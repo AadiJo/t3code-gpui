@@ -78,9 +78,10 @@ aes = "0.8"
 cbc = { version = "0.1", features = ["alloc"] }
 windows-sys = "0.61"
 
+# No debuginfo: debug builds of this workspace are large, and panics still
+# report their file and line.
 [profile.dev]
-debug = "line-tables-only"
-split-debuginfo = "unpacked"
+debug = false
 
 # Dependencies carry no debuginfo, and only the hot rendering and layout crates
 # are optimized, so debug builds stay small and scroll at a usable frame rate.
