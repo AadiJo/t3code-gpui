@@ -30,7 +30,7 @@ impl Sidebar {
         let unread = self.snapshot.notifications.iter().filter(|n| n.unread).count();
         let hovered = self.hovered_control == Some(HeaderControl::Notifications);
         let bell = sidebar_icon_button("sidebar-notifications", IconName::Bell, px(32.), hovered || self.notifications_open, colors)
-            .tooltip(super::tooltip::tooltip("Notifications"))
+            .tooltip(crate::components::ui::tooltip::tooltip(crate::i18n::t!("Notifications")))
             .on_hover(self.control_hover_listener(HeaderControl::Notifications, cx))
             .on_click(cx.listener(|this, _, _, cx| {
                 this.notifications_open = !this.notifications_open;
@@ -149,7 +149,7 @@ impl Sidebar {
                             .p_1()
                             .cursor_pointer()
                             .child(Icon::new(IconName::Check).size(IconSize::Custom(px(14.))).color(colors.muted_foreground))
-                            .tooltip(super::tooltip::tooltip("Mark as read"))
+                            .tooltip(crate::components::ui::tooltip::tooltip(crate::i18n::t!("Mark as read")))
                             .on_click(cx.listener(move |_, _, _, cx| {
                                 cx.emit(SidebarEvent::MarkNotificationRead(read_id.clone()));
                             })),

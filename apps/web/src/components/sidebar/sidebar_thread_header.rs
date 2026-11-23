@@ -162,7 +162,7 @@ impl Sidebar {
                                     hovered(HeaderControl::Filter),
                                     colors,
                                 )
-                                .tooltip(super::tooltip::tooltip("Filter projects"))
+                                .tooltip(crate::components::ui::tooltip::tooltip(crate::i18n::t!("Filter threads by project")))
                                 .on_hover(self.control_hover_listener(HeaderControl::Filter, cx))
                                 .on_click(cx.listener(|_, _, _, cx| {
                                     cx.emit(SidebarEvent::OpenProjectFilter)
@@ -176,7 +176,7 @@ impl Sidebar {
                                     hovered(HeaderControl::AddProject),
                                     colors,
                                 )
-                                .tooltip(super::tooltip::tooltip("Add project"))
+                                .tooltip(crate::components::ui::tooltip::tooltip(crate::i18n::t!("Add project")))
                                 .on_hover(self.control_hover_listener(HeaderControl::AddProject, cx))
                                 .on_click(cx.listener(|_, _, _, cx| cx.emit(SidebarEvent::AddProject))),
                             )
@@ -188,7 +188,7 @@ impl Sidebar {
                                     hovered(HeaderControl::NewThread),
                                     colors,
                                 )
-                                .tooltip(super::tooltip::tooltip("New thread"))
+                                .tooltip(crate::components::ui::tooltip::tooltip(crate::i18n::t!("New thread")))
                                 .on_hover(self.control_hover_listener(HeaderControl::NewThread, cx))
                                 .on_click(cx.listener(|_, _, _, cx| {
                                     cx.emit(SidebarEvent::NewThread(None))

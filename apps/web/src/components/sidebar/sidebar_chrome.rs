@@ -60,7 +60,7 @@ impl Sidebar {
                       label: &'static str,
                       event: fn() -> SidebarEvent| {
             sidebar_icon_button(id, glyph, px(32.), hovered(control), colors)
-                .tooltip(super::tooltip::tooltip(label))
+                .tooltip(crate::components::ui::tooltip::tooltip(label))
                 .on_hover(this.control_hover_listener(control, cx))
                 .on_click(cx.listener(move |_, _, _, cx| cx.emit(event())))
         };

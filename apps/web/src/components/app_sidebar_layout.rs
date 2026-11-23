@@ -13,7 +13,8 @@ use gpui_kit::*;
 
 use super::sidebar::style::*;
 use super::sidebar::surface_grain::surface_grain;
-use super::sidebar::tooltip::tooltip;
+use crate::components::ui::tooltip::{TooltipSurface, tooltip};
+use crate::i18n::t;
 use super::sidebar::{Sidebar, SidebarEvent};
 use crate::ActiveAppTheme as _;
 
@@ -375,7 +376,7 @@ impl AppSidebarLayout {
         &self,
         id: &'static str,
         glyph: IconName,
-        label: &'static str,
+        label: impl Into<TooltipSurface>,
         pressed: bool,
         colors: &ShellColors,
     ) -> Stateful<Div> {
@@ -393,7 +394,7 @@ impl AppSidebarLayout {
             .when(pressed, |d| d.bg(colors.accent))
             .hover(move |s| s.bg(hover))
             .child(Icon::new(glyph).size(IconSize::Custom(px(16.))).color(colors.titlebar_icon))
-            .tooltip(tooltip(label))
+            .tooltip(tooltip(label.into()))
     }
 
     fn render_caption_buttons(&self, window: &Window, colors: &ShellColors) -> Option<AnyElement> {
@@ -462,6 +463,11 @@ impl AppSidebarLayout {
             && (cfg!(target_os = "windows") || client_decorated || self.force_caption_buttons);
         if show { CAPTION_BUTTON_WIDTH * 3. } else { px(0.) }
     }
+}
+
+/// A shortcut as the platform writes it.
+fn shortcut_label(mac: &'static str, other: &'static str) -> &'static str {
+    if cfg!(target_os = "macos") { mac } else { other }
 }
 
 /// `clampThreadSidebarWidth`: `[208, max(208, viewport - 640)]`.
@@ -739,7 +745,7 @@ impl Render for AppSidebarLayout {
                     } else {
                         IconName::PanelLeft
                     },
-                    "Toggle sidebar",
+                    t!("Toggle Sidebar"),
                     false,
                     &colors,
                 )
@@ -763,7 +769,7 @@ impl Render for AppSidebarLayout {
                         } else {
                             IconName::Maximize2
                         },
-                        "Maximize panel",
+                        if self.right_maximized { t!("Restore panel size") } else { t!("Maximize panel") },
                         self.right_maximized,
                         &colors,
                     )
@@ -771,7 +777,13 @@ impl Render for AppSidebarLayout {
                 )
             })
             .child(
-                self.titlebar_toggle("toggle-details", IconName::SquareMenu, "Thread details", self.details_open, &colors)
+                self.titlebar_toggle(
+                    "toggle-details",
+                    IconName::SquareMenu,
+                    t!("Toggle thread details ({shortcut})", shortcut = shortcut_label("⌘⇧B", "Ctrl+Shift+B")),
+                    self.details_open,
+                    &colors,
+                )
                     .on_click(cx.listener(|this, _, _, cx| this.press(PanelToggle::Details, cx))),
             )
             .child(
@@ -782,7 +794,7 @@ impl Render for AppSidebarLayout {
                     } else {
                         IconName::PanelBottom
                     },
-                    "Toggle terminal",
+                    t!("Toggle terminal drawer ({shortcut})", shortcut = shortcut_label("⌘J", "Ctrl+J")),
                     false,
                     &colors,
                 )
@@ -796,7 +808,7 @@ impl Render for AppSidebarLayout {
                     } else {
                         IconName::PanelRight
                     },
-                    "Toggle right panel",
+                    t!("Toggle right panel ({shortcut})", shortcut = shortcut_label("⌘⌥B", "Ctrl+Alt+B")),
                     false,
                     &colors,
                 )

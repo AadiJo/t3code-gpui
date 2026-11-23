@@ -179,10 +179,7 @@ impl Sidebar {
                                 .cursor_pointer()
                                 .hover(|s| s.bg(colors.accent))
                                 .child(Icon::new(IconName::SquarePen).size(IconSize::Custom(px(14.))).color(colors.muted_foreground))
-                                .tooltip(super::tooltip::tooltip(format!(
-                                    "New thread in {}",
-                                    project.label
-                                )))
+                                .tooltip(crate::components::ui::tooltip::tooltip(crate::i18n::t!("New thread in {project}", project = project.label.clone())))
                                 .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
                                     if *hovered {
                                         this.set_row_hover(ix, true, cx);

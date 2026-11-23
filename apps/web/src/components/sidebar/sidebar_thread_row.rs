@@ -270,7 +270,7 @@ impl Sidebar {
             cluster = cluster.child(
                 row_action(("discard-draft", ix), colors)
                     .child(Icon::new(IconName::X).size(IconSize::Custom(px(14.))).color(colors.muted_foreground))
-                    .tooltip(super::tooltip::tooltip("Discard draft"))
+                    .tooltip(crate::components::ui::tooltip::tooltip(crate::i18n::t!("Discard draft")))
                     .on_click(cx.listener(move |_, _, _, cx| {
                         cx.stop_propagation();
                         cx.emit(SidebarEvent::DiscardDraft(key.clone()));
@@ -281,7 +281,7 @@ impl Sidebar {
             cluster = cluster.child(
                 row_action(("snooze", ix), colors)
                     .child(Icon::new(IconName::AlarmClock).size(IconSize::Custom(px(14.))).color(colors.muted_foreground))
-                    .tooltip(super::tooltip::tooltip("Snooze"))
+                    .tooltip(crate::components::ui::tooltip::tooltip(crate::i18n::t!("Snooze")))
                     .on_click(cx.listener(move |this, event: &ClickEvent, _, cx| {
                         cx.stop_propagation();
                         this.open_snooze_menu(ix, event.position(), cx);
@@ -296,7 +296,7 @@ impl Sidebar {
                     .text_color(colors.muted_foreground)
                     .child(Icon::new(IconName::Check).size(IconSize::Custom(px(14.))).color(colors.muted_foreground))
                     .child("Settle")
-                    .tooltip(super::tooltip::tooltip("Settle thread"))
+                    .tooltip(crate::components::ui::tooltip::tooltip(crate::i18n::t!("Settle thread")))
                     .on_click(cx.listener(move |this, _, _, cx| {
                         cx.stop_propagation();
                         let targets = this.command_targets(&key);
@@ -392,7 +392,7 @@ impl Sidebar {
             } else {
                 Icon::new(IconName::Pin).size(IconSize::Custom(px(12.))).color(colors.muted_foreground.opacity(0.65))
             })
-            .tooltip(super::tooltip::tooltip("Unpin thread"))
+            .tooltip(crate::components::ui::tooltip::tooltip(crate::i18n::t!("Unpin thread")))
             .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
                 this.hovered_pin = if *hovered { Some(ix) } else { None };
                 cx.notify();
@@ -533,7 +533,7 @@ impl Sidebar {
                 .when(action == SlimAction::Settle, |d| d.px_2().mr(px(-8.)))
                 .when(action != SlimAction::Settle, |d| d.mr(px(-4.)))
                 .child(Icon::new(glyph).size(IconSize::Custom(px(size))).color(colors.muted_foreground))
-                .tooltip(super::tooltip::tooltip(label))
+                .tooltip(crate::components::ui::tooltip::tooltip(label))
                 .on_click(cx.listener(move |this, _, _, cx| {
                     cx.stop_propagation();
                     let targets = this.command_targets(&key);

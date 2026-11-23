@@ -14,7 +14,6 @@ pub mod sidebar_thread_header;
 pub mod sidebar_thread_row;
 pub mod style;
 pub mod surface_grain;
-pub mod tooltip;
 
 use std::collections::HashSet;
 use std::time::Duration;
