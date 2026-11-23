@@ -60,6 +60,7 @@ pub mod syntax;
 pub mod theme_palette;
 pub mod theme_tokens;
 pub mod thread_routes;
+pub mod thread_find_store;
 pub mod thread_notifications;
 pub mod timestamp_format;
 pub mod worktree_cleanup;

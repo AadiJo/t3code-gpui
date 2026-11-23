@@ -26,6 +26,8 @@ pub mod rich_text;
 pub mod syntax_highlighting;
 pub mod syntax_theme;
 pub mod thread_details_items;
+pub mod thread_find;
+pub mod thread_find_bar;
 pub mod thread_details_panel;
 pub mod thread_details_pr_row;
 pub mod thread_details_panel_styles;

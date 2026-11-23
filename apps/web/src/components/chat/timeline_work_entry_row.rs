@@ -77,7 +77,7 @@ impl MessagesTimeline {
         let detail = if let WorkItem::QuestionAnswer { pairs } = &entry.item {
             Some(question_answers(pairs, &colors))
         } else if open && expandable {
-            Some(self.inspector(entry))
+            Some(self.inspector(entry, cx))
         } else {
             None
         };
@@ -133,7 +133,7 @@ impl MessagesTimeline {
     }
 
     /// Per-tool detail of an open entry (`V2ItemInspector`).
-    fn inspector(&self, entry: &WorkLogEntry) -> AnyElement {
+    fn inspector(&self, entry: &WorkLogEntry, cx: &mut Context<Self>) -> AnyElement {
         let colors = self.colors;
         let theme = SyntaxTheme::for_appearance(colors.appearance);
         let key = MessagesTimeline::key_of(entry.id.as_str());
@@ -184,7 +184,13 @@ impl MessagesTimeline {
                             .child(
                                 xs_button(("open-diff", key.wrapping_add(index as u64)), None, Some("Open diff".into()), colors.theme.text, &colors)
                                     .border_1()
-                                    .border_color(colors.theme.border),
+                                    .border_color(colors.theme.border)
+                                    .on_click({
+                                        let file = change.path.clone();
+                                        cx.listener(move |_, _, _, cx| {
+                                            cx.emit(super::messages_timeline::TimelineAction::OpenDiff { turn: None, file: Some(file.clone()) })
+                                        })
+                                    }),
                             )
                             .into_any_element()
                     })

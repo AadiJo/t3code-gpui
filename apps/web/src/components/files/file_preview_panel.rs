@@ -1014,6 +1014,7 @@ impl FilesPanel {
             piece_opacity: None,
             state: &self.markdown_state,
             actions,
+            find: None,
         };
         div()
             .id("file-markdown")

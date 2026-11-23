@@ -11,7 +11,7 @@ use gpui_kit::{
 
 use super::{
     chat_style::{TEXT_2XS, TEXT_3XS, TEXT_XS, alpha, mono},
-    messages_timeline::MessagesTimeline,
+    messages_timeline::{MessagesTimeline, TimelineAction},
     messages_timeline_logic::{MessageRow, TimelineRow},
     timeline_entries::{ChatMessage, TurnDiffSummary},
     timeline_row_parts::{diff_stat, xs_button},
@@ -55,6 +55,7 @@ impl MessagesTimeline {
                 piece_opacity: opacity.iter().any(|o| *o < 1.).then_some(opacity.as_slice()),
                 state: &self.markdown_state,
                 actions,
+                find: self.find_highlight(),
             };
             render_markdown(&view, window, cx).into_any_element()
         };
@@ -95,8 +96,14 @@ impl MessagesTimeline {
                 )
                 .on_click(cx.listener(move |this, _, _, cx| this.copy(key, text.clone(), cx))),
             )
-            .child(xs_button(("fork", key), Some(IconName::GitFork), None, colors.theme.text, &colors))
-            .child(xs_button(("reply", key), Some(IconName::Reply), None, colors.theme.muted_foreground, &colors))
+            .child(xs_button(("fork", key), Some(IconName::GitFork), None, colors.theme.text, &colors).on_click({
+                let id = message.id.clone();
+                cx.listener(move |_, _, _, cx| cx.emit(TimelineAction::Fork(id.clone())))
+            }))
+            .child(xs_button(("reply", key), Some(IconName::Reply), None, colors.theme.muted_foreground, &colors).on_click({
+                let (id, text) = (message.id.clone(), message.text.clone());
+                cx.listener(move |_, _, _, cx| cx.emit(TimelineAction::Reply { message: id.clone(), text: text.clone() }))
+            }))
             .children((!message.streaming).then(|| {
                 div().text_color(colors.theme.muted_foreground).child(format_clock(message.updated_at.0))
             }))
@@ -124,6 +131,7 @@ impl MessagesTimeline {
             piece_opacity: None,
             state: &self.markdown_state,
             actions,
+            find: self.find_highlight(),
         };
         div().px_1().py(px(2.)).child(render_markdown(&view, window, cx)).into_any_element()
     }
@@ -131,7 +139,7 @@ impl MessagesTimeline {
     /// "N changed files" with diff stats, folder rows and file rows.
     fn render_changed_files(&mut self, key: u64, summary: &TurnDiffSummary, cx: &mut Context<Self>) -> AnyElement {
         let colors = self.colors;
-        let _ = cx;
+        let turn = summary.assistant_message_id.clone();
         let (additions, deletions) = summary.files.iter().fold((0, 0), |(a, d), f| (a + f.additions, d + f.deletions));
         let fill = if colors.is_dark() { alpha(colors.theme.input, 0.2) } else { colors.theme.secondary };
         // Group files under their folder, as the tree's first level does.
@@ -162,7 +170,11 @@ impl MessagesTimeline {
             .child(diff_stat(additions, deletions, &colors, TEXT_XS.size))
             .child(div().flex_1())
             .child(xs_button(("expand-all", key), Some(IconName::ChevronsDownUp), None, colors.theme.muted_foreground, &colors))
-            .child(xs_button(("open-diff-turn", key), Some(IconName::FileDiff), Some("Open diff".into()), colors.theme.muted_foreground, &colors));
+            .child(xs_button(("open-diff-turn", key), Some(IconName::FileDiff), Some("Open diff".into()), colors.theme.muted_foreground, &colors).on_click({
+                let turn = turn.clone();
+                cx.listener(move |_, _, _, cx| cx.emit(TimelineAction::OpenDiff { turn: Some(turn.clone()), file: None }))
+            }));
+        let weak = cx.weak_entity();
         let rows = folders.into_iter().flat_map(|(folder, files)| {
             let folder_row = (!folder.is_empty()).then(|| {
                 div()
@@ -184,8 +196,16 @@ impl MessagesTimeline {
                     .into_any_element()
             });
             let indent = if folder.is_empty() { px(8.) } else { px(30.) };
+            let (turn, weak) = (turn.clone(), weak.clone());
             folder_row.into_iter().chain(files.into_iter().map(move |file| {
                 let name = file.path.rsplit('/').next().unwrap_or(&file.path).to_owned();
+                let open = {
+                    let (turn, file, weak) = (turn.clone(), file.path.clone(), weak.clone());
+                    move |_: &gpui_kit::ClickEvent, _: &mut Window, cx: &mut gpui_kit::App| {
+                        let action = TimelineAction::OpenDiff { turn: Some(turn.clone()), file: Some(file.clone()) };
+                        weak.update(cx, |_, cx| cx.emit(action)).ok();
+                    }
+                };
                 div()
                     .id(gpui_kit::SharedString::from(format!("changed-{}", file.path)))
                     .h(TREE_ROW_HEIGHT)
@@ -208,6 +228,7 @@ impl MessagesTimeline {
                             .child(name),
                     )
                     .child(diff_stat(file.additions, file.deletions, &colors, TEXT_3XS.size))
+                    .on_click(open)
                     .into_any_element()
             }))
         });
