@@ -24,7 +24,7 @@ pub struct EnvironmentShell {
     state: Entity<ConnectionsState>,
     empty: Entity<HostedEmptyState>,
     showing_empty: bool,
-    settings: Option<(Entity<SettingsRoute>, Subscription)>,
+    settings: Option<(Entity<SettingsRoute>, [Subscription; 2])>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -102,10 +102,22 @@ impl EnvironmentShell {
             return;
         }
         let settings = cx.new(|cx| SettingsRoute::new(path, window, cx));
-        let subscription = cx.subscribe(&settings, |this, _, event: &SettingsRouteEvent, cx| match event {
-            SettingsRouteEvent::Close => this.close_settings(cx),
-        });
-        self.settings = Some((settings, subscription));
+        let subscriptions = [
+            cx.subscribe(&settings, |this, _, event: &SettingsRouteEvent, cx| match event {
+                SettingsRouteEvent::Close => this.close_settings(cx),
+            }),
+            // The modal's own navigation (nav list, search) moves the route with it.
+            cx.observe(&settings, |this, settings, cx| {
+                let path = settings.read(cx).path();
+                let current = this.router.read(cx).current().clone();
+                if let Route::Settings { panel, .. } = current
+                    && panel.settings_path() != path
+                {
+                    this.router.update(cx, |router, cx| router.replace(Route::settings(path), cx));
+                }
+            }),
+        ];
+        self.settings = Some((settings, subscriptions));
         cx.notify();
     }
 

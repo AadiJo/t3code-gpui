@@ -486,8 +486,9 @@ fn flow(out: PathBuf, state: PathBuf, tag: &str) -> anyhow::Result<String> {
     r.shot("settings-from-gear")?;
     open_environments(&mut r);
     let path = r.settings_path();
-    let (ok, detail) = (path == Some(SettingsPath::Connections), format!("{path:?} at {}", r.route().path()));
-    r.check("the nav lands on Environments", ok, detail);
+    let route = r.route();
+    let (ok, detail) = (path == Some(SettingsPath::Connections) && route == Route::settings(SettingsPath::Connections), format!("{path:?} at {}", route.path()));
+    r.check("the nav lands on Environments and the route follows", ok, detail);
     r.shot("settings-environments-from-gear")?;
     r.click_id("settings-close");
     let (ok, detail) = (r.route() == thread && r.settings_path().is_none(), r.route().path());
