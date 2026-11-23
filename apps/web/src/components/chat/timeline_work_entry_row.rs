@@ -54,7 +54,8 @@ impl MessagesTimeline {
         let label = display_label.unwrap_or_else(|| entry_label(entry));
         let label_element = if severe {
             div().font_weight(FontWeight::MEDIUM).text_color(colors.destructive()).child(label).into_any_element()
-        } else if is_tool_like(entry) {
+        } else if is_tool_like(entry) || matches!(entry.item, WorkItem::Reasoning { .. }) {
+            // Tool and thinking rows read `secondary-label`; info rows `foreground/80`.
             label.into_any_element()
         } else {
             div().text_color(alpha(colors.theme.text, 0.8)).child(label).into_any_element()

@@ -311,19 +311,6 @@ pub fn entry_label(entry: &WorkLogEntry) -> SharedString {
     }
 }
 
-/// Whether a row reads as a tool call (`workLogEntryIsToolLike`): its label is
-/// `secondary-label`; info rows (todos, notices, answers) use `foreground/80`.
-pub fn is_tool_like(entry: &WorkLogEntry) -> bool {
-    !matches!(
-        entry.item,
-        WorkItem::TodoList { .. }
-            | WorkItem::Notification { .. }
-            | WorkItem::SystemNotice { info: true, .. }
-            | WorkItem::QuestionAnswer { .. }
-            | WorkItem::Compaction { .. }
-    )
-}
-
 /// The label of a live entry: "Running pnpm", "Thinking" (`liveWorkEntryLabel`).
 pub fn live_entry_label(entry: &WorkLogEntry, active: bool) -> SharedString {
     let status = if active { entry.status } else if entry.status == ToolStatus::InProgress { ToolStatus::Completed } else { entry.status };
