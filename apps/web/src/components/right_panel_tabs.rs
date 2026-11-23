@@ -2,11 +2,34 @@
 //! surface's body. Ports `RightPanelTabs.tsx`. Tabs activate on click, close
 //! on the X or a middle click, reorder by drag, and have a context menu
 //! (Close, Close others, Close to the right, Close all). The `+` menu and the
-//! empty panel's launcher open new surfaces. Surface bodies other areas have
-//! not built yet draw a labelled empty state.
+//! empty panel's launcher open new surfaces.
+//!
+//! Bodies: the diff panel (one view, fed the shown thread's patch the frame
+//! after the thread shows, so switching threads never waits on it), the
+//! Files panel (one per project), and terminal tabs (one session per tab).
+//! Surfaces not built yet (browser, device, pull requests, issues, side
+//! chat) draw a labelled empty state. Only the active tab's body renders,
+//! and a closed panel renders nothing.
+
+use std::collections::HashMap;
+use std::path::PathBuf;
+use std::rc::Rc;
 
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
+use t3code_contracts::ProjectScript;
+
+use crate::components::diff_panel::{DiffPanel, DiffPanelEvent};
+use crate::components::diff_panel_shell::DiffPanelLoadingState;
+use crate::components::files::file_preview_panel::{FilesPanel, FilesPanelEvent};
+use crate::components::thread_terminal_drawer::{BackendFactory, TerminalLaunch, next_terminal_id};
+use crate::diff_panel_store::{DiffPanelSelection, DiffPanelStore};
+use crate::file_source::{DirectoryFiles, SharedWorkspaceFiles};
+use crate::fixtures::FixtureStore;
+use crate::router::ThreadTarget;
+use crate::terminal::backend::TerminalBackend;
+use crate::terminal::surface::{TerminalSurface, TerminalSurfaceEvent};
+use crate::terminal_ui_state_store::ThreadKey as TerminalThreadKey;
 
 use crate::ActiveAppTheme as _;
 use crate::appearance_fonts::{TextSize, weight};
@@ -25,8 +48,33 @@ use crate::i18n::t;
 pub enum RightPanelEvent {
     /// The store changed; persist it.
     Changed,
-    /// "Terminal" was picked: open the thread's terminal drawer.
-    OpenTerminal,
+    /// "Add to chat" in the Files tab: insert this mention in the composer.
+    InsertReference(String),
+}
+
+/// Starts a project script in a new terminal session: the launch and the command.
+pub type ScriptBackendFactory = Rc<dyn Fn(&TerminalLaunch, &str, &mut App) -> Box<dyn TerminalBackend>>;
+
+/// How the panel starts terminal sessions.
+#[derive(Clone)]
+pub struct TerminalBackends {
+    pub shell: BackendFactory,
+    pub script: ScriptBackendFactory,
+}
+
+/// A project's workspace as the Files tab and the media viewer read it.
+#[derive(Clone)]
+pub struct Workspace {
+    pub key: SharedString,
+    pub name: SharedString,
+    pub files: SharedWorkspaceFiles,
+}
+
+/// A Files tab request waiting for the panel to exist (it needs the window).
+enum FilesRequest {
+    Open { path: SharedString, line: Option<u32> },
+    Picker,
+    Search,
 }
 
 /// A tab being dragged to a new position.
@@ -57,10 +105,34 @@ pub struct RightPanel {
     store: Entity<RightPanelStore>,
     /// The scoped thread key whose panel shows.
     thread: Option<SharedString>,
+    target: Option<ThreadTarget>,
+    data: Entity<FixtureStore>,
+    diff: Option<(Entity<DiffPanel>, Subscription)>,
+    /// The thread and scope the diff view holds; anything else is stale.
+    diff_shown: Option<(SharedString, DiffPanelSelection)>,
+    diff_load_scheduled: bool,
+    /// A file to reveal once the diff loads.
+    pending_reveal: Option<SharedString>,
+    workspaces: HashMap<SharedString, Workspace>,
+    files: HashMap<SharedString, (Entity<FilesPanel>, Subscription)>,
+    files_requests: Vec<FilesRequest>,
+    backends: TerminalBackends,
+    /// Terminal tab sessions by thread and terminal id.
+    terminals: HashMap<(SharedString, String), Entity<TerminalSurface>>,
+    /// Scripts to start in the terminal tab of that id when it first renders.
+    pending_scripts: HashMap<(SharedString, String), ProjectScript>,
     /// Read for the titlebar row's height and the insets around the fixed toggles.
     layout: WeakEntity<AppSidebarLayout>,
     topbar_height: Pixels,
+    focus: FocusHandle,
     _observe: Subscription,
+}
+
+impl Focusable for RightPanel {
+    /// The panel's area, for focus next/previous area.
+    fn focus_handle(&self, _: &App) -> FocusHandle {
+        self.focus.clone()
+    }
 }
 
 impl EventEmitter<RightPanelEvent> for RightPanel {}
@@ -151,16 +223,324 @@ impl Launch {
 }
 
 impl RightPanel {
-    pub fn new(store: Entity<RightPanelStore>, layout: WeakEntity<AppSidebarLayout>, cx: &mut Context<Self>) -> Self {
+    pub fn new(
+        store: Entity<RightPanelStore>,
+        layout: WeakEntity<AppSidebarLayout>,
+        data: Entity<FixtureStore>,
+        backends: TerminalBackends,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        cx.default_global::<DiffPanelStore>();
         let observe = cx.observe(&store, |_, _, cx| cx.notify());
-        Self { store, thread: None, layout, topbar_height: px(40.), _observe: observe }
+        Self {
+            store,
+            thread: None,
+            target: None,
+            data,
+            diff: None,
+            diff_shown: None,
+            diff_load_scheduled: false,
+            pending_reveal: None,
+            workspaces: HashMap::new(),
+            files: HashMap::new(),
+            files_requests: Vec::new(),
+            backends,
+            terminals: HashMap::new(),
+            pending_scripts: HashMap::new(),
+            layout,
+            topbar_height: px(40.),
+            focus: cx.focus_handle(),
+            _observe: observe,
+        }
     }
 
-    pub fn set_thread(&mut self, thread: Option<SharedString>, cx: &mut Context<Self>) {
+    /// Shows `target`'s panel. Nothing loads here: the active tab's body
+    /// loads when it renders.
+    pub fn set_thread(&mut self, thread: Option<SharedString>, target: Option<ThreadTarget>, cx: &mut Context<Self>) {
         if self.thread != thread {
             self.thread = thread;
+            self.target = target;
+            self.files_requests.clear();
             cx.notify();
         }
+    }
+
+    pub fn diff_panel(&self) -> Option<&Entity<DiffPanel>> {
+        self.diff.as_ref().map(|(diff, _)| diff)
+    }
+
+    /// The Files panel of the shown thread's project, once built.
+    pub fn files_panel(&mut self, cx: &App) -> Option<Entity<FilesPanel>> {
+        let key = self.workspace(cx)?.key;
+        self.files.get(&key).map(|(panel, _)| panel.clone())
+    }
+
+    /// The terminal session of a tab, once started.
+    pub fn terminal(&self, terminal_id: &str) -> Option<&Entity<TerminalSurface>> {
+        let thread = self.thread.clone()?;
+        self.terminals.get(&(thread, terminal_id.to_string()))
+    }
+
+    /// Whether the diff view holds the shown thread's current scope.
+    pub fn diff_loaded(&self, cx: &App) -> bool {
+        self.diff.is_some() && !self.diff_stale(cx)
+    }
+
+    /// The shown thread's project workspace, written on first use.
+    pub fn workspace(&mut self, cx: &App) -> Option<Workspace> {
+        let target = self.target.clone()?;
+        let fixture = self.data.read(cx).workspace(&target)?;
+        let workspace = self.workspaces.entry(fixture.project_key.clone()).or_insert_with(|| Workspace {
+            key: fixture.project_key.clone(),
+            name: fixture.name.clone(),
+            files: DirectoryFiles::new(PathBuf::from(&fixture.root)) as SharedWorkspaceFiles,
+        });
+        Some(workspace.clone())
+    }
+
+    /// Opens the Diff tab on a turn (its reply id) or the branch, revealing `file`.
+    pub fn open_diff(&mut self, turn: Option<SharedString>, file: Option<SharedString>, cx: &mut Context<Self>) {
+        let Some(thread) = self.thread.clone() else { return };
+        let store = cx.global_mut::<DiffPanelStore>();
+        match &turn {
+            Some(turn) => store.select_turn(&thread, turn, file.as_deref()),
+            None if file.is_some() => store.select_git_scope(&thread, crate::diff_panel_store::GitScope::Branch),
+            None => {}
+        }
+        self.pending_reveal = file;
+        if self.diff_loaded(cx)
+            && let Some(path) = self.pending_reveal.take()
+            && let Some((diff, _)) = &self.diff
+        {
+            diff.update(cx, |diff, cx| diff.reveal_path(&path, cx));
+        }
+        self.edit(cx, |store, thread| store.open(thread, SingletonKind::Diff));
+    }
+
+    /// Opens `path` in the Files tab, at `line`.
+    pub fn open_file(&mut self, path: SharedString, line: Option<u32>, window: &mut Window, cx: &mut Context<Self>) {
+        self.files_request(FilesRequest::Open { path, line }, window, cx);
+    }
+
+    /// Go to file (Mod+P): the Files tab with its picker open.
+    pub fn open_file_picker(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.files_request(FilesRequest::Picker, window, cx);
+    }
+
+    /// Search project contents (Mod+Shift+F) in the Files tab.
+    pub fn open_content_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.files_request(FilesRequest::Search, window, cx);
+    }
+
+    fn files_request(&mut self, request: FilesRequest, window: &mut Window, cx: &mut Context<Self>) {
+        if self.thread.is_none() {
+            return;
+        }
+        self.edit(cx, |store, thread| store.open(thread, SingletonKind::Files));
+        self.files_requests.push(request);
+        if let Some(panel) = self.ensure_files(window, cx) {
+            self.run_files_requests(&panel, window, cx);
+        }
+    }
+
+    fn run_files_requests(&mut self, panel: &Entity<FilesPanel>, window: &mut Window, cx: &mut Context<Self>) {
+        for request in std::mem::take(&mut self.files_requests) {
+            panel.update(cx, |panel, cx| match request {
+                FilesRequest::Open { path, line } => panel.open_file(path, line, window, cx),
+                FilesRequest::Picker => panel.open_file_picker(window, cx),
+                FilesRequest::Search => panel.open_content_search(window, cx),
+            });
+        }
+        let focus = panel.read(cx).file_picker().map(|p| p.focus_handle(cx))
+            .or_else(|| panel.read(cx).content_search().map(|s| s.focus_handle(cx)));
+        if let Some(focus) = focus {
+            window.focus(&focus, cx);
+        }
+    }
+
+    /// The Files panel for the shown thread's project, built on first use.
+    fn ensure_files(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Option<Entity<FilesPanel>> {
+        let workspace = self.workspace(cx)?;
+        if let Some((panel, _)) = self.files.get(&workspace.key) {
+            return Some(panel.clone());
+        }
+        let panel = cx.new(|cx| FilesPanel::new(workspace.files.clone(), workspace.name.clone(), window, cx));
+        let subscription = cx.subscribe(&panel, |_, _, event: &FilesPanelEvent, cx| match event {
+            FilesPanelEvent::AddToChat(mention) => cx.emit(RightPanelEvent::InsertReference(mention.clone())),
+            // Opening on the host needs the server (`shell.openInEditor`).
+            FilesPanelEvent::OpenInEditor { .. } => {}
+        });
+        self.files.insert(workspace.key.clone(), (panel.clone(), subscription));
+        Some(panel)
+    }
+
+    /// Opens a terminal tab running a project script.
+    pub fn run_script(&mut self, script: ProjectScript, cx: &mut Context<Self>) {
+        let Some(thread) = self.thread.clone() else { return };
+        let id = self.next_terminal_id(&thread);
+        self.pending_scripts.insert((thread, id.clone()), script);
+        self.add_terminal_tab(id, cx);
+    }
+
+    /// Opens a new terminal tab with a shell.
+    pub fn new_terminal_tab(&mut self, cx: &mut Context<Self>) {
+        let Some(thread) = self.thread.clone() else { return };
+        let id = self.next_terminal_id(&thread);
+        self.add_terminal_tab(id, cx);
+    }
+
+    fn next_terminal_id(&self, thread: &SharedString) -> String {
+        let used: Vec<String> = self.terminals.keys().filter(|(t, _)| t == thread).map(|(_, id)| id.clone()).chain(
+            self.pending_scripts.keys().filter(|(t, _)| t == thread).map(|(_, id)| id.clone()),
+        ).collect();
+        next_terminal_id(&used)
+    }
+
+    fn add_terminal_tab(&mut self, id: String, cx: &mut Context<Self>) {
+        let surface = RightPanelSurface::Terminal {
+            id: format!("terminal:{id}"),
+            resource_id: id.clone(),
+            terminal_ids: vec![id.clone()],
+            active_terminal_id: id,
+        };
+        self.edit(cx, |store, thread| store.open_surface(thread, surface));
+    }
+
+    /// The session behind a terminal tab, started when the tab first renders.
+    fn terminal_surface(&mut self, terminal_id: &str, window: &mut Window, cx: &mut Context<Self>) -> Option<Entity<TerminalSurface>> {
+        let thread = self.thread.clone()?;
+        let key = (thread.clone(), terminal_id.to_string());
+        if let Some(surface) = self.terminals.get(&key) {
+            return Some(surface.clone());
+        }
+        let cwd = self.workspace(cx).map(|w| SharedString::from(w.files.root().to_string())).unwrap_or_default();
+        let launch = TerminalLaunch {
+            thread: TerminalThreadKey(thread.to_string()),
+            terminal_id: terminal_id.to_string().into(),
+            cwd,
+            worktree_path: None,
+        };
+        let backend = match self.pending_scripts.remove(&key) {
+            Some(script) => (self.backends.script)(&launch, &script.command, cx),
+            None => (self.backends.shell)(&launch, cx),
+        };
+        let surface = cx.new(|cx| TerminalSurface::new(backend, window, cx));
+        let tab_id = format!("terminal:{terminal_id}");
+        cx.subscribe(&surface, move |this, _, event: &TerminalSurfaceEvent, cx| {
+            if let TerminalSurfaceEvent::SessionEnded(_) = event {
+                let id = tab_id.clone();
+                this.edit(cx, |store, thread| store.close_surface(thread, &id));
+            }
+        })
+        .detach();
+        self.terminals.insert(key, surface.clone());
+        Some(surface)
+    }
+
+    fn diff_selection(&self, cx: &App) -> Option<(SharedString, DiffPanelSelection)> {
+        let thread = self.thread.clone()?;
+        let selection = cx.global::<DiffPanelStore>().selection(&thread);
+        Some((thread, selection))
+    }
+
+    fn diff_stale(&self, cx: &App) -> bool {
+        self.diff_shown != self.diff_selection(cx)
+    }
+
+    /// Feeds the diff view the shown thread's patch for its scope.
+    fn load_diff(&mut self, cx: &mut Context<Self>) {
+        self.diff_load_scheduled = false;
+        let (Some((thread, selection)), Some(target), Some((diff, _))) =
+            (self.diff_selection(cx), self.target.clone(), self.diff.as_ref())
+        else {
+            return;
+        };
+        let diff = diff.clone();
+        let Some(input) = self.data.update(cx, |store, _| store.diff_input(&target, &selection)) else { return };
+        diff.update(cx, |diff, cx| diff.set_input(input, cx));
+        self.diff_shown = Some((thread, selection));
+        if let Some(path) = self.pending_reveal.take() {
+            diff.update(cx, |diff, cx| diff.reveal_path(&path, cx));
+        }
+        cx.notify();
+    }
+
+    fn on_diff_event(&mut self, event: &DiffPanelEvent, window: &mut Window, cx: &mut Context<Self>) {
+        match event {
+            DiffPanelEvent::SelectionChanged(_) | DiffPanelEvent::Refresh | DiffPanelEvent::IgnoreWhitespaceChanged(_) => {
+                self.diff_shown = None;
+                cx.notify();
+            }
+            DiffPanelEvent::OpenFile(path) => self.open_file(path.clone(), None, window, cx),
+            // Full contents and review comments need the server.
+            DiffPanelEvent::RequestFileContents { .. }
+            | DiffPanelEvent::ReviewComment(_)
+            | DiffPanelEvent::DeleteReviewComment(_) => {}
+        }
+    }
+
+    /// The active surface's body.
+    fn render_body(&mut self, surface: &RightPanelSurface, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+        match surface {
+            RightPanelSurface::Diff { .. } => {
+                if self.diff.is_none() {
+                    let diff = cx.new(|cx| DiffPanel::new(window, cx));
+                    let subscription = cx.subscribe_in(&diff, window, |this, _, event, window, cx| this.on_diff_event(event, window, cx));
+                    self.diff = Some((diff, subscription));
+                }
+                if self.diff_stale(cx) {
+                    // The patch loads after this frame, so showing a thread never waits on it.
+                    if !self.diff_load_scheduled {
+                        self.diff_load_scheduled = true;
+                        cx.on_next_frame(window, |this, _, cx| this.load_diff(cx));
+                    }
+                    let label = match self.diff_selection(cx).map(|(_, selection)| selection) {
+                        Some(DiffPanelSelection::ToolCall { .. }) => t!("Loading tool call diff..."),
+                        Some(DiffPanelSelection::Turn { .. }) => t!("Loading checkpoint diff..."),
+                        Some(DiffPanelSelection::Unstaged) => t!("Loading uncommitted changes..."),
+                        Some(DiffPanelSelection::Commit { .. }) => t!("Loading commit..."),
+                        _ => t!("Loading changes..."),
+                    };
+                    return div().flex_1().min_h_0().child(DiffPanelLoadingState::new(label)).into_any_element();
+                }
+                let (diff, _) = self.diff.as_ref().expect("diff built above");
+                div().flex_1().min_h_0().child(diff.clone()).into_any_element()
+            }
+            RightPanelSurface::Files { .. } | RightPanelSurface::File { .. } => match self.ensure_files(window, cx) {
+                Some(panel) => {
+                    if let RightPanelSurface::File { relative_path, reveal_line, .. } = surface
+                        && panel.read(cx).open_path().map(|p| p.as_ref()) != Some(relative_path.as_str())
+                    {
+                        let (path, line) = (SharedString::from(relative_path.clone()), *reveal_line);
+                        panel.update(cx, |panel, cx| panel.open_file(path, line, window, cx));
+                    }
+                    if !self.files_requests.is_empty() {
+                        self.run_files_requests(&panel, window, cx);
+                    }
+                    div().flex_1().min_h_0().child(panel).into_any_element()
+                }
+                None => self.render_empty(surface, cx),
+            },
+            RightPanelSurface::Terminal { active_terminal_id, .. } => match self.terminal_surface(active_terminal_id, window, cx) {
+                Some(terminal) => div().flex_1().min_h_0().px_2().pb_2().child(terminal).into_any_element(),
+                None => self.render_empty(surface, cx),
+            },
+            _ => self.render_empty(surface, cx),
+        }
+    }
+
+    /// A surface whose view does not exist yet names itself.
+    fn render_empty(&self, surface: &RightPanelSurface, cx: &mut Context<Self>) -> AnyElement {
+        let theme = cx.app_theme();
+        div()
+            .flex_1()
+            .min_h_0()
+            .flex()
+            .items_center()
+            .justify_center()
+            .child(Empty::new(surface_title(surface)).icon(surface_icon(surface.kind())))
+            .text_color(theme.colors.text)
+            .into_any_element()
     }
 
     fn edit(&mut self, cx: &mut Context<Self>, edit: impl FnOnce(&mut RightPanelStore, &str)) {
@@ -175,7 +555,7 @@ impl RightPanel {
     fn launch(&mut self, launch: Launch, cx: &mut Context<Self>) {
         match launch {
             Launch::Surface(kind) => self.edit(cx, |store, thread| store.open(thread, kind)),
-            Launch::Terminal => cx.emit(RightPanelEvent::OpenTerminal),
+            Launch::Terminal => self.new_terminal_tab(cx),
         }
     }
 
@@ -385,23 +765,9 @@ impl Render for RightPanel {
                     .child(div().h_full().flex().items_center().gap_1().children(tabs).child(add)),
             );
         let body = match state.active() {
-            Some(surface) => {
-                let theme = cx.app_theme();
-                div()
-                    .flex_1()
-                    .min_h_0()
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .child(
-                        // Surface bodies are built by other areas; until then the tab names itself.
-                        Empty::new(surface_title(surface)).icon(surface_icon(surface.kind())),
-                    )
-                    .text_color(theme.colors.text)
-                    .into_any_element()
-            }
+            Some(surface) => self.render_body(surface, window, cx),
             None => self.render_launcher(cx).into_any_element(),
         };
-        div().size_full().flex().flex_col().child(tab_row).child(body)
+        div().size_full().flex().flex_col().track_focus(&self.focus).child(tab_row).child(body)
     }
 }

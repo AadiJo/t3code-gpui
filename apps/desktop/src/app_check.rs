@@ -23,7 +23,7 @@ use anyhow::{Context as _, bail, ensure};
 use gpui_kit::test::TestWindowExt as _;
 use gpui_kit::*;
 use t3code_client_runtime::platform::{ClientPresentation, FileSecretStore};
-use t3code_web::app_root::{AppRootOptions, WindowRoot, local_shell_backend};
+use t3code_web::app_root::{AppRootOptions, WindowRoot, local_shell_backend, local_script_backend};
 use t3code_web::connection::shell::EnvironmentShell;
 use t3code_web::connection::{ConnectionRuntime, RuntimeConfig};
 use t3code_web::components::command_palette::CommandPalette;
@@ -86,6 +86,7 @@ impl Run {
             platform: TitlebarPlatform::Overlay,
             state_dir: state,
             terminal_backend: local_shell_backend(),
+            script_backend: local_script_backend(),
         };
         let (window, parts) = cx.update(|cx| {
             let window_options = WindowOptions {
