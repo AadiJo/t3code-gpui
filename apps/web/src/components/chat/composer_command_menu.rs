@@ -3,6 +3,7 @@
 //! Items come from a [`ComposerMenuSource`]; the chat view supplies one backed
 //! by workspace and provider searches, scenes supply fixtures.
 
+use crate::components::icons::{Icon, IconName, IconSize};
 use std::sync::Arc;
 
 use gpui_kit::{
@@ -10,7 +11,7 @@ use gpui_kit::{
     StatefulInteractiveElement as _, Styled as _, div, px,
 };
 
-use crate::components::chat::composer_icons::{Icon, icon, provider_icon};
+use crate::components::chat::composer_icons::{composer_icon_stroke, provider_icon};
 use crate::components::chat::composer_theme::{COMMAND_MENU_MAX_HEIGHT, ComposerColors};
 use crate::composer_logic::{ComposerTrigger, ComposerTriggerKind};
 use crate::model_selection::{ProviderIcon, ProviderInstanceId};
@@ -39,7 +40,7 @@ pub enum ComposerCommandAction {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ComposerCommandIcon {
     None,
-    Icon(Icon),
+    Icon(IconName),
     Provider(ProviderIcon),
 }
 
@@ -154,7 +155,7 @@ pub fn render_menu(
             let hover = on_hover.clone();
             let leading: Option<AnyElement> = match &item.icon {
                 ComposerCommandIcon::None => None,
-                ComposerCommandIcon::Icon(i) => Some(icon(*i, px(16.), c.secondary_label).into_any_element()),
+                ComposerCommandIcon::Icon(i) => Some(Icon::new(*i).size(IconSize::Custom(px(16.))).color(c.secondary_label).stroke(composer_icon_stroke(*i)).into_any_element()),
                 ComposerCommandIcon::Provider(p) => Some(provider_icon(*p, px(16.), &item.label, &c, cx)),
             };
             let text_color: Hsla = if active { c.accent_foreground } else { c.foreground };

@@ -1,3 +1,4 @@
+mod menu;
 mod notifications;
 mod window;
 
@@ -14,7 +15,10 @@ fn main() {
                 return;
             }
             let options = window::main_window_options(cx);
-            let (handle, _) = window::open_main_window(options, cx).expect("open main window");
+            // `T3CODE_FIXTURES=0` starts without the showcase data.
+            let fixtures = std::env::var("T3CODE_FIXTURES").map_or(true, |v| v != "0");
+            let (handle, root) = window::open_main_window(options, fixtures, cx).expect("open main window");
+            menu::install(root.app.clone(), cx);
             notifications::install(cx);
             handle
                 .update(cx, |_, window, cx| {

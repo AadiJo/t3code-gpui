@@ -3,11 +3,11 @@
 //! Rows derive everything from the thread and the sidebar's hover, cursor and
 //! selection, so hovering re-renders only the visible rows.
 
+use crate::components::icons::{Icon, IconName, IconSize};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
 use super::context_menu::MenuCommand;
-use super::icons::{ShellIcon, icon};
 use super::model::{PullRequestState, SidebarThread};
 use super::style::*;
 use super::{Sidebar, SidebarEvent};
@@ -171,7 +171,7 @@ impl Sidebar {
             .items_center()
             .gap(px(6.))
             .when(thread.has_unsent_draft, |d| {
-                d.child(icon(ShellIcon::SquarePen, px(12.), colors.warning_foreground))
+                d.child(Icon::new(IconName::SquarePen).size(IconSize::Custom(px(12.))).color(colors.warning_foreground))
             })
             .child(project_favicon(colors))
             .when(thread.pinned_at.is_some(), |d| d.child(self.pin_indicator(ix, thread, colors, cx)))
@@ -269,8 +269,8 @@ impl Sidebar {
             let key = key.clone();
             cluster = cluster.child(
                 row_action(("discard-draft", ix), colors)
-                    .child(icon(ShellIcon::X, px(14.), colors.muted_foreground))
-                    .tooltip(super::tooltip::tooltip("Discard draft"))
+                    .child(Icon::new(IconName::X).size(IconSize::Custom(px(14.))).color(colors.muted_foreground))
+                    .tooltip(crate::components::ui::tooltip::tooltip(crate::i18n::t!("Discard draft")))
                     .on_click(cx.listener(move |_, _, _, cx| {
                         cx.stop_propagation();
                         cx.emit(SidebarEvent::DiscardDraft(key.clone()));
@@ -280,8 +280,8 @@ impl Sidebar {
         if settings.snooze_supported {
             cluster = cluster.child(
                 row_action(("snooze", ix), colors)
-                    .child(icon(ShellIcon::AlarmClock, px(14.), colors.muted_foreground))
-                    .tooltip(super::tooltip::tooltip("Snooze"))
+                    .child(Icon::new(IconName::AlarmClock).size(IconSize::Custom(px(14.))).color(colors.muted_foreground))
+                    .tooltip(crate::components::ui::tooltip::tooltip(crate::i18n::t!("Snooze")))
                     .on_click(cx.listener(move |this, event: &ClickEvent, _, cx| {
                         cx.stop_propagation();
                         this.open_snooze_menu(ix, event.position(), cx);
@@ -294,9 +294,9 @@ impl Sidebar {
                     .mr(px(-4.))
                     .gap_1()
                     .text_color(colors.muted_foreground)
-                    .child(icon(ShellIcon::Check, px(14.), colors.muted_foreground))
+                    .child(Icon::new(IconName::Check).size(IconSize::Custom(px(14.))).color(colors.muted_foreground))
                     .child("Settle")
-                    .tooltip(super::tooltip::tooltip("Settle thread"))
+                    .tooltip(crate::components::ui::tooltip::tooltip(crate::i18n::t!("Settle thread")))
                     .on_click(cx.listener(move |this, _, _, cx| {
                         cx.stop_propagation();
                         let targets = this.command_targets(&key);
@@ -321,7 +321,7 @@ impl Sidebar {
         match &thread.branch {
             Some(branch) => {
                 if thread.in_worktree {
-                    line = line.child(icon(ShellIcon::FolderGit2, px(14.), colors.sidebar_icon));
+                    line = line.child(Icon::new(IconName::FolderGit2).size(IconSize::Custom(px(14.))).color(colors.sidebar_icon));
                 }
                 line = line.child(middle_truncate(branch));
             }
@@ -342,7 +342,7 @@ impl Sidebar {
                     .flex_none()
                     .items_center()
                     .gap_1()
-                    .child(icon(ShellIcon::GitPullRequest, px(12.), color))
+                    .child(Icon::new(IconName::GitPullRequest).size(IconSize::Custom(px(12.))).color(color))
                     .child(format!("#{}", pr.number)),
             );
         }
@@ -353,7 +353,7 @@ impl Sidebar {
                     .flex_none()
                     .items_center()
                     .gap_1()
-                    .child(icon(ShellIcon::CircleDot, px(12.), colors.secondary_label))
+                    .child(Icon::new(IconName::CircleDot).size(IconSize::Custom(px(12.))).color(colors.secondary_label))
                     .child(div().max_w(px(64.)).truncate().child(issue.clone())),
             );
         }
@@ -388,11 +388,11 @@ impl Sidebar {
             .flex_none()
             .cursor_pointer()
             .child(if hovered {
-                icon(ShellIcon::PinOff, px(12.), colors.foreground)
+                Icon::new(IconName::PinOff).size(IconSize::Custom(px(12.))).color(colors.foreground)
             } else {
-                icon(ShellIcon::Pin, px(12.), colors.muted_foreground.opacity(0.65))
+                Icon::new(IconName::Pin).size(IconSize::Custom(px(12.))).color(colors.muted_foreground.opacity(0.65))
             })
-            .tooltip(super::tooltip::tooltip("Unpin thread"))
+            .tooltip(crate::components::ui::tooltip::tooltip(crate::i18n::t!("Unpin thread")))
             .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
                 this.hovered_pin = if *hovered { Some(ix) } else { None };
                 cx.notify();
@@ -443,7 +443,7 @@ impl Sidebar {
                 d.child(div().flex_none().opacity(if favicon_full { 1. } else { 0.4 }).child(project_favicon(colors)))
             })
             .when(thread.has_unsent_draft, |d| {
-                d.child(icon(ShellIcon::SquarePen, px(12.), colors.warning_foreground))
+                d.child(Icon::new(IconName::SquarePen).size(IconSize::Custom(px(12.))).color(colors.warning_foreground))
             })
             .child(
                 div()
@@ -496,7 +496,7 @@ impl Sidebar {
                 .items_center()
                 .gap_1()
                 .text_color(colors.info_foreground)
-                .child(icon(ShellIcon::AlarmClock, px(12.), colors.info_foreground))
+                .child(Icon::new(IconName::AlarmClock).size(IconSize::Custom(px(12.))).color(colors.info_foreground))
                 .child(compact_relative_time(self.now, until))
         } else if state.is_woke || (in_folder && state.top.is_some()) {
             let top = state.top.unwrap_or(TopStatus::Woke);
@@ -523,17 +523,17 @@ impl Sidebar {
             return slot.child(content);
         }
         let (glyph, size, label, command) = match action {
-            SlimAction::Settle => (ShellIcon::Check, 12., "Settle thread", MenuCommand::Settle),
-            SlimAction::Unsettle => (ShellIcon::Undo2, 14., "Un-settle thread", MenuCommand::Unsettle),
-            SlimAction::Wake => (ShellIcon::AlarmClockOff, 12., "Wake thread now", MenuCommand::Wake),
+            SlimAction::Settle => (IconName::Check, 12., "Settle thread", MenuCommand::Settle),
+            SlimAction::Unsettle => (IconName::Undo2, 14., "Un-settle thread", MenuCommand::Unsettle),
+            SlimAction::Wake => (IconName::AlarmClockOff, 12., "Wake thread now", MenuCommand::Wake),
         };
         let key = thread.key.clone();
         slot.gap_1().when(state.is_woke, |d| d.child(content)).child(
             row_action(("slim-action", ix), colors)
                 .when(action == SlimAction::Settle, |d| d.px_2().mr(px(-8.)))
                 .when(action != SlimAction::Settle, |d| d.mr(px(-4.)))
-                .child(icon(glyph, px(size), colors.muted_foreground))
-                .tooltip(super::tooltip::tooltip(label))
+                .child(Icon::new(glyph).size(IconSize::Custom(px(size))).color(colors.muted_foreground))
+                .tooltip(crate::components::ui::tooltip::tooltip(label))
                 .on_click(cx.listener(move |this, _, _, cx| {
                     cx.stop_propagation();
                     let targets = this.command_targets(&key);
@@ -561,16 +561,12 @@ fn row_action(id: impl Into<ElementId>, colors: &ShellColors) -> Stateful<Div> {
 
 /// The 16px project favicon. Fetched favicons are not wired yet, so every
 /// project shows the `FolderCodeIcon` fallback.
-pub(crate) fn project_favicon(colors: &ShellColors) -> Svg {
-    icon(ShellIcon::FolderCode, px(16.), colors.sidebar_icon)
+pub(crate) fn project_favicon(colors: &ShellColors) -> Icon {
+    Icon::new(IconName::FolderCode).size(IconSize::Custom(px(16.))).color(colors.sidebar_icon)
 }
 
-fn remote_icon(colors: &ShellColors) -> Svg {
-    icon(
-        ShellIcon::Monitor,
-        px(14.),
-        colors.sidebar_muted_foreground.opacity(0.7),
-    )
+fn remote_icon(colors: &ShellColors) -> Icon {
+    Icon::new(IconName::Monitor).size(IconSize::Custom(px(14.))).color(colors.sidebar_muted_foreground.opacity(0.7))
 }
 
 /// `MiddleTruncate`: the head ellipsizes, the tail stays whole.

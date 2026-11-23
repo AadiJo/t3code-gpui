@@ -8,6 +8,7 @@
 //! The composer never talks to the network. It raises [`ComposerEvent`]s for
 //! the chat view, which feeds state back through [`ChatComposer::set_state`].
 
+use crate::components::icons::{Icon, IconName, IconSize};
 use std::cell::RefCell;
 use std::ops::Range;
 use std::rc::Rc;
@@ -24,7 +25,7 @@ use gpui_kit::{
 use crate::components::chat::composer_command_menu::{
     ComposerCommandAction, ComposerMenuSource, ComposerMenuState, SlashCommand, builtin_slash_items, render_menu,
 };
-use crate::components::chat::composer_icons::{Icon, icon, provider_icon};
+use crate::components::chat::composer_icons::{composer_icon_stroke, provider_icon};
 use crate::components::chat::composer_permissions::{RuntimeMode, runtime_mode_icon};
 use crate::components::chat::composer_prompt_history::{PromptHistoryEntry, PromptHistoryPosition, step_prompt_history};
 use crate::components::chat::composer_theme::{
@@ -101,7 +102,7 @@ pub enum BannerTone {
 pub struct ComposerBanner {
     pub id: SharedString,
     pub tone: BannerTone,
-    pub icon: Icon,
+    pub icon: IconName,
     pub title: SharedString,
     pub action: Option<SharedString>,
 }
@@ -139,6 +140,9 @@ pub struct ComposerState {
     pub context_strip: Option<ComposerContextStrip>,
     pub voice_available: bool,
     pub validation: Option<SharedString>,
+    /// Replaces the placeholder while the agent waits: a pending approval
+    /// ("Send a message to decline…") or question ("Type your own answer…").
+    pub placeholder: Option<SharedString>,
 }
 
 /// What the composer asks the chat view to do.
@@ -286,7 +290,9 @@ impl ChatComposer {
             software_keyboard_open: false,
             send_shortcut: self.state.send_shortcut,
         };
-        let placeholder: SharedString = if self.state.project_required {
+        let placeholder: SharedString = if let Some(placeholder) = self.state.placeholder.clone() {
+            placeholder
+        } else if self.state.project_required {
             "Choose a project above to start a thread".into()
         } else {
             "Ask anything. @ files, $ skills, / commands".into()
@@ -732,7 +738,7 @@ fn secondary(modifiers: &Modifiers) -> bool {
 // ---- Rendering ----
 
 /// The quiet square icon action: send, attach, previous question.
-fn icon_action(id: &'static str, glyph: Icon, size: Pixels, color: Hsla, disabled: bool, c: &ComposerColors) -> gpui_kit::Stateful<gpui_kit::Div> {
+fn icon_action(id: &'static str, glyph: IconName, size: Pixels, color: Hsla, disabled: bool, c: &ComposerColors) -> gpui_kit::Stateful<gpui_kit::Div> {
     let hover = c.row_hover;
     let fg = c.foreground;
     let active = c.accent;
@@ -747,7 +753,7 @@ fn icon_action(id: &'static str, glyph: Icon, size: Pixels, color: Hsla, disable
         .when(disabled, |el| el.opacity(0.35))
         .when(!disabled, |el| el.cursor_pointer().hover(move |s| s.bg(hover).text_color(fg)).active(move |s| s.bg(active)))
         .text_color(color)
-        .child(gpui_kit::svg().path(glyph.path()).size(size).text_color(color))
+        .child(Icon::new(glyph).size(IconSize::Custom(size)).color(color).stroke(composer_icon_stroke(glyph)))
 }
 
 /// A composer control (`ComposerControl` size `sm`).
@@ -843,8 +849,8 @@ impl ChatComposer {
                 Some(name) => el.child(div().max_w(px(96.)).overflow_hidden().whitespace_nowrap().text_ellipsis().text_color(suffix_color).child(name)),
                 None => el.child(effort_glyph(&glyph, suffix_color)),
             })
-            .when(speed_fast, |el| el.child(icon(Icon::ZapFilled, px(12.), suffix_color)))
-            .when(selection.ultracode, |el| el.child(icon(Icon::Workflow, px(12.), suffix_color)))
+            .when(speed_fast, |el| el.child(Icon::new(IconName::ZapFilled).size(IconSize::Custom(px(12.))).color(suffix_color)))
+            .when(selection.ultracode, |el| el.child(Icon::new(IconName::Workflow).size(IconSize::Custom(px(12.))).color(suffix_color)))
             .on_click(cx.listener(|this, _, window, cx| this.toggle_picker(window, cx)))
             .into_any_element();
         (element, natural)
@@ -854,7 +860,7 @@ impl ChatComposer {
         let mode = self.state.runtime_mode;
         control("composer-permissions-chip", false, c)
             .pl(px(6.))
-            .child(icon(runtime_mode_icon(mode), px(16.), c.foreground.opacity(0.8)))
+            .child(Icon::new(runtime_mode_icon(mode)).size(IconSize::Custom(px(16.))).color(c.foreground.opacity(0.8)).stroke(composer_icon_stroke(runtime_mode_icon(mode))))
             .when(!icon_only, |el| el.child(mode.label()))
             .on_click(cx.listener(|this, _, _, cx| {
                 let next = this.state.runtime_mode.next();
@@ -871,7 +877,7 @@ impl ChatComposer {
         let mut row = div().flex().flex_none().items_center().gap(px(4.));
         if self.state.voice_available {
             row = row.child(
-                icon_action("composer-voice", Icon::Mic, px(16.), c.muted_foreground, false, c)
+                icon_action("composer-voice", IconName::Mic, px(16.), c.muted_foreground, false, c)
                     .on_click(cx.listener(|_, _, _, cx| cx.emit(ComposerEvent::VoiceRequested))),
             );
         }
@@ -890,7 +896,7 @@ impl ChatComposer {
                         .rounded(ICON_ACTION_RADIUS)
                         .when(disabled, |el| el.opacity(0.64))
                         .when(!disabled, |el| el.cursor_pointer().hover(move |s| s.bg(hover).text_color(fg)))
-                        .child(icon(Icon::Square, px(14.), c.muted_foreground.opacity(0.7)))
+                        .child(Icon::new(IconName::Square).size(IconSize::Custom(px(14.))).color(c.muted_foreground.opacity(0.7)).stroke(2.2))
                         .on_click(cx.listener(|this, _, _, cx| this.stop(cx))),
                 )
                 .into_any_element();
@@ -900,13 +906,13 @@ impl ChatComposer {
             || self.uploads_pending()
             || self.stop_phase == StopPhase::Landed;
         let glyph = if self.state.is_send_busy {
-            Icon::LoaderCircle
+            IconName::LoaderCircle
         } else if self.state.running && self.running_dispatch() == FollowUpBehavior::Queue {
-            Icon::ListPlus
+            IconName::ListPlus
         } else if self.state.running {
-            Icon::CornerUpRight
+            IconName::CornerUpRight
         } else {
-            Icon::CornerDownLeft
+            IconName::CornerDownLeft
         };
         row.child(
             icon_action("composer-send", glyph, px(14.), c.secondary_label, disabled, c)
@@ -950,13 +956,13 @@ impl ChatComposer {
                             .items_center()
                             .justify_center()
                             .cursor_pointer()
-                            .child(icon(Icon::X, px(12.), gpui_kit::white()))
+                            .child(Icon::new(IconName::X).size(IconSize::Custom(px(12.))).color(gpui_kit::white()))
                             .on_click(cx.listener(move |this, _, _, cx| this.remove_attachment(id.clone(), cx))),
                     ),
             )
         });
         let files = self.attachments.iter().filter(|a| !matches!(a.kind, ComposerAttachmentKind::Image { .. })).map(|a| {
-            let glyph = if matches!(a.kind, ComposerAttachmentKind::PastedText { .. }) { Icon::FileText } else { Icon::File };
+            let glyph = if matches!(a.kind, ComposerAttachmentKind::PastedText { .. }) { IconName::FileText } else { IconName::File };
             div()
                 .flex()
                 .items_center()
@@ -964,7 +970,7 @@ impl ChatComposer {
                 .py(px(4.))
                 .text_size(px(14.))
                 .text_color(c.foreground)
-                .child(icon(glyph, px(16.), c.muted_foreground))
+                .child(Icon::new(glyph).size(IconSize::Custom(px(16.))).color(c.muted_foreground).stroke(composer_icon_stroke(glyph)))
                 .child(a.name.clone())
                 .child(div().text_size(px(12.)).text_color(c.secondary_label).child(format_size(a.size_bytes)))
         });
@@ -998,7 +1004,7 @@ impl ChatComposer {
                 .gap(px(4.))
                 .rounded(px(12.))
                 .when_some(tint, |el, t| el.bg(t.opacity(0.08)))
-                .child(div().w(px(24.)).flex().justify_center().child(icon(banner.icon, px(14.), ink)))
+                .child(div().w(px(24.)).flex().justify_center().child(Icon::new(banner.icon).size(IconSize::Custom(px(14.))).color(ink).stroke(composer_icon_stroke(banner.icon))))
                 .child(div().flex_1().min_w_0().text_size(px(12.)).line_height(px(16.)).text_color(c.foreground).child(banner.title.clone()))
                 .when_some(banner.action.clone(), |el, action| {
                     el.child(div().px(px(8.)).h(px(24.)).flex().items_center().rounded(px(8.)).text_size(px(12.)).text_color(c.foreground).hover({
@@ -1027,7 +1033,7 @@ impl ChatComposer {
 
     fn render_context_strip(&self, c: &ComposerColors, cx: &mut Context<Self>) -> Option<AnyElement> {
         let strip = self.state.context_strip.clone()?;
-        let item = |id: &'static str, glyph: Icon, label: SharedString, control: ContextStripControl, cx: &mut Context<Self>| {
+        let item = |id: &'static str, glyph: IconName, label: SharedString, control: ContextStripControl, cx: &mut Context<Self>| {
             let hover = c.row_hover;
             let fg = c.foreground;
             div()
@@ -1042,7 +1048,7 @@ impl ChatComposer {
                 .text_size(px(12.))
                 .text_color(if c.is_dark() { c.muted_foreground } else { c.foreground.opacity(0.7) })
                 .hover(move |s| s.bg(hover).text_color(fg))
-                .child(icon(glyph, px(14.), c.muted_foreground))
+                .child(Icon::new(glyph).size(IconSize::Custom(px(14.))).color(c.muted_foreground).stroke(composer_icon_stroke(glyph)))
                 .child(label)
                 .on_click(cx.listener(move |_, _, _, cx| cx.emit(ComposerEvent::ContextStripClicked(control))))
         };
@@ -1053,9 +1059,9 @@ impl ChatComposer {
                 .gap(px(4.))
                 .px(px(8.))
                 .pt(px(8.))
-                .child(item("ctx-environment", Icon::Monitor, strip.environment, ContextStripControl::Environment, cx))
-                .child(item("ctx-workspace", Icon::FolderGit, strip.workspace, ContextStripControl::Workspace, cx))
-                .child(item("ctx-branch", Icon::GitBranch, strip.branch, ContextStripControl::Branch, cx))
+                .child(item("ctx-environment", IconName::Monitor, strip.environment, ContextStripControl::Environment, cx))
+                .child(item("ctx-workspace", IconName::FolderGit2, strip.workspace, ContextStripControl::Workspace, cx))
+                .child(item("ctx-branch", IconName::GitBranch, strip.branch, ContextStripControl::Branch, cx))
                 .into_any_element(),
         )
     }
@@ -1101,7 +1107,7 @@ impl Render for ChatComposer {
         }
         if show_chip && chip_hidden {
             controls = controls.child(
-                icon_action("composer-overflow", Icon::Ellipsis, px(16.), c.muted_foreground, false, &c)
+                icon_action("composer-overflow", IconName::Ellipsis, px(16.), c.muted_foreground, false, &c)
                     .on_click(cx.listener(|this, _, window, cx| this.toggle_picker(window, cx))),
             );
         }
@@ -1151,7 +1157,7 @@ impl Render for ChatComposer {
                         .left(px(0.5))
                         .top(px(1.))
                         .child(
-                            icon_action("composer-attach", Icon::Paperclip, px(14.), c.secondary_label, disabled, &c)
+                            icon_action("composer-attach", IconName::Paperclip, px(14.), c.secondary_label, disabled, &c)
                                 .on_click(cx.listener(|_, _, _, cx| cx.emit(ComposerEvent::AttachRequested))),
                         ),
                 ),

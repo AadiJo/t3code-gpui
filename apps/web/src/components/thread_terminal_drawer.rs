@@ -3,6 +3,7 @@
 //! one, split/new/close controls, and the drag handle. Ports
 //! `ThreadTerminalDrawer.tsx`. Drawer state lives in [`TerminalUiStateStore`].
 
+use crate::components::icons::IconName;
 use std::collections::HashMap;
 use std::rc::Rc;
 
@@ -301,14 +302,14 @@ impl ThreadTerminalDrawer {
     fn action_buttons(&self, split_enabled: bool, compact: bool, cx: &mut Context<Self>) -> Vec<Stateful<Div>> {
         let operate = self.can_operate;
         vec![
-            self.action_button("terminal-split", "icons/terminal/square-split-horizontal.svg", operate && split_enabled, compact, cx, |this, window, cx| {
+            self.action_button("terminal-split", IconName::SquareSplitHorizontal.path(), operate && split_enabled, compact, cx, |this, window, cx| {
                 this.launch(Some(SplitDirection::Horizontal), window, cx)
             }),
-            self.action_button("terminal-split-vertical", "icons/terminal/square-split-vertical.svg", operate && split_enabled, compact, cx, |this, window, cx| {
+            self.action_button("terminal-split-vertical", IconName::SquareSplitVertical.path(), operate && split_enabled, compact, cx, |this, window, cx| {
                 this.launch(Some(SplitDirection::Vertical), window, cx)
             }),
-            self.action_button("terminal-new", "icons/terminal/plus.svg", operate, compact, cx, |this, window, cx| this.launch(None, window, cx)),
-            self.action_button("terminal-close", "icons/terminal/trash-2.svg", operate, compact, cx, |this, _, cx| {
+            self.action_button("terminal-new", IconName::Plus.path(), operate, compact, cx, |this, window, cx| this.launch(None, window, cx)),
+            self.action_button("terminal-close", IconName::Trash2.path(), operate, compact, cx, |this, _, cx| {
                 let active = this.state(cx).active_terminal_id;
                 this.close_terminal(&active, cx);
             }),
@@ -381,9 +382,9 @@ impl ThreadTerminalDrawer {
         let group_active = group.terminal_ids.iter().any(|id| id == active);
         let count = group.terminal_ids.len();
         let (label, icon) = match (count > 1, group.split_direction) {
-            (false, _) => ("Single", "icons/terminal/square.svg"),
-            (true, SplitDirection::Vertical) => ("Stacked", "icons/terminal/square-split-vertical.svg"),
-            (true, SplitDirection::Horizontal) => ("Side by side", "icons/terminal/square-split-horizontal.svg"),
+            (false, _) => ("Single", IconName::Square.path()),
+            (true, SplitDirection::Vertical) => ("Stacked", IconName::SquareSplitVertical.path()),
+            (true, SplitDirection::Horizontal) => ("Side by side", IconName::SquareSplitHorizontal.path()),
         };
         let mut column = div().pb(px(2.)).flex().flex_col();
         if show_header {
@@ -422,11 +423,11 @@ impl ThreadTerminalDrawer {
                 .size(px(12.))
                 .flex_none()
                 .relative()
-                .child(svg().path("icons/terminal/square-terminal.svg").size(px(12.)).text_color(text).group_hover(row_id.clone(), |style| style.invisible()))
+                .child(svg().path(IconName::SquareTerminal.path()).size(px(12.)).text_color(text).group_hover(row_id.clone(), |style| style.invisible()))
                 .when(self.can_operate, |icon| {
                     icon.child(
                         svg()
-                            .path("icons/terminal/x.svg")
+                            .path(IconName::X.path())
                             .absolute()
                             .top_0()
                             .left_0()
@@ -504,6 +505,12 @@ impl ThreadTerminalDrawer {
             surface.update(cx, |surface, _| surface.flush_resize());
         }
         cx.notify();
+    }
+}
+
+impl Focusable for ThreadTerminalDrawer {
+    fn focus_handle(&self, _: &App) -> FocusHandle {
+        self.focus.clone()
     }
 }
 

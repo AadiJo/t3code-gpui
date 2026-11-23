@@ -2,10 +2,10 @@
 //! `collapsible-section-header.tsx`), project folder headers
 //! (`SidebarProjectFolderHeader.tsx`), "Show N more" and the empty states.
 
+use crate::components::icons::{Icon, IconName, IconSize};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
-use super::icons::{ShellIcon, icon};
 use super::sidebar_thread_row::project_favicon;
 use super::style::*;
 use super::{Sidebar, SidebarEvent};
@@ -13,16 +13,12 @@ use crate::components::sidebar_logic::{EmptyState, FolderDot, Shelf};
 use crate::components::thread_status_indicators::folder_dot;
 
 /// Expanded points down, collapsed points right (the -90deg rotation).
-fn chevron(expanded: bool, color: Hsla) -> Svg {
-    icon(
-        if expanded {
-            ShellIcon::ChevronDown
+fn chevron(expanded: bool, color: Hsla) -> Icon {
+    Icon::new(if expanded {
+            IconName::ChevronDown
         } else {
-            ShellIcon::ChevronRight
-        },
-        px(12.),
-        color,
-    )
+            IconName::ChevronRight
+        }).size(IconSize::Custom(px(12.))).color(color)
 }
 
 impl Sidebar {
@@ -182,11 +178,8 @@ impl Sidebar {
                                 .rounded(px(6.))
                                 .cursor_pointer()
                                 .hover(|s| s.bg(colors.accent))
-                                .child(icon(ShellIcon::SquarePen, px(14.), colors.muted_foreground))
-                                .tooltip(super::tooltip::tooltip(format!(
-                                    "New thread in {}",
-                                    project.label
-                                )))
+                                .child(Icon::new(IconName::SquarePen).size(IconSize::Custom(px(14.))).color(colors.muted_foreground))
+                                .tooltip(crate::components::ui::tooltip::tooltip(crate::i18n::t!("New thread in {project}", project = project.label.clone())))
                                 .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
                                     if *hovered {
                                         this.set_row_hover(ix, true, cx);
@@ -231,7 +224,7 @@ impl Sidebar {
             .text_color(fg)
             .when(hovered, |d| d.bg(colors.sidebar_row_hover))
             .when(self.entry_focused(ix, window), |d| d.border_2().border_color(colors.ring))
-            .child(icon(ShellIcon::ChevronDown, px(16.), fg))
+            .child(Icon::new(IconName::ChevronDown).size(IconSize::Custom(px(16.))).color(fg))
             .child(format!("Show {count} more"))
             .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
                 this.set_row_hover(ix, *hovered, cx);
@@ -281,7 +274,7 @@ impl Sidebar {
                             s.bg(colors.sidebar_row_hover)
                                 .text_color(colors.sidebar_foreground)
                         })
-                        .child(icon(ShellIcon::Plus, px(12.), colors.sidebar_muted_foreground))
+                        .child(Icon::new(IconName::Plus).size(IconSize::Custom(px(12.))).color(colors.sidebar_muted_foreground))
                         .child("Add project")
                         .on_click(cx.listener(|_, _, _, cx| cx.emit(SidebarEvent::AddProject))),
                 )

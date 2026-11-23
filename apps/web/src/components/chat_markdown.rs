@@ -7,6 +7,8 @@
 //! its first and last child's margins outward, and the root drops its outer
 //! margins (`.chat-markdown > :first-child`).
 
+use crate::components::icons::{Icon, IconName, IconSize};
+use crate::components::chat::chat_style::chat_icon_stroke;
 use std::{collections::HashSet, ops::Range, rc::Rc};
 
 use gpui_kit::{
@@ -16,7 +18,6 @@ use gpui_kit::{
 };
 
 use super::chat::{
-    chat_icons::{ChatIcon, icon},
     chat_style::{ChatColors, TEXT_2XS, TEXT_CODE, TEXT_SM_RELAXED, TEXT_XS, alpha, mono, sans},
     rich_text::{LinkHandler, RichText, TextBox, TextIcon},
     syntax_highlighting::{highlight, highlight_or_schedule, is_plain_language},
@@ -376,12 +377,12 @@ impl Renderer<'_> {
     fn alert(&mut self, kind: AlertKind, blocks: &[Block], depth: usize) -> Rendered {
         let (border, title_color) = self.view.colors.alert(kind);
         let glyph = match kind {
-            AlertKind::Insight => ChatIcon::Star,
-            AlertKind::Note => ChatIcon::Info,
-            AlertKind::Tip => ChatIcon::Lightbulb,
-            AlertKind::Important => ChatIcon::MessageSquareWarning,
-            AlertKind::Warning => ChatIcon::TriangleAlert,
-            AlertKind::Caution => ChatIcon::OctagonAlert,
+            AlertKind::Insight => IconName::Star,
+            AlertKind::Note => IconName::Info,
+            AlertKind::Tip => IconName::Lightbulb,
+            AlertKind::Important => IconName::MessageSquareWarning,
+            AlertKind::Warning => IconName::TriangleAlert,
+            AlertKind::Caution => IconName::OctagonAlert,
         };
         let title = div()
             .flex()
@@ -389,7 +390,7 @@ impl Renderer<'_> {
             .gap(px(6.))
             .font_weight(FontWeight::MEDIUM)
             .text_color(title_color)
-            .child(icon(glyph, px(14.), title_color))
+            .child(Icon::new(glyph).size(IconSize::Custom(px(14.))).color(title_color).stroke(chat_icon_stroke(glyph)))
             .child(kind.label());
         let mut children = vec![Rendered { element: title.into_any_element(), top: BLOCK_MARGIN, bottom: BLOCK_MARGIN }];
         children.extend(blocks.iter().map(|b| self.block(b, depth, true)));
@@ -458,14 +459,14 @@ impl Renderer<'_> {
                     .flex()
                     .gap(px(2.))
                     .child(
-                        icon_button(("wrap", key), ChatIcon::TextWrap, header_color, colors)
+                        icon_button(("wrap", key), IconName::TextWrap, header_color, colors)
                             .when_active(wrapped, colors)
                             .on_click(move |_, window, cx| wrap_actions(MarkdownAction::ToggleWrap(key), window, cx)),
                     )
                     .child(
                         icon_button(
                             ("copy", key),
-                            if copied { ChatIcon::Check } else { ChatIcon::Copy },
+                            if copied { IconName::Check } else { IconName::Copy },
                             if copied { colors.theme.message_action } else { header_color },
                             colors,
                         )
@@ -573,7 +574,7 @@ impl Renderer<'_> {
                 div().mt(px(2.)).mx(px(-4.)).flex().justify_end().child(
                     icon_button(
                         ("table-copy", key),
-                        if copied { ChatIcon::Check } else { ChatIcon::Copy },
+                        if copied { IconName::Check } else { IconName::Copy },
                         if copied { colors.theme.message_action } else { colors.theme.muted_foreground },
                         colors,
                     )
@@ -658,7 +659,7 @@ fn style_inlines(inlines: &Inlines, base: InlineBase, colors: &ChatColors, user:
                 if text[span.range.clone()].starts_with(FILE_CHIP_PLACEHOLDER) {
                     styled.icons.push(TextIcon {
                         index: span.range.start,
-                        path: ChatIcon::File.path().into(),
+                        path: IconName::File.path().into(),
                         size: px(14.),
                         color: base.color,
                     });
@@ -761,7 +762,7 @@ fn checkbox(checked: bool, colors: &ChatColors) -> Div {
     let side = px(13.);
     let base = div().mt(px(5.)).size(side).rounded(px(3.)).flex().items_center().justify_center();
     if checked {
-        base.bg(colors.info).child(icon(ChatIcon::Check, px(10.), gpui_kit::white()))
+        base.bg(colors.info).child(Icon::new(IconName::Check).size(IconSize::Custom(px(10.))).color(gpui_kit::white()))
     } else {
         base.border_1().border_color(colors.theme.muted_foreground)
     }
@@ -770,16 +771,16 @@ fn checkbox(checked: bool, colors: &ChatColors) -> Div {
 /// `ChevronRight` turned 90° when open, as the fork's disclosures draw it.
 pub fn rotated_chevron(open: bool, size: Pixels, color: Hsla) -> AnyElement {
     if open {
-        icon(ChatIcon::ChevronDown, size, color).into_any_element()
+        Icon::new(IconName::ChevronDown).size(IconSize::Custom(size)).color(color).into_any_element()
     } else {
-        icon(ChatIcon::ChevronRight, size, color).into_any_element()
+        Icon::new(IconName::ChevronRight).size(IconSize::Custom(size)).color(color).into_any_element()
     }
 }
 
 /// A 24px square ghost button with a 12px icon (`Button size=icon-xs`).
 pub fn icon_button(
     id: impl Into<ElementId>,
-    glyph: ChatIcon,
+    glyph: IconName,
     color: Hsla,
     colors: &ChatColors,
 ) -> gpui_kit::Stateful<Div> {
@@ -793,7 +794,7 @@ pub fn icon_button(
         .rounded(px(8.))
         .cursor_pointer()
         .hover(|style| style.bg(colors.theme.accent_surface))
-        .child(icon(glyph, ICON_XS_GLYPH, color))
+        .child(Icon::new(glyph).size(IconSize::Custom(ICON_XS_GLYPH)).color(color).stroke(chat_icon_stroke(glyph)))
 }
 
 trait CodeButtonExt {

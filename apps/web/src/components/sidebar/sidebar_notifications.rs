@@ -13,7 +13,6 @@ use std::sync::Arc;
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
-use super::icons::ShellIcon;
 use super::sidebar_thread_header::sidebar_icon_button;
 use super::style::ShellColors;
 use super::Sidebar;
@@ -329,7 +328,8 @@ impl SidebarNotifications {
                                     .child(format!("{} · {}", item.project_title, item.environment_title)),
                             ),
                     )
-                    .on_click(cx.listener(move |this, _, _, cx| this.open_item(&open, cx))),
+                    .on_click(cx.listener(move |this, _, _, cx| this.open_item(&open, cx)))
+                    .test_support(),
             )
             .when(!item.read, |d| {
                 d.child(
@@ -341,7 +341,7 @@ impl SidebarNotifications {
                         .text_color(muted)
                         .hover(move |s| s.text_color(popover_fg))
                         .aria_label(SharedString::from(t!("Mark {thread} as read", thread = thread_title.as_ref())))
-                        .tooltip(super::tooltip::tooltip(t!("Mark as read")))
+                        .tooltip(crate::components::ui::tooltip::tooltip(t!("Mark as read")))
                         .child(Icon::new(IconName::Check).size(IconSize::Sm))
                         .on_click(move |_, _, cx| {
                             cx.stop_propagation();
@@ -359,9 +359,9 @@ impl Render for SidebarNotifications {
         let unread = inbox.read(cx).unread_count();
         let colors = ShellColors::from_theme(cx.app_theme());
         let label = if unread > 0 { t!("Notifications, unread items") } else { t!("Notifications") };
-        let bell = sidebar_icon_button("sidebar-notifications", ShellIcon::Bell, px(32.), self.hovered || self.open, &colors)
+        let bell = sidebar_icon_button("sidebar-notifications", IconName::Bell, px(32.), self.hovered || self.open, &colors)
             .aria_label(SharedString::from(label))
-            .tooltip(super::tooltip::tooltip(t!("Notifications")))
+            .tooltip(crate::components::ui::tooltip::tooltip(t!("Notifications")))
             .on_hover(cx.listener(|this, hovered: &bool, _, cx| {
                 this.hovered = *hovered;
                 cx.notify();
@@ -369,7 +369,8 @@ impl Render for SidebarNotifications {
             .on_click(cx.listener(|this, _, window, cx| this.set_open(!this.open, window, cx)))
             .when(unread > 0, |d| {
                 d.child(div().absolute().top_1().right_1().size(px(6.)).rounded_full().bg(colors.destructive))
-            });
+            })
+            .test_support();
         let popover = self.open.then(|| {
             deferred(
                 anchored()

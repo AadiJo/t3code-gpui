@@ -16,7 +16,8 @@ use gpui_kit::*;
 use t3code_client_runtime::connection::ConnectionPhase;
 use t3code_client_runtime::platform::{ClientPresentation, FileSecretStore};
 use t3code_client_runtime::relay::CloudConfig;
-use t3code_web::AppRoot;
+use t3code_web::app_root::{AppRootOptions, WindowRoot};
+use t3code_web::components::app_sidebar_layout::TitlebarPlatform;
 use t3code_web::connection::shell::EnvironmentShell;
 use t3code_web::connection::{ConnectionRuntime, ConnectionsState, RuntimeConfig};
 use t3code_web::theme_palette::{ThemeMode, ThemeSettings};
@@ -200,10 +201,8 @@ fn main() -> anyhow::Result<()> {
             focus: true,
             ..component::TitleBar::window_options()
         };
-        gpui_kit::open_window(options, cx, |window, cx| {
-            let app = cx.new(|cx| AppRoot::new(window, cx));
-            cx.new(|cx| EnvironmentShell::new(app, window, cx))
-        })
+        let app = AppRootOptions::without_fixtures(TitlebarPlatform::current());
+        WindowRoot::open_window(options, app, cx).map(|(handle, root)| (handle, root.shell))
     })?;
     let mut check = Check { cx, out: out.clone(), started: Instant::now(), log: String::new(), handle, shell };
     check.note(format!("phase {phase}"));

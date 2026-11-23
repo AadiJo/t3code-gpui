@@ -3,13 +3,13 @@
 //! row with copy, fork, reply and timestamp. Ports `TimelineAssistantRows.tsx`
 //! and `ChangedFilesTree.tsx`.
 
+use crate::components::icons::{Icon, IconName, IconSize};
 use gpui_kit::{
     AnyElement, Context, FontWeight, InteractiveElement as _, IntoElement, ParentElement as _,
     StatefulInteractiveElement as _, Styled as _, Window, div, px,
 };
 
 use super::{
-    chat_icons::{ChatIcon, icon},
     chat_style::{TEXT_2XS, TEXT_3XS, TEXT_XS, alpha, mono},
     messages_timeline::MessagesTimeline,
     messages_timeline_logic::{MessageRow, TimelineRow},
@@ -88,15 +88,15 @@ impl MessagesTimeline {
             .child(
                 xs_button(
                     ("copy-reply", key),
-                    Some(if copied { ChatIcon::Check } else { ChatIcon::Copy }),
+                    Some(if copied { IconName::Check } else { IconName::Copy }),
                     None,
                     if copied { colors.theme.message_action } else { colors.theme.muted_foreground },
                     &colors,
                 )
                 .on_click(cx.listener(move |this, _, _, cx| this.copy(key, text.clone(), cx))),
             )
-            .child(xs_button(("fork", key), Some(ChatIcon::GitFork), None, colors.theme.text, &colors))
-            .child(xs_button(("reply", key), Some(ChatIcon::Reply), None, colors.theme.muted_foreground, &colors))
+            .child(xs_button(("fork", key), Some(IconName::GitFork), None, colors.theme.text, &colors))
+            .child(xs_button(("reply", key), Some(IconName::Reply), None, colors.theme.muted_foreground, &colors))
             .children((!message.streaming).then(|| {
                 div().text_color(colors.theme.muted_foreground).child(format_clock(message.updated_at.0))
             }))
@@ -161,8 +161,8 @@ impl MessagesTimeline {
             )
             .child(diff_stat(additions, deletions, &colors, TEXT_XS.size))
             .child(div().flex_1())
-            .child(xs_button(("expand-all", key), Some(ChatIcon::ChevronsDownUp), None, colors.theme.muted_foreground, &colors))
-            .child(xs_button(("open-diff-turn", key), Some(ChatIcon::FileDiff), Some("Open diff".into()), colors.theme.muted_foreground, &colors));
+            .child(xs_button(("expand-all", key), Some(IconName::ChevronsDownUp), None, colors.theme.muted_foreground, &colors))
+            .child(xs_button(("open-diff-turn", key), Some(IconName::FileDiff), Some("Open diff".into()), colors.theme.muted_foreground, &colors));
         let rows = folders.into_iter().flat_map(|(folder, files)| {
             let folder_row = (!folder.is_empty()).then(|| {
                 div()
@@ -173,7 +173,7 @@ impl MessagesTimeline {
                     .rounded(px(6.))
                     .pr_2()
                     .pl_2()
-                    .child(icon(ChatIcon::Folder, px(14.), alpha(colors.theme.muted_foreground, 0.75)))
+                    .child(Icon::new(IconName::Folder).size(IconSize::Custom(px(14.))).color(alpha(colors.theme.muted_foreground, 0.75)))
                     .child(
                         div()
                             .font_family(mono().family)
@@ -197,7 +197,7 @@ impl MessagesTimeline {
                     .pr_2()
                     .cursor_pointer()
                     .hover(|s| s.bg(alpha(colors.theme.accent_surface, 0.6)))
-                    .child(icon(ChatIcon::File, px(14.), colors.theme.muted_foreground))
+                    .child(Icon::new(IconName::File).size(IconSize::Custom(px(14.))).color(colors.theme.muted_foreground))
                     .child(
                         div()
                             .flex_1()

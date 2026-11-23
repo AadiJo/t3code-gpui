@@ -9,6 +9,7 @@ pub mod appearance_fonts;
 pub mod assets;
 pub mod command_palette_store;
 pub mod components;
+pub mod fixtures;
 pub mod connection;
 pub mod editor_preferences;
 pub mod i18n;
@@ -30,6 +31,8 @@ pub mod remote_open;
 pub mod model_search;
 pub mod model_selection;
 pub mod markdown_pipeline;
+pub mod right_panel_store;
+pub mod router;
 pub mod keybindings;
 pub mod navigation_history;
 pub mod routes;
@@ -56,9 +59,11 @@ pub mod pierre_icons;
 pub mod syntax;
 pub mod theme_palette;
 pub mod theme_tokens;
+pub mod thread_routes;
 pub mod thread_notifications;
 pub mod timestamp_format;
 pub mod worktree_cleanup;
+pub mod ui_state_store;
 
 pub use app_root::AppRoot;
 pub use assets::Assets;
@@ -101,6 +106,7 @@ pub fn init(cx: &mut App) {
     terminal::surface::init(cx);
     components::thread_terminal_drawer::init(cx);
     cx.set_global(terminal_ui_state_store::TerminalUiStateStore::default());
+    app_root::init(cx);
     components::diffs::init(cx);
     // Last: app keybindings must follow every widget's bindings.
     shortcuts::init(cx);

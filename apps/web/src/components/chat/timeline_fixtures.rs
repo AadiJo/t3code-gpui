@@ -231,7 +231,7 @@ plain output keeps the code colour
 
 ###### Notes
 
-![Architecture sketch](icons/chat/fixture-photo.svg)
+![Architecture sketch](fixtures/fixture-photo.svg)
 
 <details>
 <summary>Why not a vector clock?</summary>
@@ -269,7 +269,7 @@ fn long_rust_code(lines: usize, seed: usize) -> String {
 /// The scene thread: every row kind and markdown element.
 pub fn fixture_thread() -> TimelineInput {
     let mut b = Builder::new();
-    let image = Attachment { name: s("sketch.svg"), kind: AttachmentKind::Image, source: s("icons/chat/fixture-photo.svg") };
+    let image = Attachment { name: s("sketch.svg"), kind: AttachmentKind::Image, source: s("fixtures/fixture-photo.svg") };
     let file = Attachment { name: s("trace.log"), kind: AttachmentKind::File, source: s("trace.log") };
 
     // Turn A: finished, folded behind "Worked for …", with the markdown showcase and a diff card.
@@ -296,7 +296,7 @@ pub fn fixture_thread() -> TimelineInput {
         pattern: s("fn persist"),
         matches: Arc::from([SearchMatch { path: s("apps/server/src/sync/cursor.rs"), line: 88, column: 5, preview: s("pub fn persist(&self) -> Result<()>") }]),
     });
-    b.work(2_974, "run-b", ToolStatus::Completed, "Viewed image", WorkItem::ViewedImage { path: s("icons/chat/fixture-photo.svg") });
+    b.work(2_974, "run-b", ToolStatus::Completed, "Viewed image", WorkItem::ViewedImage { path: s("fixtures/fixture-photo.svg") });
     b.work(2_960, "run-b", ToolStatus::Completed, "Command", command("pnpm --filter @t3tools/server test sync", "✓ 42 tests passed (1.8s)", 0));
     b.work(2_950, "run-b", ToolStatus::Completed, "Todo", WorkItem::TodoList {
         steps: Arc::from([

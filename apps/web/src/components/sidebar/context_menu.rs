@@ -3,10 +3,10 @@
 //! the project-folder menu in `Sidebar.tsx`, and the look of
 //! `contextMenuFallback.ts:391-534`.
 
+use crate::components::icons::{Icon, IconName, IconSize};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
-use super::icons::{MenuIcon, menu_icon};
 use super::model::{ProjectRef, ThreadKey};
 use super::style::{MENU_MAX_WIDTH, MENU_MIN_WIDTH, MENU_ROW_HEIGHT, ShellColors};
 
@@ -52,7 +52,7 @@ pub enum SnoozePreset {
 pub struct MenuItem {
     pub command: Option<MenuCommand>,
     pub label: SharedString,
-    pub icon: Option<MenuIcon>,
+    pub icon: Option<IconName>,
     pub detail: Option<SharedString>,
     pub destructive: bool,
     pub disabled: bool,
@@ -74,7 +74,7 @@ impl MenuItem {
         }
     }
 
-    fn icon(mut self, icon: MenuIcon) -> Self {
+    fn icon(mut self, icon: IconName) -> Self {
         self.icon = Some(icon);
         self
     }
@@ -132,33 +132,33 @@ pub fn thread_menu_items(state: &ThreadMenuState<'_>) -> Vec<MenuItem> {
     if let Some(branch) = state.branch {
         items.push(
             MenuItem::new(C::NewThreadOnBranch, format!("New thread on {branch}"))
-                .icon(MenuIcon::MessageSquarePlus),
+                .icon(IconName::MessageSquarePlus),
         );
     }
     items.push(if state.is_pinned {
-        MenuItem::new(C::Unpin, "Unpin thread").icon(MenuIcon::PinOff)
+        MenuItem::new(C::Unpin, "Unpin thread").icon(IconName::PinOff)
     } else {
-        MenuItem::new(C::Pin, "Pin thread").icon(MenuIcon::Pin)
+        MenuItem::new(C::Pin, "Pin thread").icon(IconName::Pin)
     });
     items.push(if state.is_settled {
-        MenuItem::new(C::Unsettle, "Un-settle thread").icon(MenuIcon::CircleCheck)
+        MenuItem::new(C::Unsettle, "Un-settle thread").icon(IconName::CircleCheck)
     } else {
-        MenuItem::new(C::Settle, "Settle thread").icon(MenuIcon::CircleCheck)
+        MenuItem::new(C::Settle, "Settle thread").icon(IconName::CircleCheck)
     });
     items.push(if state.is_snoozed {
-        MenuItem::new(C::Wake, "Wake thread").icon(MenuIcon::Clock)
+        MenuItem::new(C::Wake, "Wake thread").icon(IconName::Clock)
     } else {
         MenuItem::new(C::SnoozeCustom, "Snooze")
-            .icon(MenuIcon::Clock)
+            .icon(IconName::Clock)
             .submenu(snooze_items())
     });
     items.push(
         MenuItem::new(C::Rename, "Rename thread")
-            .icon(MenuIcon::Pencil)
+            .icon(IconName::Pencil)
             .separated(),
     );
-    items.push(MenuItem::new(C::RegenerateTitle, "Regenerate title").icon(MenuIcon::RefreshCw));
-    items.push(MenuItem::new(C::MarkUnread, "Mark unread").icon(MenuIcon::MailOpen));
+    items.push(MenuItem::new(C::RegenerateTitle, "Regenerate title").icon(IconName::RefreshCw));
+    items.push(MenuItem::new(C::MarkUnread, "Mark unread").icon(IconName::MailOpen));
     items.push(
         MenuItem::new(
             C::FilterByProject,
@@ -168,27 +168,27 @@ pub fn thread_menu_items(state: &ThreadMenuState<'_>) -> Vec<MenuItem> {
                 format!("Filter by {}", state.project_label)
             },
         )
-        .icon(MenuIcon::FolderTree),
+        .icon(IconName::FolderTree),
     );
-    let mut copy = vec![MenuItem::new(C::CopyPath, "Path").icon(MenuIcon::Folder)];
+    let mut copy = vec![MenuItem::new(C::CopyPath, "Path").icon(IconName::Folder)];
     if state.branch.is_some() {
-        copy.push(MenuItem::new(C::CopyBranch, "Branch").icon(MenuIcon::GitBranch));
+        copy.push(MenuItem::new(C::CopyBranch, "Branch").icon(IconName::GitBranch));
     }
-    copy.push(MenuItem::new(C::CopyThread, "Thread").icon(MenuIcon::MessageSquare));
-    copy.push(MenuItem::new(C::CopyThreadId, "Thread ID").icon(MenuIcon::Hash));
+    copy.push(MenuItem::new(C::CopyThread, "Thread").icon(IconName::MessageSquare));
+    copy.push(MenuItem::new(C::CopyThreadId, "Thread ID").icon(IconName::Hash));
     items.push(
         MenuItem::new(C::CopyPath, "Copy")
-            .icon(MenuIcon::Copy)
+            .icon(IconName::Copy)
             .separated()
             .submenu(copy),
     );
-    items.push(MenuItem::new(C::ProjectSettings, "Project settings").icon(MenuIcon::Settings));
+    items.push(MenuItem::new(C::ProjectSettings, "Project settings").icon(IconName::Settings));
     let mut archive = MenuItem::new(C::Archive, "Archive thread")
-        .icon(MenuIcon::Archive)
+        .icon(IconName::Archive)
         .separated();
     archive.disabled = state.is_running;
     items.push(archive);
-    let mut delete = MenuItem::new(C::Delete, "Delete").icon(MenuIcon::Trash);
+    let mut delete = MenuItem::new(C::Delete, "Delete").icon(IconName::Trash);
     delete.destructive = true;
     items.push(delete);
     items
@@ -215,11 +215,11 @@ pub fn project_menu_items(pinned: bool) -> Vec<MenuItem> {
         MenuItem::new(C::NewThread, "New thread"),
         MenuItem::new(C::CopyPath, "Copy path"),
         if pinned {
-            MenuItem::new(C::UnpinProject, "Unpin project").icon(MenuIcon::PinOff)
+            MenuItem::new(C::UnpinProject, "Unpin project").icon(IconName::PinOff)
         } else {
-            MenuItem::new(C::PinProject, "Pin project").icon(MenuIcon::Pin)
+            MenuItem::new(C::PinProject, "Pin project").icon(IconName::Pin)
         },
-        MenuItem::new(C::ProjectSettings, "Project settings").icon(MenuIcon::Settings),
+        MenuItem::new(C::ProjectSettings, "Project settings").icon(IconName::Settings),
     ]
 }
 
@@ -251,7 +251,7 @@ pub fn menu_row(item: &MenuItem, highlighted: bool, colors: &ShellColors) -> Div
         .text_color(fg)
         .when_some(bg, |row, bg| row.bg(bg))
         .when(item.disabled, |row| row.opacity(0.64))
-        .when_some(item.icon, |row, icon| row.child(menu_icon(icon, icon_color)))
+        .when_some(item.icon, |row, icon| row.child(Icon::new(icon).size(IconSize::Custom(px(16.))).color(icon_color).stroke(2.)))
         .child(div().flex_1().min_w_0().truncate().child(item.label.clone()))
         .when_some(item.detail.clone(), |row, detail| {
             row.child(
@@ -264,7 +264,7 @@ pub fn menu_row(item: &MenuItem, highlighted: bool, colors: &ShellColors) -> Div
             )
         })
         .when(!item.children.is_empty(), |row| {
-            row.child(menu_icon(MenuIcon::ChevronRight, fg.opacity(0.8)))
+            row.child(Icon::new(IconName::ChevronRight).size(IconSize::Custom(px(16.))).color(fg.opacity(0.8)).stroke(2.))
         })
 }
 

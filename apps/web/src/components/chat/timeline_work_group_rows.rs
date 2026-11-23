@@ -3,13 +3,14 @@
 //! as a nested virtual list, the live tool row, "Thinking", "Working for …",
 //! turn and attempt folds, compaction markers and viewed images.
 
+use crate::components::icons::{Icon, IconName, IconSize};
+use crate::components::chat::chat_style::chat_icon_stroke;
 use gpui_kit::{
     AnyElement, Context, FontWeight, InteractiveElement as _, IntoElement, ParentElement as _, SharedString,
     StatefulInteractiveElement as _, Styled as _, Window, div, img, px,
 };
 
 use super::{
-    chat_icons::{ChatIcon, icon},
     chat_style::{TEXT_2XS, TEXT_SM_RELAXED, TEXT_XS, alpha},
     messages_timeline::MessagesTimeline,
     messages_timeline_logic::{RowKind, TimelineRow},
@@ -62,7 +63,7 @@ impl MessagesTimeline {
         } else {
             label.into_any_element()
         };
-        let glyph = icon(entry_icon(entry), px(16.), if *active { colors.theme.text } else { colors.theme.icon_muted });
+        let glyph = Icon::new(entry_icon(entry)).size(IconSize::Custom(px(16.))).color(if *active { colors.theme.text } else { colors.theme.icon_muted }).stroke(chat_icon_stroke(entry_icon(entry)));
         let preview = thought.as_ref().and_then(|t| match &t.item {
             WorkItem::Reasoning { text } => Some(
                 div()
@@ -95,7 +96,7 @@ impl MessagesTimeline {
         let label = label.unwrap_or_else(|| "Thinking".into());
         work_log_row("thinking", false)
             .child(work_log_line(
-                Some(tool_icon(ChatIcon::Brain, &colors, false)),
+                Some(tool_icon(IconName::Brain, &colors, false)),
                 shimmer_label(label, self.animation_step, colors.theme.secondary_label, colors.theme.text),
                 Vec::new(),
                 &colors,
@@ -128,7 +129,7 @@ impl MessagesTimeline {
                     .text_size(TEXT_SM_RELAXED.size)
                     .line_height(TEXT_SM_RELAXED.line_height)
                     .text_color(colors.theme.muted_foreground)
-                    .children(compacting.then(|| icon(ChatIcon::Minimize2, px(12.), colors.theme.muted_foreground)))
+                    .children(compacting.then(|| Icon::new(IconName::Minimize2).size(IconSize::Custom(px(12.))).color(colors.theme.muted_foreground)))
                     .child(label),
             )
             .into_any_element()
@@ -165,7 +166,7 @@ impl MessagesTimeline {
                     .text_color(colors.theme.muted_foreground)
                     .hover(|s| s.text_color(colors.theme.text))
                     .child(label.clone())
-                    .child(icon(if expanded { ChatIcon::ChevronDown } else { ChatIcon::ChevronRight }, px(14.), colors.theme.muted_foreground))
+                    .child(Icon::new(if expanded { IconName::ChevronDown } else { IconName::ChevronRight }).size(IconSize::Custom(px(14.))).color(colors.theme.muted_foreground).stroke(chat_icon_stroke(if expanded { IconName::ChevronDown } else { IconName::ChevronRight })))
                     .child(
                         div()
                             .ml_auto()
@@ -253,7 +254,7 @@ impl MessagesTimeline {
                     .flex()
                     .items_center()
                     .gap_1()
-                    .child(icon(if failed { ChatIcon::CircleAlert } else { ChatIcon::Minimize2 }, px(12.), tone))
+                    .child(Icon::new(if failed { IconName::CircleAlert } else { IconName::Minimize2 }).size(IconSize::Custom(px(12.))).color(tone).stroke(chat_icon_stroke(if failed { IconName::CircleAlert } else { IconName::Minimize2 })))
                     .child(text),
             )
             .child(div().h(px(1.)).flex_1().bg(rule))

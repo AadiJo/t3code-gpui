@@ -1,17 +1,24 @@
 //! The chat view: header, timeline and the composer overlay. Ports the
 //! layout of `ChatView.tsx` and `ChatCanvas.tsx`. The composer overlays the
 //! timeline; its measured height becomes the timeline's bottom inset, so the
-//! last row always ends above it.
+//! last row always ends above it. One chat view stays mounted while the user
+//! moves between threads; [`ChatView::set_thread`] swaps what it shows.
+//! A new thread with no messages shows the draft hero: the composer centred
+//! under "What should we work on?".
+
+use std::rc::Rc;
 
 use gpui_kit::{
-    AnyView, App, AppContext as _, Context, Entity, FontWeight, InteractiveElement as _, IntoElement,
-    ParentElement as _, Pixels, Render, SharedString, StatefulInteractiveElement as _, Styled as _, Window,
-    base::TextSelectionLayer, canvas, div, linear_color_stop, linear_gradient, px,
+    AnyView, App, AppContext as _, Context, Entity, EventEmitter, FontWeight, InteractiveElement as _, IntoElement,
+    ParentElement as _, Pixels, Render, SharedString, StatefulInteractiveElement as _, Styled as _, Window, canvas,
+    div, linear_color_stop, linear_gradient, prelude::FluentBuilder as _, px,
 };
 
+use crate::components::icons::{Icon, IconName, IconSize};
+use crate::i18n::t;
+
 use super::chat::{
-    chat_header::{PanelState, PanelToggle, chat_header, panel_toggles},
-    chat_icons::{ChatIcon, icon},
+    chat_header::chat_header,
     chat_style::{ChatColors, TEXT_SM, TEXT_XS, alpha},
     messages_timeline::{MessagesTimeline, SM_BREAKPOINT, TIMELINE_GUTTER, TIMELINE_GUTTER_NARROW, TIMELINE_TOP_INSET},
     pending_user_input_panel::pending_user_input_panel,
@@ -31,12 +38,29 @@ const SCROLL_BUTTON_GAP: Pixels = px(4.);
 /// The top fade masks the first 24px under the header, outside the 6px scrollbar lane.
 const SCROLLBAR_LANE: Pixels = px(6.);
 
+/// Draft hero headline: `text-3xl` (30/36px) on desktop, 16px above the composer.
+const HERO_HEADLINE_SIZE: Pixels = px(30.);
+const HERO_HEADLINE_LINE: Pixels = px(36.);
+/// Below this height the hero composer stays pinned to the bottom (`34rem`).
+const HERO_MIN_HEIGHT: Pixels = px(544.);
+
+/// What the chat view asks the app to do.
+#[derive(Clone, Debug)]
+pub enum ChatViewEvent {
+    /// An option of the pending question was picked.
+    AnswerQuestion(usize),
+}
+
 /// The chat view of one thread.
 pub struct ChatView {
     timeline: Entity<MessagesTimeline>,
     project: SharedString,
     title: SharedString,
-    panels: PanelState,
+    /// The window's topbar height and the header's left inset (sidebar collapsed).
+    header_height: Pixels,
+    header_inset: Pixels,
+    /// A new thread with no messages yet.
+    hero: bool,
     /// The composer view, mounted by the composer module. A placeholder of the
     /// same shape draws until then.
     composer: Option<AnyView>,
@@ -50,12 +74,15 @@ impl ChatView {
             timeline,
             project: SharedString::default(),
             title: SharedString::default(),
-            panels: PanelState::default(),
+            header_height: px(52.),
+            header_inset: px(0.),
+            hero: false,
             composer: None,
         }
     }
 
-    /// Shows a thread: its breadcrumb and timeline.
+    /// Shows a thread: its breadcrumb and timeline. `draft` marks a new
+    /// thread, which shows the hero while it has no messages.
     pub fn set_thread(
         &mut self,
         key: SharedString,
@@ -66,8 +93,25 @@ impl ChatView {
     ) {
         self.project = project;
         self.title = title;
+        self.hero = false;
         self.timeline.update(cx, |timeline, cx| timeline.set_thread(key, input, cx));
         cx.notify();
+    }
+
+    /// Shows the draft hero (new thread, no messages) or the timeline.
+    pub fn set_hero(&mut self, hero: bool, cx: &mut Context<Self>) {
+        if self.hero != hero {
+            self.hero = hero;
+            cx.notify();
+        }
+    }
+
+    /// The topbar height and the header's left inset.
+    pub fn set_header_metrics(&mut self, height: Pixels, inset: Pixels, cx: &mut Context<Self>) {
+        if (self.header_height, self.header_inset) != (height, inset) {
+            (self.header_height, self.header_inset) = (height, inset);
+            cx.notify();
+        }
     }
 
     /// Mounts the composer in the overlay slot.
@@ -80,17 +124,17 @@ impl ChatView {
         &self.timeline
     }
 
-    pub fn panels(&self) -> PanelState {
-        self.panels
-    }
-
-    fn toggle_panel(&mut self, toggle: PanelToggle, cx: &mut Context<Self>) {
-        match toggle {
-            PanelToggle::ThreadDetails => self.panels.thread_details ^= true,
-            PanelToggle::Terminal => self.panels.terminal ^= true,
-            PanelToggle::RightPanel => self.panels.right_panel ^= true,
-        }
-        cx.notify();
+    /// The draft hero's headline (`DraftHeroHeadline.tsx`).
+    fn hero_headline(colors: &ChatColors) -> impl IntoElement {
+        div()
+            .pb_4()
+            .w_full()
+            .text_center()
+            .text_size(HERO_HEADLINE_SIZE)
+            .line_height(HERO_HEADLINE_LINE)
+            .font_weight(FontWeight::NORMAL)
+            .text_color(colors.theme.text)
+            .child(t!("What should we work on?"))
     }
 
     /// The composer's stand-in: the glass card shape with its placeholder text.
@@ -108,7 +152,7 @@ impl ChatView {
             .text_size(TEXT_SM.size)
             .line_height(px(22.75))
             .text_color(colors.theme.placeholder)
-            .child("Ask anything. @ files, $ skills, / commands")
+            .child(t!("Ask anything. @ files, $ skills, / commands"))
     }
 }
 
@@ -123,12 +167,17 @@ impl Render for ChatView {
         };
         let measure_timeline = timeline.clone();
         let weak = cx.weak_entity();
+        let on_pick: Rc<dyn Fn(usize, &mut Window, &mut App)> = Rc::new(move |index, _, cx| {
+            weak.update(cx, |_, cx| cx.emit(ChatViewEvent::AnswerQuestion(index))).ok();
+        });
+        let hero = self.hero && window.viewport_size().height >= HERO_MIN_HEIGHT;
 
         let composer_overlay = div()
             .absolute()
             .left_0()
             .right_0()
             .bottom_0()
+            .when(hero, |d| d.top_0().flex().items_center())
             .pt(COMPOSER_TOP_PAD)
             .px(gutter)
             .child(
@@ -138,6 +187,7 @@ impl Render for ChatView {
                     .max_w(COMPOSER_MAX_WIDTH)
                     .flex()
                     .flex_col()
+                    .when(self.hero, |d| d.child(Self::hero_headline(&colors)))
                     .children(pending_question.as_ref().map(|question| {
                         div()
                             .mx(px(16.))
@@ -147,7 +197,7 @@ impl Render for ChatView {
                             .border_color(alpha(colors.theme.border, 0.8))
                             .bg(colors.theme.surface_raised)
                             .pb_2()
-                            .child(pending_user_input_panel(question, Some(0), &colors))
+                            .child(pending_user_input_panel(question, Some(0), on_pick.clone(), &colors))
                     }))
                     .child(match &self.composer {
                         Some(composer) => composer.clone().into_any_element(),
@@ -185,8 +235,8 @@ impl Render for ChatView {
                     .text_size(TEXT_XS.size)
                     .font_weight(FontWeight::MEDIUM)
                     .text_color(colors.theme.text)
-                    .child(icon(ChatIcon::ChevronDown, px(14.), colors.theme.text))
-                    .child("Scroll to end")
+                    .child(Icon::new(IconName::ChevronDown).size(IconSize::Sm).color(colors.theme.text))
+                    .child(t!("Scroll to end"))
                     .on_click(move |_, _, cx| timeline.update(cx, |timeline, cx| timeline.scroll_to_end(cx))),
             )
         });
@@ -212,7 +262,6 @@ impl Render for ChatView {
             .bg(colors.theme.canvas)
             .text_color(colors.theme.text)
             .font_family(super::chat::chat_style::SANS_FAMILY)
-            .child(TextSelectionLayer)
             .child(
                 div()
                     .flex()
@@ -220,7 +269,7 @@ impl Render for ChatView {
                     .flex_1()
                     .min_w_0()
                     .min_h_0()
-                    .child(chat_header(&self.project, &self.title, &colors))
+                    .child(chat_header(&self.project, &self.title, self.header_height, self.header_inset, &colors))
                     .child(
                         div()
                             .relative()
@@ -228,17 +277,17 @@ impl Render for ChatView {
                             .flex_col()
                             .flex_1()
                             .min_h_0()
-                            .child(div().flex().flex_col().flex_1().min_h_0().child(self.timeline.clone()))
-                            .child(top_fade)
-                            .children(scroll_button)
+                            .when(!self.hero, |d| {
+                                d.child(div().flex().flex_col().flex_1().min_h_0().child(self.timeline.clone()))
+                            })
+                            .when(!self.hero, |d| d.child(top_fade).children(scroll_button))
                             .child(composer_overlay),
                     ),
             )
-            .child(panel_toggles(self.panels, &colors, move |toggle, _, cx| {
-                weak.update(cx, |this, cx| this.toggle_panel(toggle, cx)).ok();
-            }))
     }
 }
+
+impl EventEmitter<ChatViewEvent> for ChatView {}
 
 /// Creates a chat view entity.
 pub fn chat_view(cx: &mut App) -> Entity<ChatView> {

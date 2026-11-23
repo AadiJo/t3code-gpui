@@ -1,9 +1,10 @@
 //! Back and forward through visited places. Ports `navigationHistory.ts`,
 //! which leans on the browser's history: a visit drops the forward entries,
 //! back and forward move along the list, and revisiting the current place
-//! is not a new entry. The router owns one and handles the
-//! `navigation.back` / `navigation.forward` command actions
-//! ([`crate::shortcuts::commands::NavigateBack`] and `NavigateForward`).
+//! is not a new entry. [`crate::router::Router`] owns the app's one history;
+//! the app root handles the `navigation.back` / `navigation.forward` command
+//! actions ([`crate::shortcuts::commands::NavigateBack`] and `NavigateForward`)
+//! by moving the router.
 
 /// Which way to move.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -66,5 +67,23 @@ impl<L: Clone + PartialEq> NavigationHistory<L> {
             HistoryDirection::Forward => self.index += 1,
         }
         Some(&self.entries[self.index])
+    }
+
+    /// The entry before the current one, where back would go.
+    pub fn previous(&self) -> Option<&L> {
+        self.index.checked_sub(1).map(|ix| &self.entries[ix])
+    }
+
+    /// Drops entries other than the current one for which `keep` is false.
+    pub fn retain(&mut self, keep: impl Fn(&L) -> bool) {
+        let current = self.index;
+        let removed_before = self.entries[..current].iter().filter(|entry| !keep(entry)).count();
+        let mut ix = 0;
+        self.entries.retain(|entry| {
+            let kept = ix == current || keep(entry);
+            ix += 1;
+            kept
+        });
+        self.index = current - removed_before;
     }
 }

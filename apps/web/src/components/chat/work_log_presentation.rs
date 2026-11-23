@@ -2,10 +2,10 @@
 //! group summaries. Ports the parts of `client-runtime/src/work-log/presentation.ts`
 //! and `TimelineWorkEntryRow.logic.ts` the timeline rows use.
 
+use crate::components::icons::IconName;
 use gpui_kit::SharedString;
 
 use super::{
-    chat_icons::ChatIcon,
     timeline_entries::{DynamicToolKind, ToolStatus, WorkItem, WorkLogEntry},
 };
 
@@ -41,25 +41,25 @@ pub enum SummaryKind {
 
 impl SummaryKind {
     /// Icon per kind (`TimelineWorkEntryRow.logic.ts:14-55`).
-    pub fn icon(self) -> ChatIcon {
+    pub fn icon(self) -> IconName {
         match self {
-            Self::Action(ToolAction::Read) => ChatIcon::Eye,
-            Self::Action(ToolAction::Edit) => ChatIcon::SquarePen,
-            Self::Action(ToolAction::Command) => ChatIcon::Terminal,
-            Self::Action(ToolAction::Search) => ChatIcon::Globe,
-            Self::Action(ToolAction::CodeSearch) => ChatIcon::Search,
-            Self::Action(ToolAction::Browser) => ChatIcon::Globe,
-            Self::Action(ToolAction::Device) => ChatIcon::Smartphone,
-            Self::Action(ToolAction::PullRequest) => ChatIcon::GitPullRequest,
-            Self::Action(ToolAction::ThreadCreate) => ChatIcon::MessageCircle,
-            Self::Action(ToolAction::Update) | Self::DynamicTool | Self::Mixed => ChatIcon::Hammer,
-            Self::Action(ToolAction::Other) => ChatIcon::Wrench,
-            Self::Reasoning => ChatIcon::Brain,
-            Self::AgentTool => ChatIcon::Bot,
-            Self::ToneTool => ChatIcon::Zap,
-            Self::JsRepl => ChatIcon::CodeXml,
-            Self::Todo => ChatIcon::ListTodo,
-            Self::Approval => ChatIcon::MessageCircle,
+            Self::Action(ToolAction::Read) => IconName::Eye,
+            Self::Action(ToolAction::Edit) => IconName::SquarePen,
+            Self::Action(ToolAction::Command) => IconName::Terminal,
+            Self::Action(ToolAction::Search) => IconName::Globe,
+            Self::Action(ToolAction::CodeSearch) => IconName::Search,
+            Self::Action(ToolAction::Browser) => IconName::Globe,
+            Self::Action(ToolAction::Device) => IconName::Smartphone,
+            Self::Action(ToolAction::PullRequest) => IconName::GitPullRequest,
+            Self::Action(ToolAction::ThreadCreate) => IconName::MessageCircle,
+            Self::Action(ToolAction::Update) | Self::DynamicTool | Self::Mixed => IconName::Hammer,
+            Self::Action(ToolAction::Other) => IconName::Wrench,
+            Self::Reasoning => IconName::Brain,
+            Self::AgentTool => IconName::Bot,
+            Self::ToneTool => IconName::Zap,
+            Self::JsRepl => IconName::CodeXml,
+            Self::Todo => IconName::ListTodo,
+            Self::Approval => IconName::MessageCircle,
         }
     }
 }
@@ -117,18 +117,18 @@ pub fn is_visible_in_group(entry: &WorkLogEntry) -> bool {
 }
 
 /// The icon of a single entry (`TimelineWorkEntryRow.logic.ts:154-194`).
-pub fn entry_icon(entry: &WorkLogEntry) -> ChatIcon {
+pub fn entry_icon(entry: &WorkLogEntry) -> IconName {
     match &entry.item {
-        WorkItem::Reasoning { .. } => ChatIcon::Brain,
-        WorkItem::DynamicTool { kind: DynamicToolKind::JsRepl, .. } => ChatIcon::CodeXml,
-        WorkItem::DynamicTool { kind: DynamicToolKind::Agent, .. } => ChatIcon::Bot,
-        WorkItem::DynamicTool { kind: DynamicToolKind::Mcp, .. } => ChatIcon::Hammer,
-        WorkItem::TodoList { .. } => ChatIcon::ListTodo,
-        WorkItem::Approval { .. } | WorkItem::QuestionAnswer { .. } => ChatIcon::MessageCircle,
-        WorkItem::SystemNotice { info: true, .. } => ChatIcon::Zap,
-        WorkItem::SystemNotice { info: false, .. } | WorkItem::Error { .. } => ChatIcon::CircleAlert,
-        WorkItem::Notification { .. } => ChatIcon::Zap,
-        WorkItem::Compaction { .. } => ChatIcon::Minimize2,
+        WorkItem::Reasoning { .. } => IconName::Brain,
+        WorkItem::DynamicTool { kind: DynamicToolKind::JsRepl, .. } => IconName::CodeXml,
+        WorkItem::DynamicTool { kind: DynamicToolKind::Agent, .. } => IconName::Bot,
+        WorkItem::DynamicTool { kind: DynamicToolKind::Mcp, .. } => IconName::Hammer,
+        WorkItem::TodoList { .. } => IconName::ListTodo,
+        WorkItem::Approval { .. } | WorkItem::QuestionAnswer { .. } => IconName::MessageCircle,
+        WorkItem::SystemNotice { info: true, .. } => IconName::Zap,
+        WorkItem::SystemNotice { info: false, .. } | WorkItem::Error { .. } => IconName::CircleAlert,
+        WorkItem::Notification { .. } => IconName::Zap,
+        WorkItem::Compaction { .. } => IconName::Minimize2,
         _ => SummaryKind::Action(tool_action(entry)).icon(),
     }
 }

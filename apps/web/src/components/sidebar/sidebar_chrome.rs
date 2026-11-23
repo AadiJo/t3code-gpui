@@ -3,10 +3,11 @@
 //! optional environment pill; the footer holds the utility buttons and the
 //! fork's notification bell.
 
+use crate::components::icons::IconName;
+use gpui_kit::TestSupportExt as _;
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
-use super::icons::ShellIcon;
 use super::sidebar_thread_header::{HeaderControl, sidebar_icon_button};
 use super::style::*;
 use super::{Sidebar, SidebarEvent};
@@ -60,9 +61,10 @@ impl Sidebar {
                       label: &'static str,
                       event: fn() -> SidebarEvent| {
             sidebar_icon_button(id, glyph, px(32.), hovered(control), colors)
-                .tooltip(super::tooltip::tooltip(label))
+                .tooltip(crate::components::ui::tooltip::tooltip(label))
                 .on_hover(this.control_hover_listener(control, cx))
                 .on_click(cx.listener(move |_, _, _, cx| cx.emit(event())))
+                .test_support()
         };
         let settings = self.snapshot.settings;
         let row = div()
@@ -73,7 +75,7 @@ impl Sidebar {
                 self,
                 cx,
                 "sidebar-settings",
-                ShellIcon::Settings,
+                IconName::Settings,
                 HeaderControl::Settings,
                 "Settings",
                 || SidebarEvent::OpenSettings,
@@ -82,7 +84,7 @@ impl Sidebar {
                 self,
                 cx,
                 "sidebar-pull-requests",
-                ShellIcon::GitPullRequest,
+                IconName::GitPullRequest,
                 HeaderControl::PullRequests,
                 "Pull requests",
                 || SidebarEvent::OpenPullRequests,
@@ -91,7 +93,7 @@ impl Sidebar {
                 self,
                 cx,
                 "sidebar-issues",
-                ShellIcon::CircleDot,
+                IconName::CircleDot,
                 HeaderControl::Issues,
                 "Issues",
                 || SidebarEvent::OpenIssues,
@@ -100,7 +102,7 @@ impl Sidebar {
                 self,
                 cx,
                 "sidebar-usage",
-                ShellIcon::ChartNoAxesColumn,
+                IconName::ChartNoAxesColumn,
                 HeaderControl::Usage,
                 "Usage",
                 || SidebarEvent::OpenUsage,

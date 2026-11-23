@@ -3,8 +3,8 @@
 //! root that hosts them. Ports `apps/web/src/shortcuts/`.
 //!
 //! Wiring: call [`init`] after every widget `init`, render a [`ShortcutRoot`]
-//! as the window's root view around the app, and call [`keymap::install`]
-//! whenever the server config's keybindings change.
+//! as the window's root view around the app (`AppRoot::open_window` does),
+//! and call [`keymap::install`] whenever the server config's keybindings change.
 
 pub mod commands;
 pub mod keymap;
@@ -17,6 +17,7 @@ use gpui_kit::{
 };
 
 use crate::command_palette_store::OpenIntent;
+use crate::components::background_thread_announcer::BackgroundThreadAnnouncer;
 use crate::components::command_palette::{self, CommandPalette};
 use crate::components::command_palette_lookups::CommandPaletteSource;
 use crate::components::command_palette_theme_items::cycle_appearance;
@@ -33,12 +34,15 @@ pub fn init(cx: &mut App) {
 
 /// The window root for keyboard control. It carries the shortcut state's key
 /// context, keeps focus inside the window, tracks held modifiers, hosts the
-/// command palette and the toaster, and answers the palette's commands
+/// window-wide layers (command palette, toaster, screen-reader announcer and
+/// text selection), and answers the palette's commands
 /// (`commandPaletteCommands.ts`).
 pub struct ShortcutRoot {
     content: AnyView,
     palette: Entity<CommandPalette>,
     focus: FocusHandle,
+    /// Where focus goes when nothing holds it; the root's own by default.
+    default_focus: Option<FocusHandle>,
     _activation: Subscription,
 }
 
@@ -51,7 +55,13 @@ impl ShortcutRoot {
                 ShortcutModifierStore::global(cx).update(cx, |store, cx| store.reset(cx));
             }
         });
-        Self { content, palette, focus: cx.focus_handle(), _activation: activation }
+        Self { content, palette, focus: cx.focus_handle(), default_focus: None, _activation: activation }
+    }
+
+    /// Makes `focus` (inside the content) take the keyboard when nothing
+    /// holds it, so the content's command handlers are on the focus path.
+    pub fn set_default_focus(&mut self, focus: FocusHandle) {
+        self.default_focus = Some(focus);
     }
 
     pub fn palette(&self) -> &Entity<CommandPalette> {
@@ -67,7 +77,7 @@ impl ShortcutRoot {
 impl Render for ShortcutRoot {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         if window.focused(cx).is_none() {
-            window.focus(&self.focus, cx);
+            window.focus(self.default_focus.as_ref().unwrap_or(&self.focus), cx);
         }
         let key_context = keymap::ShortcutState::get(cx).root_key_context();
         let palette = self.palette.clone();
@@ -102,8 +112,10 @@ impl Render for ShortcutRoot {
                 }
             })
             .on_action(|_: &commands::CycleAppearance, _, cx| cycle_appearance(cx))
+            .child(gpui_kit::base::TextSelectionLayer)
             .child(self.content.clone())
             .child(palette)
             .child(Toaster::view(cx))
+            .child(BackgroundThreadAnnouncer::view(cx))
     }
 }

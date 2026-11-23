@@ -73,6 +73,13 @@ name = "chat-bench"
 path = "src/chat_bench.rs"
 required-features = ["headless"]
 
+# Drives the assembled app headlessly: threads, sending, panels, history,
+# relaunch restore, and the 5,000-thread navigation bench.
+# Usage: app-check <session|restore> <out> <state-dir> <dark|light> | app-check bench <out>
+[[bin]]
+name = "app-check"
+path = "src/app_check.rs"
+required-features = ["headless"]
 # Runs a scripted notification sequence through the engine and inbox and logs
 # every decision. Usage: notification-check <fixture.json> <out.jsonl> <darwin|linux> [--notify]
 [[bin]]

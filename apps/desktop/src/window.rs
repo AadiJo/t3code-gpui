@@ -10,8 +10,10 @@ use std::time::Duration;
 
 use gpui_kit::{component::TitleBar, *};
 use serde::{Deserialize, Serialize};
-use t3code_web::AppRoot;
-use t3code_web::connection::shell::EnvironmentShell;
+use t3code_web::app_root::{AppRootOptions, WindowRoot};
+use t3code_web::components::app_sidebar_layout::TitlebarPlatform;
+use t3code_web::theme_palette::ThemeSettings;
+use t3code_web::ui_state_store::StateDir;
 
 const DEFAULT_SIZE: Size<Pixels> = Size {
     width: px(1100.),
@@ -42,9 +44,14 @@ impl SavedWindowState {
     }
 }
 
+/// `<data dir>/t3code-gpui`: window bounds, layout, panels and UI state.
+pub fn data_dir() -> Option<PathBuf> {
+    Some(dirs::data_dir()?.join("t3code-gpui"))
+}
+
 /// `<data dir>/t3code-gpui/window-state.json`.
 fn state_path() -> Option<PathBuf> {
-    Some(dirs::data_dir()?.join("t3code-gpui").join("window-state.json"))
+    Some(data_dir()?.join("window-state.json"))
 }
 
 fn load_state() -> Option<SavedWindowState> {
@@ -99,20 +106,20 @@ pub fn main_window_options(cx: &App) -> WindowOptions {
     }
 }
 
-/// Opens the main window and keeps its bounds saved. The root is the
-/// connection shell around the app; it needs the connection runtime.
-pub fn open_main_window(
-    options: WindowOptions,
-    cx: &mut App,
-) -> anyhow::Result<(AnyWindowHandle, Entity<EnvironmentShell>)> {
-    let (handle, root) = gpui_kit::open_window(options, cx, |window, cx| {
-        let app = cx.new(|cx| AppRoot::new(window, cx));
-        cx.new(|cx| EnvironmentShell::new(app, window, cx))
-    })?;
+/// Opens the main window and keeps its bounds saved. `fixtures` loads the
+/// showcase data; without it the app starts empty (first-run state until an
+/// environment is saved). Needs the connection runtime.
+pub fn open_main_window(options: WindowOptions, fixtures: bool, cx: &mut App) -> anyhow::Result<(AnyWindowHandle, WindowRoot)> {
+    let platform = TitlebarPlatform::current();
+    let app = if fixtures { AppRootOptions::fixtures(platform) } else { AppRootOptions::without_fixtures(platform) };
+    let app = AppRootOptions { state_dir: StateDir(data_dir()), ..app };
+    let (handle, root) = WindowRoot::open_window(options, app, cx)?;
     handle.update(cx, |_, window, cx| {
-        let app = root.read(cx).app().clone();
-        app.update(cx, |app, cx| app.start_clock(cx));
-        root.update(cx, |_, cx| persist_bounds(window, cx));
+        ThemeSettings::follow_window(window, cx);
+        root.app.update(cx, |app, cx| {
+            app.start_clock(cx);
+            persist_bounds(window, cx);
+        });
     })?;
     Ok((handle, root))
 }
