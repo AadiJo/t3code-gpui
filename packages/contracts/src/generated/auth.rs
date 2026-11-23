@@ -220,11 +220,11 @@ pub struct AuthAccessStreamPairingLinkRemovedEvent {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum AuthAccessStreamEvent {
-    AuthAccessStreamSnapshotEvent(AuthAccessStreamSnapshotEvent),
-    AuthAccessStreamPairingLinkUpsertedEvent(AuthAccessStreamPairingLinkUpsertedEvent),
-    AuthAccessStreamPairingLinkRemovedEvent(AuthAccessStreamPairingLinkRemovedEvent),
-    AuthAccessStreamClientUpsertedEvent(AuthAccessStreamClientUpsertedEvent),
-    AuthAccessStreamClientRemovedEvent(AuthAccessStreamClientRemovedEvent),
+    Snapshot(AuthAccessStreamSnapshotEvent),
+    PairingLinkUpserted(AuthAccessStreamPairingLinkUpsertedEvent),
+    PairingLinkRemoved(AuthAccessStreamPairingLinkRemovedEvent),
+    ClientUpserted(AuthAccessStreamClientUpsertedEvent),
+    ClientRemoved(AuthAccessStreamClientRemovedEvent),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -233,11 +233,11 @@ impl<'de> ::serde::Deserialize<'de> for AuthAccessStreamEvent {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("type")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "snapshot" => Self::AuthAccessStreamSnapshotEvent(raw.decode()?),
-                "pairingLinkUpserted" => Self::AuthAccessStreamPairingLinkUpsertedEvent(raw.decode()?),
-                "pairingLinkRemoved" => Self::AuthAccessStreamPairingLinkRemovedEvent(raw.decode()?),
-                "clientUpserted" => Self::AuthAccessStreamClientUpsertedEvent(raw.decode()?),
-                "clientRemoved" => Self::AuthAccessStreamClientRemovedEvent(raw.decode()?),
+                "snapshot" => Self::Snapshot(raw.decode()?),
+                "pairingLinkUpserted" => Self::PairingLinkUpserted(raw.decode()?),
+                "pairingLinkRemoved" => Self::PairingLinkRemoved(raw.decode()?),
+                "clientUpserted" => Self::ClientUpserted(raw.decode()?),
+                "clientRemoved" => Self::ClientRemoved(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -803,6 +803,13 @@ crate::wire::string_enum! {
     }
 }
 
+crate::wire::string_enum! {
+    /// Inline enum at `AuthTokenExchangeRequestRequestedTokenType`.
+    AuthTokenExchangeRequestRequestedTokenType {
+        UrnIetfParamsOauthTokenTypeAccessToken = "urn:ietf:params:oauth:token-type:access_token",
+    }
+}
+
 /// `AuthTokenExchangeRequest` from `auth.ts`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -814,7 +821,7 @@ pub struct AuthTokenExchangeRequest {
     #[serde(rename = "subject_token_type")]
     pub subject_token_type: AuthTokenExchangeRequestSubjectTokenType,
     #[serde(rename = "requested_token_type")]
-    pub requested_token_type: AuthAccessTokenResultIssuedTokenType,
+    pub requested_token_type: AuthTokenExchangeRequestRequestedTokenType,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scope: Option<String>,
     #[serde(rename = "client_label", default, skip_serializing_if = "Option::is_none")]

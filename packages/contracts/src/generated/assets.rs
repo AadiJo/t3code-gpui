@@ -105,7 +105,7 @@ pub struct NativeAppIconReferenceAppPath {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum NativeAppIconReference {
-    ToolActivityNativeAppReference(ToolActivityNativeAppReference),
+    ToolActivityNativeApp(ToolActivityNativeAppReference),
     AppPath(NativeAppIconReferenceAppPath),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
@@ -115,7 +115,7 @@ impl<'de> ::serde::Deserialize<'de> for NativeAppIconReference {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "app-id" | "display-name" => Self::ToolActivityNativeAppReference(raw.decode()?),
+                "app-id" | "display-name" => Self::ToolActivityNativeApp(raw.decode()?),
                 "app-path" => Self::AppPath(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
@@ -315,20 +315,20 @@ pub struct AssetSigningKeyLoadError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum AssetAccessError {
-    AssetWorkspaceContextNotFoundError(AssetWorkspaceContextNotFoundError),
-    AssetWorkspaceContextResolutionError(AssetWorkspaceContextResolutionError),
-    AssetWorkspaceRootNormalizationError(AssetWorkspaceRootNormalizationError),
-    AssetWorkspacePathValidationError(AssetWorkspacePathValidationError),
-    AssetPreviewTypeValidationError(AssetPreviewTypeValidationError),
-    AssetWorkspaceAssetInspectionError(AssetWorkspaceAssetInspectionError),
-    AssetWorkspaceAssetNotFoundError(AssetWorkspaceAssetNotFoundError),
-    AssetWorkspaceResolutionError(AssetWorkspaceResolutionError),
-    AssetAttachmentNotFoundError(AssetAttachmentNotFoundError),
-    AssetProjectFaviconResolutionError(AssetProjectFaviconResolutionError),
-    AssetProjectFaviconInspectionError(AssetProjectFaviconInspectionError),
-    AssetProjectFaviconNotFoundError(AssetProjectFaviconNotFoundError),
-    AssetSourceControlMediaUrlValidationError(AssetSourceControlMediaUrlValidationError),
-    AssetSigningKeyLoadError(AssetSigningKeyLoadError),
+    WorkspaceContextNotFound(AssetWorkspaceContextNotFoundError),
+    WorkspaceContextResolution(AssetWorkspaceContextResolutionError),
+    WorkspaceRootNormalization(AssetWorkspaceRootNormalizationError),
+    WorkspacePathValidation(AssetWorkspacePathValidationError),
+    PreviewTypeValidation(AssetPreviewTypeValidationError),
+    WorkspaceAssetInspection(AssetWorkspaceAssetInspectionError),
+    WorkspaceAssetNotFound(AssetWorkspaceAssetNotFoundError),
+    WorkspaceResolution(AssetWorkspaceResolutionError),
+    AttachmentNotFound(AssetAttachmentNotFoundError),
+    ProjectFaviconResolution(AssetProjectFaviconResolutionError),
+    ProjectFaviconInspection(AssetProjectFaviconInspectionError),
+    ProjectFaviconNotFound(AssetProjectFaviconNotFoundError),
+    SourceControlMediaUrlValidation(AssetSourceControlMediaUrlValidationError),
+    SigningKeyLoad(AssetSigningKeyLoadError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -337,20 +337,20 @@ impl<'de> ::serde::Deserialize<'de> for AssetAccessError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "AssetWorkspaceContextNotFoundError" => Self::AssetWorkspaceContextNotFoundError(raw.decode()?),
-                "AssetWorkspaceContextResolutionError" => Self::AssetWorkspaceContextResolutionError(raw.decode()?),
-                "AssetWorkspaceRootNormalizationError" => Self::AssetWorkspaceRootNormalizationError(raw.decode()?),
-                "AssetWorkspacePathValidationError" => Self::AssetWorkspacePathValidationError(raw.decode()?),
-                "AssetPreviewTypeValidationError" => Self::AssetPreviewTypeValidationError(raw.decode()?),
-                "AssetWorkspaceAssetInspectionError" => Self::AssetWorkspaceAssetInspectionError(raw.decode()?),
-                "AssetWorkspaceAssetNotFoundError" => Self::AssetWorkspaceAssetNotFoundError(raw.decode()?),
-                "AssetWorkspaceResolutionError" => Self::AssetWorkspaceResolutionError(raw.decode()?),
-                "AssetAttachmentNotFoundError" => Self::AssetAttachmentNotFoundError(raw.decode()?),
-                "AssetProjectFaviconResolutionError" => Self::AssetProjectFaviconResolutionError(raw.decode()?),
-                "AssetProjectFaviconInspectionError" => Self::AssetProjectFaviconInspectionError(raw.decode()?),
-                "AssetProjectFaviconNotFoundError" => Self::AssetProjectFaviconNotFoundError(raw.decode()?),
-                "AssetGitHubMediaUrlValidationError" => Self::AssetSourceControlMediaUrlValidationError(raw.decode()?),
-                "AssetSigningKeyLoadError" => Self::AssetSigningKeyLoadError(raw.decode()?),
+                "AssetWorkspaceContextNotFoundError" => Self::WorkspaceContextNotFound(raw.decode()?),
+                "AssetWorkspaceContextResolutionError" => Self::WorkspaceContextResolution(raw.decode()?),
+                "AssetWorkspaceRootNormalizationError" => Self::WorkspaceRootNormalization(raw.decode()?),
+                "AssetWorkspacePathValidationError" => Self::WorkspacePathValidation(raw.decode()?),
+                "AssetPreviewTypeValidationError" => Self::PreviewTypeValidation(raw.decode()?),
+                "AssetWorkspaceAssetInspectionError" => Self::WorkspaceAssetInspection(raw.decode()?),
+                "AssetWorkspaceAssetNotFoundError" => Self::WorkspaceAssetNotFound(raw.decode()?),
+                "AssetWorkspaceResolutionError" => Self::WorkspaceResolution(raw.decode()?),
+                "AssetAttachmentNotFoundError" => Self::AttachmentNotFound(raw.decode()?),
+                "AssetProjectFaviconResolutionError" => Self::ProjectFaviconResolution(raw.decode()?),
+                "AssetProjectFaviconInspectionError" => Self::ProjectFaviconInspection(raw.decode()?),
+                "AssetProjectFaviconNotFoundError" => Self::ProjectFaviconNotFound(raw.decode()?),
+                "AssetGitHubMediaUrlValidationError" => Self::SourceControlMediaUrlValidation(raw.decode()?),
+                "AssetSigningKeyLoadError" => Self::SigningKeyLoad(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),

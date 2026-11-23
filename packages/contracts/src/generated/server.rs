@@ -462,6 +462,13 @@ pub struct ServerConfigProvidersItemSubProvidersItem {
     pub unavailable_reason: Option<String>,
 }
 
+crate::wire::string_enum! {
+    /// Inline enum at `ServerConfigProvidersItemUpdateRequiredModelsItemBadge`.
+    ServerConfigProvidersItemUpdateRequiredModelsItemBadge {
+        New = "new",
+    }
+}
+
 /// Inline object at `ServerConfigProvidersItemUpdateRequiredModelsItem`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -469,7 +476,7 @@ pub struct ServerConfigProvidersItemUpdateRequiredModelsItem {
     pub slug: String,
     pub name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub badge: Option<ServerConfigProvidersItemModelsItemBadge>,
+    pub badge: Option<ServerConfigProvidersItemUpdateRequiredModelsItemBadge>,
     pub min_version: String,
 }
 
@@ -512,13 +519,24 @@ pub struct ServerConfigProvidersItemSkillsItem {
     pub user_invocable: Option<bool>,
 }
 
+/// Inline object at `ServerConfigProvidersItemWorkspaceSnapshotsItemSlashCommandsItem`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ServerConfigProvidersItemWorkspaceSnapshotsItemSlashCommandsItem {
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input: Option<ServerProviderSlashCommandInput>,
+}
+
 /// Inline object at `ServerConfigProvidersItemWorkspaceSnapshotsItem`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ServerConfigProvidersItemWorkspaceSnapshotsItem {
     pub cwd: String,
     pub checked_at: String,
-    pub slash_commands: Vec<ServerConfigProvidersItemSlashCommandsItem>,
+    pub slash_commands: Vec<ServerConfigProvidersItemWorkspaceSnapshotsItemSlashCommandsItem>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub slash_commands_pending: Option<bool>,
     pub skills: Vec<ServerConfigProvidersItemSkillsItem>,
@@ -831,6 +849,13 @@ pub struct ServerEventLoopStall {
     pub cpu_count: PositiveInt,
 }
 
+crate::wire::string_enum! {
+    /// Inline enum at `ServerConfigUsageLimitSourcesItemKind`.
+    ServerConfigUsageLimitSourcesItemKind {
+        Cliproxy = "cliproxy",
+    }
+}
+
 /// Inline object at `ServerConfigUsageLimitSourcesItemAccountsItem`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -851,7 +876,7 @@ pub struct ServerConfigUsageLimitSourcesItemAccountsItem {
 #[serde(rename_all = "camelCase")]
 pub struct ServerConfigUsageLimitSourcesItem {
     pub id: UsageLimitSourceId,
-    pub kind: UsageLimitSourceConfigKind,
+    pub kind: ServerConfigUsageLimitSourcesItemKind,
     pub label: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub origin: Option<String>,
@@ -932,12 +957,89 @@ pub struct ServerConfigEnvironmentThemesUpdatedPayload {
     pub themes: Vec<EnvironmentTheme>,
 }
 
+/// Inline object at `ServerConfigKeybindingsUpdatedPayloadKeybindingsItem`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ServerConfigKeybindingsUpdatedPayloadKeybindingsItem {
+    pub command: KeybindingCommand,
+    pub shortcut: KeybindingShortcut,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub when_ast: Option<Union>,
+}
+
 /// `ServerConfigKeybindingsUpdatedPayload` from `server.ts`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ServerConfigKeybindingsUpdatedPayload {
-    pub keybindings: Vec<Option<ServerConfigKeybindingsItem>>,
+    pub keybindings: Vec<Option<ServerConfigKeybindingsUpdatedPayloadKeybindingsItem>>,
     pub issues: Vec<Option<ServerConfigIssuesItem>>,
+}
+
+/// Inline object at `ServerConfigProviderStatusDeltasPayloadProvidersItemSetup`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ServerConfigProviderStatusDeltasPayloadProvidersItemSetup {
+    pub can_authenticate: bool,
+    pub can_install: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub documentation_url: Option<String>,
+}
+
+/// Inline object at `ServerConfigProviderStatusDeltasPayloadProvidersItemNativeSessions`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ServerConfigProviderStatusDeltasPayloadProvidersItemNativeSessions {
+    pub can_list: bool,
+    pub can_load: bool,
+    pub can_resume: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub can_delete: Option<bool>,
+}
+
+/// Inline object at `ServerConfigProviderStatusDeltasPayloadProvidersItemRuntimePaths`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ServerConfigProviderStatusDeltasPayloadProvidersItemRuntimePaths {
+    pub home_path: String,
+    pub shadow_home_path: Option<String>,
+}
+
+/// Inline object at `ServerConfigProviderStatusDeltasPayloadProvidersItemSubProvidersItem`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ServerConfigProviderStatusDeltasPayloadProvidersItemSubProvidersItem {
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unavailable_reason: Option<String>,
+}
+
+crate::wire::string_enum! {
+    /// Inline enum at `ServerConfigProviderStatusDeltasPayloadProvidersItemUpdateRequiredModelsItemBadge`.
+    ServerConfigProviderStatusDeltasPayloadProvidersItemUpdateRequiredModelsItemBadge {
+        New = "new",
+    }
+}
+
+/// Inline object at `ServerConfigProviderStatusDeltasPayloadProvidersItemUpdateRequiredModelsItem`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ServerConfigProviderStatusDeltasPayloadProvidersItemUpdateRequiredModelsItem {
+    pub slug: String,
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub badge: Option<ServerConfigProviderStatusDeltasPayloadProvidersItemUpdateRequiredModelsItemBadge>,
+    pub min_version: String,
+}
+
+/// Inline object at `ServerConfigProviderStatusDeltasPayloadProvidersItemSlashCommandsItem`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ServerConfigProviderStatusDeltasPayloadProvidersItemSlashCommandsItem {
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input: Option<ServerProviderSlashCommandInput>,
 }
 
 /// Inline object at `ServerConfigProviderStatusDeltasPayloadProvidersItem`.
@@ -967,13 +1069,13 @@ pub struct ServerConfigProviderStatusDeltasPayloadProvidersItem {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub supports_text_generation: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub setup: Option<ServerConfigProvidersItemSetup>,
+    pub setup: Option<ServerConfigProviderStatusDeltasPayloadProvidersItemSetup>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub native_sessions: Option<ServerConfigProvidersItemNativeSessions>,
+    pub native_sessions: Option<ServerConfigProviderStatusDeltasPayloadProvidersItemNativeSessions>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub configurable_providers: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub runtime_paths: Option<ServerConfigProvidersItemRuntimePaths>,
+    pub runtime_paths: Option<ServerConfigProviderStatusDeltasPayloadProvidersItemRuntimePaths>,
     pub enabled: bool,
     pub installed: bool,
     pub version: Option<String>,
@@ -991,13 +1093,13 @@ pub struct ServerConfigProviderStatusDeltasPayloadProvidersItem {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub models: Option<Vec<ServerConfigProvidersItemModelsItem>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub sub_providers: Option<Vec<ServerConfigProvidersItemSubProvidersItem>>,
+    pub sub_providers: Option<Vec<ServerConfigProviderStatusDeltasPayloadProvidersItemSubProvidersItem>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub models_retained: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub update_required_models: Option<Vec<ServerConfigProvidersItemUpdateRequiredModelsItem>>,
+    pub update_required_models: Option<Vec<ServerConfigProviderStatusDeltasPayloadProvidersItemUpdateRequiredModelsItem>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub slash_commands: Option<Vec<ServerConfigProvidersItemSlashCommandsItem>>,
+    pub slash_commands: Option<Vec<ServerConfigProviderStatusDeltasPayloadProvidersItemSlashCommandsItem>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub skills: Option<Vec<ServerConfigProvidersItemSkillsItem>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1114,13 +1216,13 @@ pub struct ServerConfigStreamUsageLimitSourcesUpdatedEvent {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum ServerConfigStreamEvent {
-    ServerConfigStreamSnapshotEvent(ServerConfigStreamSnapshotEvent),
-    ServerConfigStreamKeybindingsUpdatedEvent(ServerConfigStreamKeybindingsUpdatedEvent),
-    ServerConfigStreamProviderStatusesEvent(ServerConfigStreamProviderStatusesEvent),
-    ServerConfigStreamProviderStatusDeltasEvent(ServerConfigStreamProviderStatusDeltasEvent),
-    ServerConfigStreamSettingsUpdatedEvent(ServerConfigStreamSettingsUpdatedEvent),
-    ServerConfigStreamEnvironmentThemesUpdatedEvent(ServerConfigStreamEnvironmentThemesUpdatedEvent),
-    ServerConfigStreamUsageLimitSourcesUpdatedEvent(ServerConfigStreamUsageLimitSourcesUpdatedEvent),
+    Snapshot(ServerConfigStreamSnapshotEvent),
+    KeybindingsUpdated(ServerConfigStreamKeybindingsUpdatedEvent),
+    ProviderStatuses(ServerConfigStreamProviderStatusesEvent),
+    ProviderStatusDeltas(ServerConfigStreamProviderStatusDeltasEvent),
+    SettingsUpdated(ServerConfigStreamSettingsUpdatedEvent),
+    EnvironmentThemesUpdated(ServerConfigStreamEnvironmentThemesUpdatedEvent),
+    UsageLimitSourcesUpdated(ServerConfigStreamUsageLimitSourcesUpdatedEvent),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -1129,13 +1231,13 @@ impl<'de> ::serde::Deserialize<'de> for ServerConfigStreamEvent {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("type")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "snapshot" => Self::ServerConfigStreamSnapshotEvent(raw.decode()?),
-                "keybindingsUpdated" => Self::ServerConfigStreamKeybindingsUpdatedEvent(raw.decode()?),
-                "providerStatuses" => Self::ServerConfigStreamProviderStatusesEvent(raw.decode()?),
-                "providerStatusDeltas" => Self::ServerConfigStreamProviderStatusDeltasEvent(raw.decode()?),
-                "settingsUpdated" => Self::ServerConfigStreamSettingsUpdatedEvent(raw.decode()?),
-                "environmentThemesUpdated" => Self::ServerConfigStreamEnvironmentThemesUpdatedEvent(raw.decode()?),
-                "usageLimitSourcesUpdated" => Self::ServerConfigStreamUsageLimitSourcesUpdatedEvent(raw.decode()?),
+                "snapshot" => Self::Snapshot(raw.decode()?),
+                "keybindingsUpdated" => Self::KeybindingsUpdated(raw.decode()?),
+                "providerStatuses" => Self::ProviderStatuses(raw.decode()?),
+                "providerStatusDeltas" => Self::ProviderStatusDeltas(raw.decode()?),
+                "settingsUpdated" => Self::SettingsUpdated(raw.decode()?),
+                "environmentThemesUpdated" => Self::EnvironmentThemesUpdated(raw.decode()?),
+                "usageLimitSourcesUpdated" => Self::UsageLimitSourcesUpdated(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -1269,9 +1371,9 @@ pub struct ServerLifecycleStreamLegacyThreadMigrationEvent {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum ServerLifecycleStreamEvent {
-    ServerLifecycleStreamWelcomeEvent(ServerLifecycleStreamWelcomeEvent),
-    ServerLifecycleStreamReadyEvent(ServerLifecycleStreamReadyEvent),
-    ServerLifecycleStreamLegacyThreadMigrationEvent(ServerLifecycleStreamLegacyThreadMigrationEvent),
+    Welcome(ServerLifecycleStreamWelcomeEvent),
+    Ready(ServerLifecycleStreamReadyEvent),
+    LegacyThreadMigration(ServerLifecycleStreamLegacyThreadMigrationEvent),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -1280,9 +1382,9 @@ impl<'de> ::serde::Deserialize<'de> for ServerLifecycleStreamEvent {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("type")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "welcome" => Self::ServerLifecycleStreamWelcomeEvent(raw.decode()?),
-                "ready" => Self::ServerLifecycleStreamReadyEvent(raw.decode()?),
-                "legacyThreadMigration" => Self::ServerLifecycleStreamLegacyThreadMigrationEvent(raw.decode()?),
+                "welcome" => Self::Welcome(raw.decode()?),
+                "ready" => Self::Ready(raw.decode()?),
+                "legacyThreadMigration" => Self::LegacyThreadMigration(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -1328,13 +1430,20 @@ pub struct ServerProcessDiagnosticsEntryPgidSomeType {
     pub value: i64,
 }
 
+/// Inline object at `ServerProcessDiagnosticsEntryPgidNoneType`.
+/// Wire tag: `_tag: "None"`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(tag = "_tag", rename = "None", rename_all = "camelCase")]
+pub struct ServerProcessDiagnosticsEntryPgidNoneType {
+}
+
 /// Inline union at `ServerProcessDiagnosticsEntryPgid`.
 /// Decoded by its `_tag` field; a tag this client does not know becomes `Unknown`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum ServerProcessDiagnosticsEntryPgid {
     SomeType(ServerProcessDiagnosticsEntryPgidSomeType),
-    NoneType(ResourceTelemetrySourceHealthLastSampleAtNoneType),
+    NoneType(ServerProcessDiagnosticsEntryPgidNoneType),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -1384,13 +1493,20 @@ pub struct ServerProcessDiagnosticsResultErrorSomeType {
     pub value: ServerProcessDiagnosticsResultErrorSomeTypeValue,
 }
 
+/// Inline object at `ServerProcessDiagnosticsResultErrorNoneType`.
+/// Wire tag: `_tag: "None"`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(tag = "_tag", rename = "None", rename_all = "camelCase")]
+pub struct ServerProcessDiagnosticsResultErrorNoneType {
+}
+
 /// Inline union at `ServerProcessDiagnosticsResultError`.
 /// Decoded by its `_tag` field; a tag this client does not know becomes `Unknown`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum ServerProcessDiagnosticsResultError {
     SomeType(ServerProcessDiagnosticsResultErrorSomeType),
-    NoneType(ResourceTelemetrySourceHealthLastSampleAtNoneType),
+    NoneType(ServerProcessDiagnosticsResultErrorNoneType),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -1489,13 +1605,20 @@ pub struct ServerProcessResourceHistoryResultErrorSomeType {
     pub value: ServerProcessResourceHistoryResultErrorSomeTypeValue,
 }
 
+/// Inline object at `ServerProcessResourceHistoryResultErrorNoneType`.
+/// Wire tag: `_tag: "None"`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(tag = "_tag", rename = "None", rename_all = "camelCase")]
+pub struct ServerProcessResourceHistoryResultErrorNoneType {
+}
+
 /// Inline union at `ServerProcessResourceHistoryResultError`.
 /// Decoded by its `_tag` field; a tag this client does not know becomes `Unknown`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum ServerProcessResourceHistoryResultError {
     SomeType(ServerProcessResourceHistoryResultErrorSomeType),
-    NoneType(ResourceTelemetrySourceHealthLastSampleAtNoneType),
+    NoneType(ServerProcessResourceHistoryResultErrorNoneType),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -1657,6 +1780,45 @@ pub struct ServerSignalProcessInput {
     pub signal: ServerProcessSignal,
 }
 
+/// Inline object at `ServerSignalProcessResultMessageSomeType`.
+/// Wire tag: `_tag: "Some"`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(tag = "_tag", rename = "Some", rename_all = "camelCase")]
+pub struct ServerSignalProcessResultMessageSomeType {
+    pub value: String,
+}
+
+/// Inline object at `ServerSignalProcessResultMessageNoneType`.
+/// Wire tag: `_tag: "None"`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(tag = "_tag", rename = "None", rename_all = "camelCase")]
+pub struct ServerSignalProcessResultMessageNoneType {
+}
+
+/// Inline union at `ServerSignalProcessResultMessage`.
+/// Decoded by its `_tag` field; a tag this client does not know becomes `Unknown`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
+#[serde(untagged)]
+pub enum ServerSignalProcessResultMessage {
+    SomeType(ServerSignalProcessResultMessageSomeType),
+    NoneType(ServerSignalProcessResultMessageNoneType),
+    /// A value from a newer server.
+    Unknown(::serde_json::Value),
+}
+impl<'de> ::serde::Deserialize<'de> for ServerSignalProcessResultMessage {
+    fn deserialize<D: ::serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let raw = crate::wire::Raw::new(d)?;
+        Ok(match raw.tag("_tag")? {
+            crate::wire::Tag::Str(tag) => match &*tag {
+                "Some" => Self::SomeType(raw.decode()?),
+                "None" => Self::NoneType(raw.decode()?),
+                _ => Self::Unknown(raw.decode()?),
+            },
+            _ => Self::Unknown(raw.decode()?),
+        })
+    }
+}
+
 /// `ServerSignalProcessResult` from `server.ts`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1664,7 +1826,7 @@ pub struct ServerSignalProcessResult {
     pub pid: PositiveInt,
     pub signal: ServerProcessSignal,
     pub signaled: bool,
-    pub message: ResourceTelemetrySourceHealthLastSampleAt,
+    pub message: ServerSignalProcessResultMessage,
 }
 
 crate::wire::string_enum! {
@@ -1711,6 +1873,84 @@ pub struct ServerTraceDiagnosticsRecentFailure {
     pub span_id: String,
 }
 
+/// Inline object at `ServerTraceDiagnosticsResultFirstSpanAtSomeType`.
+/// Wire tag: `_tag: "Some"`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(tag = "_tag", rename = "Some", rename_all = "camelCase")]
+pub struct ServerTraceDiagnosticsResultFirstSpanAtSomeType {
+    pub value: String,
+}
+
+/// Inline object at `ServerTraceDiagnosticsResultFirstSpanAtNoneType`.
+/// Wire tag: `_tag: "None"`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(tag = "_tag", rename = "None", rename_all = "camelCase")]
+pub struct ServerTraceDiagnosticsResultFirstSpanAtNoneType {
+}
+
+/// Inline union at `ServerTraceDiagnosticsResultFirstSpanAt`.
+/// Decoded by its `_tag` field; a tag this client does not know becomes `Unknown`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
+#[serde(untagged)]
+pub enum ServerTraceDiagnosticsResultFirstSpanAt {
+    SomeType(ServerTraceDiagnosticsResultFirstSpanAtSomeType),
+    NoneType(ServerTraceDiagnosticsResultFirstSpanAtNoneType),
+    /// A value from a newer server.
+    Unknown(::serde_json::Value),
+}
+impl<'de> ::serde::Deserialize<'de> for ServerTraceDiagnosticsResultFirstSpanAt {
+    fn deserialize<D: ::serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let raw = crate::wire::Raw::new(d)?;
+        Ok(match raw.tag("_tag")? {
+            crate::wire::Tag::Str(tag) => match &*tag {
+                "Some" => Self::SomeType(raw.decode()?),
+                "None" => Self::NoneType(raw.decode()?),
+                _ => Self::Unknown(raw.decode()?),
+            },
+            _ => Self::Unknown(raw.decode()?),
+        })
+    }
+}
+
+/// Inline object at `ServerTraceDiagnosticsResultLastSpanAtSomeType`.
+/// Wire tag: `_tag: "Some"`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(tag = "_tag", rename = "Some", rename_all = "camelCase")]
+pub struct ServerTraceDiagnosticsResultLastSpanAtSomeType {
+    pub value: String,
+}
+
+/// Inline object at `ServerTraceDiagnosticsResultLastSpanAtNoneType`.
+/// Wire tag: `_tag: "None"`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(tag = "_tag", rename = "None", rename_all = "camelCase")]
+pub struct ServerTraceDiagnosticsResultLastSpanAtNoneType {
+}
+
+/// Inline union at `ServerTraceDiagnosticsResultLastSpanAt`.
+/// Decoded by its `_tag` field; a tag this client does not know becomes `Unknown`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
+#[serde(untagged)]
+pub enum ServerTraceDiagnosticsResultLastSpanAt {
+    SomeType(ServerTraceDiagnosticsResultLastSpanAtSomeType),
+    NoneType(ServerTraceDiagnosticsResultLastSpanAtNoneType),
+    /// A value from a newer server.
+    Unknown(::serde_json::Value),
+}
+impl<'de> ::serde::Deserialize<'de> for ServerTraceDiagnosticsResultLastSpanAt {
+    fn deserialize<D: ::serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let raw = crate::wire::Raw::new(d)?;
+        Ok(match raw.tag("_tag")? {
+            crate::wire::Tag::Str(tag) => match &*tag {
+                "Some" => Self::SomeType(raw.decode()?),
+                "None" => Self::NoneType(raw.decode()?),
+                _ => Self::Unknown(raw.decode()?),
+            },
+            _ => Self::Unknown(raw.decode()?),
+        })
+    }
+}
+
 /// `ServerTraceDiagnosticsSpanSummary` from `server.ts`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1742,13 +1982,20 @@ pub struct ServerTraceDiagnosticsResultPartialFailureSomeType {
     pub value: bool,
 }
 
+/// Inline object at `ServerTraceDiagnosticsResultPartialFailureNoneType`.
+/// Wire tag: `_tag: "None"`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(tag = "_tag", rename = "None", rename_all = "camelCase")]
+pub struct ServerTraceDiagnosticsResultPartialFailureNoneType {
+}
+
 /// Inline union at `ServerTraceDiagnosticsResultPartialFailure`.
 /// Decoded by its `_tag` field; a tag this client does not know becomes `Unknown`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum ServerTraceDiagnosticsResultPartialFailure {
     SomeType(ServerTraceDiagnosticsResultPartialFailureSomeType),
-    NoneType(ResourceTelemetrySourceHealthLastSampleAtNoneType),
+    NoneType(ServerTraceDiagnosticsResultPartialFailureNoneType),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -1782,13 +2029,20 @@ pub struct ServerTraceDiagnosticsResultErrorSomeType {
     pub value: ServerTraceDiagnosticsResultErrorSomeTypeValue,
 }
 
+/// Inline object at `ServerTraceDiagnosticsResultErrorNoneType`.
+/// Wire tag: `_tag: "None"`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(tag = "_tag", rename = "None", rename_all = "camelCase")]
+pub struct ServerTraceDiagnosticsResultErrorNoneType {
+}
+
 /// Inline union at `ServerTraceDiagnosticsResultError`.
 /// Decoded by its `_tag` field; a tag this client does not know becomes `Unknown`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum ServerTraceDiagnosticsResultError {
     SomeType(ServerTraceDiagnosticsResultErrorSomeType),
-    NoneType(ResourceTelemetrySourceHealthLastSampleAtNoneType),
+    NoneType(ServerTraceDiagnosticsResultErrorNoneType),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -1815,8 +2069,8 @@ pub struct ServerTraceDiagnosticsResult {
     pub read_at: String,
     pub record_count: NonNegativeInt,
     pub parse_error_count: NonNegativeInt,
-    pub first_span_at: ResourceTelemetrySourceHealthLastSampleAt,
-    pub last_span_at: ResourceTelemetrySourceHealthLastSampleAt,
+    pub first_span_at: ServerTraceDiagnosticsResultFirstSpanAt,
+    pub last_span_at: ServerTraceDiagnosticsResultLastSpanAt,
     pub failure_count: NonNegativeInt,
     pub interruption_count: NonNegativeInt,
     pub slow_span_threshold_ms: NonNegativeInt,

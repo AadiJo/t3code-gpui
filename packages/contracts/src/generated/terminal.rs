@@ -33,9 +33,9 @@ pub struct TerminalCwdStatError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum TerminalCwdError {
-    TerminalCwdNotFoundError(TerminalCwdNotFoundError),
-    TerminalCwdNotDirectoryError(TerminalCwdNotDirectoryError),
-    TerminalCwdStatError(TerminalCwdStatError),
+    NotFound(TerminalCwdNotFoundError),
+    NotDirectory(TerminalCwdNotDirectoryError),
+    Stat(TerminalCwdStatError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -44,9 +44,9 @@ impl<'de> ::serde::Deserialize<'de> for TerminalCwdError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "TerminalCwdNotFoundError" => Self::TerminalCwdNotFoundError(raw.decode()?),
-                "TerminalCwdNotDirectoryError" => Self::TerminalCwdNotDirectoryError(raw.decode()?),
-                "TerminalCwdStatError" => Self::TerminalCwdStatError(raw.decode()?),
+                "TerminalCwdNotFoundError" => Self::NotFound(raw.decode()?),
+                "TerminalCwdNotDirectoryError" => Self::NotDirectory(raw.decode()?),
+                "TerminalCwdStatError" => Self::Stat(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -139,14 +139,14 @@ pub struct TerminalResizeError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum TerminalError {
-    TerminalCwdError(TerminalCwdError),
-    TerminalHistoryError(TerminalHistoryError),
-    TerminalSessionLookupError(TerminalSessionLookupError),
-    TerminalProviderInstanceNotFoundError(TerminalProviderInstanceNotFoundError),
-    TerminalProviderEnvironmentError(TerminalProviderEnvironmentError),
-    TerminalNotRunningError(TerminalNotRunningError),
-    TerminalWriteError(TerminalWriteError),
-    TerminalResizeError(TerminalResizeError),
+    Cwd(TerminalCwdError),
+    History(TerminalHistoryError),
+    SessionLookup(TerminalSessionLookupError),
+    ProviderInstanceNotFound(TerminalProviderInstanceNotFoundError),
+    ProviderEnvironment(TerminalProviderEnvironmentError),
+    NotRunning(TerminalNotRunningError),
+    Write(TerminalWriteError),
+    Resize(TerminalResizeError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -155,14 +155,14 @@ impl<'de> ::serde::Deserialize<'de> for TerminalError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "TerminalCwdNotFoundError" | "TerminalCwdNotDirectoryError" | "TerminalCwdStatError" => Self::TerminalCwdError(raw.decode()?),
-                "TerminalHistoryError" => Self::TerminalHistoryError(raw.decode()?),
-                "TerminalSessionLookupError" => Self::TerminalSessionLookupError(raw.decode()?),
-                "TerminalProviderInstanceNotFoundError" => Self::TerminalProviderInstanceNotFoundError(raw.decode()?),
-                "TerminalProviderEnvironmentError" => Self::TerminalProviderEnvironmentError(raw.decode()?),
-                "TerminalNotRunningError" => Self::TerminalNotRunningError(raw.decode()?),
-                "TerminalWriteError" => Self::TerminalWriteError(raw.decode()?),
-                "TerminalResizeError" => Self::TerminalResizeError(raw.decode()?),
+                "TerminalCwdNotFoundError" | "TerminalCwdNotDirectoryError" | "TerminalCwdStatError" => Self::Cwd(raw.decode()?),
+                "TerminalHistoryError" => Self::History(raw.decode()?),
+                "TerminalSessionLookupError" => Self::SessionLookup(raw.decode()?),
+                "TerminalProviderInstanceNotFoundError" => Self::ProviderInstanceNotFound(raw.decode()?),
+                "TerminalProviderEnvironmentError" => Self::ProviderEnvironment(raw.decode()?),
+                "TerminalNotRunningError" => Self::NotRunning(raw.decode()?),
+                "TerminalWriteError" => Self::Write(raw.decode()?),
+                "TerminalResizeError" => Self::Resize(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),

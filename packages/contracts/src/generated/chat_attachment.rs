@@ -31,33 +31,26 @@ crate::wire::string_enum! {
     }
 }
 
-crate::wire::string_enum! {
-    /// Inline enum at `SnapShotAccessibilityNoCoordinateSpaceFormat`.
-    SnapShotAccessibilityNoCoordinateSpaceFormat {
-        FlatText = "flat-text",
-    }
-}
-
-/// Inline object at `SnapShotAccessibilityNoCoordinateSpace`.
+/// Inline object at `SnapShotAccessibilityFlatText`.
+/// Wire tag: `format: "flat-text"`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SnapShotAccessibilityNoCoordinateSpace {
-    pub format: SnapShotAccessibilityNoCoordinateSpaceFormat,
+#[serde(tag = "format", rename = "flat-text", rename_all = "camelCase")]
+pub struct SnapShotAccessibilityFlatText {
     pub text: String,
     pub truncated: bool,
 }
 
 crate::wire::string_enum! {
-    /// Inline enum at `SnapShotAccessibilityCapturedImageFormat`.
-    SnapShotAccessibilityCapturedImageFormat {
-        ElementTree = "element-tree",
+    /// Inline enum at `SnapShotAccessibilityElementTreeCoordinateSpace`.
+    SnapShotAccessibilityElementTreeCoordinateSpace {
+        CapturedImage = "captured-image",
     }
 }
 
-/// Inline object at `SnapShotAccessibilityCapturedImageImageSize`.
+/// Inline object at `SnapShotAccessibilityElementTreeImageSize`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct SnapShotAccessibilityCapturedImageImageSize {
+pub struct SnapShotAccessibilityElementTreeImageSize {
     pub width: PositiveInt,
     pub height: PositiveInt,
 }
@@ -124,36 +117,36 @@ pub struct SnapShotAccessibilityNode {
     pub children: Vec<SnapShotAccessibilityNode>,
 }
 
-/// Inline object at `SnapShotAccessibilityCapturedImage`.
-/// Wire tag: `coordinateSpace: "captured-image"`.
+/// Inline object at `SnapShotAccessibilityElementTree`.
+/// Wire tag: `format: "element-tree"`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
-#[serde(tag = "coordinateSpace", rename = "captured-image", rename_all = "camelCase")]
-pub struct SnapShotAccessibilityCapturedImage {
-    pub format: SnapShotAccessibilityCapturedImageFormat,
-    pub image_size: SnapShotAccessibilityCapturedImageImageSize,
+#[serde(tag = "format", rename = "element-tree", rename_all = "camelCase")]
+pub struct SnapShotAccessibilityElementTree {
+    pub coordinate_space: SnapShotAccessibilityElementTreeCoordinateSpace,
+    pub image_size: SnapShotAccessibilityElementTreeImageSize,
     pub truncated: bool,
     pub root: SnapShotAccessibilityNode,
 }
 
 /// `SnapShotAccessibility` from `chatAttachment.ts`.
-/// Decoded by its `coordinateSpace` field; a tag this client does not know becomes `Unknown`.
+/// Decoded by its `format` field; a tag this client does not know becomes `Unknown`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum SnapShotAccessibility {
-    NoCoordinateSpace(SnapShotAccessibilityNoCoordinateSpace),
-    CapturedImage(SnapShotAccessibilityCapturedImage),
+    FlatText(SnapShotAccessibilityFlatText),
+    ElementTree(SnapShotAccessibilityElementTree),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
 impl<'de> ::serde::Deserialize<'de> for SnapShotAccessibility {
     fn deserialize<D: ::serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         let raw = crate::wire::Raw::new(d)?;
-        Ok(match raw.tag("coordinateSpace")? {
+        Ok(match raw.tag("format")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "captured-image" => Self::CapturedImage(raw.decode()?),
+                "flat-text" => Self::FlatText(raw.decode()?),
+                "element-tree" => Self::ElementTree(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
-            crate::wire::Tag::Absent => Self::NoCoordinateSpace(raw.decode()?),
             _ => Self::Unknown(raw.decode()?),
         })
     }
@@ -215,8 +208,8 @@ pub struct ChatFileAttachment {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum ChatAttachment {
-    ChatImageAttachment(ChatImageAttachment),
-    ChatFileAttachment(ChatFileAttachment),
+    Image(ChatImageAttachment),
+    File(ChatFileAttachment),
     /// A value from a newer server.
     Unknown(ChatUnknownAttachment),
 }
@@ -225,12 +218,19 @@ impl<'de> ::serde::Deserialize<'de> for ChatAttachment {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("type")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "image" => Self::ChatImageAttachment(raw.decode()?),
-                "file" => Self::ChatFileAttachment(raw.decode()?),
+                "image" => Self::Image(raw.decode()?),
+                "file" => Self::File(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
         })
+    }
+}
+
+crate::wire::string_enum! {
+    /// Inline enum at `UploadChatImageAttachmentType`.
+    UploadChatImageAttachmentType {
+        Image = "image",
     }
 }
 
@@ -240,7 +240,7 @@ impl<'de> ::serde::Deserialize<'de> for ChatAttachment {
 pub struct UploadChatImageAttachment {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
-    pub r#type: AttachmentCreateUploadUrlInputImageType,
+    pub r#type: UploadChatImageAttachmentType,
     pub name: String,
     pub mime_type: String,
     pub size_bytes: u64,

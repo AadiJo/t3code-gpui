@@ -82,6 +82,21 @@ pub struct TurnTokenUsageComplete {
 }
 
 crate::wire::string_enum! {
+    /// Inline enum at `TurnTokenUsagePartialOrUnavailableUsageScope`.
+    TurnTokenUsagePartialOrUnavailableUsageScope {
+        MainAgent = "main_agent",
+    }
+}
+
+/// Inline object at `TurnTokenUsagePartialOrUnavailableOtherUsage`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TurnTokenUsagePartialOrUnavailableOtherUsage {
+    pub input_tokens: NonNegativeInt,
+    pub output_tokens: NonNegativeInt,
+}
+
+crate::wire::string_enum! {
     /// Inline enum at `TurnTokenUsagePartialOrUnavailableUsageStatus`.
     TurnTokenUsagePartialOrUnavailableUsageStatus {
         Partial = "partial",
@@ -93,7 +108,7 @@ crate::wire::string_enum! {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TurnTokenUsagePartialOrUnavailable {
-    pub usage_scope: TurnTokenUsageCompleteUsageScope,
+    pub usage_scope: TurnTokenUsagePartialOrUnavailableUsageScope,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cached_input_tokens: Option<NonNegativeInt>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -106,7 +121,7 @@ pub struct TurnTokenUsagePartialOrUnavailable {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub local_command: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub other_usage: Option<TurnTokenUsageCompleteOtherUsage>,
+    pub other_usage: Option<TurnTokenUsagePartialOrUnavailableOtherUsage>,
     pub usage_status: TurnTokenUsagePartialOrUnavailableUsageStatus,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub input_tokens: Option<NonNegativeInt>,

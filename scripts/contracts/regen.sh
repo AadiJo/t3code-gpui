@@ -5,7 +5,8 @@
 #
 # 1. dump.mts exports every wire schema to packages/contracts/schema/rpc-schema.json.
 # 2. fixtures.mts encodes sample values with the real codec into schema/wire-fixtures.json.
-# 3. gen-rust.mjs writes packages/contracts/src/generated/ from the schema.
+# 3. gen-rust.mjs writes packages/contracts/src/generated/ from the schema, and the type registry
+#    of the wire_check example (cargo run -p t3code-contracts --example wire_check).
 # Without T3CODE_CHECKOUT only step 3 runs, from the committed schema.
 # The checkout needs its dependencies installed; node must be 24 or newer.
 set -euo pipefail
@@ -20,4 +21,5 @@ if [ -n "${T3CODE_CHECKOUT:-}" ]; then
 else
   echo "T3CODE_CHECKOUT not set: generating Rust from the committed schema only" >&2
 fi
-node "$here/gen-rust.mjs" "$schema/rpc-schema.json" "$root/packages/contracts/src/generated"
+node "$here/gen-rust.mjs" "$schema/rpc-schema.json" "$root/packages/contracts/src/generated" \
+  "$root/packages/contracts/examples/wire_check/registry.rs"

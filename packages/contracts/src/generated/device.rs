@@ -35,6 +35,24 @@ crate::wire::string_enum! {
     }
 }
 
+/// Inline union at `EasDeviceHostConfigAccessToken`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
+#[serde(untagged)]
+pub enum EasDeviceHostConfigAccessToken {
+    Text(String),
+    SecretReference(SecretReference),
+}
+impl<'de> ::serde::Deserialize<'de> for EasDeviceHostConfigAccessToken {
+    fn deserialize<D: ::serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let raw = crate::wire::Raw::new(d)?;
+        Ok(match raw.kind() {
+            crate::wire::JsonKind::String => Self::Text(raw.decode()?),
+            crate::wire::JsonKind::Object => Self::SecretReference(raw.decode()?),
+            other => return Err(raw.unexpected(other, "EasDeviceHostConfigAccessToken")),
+        })
+    }
+}
+
 /// `EasDeviceHostConfig` from `device.ts`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -45,7 +63,7 @@ pub struct EasDeviceHostConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub app_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub access_token: Option<ClientServerSettingsPatchCloudSpeechCredentialsOpenai>,
+    pub access_token: Option<EasDeviceHostConfigAccessToken>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_session_minutes: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -64,6 +82,24 @@ crate::wire::string_enum! {
     }
 }
 
+/// Inline union at `SimlockDeviceHostConfigAgentToken`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
+#[serde(untagged)]
+pub enum SimlockDeviceHostConfigAgentToken {
+    Text(String),
+    SecretReference(SecretReference),
+}
+impl<'de> ::serde::Deserialize<'de> for SimlockDeviceHostConfigAgentToken {
+    fn deserialize<D: ::serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let raw = crate::wire::Raw::new(d)?;
+        Ok(match raw.kind() {
+            crate::wire::JsonKind::String => Self::Text(raw.decode()?),
+            crate::wire::JsonKind::Object => Self::SecretReference(raw.decode()?),
+            other => return Err(raw.unexpected(other, "SimlockDeviceHostConfigAgentToken")),
+        })
+    }
+}
+
 /// `SimlockDeviceHostConfig` from `device.ts`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -73,7 +109,7 @@ pub struct SimlockDeviceHostConfig {
     pub label: String,
     pub gateway_url: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub agent_token: Option<ClientServerSettingsPatchCloudSpeechCredentialsOpenai>,
+    pub agent_token: Option<SimlockDeviceHostConfigAgentToken>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_leases: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -192,12 +228,12 @@ pub struct DeviceActionUnavailableError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum DeviceError {
-    DeviceHostUnavailableError(DeviceHostUnavailableError),
-    DevicePlatformUnavailableError(DevicePlatformUnavailableError),
-    DeviceNotFoundError(DeviceNotFoundError),
-    DeviceBootError(DeviceBootError),
-    DeviceOperationError(DeviceOperationError),
-    DeviceActionUnavailableError(DeviceActionUnavailableError),
+    HostUnavailable(DeviceHostUnavailableError),
+    PlatformUnavailable(DevicePlatformUnavailableError),
+    NotFound(DeviceNotFoundError),
+    Boot(DeviceBootError),
+    Operation(DeviceOperationError),
+    ActionUnavailable(DeviceActionUnavailableError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -206,12 +242,12 @@ impl<'de> ::serde::Deserialize<'de> for DeviceError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "DeviceHostUnavailableError" => Self::DeviceHostUnavailableError(raw.decode()?),
-                "DevicePlatformUnavailableError" => Self::DevicePlatformUnavailableError(raw.decode()?),
-                "DeviceNotFoundError" => Self::DeviceNotFoundError(raw.decode()?),
-                "DeviceBootError" => Self::DeviceBootError(raw.decode()?),
-                "DeviceOperationError" => Self::DeviceOperationError(raw.decode()?),
-                "DeviceActionUnavailableError" => Self::DeviceActionUnavailableError(raw.decode()?),
+                "DeviceHostUnavailableError" => Self::HostUnavailable(raw.decode()?),
+                "DevicePlatformUnavailableError" => Self::PlatformUnavailable(raw.decode()?),
+                "DeviceNotFoundError" => Self::NotFound(raw.decode()?),
+                "DeviceBootError" => Self::Boot(raw.decode()?),
+                "DeviceOperationError" => Self::Operation(raw.decode()?),
+                "DeviceActionUnavailableError" => Self::ActionUnavailable(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -631,6 +667,14 @@ pub struct DeviceToolVersions {
     pub agent: DeviceToolVersion,
 }
 
+crate::wire::string_enum! {
+    /// Inline enum at `DeviceSettingsLiquidGlass`.
+    DeviceSettingsLiquidGlass {
+        Clear = "clear",
+        Tinted = "tinted",
+    }
+}
+
 /// Inline object at `DeviceSettingsLocation`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -658,7 +702,7 @@ pub struct DeviceSettings {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub voice_over: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub liquid_glass: Option<DeviceActionInputSetLiquidGlassValue>,
+    pub liquid_glass: Option<DeviceSettingsLiquidGlass>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub color_filter: Option<DeviceColorFilter>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -732,6 +776,24 @@ pub struct DeviceEasAccountError {
     pub reason: String,
 }
 
+/// Inline union at `DeviceEasAccountInputAccessToken`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
+#[serde(untagged)]
+pub enum DeviceEasAccountInputAccessToken {
+    Text(String),
+    SecretReference(SecretReference),
+}
+impl<'de> ::serde::Deserialize<'de> for DeviceEasAccountInputAccessToken {
+    fn deserialize<D: ::serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let raw = crate::wire::Raw::new(d)?;
+        Ok(match raw.kind() {
+            crate::wire::JsonKind::String => Self::Text(raw.decode()?),
+            crate::wire::JsonKind::Object => Self::SecretReference(raw.decode()?),
+            other => return Err(raw.unexpected(other, "DeviceEasAccountInputAccessToken")),
+        })
+    }
+}
+
 /// `DeviceEasAccountInput` from `device.ts`.
 #[derive(Debug, Clone, Default, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -739,7 +801,7 @@ pub struct DeviceEasAccountInput {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub host_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub access_token: Option<ClientServerSettingsPatchCloudSpeechCredentialsOpenai>,
+    pub access_token: Option<DeviceEasAccountInputAccessToken>,
 }
 
 /// `DeviceHostSummary` from `device.ts`.
@@ -837,6 +899,24 @@ pub struct DeviceSimlockIdentityError {
     pub reason: String,
 }
 
+/// Inline union at `DeviceSimlockIdentityInputAgentToken`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
+#[serde(untagged)]
+pub enum DeviceSimlockIdentityInputAgentToken {
+    Text(String),
+    SecretReference(SecretReference),
+}
+impl<'de> ::serde::Deserialize<'de> for DeviceSimlockIdentityInputAgentToken {
+    fn deserialize<D: ::serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let raw = crate::wire::Raw::new(d)?;
+        Ok(match raw.kind() {
+            crate::wire::JsonKind::String => Self::Text(raw.decode()?),
+            crate::wire::JsonKind::Object => Self::SecretReference(raw.decode()?),
+            other => return Err(raw.unexpected(other, "DeviceSimlockIdentityInputAgentToken")),
+        })
+    }
+}
+
 /// `DeviceSimlockIdentityInput` from `device.ts`.
 #[derive(Debug, Clone, Default, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -846,5 +926,5 @@ pub struct DeviceSimlockIdentityInput {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub host_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub agent_token: Option<ClientServerSettingsPatchCloudSpeechCredentialsOpenai>,
+    pub agent_token: Option<DeviceSimlockIdentityInputAgentToken>,
 }

@@ -108,9 +108,9 @@ pub struct EnvironmentAuthInvalidError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum AuthApproveConnectDeviceError {
-    EnvironmentScopeRequiredError(EnvironmentScopeRequiredError),
-    EnvironmentInternalError(EnvironmentInternalError),
-    EnvironmentAuthInvalidError(EnvironmentAuthInvalidError),
+    EnvironmentScopeRequired(EnvironmentScopeRequiredError),
+    EnvironmentInternal(EnvironmentInternalError),
+    EnvironmentAuthInvalid(EnvironmentAuthInvalidError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -119,9 +119,9 @@ impl<'de> ::serde::Deserialize<'de> for AuthApproveConnectDeviceError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "EnvironmentScopeRequiredError" => Self::EnvironmentScopeRequiredError(raw.decode()?),
-                "EnvironmentInternalError" => Self::EnvironmentInternalError(raw.decode()?),
-                "EnvironmentAuthInvalidError" => Self::EnvironmentAuthInvalidError(raw.decode()?),
+                "EnvironmentScopeRequiredError" => Self::EnvironmentScopeRequired(raw.decode()?),
+                "EnvironmentInternalError" => Self::EnvironmentInternal(raw.decode()?),
+                "EnvironmentAuthInvalidError" => Self::EnvironmentAuthInvalid(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -144,8 +144,8 @@ pub struct AuthApproveConnectDeviceHeaders {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum AuthBrowserSessionError {
-    EnvironmentAuthInvalidError(EnvironmentAuthInvalidError),
-    EnvironmentInternalError(EnvironmentInternalError),
+    EnvironmentAuthInvalid(EnvironmentAuthInvalidError),
+    EnvironmentInternal(EnvironmentInternalError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -154,8 +154,8 @@ impl<'de> ::serde::Deserialize<'de> for AuthBrowserSessionError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "EnvironmentAuthInvalidError" => Self::EnvironmentAuthInvalidError(raw.decode()?),
-                "EnvironmentInternalError" => Self::EnvironmentInternalError(raw.decode()?),
+                "EnvironmentAuthInvalidError" => Self::EnvironmentAuthInvalid(raw.decode()?),
+                "EnvironmentInternalError" => Self::EnvironmentInternal(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -216,39 +216,16 @@ pub struct EnvironmentHttpForbiddenError {
     pub message: String,
 }
 
-/// Inline union at `AuthPairingCredentialErrorEnvironmentHttpForbiddenErrorOrEnvironmentScopeRequiredError`.
-/// Decoded by its `_tag` field; a tag this client does not know becomes `Unknown`.
-#[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
-#[serde(untagged)]
-pub enum AuthPairingCredentialErrorEnvironmentHttpForbiddenErrorOrEnvironmentScopeRequiredError {
-    EnvironmentHttpForbiddenError(EnvironmentHttpForbiddenError),
-    EnvironmentScopeRequiredError(EnvironmentScopeRequiredError),
-    /// A value from a newer server.
-    Unknown(::serde_json::Value),
-}
-impl<'de> ::serde::Deserialize<'de> for AuthPairingCredentialErrorEnvironmentHttpForbiddenErrorOrEnvironmentScopeRequiredError {
-    fn deserialize<D: ::serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        let raw = crate::wire::Raw::new(d)?;
-        Ok(match raw.tag("_tag")? {
-            crate::wire::Tag::Str(tag) => match &*tag {
-                "EnvironmentHttpForbiddenError" => Self::EnvironmentHttpForbiddenError(raw.decode()?),
-                "EnvironmentScopeRequiredError" => Self::EnvironmentScopeRequiredError(raw.decode()?),
-                _ => Self::Unknown(raw.decode()?),
-            },
-            _ => Self::Unknown(raw.decode()?),
-        })
-    }
-}
-
 /// `AuthPairingCredentialError` from `environmentHttp.ts`.
 /// Decoded by its `_tag` field; a tag this client does not know becomes `Unknown`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum AuthPairingCredentialError {
-    EnvironmentRequestInvalidError(EnvironmentRequestInvalidError),
-    EnvironmentHttpForbiddenErrorOrEnvironmentScopeRequiredError(AuthPairingCredentialErrorEnvironmentHttpForbiddenErrorOrEnvironmentScopeRequiredError),
-    EnvironmentInternalError(EnvironmentInternalError),
-    EnvironmentAuthInvalidError(EnvironmentAuthInvalidError),
+    EnvironmentRequestInvalid(EnvironmentRequestInvalidError),
+    EnvironmentHttpForbidden(EnvironmentHttpForbiddenError),
+    EnvironmentScopeRequired(EnvironmentScopeRequiredError),
+    EnvironmentInternal(EnvironmentInternalError),
+    EnvironmentAuthInvalid(EnvironmentAuthInvalidError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -257,10 +234,11 @@ impl<'de> ::serde::Deserialize<'de> for AuthPairingCredentialError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "EnvironmentRequestInvalidError" => Self::EnvironmentRequestInvalidError(raw.decode()?),
-                "EnvironmentHttpForbiddenError" | "EnvironmentScopeRequiredError" => Self::EnvironmentHttpForbiddenErrorOrEnvironmentScopeRequiredError(raw.decode()?),
-                "EnvironmentInternalError" => Self::EnvironmentInternalError(raw.decode()?),
-                "EnvironmentAuthInvalidError" => Self::EnvironmentAuthInvalidError(raw.decode()?),
+                "EnvironmentRequestInvalidError" => Self::EnvironmentRequestInvalid(raw.decode()?),
+                "EnvironmentHttpForbiddenError" => Self::EnvironmentHttpForbidden(raw.decode()?),
+                "EnvironmentScopeRequiredError" => Self::EnvironmentScopeRequired(raw.decode()?),
+                "EnvironmentInternalError" => Self::EnvironmentInternal(raw.decode()?),
+                "EnvironmentAuthInvalidError" => Self::EnvironmentAuthInvalid(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -312,38 +290,15 @@ pub struct EnvironmentOperationForbiddenError {
     pub trace_id: String,
 }
 
-/// Inline union at `AuthRevokeClientErrorEnvironmentScopeRequiredErrorOrEnvironmentOperationForbiddenError`.
-/// Decoded by its `_tag` field; a tag this client does not know becomes `Unknown`.
-#[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
-#[serde(untagged)]
-pub enum AuthRevokeClientErrorEnvironmentScopeRequiredErrorOrEnvironmentOperationForbiddenError {
-    EnvironmentScopeRequiredError(EnvironmentScopeRequiredError),
-    EnvironmentOperationForbiddenError(EnvironmentOperationForbiddenError),
-    /// A value from a newer server.
-    Unknown(::serde_json::Value),
-}
-impl<'de> ::serde::Deserialize<'de> for AuthRevokeClientErrorEnvironmentScopeRequiredErrorOrEnvironmentOperationForbiddenError {
-    fn deserialize<D: ::serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        let raw = crate::wire::Raw::new(d)?;
-        Ok(match raw.tag("_tag")? {
-            crate::wire::Tag::Str(tag) => match &*tag {
-                "EnvironmentScopeRequiredError" => Self::EnvironmentScopeRequiredError(raw.decode()?),
-                "EnvironmentOperationForbiddenError" => Self::EnvironmentOperationForbiddenError(raw.decode()?),
-                _ => Self::Unknown(raw.decode()?),
-            },
-            _ => Self::Unknown(raw.decode()?),
-        })
-    }
-}
-
 /// `AuthRevokeClientError` from `environmentHttp.ts`.
 /// Decoded by its `_tag` field; a tag this client does not know becomes `Unknown`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum AuthRevokeClientError {
-    EnvironmentScopeRequiredErrorOrEnvironmentOperationForbiddenError(AuthRevokeClientErrorEnvironmentScopeRequiredErrorOrEnvironmentOperationForbiddenError),
-    EnvironmentInternalError(EnvironmentInternalError),
-    EnvironmentAuthInvalidError(EnvironmentAuthInvalidError),
+    EnvironmentScopeRequired(EnvironmentScopeRequiredError),
+    EnvironmentOperationForbidden(EnvironmentOperationForbiddenError),
+    EnvironmentInternal(EnvironmentInternalError),
+    EnvironmentAuthInvalid(EnvironmentAuthInvalidError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -352,9 +307,10 @@ impl<'de> ::serde::Deserialize<'de> for AuthRevokeClientError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "EnvironmentScopeRequiredError" | "EnvironmentOperationForbiddenError" => Self::EnvironmentScopeRequiredErrorOrEnvironmentOperationForbiddenError(raw.decode()?),
-                "EnvironmentInternalError" => Self::EnvironmentInternalError(raw.decode()?),
-                "EnvironmentAuthInvalidError" => Self::EnvironmentAuthInvalidError(raw.decode()?),
+                "EnvironmentScopeRequiredError" => Self::EnvironmentScopeRequired(raw.decode()?),
+                "EnvironmentOperationForbiddenError" => Self::EnvironmentOperationForbidden(raw.decode()?),
+                "EnvironmentInternalError" => Self::EnvironmentInternal(raw.decode()?),
+                "EnvironmentAuthInvalidError" => Self::EnvironmentAuthInvalid(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -377,9 +333,9 @@ pub struct AuthRevokeClientHeaders {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum AuthRevokeConnectDeviceError {
-    EnvironmentScopeRequiredError(EnvironmentScopeRequiredError),
-    EnvironmentInternalError(EnvironmentInternalError),
-    EnvironmentAuthInvalidError(EnvironmentAuthInvalidError),
+    EnvironmentScopeRequired(EnvironmentScopeRequiredError),
+    EnvironmentInternal(EnvironmentInternalError),
+    EnvironmentAuthInvalid(EnvironmentAuthInvalidError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -388,9 +344,9 @@ impl<'de> ::serde::Deserialize<'de> for AuthRevokeConnectDeviceError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "EnvironmentScopeRequiredError" => Self::EnvironmentScopeRequiredError(raw.decode()?),
-                "EnvironmentInternalError" => Self::EnvironmentInternalError(raw.decode()?),
-                "EnvironmentAuthInvalidError" => Self::EnvironmentAuthInvalidError(raw.decode()?),
+                "EnvironmentScopeRequiredError" => Self::EnvironmentScopeRequired(raw.decode()?),
+                "EnvironmentInternalError" => Self::EnvironmentInternal(raw.decode()?),
+                "EnvironmentAuthInvalidError" => Self::EnvironmentAuthInvalid(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -413,9 +369,9 @@ pub struct AuthRevokeConnectDeviceHeaders {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum AuthRevokeOtherClientsError {
-    EnvironmentScopeRequiredError(EnvironmentScopeRequiredError),
-    EnvironmentInternalError(EnvironmentInternalError),
-    EnvironmentAuthInvalidError(EnvironmentAuthInvalidError),
+    EnvironmentScopeRequired(EnvironmentScopeRequiredError),
+    EnvironmentInternal(EnvironmentInternalError),
+    EnvironmentAuthInvalid(EnvironmentAuthInvalidError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -424,9 +380,9 @@ impl<'de> ::serde::Deserialize<'de> for AuthRevokeOtherClientsError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "EnvironmentScopeRequiredError" => Self::EnvironmentScopeRequiredError(raw.decode()?),
-                "EnvironmentInternalError" => Self::EnvironmentInternalError(raw.decode()?),
-                "EnvironmentAuthInvalidError" => Self::EnvironmentAuthInvalidError(raw.decode()?),
+                "EnvironmentScopeRequiredError" => Self::EnvironmentScopeRequired(raw.decode()?),
+                "EnvironmentInternalError" => Self::EnvironmentInternal(raw.decode()?),
+                "EnvironmentAuthInvalidError" => Self::EnvironmentAuthInvalid(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -449,9 +405,9 @@ pub struct AuthRevokeOtherClientsHeaders {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum AuthRevokePairingLinkError {
-    EnvironmentScopeRequiredError(EnvironmentScopeRequiredError),
-    EnvironmentInternalError(EnvironmentInternalError),
-    EnvironmentAuthInvalidError(EnvironmentAuthInvalidError),
+    EnvironmentScopeRequired(EnvironmentScopeRequiredError),
+    EnvironmentInternal(EnvironmentInternalError),
+    EnvironmentAuthInvalid(EnvironmentAuthInvalidError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -460,9 +416,9 @@ impl<'de> ::serde::Deserialize<'de> for AuthRevokePairingLinkError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "EnvironmentScopeRequiredError" => Self::EnvironmentScopeRequiredError(raw.decode()?),
-                "EnvironmentInternalError" => Self::EnvironmentInternalError(raw.decode()?),
-                "EnvironmentAuthInvalidError" => Self::EnvironmentAuthInvalidError(raw.decode()?),
+                "EnvironmentScopeRequiredError" => Self::EnvironmentScopeRequired(raw.decode()?),
+                "EnvironmentInternalError" => Self::EnvironmentInternal(raw.decode()?),
+                "EnvironmentAuthInvalidError" => Self::EnvironmentAuthInvalid(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -511,10 +467,10 @@ pub struct EnvironmentConnectApprovalPendingError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum AuthTokenError {
-    EnvironmentRequestInvalidError(EnvironmentRequestInvalidError),
-    EnvironmentAuthInvalidError(EnvironmentAuthInvalidError),
-    EnvironmentConnectApprovalPendingError(EnvironmentConnectApprovalPendingError),
-    EnvironmentInternalError(EnvironmentInternalError),
+    EnvironmentRequestInvalid(EnvironmentRequestInvalidError),
+    EnvironmentAuthInvalid(EnvironmentAuthInvalidError),
+    EnvironmentConnectApprovalPending(EnvironmentConnectApprovalPendingError),
+    EnvironmentInternal(EnvironmentInternalError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -523,10 +479,10 @@ impl<'de> ::serde::Deserialize<'de> for AuthTokenError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "EnvironmentRequestInvalidError" => Self::EnvironmentRequestInvalidError(raw.decode()?),
-                "EnvironmentAuthInvalidError" => Self::EnvironmentAuthInvalidError(raw.decode()?),
-                "EnvironmentConnectApprovalPendingError" => Self::EnvironmentConnectApprovalPendingError(raw.decode()?),
-                "EnvironmentInternalError" => Self::EnvironmentInternalError(raw.decode()?),
+                "EnvironmentRequestInvalidError" => Self::EnvironmentRequestInvalid(raw.decode()?),
+                "EnvironmentAuthInvalidError" => Self::EnvironmentAuthInvalid(raw.decode()?),
+                "EnvironmentConnectApprovalPendingError" => Self::EnvironmentConnectApprovalPending(raw.decode()?),
+                "EnvironmentInternalError" => Self::EnvironmentInternal(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -547,8 +503,8 @@ pub struct AuthTokenHeaders {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum AuthWebSocketTicketError {
-    EnvironmentInternalError(EnvironmentInternalError),
-    EnvironmentAuthInvalidError(EnvironmentAuthInvalidError),
+    EnvironmentInternal(EnvironmentInternalError),
+    EnvironmentAuthInvalid(EnvironmentAuthInvalidError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -557,8 +513,8 @@ impl<'de> ::serde::Deserialize<'de> for AuthWebSocketTicketError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "EnvironmentInternalError" => Self::EnvironmentInternalError(raw.decode()?),
-                "EnvironmentAuthInvalidError" => Self::EnvironmentAuthInvalidError(raw.decode()?),
+                "EnvironmentInternalError" => Self::EnvironmentInternal(raw.decode()?),
+                "EnvironmentAuthInvalidError" => Self::EnvironmentAuthInvalid(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -571,8 +527,8 @@ impl<'de> ::serde::Deserialize<'de> for AuthWebSocketTicketError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum AuthWebSocketTicketForError {
-    EnvironmentInternalError(EnvironmentInternalError),
-    EnvironmentAuthInvalidError(EnvironmentAuthInvalidError),
+    EnvironmentInternal(EnvironmentInternalError),
+    EnvironmentAuthInvalid(EnvironmentAuthInvalidError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -581,8 +537,8 @@ impl<'de> ::serde::Deserialize<'de> for AuthWebSocketTicketForError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "EnvironmentInternalError" => Self::EnvironmentInternalError(raw.decode()?),
-                "EnvironmentAuthInvalidError" => Self::EnvironmentAuthInvalidError(raw.decode()?),
+                "EnvironmentInternalError" => Self::EnvironmentInternal(raw.decode()?),
+                "EnvironmentAuthInvalidError" => Self::EnvironmentAuthInvalid(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -626,30 +582,6 @@ pub struct EnvironmentHttpUnauthorizedError {
     pub message: String,
 }
 
-/// Inline union at `ConnectCheckReachabilityErrorEnvironmentHttpUnauthorizedErrorOrEnvironmentAuthInvalidError`.
-/// Decoded by its `_tag` field; a tag this client does not know becomes `Unknown`.
-#[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
-#[serde(untagged)]
-pub enum ConnectCheckReachabilityErrorEnvironmentHttpUnauthorizedErrorOrEnvironmentAuthInvalidError {
-    EnvironmentHttpUnauthorizedError(EnvironmentHttpUnauthorizedError),
-    EnvironmentAuthInvalidError(EnvironmentAuthInvalidError),
-    /// A value from a newer server.
-    Unknown(::serde_json::Value),
-}
-impl<'de> ::serde::Deserialize<'de> for ConnectCheckReachabilityErrorEnvironmentHttpUnauthorizedErrorOrEnvironmentAuthInvalidError {
-    fn deserialize<D: ::serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        let raw = crate::wire::Raw::new(d)?;
-        Ok(match raw.tag("_tag")? {
-            crate::wire::Tag::Str(tag) => match &*tag {
-                "EnvironmentHttpUnauthorizedError" => Self::EnvironmentHttpUnauthorizedError(raw.decode()?),
-                "EnvironmentAuthInvalidError" => Self::EnvironmentAuthInvalidError(raw.decode()?),
-                _ => Self::Unknown(raw.decode()?),
-            },
-            _ => Self::Unknown(raw.decode()?),
-        })
-    }
-}
-
 /// `EnvironmentHttpConflictError` from `environmentHttp.ts`.
 /// Wire tag: `_tag: "EnvironmentHttpConflictError"`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
@@ -666,40 +598,19 @@ pub struct EnvironmentHttpInternalServerError {
     pub message: String,
 }
 
-/// Inline union at `ConnectCheckReachabilityErrorEnvironmentHttpInternalServerErrorOrEnvironmentInternalError`.
-/// Decoded by its `_tag` field; a tag this client does not know becomes `Unknown`.
-#[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
-#[serde(untagged)]
-pub enum ConnectCheckReachabilityErrorEnvironmentHttpInternalServerErrorOrEnvironmentInternalError {
-    EnvironmentHttpInternalServerError(EnvironmentHttpInternalServerError),
-    EnvironmentInternalError(EnvironmentInternalError),
-    /// A value from a newer server.
-    Unknown(::serde_json::Value),
-}
-impl<'de> ::serde::Deserialize<'de> for ConnectCheckReachabilityErrorEnvironmentHttpInternalServerErrorOrEnvironmentInternalError {
-    fn deserialize<D: ::serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        let raw = crate::wire::Raw::new(d)?;
-        Ok(match raw.tag("_tag")? {
-            crate::wire::Tag::Str(tag) => match &*tag {
-                "EnvironmentHttpInternalServerError" => Self::EnvironmentHttpInternalServerError(raw.decode()?),
-                "EnvironmentInternalError" => Self::EnvironmentInternalError(raw.decode()?),
-                _ => Self::Unknown(raw.decode()?),
-            },
-            _ => Self::Unknown(raw.decode()?),
-        })
-    }
-}
-
 /// `ConnectCheckReachabilityError` from `environmentHttp.ts`.
 /// Decoded by its `_tag` field; a tag this client does not know becomes `Unknown`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum ConnectCheckReachabilityError {
-    EnvironmentHttpBadRequestError(EnvironmentHttpBadRequestError),
-    EnvironmentHttpUnauthorizedErrorOrEnvironmentAuthInvalidError(ConnectCheckReachabilityErrorEnvironmentHttpUnauthorizedErrorOrEnvironmentAuthInvalidError),
-    EnvironmentHttpForbiddenErrorOrEnvironmentScopeRequiredError(AuthPairingCredentialErrorEnvironmentHttpForbiddenErrorOrEnvironmentScopeRequiredError),
-    EnvironmentHttpConflictError(EnvironmentHttpConflictError),
-    EnvironmentHttpInternalServerErrorOrEnvironmentInternalError(ConnectCheckReachabilityErrorEnvironmentHttpInternalServerErrorOrEnvironmentInternalError),
+    EnvironmentHttpBadRequest(EnvironmentHttpBadRequestError),
+    EnvironmentHttpUnauthorized(EnvironmentHttpUnauthorizedError),
+    EnvironmentAuthInvalid(EnvironmentAuthInvalidError),
+    EnvironmentHttpForbidden(EnvironmentHttpForbiddenError),
+    EnvironmentScopeRequired(EnvironmentScopeRequiredError),
+    EnvironmentHttpConflict(EnvironmentHttpConflictError),
+    EnvironmentHttpInternalServer(EnvironmentHttpInternalServerError),
+    EnvironmentInternal(EnvironmentInternalError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -708,11 +619,14 @@ impl<'de> ::serde::Deserialize<'de> for ConnectCheckReachabilityError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "EnvironmentHttpBadRequestError" => Self::EnvironmentHttpBadRequestError(raw.decode()?),
-                "EnvironmentHttpUnauthorizedError" | "EnvironmentAuthInvalidError" => Self::EnvironmentHttpUnauthorizedErrorOrEnvironmentAuthInvalidError(raw.decode()?),
-                "EnvironmentHttpForbiddenError" | "EnvironmentScopeRequiredError" => Self::EnvironmentHttpForbiddenErrorOrEnvironmentScopeRequiredError(raw.decode()?),
-                "EnvironmentHttpConflictError" => Self::EnvironmentHttpConflictError(raw.decode()?),
-                "EnvironmentHttpInternalServerError" | "EnvironmentInternalError" => Self::EnvironmentHttpInternalServerErrorOrEnvironmentInternalError(raw.decode()?),
+                "EnvironmentHttpBadRequestError" => Self::EnvironmentHttpBadRequest(raw.decode()?),
+                "EnvironmentHttpUnauthorizedError" => Self::EnvironmentHttpUnauthorized(raw.decode()?),
+                "EnvironmentAuthInvalidError" => Self::EnvironmentAuthInvalid(raw.decode()?),
+                "EnvironmentHttpForbiddenError" => Self::EnvironmentHttpForbidden(raw.decode()?),
+                "EnvironmentScopeRequiredError" => Self::EnvironmentScopeRequired(raw.decode()?),
+                "EnvironmentHttpConflictError" => Self::EnvironmentHttpConflict(raw.decode()?),
+                "EnvironmentHttpInternalServerError" => Self::EnvironmentHttpInternalServer(raw.decode()?),
+                "EnvironmentInternalError" => Self::EnvironmentInternal(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -735,11 +649,14 @@ pub struct ConnectCheckReachabilityHeaders {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum ConnectLinkProofError {
-    EnvironmentHttpBadRequestError(EnvironmentHttpBadRequestError),
-    EnvironmentHttpUnauthorizedErrorOrEnvironmentAuthInvalidError(ConnectCheckReachabilityErrorEnvironmentHttpUnauthorizedErrorOrEnvironmentAuthInvalidError),
-    EnvironmentHttpForbiddenErrorOrEnvironmentScopeRequiredError(AuthPairingCredentialErrorEnvironmentHttpForbiddenErrorOrEnvironmentScopeRequiredError),
-    EnvironmentHttpConflictError(EnvironmentHttpConflictError),
-    EnvironmentHttpInternalServerErrorOrEnvironmentInternalError(ConnectCheckReachabilityErrorEnvironmentHttpInternalServerErrorOrEnvironmentInternalError),
+    EnvironmentHttpBadRequest(EnvironmentHttpBadRequestError),
+    EnvironmentHttpUnauthorized(EnvironmentHttpUnauthorizedError),
+    EnvironmentAuthInvalid(EnvironmentAuthInvalidError),
+    EnvironmentHttpForbidden(EnvironmentHttpForbiddenError),
+    EnvironmentScopeRequired(EnvironmentScopeRequiredError),
+    EnvironmentHttpConflict(EnvironmentHttpConflictError),
+    EnvironmentHttpInternalServer(EnvironmentHttpInternalServerError),
+    EnvironmentInternal(EnvironmentInternalError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -748,11 +665,14 @@ impl<'de> ::serde::Deserialize<'de> for ConnectLinkProofError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "EnvironmentHttpBadRequestError" => Self::EnvironmentHttpBadRequestError(raw.decode()?),
-                "EnvironmentHttpUnauthorizedError" | "EnvironmentAuthInvalidError" => Self::EnvironmentHttpUnauthorizedErrorOrEnvironmentAuthInvalidError(raw.decode()?),
-                "EnvironmentHttpForbiddenError" | "EnvironmentScopeRequiredError" => Self::EnvironmentHttpForbiddenErrorOrEnvironmentScopeRequiredError(raw.decode()?),
-                "EnvironmentHttpConflictError" => Self::EnvironmentHttpConflictError(raw.decode()?),
-                "EnvironmentHttpInternalServerError" | "EnvironmentInternalError" => Self::EnvironmentHttpInternalServerErrorOrEnvironmentInternalError(raw.decode()?),
+                "EnvironmentHttpBadRequestError" => Self::EnvironmentHttpBadRequest(raw.decode()?),
+                "EnvironmentHttpUnauthorizedError" => Self::EnvironmentHttpUnauthorized(raw.decode()?),
+                "EnvironmentAuthInvalidError" => Self::EnvironmentAuthInvalid(raw.decode()?),
+                "EnvironmentHttpForbiddenError" => Self::EnvironmentHttpForbidden(raw.decode()?),
+                "EnvironmentScopeRequiredError" => Self::EnvironmentScopeRequired(raw.decode()?),
+                "EnvironmentHttpConflictError" => Self::EnvironmentHttpConflict(raw.decode()?),
+                "EnvironmentHttpInternalServerError" => Self::EnvironmentHttpInternalServer(raw.decode()?),
+                "EnvironmentInternalError" => Self::EnvironmentInternal(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -780,11 +700,14 @@ crate::wire::id_newtype! {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum ConnectLinkStateError {
-    EnvironmentHttpBadRequestError(EnvironmentHttpBadRequestError),
-    EnvironmentHttpUnauthorizedErrorOrEnvironmentAuthInvalidError(ConnectCheckReachabilityErrorEnvironmentHttpUnauthorizedErrorOrEnvironmentAuthInvalidError),
-    EnvironmentHttpForbiddenErrorOrEnvironmentScopeRequiredError(AuthPairingCredentialErrorEnvironmentHttpForbiddenErrorOrEnvironmentScopeRequiredError),
-    EnvironmentHttpConflictError(EnvironmentHttpConflictError),
-    EnvironmentHttpInternalServerErrorOrEnvironmentInternalError(ConnectCheckReachabilityErrorEnvironmentHttpInternalServerErrorOrEnvironmentInternalError),
+    EnvironmentHttpBadRequest(EnvironmentHttpBadRequestError),
+    EnvironmentHttpUnauthorized(EnvironmentHttpUnauthorizedError),
+    EnvironmentAuthInvalid(EnvironmentAuthInvalidError),
+    EnvironmentHttpForbidden(EnvironmentHttpForbiddenError),
+    EnvironmentScopeRequired(EnvironmentScopeRequiredError),
+    EnvironmentHttpConflict(EnvironmentHttpConflictError),
+    EnvironmentHttpInternalServer(EnvironmentHttpInternalServerError),
+    EnvironmentInternal(EnvironmentInternalError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -793,11 +716,14 @@ impl<'de> ::serde::Deserialize<'de> for ConnectLinkStateError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "EnvironmentHttpBadRequestError" => Self::EnvironmentHttpBadRequestError(raw.decode()?),
-                "EnvironmentHttpUnauthorizedError" | "EnvironmentAuthInvalidError" => Self::EnvironmentHttpUnauthorizedErrorOrEnvironmentAuthInvalidError(raw.decode()?),
-                "EnvironmentHttpForbiddenError" | "EnvironmentScopeRequiredError" => Self::EnvironmentHttpForbiddenErrorOrEnvironmentScopeRequiredError(raw.decode()?),
-                "EnvironmentHttpConflictError" => Self::EnvironmentHttpConflictError(raw.decode()?),
-                "EnvironmentHttpInternalServerError" | "EnvironmentInternalError" => Self::EnvironmentHttpInternalServerErrorOrEnvironmentInternalError(raw.decode()?),
+                "EnvironmentHttpBadRequestError" => Self::EnvironmentHttpBadRequest(raw.decode()?),
+                "EnvironmentHttpUnauthorizedError" => Self::EnvironmentHttpUnauthorized(raw.decode()?),
+                "EnvironmentAuthInvalidError" => Self::EnvironmentAuthInvalid(raw.decode()?),
+                "EnvironmentHttpForbiddenError" => Self::EnvironmentHttpForbidden(raw.decode()?),
+                "EnvironmentScopeRequiredError" => Self::EnvironmentScopeRequired(raw.decode()?),
+                "EnvironmentHttpConflictError" => Self::EnvironmentHttpConflict(raw.decode()?),
+                "EnvironmentHttpInternalServerError" => Self::EnvironmentHttpInternalServer(raw.decode()?),
+                "EnvironmentInternalError" => Self::EnvironmentInternal(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -827,11 +753,14 @@ pub struct ConnectLiveActivityPreferenceBody {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum ConnectLiveActivityPreferenceError {
-    EnvironmentHttpBadRequestError(EnvironmentHttpBadRequestError),
-    EnvironmentHttpUnauthorizedErrorOrEnvironmentAuthInvalidError(ConnectCheckReachabilityErrorEnvironmentHttpUnauthorizedErrorOrEnvironmentAuthInvalidError),
-    EnvironmentHttpForbiddenErrorOrEnvironmentScopeRequiredError(AuthPairingCredentialErrorEnvironmentHttpForbiddenErrorOrEnvironmentScopeRequiredError),
-    EnvironmentHttpConflictError(EnvironmentHttpConflictError),
-    EnvironmentHttpInternalServerErrorOrEnvironmentInternalError(ConnectCheckReachabilityErrorEnvironmentHttpInternalServerErrorOrEnvironmentInternalError),
+    EnvironmentHttpBadRequest(EnvironmentHttpBadRequestError),
+    EnvironmentHttpUnauthorized(EnvironmentHttpUnauthorizedError),
+    EnvironmentAuthInvalid(EnvironmentAuthInvalidError),
+    EnvironmentHttpForbidden(EnvironmentHttpForbiddenError),
+    EnvironmentScopeRequired(EnvironmentScopeRequiredError),
+    EnvironmentHttpConflict(EnvironmentHttpConflictError),
+    EnvironmentHttpInternalServer(EnvironmentHttpInternalServerError),
+    EnvironmentInternal(EnvironmentInternalError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -840,11 +769,14 @@ impl<'de> ::serde::Deserialize<'de> for ConnectLiveActivityPreferenceError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "EnvironmentHttpBadRequestError" => Self::EnvironmentHttpBadRequestError(raw.decode()?),
-                "EnvironmentHttpUnauthorizedError" | "EnvironmentAuthInvalidError" => Self::EnvironmentHttpUnauthorizedErrorOrEnvironmentAuthInvalidError(raw.decode()?),
-                "EnvironmentHttpForbiddenError" | "EnvironmentScopeRequiredError" => Self::EnvironmentHttpForbiddenErrorOrEnvironmentScopeRequiredError(raw.decode()?),
-                "EnvironmentHttpConflictError" => Self::EnvironmentHttpConflictError(raw.decode()?),
-                "EnvironmentHttpInternalServerError" | "EnvironmentInternalError" => Self::EnvironmentHttpInternalServerErrorOrEnvironmentInternalError(raw.decode()?),
+                "EnvironmentHttpBadRequestError" => Self::EnvironmentHttpBadRequest(raw.decode()?),
+                "EnvironmentHttpUnauthorizedError" => Self::EnvironmentHttpUnauthorized(raw.decode()?),
+                "EnvironmentAuthInvalidError" => Self::EnvironmentAuthInvalid(raw.decode()?),
+                "EnvironmentHttpForbiddenError" => Self::EnvironmentHttpForbidden(raw.decode()?),
+                "EnvironmentScopeRequiredError" => Self::EnvironmentScopeRequired(raw.decode()?),
+                "EnvironmentHttpConflictError" => Self::EnvironmentHttpConflict(raw.decode()?),
+                "EnvironmentHttpInternalServerError" => Self::EnvironmentHttpInternalServer(raw.decode()?),
+                "EnvironmentInternalError" => Self::EnvironmentInternal(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -867,11 +799,14 @@ pub struct ConnectLiveActivityPreferenceHeaders {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum ConnectPreferencesError {
-    EnvironmentHttpBadRequestError(EnvironmentHttpBadRequestError),
-    EnvironmentHttpUnauthorizedErrorOrEnvironmentAuthInvalidError(ConnectCheckReachabilityErrorEnvironmentHttpUnauthorizedErrorOrEnvironmentAuthInvalidError),
-    EnvironmentHttpForbiddenErrorOrEnvironmentScopeRequiredError(AuthPairingCredentialErrorEnvironmentHttpForbiddenErrorOrEnvironmentScopeRequiredError),
-    EnvironmentHttpConflictError(EnvironmentHttpConflictError),
-    EnvironmentHttpInternalServerErrorOrEnvironmentInternalError(ConnectCheckReachabilityErrorEnvironmentHttpInternalServerErrorOrEnvironmentInternalError),
+    EnvironmentHttpBadRequest(EnvironmentHttpBadRequestError),
+    EnvironmentHttpUnauthorized(EnvironmentHttpUnauthorizedError),
+    EnvironmentAuthInvalid(EnvironmentAuthInvalidError),
+    EnvironmentHttpForbidden(EnvironmentHttpForbiddenError),
+    EnvironmentScopeRequired(EnvironmentScopeRequiredError),
+    EnvironmentHttpConflict(EnvironmentHttpConflictError),
+    EnvironmentHttpInternalServer(EnvironmentHttpInternalServerError),
+    EnvironmentInternal(EnvironmentInternalError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -880,11 +815,14 @@ impl<'de> ::serde::Deserialize<'de> for ConnectPreferencesError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "EnvironmentHttpBadRequestError" => Self::EnvironmentHttpBadRequestError(raw.decode()?),
-                "EnvironmentHttpUnauthorizedError" | "EnvironmentAuthInvalidError" => Self::EnvironmentHttpUnauthorizedErrorOrEnvironmentAuthInvalidError(raw.decode()?),
-                "EnvironmentHttpForbiddenError" | "EnvironmentScopeRequiredError" => Self::EnvironmentHttpForbiddenErrorOrEnvironmentScopeRequiredError(raw.decode()?),
-                "EnvironmentHttpConflictError" => Self::EnvironmentHttpConflictError(raw.decode()?),
-                "EnvironmentHttpInternalServerError" | "EnvironmentInternalError" => Self::EnvironmentHttpInternalServerErrorOrEnvironmentInternalError(raw.decode()?),
+                "EnvironmentHttpBadRequestError" => Self::EnvironmentHttpBadRequest(raw.decode()?),
+                "EnvironmentHttpUnauthorizedError" => Self::EnvironmentHttpUnauthorized(raw.decode()?),
+                "EnvironmentAuthInvalidError" => Self::EnvironmentAuthInvalid(raw.decode()?),
+                "EnvironmentHttpForbiddenError" => Self::EnvironmentHttpForbidden(raw.decode()?),
+                "EnvironmentScopeRequiredError" => Self::EnvironmentScopeRequired(raw.decode()?),
+                "EnvironmentHttpConflictError" => Self::EnvironmentHttpConflict(raw.decode()?),
+                "EnvironmentHttpInternalServerError" => Self::EnvironmentHttpInternalServer(raw.decode()?),
+                "EnvironmentInternalError" => Self::EnvironmentInternal(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -916,12 +854,15 @@ pub struct EnvironmentCloudEndpointUnavailableError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum ConnectRelayConfigError {
-    EnvironmentHttpBadRequestError(EnvironmentHttpBadRequestError),
-    EnvironmentHttpUnauthorizedErrorOrEnvironmentAuthInvalidError(ConnectCheckReachabilityErrorEnvironmentHttpUnauthorizedErrorOrEnvironmentAuthInvalidError),
-    EnvironmentHttpForbiddenErrorOrEnvironmentScopeRequiredError(AuthPairingCredentialErrorEnvironmentHttpForbiddenErrorOrEnvironmentScopeRequiredError),
-    EnvironmentHttpConflictError(EnvironmentHttpConflictError),
-    EnvironmentHttpInternalServerErrorOrEnvironmentInternalError(ConnectCheckReachabilityErrorEnvironmentHttpInternalServerErrorOrEnvironmentInternalError),
-    EnvironmentCloudEndpointUnavailableError(EnvironmentCloudEndpointUnavailableError),
+    EnvironmentHttpBadRequest(EnvironmentHttpBadRequestError),
+    EnvironmentHttpUnauthorized(EnvironmentHttpUnauthorizedError),
+    EnvironmentAuthInvalid(EnvironmentAuthInvalidError),
+    EnvironmentHttpForbidden(EnvironmentHttpForbiddenError),
+    EnvironmentScopeRequired(EnvironmentScopeRequiredError),
+    EnvironmentHttpConflict(EnvironmentHttpConflictError),
+    EnvironmentHttpInternalServer(EnvironmentHttpInternalServerError),
+    EnvironmentInternal(EnvironmentInternalError),
+    EnvironmentCloudEndpointUnavailable(EnvironmentCloudEndpointUnavailableError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -930,12 +871,15 @@ impl<'de> ::serde::Deserialize<'de> for ConnectRelayConfigError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "EnvironmentHttpBadRequestError" => Self::EnvironmentHttpBadRequestError(raw.decode()?),
-                "EnvironmentHttpUnauthorizedError" | "EnvironmentAuthInvalidError" => Self::EnvironmentHttpUnauthorizedErrorOrEnvironmentAuthInvalidError(raw.decode()?),
-                "EnvironmentHttpForbiddenError" | "EnvironmentScopeRequiredError" => Self::EnvironmentHttpForbiddenErrorOrEnvironmentScopeRequiredError(raw.decode()?),
-                "EnvironmentHttpConflictError" => Self::EnvironmentHttpConflictError(raw.decode()?),
-                "EnvironmentHttpInternalServerError" | "EnvironmentInternalError" => Self::EnvironmentHttpInternalServerErrorOrEnvironmentInternalError(raw.decode()?),
-                "EnvironmentCloudEndpointUnavailableError" => Self::EnvironmentCloudEndpointUnavailableError(raw.decode()?),
+                "EnvironmentHttpBadRequestError" => Self::EnvironmentHttpBadRequest(raw.decode()?),
+                "EnvironmentHttpUnauthorizedError" => Self::EnvironmentHttpUnauthorized(raw.decode()?),
+                "EnvironmentAuthInvalidError" => Self::EnvironmentAuthInvalid(raw.decode()?),
+                "EnvironmentHttpForbiddenError" => Self::EnvironmentHttpForbidden(raw.decode()?),
+                "EnvironmentScopeRequiredError" => Self::EnvironmentScopeRequired(raw.decode()?),
+                "EnvironmentHttpConflictError" => Self::EnvironmentHttpConflict(raw.decode()?),
+                "EnvironmentHttpInternalServerError" => Self::EnvironmentHttpInternalServer(raw.decode()?),
+                "EnvironmentInternalError" => Self::EnvironmentInternal(raw.decode()?),
+                "EnvironmentCloudEndpointUnavailableError" => Self::EnvironmentCloudEndpointUnavailable(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -958,11 +902,14 @@ pub struct ConnectRelayConfigHeaders {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum ConnectUnlinkError {
-    EnvironmentHttpBadRequestError(EnvironmentHttpBadRequestError),
-    EnvironmentHttpUnauthorizedErrorOrEnvironmentAuthInvalidError(ConnectCheckReachabilityErrorEnvironmentHttpUnauthorizedErrorOrEnvironmentAuthInvalidError),
-    EnvironmentHttpForbiddenErrorOrEnvironmentScopeRequiredError(AuthPairingCredentialErrorEnvironmentHttpForbiddenErrorOrEnvironmentScopeRequiredError),
-    EnvironmentHttpConflictError(EnvironmentHttpConflictError),
-    EnvironmentHttpInternalServerErrorOrEnvironmentInternalError(ConnectCheckReachabilityErrorEnvironmentHttpInternalServerErrorOrEnvironmentInternalError),
+    EnvironmentHttpBadRequest(EnvironmentHttpBadRequestError),
+    EnvironmentHttpUnauthorized(EnvironmentHttpUnauthorizedError),
+    EnvironmentAuthInvalid(EnvironmentAuthInvalidError),
+    EnvironmentHttpForbidden(EnvironmentHttpForbiddenError),
+    EnvironmentScopeRequired(EnvironmentScopeRequiredError),
+    EnvironmentHttpConflict(EnvironmentHttpConflictError),
+    EnvironmentHttpInternalServer(EnvironmentHttpInternalServerError),
+    EnvironmentInternal(EnvironmentInternalError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -971,11 +918,14 @@ impl<'de> ::serde::Deserialize<'de> for ConnectUnlinkError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "EnvironmentHttpBadRequestError" => Self::EnvironmentHttpBadRequestError(raw.decode()?),
-                "EnvironmentHttpUnauthorizedError" | "EnvironmentAuthInvalidError" => Self::EnvironmentHttpUnauthorizedErrorOrEnvironmentAuthInvalidError(raw.decode()?),
-                "EnvironmentHttpForbiddenError" | "EnvironmentScopeRequiredError" => Self::EnvironmentHttpForbiddenErrorOrEnvironmentScopeRequiredError(raw.decode()?),
-                "EnvironmentHttpConflictError" => Self::EnvironmentHttpConflictError(raw.decode()?),
-                "EnvironmentHttpInternalServerError" | "EnvironmentInternalError" => Self::EnvironmentHttpInternalServerErrorOrEnvironmentInternalError(raw.decode()?),
+                "EnvironmentHttpBadRequestError" => Self::EnvironmentHttpBadRequest(raw.decode()?),
+                "EnvironmentHttpUnauthorizedError" => Self::EnvironmentHttpUnauthorized(raw.decode()?),
+                "EnvironmentAuthInvalidError" => Self::EnvironmentAuthInvalid(raw.decode()?),
+                "EnvironmentHttpForbiddenError" => Self::EnvironmentHttpForbidden(raw.decode()?),
+                "EnvironmentScopeRequiredError" => Self::EnvironmentScopeRequired(raw.decode()?),
+                "EnvironmentHttpConflictError" => Self::EnvironmentHttpConflict(raw.decode()?),
+                "EnvironmentHttpInternalServerError" => Self::EnvironmentHttpInternalServer(raw.decode()?),
+                "EnvironmentInternalError" => Self::EnvironmentInternal(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -993,28 +943,14 @@ pub struct ConnectUnlinkHeaders {
     pub dpop: Option<String>,
 }
 
-crate::wire::string_enum! {
-    /// Inline enum at `EnvironmentConnectReachabilityNoCauseStatus`.
-    EnvironmentConnectReachabilityNoCauseStatus {
-        Reachable = "reachable",
-    }
-}
-
-/// Inline object at `EnvironmentConnectReachabilityNoCause`.
+/// Inline object at `EnvironmentConnectReachabilityReachable`.
+/// Wire tag: `status: "reachable"`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct EnvironmentConnectReachabilityNoCause {
-    pub status: EnvironmentConnectReachabilityNoCauseStatus,
+#[serde(tag = "status", rename = "reachable", rename_all = "camelCase")]
+pub struct EnvironmentConnectReachabilityReachable {
     pub checked_at: String,
     pub ready_connections: Option<i64>,
     pub protocol: Option<String>,
-}
-
-crate::wire::string_enum! {
-    /// Inline enum at `EnvironmentConnectReachabilityNotLinkedOrConnectorNotRunningOrConnectorNotReadyOrEdgeUnreachableOrNoConnectorOrOriginUnreachableOrDnsFailedOrTimeoutOrUnexpectedResponseStatus`.
-    EnvironmentConnectReachabilityNotLinkedOrConnectorNotRunningOrConnectorNotReadyOrEdgeUnreachableOrNoConnectorOrOriginUnreachableOrDnsFailedOrTimeoutOrUnexpectedResponseStatus {
-        Unreachable = "unreachable",
-    }
 }
 
 crate::wire::string_enum! {
@@ -1032,11 +968,11 @@ crate::wire::string_enum! {
     }
 }
 
-/// Inline object at `EnvironmentConnectReachabilityNotLinkedOrConnectorNotRunningOrConnectorNotReadyOrEdgeUnreachableOrNoConnectorOrOriginUnreachableOrDnsFailedOrTimeoutOrUnexpectedResponse`.
+/// Inline object at `EnvironmentConnectReachabilityUnreachable`.
+/// Wire tag: `status: "unreachable"`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct EnvironmentConnectReachabilityNotLinkedOrConnectorNotRunningOrConnectorNotReadyOrEdgeUnreachableOrNoConnectorOrOriginUnreachableOrDnsFailedOrTimeoutOrUnexpectedResponse {
-    pub status: EnvironmentConnectReachabilityNotLinkedOrConnectorNotRunningOrConnectorNotReadyOrEdgeUnreachableOrNoConnectorOrOriginUnreachableOrDnsFailedOrTimeoutOrUnexpectedResponseStatus,
+#[serde(tag = "status", rename = "unreachable", rename_all = "camelCase")]
+pub struct EnvironmentConnectReachabilityUnreachable {
     pub checked_at: String,
     pub cause: EnvironmentConnectReachabilityCause,
     pub reason: String,
@@ -1045,24 +981,24 @@ pub struct EnvironmentConnectReachabilityNotLinkedOrConnectorNotRunningOrConnect
 }
 
 /// `EnvironmentConnectReachability` from `environmentHttp.ts`.
-/// Decoded by its `cause` field; a tag this client does not know becomes `Unknown`.
+/// Decoded by its `status` field; a tag this client does not know becomes `Unknown`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum EnvironmentConnectReachability {
-    NoCause(EnvironmentConnectReachabilityNoCause),
-    NotLinkedOrConnectorNotRunningOrConnectorNotReadyOrEdgeUnreachableOrNoConnectorOrOriginUnreachableOrDnsFailedOrTimeoutOrUnexpectedResponse(EnvironmentConnectReachabilityNotLinkedOrConnectorNotRunningOrConnectorNotReadyOrEdgeUnreachableOrNoConnectorOrOriginUnreachableOrDnsFailedOrTimeoutOrUnexpectedResponse),
+    Reachable(EnvironmentConnectReachabilityReachable),
+    Unreachable(EnvironmentConnectReachabilityUnreachable),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
 impl<'de> ::serde::Deserialize<'de> for EnvironmentConnectReachability {
     fn deserialize<D: ::serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         let raw = crate::wire::Raw::new(d)?;
-        Ok(match raw.tag("cause")? {
+        Ok(match raw.tag("status")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "not_linked" | "connector_not_running" | "connector_not_ready" | "edge_unreachable" | "no_connector" | "origin_unreachable" | "dns_failed" | "timeout" | "unexpected_response" => Self::NotLinkedOrConnectorNotRunningOrConnectorNotReadyOrEdgeUnreachableOrNoConnectorOrOriginUnreachableOrDnsFailedOrTimeoutOrUnexpectedResponse(raw.decode()?),
+                "reachable" => Self::Reachable(raw.decode()?),
+                "unreachable" => Self::Unreachable(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
-            crate::wire::Tag::Absent => Self::NoCause(raw.decode()?),
             _ => Self::Unknown(raw.decode()?),
         })
     }
@@ -1207,9 +1143,9 @@ pub struct McpOAuthDecisionHeaders {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum OrchestrationShellSnapshotError {
-    EnvironmentScopeRequiredError(EnvironmentScopeRequiredError),
-    EnvironmentInternalError(EnvironmentInternalError),
-    EnvironmentAuthInvalidError(EnvironmentAuthInvalidError),
+    EnvironmentScopeRequired(EnvironmentScopeRequiredError),
+    EnvironmentInternal(EnvironmentInternalError),
+    EnvironmentAuthInvalid(EnvironmentAuthInvalidError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -1218,9 +1154,9 @@ impl<'de> ::serde::Deserialize<'de> for OrchestrationShellSnapshotError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "EnvironmentScopeRequiredError" => Self::EnvironmentScopeRequiredError(raw.decode()?),
-                "EnvironmentInternalError" => Self::EnvironmentInternalError(raw.decode()?),
-                "EnvironmentAuthInvalidError" => Self::EnvironmentAuthInvalidError(raw.decode()?),
+                "EnvironmentScopeRequiredError" => Self::EnvironmentScopeRequired(raw.decode()?),
+                "EnvironmentInternalError" => Self::EnvironmentInternal(raw.decode()?),
+                "EnvironmentAuthInvalidError" => Self::EnvironmentAuthInvalid(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -1252,8 +1188,8 @@ pub struct OrchestrationShellSnapshotHeaders {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum OrchestrationShellSnapshotResponse {
-    OrchestrationV2ShellHttpSnapshot(OrchestrationV2ShellHttpSnapshot),
-    OrchestrationV2ShellResumable(OrchestrationV2ShellResumable),
+    V2ShellHttpSnapshot(OrchestrationV2ShellHttpSnapshot),
+    V2ShellResumable(OrchestrationV2ShellResumable),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -1261,8 +1197,8 @@ impl<'de> ::serde::Deserialize<'de> for OrchestrationShellSnapshotResponse {
     fn deserialize<D: ::serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("resumable")? {
-            crate::wire::Tag::Absent => Self::OrchestrationV2ShellHttpSnapshot(raw.decode()?),
-            crate::wire::Tag::Bool(true) => Self::OrchestrationV2ShellResumable(raw.decode()?),
+            crate::wire::Tag::Absent => Self::V2ShellHttpSnapshot(raw.decode()?),
+            crate::wire::Tag::Bool(true) => Self::V2ShellResumable(raw.decode()?),
             _ => Self::Unknown(raw.decode()?),
         })
     }
@@ -1273,10 +1209,10 @@ impl<'de> ::serde::Deserialize<'de> for OrchestrationShellSnapshotResponse {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum OrchestrationThreadBoundedSnapshotError {
-    EnvironmentScopeRequiredError(EnvironmentScopeRequiredError),
-    EnvironmentResourceNotFoundError(EnvironmentResourceNotFoundError),
-    EnvironmentInternalError(EnvironmentInternalError),
-    EnvironmentAuthInvalidError(EnvironmentAuthInvalidError),
+    EnvironmentScopeRequired(EnvironmentScopeRequiredError),
+    EnvironmentResourceNotFound(EnvironmentResourceNotFoundError),
+    EnvironmentInternal(EnvironmentInternalError),
+    EnvironmentAuthInvalid(EnvironmentAuthInvalidError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -1285,14 +1221,21 @@ impl<'de> ::serde::Deserialize<'de> for OrchestrationThreadBoundedSnapshotError 
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "EnvironmentScopeRequiredError" => Self::EnvironmentScopeRequiredError(raw.decode()?),
-                "EnvironmentResourceNotFoundError" => Self::EnvironmentResourceNotFoundError(raw.decode()?),
-                "EnvironmentInternalError" => Self::EnvironmentInternalError(raw.decode()?),
-                "EnvironmentAuthInvalidError" => Self::EnvironmentAuthInvalidError(raw.decode()?),
+                "EnvironmentScopeRequiredError" => Self::EnvironmentScopeRequired(raw.decode()?),
+                "EnvironmentResourceNotFoundError" => Self::EnvironmentResourceNotFound(raw.decode()?),
+                "EnvironmentInternalError" => Self::EnvironmentInternal(raw.decode()?),
+                "EnvironmentAuthInvalidError" => Self::EnvironmentAuthInvalid(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
         })
+    }
+}
+
+crate::wire::string_enum! {
+    /// Inline enum at `OrchestrationThreadBoundedSnapshotHeadersXT3OrchestrationProtocol`.
+    OrchestrationThreadBoundedSnapshotHeadersXT3OrchestrationProtocol {
+        N2 = "2",
     }
 }
 
@@ -1305,7 +1248,7 @@ pub struct OrchestrationThreadBoundedSnapshotHeaders {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dpop: Option<String>,
     #[serde(rename = "x-t3-orchestration-protocol")]
-    pub x_t3_orchestration_protocol: OrchestrationShellSnapshotHeadersXT3OrchestrationProtocol,
+    pub x_t3_orchestration_protocol: OrchestrationThreadBoundedSnapshotHeadersXT3OrchestrationProtocol,
 }
 
 /// `OrchestrationThreadHistoryPageError` from `environmentHttp.ts`.
@@ -1313,11 +1256,11 @@ pub struct OrchestrationThreadBoundedSnapshotHeaders {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum OrchestrationThreadHistoryPageError {
-    EnvironmentRequestInvalidError(EnvironmentRequestInvalidError),
-    EnvironmentScopeRequiredError(EnvironmentScopeRequiredError),
-    EnvironmentResourceNotFoundError(EnvironmentResourceNotFoundError),
-    EnvironmentInternalError(EnvironmentInternalError),
-    EnvironmentAuthInvalidError(EnvironmentAuthInvalidError),
+    EnvironmentRequestInvalid(EnvironmentRequestInvalidError),
+    EnvironmentScopeRequired(EnvironmentScopeRequiredError),
+    EnvironmentResourceNotFound(EnvironmentResourceNotFoundError),
+    EnvironmentInternal(EnvironmentInternalError),
+    EnvironmentAuthInvalid(EnvironmentAuthInvalidError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -1326,15 +1269,22 @@ impl<'de> ::serde::Deserialize<'de> for OrchestrationThreadHistoryPageError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "EnvironmentRequestInvalidError" => Self::EnvironmentRequestInvalidError(raw.decode()?),
-                "EnvironmentScopeRequiredError" => Self::EnvironmentScopeRequiredError(raw.decode()?),
-                "EnvironmentResourceNotFoundError" => Self::EnvironmentResourceNotFoundError(raw.decode()?),
-                "EnvironmentInternalError" => Self::EnvironmentInternalError(raw.decode()?),
-                "EnvironmentAuthInvalidError" => Self::EnvironmentAuthInvalidError(raw.decode()?),
+                "EnvironmentRequestInvalidError" => Self::EnvironmentRequestInvalid(raw.decode()?),
+                "EnvironmentScopeRequiredError" => Self::EnvironmentScopeRequired(raw.decode()?),
+                "EnvironmentResourceNotFoundError" => Self::EnvironmentResourceNotFound(raw.decode()?),
+                "EnvironmentInternalError" => Self::EnvironmentInternal(raw.decode()?),
+                "EnvironmentAuthInvalidError" => Self::EnvironmentAuthInvalid(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
         })
+    }
+}
+
+crate::wire::string_enum! {
+    /// Inline enum at `OrchestrationThreadHistoryPageHeadersXT3OrchestrationProtocol`.
+    OrchestrationThreadHistoryPageHeadersXT3OrchestrationProtocol {
+        N2 = "2",
     }
 }
 
@@ -1347,7 +1297,7 @@ pub struct OrchestrationThreadHistoryPageHeaders {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dpop: Option<String>,
     #[serde(rename = "x-t3-orchestration-protocol")]
-    pub x_t3_orchestration_protocol: OrchestrationShellSnapshotHeadersXT3OrchestrationProtocol,
+    pub x_t3_orchestration_protocol: OrchestrationThreadHistoryPageHeadersXT3OrchestrationProtocol,
 }
 
 crate::wire::string_enum! {
@@ -1379,10 +1329,10 @@ pub struct OrchestrationThreadHistoryPageQuery {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum OrchestrationThreadSnapshotError {
-    EnvironmentScopeRequiredError(EnvironmentScopeRequiredError),
-    EnvironmentResourceNotFoundError(EnvironmentResourceNotFoundError),
-    EnvironmentInternalError(EnvironmentInternalError),
-    EnvironmentAuthInvalidError(EnvironmentAuthInvalidError),
+    EnvironmentScopeRequired(EnvironmentScopeRequiredError),
+    EnvironmentResourceNotFound(EnvironmentResourceNotFoundError),
+    EnvironmentInternal(EnvironmentInternalError),
+    EnvironmentAuthInvalid(EnvironmentAuthInvalidError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -1391,14 +1341,21 @@ impl<'de> ::serde::Deserialize<'de> for OrchestrationThreadSnapshotError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "EnvironmentScopeRequiredError" => Self::EnvironmentScopeRequiredError(raw.decode()?),
-                "EnvironmentResourceNotFoundError" => Self::EnvironmentResourceNotFoundError(raw.decode()?),
-                "EnvironmentInternalError" => Self::EnvironmentInternalError(raw.decode()?),
-                "EnvironmentAuthInvalidError" => Self::EnvironmentAuthInvalidError(raw.decode()?),
+                "EnvironmentScopeRequiredError" => Self::EnvironmentScopeRequired(raw.decode()?),
+                "EnvironmentResourceNotFoundError" => Self::EnvironmentResourceNotFound(raw.decode()?),
+                "EnvironmentInternalError" => Self::EnvironmentInternal(raw.decode()?),
+                "EnvironmentAuthInvalidError" => Self::EnvironmentAuthInvalid(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
         })
+    }
+}
+
+crate::wire::string_enum! {
+    /// Inline enum at `OrchestrationThreadSnapshotHeadersXT3OrchestrationProtocol`.
+    OrchestrationThreadSnapshotHeadersXT3OrchestrationProtocol {
+        N2 = "2",
     }
 }
 
@@ -1411,7 +1368,7 @@ pub struct OrchestrationThreadSnapshotHeaders {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dpop: Option<String>,
     #[serde(rename = "x-t3-orchestration-protocol")]
-    pub x_t3_orchestration_protocol: OrchestrationShellSnapshotHeadersXT3OrchestrationProtocol,
+    pub x_t3_orchestration_protocol: OrchestrationThreadSnapshotHeadersXT3OrchestrationProtocol,
 }
 
 /// `OrchestrationThreadTranscriptError` from `environmentHttp.ts`.
@@ -1419,11 +1376,11 @@ pub struct OrchestrationThreadSnapshotHeaders {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum OrchestrationThreadTranscriptError {
-    EnvironmentRequestInvalidError(EnvironmentRequestInvalidError),
-    EnvironmentScopeRequiredError(EnvironmentScopeRequiredError),
-    EnvironmentResourceNotFoundError(EnvironmentResourceNotFoundError),
-    EnvironmentInternalError(EnvironmentInternalError),
-    EnvironmentAuthInvalidError(EnvironmentAuthInvalidError),
+    EnvironmentRequestInvalid(EnvironmentRequestInvalidError),
+    EnvironmentScopeRequired(EnvironmentScopeRequiredError),
+    EnvironmentResourceNotFound(EnvironmentResourceNotFoundError),
+    EnvironmentInternal(EnvironmentInternalError),
+    EnvironmentAuthInvalid(EnvironmentAuthInvalidError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -1432,15 +1389,22 @@ impl<'de> ::serde::Deserialize<'de> for OrchestrationThreadTranscriptError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "EnvironmentRequestInvalidError" => Self::EnvironmentRequestInvalidError(raw.decode()?),
-                "EnvironmentScopeRequiredError" => Self::EnvironmentScopeRequiredError(raw.decode()?),
-                "EnvironmentResourceNotFoundError" => Self::EnvironmentResourceNotFoundError(raw.decode()?),
-                "EnvironmentInternalError" => Self::EnvironmentInternalError(raw.decode()?),
-                "EnvironmentAuthInvalidError" => Self::EnvironmentAuthInvalidError(raw.decode()?),
+                "EnvironmentRequestInvalidError" => Self::EnvironmentRequestInvalid(raw.decode()?),
+                "EnvironmentScopeRequiredError" => Self::EnvironmentScopeRequired(raw.decode()?),
+                "EnvironmentResourceNotFoundError" => Self::EnvironmentResourceNotFound(raw.decode()?),
+                "EnvironmentInternalError" => Self::EnvironmentInternal(raw.decode()?),
+                "EnvironmentAuthInvalidError" => Self::EnvironmentAuthInvalid(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
         })
+    }
+}
+
+crate::wire::string_enum! {
+    /// Inline enum at `OrchestrationThreadTranscriptHeadersXT3OrchestrationProtocol`.
+    OrchestrationThreadTranscriptHeadersXT3OrchestrationProtocol {
+        N2 = "2",
     }
 }
 
@@ -1453,7 +1417,7 @@ pub struct OrchestrationThreadTranscriptHeaders {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dpop: Option<String>,
     #[serde(rename = "x-t3-orchestration-protocol")]
-    pub x_t3_orchestration_protocol: OrchestrationShellSnapshotHeadersXT3OrchestrationProtocol,
+    pub x_t3_orchestration_protocol: OrchestrationThreadTranscriptHeadersXT3OrchestrationProtocol,
 }
 
 /// `PullRequestsDiffError` from `environmentHttp.ts`.
@@ -1461,11 +1425,11 @@ pub struct OrchestrationThreadTranscriptHeaders {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum PullRequestsDiffError {
-    PullRequestUnavailableError(PullRequestUnavailableError),
-    PullRequestOperationError(PullRequestOperationError),
-    EnvironmentAuthInvalidError(EnvironmentAuthInvalidError),
-    EnvironmentScopeRequiredError(EnvironmentScopeRequiredError),
-    EnvironmentInternalError(EnvironmentInternalError),
+    RequestUnavailable(PullRequestUnavailableError),
+    RequestOperation(PullRequestOperationError),
+    EnvironmentAuthInvalid(EnvironmentAuthInvalidError),
+    EnvironmentScopeRequired(EnvironmentScopeRequiredError),
+    EnvironmentInternal(EnvironmentInternalError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -1474,11 +1438,11 @@ impl<'de> ::serde::Deserialize<'de> for PullRequestsDiffError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "PullRequestUnavailableError" => Self::PullRequestUnavailableError(raw.decode()?),
-                "PullRequestOperationError" => Self::PullRequestOperationError(raw.decode()?),
-                "EnvironmentAuthInvalidError" => Self::EnvironmentAuthInvalidError(raw.decode()?),
-                "EnvironmentScopeRequiredError" => Self::EnvironmentScopeRequiredError(raw.decode()?),
-                "EnvironmentInternalError" => Self::EnvironmentInternalError(raw.decode()?),
+                "PullRequestUnavailableError" => Self::RequestUnavailable(raw.decode()?),
+                "PullRequestOperationError" => Self::RequestOperation(raw.decode()?),
+                "EnvironmentAuthInvalidError" => Self::EnvironmentAuthInvalid(raw.decode()?),
+                "EnvironmentScopeRequiredError" => Self::EnvironmentScopeRequired(raw.decode()?),
+                "EnvironmentInternalError" => Self::EnvironmentInternal(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -1501,10 +1465,10 @@ pub struct PullRequestsDiffHeaders {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum VoiceCancelModelDownloadError {
-    EnvironmentScopeRequiredError(EnvironmentScopeRequiredError),
-    EnvironmentInternalError(EnvironmentInternalError),
-    EnvironmentRequestInvalidError(EnvironmentRequestInvalidError),
-    EnvironmentAuthInvalidError(EnvironmentAuthInvalidError),
+    EnvironmentScopeRequired(EnvironmentScopeRequiredError),
+    EnvironmentInternal(EnvironmentInternalError),
+    EnvironmentRequestInvalid(EnvironmentRequestInvalidError),
+    EnvironmentAuthInvalid(EnvironmentAuthInvalidError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -1513,10 +1477,10 @@ impl<'de> ::serde::Deserialize<'de> for VoiceCancelModelDownloadError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "EnvironmentScopeRequiredError" => Self::EnvironmentScopeRequiredError(raw.decode()?),
-                "EnvironmentInternalError" => Self::EnvironmentInternalError(raw.decode()?),
-                "EnvironmentRequestInvalidError" => Self::EnvironmentRequestInvalidError(raw.decode()?),
-                "EnvironmentAuthInvalidError" => Self::EnvironmentAuthInvalidError(raw.decode()?),
+                "EnvironmentScopeRequiredError" => Self::EnvironmentScopeRequired(raw.decode()?),
+                "EnvironmentInternalError" => Self::EnvironmentInternal(raw.decode()?),
+                "EnvironmentRequestInvalidError" => Self::EnvironmentRequestInvalid(raw.decode()?),
+                "EnvironmentAuthInvalidError" => Self::EnvironmentAuthInvalid(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -1539,9 +1503,9 @@ pub struct VoiceCancelModelDownloadHeaders {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum VoiceCloudKeysError {
-    EnvironmentScopeRequiredError(EnvironmentScopeRequiredError),
-    EnvironmentInternalError(EnvironmentInternalError),
-    EnvironmentAuthInvalidError(EnvironmentAuthInvalidError),
+    EnvironmentScopeRequired(EnvironmentScopeRequiredError),
+    EnvironmentInternal(EnvironmentInternalError),
+    EnvironmentAuthInvalid(EnvironmentAuthInvalidError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -1550,9 +1514,9 @@ impl<'de> ::serde::Deserialize<'de> for VoiceCloudKeysError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "EnvironmentScopeRequiredError" => Self::EnvironmentScopeRequiredError(raw.decode()?),
-                "EnvironmentInternalError" => Self::EnvironmentInternalError(raw.decode()?),
-                "EnvironmentAuthInvalidError" => Self::EnvironmentAuthInvalidError(raw.decode()?),
+                "EnvironmentScopeRequiredError" => Self::EnvironmentScopeRequired(raw.decode()?),
+                "EnvironmentInternalError" => Self::EnvironmentInternal(raw.decode()?),
+                "EnvironmentAuthInvalidError" => Self::EnvironmentAuthInvalid(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -1575,10 +1539,10 @@ pub struct VoiceCloudKeysHeaders {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum VoiceCloudModelsError {
-    EnvironmentScopeRequiredError(EnvironmentScopeRequiredError),
-    EnvironmentInternalError(EnvironmentInternalError),
-    CloudSpeechError(CloudSpeechError),
-    EnvironmentAuthInvalidError(EnvironmentAuthInvalidError),
+    EnvironmentScopeRequired(EnvironmentScopeRequiredError),
+    EnvironmentInternal(EnvironmentInternalError),
+    CloudSpeech(CloudSpeechError),
+    EnvironmentAuthInvalid(EnvironmentAuthInvalidError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -1587,10 +1551,10 @@ impl<'de> ::serde::Deserialize<'de> for VoiceCloudModelsError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "EnvironmentScopeRequiredError" => Self::EnvironmentScopeRequiredError(raw.decode()?),
-                "EnvironmentInternalError" => Self::EnvironmentInternalError(raw.decode()?),
-                "CloudSpeechError" => Self::CloudSpeechError(raw.decode()?),
-                "EnvironmentAuthInvalidError" => Self::EnvironmentAuthInvalidError(raw.decode()?),
+                "EnvironmentScopeRequiredError" => Self::EnvironmentScopeRequired(raw.decode()?),
+                "EnvironmentInternalError" => Self::EnvironmentInternal(raw.decode()?),
+                "CloudSpeechError" => Self::CloudSpeech(raw.decode()?),
+                "EnvironmentAuthInvalidError" => Self::EnvironmentAuthInvalid(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -1613,10 +1577,10 @@ pub struct VoiceCloudModelsHeaders {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum VoiceDownloadModelError {
-    EnvironmentScopeRequiredError(EnvironmentScopeRequiredError),
-    EnvironmentInternalError(EnvironmentInternalError),
-    EnvironmentRequestInvalidError(EnvironmentRequestInvalidError),
-    EnvironmentAuthInvalidError(EnvironmentAuthInvalidError),
+    EnvironmentScopeRequired(EnvironmentScopeRequiredError),
+    EnvironmentInternal(EnvironmentInternalError),
+    EnvironmentRequestInvalid(EnvironmentRequestInvalidError),
+    EnvironmentAuthInvalid(EnvironmentAuthInvalidError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -1625,10 +1589,10 @@ impl<'de> ::serde::Deserialize<'de> for VoiceDownloadModelError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "EnvironmentScopeRequiredError" => Self::EnvironmentScopeRequiredError(raw.decode()?),
-                "EnvironmentInternalError" => Self::EnvironmentInternalError(raw.decode()?),
-                "EnvironmentRequestInvalidError" => Self::EnvironmentRequestInvalidError(raw.decode()?),
-                "EnvironmentAuthInvalidError" => Self::EnvironmentAuthInvalidError(raw.decode()?),
+                "EnvironmentScopeRequiredError" => Self::EnvironmentScopeRequired(raw.decode()?),
+                "EnvironmentInternalError" => Self::EnvironmentInternal(raw.decode()?),
+                "EnvironmentRequestInvalidError" => Self::EnvironmentRequestInvalid(raw.decode()?),
+                "EnvironmentAuthInvalidError" => Self::EnvironmentAuthInvalid(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -1651,10 +1615,10 @@ pub struct VoiceDownloadModelHeaders {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum VoiceLinkModelsError {
-    EnvironmentScopeRequiredError(EnvironmentScopeRequiredError),
-    EnvironmentInternalError(EnvironmentInternalError),
-    EnvironmentRequestInvalidError(EnvironmentRequestInvalidError),
-    EnvironmentAuthInvalidError(EnvironmentAuthInvalidError),
+    EnvironmentScopeRequired(EnvironmentScopeRequiredError),
+    EnvironmentInternal(EnvironmentInternalError),
+    EnvironmentRequestInvalid(EnvironmentRequestInvalidError),
+    EnvironmentAuthInvalid(EnvironmentAuthInvalidError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -1663,10 +1627,10 @@ impl<'de> ::serde::Deserialize<'de> for VoiceLinkModelsError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "EnvironmentScopeRequiredError" => Self::EnvironmentScopeRequiredError(raw.decode()?),
-                "EnvironmentInternalError" => Self::EnvironmentInternalError(raw.decode()?),
-                "EnvironmentRequestInvalidError" => Self::EnvironmentRequestInvalidError(raw.decode()?),
-                "EnvironmentAuthInvalidError" => Self::EnvironmentAuthInvalidError(raw.decode()?),
+                "EnvironmentScopeRequiredError" => Self::EnvironmentScopeRequired(raw.decode()?),
+                "EnvironmentInternalError" => Self::EnvironmentInternal(raw.decode()?),
+                "EnvironmentRequestInvalidError" => Self::EnvironmentRequestInvalid(raw.decode()?),
+                "EnvironmentAuthInvalidError" => Self::EnvironmentAuthInvalid(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -1689,10 +1653,10 @@ pub struct VoiceLinkModelsHeaders {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum VoiceModelsError {
-    EnvironmentScopeRequiredError(EnvironmentScopeRequiredError),
-    EnvironmentInternalError(EnvironmentInternalError),
-    EnvironmentRequestInvalidError(EnvironmentRequestInvalidError),
-    EnvironmentAuthInvalidError(EnvironmentAuthInvalidError),
+    EnvironmentScopeRequired(EnvironmentScopeRequiredError),
+    EnvironmentInternal(EnvironmentInternalError),
+    EnvironmentRequestInvalid(EnvironmentRequestInvalidError),
+    EnvironmentAuthInvalid(EnvironmentAuthInvalidError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -1701,10 +1665,10 @@ impl<'de> ::serde::Deserialize<'de> for VoiceModelsError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "EnvironmentScopeRequiredError" => Self::EnvironmentScopeRequiredError(raw.decode()?),
-                "EnvironmentInternalError" => Self::EnvironmentInternalError(raw.decode()?),
-                "EnvironmentRequestInvalidError" => Self::EnvironmentRequestInvalidError(raw.decode()?),
-                "EnvironmentAuthInvalidError" => Self::EnvironmentAuthInvalidError(raw.decode()?),
+                "EnvironmentScopeRequiredError" => Self::EnvironmentScopeRequired(raw.decode()?),
+                "EnvironmentInternalError" => Self::EnvironmentInternal(raw.decode()?),
+                "EnvironmentRequestInvalidError" => Self::EnvironmentRequestInvalid(raw.decode()?),
+                "EnvironmentAuthInvalidError" => Self::EnvironmentAuthInvalid(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -1742,9 +1706,9 @@ pub struct VoiceModelsQuery {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum VoicePostProcessError {
-    EnvironmentScopeRequiredError(EnvironmentScopeRequiredError),
-    EnvironmentInternalError(EnvironmentInternalError),
-    EnvironmentAuthInvalidError(EnvironmentAuthInvalidError),
+    EnvironmentScopeRequired(EnvironmentScopeRequiredError),
+    EnvironmentInternal(EnvironmentInternalError),
+    EnvironmentAuthInvalid(EnvironmentAuthInvalidError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -1753,9 +1717,9 @@ impl<'de> ::serde::Deserialize<'de> for VoicePostProcessError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "EnvironmentScopeRequiredError" => Self::EnvironmentScopeRequiredError(raw.decode()?),
-                "EnvironmentInternalError" => Self::EnvironmentInternalError(raw.decode()?),
-                "EnvironmentAuthInvalidError" => Self::EnvironmentAuthInvalidError(raw.decode()?),
+                "EnvironmentScopeRequiredError" => Self::EnvironmentScopeRequired(raw.decode()?),
+                "EnvironmentInternalError" => Self::EnvironmentInternal(raw.decode()?),
+                "EnvironmentAuthInvalidError" => Self::EnvironmentAuthInvalid(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -1778,10 +1742,10 @@ pub struct VoicePostProcessHeaders {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum VoiceRemoveModelError {
-    EnvironmentScopeRequiredError(EnvironmentScopeRequiredError),
-    EnvironmentInternalError(EnvironmentInternalError),
-    EnvironmentRequestInvalidError(EnvironmentRequestInvalidError),
-    EnvironmentAuthInvalidError(EnvironmentAuthInvalidError),
+    EnvironmentScopeRequired(EnvironmentScopeRequiredError),
+    EnvironmentInternal(EnvironmentInternalError),
+    EnvironmentRequestInvalid(EnvironmentRequestInvalidError),
+    EnvironmentAuthInvalid(EnvironmentAuthInvalidError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -1790,10 +1754,10 @@ impl<'de> ::serde::Deserialize<'de> for VoiceRemoveModelError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "EnvironmentScopeRequiredError" => Self::EnvironmentScopeRequiredError(raw.decode()?),
-                "EnvironmentInternalError" => Self::EnvironmentInternalError(raw.decode()?),
-                "EnvironmentRequestInvalidError" => Self::EnvironmentRequestInvalidError(raw.decode()?),
-                "EnvironmentAuthInvalidError" => Self::EnvironmentAuthInvalidError(raw.decode()?),
+                "EnvironmentScopeRequiredError" => Self::EnvironmentScopeRequired(raw.decode()?),
+                "EnvironmentInternalError" => Self::EnvironmentInternal(raw.decode()?),
+                "EnvironmentRequestInvalidError" => Self::EnvironmentRequestInvalid(raw.decode()?),
+                "EnvironmentAuthInvalidError" => Self::EnvironmentAuthInvalid(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -1816,10 +1780,10 @@ pub struct VoiceRemoveModelHeaders {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum VoiceSelectModelError {
-    EnvironmentScopeRequiredError(EnvironmentScopeRequiredError),
-    EnvironmentInternalError(EnvironmentInternalError),
-    EnvironmentRequestInvalidError(EnvironmentRequestInvalidError),
-    EnvironmentAuthInvalidError(EnvironmentAuthInvalidError),
+    EnvironmentScopeRequired(EnvironmentScopeRequiredError),
+    EnvironmentInternal(EnvironmentInternalError),
+    EnvironmentRequestInvalid(EnvironmentRequestInvalidError),
+    EnvironmentAuthInvalid(EnvironmentAuthInvalidError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -1828,10 +1792,10 @@ impl<'de> ::serde::Deserialize<'de> for VoiceSelectModelError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "EnvironmentScopeRequiredError" => Self::EnvironmentScopeRequiredError(raw.decode()?),
-                "EnvironmentInternalError" => Self::EnvironmentInternalError(raw.decode()?),
-                "EnvironmentRequestInvalidError" => Self::EnvironmentRequestInvalidError(raw.decode()?),
-                "EnvironmentAuthInvalidError" => Self::EnvironmentAuthInvalidError(raw.decode()?),
+                "EnvironmentScopeRequiredError" => Self::EnvironmentScopeRequired(raw.decode()?),
+                "EnvironmentInternalError" => Self::EnvironmentInternal(raw.decode()?),
+                "EnvironmentRequestInvalidError" => Self::EnvironmentRequestInvalid(raw.decode()?),
+                "EnvironmentAuthInvalidError" => Self::EnvironmentAuthInvalid(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -1849,11 +1813,29 @@ pub struct VoiceSelectModelHeaders {
     pub dpop: Option<String>,
 }
 
+/// Inline union at `VoiceSetCloudKeyBodyKey`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
+#[serde(untagged)]
+pub enum VoiceSetCloudKeyBodyKey {
+    Text(String),
+    SecretReference(SecretReference),
+}
+impl<'de> ::serde::Deserialize<'de> for VoiceSetCloudKeyBodyKey {
+    fn deserialize<D: ::serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let raw = crate::wire::Raw::new(d)?;
+        Ok(match raw.kind() {
+            crate::wire::JsonKind::String => Self::Text(raw.decode()?),
+            crate::wire::JsonKind::Object => Self::SecretReference(raw.decode()?),
+            other => return Err(raw.unexpected(other, "VoiceSetCloudKeyBodyKey")),
+        })
+    }
+}
+
 /// `VoiceSetCloudKeyBody` from `environmentHttp.ts`.
 #[derive(Debug, Clone, Default, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VoiceSetCloudKeyBody {
-    pub key: Option<ClientServerSettingsPatchCloudSpeechCredentialsOpenai>,
+    pub key: Option<VoiceSetCloudKeyBodyKey>,
 }
 
 /// `VoiceSetCloudKeyError` from `environmentHttp.ts`.
@@ -1861,9 +1843,9 @@ pub struct VoiceSetCloudKeyBody {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum VoiceSetCloudKeyError {
-    EnvironmentScopeRequiredError(EnvironmentScopeRequiredError),
-    EnvironmentInternalError(EnvironmentInternalError),
-    EnvironmentAuthInvalidError(EnvironmentAuthInvalidError),
+    EnvironmentScopeRequired(EnvironmentScopeRequiredError),
+    EnvironmentInternal(EnvironmentInternalError),
+    EnvironmentAuthInvalid(EnvironmentAuthInvalidError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -1872,9 +1854,9 @@ impl<'de> ::serde::Deserialize<'de> for VoiceSetCloudKeyError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "EnvironmentScopeRequiredError" => Self::EnvironmentScopeRequiredError(raw.decode()?),
-                "EnvironmentInternalError" => Self::EnvironmentInternalError(raw.decode()?),
-                "EnvironmentAuthInvalidError" => Self::EnvironmentAuthInvalidError(raw.decode()?),
+                "EnvironmentScopeRequiredError" => Self::EnvironmentScopeRequired(raw.decode()?),
+                "EnvironmentInternalError" => Self::EnvironmentInternal(raw.decode()?),
+                "EnvironmentAuthInvalidError" => Self::EnvironmentAuthInvalid(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -1904,10 +1886,10 @@ pub struct VoiceSetCloudKeyParams {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum VoiceStatusError {
-    EnvironmentScopeRequiredError(EnvironmentScopeRequiredError),
-    EnvironmentInternalError(EnvironmentInternalError),
-    EnvironmentRequestInvalidError(EnvironmentRequestInvalidError),
-    EnvironmentAuthInvalidError(EnvironmentAuthInvalidError),
+    EnvironmentScopeRequired(EnvironmentScopeRequiredError),
+    EnvironmentInternal(EnvironmentInternalError),
+    EnvironmentRequestInvalid(EnvironmentRequestInvalidError),
+    EnvironmentAuthInvalid(EnvironmentAuthInvalidError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -1916,10 +1898,10 @@ impl<'de> ::serde::Deserialize<'de> for VoiceStatusError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "EnvironmentScopeRequiredError" => Self::EnvironmentScopeRequiredError(raw.decode()?),
-                "EnvironmentInternalError" => Self::EnvironmentInternalError(raw.decode()?),
-                "EnvironmentRequestInvalidError" => Self::EnvironmentRequestInvalidError(raw.decode()?),
-                "EnvironmentAuthInvalidError" => Self::EnvironmentAuthInvalidError(raw.decode()?),
+                "EnvironmentScopeRequiredError" => Self::EnvironmentScopeRequired(raw.decode()?),
+                "EnvironmentInternalError" => Self::EnvironmentInternal(raw.decode()?),
+                "EnvironmentRequestInvalidError" => Self::EnvironmentRequestInvalid(raw.decode()?),
+                "EnvironmentAuthInvalidError" => Self::EnvironmentAuthInvalid(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -1952,11 +1934,11 @@ crate::wire::id_newtype! {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum VoiceTranscribeCloudError {
-    EnvironmentScopeRequiredError(EnvironmentScopeRequiredError),
-    EnvironmentInternalError(EnvironmentInternalError),
-    EnvironmentRequestInvalidError(EnvironmentRequestInvalidError),
-    CloudSpeechError(CloudSpeechError),
-    EnvironmentAuthInvalidError(EnvironmentAuthInvalidError),
+    EnvironmentScopeRequired(EnvironmentScopeRequiredError),
+    EnvironmentInternal(EnvironmentInternalError),
+    EnvironmentRequestInvalid(EnvironmentRequestInvalidError),
+    CloudSpeech(CloudSpeechError),
+    EnvironmentAuthInvalid(EnvironmentAuthInvalidError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -1965,11 +1947,11 @@ impl<'de> ::serde::Deserialize<'de> for VoiceTranscribeCloudError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "EnvironmentScopeRequiredError" => Self::EnvironmentScopeRequiredError(raw.decode()?),
-                "EnvironmentInternalError" => Self::EnvironmentInternalError(raw.decode()?),
-                "EnvironmentRequestInvalidError" => Self::EnvironmentRequestInvalidError(raw.decode()?),
-                "CloudSpeechError" => Self::CloudSpeechError(raw.decode()?),
-                "EnvironmentAuthInvalidError" => Self::EnvironmentAuthInvalidError(raw.decode()?),
+                "EnvironmentScopeRequiredError" => Self::EnvironmentScopeRequired(raw.decode()?),
+                "EnvironmentInternalError" => Self::EnvironmentInternal(raw.decode()?),
+                "EnvironmentRequestInvalidError" => Self::EnvironmentRequestInvalid(raw.decode()?),
+                "CloudSpeechError" => Self::CloudSpeech(raw.decode()?),
+                "EnvironmentAuthInvalidError" => Self::EnvironmentAuthInvalid(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -2007,10 +1989,10 @@ pub struct VoiceTranscribeCloudQuery {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum VoiceTranscribeError {
-    EnvironmentScopeRequiredError(EnvironmentScopeRequiredError),
-    EnvironmentInternalError(EnvironmentInternalError),
-    EnvironmentRequestInvalidError(EnvironmentRequestInvalidError),
-    EnvironmentAuthInvalidError(EnvironmentAuthInvalidError),
+    EnvironmentScopeRequired(EnvironmentScopeRequiredError),
+    EnvironmentInternal(EnvironmentInternalError),
+    EnvironmentRequestInvalid(EnvironmentRequestInvalidError),
+    EnvironmentAuthInvalid(EnvironmentAuthInvalidError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -2019,10 +2001,10 @@ impl<'de> ::serde::Deserialize<'de> for VoiceTranscribeError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "EnvironmentScopeRequiredError" => Self::EnvironmentScopeRequiredError(raw.decode()?),
-                "EnvironmentInternalError" => Self::EnvironmentInternalError(raw.decode()?),
-                "EnvironmentRequestInvalidError" => Self::EnvironmentRequestInvalidError(raw.decode()?),
-                "EnvironmentAuthInvalidError" => Self::EnvironmentAuthInvalidError(raw.decode()?),
+                "EnvironmentScopeRequiredError" => Self::EnvironmentScopeRequired(raw.decode()?),
+                "EnvironmentInternalError" => Self::EnvironmentInternal(raw.decode()?),
+                "EnvironmentRequestInvalidError" => Self::EnvironmentRequestInvalid(raw.decode()?),
+                "EnvironmentAuthInvalidError" => Self::EnvironmentAuthInvalid(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -2045,10 +2027,10 @@ pub struct VoiceTranscribeHeaders {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum VoiceUpdateAccelerationError {
-    EnvironmentScopeRequiredError(EnvironmentScopeRequiredError),
-    EnvironmentInternalError(EnvironmentInternalError),
-    EnvironmentRequestInvalidError(EnvironmentRequestInvalidError),
-    EnvironmentAuthInvalidError(EnvironmentAuthInvalidError),
+    EnvironmentScopeRequired(EnvironmentScopeRequiredError),
+    EnvironmentInternal(EnvironmentInternalError),
+    EnvironmentRequestInvalid(EnvironmentRequestInvalidError),
+    EnvironmentAuthInvalid(EnvironmentAuthInvalidError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -2057,10 +2039,10 @@ impl<'de> ::serde::Deserialize<'de> for VoiceUpdateAccelerationError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "EnvironmentScopeRequiredError" => Self::EnvironmentScopeRequiredError(raw.decode()?),
-                "EnvironmentInternalError" => Self::EnvironmentInternalError(raw.decode()?),
-                "EnvironmentRequestInvalidError" => Self::EnvironmentRequestInvalidError(raw.decode()?),
-                "EnvironmentAuthInvalidError" => Self::EnvironmentAuthInvalidError(raw.decode()?),
+                "EnvironmentScopeRequiredError" => Self::EnvironmentScopeRequired(raw.decode()?),
+                "EnvironmentInternalError" => Self::EnvironmentInternal(raw.decode()?),
+                "EnvironmentRequestInvalidError" => Self::EnvironmentRequestInvalid(raw.decode()?),
+                "EnvironmentAuthInvalidError" => Self::EnvironmentAuthInvalid(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -2083,10 +2065,10 @@ pub struct VoiceUpdateAccelerationHeaders {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum VoiceUpdateModelUnloadTimeoutError {
-    EnvironmentScopeRequiredError(EnvironmentScopeRequiredError),
-    EnvironmentInternalError(EnvironmentInternalError),
-    EnvironmentRequestInvalidError(EnvironmentRequestInvalidError),
-    EnvironmentAuthInvalidError(EnvironmentAuthInvalidError),
+    EnvironmentScopeRequired(EnvironmentScopeRequiredError),
+    EnvironmentInternal(EnvironmentInternalError),
+    EnvironmentRequestInvalid(EnvironmentRequestInvalidError),
+    EnvironmentAuthInvalid(EnvironmentAuthInvalidError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -2095,10 +2077,10 @@ impl<'de> ::serde::Deserialize<'de> for VoiceUpdateModelUnloadTimeoutError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "EnvironmentScopeRequiredError" => Self::EnvironmentScopeRequiredError(raw.decode()?),
-                "EnvironmentInternalError" => Self::EnvironmentInternalError(raw.decode()?),
-                "EnvironmentRequestInvalidError" => Self::EnvironmentRequestInvalidError(raw.decode()?),
-                "EnvironmentAuthInvalidError" => Self::EnvironmentAuthInvalidError(raw.decode()?),
+                "EnvironmentScopeRequiredError" => Self::EnvironmentScopeRequired(raw.decode()?),
+                "EnvironmentInternalError" => Self::EnvironmentInternal(raw.decode()?),
+                "EnvironmentRequestInvalidError" => Self::EnvironmentRequestInvalid(raw.decode()?),
+                "EnvironmentAuthInvalidError" => Self::EnvironmentAuthInvalid(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),

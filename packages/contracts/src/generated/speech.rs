@@ -320,10 +320,10 @@ crate::wire::string_enum! {
     }
 }
 
-/// Inline object at `EnvironmentSpeechStatusNoModelUnloadTimeout`.
+/// Inline object at `EnvironmentSpeechStatusNotSupported`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct EnvironmentSpeechStatusNoModelUnloadTimeout {
+pub struct EnvironmentSpeechStatusNotSupported {
     pub supported: crate::wire::False,
     pub reason: String,
 }
@@ -344,10 +344,10 @@ pub struct SpeechGpuDevice {
     pub name: String,
 }
 
-/// Inline object at `EnvironmentSpeechStatusNeverOrImmediatelyOrMin2OrMin5OrMin10OrMin15OrHour1`.
+/// Inline object at `EnvironmentSpeechStatusSupported`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct EnvironmentSpeechStatusNeverOrImmediatelyOrMin2OrMin5OrMin10OrMin15OrHour1 {
+pub struct EnvironmentSpeechStatusSupported {
     pub supported: crate::wire::True,
     pub state: EnvironmentSpeechState,
     pub model_id: SpeechModelId,
@@ -371,24 +371,21 @@ pub struct EnvironmentSpeechStatusNeverOrImmediatelyOrMin2OrMin5OrMin10OrMin15Or
 }
 
 /// `EnvironmentSpeechStatus` from `speech.ts`.
-/// Decoded by its `modelUnloadTimeout` field; a tag this client does not know becomes `Unknown`.
+/// Decoded by its `supported` field; a tag this client does not know becomes `Unknown`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum EnvironmentSpeechStatus {
-    NoModelUnloadTimeout(EnvironmentSpeechStatusNoModelUnloadTimeout),
-    NeverOrImmediatelyOrMin2OrMin5OrMin10OrMin15OrHour1(EnvironmentSpeechStatusNeverOrImmediatelyOrMin2OrMin5OrMin10OrMin15OrHour1),
+    NotSupported(EnvironmentSpeechStatusNotSupported),
+    Supported(EnvironmentSpeechStatusSupported),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
 impl<'de> ::serde::Deserialize<'de> for EnvironmentSpeechStatus {
     fn deserialize<D: ::serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         let raw = crate::wire::Raw::new(d)?;
-        Ok(match raw.tag("modelUnloadTimeout")? {
-            crate::wire::Tag::Str(tag) => match &*tag {
-                "never" | "immediately" | "min_2" | "min_5" | "min_10" | "min_15" | "hour_1" => Self::NeverOrImmediatelyOrMin2OrMin5OrMin10OrMin15OrHour1(raw.decode()?),
-                _ => Self::Unknown(raw.decode()?),
-            },
-            crate::wire::Tag::Absent => Self::NoModelUnloadTimeout(raw.decode()?),
+        Ok(match raw.tag("supported")? {
+            crate::wire::Tag::Bool(false) => Self::NotSupported(raw.decode()?),
+            crate::wire::Tag::Bool(true) => Self::Supported(raw.decode()?),
             _ => Self::Unknown(raw.decode()?),
         })
     }

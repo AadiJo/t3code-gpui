@@ -180,9 +180,9 @@ pub struct PreviewControlRequiredError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum PreviewError {
-    PreviewSessionLookupError(PreviewSessionLookupError),
-    PreviewInvalidUrlError(PreviewInvalidUrlError),
-    PreviewControlRequiredError(PreviewControlRequiredError),
+    SessionLookup(PreviewSessionLookupError),
+    InvalidUrl(PreviewInvalidUrlError),
+    ControlRequired(PreviewControlRequiredError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -191,9 +191,9 @@ impl<'de> ::serde::Deserialize<'de> for PreviewError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "PreviewSessionLookupError" => Self::PreviewSessionLookupError(raw.decode()?),
-                "PreviewInvalidUrlError" => Self::PreviewInvalidUrlError(raw.decode()?),
-                "PreviewControlRequiredError" => Self::PreviewControlRequiredError(raw.decode()?),
+                "PreviewSessionLookupError" => Self::SessionLookup(raw.decode()?),
+                "PreviewInvalidUrlError" => Self::InvalidUrl(raw.decode()?),
+                "PreviewControlRequiredError" => Self::ControlRequired(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -396,6 +396,14 @@ pub struct PreviewEventNavigated {
     pub snapshot: PreviewSessionSnapshot,
 }
 
+crate::wire::string_enum! {
+    /// Inline enum at `PreviewEventResizedRequestClear`.
+    PreviewEventResizedRequestClear {
+        Cookies = "cookies",
+        Cache = "cache",
+    }
+}
+
 /// Inline object at `PreviewEventResizedRequest`.
 #[derive(Debug, Clone, Default, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -403,7 +411,7 @@ pub struct PreviewEventResizedRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hard_reload: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub clear: Option<PreviewAdjustInputClear>,
+    pub clear: Option<PreviewEventResizedRequestClear>,
 }
 
 /// Inline object at `PreviewEventResized`.
@@ -421,6 +429,14 @@ pub struct PreviewEventResized {
     pub request: Option<PreviewEventResizedRequest>,
 }
 
+/// Inline object at `PreviewEventFailedDownload`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PreviewEventFailedDownload {
+    pub id: String,
+    pub file_name: String,
+}
+
 /// Inline object at `PreviewEventFailed`.
 /// Wire tag: `type: "failed"`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
@@ -436,7 +452,7 @@ pub struct PreviewEventFailed {
     pub code: i64,
     pub description: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub download: Option<PreviewNavStatusLoadFailedDownload>,
+    pub download: Option<PreviewEventFailedDownload>,
 }
 
 /// Inline object at `PreviewEventClosed`.

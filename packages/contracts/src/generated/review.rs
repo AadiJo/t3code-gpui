@@ -87,8 +87,8 @@ pub struct ReviewDiffFileStat {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum ReviewDiffPreviewError {
-    VcsError(VcsError),
-    GitCommandError(GitCommandError),
+    Vcs(VcsError),
+    GitCommand(GitCommandError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -97,8 +97,8 @@ impl<'de> ::serde::Deserialize<'de> for ReviewDiffPreviewError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "VcsCheckpointStorageError" | "VcsProcessSpawnError" | "VcsProcessExitError" | "VcsProcessTimeoutError" | "VcsProcessStdinWriteError" | "VcsProcessOutputReadError" | "VcsProcessOutputLimitError" | "VcsProcessMissingExitCodeError" | "VcsRepositoryDetectionError" | "VcsUnsupportedOperationError" => Self::VcsError(raw.decode()?),
-                "GitCommandError" => Self::GitCommandError(raw.decode()?),
+                "VcsCheckpointStorageError" | "VcsProcessSpawnError" | "VcsProcessExitError" | "VcsProcessTimeoutError" | "VcsProcessStdinWriteError" | "VcsProcessOutputReadError" | "VcsProcessOutputLimitError" | "VcsProcessMissingExitCodeError" | "VcsRepositoryDetectionError" | "VcsUnsupportedOperationError" => Self::Vcs(raw.decode()?),
+                "GitCommandError" => Self::GitCommand(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),

@@ -91,12 +91,12 @@ pub struct ExternalLauncherUnsupportedTargetError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum ExternalLauncherError {
-    ExternalLauncherUnknownEditorError(ExternalLauncherUnknownEditorError),
-    ExternalLauncherUnsupportedEditorError(ExternalLauncherUnsupportedEditorError),
-    ExternalLauncherCommandNotFoundError(ExternalLauncherCommandNotFoundError),
-    ExternalLauncherUnsupportedTargetError(ExternalLauncherUnsupportedTargetError),
-    ExternalLauncherBrowserSpawnError(ExternalLauncherBrowserSpawnError),
-    ExternalLauncherEditorSpawnError(ExternalLauncherEditorSpawnError),
+    UnknownEditor(ExternalLauncherUnknownEditorError),
+    UnsupportedEditor(ExternalLauncherUnsupportedEditorError),
+    CommandNotFound(ExternalLauncherCommandNotFoundError),
+    UnsupportedTarget(ExternalLauncherUnsupportedTargetError),
+    BrowserSpawn(ExternalLauncherBrowserSpawnError),
+    EditorSpawn(ExternalLauncherEditorSpawnError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -105,12 +105,12 @@ impl<'de> ::serde::Deserialize<'de> for ExternalLauncherError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "ExternalLauncherUnknownEditorError" => Self::ExternalLauncherUnknownEditorError(raw.decode()?),
-                "ExternalLauncherUnsupportedEditorError" => Self::ExternalLauncherUnsupportedEditorError(raw.decode()?),
-                "ExternalLauncherCommandNotFoundError" => Self::ExternalLauncherCommandNotFoundError(raw.decode()?),
-                "ExternalLauncherUnsupportedTargetError" => Self::ExternalLauncherUnsupportedTargetError(raw.decode()?),
-                "ExternalLauncherBrowserSpawnError" => Self::ExternalLauncherBrowserSpawnError(raw.decode()?),
-                "ExternalLauncherEditorSpawnError" => Self::ExternalLauncherEditorSpawnError(raw.decode()?),
+                "ExternalLauncherUnknownEditorError" => Self::UnknownEditor(raw.decode()?),
+                "ExternalLauncherUnsupportedEditorError" => Self::UnsupportedEditor(raw.decode()?),
+                "ExternalLauncherCommandNotFoundError" => Self::CommandNotFound(raw.decode()?),
+                "ExternalLauncherUnsupportedTargetError" => Self::UnsupportedTarget(raw.decode()?),
+                "ExternalLauncherBrowserSpawnError" => Self::BrowserSpawn(raw.decode()?),
+                "ExternalLauncherEditorSpawnError" => Self::EditorSpawn(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),

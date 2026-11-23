@@ -399,11 +399,11 @@ pub struct TextGenerationError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum GitManagerServiceError {
-    GitManagerError(GitManagerError),
-    GitPullRequestMaterializationError(GitPullRequestMaterializationError),
-    GitCommandError(GitCommandError),
-    SourceControlProviderError(SourceControlProviderError),
-    TextGenerationError(TextGenerationError),
+    Error(GitManagerError),
+    PullRequestMaterialization(GitPullRequestMaterializationError),
+    Command(GitCommandError),
+    SourceControlProvider(SourceControlProviderError),
+    TextGeneration(TextGenerationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -412,11 +412,11 @@ impl<'de> ::serde::Deserialize<'de> for GitManagerServiceError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "GitManagerError" => Self::GitManagerError(raw.decode()?),
-                "GitPullRequestMaterializationError" => Self::GitPullRequestMaterializationError(raw.decode()?),
-                "GitCommandError" => Self::GitCommandError(raw.decode()?),
-                "SourceControlProviderError" => Self::SourceControlProviderError(raw.decode()?),
-                "TextGenerationError" => Self::TextGenerationError(raw.decode()?),
+                "GitManagerError" => Self::Error(raw.decode()?),
+                "GitPullRequestMaterializationError" => Self::PullRequestMaterialization(raw.decode()?),
+                "GitCommandError" => Self::Command(raw.decode()?),
+                "SourceControlProviderError" => Self::SourceControlProvider(raw.decode()?),
+                "TextGenerationError" => Self::TextGeneration(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -713,6 +713,15 @@ pub struct VcsStatusRemoteResult {
     pub pr: Option<VcsStatusRemoteResultPr>,
 }
 
+/// Inline object at `VcsStatusResultBranchChanges`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VcsStatusResultBranchChanges {
+    pub base_ref: Option<String>,
+    pub insertions: NonNegativeInt,
+    pub deletions: NonNegativeInt,
+}
+
 /// `VcsStatusResult` from `git.ts`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -726,7 +735,7 @@ pub struct VcsStatusResult {
     pub has_working_tree_changes: bool,
     pub working_tree: VcsStatusLocalResultWorkingTree,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub branch_changes: Option<VcsStatusLocalResultBranchChanges>,
+    pub branch_changes: Option<VcsStatusResultBranchChanges>,
     pub has_upstream: bool,
     pub ahead_count: NonNegativeInt,
     pub behind_count: NonNegativeInt,

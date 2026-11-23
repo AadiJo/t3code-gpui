@@ -160,6 +160,17 @@ pub struct IssueCreateResult {
     pub url: String,
 }
 
+/// Inline object at `IssueDetailAuthor`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IssueDetailAuthor {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub is_bot: Option<bool>,
+    pub login: String,
+    pub name: Option<String>,
+    pub avatar_url: Option<String>,
+}
+
 crate::wire::string_enum! {
     /// `IssueStateCategory` from `issue.ts`.
     IssueStateCategory {
@@ -176,6 +187,17 @@ pub struct IssueState {
     pub name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub close_reason: Option<String>,
+}
+
+/// Inline object at `IssueDetailAssigneesItem`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IssueDetailAssigneesItem {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub is_bot: Option<bool>,
+    pub login: String,
+    pub name: Option<String>,
+    pub avatar_url: Option<String>,
 }
 
 /// Inline object at `IssueDetailLabelsItem`.
@@ -214,13 +236,24 @@ crate::wire::string_enum! {
     }
 }
 
+/// Inline object at `IssueEventActor`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IssueEventActor {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub is_bot: Option<bool>,
+    pub login: String,
+    pub name: Option<String>,
+    pub avatar_url: Option<String>,
+}
+
 /// `IssueEvent` from `issue.ts`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct IssueEvent {
     pub id: String,
     pub kind: IssueEventKind,
-    pub actor: Option<IssueCommentAuthor>,
+    pub actor: Option<IssueEventActor>,
     pub created_at: String,
     pub detail: Option<String>,
 }
@@ -249,12 +282,12 @@ pub struct IssueDetail {
     pub display_key: String,
     pub title: String,
     pub url: String,
-    pub author: Option<IssueCommentAuthor>,
+    pub author: Option<IssueDetailAuthor>,
     pub state: IssueState,
     pub created_at: String,
     pub updated_at: String,
     pub closed_at: Option<String>,
-    pub assignees: Vec<IssueCommentAuthor>,
+    pub assignees: Vec<IssueDetailAssigneesItem>,
     pub labels: Vec<IssueDetailLabelsItem>,
     pub comment_count: NonNegativeInt,
     pub project_id: ProjectId,
@@ -313,6 +346,38 @@ pub struct IssueLinkedThreadsResult {
 /// `IssueListCursors` from `issue.ts`.
 pub type IssueListCursors = ::std::collections::BTreeMap<String, String>;
 
+/// Inline object at `IssueListEntryAuthor`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IssueListEntryAuthor {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub is_bot: Option<bool>,
+    pub login: String,
+    pub name: Option<String>,
+    pub avatar_url: Option<String>,
+}
+
+/// Inline object at `IssueListEntryAssigneesItem`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IssueListEntryAssigneesItem {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub is_bot: Option<bool>,
+    pub login: String,
+    pub name: Option<String>,
+    pub avatar_url: Option<String>,
+}
+
+/// Inline object at `IssueListEntryLabelsItem`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IssueListEntryLabelsItem {
+    pub name: String,
+    pub color: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+}
+
 /// `IssueListEntry` from `issue.ts`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -324,13 +389,13 @@ pub struct IssueListEntry {
     pub display_key: String,
     pub title: String,
     pub url: String,
-    pub author: Option<IssueCommentAuthor>,
+    pub author: Option<IssueListEntryAuthor>,
     pub state: IssueState,
     pub created_at: String,
     pub updated_at: String,
     pub closed_at: Option<String>,
-    pub assignees: Vec<IssueCommentAuthor>,
-    pub labels: Vec<IssueDetailLabelsItem>,
+    pub assignees: Vec<IssueListEntryAssigneesItem>,
+    pub labels: Vec<IssueListEntryLabelsItem>,
     pub comment_count: NonNegativeInt,
     pub project_id: ProjectId,
     pub project_title: String,
@@ -451,6 +516,20 @@ pub struct IssueOperationError {
     pub cause: Option<::serde_json::Value>,
 }
 
+crate::wire::string_enum! {
+    /// Inline enum at `IssueReactionInputContent`.
+    IssueReactionInputContent {
+        ThumbsUp = "thumbs-up",
+        ThumbsDown = "thumbs-down",
+        Laugh = "laugh",
+        Hooray = "hooray",
+        Confused = "confused",
+        Heart = "heart",
+        Rocket = "rocket",
+        Eyes = "eyes",
+    }
+}
+
 /// `IssueReactionInput` from `issue.ts`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -463,7 +542,7 @@ pub struct IssueReactionInput {
     pub key: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub subject_id: Option<String>,
-    pub content: IssueCommentReactionsItemContent,
+    pub content: IssueReactionInputContent,
     pub reacted: bool,
 }
 

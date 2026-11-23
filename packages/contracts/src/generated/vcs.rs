@@ -180,16 +180,16 @@ pub struct VcsUnsupportedOperationError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum VcsError {
-    VcsCheckpointStorageError(VcsCheckpointStorageError),
-    VcsProcessSpawnError(VcsProcessSpawnError),
-    VcsProcessExitError(VcsProcessExitError),
-    VcsProcessTimeoutError(VcsProcessTimeoutError),
-    VcsProcessStdinWriteError(VcsProcessStdinWriteError),
-    VcsProcessOutputReadError(VcsProcessOutputReadError),
-    VcsProcessOutputLimitError(VcsProcessOutputLimitError),
-    VcsProcessMissingExitCodeError(VcsProcessMissingExitCodeError),
-    VcsRepositoryDetectionError(VcsRepositoryDetectionError),
-    VcsUnsupportedOperationError(VcsUnsupportedOperationError),
+    CheckpointStorage(VcsCheckpointStorageError),
+    ProcessSpawn(VcsProcessSpawnError),
+    ProcessExit(VcsProcessExitError),
+    ProcessTimeout(VcsProcessTimeoutError),
+    ProcessStdinWrite(VcsProcessStdinWriteError),
+    ProcessOutputRead(VcsProcessOutputReadError),
+    ProcessOutputLimit(VcsProcessOutputLimitError),
+    ProcessMissingExitCode(VcsProcessMissingExitCodeError),
+    RepositoryDetection(VcsRepositoryDetectionError),
+    UnsupportedOperation(VcsUnsupportedOperationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -198,16 +198,16 @@ impl<'de> ::serde::Deserialize<'de> for VcsError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "VcsCheckpointStorageError" => Self::VcsCheckpointStorageError(raw.decode()?),
-                "VcsProcessSpawnError" => Self::VcsProcessSpawnError(raw.decode()?),
-                "VcsProcessExitError" => Self::VcsProcessExitError(raw.decode()?),
-                "VcsProcessTimeoutError" => Self::VcsProcessTimeoutError(raw.decode()?),
-                "VcsProcessStdinWriteError" => Self::VcsProcessStdinWriteError(raw.decode()?),
-                "VcsProcessOutputReadError" => Self::VcsProcessOutputReadError(raw.decode()?),
-                "VcsProcessOutputLimitError" => Self::VcsProcessOutputLimitError(raw.decode()?),
-                "VcsProcessMissingExitCodeError" => Self::VcsProcessMissingExitCodeError(raw.decode()?),
-                "VcsRepositoryDetectionError" => Self::VcsRepositoryDetectionError(raw.decode()?),
-                "VcsUnsupportedOperationError" => Self::VcsUnsupportedOperationError(raw.decode()?),
+                "VcsCheckpointStorageError" => Self::CheckpointStorage(raw.decode()?),
+                "VcsProcessSpawnError" => Self::ProcessSpawn(raw.decode()?),
+                "VcsProcessExitError" => Self::ProcessExit(raw.decode()?),
+                "VcsProcessTimeoutError" => Self::ProcessTimeout(raw.decode()?),
+                "VcsProcessStdinWriteError" => Self::ProcessStdinWrite(raw.decode()?),
+                "VcsProcessOutputReadError" => Self::ProcessOutputRead(raw.decode()?),
+                "VcsProcessOutputLimitError" => Self::ProcessOutputLimit(raw.decode()?),
+                "VcsProcessMissingExitCodeError" => Self::ProcessMissingExitCode(raw.decode()?),
+                "VcsRepositoryDetectionError" => Self::RepositoryDetection(raw.decode()?),
+                "VcsUnsupportedOperationError" => Self::UnsupportedOperation(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),

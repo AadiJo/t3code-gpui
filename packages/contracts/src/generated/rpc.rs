@@ -8,10 +8,10 @@ use super::*;
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum AgentSessionsImportError {
-    AgentSessionImportProjectChangedError(AgentSessionImportProjectChangedError),
-    AgentSessionImportProjectNotFoundError(AgentSessionImportProjectNotFoundError),
-    AgentSessionScanError(AgentSessionScanError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    SessionImportProjectChanged(AgentSessionImportProjectChangedError),
+    SessionImportProjectNotFound(AgentSessionImportProjectNotFoundError),
+    SessionScan(AgentSessionScanError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -20,10 +20,10 @@ impl<'de> ::serde::Deserialize<'de> for AgentSessionsImportError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "AgentSessionImportProjectChangedError" => Self::AgentSessionImportProjectChangedError(raw.decode()?),
-                "AgentSessionImportProjectNotFoundError" => Self::AgentSessionImportProjectNotFoundError(raw.decode()?),
-                "AgentSessionScanError" => Self::AgentSessionScanError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "AgentSessionImportProjectChangedError" => Self::SessionImportProjectChanged(raw.decode()?),
+                "AgentSessionImportProjectNotFoundError" => Self::SessionImportProjectNotFound(raw.decode()?),
+                "AgentSessionScanError" => Self::SessionScan(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -36,8 +36,8 @@ impl<'de> ::serde::Deserialize<'de> for AgentSessionsImportError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum AgentSessionsScanError {
-    AgentSessionScanError(AgentSessionScanError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    Session(AgentSessionScanError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -46,8 +46,8 @@ impl<'de> ::serde::Deserialize<'de> for AgentSessionsScanError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "AgentSessionScanError" => Self::AgentSessionScanError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "AgentSessionScanError" => Self::Session(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -60,8 +60,8 @@ impl<'de> ::serde::Deserialize<'de> for AgentSessionsScanError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum AssetsCreateUrlError {
-    AssetAccessError(AssetAccessError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    AssetAccess(AssetAccessError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -70,8 +70,8 @@ impl<'de> ::serde::Deserialize<'de> for AssetsCreateUrlError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "AssetWorkspaceContextNotFoundError" | "AssetWorkspaceContextResolutionError" | "AssetWorkspaceRootNormalizationError" | "AssetWorkspacePathValidationError" | "AssetPreviewTypeValidationError" | "AssetWorkspaceAssetInspectionError" | "AssetWorkspaceAssetNotFoundError" | "AssetWorkspaceResolutionError" | "AssetAttachmentNotFoundError" | "AssetProjectFaviconResolutionError" | "AssetProjectFaviconInspectionError" | "AssetProjectFaviconNotFoundError" | "AssetGitHubMediaUrlValidationError" | "AssetSigningKeyLoadError" => Self::AssetAccessError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "AssetWorkspaceContextNotFoundError" | "AssetWorkspaceContextResolutionError" | "AssetWorkspaceRootNormalizationError" | "AssetWorkspacePathValidationError" | "AssetPreviewTypeValidationError" | "AssetWorkspaceAssetInspectionError" | "AssetWorkspaceAssetNotFoundError" | "AssetWorkspaceResolutionError" | "AssetAttachmentNotFoundError" | "AssetProjectFaviconResolutionError" | "AssetProjectFaviconInspectionError" | "AssetProjectFaviconNotFoundError" | "AssetGitHubMediaUrlValidationError" | "AssetSigningKeyLoadError" => Self::AssetAccess(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -84,8 +84,8 @@ impl<'de> ::serde::Deserialize<'de> for AssetsCreateUrlError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum AssetsPersistChatAttachmentsError {
-    PersistChatAttachmentsError(PersistChatAttachmentsError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    Persist(PersistChatAttachmentsError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -94,8 +94,8 @@ impl<'de> ::serde::Deserialize<'de> for AssetsPersistChatAttachmentsError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "PersistChatAttachmentsError" => Self::PersistChatAttachmentsError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "PersistChatAttachmentsError" => Self::Persist(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -108,8 +108,8 @@ impl<'de> ::serde::Deserialize<'de> for AssetsPersistChatAttachmentsError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum AttachmentsCreateUploadUrlError {
-    AttachmentUploadSigningKeyError(AttachmentUploadSigningKeyError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    AttachmentUploadSigningKey(AttachmentUploadSigningKeyError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -118,8 +118,8 @@ impl<'de> ::serde::Deserialize<'de> for AttachmentsCreateUploadUrlError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "AttachmentUploadSigningKeyError" => Self::AttachmentUploadSigningKeyError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "AttachmentUploadSigningKeyError" => Self::AttachmentUploadSigningKey(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -132,8 +132,8 @@ impl<'de> ::serde::Deserialize<'de> for AttachmentsCreateUploadUrlError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum CloudInstallRelayClientError {
-    RelayClientInstallFailedError(RelayClientInstallFailedError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    RelayClientInstallFailed(RelayClientInstallFailedError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -142,8 +142,8 @@ impl<'de> ::serde::Deserialize<'de> for CloudInstallRelayClientError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "RelayClientInstallFailedError" => Self::RelayClientInstallFailedError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "RelayClientInstallFailedError" => Self::RelayClientInstallFailed(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -156,8 +156,8 @@ impl<'de> ::serde::Deserialize<'de> for CloudInstallRelayClientError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum DeviceActionError {
-    DeviceError(DeviceError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    Error(DeviceError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -166,8 +166,8 @@ impl<'de> ::serde::Deserialize<'de> for DeviceActionError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "DeviceHostUnavailableError" | "DevicePlatformUnavailableError" | "DeviceNotFoundError" | "DeviceBootError" | "DeviceOperationError" | "DeviceActionUnavailableError" => Self::DeviceError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "DeviceHostUnavailableError" | "DevicePlatformUnavailableError" | "DeviceNotFoundError" | "DeviceBootError" | "DeviceOperationError" | "DeviceActionUnavailableError" => Self::Error(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -180,8 +180,8 @@ impl<'de> ::serde::Deserialize<'de> for DeviceActionError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum DeviceCloseError {
-    DeviceError(DeviceError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    Error(DeviceError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -190,8 +190,8 @@ impl<'de> ::serde::Deserialize<'de> for DeviceCloseError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "DeviceHostUnavailableError" | "DevicePlatformUnavailableError" | "DeviceNotFoundError" | "DeviceBootError" | "DeviceOperationError" | "DeviceActionUnavailableError" => Self::DeviceError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "DeviceHostUnavailableError" | "DevicePlatformUnavailableError" | "DeviceNotFoundError" | "DeviceBootError" | "DeviceOperationError" | "DeviceActionUnavailableError" => Self::Error(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -204,8 +204,8 @@ impl<'de> ::serde::Deserialize<'de> for DeviceCloseError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum DeviceConfigureError {
-    DeviceError(DeviceError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    Error(DeviceError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -214,8 +214,8 @@ impl<'de> ::serde::Deserialize<'de> for DeviceConfigureError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "DeviceHostUnavailableError" | "DevicePlatformUnavailableError" | "DeviceNotFoundError" | "DeviceBootError" | "DeviceOperationError" | "DeviceActionUnavailableError" => Self::DeviceError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "DeviceHostUnavailableError" | "DevicePlatformUnavailableError" | "DeviceNotFoundError" | "DeviceBootError" | "DeviceOperationError" | "DeviceActionUnavailableError" => Self::Error(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -261,6 +261,13 @@ pub struct DeviceConfigureSuccessHostsItem {
     pub kind: DeviceConfigureSuccessHostsItemKind,
 }
 
+crate::wire::string_enum! {
+    /// Inline enum at `DeviceConfigureSuccessEasHostsItemKind`.
+    DeviceConfigureSuccessEasHostsItemKind {
+        Eas = "eas",
+    }
+}
+
 /// Inline object at `DeviceConfigureSuccessEasHostsItem`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -274,7 +281,14 @@ pub struct DeviceConfigureSuccessEasHostsItem {
     pub tool_inspection_error: Option<String>,
     pub hub_installed: bool,
     pub agent_device_installed: bool,
-    pub kind: EasDeviceHostConfigKind,
+    pub kind: DeviceConfigureSuccessEasHostsItemKind,
+}
+
+crate::wire::string_enum! {
+    /// Inline enum at `DeviceConfigureSuccessSimlockHostsItemKind`.
+    DeviceConfigureSuccessSimlockHostsItemKind {
+        Simlock = "simlock",
+    }
 }
 
 /// Inline object at `DeviceConfigureSuccessSimlockHostsItem`.
@@ -290,7 +304,7 @@ pub struct DeviceConfigureSuccessSimlockHostsItem {
     pub tool_inspection_error: Option<String>,
     pub hub_installed: bool,
     pub agent_device_installed: bool,
-    pub kind: SimlockDeviceHostConfigKind,
+    pub kind: DeviceConfigureSuccessSimlockHostsItemKind,
 }
 
 /// `DeviceConfigureSuccess` from `rpc.ts`.
@@ -331,8 +345,8 @@ pub struct DeviceConfigureSuccess {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum DeviceDetailError {
-    DeviceError(DeviceError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    Error(DeviceError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -341,8 +355,8 @@ impl<'de> ::serde::Deserialize<'de> for DeviceDetailError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "DeviceHostUnavailableError" | "DevicePlatformUnavailableError" | "DeviceNotFoundError" | "DeviceBootError" | "DeviceOperationError" | "DeviceActionUnavailableError" => Self::DeviceError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "DeviceHostUnavailableError" | "DevicePlatformUnavailableError" | "DeviceNotFoundError" | "DeviceBootError" | "DeviceOperationError" | "DeviceActionUnavailableError" => Self::Error(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -355,7 +369,7 @@ impl<'de> ::serde::Deserialize<'de> for DeviceDetailError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum DeviceEasAccountError2 {
-    DeviceEasAccountError(DeviceEasAccountError),
+    Error(DeviceEasAccountError),
     EnvironmentAuthorizationError(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
@@ -365,7 +379,7 @@ impl<'de> ::serde::Deserialize<'de> for DeviceEasAccountError2 {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "DeviceEasAccountError" => Self::DeviceEasAccountError(raw.decode()?),
+                "DeviceEasAccountError" => Self::Error(raw.decode()?),
                 "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
@@ -379,8 +393,8 @@ impl<'de> ::serde::Deserialize<'de> for DeviceEasAccountError2 {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum DeviceListError {
-    DeviceError(DeviceError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    Error(DeviceError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -389,8 +403,8 @@ impl<'de> ::serde::Deserialize<'de> for DeviceListError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "DeviceHostUnavailableError" | "DevicePlatformUnavailableError" | "DeviceNotFoundError" | "DeviceBootError" | "DeviceOperationError" | "DeviceActionUnavailableError" => Self::DeviceError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "DeviceHostUnavailableError" | "DevicePlatformUnavailableError" | "DeviceNotFoundError" | "DeviceBootError" | "DeviceOperationError" | "DeviceActionUnavailableError" => Self::Error(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -436,8 +450,8 @@ pub struct DeviceListSuccess {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum DeviceOpenError {
-    DeviceError(DeviceError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    Error(DeviceError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -446,8 +460,8 @@ impl<'de> ::serde::Deserialize<'de> for DeviceOpenError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "DeviceHostUnavailableError" | "DevicePlatformUnavailableError" | "DeviceNotFoundError" | "DeviceBootError" | "DeviceOperationError" | "DeviceActionUnavailableError" => Self::DeviceError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "DeviceHostUnavailableError" | "DevicePlatformUnavailableError" | "DeviceNotFoundError" | "DeviceBootError" | "DeviceOperationError" | "DeviceActionUnavailableError" => Self::Error(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -460,8 +474,8 @@ impl<'de> ::serde::Deserialize<'de> for DeviceOpenError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum DeviceShutdownError {
-    DeviceError(DeviceError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    Error(DeviceError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -470,8 +484,8 @@ impl<'de> ::serde::Deserialize<'de> for DeviceShutdownError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "DeviceHostUnavailableError" | "DevicePlatformUnavailableError" | "DeviceNotFoundError" | "DeviceBootError" | "DeviceOperationError" | "DeviceActionUnavailableError" => Self::DeviceError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "DeviceHostUnavailableError" | "DevicePlatformUnavailableError" | "DeviceNotFoundError" | "DeviceBootError" | "DeviceOperationError" | "DeviceActionUnavailableError" => Self::Error(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -484,7 +498,7 @@ impl<'de> ::serde::Deserialize<'de> for DeviceShutdownError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum DeviceSimlockIdentityError2 {
-    DeviceSimlockIdentityError(DeviceSimlockIdentityError),
+    Error(DeviceSimlockIdentityError),
     EnvironmentAuthorizationError(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
@@ -494,7 +508,7 @@ impl<'de> ::serde::Deserialize<'de> for DeviceSimlockIdentityError2 {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "DeviceSimlockIdentityError" => Self::DeviceSimlockIdentityError(raw.decode()?),
+                "DeviceSimlockIdentityError" => Self::Error(raw.decode()?),
                 "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
@@ -508,8 +522,8 @@ impl<'de> ::serde::Deserialize<'de> for DeviceSimlockIdentityError2 {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum DeviceTestHostError {
-    DeviceError(DeviceError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    Error(DeviceError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -518,8 +532,8 @@ impl<'de> ::serde::Deserialize<'de> for DeviceTestHostError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "DeviceHostUnavailableError" | "DevicePlatformUnavailableError" | "DeviceNotFoundError" | "DeviceBootError" | "DeviceOperationError" | "DeviceActionUnavailableError" => Self::DeviceError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "DeviceHostUnavailableError" | "DevicePlatformUnavailableError" | "DeviceNotFoundError" | "DeviceBootError" | "DeviceOperationError" | "DeviceActionUnavailableError" => Self::Error(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -532,7 +546,7 @@ impl<'de> ::serde::Deserialize<'de> for DeviceTestHostError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum FilesystemBrowseError2 {
-    FilesystemBrowseError(FilesystemBrowseError),
+    Error(FilesystemBrowseError),
     EnvironmentAuthorizationError(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
@@ -542,7 +556,7 @@ impl<'de> ::serde::Deserialize<'de> for FilesystemBrowseError2 {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "FilesystemBrowseError" => Self::FilesystemBrowseError(raw.decode()?),
+                "FilesystemBrowseError" => Self::Error(raw.decode()?),
                 "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
@@ -556,8 +570,8 @@ impl<'de> ::serde::Deserialize<'de> for FilesystemBrowseError2 {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum GitPreparePullRequestThreadError {
-    GitManagerServiceError(GitManagerServiceError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    ManagerService(GitManagerServiceError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -566,8 +580,8 @@ impl<'de> ::serde::Deserialize<'de> for GitPreparePullRequestThreadError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "GitManagerError" | "GitPullRequestMaterializationError" | "GitCommandError" | "SourceControlProviderError" | "TextGenerationError" => Self::GitManagerServiceError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "GitManagerError" | "GitPullRequestMaterializationError" | "GitCommandError" | "SourceControlProviderError" | "TextGenerationError" => Self::ManagerService(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -580,8 +594,8 @@ impl<'de> ::serde::Deserialize<'de> for GitPreparePullRequestThreadError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum GitResolvePullRequestError {
-    GitManagerServiceError(GitManagerServiceError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    ManagerService(GitManagerServiceError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -590,8 +604,8 @@ impl<'de> ::serde::Deserialize<'de> for GitResolvePullRequestError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "GitManagerError" | "GitPullRequestMaterializationError" | "GitCommandError" | "SourceControlProviderError" | "TextGenerationError" => Self::GitManagerServiceError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "GitManagerError" | "GitPullRequestMaterializationError" | "GitCommandError" | "SourceControlProviderError" | "TextGenerationError" => Self::ManagerService(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -604,8 +618,8 @@ impl<'de> ::serde::Deserialize<'de> for GitResolvePullRequestError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum GitRunStackedActionError {
-    GitManagerServiceError(GitManagerServiceError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    ManagerService(GitManagerServiceError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -614,8 +628,8 @@ impl<'de> ::serde::Deserialize<'de> for GitRunStackedActionError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "GitManagerError" | "GitPullRequestMaterializationError" | "GitCommandError" | "SourceControlProviderError" | "TextGenerationError" => Self::GitManagerServiceError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "GitManagerError" | "GitPullRequestMaterializationError" | "GitCommandError" | "SourceControlProviderError" | "TextGenerationError" => Self::ManagerService(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -628,7 +642,7 @@ impl<'de> ::serde::Deserialize<'de> for GitRunStackedActionError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum GuestShareCreateError2 {
-    GuestShareCreateError(GuestShareCreateError),
+    Error(GuestShareCreateError),
     EnvironmentAuthorizationError(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
@@ -638,7 +652,7 @@ impl<'de> ::serde::Deserialize<'de> for GuestShareCreateError2 {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "GuestShareCreateError" => Self::GuestShareCreateError(raw.decode()?),
+                "GuestShareCreateError" => Self::Error(raw.decode()?),
                 "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
@@ -652,9 +666,9 @@ impl<'de> ::serde::Deserialize<'de> for GuestShareCreateError2 {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum IssuesCandidatesError {
-    IssueUnavailableError(IssueUnavailableError),
-    IssueOperationError(IssueOperationError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    IssueUnavailable(IssueUnavailableError),
+    IssueOperation(IssueOperationError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -663,9 +677,9 @@ impl<'de> ::serde::Deserialize<'de> for IssuesCandidatesError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "IssueUnavailableError" => Self::IssueUnavailableError(raw.decode()?),
-                "IssueOperationError" => Self::IssueOperationError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "IssueUnavailableError" => Self::IssueUnavailable(raw.decode()?),
+                "IssueOperationError" => Self::IssueOperation(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -678,9 +692,9 @@ impl<'de> ::serde::Deserialize<'de> for IssuesCandidatesError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum IssuesCommentError {
-    IssueUnavailableError(IssueUnavailableError),
-    IssueOperationError(IssueOperationError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    IssueUnavailable(IssueUnavailableError),
+    IssueOperation(IssueOperationError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -689,9 +703,9 @@ impl<'de> ::serde::Deserialize<'de> for IssuesCommentError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "IssueUnavailableError" => Self::IssueUnavailableError(raw.decode()?),
-                "IssueOperationError" => Self::IssueOperationError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "IssueUnavailableError" => Self::IssueUnavailable(raw.decode()?),
+                "IssueOperationError" => Self::IssueOperation(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -704,9 +718,9 @@ impl<'de> ::serde::Deserialize<'de> for IssuesCommentError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum IssuesCommentsError {
-    IssueUnavailableError(IssueUnavailableError),
-    IssueOperationError(IssueOperationError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    IssueUnavailable(IssueUnavailableError),
+    IssueOperation(IssueOperationError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -715,9 +729,9 @@ impl<'de> ::serde::Deserialize<'de> for IssuesCommentsError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "IssueUnavailableError" => Self::IssueUnavailableError(raw.decode()?),
-                "IssueOperationError" => Self::IssueOperationError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "IssueUnavailableError" => Self::IssueUnavailable(raw.decode()?),
+                "IssueOperationError" => Self::IssueOperation(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -730,9 +744,9 @@ impl<'de> ::serde::Deserialize<'de> for IssuesCommentsError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum IssuesCreateError {
-    IssueUnavailableError(IssueUnavailableError),
-    IssueOperationError(IssueOperationError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    IssueUnavailable(IssueUnavailableError),
+    IssueOperation(IssueOperationError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -741,9 +755,9 @@ impl<'de> ::serde::Deserialize<'de> for IssuesCreateError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "IssueUnavailableError" => Self::IssueUnavailableError(raw.decode()?),
-                "IssueOperationError" => Self::IssueOperationError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "IssueUnavailableError" => Self::IssueUnavailable(raw.decode()?),
+                "IssueOperationError" => Self::IssueOperation(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -756,9 +770,9 @@ impl<'de> ::serde::Deserialize<'de> for IssuesCreateError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum IssuesDetailError {
-    IssueUnavailableError(IssueUnavailableError),
-    IssueOperationError(IssueOperationError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    IssueUnavailable(IssueUnavailableError),
+    IssueOperation(IssueOperationError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -767,9 +781,9 @@ impl<'de> ::serde::Deserialize<'de> for IssuesDetailError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "IssueUnavailableError" => Self::IssueUnavailableError(raw.decode()?),
-                "IssueOperationError" => Self::IssueOperationError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "IssueUnavailableError" => Self::IssueUnavailable(raw.decode()?),
+                "IssueOperationError" => Self::IssueOperation(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -782,9 +796,9 @@ impl<'de> ::serde::Deserialize<'de> for IssuesDetailError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum IssuesLinkedThreadsError {
-    IssueUnavailableError(IssueUnavailableError),
-    IssueOperationError(IssueOperationError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    IssueUnavailable(IssueUnavailableError),
+    IssueOperation(IssueOperationError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -793,9 +807,9 @@ impl<'de> ::serde::Deserialize<'de> for IssuesLinkedThreadsError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "IssueUnavailableError" => Self::IssueUnavailableError(raw.decode()?),
-                "IssueOperationError" => Self::IssueOperationError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "IssueUnavailableError" => Self::IssueUnavailable(raw.decode()?),
+                "IssueOperationError" => Self::IssueOperation(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -808,9 +822,9 @@ impl<'de> ::serde::Deserialize<'de> for IssuesLinkedThreadsError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum IssuesListError {
-    IssueUnavailableError(IssueUnavailableError),
-    IssueOperationError(IssueOperationError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    IssueUnavailable(IssueUnavailableError),
+    IssueOperation(IssueOperationError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -819,9 +833,9 @@ impl<'de> ::serde::Deserialize<'de> for IssuesListError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "IssueUnavailableError" => Self::IssueUnavailableError(raw.decode()?),
-                "IssueOperationError" => Self::IssueOperationError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "IssueUnavailableError" => Self::IssueUnavailable(raw.decode()?),
+                "IssueOperationError" => Self::IssueOperation(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -834,9 +848,9 @@ impl<'de> ::serde::Deserialize<'de> for IssuesListError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum IssuesReactError {
-    IssueUnavailableError(IssueUnavailableError),
-    IssueOperationError(IssueOperationError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    IssueUnavailable(IssueUnavailableError),
+    IssueOperation(IssueOperationError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -845,9 +859,9 @@ impl<'de> ::serde::Deserialize<'de> for IssuesReactError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "IssueUnavailableError" => Self::IssueUnavailableError(raw.decode()?),
-                "IssueOperationError" => Self::IssueOperationError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "IssueUnavailableError" => Self::IssueUnavailable(raw.decode()?),
+                "IssueOperationError" => Self::IssueOperation(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -860,9 +874,9 @@ impl<'de> ::serde::Deserialize<'de> for IssuesReactError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum IssuesSetStateError {
-    IssueUnavailableError(IssueUnavailableError),
-    IssueOperationError(IssueOperationError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    IssueUnavailable(IssueUnavailableError),
+    IssueOperation(IssueOperationError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -871,9 +885,9 @@ impl<'de> ::serde::Deserialize<'de> for IssuesSetStateError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "IssueUnavailableError" => Self::IssueUnavailableError(raw.decode()?),
-                "IssueOperationError" => Self::IssueOperationError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "IssueUnavailableError" => Self::IssueUnavailable(raw.decode()?),
+                "IssueOperationError" => Self::IssueOperation(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -886,9 +900,9 @@ impl<'de> ::serde::Deserialize<'de> for IssuesSetStateError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum IssuesTemplatesError {
-    IssueUnavailableError(IssueUnavailableError),
-    IssueOperationError(IssueOperationError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    IssueUnavailable(IssueUnavailableError),
+    IssueOperation(IssueOperationError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -897,9 +911,9 @@ impl<'de> ::serde::Deserialize<'de> for IssuesTemplatesError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "IssueUnavailableError" => Self::IssueUnavailableError(raw.decode()?),
-                "IssueOperationError" => Self::IssueOperationError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "IssueUnavailableError" => Self::IssueUnavailable(raw.decode()?),
+                "IssueOperationError" => Self::IssueOperation(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -912,9 +926,9 @@ impl<'de> ::serde::Deserialize<'de> for IssuesTemplatesError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum IssuesUpdateError {
-    IssueUnavailableError(IssueUnavailableError),
-    IssueOperationError(IssueOperationError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    IssueUnavailable(IssueUnavailableError),
+    IssueOperation(IssueOperationError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -923,9 +937,9 @@ impl<'de> ::serde::Deserialize<'de> for IssuesUpdateError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "IssueUnavailableError" => Self::IssueUnavailableError(raw.decode()?),
-                "IssueOperationError" => Self::IssueOperationError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "IssueUnavailableError" => Self::IssueUnavailable(raw.decode()?),
+                "IssueOperationError" => Self::IssueOperation(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -938,8 +952,8 @@ impl<'de> ::serde::Deserialize<'de> for IssuesUpdateError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum IssueTrackersBindProjectError {
-    IssueTrackerConnectionError(IssueTrackerConnectionError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    TrackerConnection(IssueTrackerConnectionError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -948,8 +962,8 @@ impl<'de> ::serde::Deserialize<'de> for IssueTrackersBindProjectError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "IssueTrackerConnectionError" => Self::IssueTrackerConnectionError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "IssueTrackerConnectionError" => Self::TrackerConnection(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -962,8 +976,8 @@ impl<'de> ::serde::Deserialize<'de> for IssueTrackersBindProjectError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum IssueTrackersConnectError {
-    IssueTrackerConnectionError(IssueTrackerConnectionError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    TrackerConnection(IssueTrackerConnectionError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -972,8 +986,8 @@ impl<'de> ::serde::Deserialize<'de> for IssueTrackersConnectError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "IssueTrackerConnectionError" => Self::IssueTrackerConnectionError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "IssueTrackerConnectionError" => Self::TrackerConnection(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -986,8 +1000,8 @@ impl<'de> ::serde::Deserialize<'de> for IssueTrackersConnectError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum IssueTrackersListError {
-    IssueTrackerConnectionError(IssueTrackerConnectionError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    TrackerConnection(IssueTrackerConnectionError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -996,8 +1010,8 @@ impl<'de> ::serde::Deserialize<'de> for IssueTrackersListError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "IssueTrackerConnectionError" => Self::IssueTrackerConnectionError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "IssueTrackerConnectionError" => Self::TrackerConnection(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -1010,8 +1024,8 @@ impl<'de> ::serde::Deserialize<'de> for IssueTrackersListError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum McpAppsCallToolError {
-    McpAppRequestError(McpAppRequestError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    AppRequest(McpAppRequestError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -1020,8 +1034,8 @@ impl<'de> ::serde::Deserialize<'de> for McpAppsCallToolError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "McpAppRequestError" => Self::McpAppRequestError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "McpAppRequestError" => Self::AppRequest(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -1034,8 +1048,8 @@ impl<'de> ::serde::Deserialize<'de> for McpAppsCallToolError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum McpAppsReadResourceError {
-    McpAppRequestError(McpAppRequestError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    AppRequest(McpAppRequestError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -1044,8 +1058,8 @@ impl<'de> ::serde::Deserialize<'de> for McpAppsReadResourceError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "McpAppRequestError" => Self::McpAppRequestError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "McpAppRequestError" => Self::AppRequest(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -1058,8 +1072,8 @@ impl<'de> ::serde::Deserialize<'de> for McpAppsReadResourceError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum McpAppsToolInfoError {
-    McpAppRequestError(McpAppRequestError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    AppRequest(McpAppRequestError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -1068,8 +1082,8 @@ impl<'de> ::serde::Deserialize<'de> for McpAppsToolInfoError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "McpAppRequestError" => Self::McpAppRequestError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "McpAppRequestError" => Self::AppRequest(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -1082,8 +1096,8 @@ impl<'de> ::serde::Deserialize<'de> for McpAppsToolInfoError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum McpAppsUpdateModelContextError {
-    McpAppRequestError(McpAppRequestError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    AppRequest(McpAppRequestError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -1092,8 +1106,8 @@ impl<'de> ::serde::Deserialize<'de> for McpAppsUpdateModelContextError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "McpAppRequestError" => Self::McpAppRequestError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "McpAppRequestError" => Self::AppRequest(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -1106,7 +1120,7 @@ impl<'de> ::serde::Deserialize<'de> for McpAppsUpdateModelContextError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum OrchestrationDispatchCommandError2 {
-    OrchestrationV2DispatchCommandError(OrchestrationV2DispatchCommandError),
+    V2DispatchCommandError(OrchestrationV2DispatchCommandError),
     EnvironmentAuthorizationError(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
@@ -1116,7 +1130,7 @@ impl<'de> ::serde::Deserialize<'de> for OrchestrationDispatchCommandError2 {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "OrchestrationV2DispatchCommandError" => Self::OrchestrationV2DispatchCommandError(raw.decode()?),
+                "OrchestrationV2DispatchCommandError" => Self::V2DispatchCommandError(raw.decode()?),
                 "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
@@ -1130,8 +1144,8 @@ impl<'de> ::serde::Deserialize<'de> for OrchestrationDispatchCommandError2 {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum OrchestrationForceStopThreadError {
-    OrchestrationV2ForceStopThreadError(OrchestrationV2ForceStopThreadError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    V2(OrchestrationV2ForceStopThreadError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -1140,8 +1154,8 @@ impl<'de> ::serde::Deserialize<'de> for OrchestrationForceStopThreadError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "OrchestrationV2ForceStopThreadError" => Self::OrchestrationV2ForceStopThreadError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "OrchestrationV2ForceStopThreadError" => Self::V2(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -1154,8 +1168,8 @@ impl<'de> ::serde::Deserialize<'de> for OrchestrationForceStopThreadError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum OrchestrationGetArchivedShellSnapshotError {
-    OrchestrationV2GetShellSnapshotError(OrchestrationV2GetShellSnapshotError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    V2Get(OrchestrationV2GetShellSnapshotError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -1164,8 +1178,8 @@ impl<'de> ::serde::Deserialize<'de> for OrchestrationGetArchivedShellSnapshotErr
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "OrchestrationV2GetShellSnapshotError" => Self::OrchestrationV2GetShellSnapshotError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "OrchestrationV2GetShellSnapshotError" => Self::V2Get(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -1178,7 +1192,7 @@ impl<'de> ::serde::Deserialize<'de> for OrchestrationGetArchivedShellSnapshotErr
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum OrchestrationGetFullThreadDiffError2 {
-    OrchestrationGetFullThreadDiffError(OrchestrationGetFullThreadDiffError),
+    Error(OrchestrationGetFullThreadDiffError),
     EnvironmentAuthorizationError(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
@@ -1188,7 +1202,7 @@ impl<'de> ::serde::Deserialize<'de> for OrchestrationGetFullThreadDiffError2 {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "OrchestrationGetFullThreadDiffError" => Self::OrchestrationGetFullThreadDiffError(raw.decode()?),
+                "OrchestrationGetFullThreadDiffError" => Self::Error(raw.decode()?),
                 "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
@@ -1202,8 +1216,8 @@ impl<'de> ::serde::Deserialize<'de> for OrchestrationGetFullThreadDiffError2 {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum OrchestrationGetNativeChildWorkError {
-    OrchestrationV2GetNativeChildWorkError(OrchestrationV2GetNativeChildWorkError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    V2(OrchestrationV2GetNativeChildWorkError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -1212,8 +1226,8 @@ impl<'de> ::serde::Deserialize<'de> for OrchestrationGetNativeChildWorkError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "OrchestrationV2GetNativeChildWorkError" => Self::OrchestrationV2GetNativeChildWorkError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "OrchestrationV2GetNativeChildWorkError" => Self::V2(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -1226,8 +1240,8 @@ impl<'de> ::serde::Deserialize<'de> for OrchestrationGetNativeChildWorkError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum OrchestrationGetOlderSettledThreadsError {
-    OrchestrationV2GetShellSnapshotError(OrchestrationV2GetShellSnapshotError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    V2GetShellSnapshot(OrchestrationV2GetShellSnapshotError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -1236,8 +1250,8 @@ impl<'de> ::serde::Deserialize<'de> for OrchestrationGetOlderSettledThreadsError
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "OrchestrationV2GetShellSnapshotError" => Self::OrchestrationV2GetShellSnapshotError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "OrchestrationV2GetShellSnapshotError" => Self::V2GetShellSnapshot(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -1250,8 +1264,8 @@ impl<'de> ::serde::Deserialize<'de> for OrchestrationGetOlderSettledThreadsError
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum OrchestrationGetThreadFamilyError {
-    OrchestrationV2GetShellSnapshotError(OrchestrationV2GetShellSnapshotError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    V2GetShellSnapshot(OrchestrationV2GetShellSnapshotError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -1260,8 +1274,8 @@ impl<'de> ::serde::Deserialize<'de> for OrchestrationGetThreadFamilyError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "OrchestrationV2GetShellSnapshotError" => Self::OrchestrationV2GetShellSnapshotError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "OrchestrationV2GetShellSnapshotError" => Self::V2GetShellSnapshot(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -1274,8 +1288,8 @@ impl<'de> ::serde::Deserialize<'de> for OrchestrationGetThreadFamilyError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum OrchestrationGetThreadLinkMetadataError {
-    OrchestrationV2GetShellSnapshotError(OrchestrationV2GetShellSnapshotError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    V2GetShellSnapshot(OrchestrationV2GetShellSnapshotError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -1284,8 +1298,8 @@ impl<'de> ::serde::Deserialize<'de> for OrchestrationGetThreadLinkMetadataError 
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "OrchestrationV2GetShellSnapshotError" => Self::OrchestrationV2GetShellSnapshotError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "OrchestrationV2GetShellSnapshotError" => Self::V2GetShellSnapshot(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -1301,8 +1315,8 @@ pub type OrchestrationGetThreadLinkMetadataSuccess = ::std::collections::BTreeMa
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum OrchestrationGetThreadProjectionError {
-    OrchestrationV2GetThreadProjectionError(OrchestrationV2GetThreadProjectionError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    V2(OrchestrationV2GetThreadProjectionError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -1311,8 +1325,8 @@ impl<'de> ::serde::Deserialize<'de> for OrchestrationGetThreadProjectionError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "OrchestrationV2GetThreadProjectionError" => Self::OrchestrationV2GetThreadProjectionError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "OrchestrationV2GetThreadProjectionError" => Self::V2(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -1325,8 +1339,8 @@ impl<'de> ::serde::Deserialize<'de> for OrchestrationGetThreadProjectionError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum OrchestrationGetThreadTitlesError {
-    OrchestrationV2GetShellSnapshotError(OrchestrationV2GetShellSnapshotError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    V2GetShellSnapshot(OrchestrationV2GetShellSnapshotError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -1335,8 +1349,8 @@ impl<'de> ::serde::Deserialize<'de> for OrchestrationGetThreadTitlesError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "OrchestrationV2GetShellSnapshotError" => Self::OrchestrationV2GetShellSnapshotError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "OrchestrationV2GetShellSnapshotError" => Self::V2GetShellSnapshot(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -1349,7 +1363,7 @@ impl<'de> ::serde::Deserialize<'de> for OrchestrationGetThreadTitlesError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum OrchestrationGetTurnDiffError2 {
-    OrchestrationGetTurnDiffError(OrchestrationGetTurnDiffError),
+    Error(OrchestrationGetTurnDiffError),
     EnvironmentAuthorizationError(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
@@ -1359,7 +1373,7 @@ impl<'de> ::serde::Deserialize<'de> for OrchestrationGetTurnDiffError2 {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "OrchestrationGetTurnDiffError" => Self::OrchestrationGetTurnDiffError(raw.decode()?),
+                "OrchestrationGetTurnDiffError" => Self::Error(raw.decode()?),
                 "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
@@ -1373,8 +1387,8 @@ impl<'de> ::serde::Deserialize<'de> for OrchestrationGetTurnDiffError2 {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum OrchestrationGetTurnItemError {
-    OrchestrationV2GetThreadProjectionError(OrchestrationV2GetThreadProjectionError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    V2GetThreadProjection(OrchestrationV2GetThreadProjectionError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -1383,8 +1397,8 @@ impl<'de> ::serde::Deserialize<'de> for OrchestrationGetTurnItemError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "OrchestrationV2GetThreadProjectionError" => Self::OrchestrationV2GetThreadProjectionError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "OrchestrationV2GetThreadProjectionError" => Self::V2GetThreadProjection(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -1397,7 +1411,7 @@ impl<'de> ::serde::Deserialize<'de> for OrchestrationGetTurnItemError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum OrchestrationGetWorkflowScriptError2 {
-    OrchestrationGetWorkflowScriptError(OrchestrationGetWorkflowScriptError),
+    Error(OrchestrationGetWorkflowScriptError),
     EnvironmentAuthorizationError(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
@@ -1407,7 +1421,7 @@ impl<'de> ::serde::Deserialize<'de> for OrchestrationGetWorkflowScriptError2 {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "OrchestrationGetWorkflowScriptError" => Self::OrchestrationGetWorkflowScriptError(raw.decode()?),
+                "OrchestrationGetWorkflowScriptError" => Self::Error(raw.decode()?),
                 "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
@@ -1421,8 +1435,8 @@ impl<'de> ::serde::Deserialize<'de> for OrchestrationGetWorkflowScriptError2 {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum OrchestrationGetWorktreeThreadIdsError {
-    OrchestrationV2GetShellSnapshotError(OrchestrationV2GetShellSnapshotError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    V2GetShellSnapshot(OrchestrationV2GetShellSnapshotError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -1431,8 +1445,8 @@ impl<'de> ::serde::Deserialize<'de> for OrchestrationGetWorktreeThreadIdsError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "OrchestrationV2GetShellSnapshotError" => Self::OrchestrationV2GetShellSnapshotError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "OrchestrationV2GetShellSnapshotError" => Self::V2GetShellSnapshot(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -1445,8 +1459,8 @@ impl<'de> ::serde::Deserialize<'de> for OrchestrationGetWorktreeThreadIdsError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum OrchestrationLaunchThreadError {
-    OrchestrationV2ThreadLaunchError(OrchestrationV2ThreadLaunchError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    V2ThreadLaunch(OrchestrationV2ThreadLaunchError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -1455,8 +1469,8 @@ impl<'de> ::serde::Deserialize<'de> for OrchestrationLaunchThreadError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "OrchestrationV2ThreadLaunchError" => Self::OrchestrationV2ThreadLaunchError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "OrchestrationV2ThreadLaunchError" => Self::V2ThreadLaunch(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -1469,8 +1483,8 @@ impl<'de> ::serde::Deserialize<'de> for OrchestrationLaunchThreadError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum OrchestrationSearchThreadError {
-    OrchestrationV2SearchThreadError(OrchestrationV2SearchThreadError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    V2(OrchestrationV2SearchThreadError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -1479,8 +1493,8 @@ impl<'de> ::serde::Deserialize<'de> for OrchestrationSearchThreadError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "OrchestrationV2SearchThreadError" => Self::OrchestrationV2SearchThreadError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "OrchestrationV2SearchThreadError" => Self::V2(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -1493,7 +1507,7 @@ impl<'de> ::serde::Deserialize<'de> for OrchestrationSearchThreadError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum OrchestrationSearchThreadsError2 {
-    OrchestrationSearchThreadsError(OrchestrationSearchThreadsError),
+    Error(OrchestrationSearchThreadsError),
     EnvironmentAuthorizationError(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
@@ -1503,7 +1517,7 @@ impl<'de> ::serde::Deserialize<'de> for OrchestrationSearchThreadsError2 {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "OrchestrationSearchThreadsError" => Self::OrchestrationSearchThreadsError(raw.decode()?),
+                "OrchestrationSearchThreadsError" => Self::Error(raw.decode()?),
                 "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
@@ -1517,8 +1531,8 @@ impl<'de> ::serde::Deserialize<'de> for OrchestrationSearchThreadsError2 {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum OrchestrationSearchThreadStreamError {
-    OrchestrationV2SearchThreadError(OrchestrationV2SearchThreadError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    V2SearchThread(OrchestrationV2SearchThreadError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -1527,8 +1541,8 @@ impl<'de> ::serde::Deserialize<'de> for OrchestrationSearchThreadStreamError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "OrchestrationV2SearchThreadError" => Self::OrchestrationV2SearchThreadError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "OrchestrationV2SearchThreadError" => Self::V2SearchThread(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -1541,8 +1555,8 @@ impl<'de> ::serde::Deserialize<'de> for OrchestrationSearchThreadStreamError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum OrchestrationStopWorkflowError {
-    OrchestrationV2StopWorkflowError(OrchestrationV2StopWorkflowError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    V2(OrchestrationV2StopWorkflowError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -1551,8 +1565,8 @@ impl<'de> ::serde::Deserialize<'de> for OrchestrationStopWorkflowError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "OrchestrationV2StopWorkflowError" => Self::OrchestrationV2StopWorkflowError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "OrchestrationV2StopWorkflowError" => Self::V2(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -1565,8 +1579,8 @@ impl<'de> ::serde::Deserialize<'de> for OrchestrationStopWorkflowError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum OrchestrationSubscribeCommandOutputError {
-    OrchestrationV2CommandOutputError(OrchestrationV2CommandOutputError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    V2(OrchestrationV2CommandOutputError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -1575,8 +1589,8 @@ impl<'de> ::serde::Deserialize<'de> for OrchestrationSubscribeCommandOutputError
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "OrchestrationV2CommandOutputError" => Self::OrchestrationV2CommandOutputError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "OrchestrationV2CommandOutputError" => Self::V2(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -1589,8 +1603,8 @@ impl<'de> ::serde::Deserialize<'de> for OrchestrationSubscribeCommandOutputError
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum OrchestrationSubscribeShellError {
-    OrchestrationV2GetShellSnapshotError(OrchestrationV2GetShellSnapshotError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    V2GetShellSnapshot(OrchestrationV2GetShellSnapshotError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -1599,8 +1613,8 @@ impl<'de> ::serde::Deserialize<'de> for OrchestrationSubscribeShellError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "OrchestrationV2GetShellSnapshotError" => Self::OrchestrationV2GetShellSnapshotError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "OrchestrationV2GetShellSnapshotError" => Self::V2GetShellSnapshot(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -1613,8 +1627,8 @@ impl<'de> ::serde::Deserialize<'de> for OrchestrationSubscribeShellError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum OrchestrationSubscribeThreadError {
-    OrchestrationV2GetThreadProjectionError(OrchestrationV2GetThreadProjectionError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    V2GetThreadProjection(OrchestrationV2GetThreadProjectionError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -1623,8 +1637,8 @@ impl<'de> ::serde::Deserialize<'de> for OrchestrationSubscribeThreadError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "OrchestrationV2GetThreadProjectionError" => Self::OrchestrationV2GetThreadProjectionError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "OrchestrationV2GetThreadProjectionError" => Self::V2GetThreadProjection(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -1637,8 +1651,8 @@ impl<'de> ::serde::Deserialize<'de> for OrchestrationSubscribeThreadError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum PeerLinksAnswerRequestError {
-    PeerLinkRequestError(PeerLinkRequestError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    Link(PeerLinkRequestError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -1647,8 +1661,8 @@ impl<'de> ::serde::Deserialize<'de> for PeerLinksAnswerRequestError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "PeerLinkRequestError" => Self::PeerLinkRequestError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "PeerLinkRequestError" => Self::Link(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -1661,8 +1675,8 @@ impl<'de> ::serde::Deserialize<'de> for PeerLinksAnswerRequestError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum PeerLinksLinkError {
-    PeerLinkError(PeerLinkError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    Link(PeerLinkError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -1671,8 +1685,8 @@ impl<'de> ::serde::Deserialize<'de> for PeerLinksLinkError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "PeerLinkError" => Self::PeerLinkError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "PeerLinkError" => Self::Link(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -1685,8 +1699,8 @@ impl<'de> ::serde::Deserialize<'de> for PeerLinksLinkError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum PeerLinksListError {
-    PeerLinkError(PeerLinkError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    Link(PeerLinkError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -1695,8 +1709,8 @@ impl<'de> ::serde::Deserialize<'de> for PeerLinksListError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "PeerLinkError" => Self::PeerLinkError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "PeerLinkError" => Self::Link(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -1716,8 +1730,8 @@ pub struct PeerLinksListSuccess {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum PeerLinksUnlinkError {
-    PeerLinkError(PeerLinkError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    Link(PeerLinkError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -1726,8 +1740,8 @@ impl<'de> ::serde::Deserialize<'de> for PeerLinksUnlinkError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "PeerLinkError" => Self::PeerLinkError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "PeerLinkError" => Self::Link(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -1740,8 +1754,8 @@ impl<'de> ::serde::Deserialize<'de> for PeerLinksUnlinkError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum PreviewAdjustError {
-    PreviewError(PreviewError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    Error(PreviewError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -1750,8 +1764,8 @@ impl<'de> ::serde::Deserialize<'de> for PreviewAdjustError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "PreviewSessionLookupError" | "PreviewInvalidUrlError" | "PreviewControlRequiredError" => Self::PreviewError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "PreviewSessionLookupError" | "PreviewInvalidUrlError" | "PreviewControlRequiredError" => Self::Error(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -1764,7 +1778,7 @@ impl<'de> ::serde::Deserialize<'de> for PreviewAdjustError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum PreviewClearProfileError2 {
-    PreviewClearProfileError(PreviewClearProfileError),
+    Error(PreviewClearProfileError),
     EnvironmentAuthorizationError(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
@@ -1774,7 +1788,7 @@ impl<'de> ::serde::Deserialize<'de> for PreviewClearProfileError2 {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "PreviewClearProfileError" => Self::PreviewClearProfileError(raw.decode()?),
+                "PreviewClearProfileError" => Self::Error(raw.decode()?),
                 "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
@@ -1788,8 +1802,8 @@ impl<'de> ::serde::Deserialize<'de> for PreviewClearProfileError2 {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum PreviewCloseError {
-    PreviewError(PreviewError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    Error(PreviewError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -1798,8 +1812,8 @@ impl<'de> ::serde::Deserialize<'de> for PreviewCloseError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "PreviewSessionLookupError" | "PreviewInvalidUrlError" | "PreviewControlRequiredError" => Self::PreviewError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "PreviewSessionLookupError" | "PreviewInvalidUrlError" | "PreviewControlRequiredError" => Self::Error(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -1812,8 +1826,8 @@ impl<'de> ::serde::Deserialize<'de> for PreviewCloseError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum PreviewOpenError {
-    PreviewError(PreviewError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    Error(PreviewError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -1822,8 +1836,8 @@ impl<'de> ::serde::Deserialize<'de> for PreviewOpenError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "PreviewSessionLookupError" | "PreviewInvalidUrlError" | "PreviewControlRequiredError" => Self::PreviewError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "PreviewSessionLookupError" | "PreviewInvalidUrlError" | "PreviewControlRequiredError" => Self::Error(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -1836,8 +1850,8 @@ impl<'de> ::serde::Deserialize<'de> for PreviewOpenError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum PreviewReportStatusError {
-    PreviewError(PreviewError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    Error(PreviewError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -1846,8 +1860,8 @@ impl<'de> ::serde::Deserialize<'de> for PreviewReportStatusError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "PreviewSessionLookupError" | "PreviewInvalidUrlError" | "PreviewControlRequiredError" => Self::PreviewError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "PreviewSessionLookupError" | "PreviewInvalidUrlError" | "PreviewControlRequiredError" => Self::Error(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -1860,8 +1874,8 @@ impl<'de> ::serde::Deserialize<'de> for PreviewReportStatusError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum PreviewResizeError {
-    PreviewError(PreviewError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    Error(PreviewError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -1870,8 +1884,8 @@ impl<'de> ::serde::Deserialize<'de> for PreviewResizeError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "PreviewSessionLookupError" | "PreviewInvalidUrlError" | "PreviewControlRequiredError" => Self::PreviewError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "PreviewSessionLookupError" | "PreviewInvalidUrlError" | "PreviewControlRequiredError" => Self::Error(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -1884,7 +1898,7 @@ impl<'de> ::serde::Deserialize<'de> for PreviewResizeError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum PreviewStopLocalServerError2 {
-    PreviewStopLocalServerError(PreviewStopLocalServerError),
+    Error(PreviewStopLocalServerError),
     EnvironmentAuthorizationError(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
@@ -1894,7 +1908,7 @@ impl<'de> ::serde::Deserialize<'de> for PreviewStopLocalServerError2 {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "PreviewStopLocalServerError" => Self::PreviewStopLocalServerError(raw.decode()?),
+                "PreviewStopLocalServerError" => Self::Error(raw.decode()?),
                 "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
@@ -1908,8 +1922,8 @@ impl<'de> ::serde::Deserialize<'de> for PreviewStopLocalServerError2 {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum ProjectCloneRetryError {
-    SourceControlRepositoryError(SourceControlRepositoryError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    SourceControlRepository(SourceControlRepositoryError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -1918,8 +1932,8 @@ impl<'de> ::serde::Deserialize<'de> for ProjectCloneRetryError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "SourceControlRepositoryError" => Self::SourceControlRepositoryError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "SourceControlRepositoryError" => Self::SourceControlRepository(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -1932,9 +1946,9 @@ impl<'de> ::serde::Deserialize<'de> for ProjectCloneRetryError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum ProjectCloneStartError {
-    SourceControlRepositoryError(SourceControlRepositoryError),
-    OrchestrationDispatchCommandError(OrchestrationDispatchCommandError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    SourceControlRepository(SourceControlRepositoryError),
+    OrchestrationDispatchCommand(OrchestrationDispatchCommandError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -1943,9 +1957,9 @@ impl<'de> ::serde::Deserialize<'de> for ProjectCloneStartError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "SourceControlRepositoryError" => Self::SourceControlRepositoryError(raw.decode()?),
-                "OrchestrationDispatchCommandError" => Self::OrchestrationDispatchCommandError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "SourceControlRepositoryError" => Self::SourceControlRepository(raw.decode()?),
+                "OrchestrationDispatchCommandError" => Self::OrchestrationDispatchCommand(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -1958,8 +1972,8 @@ impl<'de> ::serde::Deserialize<'de> for ProjectCloneStartError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum ProjectsCreateFromThreadError {
-    OrchestrationDispatchCommandError(OrchestrationDispatchCommandError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    OrchestrationDispatchCommand(OrchestrationDispatchCommandError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -1968,8 +1982,8 @@ impl<'de> ::serde::Deserialize<'de> for ProjectsCreateFromThreadError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "OrchestrationDispatchCommandError" => Self::OrchestrationDispatchCommandError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "OrchestrationDispatchCommandError" => Self::OrchestrationDispatchCommand(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -1982,8 +1996,8 @@ impl<'de> ::serde::Deserialize<'de> for ProjectsCreateFromThreadError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum ProjectsCreateNewError {
-    OrchestrationDispatchCommandError(OrchestrationDispatchCommandError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    OrchestrationDispatchCommand(OrchestrationDispatchCommandError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -1992,8 +2006,8 @@ impl<'de> ::serde::Deserialize<'de> for ProjectsCreateNewError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "OrchestrationDispatchCommandError" => Self::OrchestrationDispatchCommandError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "OrchestrationDispatchCommandError" => Self::OrchestrationDispatchCommand(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -2006,8 +2020,8 @@ impl<'de> ::serde::Deserialize<'de> for ProjectsCreateNewError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum ProjectsEnsureScratchError {
-    OrchestrationDispatchCommandError(OrchestrationDispatchCommandError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    OrchestrationDispatchCommand(OrchestrationDispatchCommandError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -2016,8 +2030,8 @@ impl<'de> ::serde::Deserialize<'de> for ProjectsEnsureScratchError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "OrchestrationDispatchCommandError" => Self::OrchestrationDispatchCommandError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "OrchestrationDispatchCommandError" => Self::OrchestrationDispatchCommand(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -2030,8 +2044,8 @@ impl<'de> ::serde::Deserialize<'de> for ProjectsEnsureScratchError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum ProjectsListEntriesError {
-    ProjectListEntriesError(ProjectListEntriesError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    Project(ProjectListEntriesError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -2040,8 +2054,8 @@ impl<'de> ::serde::Deserialize<'de> for ProjectsListEntriesError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "ProjectListEntriesError" => Self::ProjectListEntriesError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "ProjectListEntriesError" => Self::Project(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -2054,8 +2068,8 @@ impl<'de> ::serde::Deserialize<'de> for ProjectsListEntriesError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum ProjectsListIgnoredFilesError {
-    ProjectListEntriesError(ProjectListEntriesError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    ProjectListEntries(ProjectListEntriesError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -2064,8 +2078,8 @@ impl<'de> ::serde::Deserialize<'de> for ProjectsListIgnoredFilesError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "ProjectListEntriesError" => Self::ProjectListEntriesError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "ProjectListEntriesError" => Self::ProjectListEntries(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -2078,8 +2092,8 @@ impl<'de> ::serde::Deserialize<'de> for ProjectsListIgnoredFilesError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum ProjectsMutateError {
-    ProjectMutationError(ProjectMutationError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    ProjectMutation(ProjectMutationError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -2088,8 +2102,8 @@ impl<'de> ::serde::Deserialize<'de> for ProjectsMutateError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "ProjectMutationError" => Self::ProjectMutationError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "ProjectMutationError" => Self::ProjectMutation(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -2102,8 +2116,8 @@ impl<'de> ::serde::Deserialize<'de> for ProjectsMutateError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum ProjectsReadFileError {
-    ProjectReadFileError(ProjectReadFileError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    Project(ProjectReadFileError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -2112,8 +2126,8 @@ impl<'de> ::serde::Deserialize<'de> for ProjectsReadFileError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "ProjectReadFileError" => Self::ProjectReadFileError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "ProjectReadFileError" => Self::Project(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -2126,8 +2140,8 @@ impl<'de> ::serde::Deserialize<'de> for ProjectsReadFileError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum ProjectsSearchContentsError {
-    ProjectSearchContentsError(ProjectSearchContentsError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    Project(ProjectSearchContentsError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -2136,8 +2150,8 @@ impl<'de> ::serde::Deserialize<'de> for ProjectsSearchContentsError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "ProjectSearchContentsError" => Self::ProjectSearchContentsError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "ProjectSearchContentsError" => Self::Project(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -2150,8 +2164,8 @@ impl<'de> ::serde::Deserialize<'de> for ProjectsSearchContentsError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum ProjectsSearchEntriesError {
-    ProjectSearchEntriesError(ProjectSearchEntriesError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    Project(ProjectSearchEntriesError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -2160,8 +2174,8 @@ impl<'de> ::serde::Deserialize<'de> for ProjectsSearchEntriesError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "ProjectSearchEntriesError" => Self::ProjectSearchEntriesError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "ProjectSearchEntriesError" => Self::Project(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -2174,8 +2188,8 @@ impl<'de> ::serde::Deserialize<'de> for ProjectsSearchEntriesError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum ProjectsWriteFileError {
-    ProjectWriteFileError(ProjectWriteFileError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    Project(ProjectWriteFileError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -2184,8 +2198,8 @@ impl<'de> ::serde::Deserialize<'de> for ProjectsWriteFileError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "ProjectWriteFileError" => Self::ProjectWriteFileError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "ProjectWriteFileError" => Self::Project(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -2198,8 +2212,8 @@ impl<'de> ::serde::Deserialize<'de> for ProjectsWriteFileError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum ProviderAuthCancelError {
-    ProviderSetupError(ProviderSetupError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    Setup(ProviderSetupError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -2208,8 +2222,8 @@ impl<'de> ::serde::Deserialize<'de> for ProviderAuthCancelError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "ProviderSetupError" => Self::ProviderSetupError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "ProviderSetupError" => Self::Setup(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -2222,8 +2236,8 @@ impl<'de> ::serde::Deserialize<'de> for ProviderAuthCancelError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum ProviderAuthCompleteError {
-    ProviderSetupError(ProviderSetupError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    Setup(ProviderSetupError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -2232,8 +2246,8 @@ impl<'de> ::serde::Deserialize<'de> for ProviderAuthCompleteError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "ProviderSetupError" => Self::ProviderSetupError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "ProviderSetupError" => Self::Setup(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -2246,8 +2260,8 @@ impl<'de> ::serde::Deserialize<'de> for ProviderAuthCompleteError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum ProviderAuthLogoutError {
-    ProviderSetupError(ProviderSetupError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    Setup(ProviderSetupError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -2256,8 +2270,8 @@ impl<'de> ::serde::Deserialize<'de> for ProviderAuthLogoutError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "ProviderSetupError" => Self::ProviderSetupError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "ProviderSetupError" => Self::Setup(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -2270,8 +2284,8 @@ impl<'de> ::serde::Deserialize<'de> for ProviderAuthLogoutError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum ProviderAuthRemoveMethodError {
-    ProviderSetupError(ProviderSetupError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    Setup(ProviderSetupError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -2280,8 +2294,8 @@ impl<'de> ::serde::Deserialize<'de> for ProviderAuthRemoveMethodError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "ProviderSetupError" => Self::ProviderSetupError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "ProviderSetupError" => Self::Setup(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -2294,8 +2308,8 @@ impl<'de> ::serde::Deserialize<'de> for ProviderAuthRemoveMethodError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum ProviderAuthRespondError {
-    ProviderSetupError(ProviderSetupError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    Setup(ProviderSetupError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -2304,8 +2318,8 @@ impl<'de> ::serde::Deserialize<'de> for ProviderAuthRespondError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "ProviderSetupError" => Self::ProviderSetupError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "ProviderSetupError" => Self::Setup(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -2318,8 +2332,8 @@ impl<'de> ::serde::Deserialize<'de> for ProviderAuthRespondError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum ProviderAuthStartError {
-    ProviderSetupError(ProviderSetupError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    Setup(ProviderSetupError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -2328,8 +2342,8 @@ impl<'de> ::serde::Deserialize<'de> for ProviderAuthStartError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "ProviderSetupError" => Self::ProviderSetupError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "ProviderSetupError" => Self::Setup(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -2342,8 +2356,8 @@ impl<'de> ::serde::Deserialize<'de> for ProviderAuthStartError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum ProviderAuthSubscribeError {
-    ProviderSetupError(ProviderSetupError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    Setup(ProviderSetupError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -2352,8 +2366,8 @@ impl<'de> ::serde::Deserialize<'de> for ProviderAuthSubscribeError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "ProviderSetupError" => Self::ProviderSetupError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "ProviderSetupError" => Self::Setup(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -2366,8 +2380,8 @@ impl<'de> ::serde::Deserialize<'de> for ProviderAuthSubscribeError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum ProviderChatgptHandoffSubscribeError {
-    ProviderSetupError(ProviderSetupError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    Setup(ProviderSetupError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -2376,8 +2390,8 @@ impl<'de> ::serde::Deserialize<'de> for ProviderChatgptHandoffSubscribeError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "ProviderSetupError" => Self::ProviderSetupError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "ProviderSetupError" => Self::Setup(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -2390,8 +2404,8 @@ impl<'de> ::serde::Deserialize<'de> for ProviderChatgptHandoffSubscribeError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum ProviderChatgptImportProfileError {
-    ProviderSetupError(ProviderSetupError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    Setup(ProviderSetupError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -2400,8 +2414,8 @@ impl<'de> ::serde::Deserialize<'de> for ProviderChatgptImportProfileError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "ProviderSetupError" => Self::ProviderSetupError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "ProviderSetupError" => Self::Setup(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -2414,8 +2428,8 @@ impl<'de> ::serde::Deserialize<'de> for ProviderChatgptImportProfileError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum ProviderChatgptReconnectProfileError {
-    ProviderSetupError(ProviderSetupError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    Setup(ProviderSetupError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -2424,8 +2438,8 @@ impl<'de> ::serde::Deserialize<'de> for ProviderChatgptReconnectProfileError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "ProviderSetupError" => Self::ProviderSetupError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "ProviderSetupError" => Self::Setup(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -2441,9 +2455,9 @@ pub type ProviderChatgptReconnectProfileSuccess = Option<ChatGptReconnectProfile
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum ProviderConsumeResetCreditError {
-    ProviderSetupError(ProviderSetupError),
-    UsageLimitSourceError(UsageLimitSourceError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    Setup(ProviderSetupError),
+    UsageLimitSource(UsageLimitSourceError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -2452,9 +2466,9 @@ impl<'de> ::serde::Deserialize<'de> for ProviderConsumeResetCreditError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "ProviderSetupError" => Self::ProviderSetupError(raw.decode()?),
-                "UsageLimitSourceError" => Self::UsageLimitSourceError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "ProviderSetupError" => Self::Setup(raw.decode()?),
+                "UsageLimitSourceError" => Self::UsageLimitSource(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -2467,8 +2481,8 @@ impl<'de> ::serde::Deserialize<'de> for ProviderConsumeResetCreditError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum ProviderInstallCancelError {
-    ProviderSetupError(ProviderSetupError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    Setup(ProviderSetupError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -2477,8 +2491,8 @@ impl<'de> ::serde::Deserialize<'de> for ProviderInstallCancelError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "ProviderSetupError" => Self::ProviderSetupError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "ProviderSetupError" => Self::Setup(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -2491,8 +2505,8 @@ impl<'de> ::serde::Deserialize<'de> for ProviderInstallCancelError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum ProviderInstallRemoveError {
-    ProviderSetupError(ProviderSetupError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    Setup(ProviderSetupError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -2501,8 +2515,8 @@ impl<'de> ::serde::Deserialize<'de> for ProviderInstallRemoveError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "ProviderSetupError" => Self::ProviderSetupError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "ProviderSetupError" => Self::Setup(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -2515,8 +2529,8 @@ impl<'de> ::serde::Deserialize<'de> for ProviderInstallRemoveError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum ProviderInstallStartError {
-    ProviderSetupError(ProviderSetupError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    Setup(ProviderSetupError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -2525,8 +2539,8 @@ impl<'de> ::serde::Deserialize<'de> for ProviderInstallStartError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "ProviderSetupError" => Self::ProviderSetupError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "ProviderSetupError" => Self::Setup(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -2539,8 +2553,8 @@ impl<'de> ::serde::Deserialize<'de> for ProviderInstallStartError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum ProviderInstallSubscribeError {
-    ProviderSetupError(ProviderSetupError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    Setup(ProviderSetupError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -2549,8 +2563,8 @@ impl<'de> ::serde::Deserialize<'de> for ProviderInstallSubscribeError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "ProviderSetupError" => Self::ProviderSetupError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "ProviderSetupError" => Self::Setup(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -2563,7 +2577,7 @@ impl<'de> ::serde::Deserialize<'de> for ProviderInstallSubscribeError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum ProviderUploadFeedbackError2 {
-    ProviderUploadFeedbackError(ProviderUploadFeedbackError),
+    Error(ProviderUploadFeedbackError),
     EnvironmentAuthorizationError(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
@@ -2573,7 +2587,7 @@ impl<'de> ::serde::Deserialize<'de> for ProviderUploadFeedbackError2 {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "ProviderUploadFeedbackError" => Self::ProviderUploadFeedbackError(raw.decode()?),
+                "ProviderUploadFeedbackError" => Self::Error(raw.decode()?),
                 "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
@@ -2587,9 +2601,9 @@ impl<'de> ::serde::Deserialize<'de> for ProviderUploadFeedbackError2 {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum PullRequestsActivityError {
-    PullRequestUnavailableError(PullRequestUnavailableError),
-    PullRequestOperationError(PullRequestOperationError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    RequestUnavailable(PullRequestUnavailableError),
+    RequestOperation(PullRequestOperationError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -2598,9 +2612,9 @@ impl<'de> ::serde::Deserialize<'de> for PullRequestsActivityError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "PullRequestUnavailableError" => Self::PullRequestUnavailableError(raw.decode()?),
-                "PullRequestOperationError" => Self::PullRequestOperationError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "PullRequestUnavailableError" => Self::RequestUnavailable(raw.decode()?),
+                "PullRequestOperationError" => Self::RequestOperation(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -2613,9 +2627,9 @@ impl<'de> ::serde::Deserialize<'de> for PullRequestsActivityError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum PullRequestsChangeBreakdownError {
-    PullRequestUnavailableError(PullRequestUnavailableError),
-    PullRequestOperationError(PullRequestOperationError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    RequestUnavailable(PullRequestUnavailableError),
+    RequestOperation(PullRequestOperationError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -2624,9 +2638,9 @@ impl<'de> ::serde::Deserialize<'de> for PullRequestsChangeBreakdownError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "PullRequestUnavailableError" => Self::PullRequestUnavailableError(raw.decode()?),
-                "PullRequestOperationError" => Self::PullRequestOperationError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "PullRequestUnavailableError" => Self::RequestUnavailable(raw.decode()?),
+                "PullRequestOperationError" => Self::RequestOperation(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -2639,9 +2653,9 @@ impl<'de> ::serde::Deserialize<'de> for PullRequestsChangeBreakdownError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum PullRequestsChecksError {
-    PullRequestUnavailableError(PullRequestUnavailableError),
-    PullRequestOperationError(PullRequestOperationError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    RequestUnavailable(PullRequestUnavailableError),
+    RequestOperation(PullRequestOperationError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -2650,9 +2664,9 @@ impl<'de> ::serde::Deserialize<'de> for PullRequestsChecksError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "PullRequestUnavailableError" => Self::PullRequestUnavailableError(raw.decode()?),
-                "PullRequestOperationError" => Self::PullRequestOperationError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "PullRequestUnavailableError" => Self::RequestUnavailable(raw.decode()?),
+                "PullRequestOperationError" => Self::RequestOperation(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -2668,9 +2682,9 @@ pub type PullRequestsChecksSuccess = Option<PullRequestChecks>;
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum PullRequestsCommentError {
-    PullRequestUnavailableError(PullRequestUnavailableError),
-    PullRequestOperationError(PullRequestOperationError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    RequestUnavailable(PullRequestUnavailableError),
+    RequestOperation(PullRequestOperationError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -2679,9 +2693,9 @@ impl<'de> ::serde::Deserialize<'de> for PullRequestsCommentError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "PullRequestUnavailableError" => Self::PullRequestUnavailableError(raw.decode()?),
-                "PullRequestOperationError" => Self::PullRequestOperationError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "PullRequestUnavailableError" => Self::RequestUnavailable(raw.decode()?),
+                "PullRequestOperationError" => Self::RequestOperation(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -2694,9 +2708,9 @@ impl<'de> ::serde::Deserialize<'de> for PullRequestsCommentError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum PullRequestsDetailError {
-    PullRequestUnavailableError(PullRequestUnavailableError),
-    PullRequestOperationError(PullRequestOperationError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    RequestUnavailable(PullRequestUnavailableError),
+    RequestOperation(PullRequestOperationError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -2705,9 +2719,9 @@ impl<'de> ::serde::Deserialize<'de> for PullRequestsDetailError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "PullRequestUnavailableError" => Self::PullRequestUnavailableError(raw.decode()?),
-                "PullRequestOperationError" => Self::PullRequestOperationError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "PullRequestUnavailableError" => Self::RequestUnavailable(raw.decode()?),
+                "PullRequestOperationError" => Self::RequestOperation(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -2720,9 +2734,9 @@ impl<'de> ::serde::Deserialize<'de> for PullRequestsDetailError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum PullRequestsDiffFileContentsError {
-    PullRequestUnavailableError(PullRequestUnavailableError),
-    PullRequestOperationError(PullRequestOperationError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    RequestUnavailable(PullRequestUnavailableError),
+    RequestOperation(PullRequestOperationError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -2731,9 +2745,9 @@ impl<'de> ::serde::Deserialize<'de> for PullRequestsDiffFileContentsError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "PullRequestUnavailableError" => Self::PullRequestUnavailableError(raw.decode()?),
-                "PullRequestOperationError" => Self::PullRequestOperationError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "PullRequestUnavailableError" => Self::RequestUnavailable(raw.decode()?),
+                "PullRequestOperationError" => Self::RequestOperation(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -2746,9 +2760,9 @@ impl<'de> ::serde::Deserialize<'de> for PullRequestsDiffFileContentsError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum PullRequestsFilesViewedError {
-    PullRequestUnavailableError(PullRequestUnavailableError),
-    PullRequestOperationError(PullRequestOperationError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    RequestUnavailable(PullRequestUnavailableError),
+    RequestOperation(PullRequestOperationError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -2757,9 +2771,9 @@ impl<'de> ::serde::Deserialize<'de> for PullRequestsFilesViewedError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "PullRequestUnavailableError" => Self::PullRequestUnavailableError(raw.decode()?),
-                "PullRequestOperationError" => Self::PullRequestOperationError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "PullRequestUnavailableError" => Self::RequestUnavailable(raw.decode()?),
+                "PullRequestOperationError" => Self::RequestOperation(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -2772,9 +2786,9 @@ impl<'de> ::serde::Deserialize<'de> for PullRequestsFilesViewedError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum PullRequestsFilterOptionsError {
-    PullRequestUnavailableError(PullRequestUnavailableError),
-    PullRequestOperationError(PullRequestOperationError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    RequestUnavailable(PullRequestUnavailableError),
+    RequestOperation(PullRequestOperationError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -2783,9 +2797,9 @@ impl<'de> ::serde::Deserialize<'de> for PullRequestsFilterOptionsError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "PullRequestUnavailableError" => Self::PullRequestUnavailableError(raw.decode()?),
-                "PullRequestOperationError" => Self::PullRequestOperationError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "PullRequestUnavailableError" => Self::RequestUnavailable(raw.decode()?),
+                "PullRequestOperationError" => Self::RequestOperation(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -2798,9 +2812,9 @@ impl<'de> ::serde::Deserialize<'de> for PullRequestsFilterOptionsError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum PullRequestsGenerateReviewGuideError {
-    PullRequestUnavailableError(PullRequestUnavailableError),
-    PullRequestOperationError(PullRequestOperationError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    RequestUnavailable(PullRequestUnavailableError),
+    RequestOperation(PullRequestOperationError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -2809,9 +2823,9 @@ impl<'de> ::serde::Deserialize<'de> for PullRequestsGenerateReviewGuideError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "PullRequestUnavailableError" => Self::PullRequestUnavailableError(raw.decode()?),
-                "PullRequestOperationError" => Self::PullRequestOperationError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "PullRequestUnavailableError" => Self::RequestUnavailable(raw.decode()?),
+                "PullRequestOperationError" => Self::RequestOperation(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -2824,9 +2838,9 @@ impl<'de> ::serde::Deserialize<'de> for PullRequestsGenerateReviewGuideError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum PullRequestsInvalidateError {
-    PullRequestUnavailableError(PullRequestUnavailableError),
-    PullRequestOperationError(PullRequestOperationError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    RequestUnavailable(PullRequestUnavailableError),
+    RequestOperation(PullRequestOperationError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -2835,9 +2849,9 @@ impl<'de> ::serde::Deserialize<'de> for PullRequestsInvalidateError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "PullRequestUnavailableError" => Self::PullRequestUnavailableError(raw.decode()?),
-                "PullRequestOperationError" => Self::PullRequestOperationError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "PullRequestUnavailableError" => Self::RequestUnavailable(raw.decode()?),
+                "PullRequestOperationError" => Self::RequestOperation(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -2850,9 +2864,9 @@ impl<'de> ::serde::Deserialize<'de> for PullRequestsInvalidateError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum PullRequestsLabelCandidatesError {
-    PullRequestUnavailableError(PullRequestUnavailableError),
-    PullRequestOperationError(PullRequestOperationError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    RequestUnavailable(PullRequestUnavailableError),
+    RequestOperation(PullRequestOperationError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -2861,9 +2875,9 @@ impl<'de> ::serde::Deserialize<'de> for PullRequestsLabelCandidatesError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "PullRequestUnavailableError" => Self::PullRequestUnavailableError(raw.decode()?),
-                "PullRequestOperationError" => Self::PullRequestOperationError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "PullRequestUnavailableError" => Self::RequestUnavailable(raw.decode()?),
+                "PullRequestOperationError" => Self::RequestOperation(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -2876,9 +2890,9 @@ impl<'de> ::serde::Deserialize<'de> for PullRequestsLabelCandidatesError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum PullRequestsLinkedThreadsError {
-    PullRequestUnavailableError(PullRequestUnavailableError),
-    PullRequestOperationError(PullRequestOperationError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    RequestUnavailable(PullRequestUnavailableError),
+    RequestOperation(PullRequestOperationError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -2887,9 +2901,9 @@ impl<'de> ::serde::Deserialize<'de> for PullRequestsLinkedThreadsError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "PullRequestUnavailableError" => Self::PullRequestUnavailableError(raw.decode()?),
-                "PullRequestOperationError" => Self::PullRequestOperationError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "PullRequestUnavailableError" => Self::RequestUnavailable(raw.decode()?),
+                "PullRequestOperationError" => Self::RequestOperation(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -2902,9 +2916,9 @@ impl<'de> ::serde::Deserialize<'de> for PullRequestsLinkedThreadsError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum PullRequestsListError {
-    PullRequestUnavailableError(PullRequestUnavailableError),
-    PullRequestOperationError(PullRequestOperationError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    RequestUnavailable(PullRequestUnavailableError),
+    RequestOperation(PullRequestOperationError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -2913,9 +2927,9 @@ impl<'de> ::serde::Deserialize<'de> for PullRequestsListError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "PullRequestUnavailableError" => Self::PullRequestUnavailableError(raw.decode()?),
-                "PullRequestOperationError" => Self::PullRequestOperationError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "PullRequestUnavailableError" => Self::RequestUnavailable(raw.decode()?),
+                "PullRequestOperationError" => Self::RequestOperation(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -2928,9 +2942,9 @@ impl<'de> ::serde::Deserialize<'de> for PullRequestsListError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum PullRequestsListStatsError {
-    PullRequestUnavailableError(PullRequestUnavailableError),
-    PullRequestOperationError(PullRequestOperationError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    RequestUnavailable(PullRequestUnavailableError),
+    RequestOperation(PullRequestOperationError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -2939,9 +2953,9 @@ impl<'de> ::serde::Deserialize<'de> for PullRequestsListStatsError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "PullRequestUnavailableError" => Self::PullRequestUnavailableError(raw.decode()?),
-                "PullRequestOperationError" => Self::PullRequestOperationError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "PullRequestUnavailableError" => Self::RequestUnavailable(raw.decode()?),
+                "PullRequestOperationError" => Self::RequestOperation(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -2954,9 +2968,9 @@ impl<'de> ::serde::Deserialize<'de> for PullRequestsListStatsError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum PullRequestsPreviewError {
-    PullRequestUnavailableError(PullRequestUnavailableError),
-    PullRequestOperationError(PullRequestOperationError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    RequestUnavailable(PullRequestUnavailableError),
+    RequestOperation(PullRequestOperationError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -2965,9 +2979,9 @@ impl<'de> ::serde::Deserialize<'de> for PullRequestsPreviewError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "PullRequestUnavailableError" => Self::PullRequestUnavailableError(raw.decode()?),
-                "PullRequestOperationError" => Self::PullRequestOperationError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "PullRequestUnavailableError" => Self::RequestUnavailable(raw.decode()?),
+                "PullRequestOperationError" => Self::RequestOperation(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -2980,9 +2994,9 @@ impl<'de> ::serde::Deserialize<'de> for PullRequestsPreviewError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum PullRequestsReplyToThreadError {
-    PullRequestUnavailableError(PullRequestUnavailableError),
-    PullRequestOperationError(PullRequestOperationError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    RequestUnavailable(PullRequestUnavailableError),
+    RequestOperation(PullRequestOperationError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -2991,9 +3005,9 @@ impl<'de> ::serde::Deserialize<'de> for PullRequestsReplyToThreadError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "PullRequestUnavailableError" => Self::PullRequestUnavailableError(raw.decode()?),
-                "PullRequestOperationError" => Self::PullRequestOperationError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "PullRequestUnavailableError" => Self::RequestUnavailable(raw.decode()?),
+                "PullRequestOperationError" => Self::RequestOperation(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -3006,9 +3020,9 @@ impl<'de> ::serde::Deserialize<'de> for PullRequestsReplyToThreadError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum PullRequestsReportStateError {
-    PullRequestUnavailableError(PullRequestUnavailableError),
-    PullRequestOperationError(PullRequestOperationError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    RequestUnavailable(PullRequestUnavailableError),
+    RequestOperation(PullRequestOperationError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -3017,9 +3031,9 @@ impl<'de> ::serde::Deserialize<'de> for PullRequestsReportStateError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "PullRequestUnavailableError" => Self::PullRequestUnavailableError(raw.decode()?),
-                "PullRequestOperationError" => Self::PullRequestOperationError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "PullRequestUnavailableError" => Self::RequestUnavailable(raw.decode()?),
+                "PullRequestOperationError" => Self::RequestOperation(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -3032,9 +3046,9 @@ impl<'de> ::serde::Deserialize<'de> for PullRequestsReportStateError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum PullRequestsRequestReviewersError {
-    PullRequestUnavailableError(PullRequestUnavailableError),
-    PullRequestOperationError(PullRequestOperationError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    RequestUnavailable(PullRequestUnavailableError),
+    RequestOperation(PullRequestOperationError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -3043,9 +3057,9 @@ impl<'de> ::serde::Deserialize<'de> for PullRequestsRequestReviewersError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "PullRequestUnavailableError" => Self::PullRequestUnavailableError(raw.decode()?),
-                "PullRequestOperationError" => Self::PullRequestOperationError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "PullRequestUnavailableError" => Self::RequestUnavailable(raw.decode()?),
+                "PullRequestOperationError" => Self::RequestOperation(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -3058,9 +3072,9 @@ impl<'de> ::serde::Deserialize<'de> for PullRequestsRequestReviewersError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum PullRequestsReviewerCandidatesError {
-    PullRequestUnavailableError(PullRequestUnavailableError),
-    PullRequestOperationError(PullRequestOperationError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    RequestUnavailable(PullRequestUnavailableError),
+    RequestOperation(PullRequestOperationError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -3069,9 +3083,9 @@ impl<'de> ::serde::Deserialize<'de> for PullRequestsReviewerCandidatesError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "PullRequestUnavailableError" => Self::PullRequestUnavailableError(raw.decode()?),
-                "PullRequestOperationError" => Self::PullRequestOperationError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "PullRequestUnavailableError" => Self::RequestUnavailable(raw.decode()?),
+                "PullRequestOperationError" => Self::RequestOperation(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -3084,9 +3098,9 @@ impl<'de> ::serde::Deserialize<'de> for PullRequestsReviewerCandidatesError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum PullRequestsReviewGuideError {
-    PullRequestUnavailableError(PullRequestUnavailableError),
-    PullRequestOperationError(PullRequestOperationError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    RequestUnavailable(PullRequestUnavailableError),
+    RequestOperation(PullRequestOperationError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -3095,9 +3109,9 @@ impl<'de> ::serde::Deserialize<'de> for PullRequestsReviewGuideError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "PullRequestUnavailableError" => Self::PullRequestUnavailableError(raw.decode()?),
-                "PullRequestOperationError" => Self::PullRequestOperationError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "PullRequestUnavailableError" => Self::RequestUnavailable(raw.decode()?),
+                "PullRequestOperationError" => Self::RequestOperation(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -3110,9 +3124,9 @@ impl<'de> ::serde::Deserialize<'de> for PullRequestsReviewGuideError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum PullRequestsRoutingError {
-    PullRequestUnavailableError(PullRequestUnavailableError),
-    PullRequestOperationError(PullRequestOperationError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    RequestUnavailable(PullRequestUnavailableError),
+    RequestOperation(PullRequestOperationError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -3121,9 +3135,9 @@ impl<'de> ::serde::Deserialize<'de> for PullRequestsRoutingError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "PullRequestUnavailableError" => Self::PullRequestUnavailableError(raw.decode()?),
-                "PullRequestOperationError" => Self::PullRequestOperationError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "PullRequestUnavailableError" => Self::RequestUnavailable(raw.decode()?),
+                "PullRequestOperationError" => Self::RequestOperation(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -3136,9 +3150,9 @@ impl<'de> ::serde::Deserialize<'de> for PullRequestsRoutingError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum PullRequestsRoutingIdentityError {
-    PullRequestUnavailableError(PullRequestUnavailableError),
-    PullRequestOperationError(PullRequestOperationError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    RequestUnavailable(PullRequestUnavailableError),
+    RequestOperation(PullRequestOperationError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -3147,9 +3161,9 @@ impl<'de> ::serde::Deserialize<'de> for PullRequestsRoutingIdentityError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "PullRequestUnavailableError" => Self::PullRequestUnavailableError(raw.decode()?),
-                "PullRequestOperationError" => Self::PullRequestOperationError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "PullRequestUnavailableError" => Self::RequestUnavailable(raw.decode()?),
+                "PullRequestOperationError" => Self::RequestOperation(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -3162,9 +3176,9 @@ impl<'de> ::serde::Deserialize<'de> for PullRequestsRoutingIdentityError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum PullRequestsRunActionError {
-    PullRequestUnavailableError(PullRequestUnavailableError),
-    PullRequestOperationError(PullRequestOperationError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    RequestUnavailable(PullRequestUnavailableError),
+    RequestOperation(PullRequestOperationError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -3173,9 +3187,9 @@ impl<'de> ::serde::Deserialize<'de> for PullRequestsRunActionError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "PullRequestUnavailableError" => Self::PullRequestUnavailableError(raw.decode()?),
-                "PullRequestOperationError" => Self::PullRequestOperationError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "PullRequestUnavailableError" => Self::RequestUnavailable(raw.decode()?),
+                "PullRequestOperationError" => Self::RequestOperation(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -3191,9 +3205,9 @@ pub type PullRequestsRunActionSuccess = Option<PullRequestSummary>;
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum PullRequestsSetFilesViewedError {
-    PullRequestUnavailableError(PullRequestUnavailableError),
-    PullRequestOperationError(PullRequestOperationError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    RequestUnavailable(PullRequestUnavailableError),
+    RequestOperation(PullRequestOperationError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -3202,9 +3216,9 @@ impl<'de> ::serde::Deserialize<'de> for PullRequestsSetFilesViewedError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "PullRequestUnavailableError" => Self::PullRequestUnavailableError(raw.decode()?),
-                "PullRequestOperationError" => Self::PullRequestOperationError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "PullRequestUnavailableError" => Self::RequestUnavailable(raw.decode()?),
+                "PullRequestOperationError" => Self::RequestOperation(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -3217,9 +3231,9 @@ impl<'de> ::serde::Deserialize<'de> for PullRequestsSetFilesViewedError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum PullRequestsSetLabelsError {
-    PullRequestUnavailableError(PullRequestUnavailableError),
-    PullRequestOperationError(PullRequestOperationError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    RequestUnavailable(PullRequestUnavailableError),
+    RequestOperation(PullRequestOperationError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -3228,9 +3242,9 @@ impl<'de> ::serde::Deserialize<'de> for PullRequestsSetLabelsError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "PullRequestUnavailableError" => Self::PullRequestUnavailableError(raw.decode()?),
-                "PullRequestOperationError" => Self::PullRequestOperationError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "PullRequestUnavailableError" => Self::RequestUnavailable(raw.decode()?),
+                "PullRequestOperationError" => Self::RequestOperation(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -3243,9 +3257,9 @@ impl<'de> ::serde::Deserialize<'de> for PullRequestsSetLabelsError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum PullRequestsSetReactionError {
-    PullRequestUnavailableError(PullRequestUnavailableError),
-    PullRequestOperationError(PullRequestOperationError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    RequestUnavailable(PullRequestUnavailableError),
+    RequestOperation(PullRequestOperationError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -3254,9 +3268,9 @@ impl<'de> ::serde::Deserialize<'de> for PullRequestsSetReactionError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "PullRequestUnavailableError" => Self::PullRequestUnavailableError(raw.decode()?),
-                "PullRequestOperationError" => Self::PullRequestOperationError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "PullRequestUnavailableError" => Self::RequestUnavailable(raw.decode()?),
+                "PullRequestOperationError" => Self::RequestOperation(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -3269,9 +3283,9 @@ impl<'de> ::serde::Deserialize<'de> for PullRequestsSetReactionError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum PullRequestsSetThreadResolutionError {
-    PullRequestUnavailableError(PullRequestUnavailableError),
-    PullRequestOperationError(PullRequestOperationError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    RequestUnavailable(PullRequestUnavailableError),
+    RequestOperation(PullRequestOperationError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -3280,9 +3294,9 @@ impl<'de> ::serde::Deserialize<'de> for PullRequestsSetThreadResolutionError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "PullRequestUnavailableError" => Self::PullRequestUnavailableError(raw.decode()?),
-                "PullRequestOperationError" => Self::PullRequestOperationError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "PullRequestUnavailableError" => Self::RequestUnavailable(raw.decode()?),
+                "PullRequestOperationError" => Self::RequestOperation(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -3295,9 +3309,9 @@ impl<'de> ::serde::Deserialize<'de> for PullRequestsSetThreadResolutionError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum PullRequestsStackError {
-    PullRequestUnavailableError(PullRequestUnavailableError),
-    PullRequestOperationError(PullRequestOperationError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    RequestUnavailable(PullRequestUnavailableError),
+    RequestOperation(PullRequestOperationError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -3306,9 +3320,9 @@ impl<'de> ::serde::Deserialize<'de> for PullRequestsStackError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "PullRequestUnavailableError" => Self::PullRequestUnavailableError(raw.decode()?),
-                "PullRequestOperationError" => Self::PullRequestOperationError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "PullRequestUnavailableError" => Self::RequestUnavailable(raw.decode()?),
+                "PullRequestOperationError" => Self::RequestOperation(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -3324,9 +3338,9 @@ pub type PullRequestsStackSuccess = Option<PullRequestStack>;
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum PullRequestsSubmitReviewError {
-    PullRequestUnavailableError(PullRequestUnavailableError),
-    PullRequestOperationError(PullRequestOperationError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    RequestUnavailable(PullRequestUnavailableError),
+    RequestOperation(PullRequestOperationError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -3335,9 +3349,9 @@ impl<'de> ::serde::Deserialize<'de> for PullRequestsSubmitReviewError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "PullRequestUnavailableError" => Self::PullRequestUnavailableError(raw.decode()?),
-                "PullRequestOperationError" => Self::PullRequestOperationError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "PullRequestUnavailableError" => Self::RequestUnavailable(raw.decode()?),
+                "PullRequestOperationError" => Self::RequestOperation(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -3350,9 +3364,9 @@ impl<'de> ::serde::Deserialize<'de> for PullRequestsSubmitReviewError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum PullRequestsSummaryError {
-    PullRequestUnavailableError(PullRequestUnavailableError),
-    PullRequestOperationError(PullRequestOperationError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    RequestUnavailable(PullRequestUnavailableError),
+    RequestOperation(PullRequestOperationError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -3361,9 +3375,9 @@ impl<'de> ::serde::Deserialize<'de> for PullRequestsSummaryError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "PullRequestUnavailableError" => Self::PullRequestUnavailableError(raw.decode()?),
-                "PullRequestOperationError" => Self::PullRequestOperationError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "PullRequestUnavailableError" => Self::RequestUnavailable(raw.decode()?),
+                "PullRequestOperationError" => Self::RequestOperation(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -3376,9 +3390,9 @@ impl<'de> ::serde::Deserialize<'de> for PullRequestsSummaryError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum PullRequestsThreadCommentsError {
-    PullRequestUnavailableError(PullRequestUnavailableError),
-    PullRequestOperationError(PullRequestOperationError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    RequestUnavailable(PullRequestUnavailableError),
+    RequestOperation(PullRequestOperationError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -3387,9 +3401,9 @@ impl<'de> ::serde::Deserialize<'de> for PullRequestsThreadCommentsError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "PullRequestUnavailableError" => Self::PullRequestUnavailableError(raw.decode()?),
-                "PullRequestOperationError" => Self::PullRequestOperationError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "PullRequestUnavailableError" => Self::RequestUnavailable(raw.decode()?),
+                "PullRequestOperationError" => Self::RequestOperation(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -3402,9 +3416,9 @@ impl<'de> ::serde::Deserialize<'de> for PullRequestsThreadCommentsError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum PullRequestsUpdateCommentError {
-    PullRequestUnavailableError(PullRequestUnavailableError),
-    PullRequestOperationError(PullRequestOperationError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    RequestUnavailable(PullRequestUnavailableError),
+    RequestOperation(PullRequestOperationError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -3413,9 +3427,9 @@ impl<'de> ::serde::Deserialize<'de> for PullRequestsUpdateCommentError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "PullRequestUnavailableError" => Self::PullRequestUnavailableError(raw.decode()?),
-                "PullRequestOperationError" => Self::PullRequestOperationError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "PullRequestUnavailableError" => Self::RequestUnavailable(raw.decode()?),
+                "PullRequestOperationError" => Self::RequestOperation(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -3428,9 +3442,9 @@ impl<'de> ::serde::Deserialize<'de> for PullRequestsUpdateCommentError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum PullRequestsUpdateError {
-    PullRequestUnavailableError(PullRequestUnavailableError),
-    PullRequestOperationError(PullRequestOperationError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    RequestUnavailable(PullRequestUnavailableError),
+    RequestOperation(PullRequestOperationError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -3439,9 +3453,9 @@ impl<'de> ::serde::Deserialize<'de> for PullRequestsUpdateError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "PullRequestUnavailableError" => Self::PullRequestUnavailableError(raw.decode()?),
-                "PullRequestOperationError" => Self::PullRequestOperationError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "PullRequestUnavailableError" => Self::RequestUnavailable(raw.decode()?),
+                "PullRequestOperationError" => Self::RequestOperation(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -3454,8 +3468,8 @@ impl<'de> ::serde::Deserialize<'de> for PullRequestsUpdateError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum ReviewGetBranchCommitsError {
-    ReviewDiffPreviewError(ReviewDiffPreviewError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    DiffPreview(ReviewDiffPreviewError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -3464,8 +3478,8 @@ impl<'de> ::serde::Deserialize<'de> for ReviewGetBranchCommitsError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "VcsCheckpointStorageError" | "VcsProcessSpawnError" | "VcsProcessExitError" | "VcsProcessTimeoutError" | "VcsProcessStdinWriteError" | "VcsProcessOutputReadError" | "VcsProcessOutputLimitError" | "VcsProcessMissingExitCodeError" | "VcsRepositoryDetectionError" | "VcsUnsupportedOperationError" | "GitCommandError" => Self::ReviewDiffPreviewError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "VcsCheckpointStorageError" | "VcsProcessSpawnError" | "VcsProcessExitError" | "VcsProcessTimeoutError" | "VcsProcessStdinWriteError" | "VcsProcessOutputReadError" | "VcsProcessOutputLimitError" | "VcsProcessMissingExitCodeError" | "VcsRepositoryDetectionError" | "VcsUnsupportedOperationError" | "GitCommandError" => Self::DiffPreview(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -3478,8 +3492,8 @@ impl<'de> ::serde::Deserialize<'de> for ReviewGetBranchCommitsError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum ReviewGetDiffFileContentsError {
-    ReviewDiffPreviewError(ReviewDiffPreviewError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    DiffPreview(ReviewDiffPreviewError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -3488,8 +3502,8 @@ impl<'de> ::serde::Deserialize<'de> for ReviewGetDiffFileContentsError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "VcsCheckpointStorageError" | "VcsProcessSpawnError" | "VcsProcessExitError" | "VcsProcessTimeoutError" | "VcsProcessStdinWriteError" | "VcsProcessOutputReadError" | "VcsProcessOutputLimitError" | "VcsProcessMissingExitCodeError" | "VcsRepositoryDetectionError" | "VcsUnsupportedOperationError" | "GitCommandError" => Self::ReviewDiffPreviewError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "VcsCheckpointStorageError" | "VcsProcessSpawnError" | "VcsProcessExitError" | "VcsProcessTimeoutError" | "VcsProcessStdinWriteError" | "VcsProcessOutputReadError" | "VcsProcessOutputLimitError" | "VcsProcessMissingExitCodeError" | "VcsRepositoryDetectionError" | "VcsUnsupportedOperationError" | "GitCommandError" => Self::DiffPreview(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -3502,8 +3516,8 @@ impl<'de> ::serde::Deserialize<'de> for ReviewGetDiffFileContentsError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum ReviewGetDiffPreviewError {
-    ReviewDiffPreviewError(ReviewDiffPreviewError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    Diff(ReviewDiffPreviewError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -3512,8 +3526,8 @@ impl<'de> ::serde::Deserialize<'de> for ReviewGetDiffPreviewError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "VcsCheckpointStorageError" | "VcsProcessSpawnError" | "VcsProcessExitError" | "VcsProcessTimeoutError" | "VcsProcessStdinWriteError" | "VcsProcessOutputReadError" | "VcsProcessOutputLimitError" | "VcsProcessMissingExitCodeError" | "VcsRepositoryDetectionError" | "VcsUnsupportedOperationError" | "GitCommandError" => Self::ReviewDiffPreviewError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "VcsCheckpointStorageError" | "VcsProcessSpawnError" | "VcsProcessExitError" | "VcsProcessTimeoutError" | "VcsProcessStdinWriteError" | "VcsProcessOutputReadError" | "VcsProcessOutputLimitError" | "VcsProcessMissingExitCodeError" | "VcsRepositoryDetectionError" | "VcsUnsupportedOperationError" | "GitCommandError" => Self::Diff(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -3526,8 +3540,8 @@ impl<'de> ::serde::Deserialize<'de> for ReviewGetDiffPreviewError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum ScheduledTasksDeleteError {
-    ScheduledTaskError(ScheduledTaskError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    Task(ScheduledTaskError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -3536,8 +3550,8 @@ impl<'de> ::serde::Deserialize<'de> for ScheduledTasksDeleteError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "ScheduledTaskError" => Self::ScheduledTaskError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "ScheduledTaskError" => Self::Task(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -3550,8 +3564,8 @@ impl<'de> ::serde::Deserialize<'de> for ScheduledTasksDeleteError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum ScheduledTasksGetWebhookDeliveryError {
-    ScheduledTaskError(ScheduledTaskError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    Task(ScheduledTaskError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -3560,8 +3574,8 @@ impl<'de> ::serde::Deserialize<'de> for ScheduledTasksGetWebhookDeliveryError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "ScheduledTaskError" => Self::ScheduledTaskError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "ScheduledTaskError" => Self::Task(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -3574,8 +3588,8 @@ impl<'de> ::serde::Deserialize<'de> for ScheduledTasksGetWebhookDeliveryError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum ScheduledTasksListWebhookDeliveriesError {
-    ScheduledTaskError(ScheduledTaskError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    Task(ScheduledTaskError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -3584,8 +3598,8 @@ impl<'de> ::serde::Deserialize<'de> for ScheduledTasksListWebhookDeliveriesError
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "ScheduledTaskError" => Self::ScheduledTaskError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "ScheduledTaskError" => Self::Task(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -3598,8 +3612,8 @@ impl<'de> ::serde::Deserialize<'de> for ScheduledTasksListWebhookDeliveriesError
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum ScheduledTasksRotateWebhookTokenError {
-    ScheduledTaskError(ScheduledTaskError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    Task(ScheduledTaskError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -3608,8 +3622,8 @@ impl<'de> ::serde::Deserialize<'de> for ScheduledTasksRotateWebhookTokenError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "ScheduledTaskError" => Self::ScheduledTaskError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "ScheduledTaskError" => Self::Task(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -3622,8 +3636,8 @@ impl<'de> ::serde::Deserialize<'de> for ScheduledTasksRotateWebhookTokenError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum ScheduledTasksRunNowError {
-    ScheduledTaskError(ScheduledTaskError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    Task(ScheduledTaskError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -3632,8 +3646,8 @@ impl<'de> ::serde::Deserialize<'de> for ScheduledTasksRunNowError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "ScheduledTaskError" => Self::ScheduledTaskError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "ScheduledTaskError" => Self::Task(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -3646,8 +3660,8 @@ impl<'de> ::serde::Deserialize<'de> for ScheduledTasksRunNowError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum ScheduledTasksSetEnabledError {
-    ScheduledTaskError(ScheduledTaskError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    Task(ScheduledTaskError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -3656,8 +3670,8 @@ impl<'de> ::serde::Deserialize<'de> for ScheduledTasksSetEnabledError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "ScheduledTaskError" => Self::ScheduledTaskError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "ScheduledTaskError" => Self::Task(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -3670,8 +3684,8 @@ impl<'de> ::serde::Deserialize<'de> for ScheduledTasksSetEnabledError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum ScheduledTasksSubscribeError {
-    ScheduledTaskError(ScheduledTaskError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    Task(ScheduledTaskError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -3680,8 +3694,8 @@ impl<'de> ::serde::Deserialize<'de> for ScheduledTasksSubscribeError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "ScheduledTaskError" => Self::ScheduledTaskError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "ScheduledTaskError" => Self::Task(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -3694,8 +3708,8 @@ impl<'de> ::serde::Deserialize<'de> for ScheduledTasksSubscribeError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum ScheduledTasksUpsertError {
-    ScheduledTaskError(ScheduledTaskError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    Task(ScheduledTaskError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -3704,8 +3718,8 @@ impl<'de> ::serde::Deserialize<'de> for ScheduledTasksUpsertError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "ScheduledTaskError" => Self::ScheduledTaskError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "ScheduledTaskError" => Self::Task(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -3718,8 +3732,8 @@ impl<'de> ::serde::Deserialize<'de> for ScheduledTasksUpsertError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum SecretsAnswerRequestError {
-    SecretRequestError(SecretRequestError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    Secret(SecretRequestError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -3728,8 +3742,8 @@ impl<'de> ::serde::Deserialize<'de> for SecretsAnswerRequestError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "SecretRequestError" => Self::SecretRequestError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "SecretRequestError" => Self::Secret(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -3750,7 +3764,7 @@ pub struct ServerCheckSecretSourcePayload {
 #[serde(untagged)]
 pub enum ServerCommitDesktopUpdateError {
     ServerSelfUpdateError(ServerSelfUpdateError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -3760,7 +3774,7 @@ impl<'de> ::serde::Deserialize<'de> for ServerCommitDesktopUpdateError {
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
                 "ServerSelfUpdateError" => Self::ServerSelfUpdateError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -3773,8 +3787,8 @@ impl<'de> ::serde::Deserialize<'de> for ServerCommitDesktopUpdateError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum ServerDeleteAcpRegistrySessionError {
-    AcpRegistryOperationError(AcpRegistryOperationError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    AcpRegistryOperation(AcpRegistryOperationError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -3783,8 +3797,8 @@ impl<'de> ::serde::Deserialize<'de> for ServerDeleteAcpRegistrySessionError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "AcpRegistryOperationError" => Self::AcpRegistryOperationError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "AcpRegistryOperationError" => Self::AcpRegistryOperation(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -3797,8 +3811,8 @@ impl<'de> ::serde::Deserialize<'de> for ServerDeleteAcpRegistrySessionError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum ServerDisableAcpRegistryProviderError {
-    AcpRegistryOperationError(AcpRegistryOperationError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    AcpRegistryOperation(AcpRegistryOperationError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -3807,8 +3821,8 @@ impl<'de> ::serde::Deserialize<'de> for ServerDisableAcpRegistryProviderError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "AcpRegistryOperationError" => Self::AcpRegistryOperationError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "AcpRegistryOperationError" => Self::AcpRegistryOperation(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -3821,9 +3835,9 @@ impl<'de> ::serde::Deserialize<'de> for ServerDisableAcpRegistryProviderError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum ServerGetConfigError {
-    KeybindingsConfigParseError(KeybindingsConfigParseError),
-    ServerSettingsError(ServerSettingsError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    KeybindingsConfigParse(KeybindingsConfigParseError),
+    Settings(ServerSettingsError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -3832,9 +3846,9 @@ impl<'de> ::serde::Deserialize<'de> for ServerGetConfigError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "KeybindingsConfigParseError" => Self::KeybindingsConfigParseError(raw.decode()?),
-                "ServerSettingsError" => Self::ServerSettingsError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "KeybindingsConfigParseError" => Self::KeybindingsConfigParse(raw.decode()?),
+                "ServerSettingsError" => Self::Settings(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -3850,8 +3864,8 @@ pub type ServerGetDatabaseStorageSuccess = Option<DatabaseStorageStatus>;
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum ServerGetNpmReleaseError {
-    ServerNpmReleaseError(ServerNpmReleaseError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    Npm(ServerNpmReleaseError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -3860,8 +3874,8 @@ impl<'de> ::serde::Deserialize<'de> for ServerGetNpmReleaseError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "ServerNpmReleaseError" => Self::ServerNpmReleaseError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "ServerNpmReleaseError" => Self::Npm(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -3877,8 +3891,8 @@ pub type ServerGetNpmReleaseSuccess = Option<ServerNpmRelease>;
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum ServerGetSettingsError {
-    ServerSettingsError(ServerSettingsError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    Settings(ServerSettingsError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -3887,8 +3901,8 @@ impl<'de> ::serde::Deserialize<'de> for ServerGetSettingsError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "ServerSettingsError" => Self::ServerSettingsError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "ServerSettingsError" => Self::Settings(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -3904,8 +3918,8 @@ pub type ServerGetStorageCleanupReportSuccess = Option<StorageCleanupReport>;
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum ServerGetUsageSummaryError {
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
-    UsageReadError(UsageReadError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
+    UsageRead(UsageReadError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -3914,8 +3928,8 @@ impl<'de> ::serde::Deserialize<'de> for ServerGetUsageSummaryError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
-                "UsageReadError" => Self::UsageReadError(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
+                "UsageReadError" => Self::UsageRead(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -3928,8 +3942,8 @@ impl<'de> ::serde::Deserialize<'de> for ServerGetUsageSummaryError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum ServerImportAcpRegistrySessionError {
-    AcpRegistryOperationError(AcpRegistryOperationError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    AcpRegistryOperation(AcpRegistryOperationError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -3938,8 +3952,8 @@ impl<'de> ::serde::Deserialize<'de> for ServerImportAcpRegistrySessionError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "AcpRegistryOperationError" => Self::AcpRegistryOperationError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "AcpRegistryOperationError" => Self::AcpRegistryOperation(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -3952,8 +3966,8 @@ impl<'de> ::serde::Deserialize<'de> for ServerImportAcpRegistrySessionError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum ServerListAcpRegistryProvidersError {
-    AcpRegistryOperationError(AcpRegistryOperationError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    AcpRegistryOperation(AcpRegistryOperationError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -3962,8 +3976,8 @@ impl<'de> ::serde::Deserialize<'de> for ServerListAcpRegistryProvidersError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "AcpRegistryOperationError" => Self::AcpRegistryOperationError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "AcpRegistryOperationError" => Self::AcpRegistryOperation(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -3976,8 +3990,8 @@ impl<'de> ::serde::Deserialize<'de> for ServerListAcpRegistryProvidersError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum ServerListAcpRegistrySessionsError {
-    AcpRegistryOperationError(AcpRegistryOperationError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    AcpRegistryOperation(AcpRegistryOperationError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -3986,8 +4000,8 @@ impl<'de> ::serde::Deserialize<'de> for ServerListAcpRegistrySessionsError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "AcpRegistryOperationError" => Self::AcpRegistryOperationError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "AcpRegistryOperationError" => Self::AcpRegistryOperation(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -4000,8 +4014,8 @@ impl<'de> ::serde::Deserialize<'de> for ServerListAcpRegistrySessionsError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum ServerListTextGeneratorModelsError {
-    TextGeneratorError(TextGeneratorError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    TextGenerator(TextGeneratorError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -4010,8 +4024,8 @@ impl<'de> ::serde::Deserialize<'de> for ServerListTextGeneratorModelsError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "TextGeneratorError" => Self::TextGeneratorError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "TextGeneratorError" => Self::TextGenerator(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -4024,8 +4038,8 @@ impl<'de> ::serde::Deserialize<'de> for ServerListTextGeneratorModelsError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum ServerLogoutAcpRegistryError {
-    AcpRegistryOperationError(AcpRegistryOperationError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    AcpRegistryOperation(AcpRegistryOperationError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -4034,8 +4048,8 @@ impl<'de> ::serde::Deserialize<'de> for ServerLogoutAcpRegistryError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "AcpRegistryOperationError" => Self::AcpRegistryOperationError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "AcpRegistryOperationError" => Self::AcpRegistryOperation(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -4048,8 +4062,8 @@ impl<'de> ::serde::Deserialize<'de> for ServerLogoutAcpRegistryError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum ServerPrepareAcpRegistryAgentError {
-    AcpRegistryOperationError(AcpRegistryOperationError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    AcpRegistryOperation(AcpRegistryOperationError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -4058,8 +4072,8 @@ impl<'de> ::serde::Deserialize<'de> for ServerPrepareAcpRegistryAgentError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "AcpRegistryOperationError" => Self::AcpRegistryOperationError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "AcpRegistryOperationError" => Self::AcpRegistryOperation(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -4072,7 +4086,7 @@ impl<'de> ::serde::Deserialize<'de> for ServerPrepareAcpRegistryAgentError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum ServerPrepareTriageError2 {
-    ServerPrepareTriageError(ServerPrepareTriageError),
+    Error(ServerPrepareTriageError),
     EnvironmentAuthorizationError(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
@@ -4082,7 +4096,7 @@ impl<'de> ::serde::Deserialize<'de> for ServerPrepareTriageError2 {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "ServerPrepareTriageError" => Self::ServerPrepareTriageError(raw.decode()?),
+                "ServerPrepareTriageError" => Self::Error(raw.decode()?),
                 "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
@@ -4099,8 +4113,8 @@ pub type ServerProbeSuccess = crate::wire::Empty;
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum ServerReclaimDatabaseSpaceError {
-    DatabaseReclaimError(DatabaseReclaimError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    DatabaseReclaim(DatabaseReclaimError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -4109,8 +4123,8 @@ impl<'de> ::serde::Deserialize<'de> for ServerReclaimDatabaseSpaceError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "DatabaseReclaimError" => Self::DatabaseReclaimError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "DatabaseReclaimError" => Self::DatabaseReclaim(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -4123,8 +4137,8 @@ impl<'de> ::serde::Deserialize<'de> for ServerReclaimDatabaseSpaceError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum ServerRefreshProvidersError {
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
-    ProviderSetupError(ProviderSetupError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
+    ProviderSetup(ProviderSetupError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -4133,8 +4147,8 @@ impl<'de> ::serde::Deserialize<'de> for ServerRefreshProvidersError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
-                "ProviderSetupError" => Self::ProviderSetupError(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
+                "ProviderSetupError" => Self::ProviderSetup(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -4175,8 +4189,8 @@ pub struct ServerRefreshProvidersPayload {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum ServerRemoveKeybindingError {
-    KeybindingsConfigParseError(KeybindingsConfigParseError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    KeybindingsConfigParse(KeybindingsConfigParseError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -4185,8 +4199,8 @@ impl<'de> ::serde::Deserialize<'de> for ServerRemoveKeybindingError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "KeybindingsConfigParseError" => Self::KeybindingsConfigParseError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "KeybindingsConfigParseError" => Self::KeybindingsConfigParse(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -4199,8 +4213,8 @@ impl<'de> ::serde::Deserialize<'de> for ServerRemoveKeybindingError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum ServerRunStorageCleanupError {
-    ServerSettingsError(ServerSettingsError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    Settings(ServerSettingsError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -4209,8 +4223,8 @@ impl<'de> ::serde::Deserialize<'de> for ServerRunStorageCleanupError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "ServerSettingsError" => Self::ServerSettingsError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "ServerSettingsError" => Self::Settings(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -4223,8 +4237,8 @@ impl<'de> ::serde::Deserialize<'de> for ServerRunStorageCleanupError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum ServerSearchAcpRegistryError {
-    AcpRegistryOperationError(AcpRegistryOperationError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    AcpRegistryOperation(AcpRegistryOperationError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -4233,8 +4247,8 @@ impl<'de> ::serde::Deserialize<'de> for ServerSearchAcpRegistryError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "AcpRegistryOperationError" => Self::AcpRegistryOperationError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "AcpRegistryOperationError" => Self::AcpRegistryOperation(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -4247,8 +4261,8 @@ impl<'de> ::serde::Deserialize<'de> for ServerSearchAcpRegistryError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum ServerSetAcpRegistryProviderError {
-    AcpRegistryOperationError(AcpRegistryOperationError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    AcpRegistryOperation(AcpRegistryOperationError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -4257,8 +4271,8 @@ impl<'de> ::serde::Deserialize<'de> for ServerSetAcpRegistryProviderError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "AcpRegistryOperationError" => Self::AcpRegistryOperationError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "AcpRegistryOperationError" => Self::AcpRegistryOperation(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -4271,8 +4285,8 @@ impl<'de> ::serde::Deserialize<'de> for ServerSetAcpRegistryProviderError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum ServerUninstallAcpRegistryManagedBinaryError {
-    AcpRegistryOperationError(AcpRegistryOperationError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    AcpRegistryOperation(AcpRegistryOperationError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -4281,8 +4295,8 @@ impl<'de> ::serde::Deserialize<'de> for ServerUninstallAcpRegistryManagedBinaryE
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "AcpRegistryOperationError" => Self::AcpRegistryOperationError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "AcpRegistryOperationError" => Self::AcpRegistryOperation(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -4295,8 +4309,8 @@ impl<'de> ::serde::Deserialize<'de> for ServerUninstallAcpRegistryManagedBinaryE
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum ServerUpdateProviderError {
-    ServerProviderUpdateError(ServerProviderUpdateError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    ProviderUpdate(ServerProviderUpdateError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -4305,8 +4319,8 @@ impl<'de> ::serde::Deserialize<'de> for ServerUpdateProviderError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "ServerProviderUpdateError" => Self::ServerProviderUpdateError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "ServerProviderUpdateError" => Self::ProviderUpdate(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -4319,8 +4333,8 @@ impl<'de> ::serde::Deserialize<'de> for ServerUpdateProviderError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum ServerUpdateServerError {
-    ServerSelfUpdateError(ServerSelfUpdateError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    SelfUpdate(ServerSelfUpdateError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -4329,8 +4343,8 @@ impl<'de> ::serde::Deserialize<'de> for ServerUpdateServerError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "ServerSelfUpdateError" => Self::ServerSelfUpdateError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "ServerSelfUpdateError" => Self::SelfUpdate(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -4343,8 +4357,8 @@ impl<'de> ::serde::Deserialize<'de> for ServerUpdateServerError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum ServerUpdateServerWithProgressError {
-    ServerSelfUpdateError(ServerSelfUpdateError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    SelfUpdate(ServerSelfUpdateError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -4353,8 +4367,8 @@ impl<'de> ::serde::Deserialize<'de> for ServerUpdateServerWithProgressError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "ServerSelfUpdateError" => Self::ServerSelfUpdateError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "ServerSelfUpdateError" => Self::SelfUpdate(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -4367,8 +4381,8 @@ impl<'de> ::serde::Deserialize<'de> for ServerUpdateServerWithProgressError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum ServerUpdateSettingsError {
-    ServerSettingsError(ServerSettingsError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    Settings(ServerSettingsError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -4377,8 +4391,8 @@ impl<'de> ::serde::Deserialize<'de> for ServerUpdateSettingsError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "ServerSettingsError" => Self::ServerSettingsError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "ServerSettingsError" => Self::Settings(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -4400,8 +4414,8 @@ pub struct ServerUpdateSettingsPayload {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum ServerUpsertKeybindingError {
-    KeybindingsConfigParseError(KeybindingsConfigParseError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    KeybindingsConfigParse(KeybindingsConfigParseError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -4410,8 +4424,8 @@ impl<'de> ::serde::Deserialize<'de> for ServerUpsertKeybindingError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "KeybindingsConfigParseError" => Self::KeybindingsConfigParseError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "KeybindingsConfigParseError" => Self::KeybindingsConfigParse(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -4424,8 +4438,8 @@ impl<'de> ::serde::Deserialize<'de> for ServerUpsertKeybindingError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum ShellOpenInEditorError {
-    ExternalLauncherError(ExternalLauncherError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    ExternalLauncher(ExternalLauncherError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -4434,8 +4448,8 @@ impl<'de> ::serde::Deserialize<'de> for ShellOpenInEditorError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "ExternalLauncherUnknownEditorError" | "ExternalLauncherUnsupportedEditorError" | "ExternalLauncherCommandNotFoundError" | "ExternalLauncherUnsupportedTargetError" | "ExternalLauncherBrowserSpawnError" | "ExternalLauncherEditorSpawnError" => Self::ExternalLauncherError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "ExternalLauncherUnknownEditorError" | "ExternalLauncherUnsupportedEditorError" | "ExternalLauncherCommandNotFoundError" | "ExternalLauncherUnsupportedTargetError" | "ExternalLauncherBrowserSpawnError" | "ExternalLauncherEditorSpawnError" => Self::ExternalLauncher(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -4448,8 +4462,8 @@ impl<'de> ::serde::Deserialize<'de> for ShellOpenInEditorError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum SourceControlCloneRepositoryError {
-    SourceControlRepositoryError(SourceControlRepositoryError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    Repository(SourceControlRepositoryError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -4458,8 +4472,8 @@ impl<'de> ::serde::Deserialize<'de> for SourceControlCloneRepositoryError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "SourceControlRepositoryError" => Self::SourceControlRepositoryError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "SourceControlRepositoryError" => Self::Repository(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -4472,8 +4486,8 @@ impl<'de> ::serde::Deserialize<'de> for SourceControlCloneRepositoryError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum SourceControlLookupRepositoryError {
-    SourceControlRepositoryError(SourceControlRepositoryError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    Repository(SourceControlRepositoryError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -4482,8 +4496,8 @@ impl<'de> ::serde::Deserialize<'de> for SourceControlLookupRepositoryError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "SourceControlRepositoryError" => Self::SourceControlRepositoryError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "SourceControlRepositoryError" => Self::Repository(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -4496,8 +4510,8 @@ impl<'de> ::serde::Deserialize<'de> for SourceControlLookupRepositoryError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum SourceControlPublishRepositoryError {
-    SourceControlRepositoryError(SourceControlRepositoryError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    Repository(SourceControlRepositoryError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -4506,8 +4520,8 @@ impl<'de> ::serde::Deserialize<'de> for SourceControlPublishRepositoryError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "SourceControlRepositoryError" => Self::SourceControlRepositoryError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "SourceControlRepositoryError" => Self::Repository(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -4520,8 +4534,8 @@ impl<'de> ::serde::Deserialize<'de> for SourceControlPublishRepositoryError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum SourceControlSignInCancelError {
-    SourceControlSignInError(SourceControlSignInError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    Error(SourceControlSignInError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -4530,8 +4544,8 @@ impl<'de> ::serde::Deserialize<'de> for SourceControlSignInCancelError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "SourceControlSignInError" => Self::SourceControlSignInError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "SourceControlSignInError" => Self::Error(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -4544,8 +4558,8 @@ impl<'de> ::serde::Deserialize<'de> for SourceControlSignInCancelError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum SourceControlSignInStartError {
-    SourceControlSignInError(SourceControlSignInError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    Error(SourceControlSignInError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -4554,8 +4568,8 @@ impl<'de> ::serde::Deserialize<'de> for SourceControlSignInStartError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "SourceControlSignInError" => Self::SourceControlSignInError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "SourceControlSignInError" => Self::Error(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -4568,8 +4582,8 @@ impl<'de> ::serde::Deserialize<'de> for SourceControlSignInStartError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum SourceControlSignInWaitError {
-    SourceControlSignInError(SourceControlSignInError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    Error(SourceControlSignInError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -4578,8 +4592,8 @@ impl<'de> ::serde::Deserialize<'de> for SourceControlSignInWaitError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "SourceControlSignInError" => Self::SourceControlSignInError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "SourceControlSignInError" => Self::Error(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -4598,8 +4612,8 @@ pub type SourceControlStarSuccess = bool;
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum SubscribeAuthAccessError {
-    AuthAccessStreamError(AuthAccessStreamError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    AuthAccessStream(AuthAccessStreamError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -4608,8 +4622,8 @@ impl<'de> ::serde::Deserialize<'de> for SubscribeAuthAccessError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "AuthAccessStreamError" => Self::AuthAccessStreamError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "AuthAccessStreamError" => Self::AuthAccessStream(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -4663,9 +4677,9 @@ pub struct SubscribeDiscoveredLocalServersPayload {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum SubscribeServerConfigError {
-    KeybindingsConfigParseError(KeybindingsConfigParseError),
-    ServerSettingsError(ServerSettingsError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    KeybindingsConfigParse(KeybindingsConfigParseError),
+    ServerSettings(ServerSettingsError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -4674,9 +4688,9 @@ impl<'de> ::serde::Deserialize<'de> for SubscribeServerConfigError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "KeybindingsConfigParseError" => Self::KeybindingsConfigParseError(raw.decode()?),
-                "ServerSettingsError" => Self::ServerSettingsError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "KeybindingsConfigParseError" => Self::KeybindingsConfigParse(raw.decode()?),
+                "ServerSettingsError" => Self::ServerSettings(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -4709,8 +4723,8 @@ pub struct SubscribeServerConfigPayload {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum SubscribeVcsBranchError {
-    GitManagerServiceError(GitManagerServiceError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    GitManagerService(GitManagerServiceError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -4719,8 +4733,8 @@ impl<'de> ::serde::Deserialize<'de> for SubscribeVcsBranchError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "GitManagerError" | "GitPullRequestMaterializationError" | "GitCommandError" | "SourceControlProviderError" | "TextGenerationError" => Self::GitManagerServiceError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "GitManagerError" | "GitPullRequestMaterializationError" | "GitCommandError" | "SourceControlProviderError" | "TextGenerationError" => Self::GitManagerService(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -4733,8 +4747,8 @@ impl<'de> ::serde::Deserialize<'de> for SubscribeVcsBranchError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum SubscribeVcsStatusError {
-    GitManagerServiceError(GitManagerServiceError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    GitManagerService(GitManagerServiceError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -4743,8 +4757,8 @@ impl<'de> ::serde::Deserialize<'de> for SubscribeVcsStatusError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "GitManagerError" | "GitPullRequestMaterializationError" | "GitCommandError" | "SourceControlProviderError" | "TextGenerationError" => Self::GitManagerServiceError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "GitManagerError" | "GitPullRequestMaterializationError" | "GitCommandError" | "SourceControlProviderError" | "TextGenerationError" => Self::GitManagerService(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -4757,8 +4771,8 @@ impl<'de> ::serde::Deserialize<'de> for SubscribeVcsStatusError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum TerminalAttachError {
-    TerminalError(TerminalError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    Error(TerminalError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -4767,8 +4781,8 @@ impl<'de> ::serde::Deserialize<'de> for TerminalAttachError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "TerminalCwdNotFoundError" | "TerminalCwdNotDirectoryError" | "TerminalCwdStatError" | "TerminalHistoryError" | "TerminalSessionLookupError" | "TerminalProviderInstanceNotFoundError" | "TerminalProviderEnvironmentError" | "TerminalNotRunningError" | "TerminalWriteError" | "TerminalResizeError" => Self::TerminalError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "TerminalCwdNotFoundError" | "TerminalCwdNotDirectoryError" | "TerminalCwdStatError" | "TerminalHistoryError" | "TerminalSessionLookupError" | "TerminalProviderInstanceNotFoundError" | "TerminalProviderEnvironmentError" | "TerminalNotRunningError" | "TerminalWriteError" | "TerminalResizeError" => Self::Error(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -4781,8 +4795,8 @@ impl<'de> ::serde::Deserialize<'de> for TerminalAttachError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum TerminalClearError {
-    TerminalError(TerminalError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    Error(TerminalError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -4791,8 +4805,8 @@ impl<'de> ::serde::Deserialize<'de> for TerminalClearError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "TerminalCwdNotFoundError" | "TerminalCwdNotDirectoryError" | "TerminalCwdStatError" | "TerminalHistoryError" | "TerminalSessionLookupError" | "TerminalProviderInstanceNotFoundError" | "TerminalProviderEnvironmentError" | "TerminalNotRunningError" | "TerminalWriteError" | "TerminalResizeError" => Self::TerminalError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "TerminalCwdNotFoundError" | "TerminalCwdNotDirectoryError" | "TerminalCwdStatError" | "TerminalHistoryError" | "TerminalSessionLookupError" | "TerminalProviderInstanceNotFoundError" | "TerminalProviderEnvironmentError" | "TerminalNotRunningError" | "TerminalWriteError" | "TerminalResizeError" => Self::Error(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -4813,8 +4827,8 @@ pub struct TerminalClearPayload {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum TerminalCloseError {
-    TerminalError(TerminalError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    Error(TerminalError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -4823,8 +4837,8 @@ impl<'de> ::serde::Deserialize<'de> for TerminalCloseError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "TerminalCwdNotFoundError" | "TerminalCwdNotDirectoryError" | "TerminalCwdStatError" | "TerminalHistoryError" | "TerminalSessionLookupError" | "TerminalProviderInstanceNotFoundError" | "TerminalProviderEnvironmentError" | "TerminalNotRunningError" | "TerminalWriteError" | "TerminalResizeError" => Self::TerminalError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "TerminalCwdNotFoundError" | "TerminalCwdNotDirectoryError" | "TerminalCwdStatError" | "TerminalHistoryError" | "TerminalSessionLookupError" | "TerminalProviderInstanceNotFoundError" | "TerminalProviderEnvironmentError" | "TerminalNotRunningError" | "TerminalWriteError" | "TerminalResizeError" => Self::Error(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -4837,8 +4851,8 @@ impl<'de> ::serde::Deserialize<'de> for TerminalCloseError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum TerminalObserveError {
-    TerminalError(TerminalError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    Error(TerminalError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -4847,8 +4861,8 @@ impl<'de> ::serde::Deserialize<'de> for TerminalObserveError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "TerminalCwdNotFoundError" | "TerminalCwdNotDirectoryError" | "TerminalCwdStatError" | "TerminalHistoryError" | "TerminalSessionLookupError" | "TerminalProviderInstanceNotFoundError" | "TerminalProviderEnvironmentError" | "TerminalNotRunningError" | "TerminalWriteError" | "TerminalResizeError" => Self::TerminalError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "TerminalCwdNotFoundError" | "TerminalCwdNotDirectoryError" | "TerminalCwdStatError" | "TerminalHistoryError" | "TerminalSessionLookupError" | "TerminalProviderInstanceNotFoundError" | "TerminalProviderEnvironmentError" | "TerminalNotRunningError" | "TerminalWriteError" | "TerminalResizeError" => Self::Error(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -4869,8 +4883,8 @@ pub struct TerminalObservePayload {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum TerminalOpenError {
-    TerminalError(TerminalError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    Error(TerminalError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -4879,8 +4893,8 @@ impl<'de> ::serde::Deserialize<'de> for TerminalOpenError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "TerminalCwdNotFoundError" | "TerminalCwdNotDirectoryError" | "TerminalCwdStatError" | "TerminalHistoryError" | "TerminalSessionLookupError" | "TerminalProviderInstanceNotFoundError" | "TerminalProviderEnvironmentError" | "TerminalNotRunningError" | "TerminalWriteError" | "TerminalResizeError" => Self::TerminalError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "TerminalCwdNotFoundError" | "TerminalCwdNotDirectoryError" | "TerminalCwdStatError" | "TerminalHistoryError" | "TerminalSessionLookupError" | "TerminalProviderInstanceNotFoundError" | "TerminalProviderEnvironmentError" | "TerminalNotRunningError" | "TerminalWriteError" | "TerminalResizeError" => Self::Error(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -4893,7 +4907,7 @@ impl<'de> ::serde::Deserialize<'de> for TerminalOpenError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum TerminalResizeError2 {
-    TerminalError(TerminalError),
+    Error(TerminalError),
     EnvironmentAuthorizationError(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
@@ -4903,7 +4917,7 @@ impl<'de> ::serde::Deserialize<'de> for TerminalResizeError2 {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "TerminalCwdNotFoundError" | "TerminalCwdNotDirectoryError" | "TerminalCwdStatError" | "TerminalHistoryError" | "TerminalSessionLookupError" | "TerminalProviderInstanceNotFoundError" | "TerminalProviderEnvironmentError" | "TerminalNotRunningError" | "TerminalWriteError" | "TerminalResizeError" => Self::TerminalError(raw.decode()?),
+                "TerminalCwdNotFoundError" | "TerminalCwdNotDirectoryError" | "TerminalCwdStatError" | "TerminalHistoryError" | "TerminalSessionLookupError" | "TerminalProviderInstanceNotFoundError" | "TerminalProviderEnvironmentError" | "TerminalNotRunningError" | "TerminalWriteError" | "TerminalResizeError" => Self::Error(raw.decode()?),
                 "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
@@ -4917,7 +4931,7 @@ impl<'de> ::serde::Deserialize<'de> for TerminalResizeError2 {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum TerminalWriteError2 {
-    TerminalError(TerminalError),
+    Error(TerminalError),
     EnvironmentAuthorizationError(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
@@ -4927,7 +4941,7 @@ impl<'de> ::serde::Deserialize<'de> for TerminalWriteError2 {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "TerminalCwdNotFoundError" | "TerminalCwdNotDirectoryError" | "TerminalCwdStatError" | "TerminalHistoryError" | "TerminalSessionLookupError" | "TerminalProviderInstanceNotFoundError" | "TerminalProviderEnvironmentError" | "TerminalNotRunningError" | "TerminalWriteError" | "TerminalResizeError" => Self::TerminalError(raw.decode()?),
+                "TerminalCwdNotFoundError" | "TerminalCwdNotDirectoryError" | "TerminalCwdStatError" | "TerminalHistoryError" | "TerminalSessionLookupError" | "TerminalProviderInstanceNotFoundError" | "TerminalProviderEnvironmentError" | "TerminalNotRunningError" | "TerminalWriteError" | "TerminalResizeError" => Self::Error(raw.decode()?),
                 "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
@@ -4941,8 +4955,8 @@ impl<'de> ::serde::Deserialize<'de> for TerminalWriteError2 {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum VcsCreateRefError {
-    GitCommandError(GitCommandError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    GitCommand(GitCommandError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -4951,8 +4965,8 @@ impl<'de> ::serde::Deserialize<'de> for VcsCreateRefError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "GitCommandError" => Self::GitCommandError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "GitCommandError" => Self::GitCommand(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -4965,8 +4979,8 @@ impl<'de> ::serde::Deserialize<'de> for VcsCreateRefError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum VcsCreateWorktreeError {
-    GitCommandError(GitCommandError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    GitCommand(GitCommandError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -4975,8 +4989,8 @@ impl<'de> ::serde::Deserialize<'de> for VcsCreateWorktreeError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "GitCommandError" => Self::GitCommandError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "GitCommandError" => Self::GitCommand(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -5002,8 +5016,8 @@ pub struct VcsCreateWorktreePayload {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum VcsInitError {
-    VcsError(VcsError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    Error(VcsError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -5012,8 +5026,8 @@ impl<'de> ::serde::Deserialize<'de> for VcsInitError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "VcsCheckpointStorageError" | "VcsProcessSpawnError" | "VcsProcessExitError" | "VcsProcessTimeoutError" | "VcsProcessStdinWriteError" | "VcsProcessOutputReadError" | "VcsProcessOutputLimitError" | "VcsProcessMissingExitCodeError" | "VcsRepositoryDetectionError" | "VcsUnsupportedOperationError" => Self::VcsError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "VcsCheckpointStorageError" | "VcsProcessSpawnError" | "VcsProcessExitError" | "VcsProcessTimeoutError" | "VcsProcessStdinWriteError" | "VcsProcessOutputReadError" | "VcsProcessOutputLimitError" | "VcsProcessMissingExitCodeError" | "VcsRepositoryDetectionError" | "VcsUnsupportedOperationError" => Self::Error(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -5026,8 +5040,8 @@ impl<'de> ::serde::Deserialize<'de> for VcsInitError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum VcsListRefsError {
-    GitCommandError(GitCommandError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    GitCommand(GitCommandError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -5036,8 +5050,8 @@ impl<'de> ::serde::Deserialize<'de> for VcsListRefsError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "GitCommandError" => Self::GitCommandError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "GitCommandError" => Self::GitCommand(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -5050,8 +5064,8 @@ impl<'de> ::serde::Deserialize<'de> for VcsListRefsError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum VcsPullError {
-    GitCommandError(GitCommandError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    GitCommand(GitCommandError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -5060,8 +5074,8 @@ impl<'de> ::serde::Deserialize<'de> for VcsPullError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "GitCommandError" => Self::GitCommandError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "GitCommandError" => Self::GitCommand(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -5074,8 +5088,8 @@ impl<'de> ::serde::Deserialize<'de> for VcsPullError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum VcsRefreshBranchError {
-    GitManagerServiceError(GitManagerServiceError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    GitManagerService(GitManagerServiceError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -5084,8 +5098,8 @@ impl<'de> ::serde::Deserialize<'de> for VcsRefreshBranchError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "GitManagerError" | "GitPullRequestMaterializationError" | "GitCommandError" | "SourceControlProviderError" | "TextGenerationError" => Self::GitManagerServiceError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "GitManagerError" | "GitPullRequestMaterializationError" | "GitCommandError" | "SourceControlProviderError" | "TextGenerationError" => Self::GitManagerService(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -5098,8 +5112,8 @@ impl<'de> ::serde::Deserialize<'de> for VcsRefreshBranchError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum VcsRefreshStatusError {
-    GitManagerServiceError(GitManagerServiceError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    GitManagerService(GitManagerServiceError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -5108,8 +5122,8 @@ impl<'de> ::serde::Deserialize<'de> for VcsRefreshStatusError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "GitManagerError" | "GitPullRequestMaterializationError" | "GitCommandError" | "SourceControlProviderError" | "TextGenerationError" => Self::GitManagerServiceError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "GitManagerError" | "GitPullRequestMaterializationError" | "GitCommandError" | "SourceControlProviderError" | "TextGenerationError" => Self::GitManagerService(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -5131,8 +5145,8 @@ pub struct VcsRefreshStatusPayload {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum VcsRemoveWorktreeError {
-    GitCommandError(GitCommandError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    GitCommand(GitCommandError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -5141,8 +5155,8 @@ impl<'de> ::serde::Deserialize<'de> for VcsRemoveWorktreeError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "GitCommandError" => Self::GitCommandError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "GitCommandError" => Self::GitCommand(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -5155,8 +5169,8 @@ impl<'de> ::serde::Deserialize<'de> for VcsRemoveWorktreeError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum VcsSwitchRefError {
-    GitCommandError(GitCommandError),
-    EnvironmentAuthorizationError(EnvironmentAuthorizationError),
+    GitCommand(GitCommandError),
+    EnvironmentAuthorization(EnvironmentAuthorizationError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -5165,8 +5179,8 @@ impl<'de> ::serde::Deserialize<'de> for VcsSwitchRefError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "GitCommandError" => Self::GitCommandError(raw.decode()?),
-                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorizationError(raw.decode()?),
+                "GitCommandError" => Self::GitCommand(raw.decode()?),
+                "EnvironmentAuthorizationError" => Self::EnvironmentAuthorization(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),

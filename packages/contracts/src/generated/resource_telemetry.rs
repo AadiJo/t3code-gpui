@@ -126,13 +126,91 @@ impl<'de> ::serde::Deserialize<'de> for ResourceTelemetrySourceHealthLastSampleA
     }
 }
 
+/// Inline object at `ResourceTelemetrySourceHealthLastErrorSomeType`.
+/// Wire tag: `_tag: "Some"`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(tag = "_tag", rename = "Some", rename_all = "camelCase")]
+pub struct ResourceTelemetrySourceHealthLastErrorSomeType {
+    pub value: String,
+}
+
+/// Inline object at `ResourceTelemetrySourceHealthLastErrorNoneType`.
+/// Wire tag: `_tag: "None"`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(tag = "_tag", rename = "None", rename_all = "camelCase")]
+pub struct ResourceTelemetrySourceHealthLastErrorNoneType {
+}
+
+/// Inline union at `ResourceTelemetrySourceHealthLastError`.
+/// Decoded by its `_tag` field; a tag this client does not know becomes `Unknown`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
+#[serde(untagged)]
+pub enum ResourceTelemetrySourceHealthLastError {
+    SomeType(ResourceTelemetrySourceHealthLastErrorSomeType),
+    NoneType(ResourceTelemetrySourceHealthLastErrorNoneType),
+    /// A value from a newer server.
+    Unknown(::serde_json::Value),
+}
+impl<'de> ::serde::Deserialize<'de> for ResourceTelemetrySourceHealthLastError {
+    fn deserialize<D: ::serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let raw = crate::wire::Raw::new(d)?;
+        Ok(match raw.tag("_tag")? {
+            crate::wire::Tag::Str(tag) => match &*tag {
+                "Some" => Self::SomeType(raw.decode()?),
+                "None" => Self::NoneType(raw.decode()?),
+                _ => Self::Unknown(raw.decode()?),
+            },
+            _ => Self::Unknown(raw.decode()?),
+        })
+    }
+}
+
 /// `ResourceTelemetrySourceHealth` from `resourceTelemetry.ts`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ResourceTelemetrySourceHealth {
     pub status: ResourceTelemetrySourceStatus,
     pub last_sample_at: ResourceTelemetrySourceHealthLastSampleAt,
-    pub last_error: ResourceTelemetrySourceHealthLastSampleAt,
+    pub last_error: ResourceTelemetrySourceHealthLastError,
+}
+
+/// Inline object at `ResourceTelemetryHealthSidecarVersionSomeType`.
+/// Wire tag: `_tag: "Some"`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(tag = "_tag", rename = "Some", rename_all = "camelCase")]
+pub struct ResourceTelemetryHealthSidecarVersionSomeType {
+    pub value: String,
+}
+
+/// Inline object at `ResourceTelemetryHealthSidecarVersionNoneType`.
+/// Wire tag: `_tag: "None"`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(tag = "_tag", rename = "None", rename_all = "camelCase")]
+pub struct ResourceTelemetryHealthSidecarVersionNoneType {
+}
+
+/// Inline union at `ResourceTelemetryHealthSidecarVersion`.
+/// Decoded by its `_tag` field; a tag this client does not know becomes `Unknown`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
+#[serde(untagged)]
+pub enum ResourceTelemetryHealthSidecarVersion {
+    SomeType(ResourceTelemetryHealthSidecarVersionSomeType),
+    NoneType(ResourceTelemetryHealthSidecarVersionNoneType),
+    /// A value from a newer server.
+    Unknown(::serde_json::Value),
+}
+impl<'de> ::serde::Deserialize<'de> for ResourceTelemetryHealthSidecarVersion {
+    fn deserialize<D: ::serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let raw = crate::wire::Raw::new(d)?;
+        Ok(match raw.tag("_tag")? {
+            crate::wire::Tag::Str(tag) => match &*tag {
+                "Some" => Self::SomeType(raw.decode()?),
+                "None" => Self::NoneType(raw.decode()?),
+                _ => Self::Unknown(raw.decode()?),
+            },
+            _ => Self::Unknown(raw.decode()?),
+        })
+    }
 }
 
 /// Inline object at `ResourceTelemetryHealthSidecarPidSomeType`.
@@ -143,13 +221,20 @@ pub struct ResourceTelemetryHealthSidecarPidSomeType {
     pub value: PositiveInt,
 }
 
+/// Inline object at `ResourceTelemetryHealthSidecarPidNoneType`.
+/// Wire tag: `_tag: "None"`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(tag = "_tag", rename = "None", rename_all = "camelCase")]
+pub struct ResourceTelemetryHealthSidecarPidNoneType {
+}
+
 /// Inline union at `ResourceTelemetryHealthSidecarPid`.
 /// Decoded by its `_tag` field; a tag this client does not know becomes `Unknown`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum ResourceTelemetryHealthSidecarPid {
     SomeType(ResourceTelemetryHealthSidecarPidSomeType),
-    NoneType(ResourceTelemetrySourceHealthLastSampleAtNoneType),
+    NoneType(ResourceTelemetryHealthSidecarPidNoneType),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -173,7 +258,7 @@ impl<'de> ::serde::Deserialize<'de> for ResourceTelemetryHealthSidecarPid {
 pub struct ResourceTelemetryHealth {
     pub native: ResourceTelemetrySourceHealth,
     pub desktop: ResourceTelemetrySourceHealth,
-    pub sidecar_version: ResourceTelemetrySourceHealthLastSampleAt,
+    pub sidecar_version: ResourceTelemetryHealthSidecarVersion,
     pub sidecar_pid: ResourceTelemetryHealthSidecarPid,
     pub restart_count: NonNegativeInt,
     pub collection_duration_micros: NonNegativeInt,
@@ -317,13 +402,20 @@ pub struct ResourceTelemetrySnapshotSpeedLimitPercentSomeType {
     pub value: SidebarAutoSettleAfterDays,
 }
 
+/// Inline object at `ResourceTelemetrySnapshotSpeedLimitPercentNoneType`.
+/// Wire tag: `_tag: "None"`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(tag = "_tag", rename = "None", rename_all = "camelCase")]
+pub struct ResourceTelemetrySnapshotSpeedLimitPercentNoneType {
+}
+
 /// Inline union at `ResourceTelemetrySnapshotSpeedLimitPercent`.
 /// Decoded by its `_tag` field; a tag this client does not know becomes `Unknown`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum ResourceTelemetrySnapshotSpeedLimitPercent {
     SomeType(ResourceTelemetrySnapshotSpeedLimitPercentSomeType),
-    NoneType(ResourceTelemetrySourceHealthLastSampleAtNoneType),
+    NoneType(ResourceTelemetrySnapshotSpeedLimitPercentNoneType),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }

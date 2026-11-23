@@ -1,6 +1,8 @@
 // Generates the Rust wire types of the t3code-contracts crate from the JSON Schema dump.
 //
-//   node gen-rust.mjs <rpc-schema.json> <out dir: packages/contracts/src/generated>
+//   node gen-rust.mjs <rpc-schema.json> <out dir: packages/contracts/src/generated> [registry.rs]
+//
+// The optional registry maps fixture type names and RPC tags to types, for the wire_check example.
 //
 // Input is the dialect effect's toJsonSchemaMultiDocument emits (see dump.mts). Output is one Rust
 // file per TypeScript source module plus `rpc_methods.rs` and `http_endpoints.rs`. Mapping rules:
@@ -15,8 +17,8 @@
 import fs from "node:fs";
 import path from "node:path";
 
-const [, , specPath, outDir] = process.argv;
-if (!specPath || !outDir) throw new Error("usage: node gen-rust.mjs <rpc-schema.json> <out dir>");
+const [, , specPath, outDir, registryPath] = process.argv;
+if (!specPath || !outDir) throw new Error("usage: node gen-rust.mjs <rpc-schema.json> <out dir> [registry.rs]");
 const spec = JSON.parse(fs.readFileSync(specPath, "utf8"));
 
 // ---------------------------------------------------------------------------------------------
@@ -94,7 +96,7 @@ for (const h of spec.http) {
   h.headers = synth(`${base}Headers`, h.headers, mod);
   for (const p of h.payload) p.schema = synth(`${base}Body`, p.schema, mod);
   for (const s of h.successes) s.schema = synth(`${base}Response`, s.schema, mod);
-  const errs = h.errors.map((e) => e.schema).filter((e) => !isBare(e));
+  const errs = h.errors.flatMap((e) => (isBare(e.schema) ? [] : e.schema.anyOf && !e.schema.$ref ? e.schema.anyOf : [e.schema]));
   h.errorSchema = errs.length === 0 ? null : synth(`${base}Error`, errs.length === 1 ? errs[0] : { anyOf: errs }, mod);
 }
 function isNotNullOnly(s) {
@@ -255,6 +257,20 @@ function mergeSameTag(a, b) {
   return { ...ra, properties: { ...ra.properties, [k]: { anyOf: [ra.properties[k], rb.properties[k]] } } };
 }
 
+/**
+ * A union of one tagged union plus a fallback that only carries the tag is that union: its own
+ * `Unknown` variant already takes any other tag. Returns the union's schema, or undefined.
+ */
+function collapseUnion(alts) {
+  if (!alts.every((a) => jsonKind(a) === "object")) return undefined;
+  const plan = planObjectUnion(alts);
+  if (plan.kind !== "tag" || plan.members.length !== 1 || !plan.fallback) return undefined;
+  const only = plan.members[0].schema;
+  const fb = normalize(resolve(plan.fallback));
+  const fallbackIsBare = (fb.required ?? []).every((k) => k === plan.key);
+  return only.$ref && isObjectUnion(only) && fallbackIsBare ? only : undefined;
+}
+
 /** Plans how an object union decodes: by a tag key, by key presence, or (last resort) by trial. */
 function planObjectUnion(members) {
   const candidateKeys = new Set();
@@ -265,7 +281,7 @@ function planObjectUnion(members) {
   members.forEach(collectKeys);
   const preferred = ["_tag", "type", "kind"];
   const ordered = [...preferred.filter((k) => candidateKeys.has(k)), ...[...candidateKeys].filter((k) => !preferred.includes(k)).sort()];
-  let overlapping;
+  let overlapping, best;
   for (const key of ordered) {
     let ms = members.map((m) => ({ schema: m, tags: tagSet(m, key) }));
     if (ms.some((m) => m.tags === null)) continue;
@@ -295,10 +311,17 @@ function planObjectUnion(members) {
     }
     if (ms.filter((m) => !m.tags.open).every((m) => m.tags.values.size === 1 && m.tags.values.has(ABSENT))) continue;
     const plan = { kind: "tag", key, members: ms.filter((m) => !m.tags.open), fallback: open[0]?.schema };
-    if (disjoint) return plan;
     // Members sharing a tag are tried in declaration order, as the TypeScript union does.
-    overlapping ??= plan;
+    if (!disjoint) {
+      overlapping ??= plan;
+      continue;
+    }
+    if (preferred.includes(key)) return plan;
+    // Otherwise the best key is required everywhere and has few values.
+    const score = plan.members.reduce((n, m) => n + m.tags.values.size + (m.tags.values.has(ABSENT) ? 100 : 0), 0);
+    if (best === undefined || score < best.score) best = { plan, score };
   }
+  if (best) return best.plan;
   if (overlapping) return overlapping;
   // A key only one member has picks that member; at most one member may lack such a key.
   const structs = members.map((m) => (isStruct(m) ? normalize(resolve(m)) : null));
@@ -399,6 +422,8 @@ function rustType(s, ctx0) {
     if (nn.length === 0) return "()";
     if (nn.length < alts.length) return `Option<${rustType(nn.length === 1 ? nn[0] : { anyOf: nn }, ctx)}>`;
     if (nn.length === 1) return rustType(nn[0], ctx);
+    const collapsed = collapseUnion(nn);
+    if (collapsed) return rustType(collapsed, ctx);
     return inline(s, ctx, (name, c) => emitUnion(name, s, nn, c));
   }
   if (Array.isArray(s.type)) return value(ctx, "type list");
@@ -427,13 +452,19 @@ function rustType(s, ctx0) {
       if (s.additionalProperties === false || s.properties) return "crate::wire::Empty";
       const extra = s.additionalProperties ?? Object.values(s.patternProperties ?? {})[0];
       if (extra && extra !== true && !isEmpty(extra))
-        return `::std::collections::BTreeMap<String, ${rustType(extra, { ...ctx, hint: `${ctx.hint}Value`, direct: false })}>`;
+        return `::std::collections::BTreeMap<${mapKeyType(s.propertyNames)}, ${rustType(extra, { ...ctx, hint: `${ctx.hint}Value`, direct: false })}>`;
       stats.valueSites++;
       valueSites.push(`${ctx.hint}: object with arbitrary values`);
       return JSON_MAP;
     }
   }
   return value(ctx, `unhandled ${JSON.stringify(s).slice(0, 60)}`);
+}
+/** A record's key type: a branded id or string enum when the key schema names one, else String. */
+function mapKeyType(propertyNames) {
+  if (!propertyNames?.$ref) return "String";
+  const target = resolve(propertyNames);
+  return target?.type === "string" ? ensureDef(refName(propertyNames.$ref)) : "String";
 }
 function value(ctx, why) {
   stats.valueSites++;
@@ -449,9 +480,10 @@ function inline(s, ctx, emitFn) {
   const key = canon(s);
   const asDef = shapeToDef.get(key);
   if (asDef !== undefined) return ensureDef(asDef);
-  if (inlineByShape.has(key)) return inlineByShape.get(key);
+  // Small shapes get a type named for their own site; large ones are shared to save compile time.
+  if (key.length >= 300 && inlineByShape.has(key)) return inlineByShape.get(key);
   const name = fresh(ctx.hint);
-  inlineByShape.set(key, name);
+  if (key.length >= 300) inlineByShape.set(key, name);
   emitFn(name, { owner: ctx.owner, module: ctx.module, hint: name });
   return name;
 }
@@ -570,15 +602,29 @@ function emitStruct(name, s, ctx, tagKeyOverride) {
   return name;
 }
 
+// Branches that carry many tag values, keyed by union and first value. Others join their values.
+const VARIANT_NAMES = {
+  "OrchestrationV2DomainEvent:thread.archived": "ThreadChanged",
+  "EnvironmentConnectReachability:not_linked": "Unreachable",
+};
+
 /** Variant name for a union member. */
 function memberIdent(m, key, unionName) {
   if (m.schema.$ref) {
+    // Drop the words the member shares with the union's name at either end:
+    // `TerminalError::Cwd(TerminalCwdError)`, `ChatAttachment::Image(ChatImageAttachment)`.
     const n = typeIdent(refName(m.schema.$ref));
-    // Drop the union's own name as a prefix: `TerminalError::CwdError` reads better than `TerminalError::TerminalCwdError`.
-    return n.startsWith(unionName) && n.length > unionName.length && /^[A-Z]/.test(n.slice(unionName.length)) ? n.slice(unionName.length) : n;
+    const mw = words(n), uw = words(unionName);
+    let start = 0, end = mw.length;
+    while (start < end - 1 && start < uw.length && mw[start] === uw[start]) start++;
+    while (end - 1 > start && uw.length - (mw.length - end) - 1 >= 0 && mw[end - 1] === uw[uw.length - (mw.length - end) - 1]) end--;
+    const stripped = mw.slice(start, end).join("");
+    return /^[A-Z]/.test(stripped) && !RUST_KEYWORDS.has(stripped) && !RESERVED_TYPES.has(stripped) ? stripped : n;
   }
   const vals = [...(m.tags?.values ?? [])].filter((v) => v !== ABSENT);
   if (vals.length === 0) return `No${pascal(key)}`;
+  const override = VARIANT_NAMES[`${unionName}:${vals[0].slice(2)}`];
+  if (override) return override;
   return vals
     .map((v) => (v === "b:true" ? pascal(key) : v === "b:false" ? `Not${pascal(key)}` : variantIdent(v.slice(2))))
     .join("Or");
@@ -633,10 +679,11 @@ function emitUnion(name, s, alts, ctx) {
   // Objects.
   const plan = kinds.every((k) => k === "object") ? planObjectUnion(alts) : { kind: "trial", members: alts.map((schema) => ({ schema })) };
   const seen = new Set();
+  const baseIdents = plan.members.map((m) => memberIdent(m, plan.key, name));
   const identFor = (m) => {
     let ident = memberIdent(m, plan.key, name);
     if (ident === "Unknown") ident = "UnknownValue";
-    if (seen.has(ident) && isStruct(m.schema)) {
+    if (baseIdents.filter((b) => b === ident).length > 1 && isStruct(m.schema)) {
       // Members that share a tag: name this one by its other literal fields.
       const r = normalize(resolve(m.schema));
       const extra = Object.keys(r.properties)
@@ -762,6 +809,7 @@ const rpcLines = spec.rpc.map((r) => {
   let ident = rpcName(r.tag);
   while (methodIdents.has(ident)) ident = `${ident}Alt`;
   methodIdents.add(ident);
+  r.ident = ident;
   return `    /// \`${r.tag}\`${r.stream ? " (stream)" : ""}.\n    ${ident} {\n        tag: ${JSON.stringify(r.tag)},\n        scope: ${scopeVariant(r.scope)},\n        client_guarded: ${r.clientGuarded},\n        payload: ${rootType(r.payload, "()")},\n        success: ${rootType(r.success, "()")},\n        error: ${rootType(r.error, "crate::wire::Never")},\n        stream: ${r.stream},\n    }`;
 });
 const rpcMethods = `// @generated by scripts/contracts/gen-rust.mjs. Do not edit.
@@ -818,6 +866,39 @@ ${modules.map((m) => `mod ${moduleIdent(m)};\npub use ${moduleIdent(m)}::*;`).jo
 // rpc_methods.rs and http_endpoints.rs are included by crate::rpc and crate::http.
 `,
 );
+
+// Registry for the wire_check example: every fixture type by name, every RPC method by tag.
+if (registryPath) {
+  const fixturesPath = path.join(path.dirname(specPath), "wire-fixtures.json");
+  const fixtureNames = fs.existsSync(fixturesPath) ? Object.keys(JSON.parse(fs.readFileSync(fixturesPath, "utf8"))).sort() : [];
+  const missing = fixtureNames.filter((n) => !named.has(n));
+  if (missing.length) throw new Error(`fixture types without a Rust type: ${missing.join(", ")}`);
+  fs.mkdirSync(path.dirname(registryPath), { recursive: true });
+  fs.writeFileSync(
+    registryPath,
+    `// @generated by scripts/contracts/gen-rust.mjs. Do not edit.
+//! Name and tag lookup for the wire check.
+use crate::{Part, roundtrip, roundtrip_part};
+use t3code_contracts::rpc::methods;
+
+/// Decodes \`text\` as the fixture type \`name\` and encodes it again; None for an unknown name.
+pub fn by_name(name: &str, text: &str) -> Option<Result<serde_json::Value, serde_json::Error>> {
+    Some(match name {
+${fixtureNames.map((n) => `        ${JSON.stringify(n)} => roundtrip::<t3code_contracts::${named.get(n)}>(text),`).join("\n")}
+        _ => return None,
+    })
+}
+
+/// Decodes \`text\` as one part of RPC \`tag\` and encodes it again; None for an unknown tag.
+pub fn by_tag(tag: &str, part: Part, text: &str) -> Option<Result<serde_json::Value, serde_json::Error>> {
+    Some(match tag {
+${spec.rpc.map((r) => `        ${JSON.stringify(r.tag)} => roundtrip_part::<methods::${r.ident}>(part, text),`).join("\n")}
+        _ => return None,
+    })
+}
+`,
+  );
+}
 
 const report = {
   definitions: Object.keys(defs).length,

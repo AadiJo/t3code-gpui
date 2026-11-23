@@ -35,7 +35,7 @@ pub struct UsageLimitSourceConsumeResetCreditInput {
 #[serde(untagged)]
 pub enum ProviderConsumeResetCreditInput {
     NoUndefined(ProviderConsumeResetCreditInputNoUndefined),
-    UsageLimitSourceConsumeResetCreditInput(UsageLimitSourceConsumeResetCreditInput),
+    UsageLimitSource(UsageLimitSourceConsumeResetCreditInput),
 }
 impl<'de> ::serde::Deserialize<'de> for ProviderConsumeResetCreditInput {
     fn deserialize<D: ::serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
@@ -43,7 +43,7 @@ impl<'de> ::serde::Deserialize<'de> for ProviderConsumeResetCreditInput {
         Ok(if raw.has_key("instanceId")? {
             Self::NoUndefined(raw.decode()?)
         } else if raw.has_key("sourceId")? {
-            Self::UsageLimitSourceConsumeResetCreditInput(raw.decode()?)
+            Self::UsageLimitSource(raw.decode()?)
         } else {
             return Err(raw.unexpected(raw.kind(), "ProviderConsumeResetCreditInput"));
         })

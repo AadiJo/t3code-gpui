@@ -4,6 +4,13 @@
 use super::*;
 
 crate::wire::string_enum! {
+    /// Inline enum at `RelayAuthInvalidErrorCode`.
+    RelayAuthInvalidErrorCode {
+        AuthInvalid = "auth_invalid",
+    }
+}
+
+crate::wire::string_enum! {
     /// `RelayAuthInvalidReason` from `relay.ts`.
     RelayAuthInvalidReason {
         MissingBearer = "missing_bearer",
@@ -13,15 +20,27 @@ crate::wire::string_enum! {
     }
 }
 
+crate::wire::string_enum! {
+    /// Inline enum at `RelayAuthInvalidErrorDpopFailureReason`.
+    RelayAuthInvalidErrorDpopFailureReason {
+        TimeWindow = "time_window",
+        KeyMismatch = "key_mismatch",
+        RequestMismatch = "request_mismatch",
+        TokenMismatch = "token_mismatch",
+        Replay = "replay",
+        InvalidProof = "invalid_proof",
+    }
+}
+
 /// `RelayAuthInvalidError` from `relay.ts`.
 /// Wire tag: `_tag: "RelayAuthInvalidError"`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(tag = "_tag", rename = "RelayAuthInvalidError", rename_all = "camelCase")]
 pub struct RelayAuthInvalidError {
-    pub code: EnvironmentAuthInvalidErrorCode,
+    pub code: RelayAuthInvalidErrorCode,
     pub reason: RelayAuthInvalidReason,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub dpop_failure_reason: Option<EnvironmentAuthInvalidErrorDpopFailureReason>,
+    pub dpop_failure_reason: Option<RelayAuthInvalidErrorDpopFailureReason>,
     pub trace_id: String,
 }
 
@@ -117,6 +136,13 @@ pub struct RelayEnvironmentEndpointTimedOutError {
 }
 
 crate::wire::string_enum! {
+    /// Inline enum at `RelayInternalErrorCode`.
+    RelayInternalErrorCode {
+        InternalError = "internal_error",
+    }
+}
+
+crate::wire::string_enum! {
     /// `RelayInternalErrorReason` from `relay.ts`.
     RelayInternalErrorReason {
         DatabaseUnavailable = "database_unavailable",
@@ -131,7 +157,7 @@ crate::wire::string_enum! {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(tag = "_tag", rename = "RelayInternalError", rename_all = "camelCase")]
 pub struct RelayInternalError {
-    pub code: EnvironmentInternalErrorCode,
+    pub code: RelayInternalErrorCode,
     pub reason: RelayInternalErrorReason,
     pub trace_id: String,
 }
@@ -141,11 +167,11 @@ pub struct RelayInternalError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum DpopClientConnectEnvironmentError {
-    RelayAuthInvalidError(RelayAuthInvalidError),
-    RelayEnvironmentConnectNotAuthorizedError(RelayEnvironmentConnectNotAuthorizedError),
-    RelayEnvironmentEndpointUnavailableError(RelayEnvironmentEndpointUnavailableError),
-    RelayEnvironmentEndpointTimedOutError(RelayEnvironmentEndpointTimedOutError),
-    RelayInternalError(RelayInternalError),
+    RelayAuthInvalid(RelayAuthInvalidError),
+    RelayEnvironmentConnectNotAuthorized(RelayEnvironmentConnectNotAuthorizedError),
+    RelayEnvironmentEndpointUnavailable(RelayEnvironmentEndpointUnavailableError),
+    RelayEnvironmentEndpointTimedOut(RelayEnvironmentEndpointTimedOutError),
+    RelayInternal(RelayInternalError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -154,11 +180,11 @@ impl<'de> ::serde::Deserialize<'de> for DpopClientConnectEnvironmentError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "RelayAuthInvalidError" => Self::RelayAuthInvalidError(raw.decode()?),
-                "RelayEnvironmentConnectNotAuthorizedError" => Self::RelayEnvironmentConnectNotAuthorizedError(raw.decode()?),
-                "RelayEnvironmentEndpointUnavailableError" => Self::RelayEnvironmentEndpointUnavailableError(raw.decode()?),
-                "RelayEnvironmentEndpointTimedOutError" => Self::RelayEnvironmentEndpointTimedOutError(raw.decode()?),
-                "RelayInternalError" => Self::RelayInternalError(raw.decode()?),
+                "RelayAuthInvalidError" => Self::RelayAuthInvalid(raw.decode()?),
+                "RelayEnvironmentConnectNotAuthorizedError" => Self::RelayEnvironmentConnectNotAuthorized(raw.decode()?),
+                "RelayEnvironmentEndpointUnavailableError" => Self::RelayEnvironmentEndpointUnavailable(raw.decode()?),
+                "RelayEnvironmentEndpointTimedOutError" => Self::RelayEnvironmentEndpointTimedOut(raw.decode()?),
+                "RelayInternalError" => Self::RelayInternal(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -171,11 +197,11 @@ impl<'de> ::serde::Deserialize<'de> for DpopClientConnectEnvironmentError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum DpopClientGetEnvironmentStatusError {
-    RelayAuthInvalidError(RelayAuthInvalidError),
-    RelayEnvironmentConnectNotAuthorizedError(RelayEnvironmentConnectNotAuthorizedError),
-    RelayEnvironmentEndpointUnavailableError(RelayEnvironmentEndpointUnavailableError),
-    RelayEnvironmentEndpointTimedOutError(RelayEnvironmentEndpointTimedOutError),
-    RelayInternalError(RelayInternalError),
+    RelayAuthInvalid(RelayAuthInvalidError),
+    RelayEnvironmentConnectNotAuthorized(RelayEnvironmentConnectNotAuthorizedError),
+    RelayEnvironmentEndpointUnavailable(RelayEnvironmentEndpointUnavailableError),
+    RelayEnvironmentEndpointTimedOut(RelayEnvironmentEndpointTimedOutError),
+    RelayInternal(RelayInternalError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -184,11 +210,11 @@ impl<'de> ::serde::Deserialize<'de> for DpopClientGetEnvironmentStatusError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "RelayAuthInvalidError" => Self::RelayAuthInvalidError(raw.decode()?),
-                "RelayEnvironmentConnectNotAuthorizedError" => Self::RelayEnvironmentConnectNotAuthorizedError(raw.decode()?),
-                "RelayEnvironmentEndpointUnavailableError" => Self::RelayEnvironmentEndpointUnavailableError(raw.decode()?),
-                "RelayEnvironmentEndpointTimedOutError" => Self::RelayEnvironmentEndpointTimedOutError(raw.decode()?),
-                "RelayInternalError" => Self::RelayInternalError(raw.decode()?),
+                "RelayAuthInvalidError" => Self::RelayAuthInvalid(raw.decode()?),
+                "RelayEnvironmentConnectNotAuthorizedError" => Self::RelayEnvironmentConnectNotAuthorized(raw.decode()?),
+                "RelayEnvironmentEndpointUnavailableError" => Self::RelayEnvironmentEndpointUnavailable(raw.decode()?),
+                "RelayEnvironmentEndpointTimedOutError" => Self::RelayEnvironmentEndpointTimedOut(raw.decode()?),
+                "RelayInternalError" => Self::RelayInternal(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -201,8 +227,8 @@ impl<'de> ::serde::Deserialize<'de> for DpopClientGetEnvironmentStatusError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum MobileGetAgentActivitySnapshotError {
-    RelayAuthInvalidError(RelayAuthInvalidError),
-    RelayInternalError(RelayInternalError),
+    RelayAuthInvalid(RelayAuthInvalidError),
+    RelayInternal(RelayInternalError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -211,8 +237,8 @@ impl<'de> ::serde::Deserialize<'de> for MobileGetAgentActivitySnapshotError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "RelayAuthInvalidError" => Self::RelayAuthInvalidError(raw.decode()?),
-                "RelayInternalError" => Self::RelayInternalError(raw.decode()?),
+                "RelayAuthInvalidError" => Self::RelayAuthInvalid(raw.decode()?),
+                "RelayInternalError" => Self::RelayInternal(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -225,8 +251,8 @@ impl<'de> ::serde::Deserialize<'de> for MobileGetAgentActivitySnapshotError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum MobileRegisterDeviceError {
-    RelayAuthInvalidError(RelayAuthInvalidError),
-    RelayInternalError(RelayInternalError),
+    RelayAuthInvalid(RelayAuthInvalidError),
+    RelayInternal(RelayInternalError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -235,8 +261,8 @@ impl<'de> ::serde::Deserialize<'de> for MobileRegisterDeviceError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "RelayAuthInvalidError" => Self::RelayAuthInvalidError(raw.decode()?),
-                "RelayInternalError" => Self::RelayInternalError(raw.decode()?),
+                "RelayAuthInvalidError" => Self::RelayAuthInvalid(raw.decode()?),
+                "RelayInternalError" => Self::RelayInternal(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -249,8 +275,8 @@ impl<'de> ::serde::Deserialize<'de> for MobileRegisterDeviceError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum MobileRegisterLiveActivityError {
-    RelayAuthInvalidError(RelayAuthInvalidError),
-    RelayInternalError(RelayInternalError),
+    RelayAuthInvalid(RelayAuthInvalidError),
+    RelayInternal(RelayInternalError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -259,8 +285,8 @@ impl<'de> ::serde::Deserialize<'de> for MobileRegisterLiveActivityError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "RelayAuthInvalidError" => Self::RelayAuthInvalidError(raw.decode()?),
-                "RelayInternalError" => Self::RelayInternalError(raw.decode()?),
+                "RelayAuthInvalidError" => Self::RelayAuthInvalid(raw.decode()?),
+                "RelayInternalError" => Self::RelayInternal(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -273,8 +299,8 @@ impl<'de> ::serde::Deserialize<'de> for MobileRegisterLiveActivityError {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum MobileUnregisterDeviceError {
-    RelayAuthInvalidError(RelayAuthInvalidError),
-    RelayInternalError(RelayInternalError),
+    RelayAuthInvalid(RelayAuthInvalidError),
+    RelayInternal(RelayInternalError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -283,8 +309,8 @@ impl<'de> ::serde::Deserialize<'de> for MobileUnregisterDeviceError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "RelayAuthInvalidError" => Self::RelayAuthInvalidError(raw.decode()?),
-                "RelayInternalError" => Self::RelayInternalError(raw.decode()?),
+                "RelayAuthInvalidError" => Self::RelayAuthInvalid(raw.decode()?),
+                "RelayInternalError" => Self::RelayInternal(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),
@@ -435,6 +461,20 @@ crate::wire::string_enum! {
 }
 
 crate::wire::string_enum! {
+    /// Inline enum at `RelayAuthorizationServerMetadataGrantTypesSupportedItem`.
+    RelayAuthorizationServerMetadataGrantTypesSupportedItem {
+        UrnIetfParamsOauthGrantTypeTokenExchange = "urn:ietf:params:oauth:grant-type:token-exchange",
+    }
+}
+
+crate::wire::string_enum! {
+    /// Inline enum at `RelayAuthorizationServerMetadataTokenEndpointAuthMethodsSupportedItem`.
+    RelayAuthorizationServerMetadataTokenEndpointAuthMethodsSupportedItem {
+        NoneType = "none",
+    }
+}
+
+crate::wire::string_enum! {
     /// Inline enum at `RelayAuthorizationServerMetadataDpopSigningAlgValuesSupportedItem`.
     RelayAuthorizationServerMetadataDpopSigningAlgValuesSupportedItem {
         Es256 = "ES256",
@@ -458,9 +498,9 @@ pub struct RelayAuthorizationServerMetadata {
     #[serde(rename = "token_endpoint")]
     pub token_endpoint: String,
     #[serde(rename = "grant_types_supported")]
-    pub grant_types_supported: Vec<AuthTokenExchangeRequestGrantType>,
+    pub grant_types_supported: Vec<RelayAuthorizationServerMetadataGrantTypesSupportedItem>,
     #[serde(rename = "token_endpoint_auth_methods_supported")]
-    pub token_endpoint_auth_methods_supported: Vec<AuthMcpAuthorizationServerMetadataTokenEndpointAuthMethodsSupportedItem>,
+    pub token_endpoint_auth_methods_supported: Vec<RelayAuthorizationServerMetadataTokenEndpointAuthMethodsSupportedItem>,
     #[serde(rename = "dpop_signing_alg_values_supported")]
     pub dpop_signing_alg_values_supported: Vec<RelayAuthorizationServerMetadataDpopSigningAlgValuesSupportedItem>,
     #[serde(rename = "scopes_supported")]
@@ -606,9 +646,23 @@ pub struct RelayDeviceUnregistrationParams {
 }
 
 crate::wire::string_enum! {
+    /// Inline enum at `RelayDpopAccessTokenRequestGrantType`.
+    RelayDpopAccessTokenRequestGrantType {
+        UrnIetfParamsOauthGrantTypeTokenExchange = "urn:ietf:params:oauth:grant-type:token-exchange",
+    }
+}
+
+crate::wire::string_enum! {
     /// Inline enum at `RelayDpopAccessTokenRequestSubjectTokenType`.
     RelayDpopAccessTokenRequestSubjectTokenType {
         UrnIetfParamsOauthTokenTypeJwt = "urn:ietf:params:oauth:token-type:jwt",
+    }
+}
+
+crate::wire::string_enum! {
+    /// Inline enum at `RelayDpopAccessTokenRequestRequestedTokenType`.
+    RelayDpopAccessTokenRequestRequestedTokenType {
+        UrnIetfParamsOauthTokenTypeAccessToken = "urn:ietf:params:oauth:token-type:access_token",
     }
 }
 
@@ -626,17 +680,24 @@ crate::wire::string_enum! {
 #[serde(rename_all = "camelCase")]
 pub struct RelayDpopAccessTokenRequest {
     #[serde(rename = "grant_type")]
-    pub grant_type: AuthTokenExchangeRequestGrantType,
+    pub grant_type: RelayDpopAccessTokenRequestGrantType,
     #[serde(rename = "subject_token")]
     pub subject_token: String,
     #[serde(rename = "subject_token_type")]
     pub subject_token_type: RelayDpopAccessTokenRequestSubjectTokenType,
     #[serde(rename = "requested_token_type")]
-    pub requested_token_type: AuthAccessTokenResultIssuedTokenType,
+    pub requested_token_type: RelayDpopAccessTokenRequestRequestedTokenType,
     pub resource: String,
     pub scope: String,
     #[serde(rename = "client_id")]
     pub client_id: RelayPublicClientId,
+}
+
+crate::wire::string_enum! {
+    /// Inline enum at `RelayDpopAccessTokenResponseIssuedTokenType`.
+    RelayDpopAccessTokenResponseIssuedTokenType {
+        UrnIetfParamsOauthTokenTypeAccessToken = "urn:ietf:params:oauth:token-type:access_token",
+    }
 }
 
 crate::wire::string_enum! {
@@ -653,7 +714,7 @@ pub struct RelayDpopAccessTokenResponse {
     #[serde(rename = "access_token")]
     pub access_token: String,
     #[serde(rename = "issued_token_type")]
-    pub issued_token_type: AuthAccessTokenResultIssuedTokenType,
+    pub issued_token_type: RelayDpopAccessTokenResponseIssuedTokenType,
     #[serde(rename = "token_type")]
     pub token_type: RelayDpopAccessTokenResponseTokenType,
     #[serde(rename = "expires_in")]
@@ -1014,6 +1075,13 @@ crate::wire::string_enum! {
     }
 }
 
+/// Inline object at `RelayListDevicesResponseV1DevicesItemLiveActivities`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RelayListDevicesResponseV1DevicesItemLiveActivities {
+    pub enabled: bool,
+}
+
 /// Inline object at `RelayListDevicesResponseV1DevicesItem`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1026,7 +1094,7 @@ pub struct RelayListDevicesResponseV1DevicesItem {
     pub android_api_level: Option<i64>,
     pub app_version: Option<String>,
     pub notifications: RelayClientDeviceRecordNotifications,
-    pub live_activities: RelayClientDeviceRecordLiveActivities,
+    pub live_activities: RelayListDevicesResponseV1DevicesItemLiveActivities,
     pub updated_at: String,
 }
 
@@ -1110,6 +1178,13 @@ pub struct RelayOkResponse {
     pub ok: bool,
 }
 
+crate::wire::string_enum! {
+    /// Inline enum at `RelayProtectedResourceMetadataDpopSigningAlgValuesSupportedItem`.
+    RelayProtectedResourceMetadataDpopSigningAlgValuesSupportedItem {
+        Es256 = "ES256",
+    }
+}
+
 /// `RelayProtectedResourceMetadata` from `relay.ts`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1122,7 +1197,7 @@ pub struct RelayProtectedResourceMetadata {
     #[serde(rename = "dpop_bound_access_tokens_required")]
     pub dpop_bound_access_tokens_required: bool,
     #[serde(rename = "dpop_signing_alg_values_supported")]
-    pub dpop_signing_alg_values_supported: Vec<RelayAuthorizationServerMetadataDpopSigningAlgValuesSupportedItem>,
+    pub dpop_signing_alg_values_supported: Vec<RelayProtectedResourceMetadataDpopSigningAlgValuesSupportedItem>,
 }
 
 /// `RelayPublishResponse` from `relay.ts`.
@@ -1179,8 +1254,8 @@ pub struct RelayWakeHeldHooksResponse {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum TokenExchangeDpopAccessTokenError {
-    RelayAuthInvalidError(RelayAuthInvalidError),
-    RelayInternalError(RelayInternalError),
+    RelayAuthInvalid(RelayAuthInvalidError),
+    RelayInternal(RelayInternalError),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -1189,8 +1264,8 @@ impl<'de> ::serde::Deserialize<'de> for TokenExchangeDpopAccessTokenError {
         let raw = crate::wire::Raw::new(d)?;
         Ok(match raw.tag("_tag")? {
             crate::wire::Tag::Str(tag) => match &*tag {
-                "RelayAuthInvalidError" => Self::RelayAuthInvalidError(raw.decode()?),
-                "RelayInternalError" => Self::RelayInternalError(raw.decode()?),
+                "RelayAuthInvalidError" => Self::RelayAuthInvalid(raw.decode()?),
+                "RelayInternalError" => Self::RelayInternal(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
             _ => Self::Unknown(raw.decode()?),

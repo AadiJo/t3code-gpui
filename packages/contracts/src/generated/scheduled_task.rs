@@ -383,6 +383,24 @@ pub struct ScheduledTaskListWebhookDeliveriesInput {
     pub accept_any_outcome: Option<bool>,
 }
 
+/// Inline union at `ScheduledTaskWebhookDeliverySummaryOutcome`.
+/// A known value, or any other string.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
+#[serde(untagged)]
+pub enum ScheduledTaskWebhookDeliverySummaryOutcome {
+    Known(ScheduledTaskWebhookDeliveryOutcome),
+    Other(String),
+}
+impl<'de> ::serde::Deserialize<'de> for ScheduledTaskWebhookDeliverySummaryOutcome {
+    fn deserialize<D: ::serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let s = String::deserialize(d)?;
+        Ok(match ScheduledTaskWebhookDeliveryOutcome::from_wire(&s) {
+            Some(k) => Self::Known(k),
+            None => Self::Other(s),
+        })
+    }
+}
+
 /// `ScheduledTaskWebhookDeliverySummary` from `scheduledTask.ts`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -393,7 +411,7 @@ pub struct ScheduledTaskWebhookDeliverySummary {
     pub method: String,
     pub content_type: Option<String>,
     pub body_bytes: u64,
-    pub outcome: ScheduledTaskWebhookDeliveryOutcome2,
+    pub outcome: ScheduledTaskWebhookDeliverySummaryOutcome,
     pub signature_verified: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pending_window: Option<bool>,
@@ -453,12 +471,38 @@ pub struct ScheduledTaskUpsertScheduleInterval {
     pub every_ms: u64,
 }
 
+/// Inline object at `ScheduledTaskUpsertScheduleFixedTime`.
+/// Wire tag: `type: "fixed_time"`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(tag = "type", rename = "fixed_time", rename_all = "camelCase")]
+pub struct ScheduledTaskUpsertScheduleFixedTime {
+    pub time_of_day: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub weekdays: Option<Vec<u64>>,
+}
+
+/// Inline object at `ScheduledTaskUpsertScheduleOnce`.
+/// Wire tag: `type: "once"`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(tag = "type", rename = "once", rename_all = "camelCase")]
+pub struct ScheduledTaskUpsertScheduleOnce {
+    pub run_at: String,
+}
+
+crate::wire::string_enum! {
+    /// Inline enum at `ScheduledTaskUpsertScheduleWebhookSignatureEncoding`.
+    ScheduledTaskUpsertScheduleWebhookSignatureEncoding {
+        Hex = "hex",
+        Base64 = "base64",
+    }
+}
+
 /// Inline object at `ScheduledTaskUpsertScheduleWebhookSignature`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ScheduledTaskUpsertScheduleWebhookSignature {
     pub header: String,
-    pub encoding: ScheduledTaskWebhookSignatureEncoding,
+    pub encoding: ScheduledTaskUpsertScheduleWebhookSignatureEncoding,
     /// Text before the digest, such as 'sha256='. Empty for none.
     pub prefix: String,
     /// Default: stored secret.
@@ -467,6 +511,19 @@ pub struct ScheduledTaskUpsertScheduleWebhookSignature {
     /// From `request_secret`. Instead of `secret`. Spent by this save.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub secret_ref: Option<SecretRef>,
+}
+
+/// Replay and coalesce key templates. Window in seconds, default 120.
+/// Inline object at `ScheduledTaskUpsertScheduleWebhookDedupe`.
+#[derive(Debug, Clone, Default, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScheduledTaskUpsertScheduleWebhookDedupe {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub replay_key: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub coalesce_key: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub coalesce_window_seconds: Option<u64>,
 }
 
 /// Run per webhook request. Prompt can use {{body.path}}, {{headers.name}}, {{query.name}}, {{body}}, {{request}}.
@@ -481,7 +538,7 @@ pub struct ScheduledTaskUpsertScheduleWebhook {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_delivery_age_minutes: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub dedupe: Option<ScheduledTaskScheduleWebhookDedupe>,
+    pub dedupe: Option<ScheduledTaskUpsertScheduleWebhookDedupe>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub filters: Option<Vec<ScheduledTaskWebhookFilter>>,
 }
@@ -492,8 +549,8 @@ pub struct ScheduledTaskUpsertScheduleWebhook {
 #[serde(untagged)]
 pub enum ScheduledTaskUpsertSchedule {
     Interval(ScheduledTaskUpsertScheduleInterval),
-    FixedTime(ScheduledTaskScheduleFixedTime),
-    Once(ScheduledTaskScheduleOnce),
+    FixedTime(ScheduledTaskUpsertScheduleFixedTime),
+    Once(ScheduledTaskUpsertScheduleOnce),
     Webhook(ScheduledTaskUpsertScheduleWebhook),
     /// A value from a newer server.
     Unknown(::serde_json::Value),

@@ -210,14 +210,31 @@ pub struct ProjectIconOverrideLucide {
     pub color: ProjectIconColor,
 }
 
+/// Inline object at `ProjectIconOverrideEmoji`.
+/// Wire tag: `kind: "emoji"`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(tag = "kind", rename = "emoji", rename_all = "camelCase")]
+pub struct ProjectIconOverrideEmoji {
+    pub emoji: String,
+}
+
+/// Inline object at `ProjectIconOverrideMonogram`.
+/// Wire tag: `kind: "monogram"`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(tag = "kind", rename = "monogram", rename_all = "camelCase")]
+pub struct ProjectIconOverrideMonogram {
+    pub text: String,
+    pub color: ProjectIconColor,
+}
+
 /// `ProjectIconOverride` from `project.ts`.
 /// Decoded by its `kind` field; a tag this client does not know becomes `Unknown`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum ProjectIconOverride {
     Lucide(ProjectIconOverrideLucide),
-    Emoji(OrchestrationProjectShellProjectIconEmoji),
-    Monogram(OrchestrationProjectShellProjectIconMonogram),
+    Emoji(ProjectIconOverrideEmoji),
+    Monogram(ProjectIconOverrideMonogram),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }

@@ -24,6 +24,17 @@ crate::wire::string_enum! {
     }
 }
 
+/// Inline object at `ThreadPullRequestSnapshotAuthor`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadPullRequestSnapshotAuthor {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub is_bot: Option<bool>,
+    pub login: String,
+    pub name: Option<String>,
+    pub avatar_url: Option<String>,
+}
+
 /// `ThreadPullRequestSnapshot` from `threadPullRequest.ts`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -40,7 +51,7 @@ pub struct ThreadPullRequestSnapshot {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub merged_at: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub author: Option<IssueCommentAuthor>,
+    pub author: Option<ThreadPullRequestSnapshotAuthor>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub additions: Option<NonNegativeInt>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

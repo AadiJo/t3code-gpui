@@ -115,6 +115,84 @@ crate::wire::string_enum! {
     }
 }
 
+/// Inline object at `VcsDiscoveryItemVersionSomeType`.
+/// Wire tag: `_tag: "Some"`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(tag = "_tag", rename = "Some", rename_all = "camelCase")]
+pub struct VcsDiscoveryItemVersionSomeType {
+    pub value: String,
+}
+
+/// Inline object at `VcsDiscoveryItemVersionNoneType`.
+/// Wire tag: `_tag: "None"`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(tag = "_tag", rename = "None", rename_all = "camelCase")]
+pub struct VcsDiscoveryItemVersionNoneType {
+}
+
+/// Inline union at `VcsDiscoveryItemVersion`.
+/// Decoded by its `_tag` field; a tag this client does not know becomes `Unknown`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
+#[serde(untagged)]
+pub enum VcsDiscoveryItemVersion {
+    SomeType(VcsDiscoveryItemVersionSomeType),
+    NoneType(VcsDiscoveryItemVersionNoneType),
+    /// A value from a newer server.
+    Unknown(::serde_json::Value),
+}
+impl<'de> ::serde::Deserialize<'de> for VcsDiscoveryItemVersion {
+    fn deserialize<D: ::serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let raw = crate::wire::Raw::new(d)?;
+        Ok(match raw.tag("_tag")? {
+            crate::wire::Tag::Str(tag) => match &*tag {
+                "Some" => Self::SomeType(raw.decode()?),
+                "None" => Self::NoneType(raw.decode()?),
+                _ => Self::Unknown(raw.decode()?),
+            },
+            _ => Self::Unknown(raw.decode()?),
+        })
+    }
+}
+
+/// Inline object at `VcsDiscoveryItemDetailSomeType`.
+/// Wire tag: `_tag: "Some"`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(tag = "_tag", rename = "Some", rename_all = "camelCase")]
+pub struct VcsDiscoveryItemDetailSomeType {
+    pub value: String,
+}
+
+/// Inline object at `VcsDiscoveryItemDetailNoneType`.
+/// Wire tag: `_tag: "None"`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(tag = "_tag", rename = "None", rename_all = "camelCase")]
+pub struct VcsDiscoveryItemDetailNoneType {
+}
+
+/// Inline union at `VcsDiscoveryItemDetail`.
+/// Decoded by its `_tag` field; a tag this client does not know becomes `Unknown`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
+#[serde(untagged)]
+pub enum VcsDiscoveryItemDetail {
+    SomeType(VcsDiscoveryItemDetailSomeType),
+    NoneType(VcsDiscoveryItemDetailNoneType),
+    /// A value from a newer server.
+    Unknown(::serde_json::Value),
+}
+impl<'de> ::serde::Deserialize<'de> for VcsDiscoveryItemDetail {
+    fn deserialize<D: ::serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let raw = crate::wire::Raw::new(d)?;
+        Ok(match raw.tag("_tag")? {
+            crate::wire::Tag::Str(tag) => match &*tag {
+                "Some" => Self::SomeType(raw.decode()?),
+                "None" => Self::NoneType(raw.decode()?),
+                _ => Self::Unknown(raw.decode()?),
+            },
+            _ => Self::Unknown(raw.decode()?),
+        })
+    }
+}
+
 /// `VcsDiscoveryItem` from `sourceControl.ts`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -125,9 +203,87 @@ pub struct VcsDiscoveryItem {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub executable: Option<String>,
     pub status: SourceControlDiscoveryStatus,
-    pub version: ResourceTelemetrySourceHealthLastSampleAt,
+    pub version: VcsDiscoveryItemVersion,
     pub install_hint: String,
-    pub detail: ResourceTelemetrySourceHealthLastSampleAt,
+    pub detail: VcsDiscoveryItemDetail,
+}
+
+/// Inline object at `SourceControlProviderDiscoveryItemVersionSomeType`.
+/// Wire tag: `_tag: "Some"`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(tag = "_tag", rename = "Some", rename_all = "camelCase")]
+pub struct SourceControlProviderDiscoveryItemVersionSomeType {
+    pub value: String,
+}
+
+/// Inline object at `SourceControlProviderDiscoveryItemVersionNoneType`.
+/// Wire tag: `_tag: "None"`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(tag = "_tag", rename = "None", rename_all = "camelCase")]
+pub struct SourceControlProviderDiscoveryItemVersionNoneType {
+}
+
+/// Inline union at `SourceControlProviderDiscoveryItemVersion`.
+/// Decoded by its `_tag` field; a tag this client does not know becomes `Unknown`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
+#[serde(untagged)]
+pub enum SourceControlProviderDiscoveryItemVersion {
+    SomeType(SourceControlProviderDiscoveryItemVersionSomeType),
+    NoneType(SourceControlProviderDiscoveryItemVersionNoneType),
+    /// A value from a newer server.
+    Unknown(::serde_json::Value),
+}
+impl<'de> ::serde::Deserialize<'de> for SourceControlProviderDiscoveryItemVersion {
+    fn deserialize<D: ::serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let raw = crate::wire::Raw::new(d)?;
+        Ok(match raw.tag("_tag")? {
+            crate::wire::Tag::Str(tag) => match &*tag {
+                "Some" => Self::SomeType(raw.decode()?),
+                "None" => Self::NoneType(raw.decode()?),
+                _ => Self::Unknown(raw.decode()?),
+            },
+            _ => Self::Unknown(raw.decode()?),
+        })
+    }
+}
+
+/// Inline object at `SourceControlProviderDiscoveryItemDetailSomeType`.
+/// Wire tag: `_tag: "Some"`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(tag = "_tag", rename = "Some", rename_all = "camelCase")]
+pub struct SourceControlProviderDiscoveryItemDetailSomeType {
+    pub value: String,
+}
+
+/// Inline object at `SourceControlProviderDiscoveryItemDetailNoneType`.
+/// Wire tag: `_tag: "None"`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(tag = "_tag", rename = "None", rename_all = "camelCase")]
+pub struct SourceControlProviderDiscoveryItemDetailNoneType {
+}
+
+/// Inline union at `SourceControlProviderDiscoveryItemDetail`.
+/// Decoded by its `_tag` field; a tag this client does not know becomes `Unknown`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
+#[serde(untagged)]
+pub enum SourceControlProviderDiscoveryItemDetail {
+    SomeType(SourceControlProviderDiscoveryItemDetailSomeType),
+    NoneType(SourceControlProviderDiscoveryItemDetailNoneType),
+    /// A value from a newer server.
+    Unknown(::serde_json::Value),
+}
+impl<'de> ::serde::Deserialize<'de> for SourceControlProviderDiscoveryItemDetail {
+    fn deserialize<D: ::serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let raw = crate::wire::Raw::new(d)?;
+        Ok(match raw.tag("_tag")? {
+            crate::wire::Tag::Str(tag) => match &*tag {
+                "Some" => Self::SomeType(raw.decode()?),
+                "None" => Self::NoneType(raw.decode()?),
+                _ => Self::Unknown(raw.decode()?),
+            },
+            _ => Self::Unknown(raw.decode()?),
+        })
+    }
 }
 
 crate::wire::string_enum! {
@@ -136,6 +292,123 @@ crate::wire::string_enum! {
         Authenticated = "authenticated",
         Unauthenticated = "unauthenticated",
         Unknown = "unknown",
+    }
+}
+
+/// Inline object at `SourceControlProviderAuthAccountSomeType`.
+/// Wire tag: `_tag: "Some"`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(tag = "_tag", rename = "Some", rename_all = "camelCase")]
+pub struct SourceControlProviderAuthAccountSomeType {
+    pub value: String,
+}
+
+/// Inline object at `SourceControlProviderAuthAccountNoneType`.
+/// Wire tag: `_tag: "None"`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(tag = "_tag", rename = "None", rename_all = "camelCase")]
+pub struct SourceControlProviderAuthAccountNoneType {
+}
+
+/// Inline union at `SourceControlProviderAuthAccount`.
+/// Decoded by its `_tag` field; a tag this client does not know becomes `Unknown`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
+#[serde(untagged)]
+pub enum SourceControlProviderAuthAccount {
+    SomeType(SourceControlProviderAuthAccountSomeType),
+    NoneType(SourceControlProviderAuthAccountNoneType),
+    /// A value from a newer server.
+    Unknown(::serde_json::Value),
+}
+impl<'de> ::serde::Deserialize<'de> for SourceControlProviderAuthAccount {
+    fn deserialize<D: ::serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let raw = crate::wire::Raw::new(d)?;
+        Ok(match raw.tag("_tag")? {
+            crate::wire::Tag::Str(tag) => match &*tag {
+                "Some" => Self::SomeType(raw.decode()?),
+                "None" => Self::NoneType(raw.decode()?),
+                _ => Self::Unknown(raw.decode()?),
+            },
+            _ => Self::Unknown(raw.decode()?),
+        })
+    }
+}
+
+/// Inline object at `SourceControlProviderAuthHostSomeType`.
+/// Wire tag: `_tag: "Some"`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(tag = "_tag", rename = "Some", rename_all = "camelCase")]
+pub struct SourceControlProviderAuthHostSomeType {
+    pub value: String,
+}
+
+/// Inline object at `SourceControlProviderAuthHostNoneType`.
+/// Wire tag: `_tag: "None"`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(tag = "_tag", rename = "None", rename_all = "camelCase")]
+pub struct SourceControlProviderAuthHostNoneType {
+}
+
+/// Inline union at `SourceControlProviderAuthHost`.
+/// Decoded by its `_tag` field; a tag this client does not know becomes `Unknown`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
+#[serde(untagged)]
+pub enum SourceControlProviderAuthHost {
+    SomeType(SourceControlProviderAuthHostSomeType),
+    NoneType(SourceControlProviderAuthHostNoneType),
+    /// A value from a newer server.
+    Unknown(::serde_json::Value),
+}
+impl<'de> ::serde::Deserialize<'de> for SourceControlProviderAuthHost {
+    fn deserialize<D: ::serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let raw = crate::wire::Raw::new(d)?;
+        Ok(match raw.tag("_tag")? {
+            crate::wire::Tag::Str(tag) => match &*tag {
+                "Some" => Self::SomeType(raw.decode()?),
+                "None" => Self::NoneType(raw.decode()?),
+                _ => Self::Unknown(raw.decode()?),
+            },
+            _ => Self::Unknown(raw.decode()?),
+        })
+    }
+}
+
+/// Inline object at `SourceControlProviderAuthDetailSomeType`.
+/// Wire tag: `_tag: "Some"`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(tag = "_tag", rename = "Some", rename_all = "camelCase")]
+pub struct SourceControlProviderAuthDetailSomeType {
+    pub value: String,
+}
+
+/// Inline object at `SourceControlProviderAuthDetailNoneType`.
+/// Wire tag: `_tag: "None"`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(tag = "_tag", rename = "None", rename_all = "camelCase")]
+pub struct SourceControlProviderAuthDetailNoneType {
+}
+
+/// Inline union at `SourceControlProviderAuthDetail`.
+/// Decoded by its `_tag` field; a tag this client does not know becomes `Unknown`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
+#[serde(untagged)]
+pub enum SourceControlProviderAuthDetail {
+    SomeType(SourceControlProviderAuthDetailSomeType),
+    NoneType(SourceControlProviderAuthDetailNoneType),
+    /// A value from a newer server.
+    Unknown(::serde_json::Value),
+}
+impl<'de> ::serde::Deserialize<'de> for SourceControlProviderAuthDetail {
+    fn deserialize<D: ::serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let raw = crate::wire::Raw::new(d)?;
+        Ok(match raw.tag("_tag")? {
+            crate::wire::Tag::Str(tag) => match &*tag {
+                "Some" => Self::SomeType(raw.decode()?),
+                "None" => Self::NoneType(raw.decode()?),
+                _ => Self::Unknown(raw.decode()?),
+            },
+            _ => Self::Unknown(raw.decode()?),
+        })
     }
 }
 
@@ -158,9 +431,9 @@ pub struct SourceControlProviderAuthAccountsItem {
 #[serde(rename_all = "camelCase")]
 pub struct SourceControlProviderAuth {
     pub status: SourceControlProviderAuthStatus,
-    pub account: ResourceTelemetrySourceHealthLastSampleAt,
-    pub host: ResourceTelemetrySourceHealthLastSampleAt,
-    pub detail: ResourceTelemetrySourceHealthLastSampleAt,
+    pub account: SourceControlProviderAuthAccount,
+    pub host: SourceControlProviderAuthHost,
+    pub detail: SourceControlProviderAuthDetail,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub accounts: Option<Vec<SourceControlProviderAuthAccountsItem>>,
 }
@@ -174,9 +447,9 @@ pub struct SourceControlProviderDiscoveryItem {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub executable: Option<String>,
     pub status: SourceControlDiscoveryStatus,
-    pub version: ResourceTelemetrySourceHealthLastSampleAt,
+    pub version: SourceControlProviderDiscoveryItemVersion,
     pub install_hint: String,
-    pub detail: ResourceTelemetrySourceHealthLastSampleAt,
+    pub detail: SourceControlProviderDiscoveryItemDetail,
     pub auth: SourceControlProviderAuth,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub app_sign_in: Option<bool>,

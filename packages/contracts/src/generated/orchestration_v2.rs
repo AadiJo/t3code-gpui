@@ -758,6 +758,22 @@ pub struct OrchestrationV2ApprovalCapabilities {
     pub approvals_can_originate_from_subagents: bool,
 }
 
+crate::wire::string_enum! {
+    /// Inline enum at `OrchestrationV2AppThreadSettledOverride`.
+    OrchestrationV2AppThreadSettledOverride {
+        Settled = "settled",
+        Active = "active",
+    }
+}
+
+/// Inline object at `OrchestrationV2AppThreadTitleRegeneration`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OrchestrationV2AppThreadTitleRegeneration {
+    pub request_id: CommandId,
+    pub started_at: String,
+}
+
 /// Inline object at `OrchestrationV2AppThreadRollbackFailure`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -802,7 +818,7 @@ pub struct OrchestrationV2AppThread {
     pub updated_at: String,
     pub archived_at: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub settled_override: Option<OrchestrationV2ThreadShellSettledOverride>,
+    pub settled_override: Option<OrchestrationV2AppThreadSettledOverride>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub settled_at: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -832,7 +848,7 @@ pub struct OrchestrationV2AppThread {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub opens: Option<OrchestrationV2ThreadOpens>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub title_regeneration: Option<OrchestrationV2ThreadShellTitleRegeneration>,
+    pub title_regeneration: Option<OrchestrationV2AppThreadTitleRegeneration>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_title_regeneration: Option<OrchestrationV2ThreadShellLastTitleRegeneration>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1221,6 +1237,13 @@ pub struct OrchestrationV2CommandThreadSnooze {
     pub snoozed_until: String,
 }
 
+crate::wire::string_enum! {
+    /// Inline enum at `OrchestrationV2CommandThreadUnsnoozeReason`.
+    OrchestrationV2CommandThreadUnsnoozeReason {
+        User = "user",
+    }
+}
+
 /// Inline object at `OrchestrationV2CommandThreadUnsnooze`.
 /// Wire tag: `type: "thread.unsnooze"`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
@@ -1228,7 +1251,7 @@ pub struct OrchestrationV2CommandThreadSnooze {
 pub struct OrchestrationV2CommandThreadUnsnooze {
     pub command_id: CommandId,
     pub thread_id: ThreadId,
-    pub reason: OrchestrationV2CommandThreadUnsettleReason,
+    pub reason: OrchestrationV2CommandThreadUnsnoozeReason,
 }
 
 /// Inline object at `OrchestrationV2CommandThreadAutoSettleSet`.
@@ -1559,18 +1582,18 @@ pub struct OrchestrationV2NotificationSourceDelegatedTask {
 }
 
 crate::wire::string_enum! {
-    /// Inline enum at `OrchestrationV2NotificationSourceBackgroundTaskWork`.
-    OrchestrationV2NotificationSourceBackgroundTaskWork {
+    /// Inline enum at `OrchestrationV2NotificationSourceBackgroundTaskSubagentWork`.
+    OrchestrationV2NotificationSourceBackgroundTaskSubagentWork {
         Subagent = "subagent",
     }
 }
 
-/// Inline object at `OrchestrationV2NotificationSourceBackgroundTask`.
+/// Inline object at `OrchestrationV2NotificationSourceBackgroundTaskSubagent`.
 /// Wire tag: `kind: "background_task"`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(tag = "kind", rename = "background_task", rename_all = "camelCase")]
-pub struct OrchestrationV2NotificationSourceBackgroundTask {
-    pub work: OrchestrationV2NotificationSourceBackgroundTaskWork,
+pub struct OrchestrationV2NotificationSourceBackgroundTaskSubagent {
+    pub work: OrchestrationV2NotificationSourceBackgroundTaskSubagentWork,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub child_thread_id: Option<ThreadId>,
 }
@@ -1644,11 +1667,11 @@ pub struct OrchestrationV2NotificationSourceMonitor {
     pub other_pull_requests: Option<Vec<OrchestrationV2NotificationSourceMonitorPullRequest>>,
 }
 
-/// Inline object at `OrchestrationV2NotificationSourceBackgroundTaskAlt`.
+/// Inline object at `OrchestrationV2NotificationSourceBackgroundTask`.
 /// Wire tag: `kind: "background_task"`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(tag = "kind", rename = "background_task", rename_all = "camelCase")]
-pub struct OrchestrationV2NotificationSourceBackgroundTaskAlt {
+pub struct OrchestrationV2NotificationSourceBackgroundTask {
 }
 
 /// Inline object at `OrchestrationV2NotificationSourceSystem`.
@@ -1664,12 +1687,12 @@ pub struct OrchestrationV2NotificationSourceSystem {
 #[serde(untagged)]
 pub enum OrchestrationV2NotificationSource {
     DelegatedTask(OrchestrationV2NotificationSourceDelegatedTask),
-    BackgroundTask(OrchestrationV2NotificationSourceBackgroundTask),
+    BackgroundTaskSubagent(OrchestrationV2NotificationSourceBackgroundTaskSubagent),
     BackgroundCommand(OrchestrationV2NotificationSourceBackgroundCommand),
     Subagent(OrchestrationV2NotificationSourceSubagent),
     Command(OrchestrationV2NotificationSourceCommand),
     Monitor(OrchestrationV2NotificationSourceMonitor),
-    BackgroundTaskAlt(OrchestrationV2NotificationSourceBackgroundTaskAlt),
+    BackgroundTask(OrchestrationV2NotificationSourceBackgroundTask),
     System(OrchestrationV2NotificationSourceSystem),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
@@ -1680,7 +1703,7 @@ impl<'de> ::serde::Deserialize<'de> for OrchestrationV2NotificationSource {
         Ok(match raw.tag("kind")? {
             crate::wire::Tag::Str(tag) => match &*tag {
                 "delegated_task" => Self::DelegatedTask(raw.decode()?),
-                "background_task" => if let Ok(v) = raw.decode() { Self::BackgroundTask(v) } else { Self::BackgroundTaskAlt(raw.decode()?) },
+                "background_task" => if let Ok(v) = raw.decode() { Self::BackgroundTaskSubagent(v) } else { Self::BackgroundTask(raw.decode()?) },
                 "background_command" => Self::BackgroundCommand(raw.decode()?),
                 "subagent" => Self::Subagent(raw.decode()?),
                 "command" => Self::Command(raw.decode()?),
@@ -1693,12 +1716,23 @@ impl<'de> ::serde::Deserialize<'de> for OrchestrationV2NotificationSource {
     }
 }
 
+crate::wire::string_enum! {
+    /// Inline enum at `OrchestrationV2NotificationOutcome`.
+    OrchestrationV2NotificationOutcome {
+        Completed = "completed",
+        Failed = "failed",
+        Cancelled = "cancelled",
+        Updated = "updated",
+        Unknown = "unknown",
+    }
+}
+
 /// `OrchestrationV2Notification` from `orchestrationV2.ts`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OrchestrationV2Notification {
     pub source: OrchestrationV2NotificationSource,
-    pub outcome: OrchestrationV2NotificationSourceMonitorPullRequestSectionOutcome,
+    pub outcome: OrchestrationV2NotificationOutcome,
     pub summary: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub detail: Option<String>,
@@ -2189,6 +2223,14 @@ pub struct OrchestrationV2CommandDelegatedTaskRequest {
     pub created_at: Option<String>,
 }
 
+crate::wire::string_enum! {
+    /// Inline enum at `OrchestrationV2CommandDelegatedTaskWakePolicyCompletionWake`.
+    OrchestrationV2CommandDelegatedTaskWakePolicyCompletionWake {
+        Always = "always",
+        SettledOnly = "settled_only",
+    }
+}
+
 /// Inline object at `OrchestrationV2CommandDelegatedTaskWakePolicy`.
 /// Wire tag: `type: "delegated_task.wake-policy"`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
@@ -2197,7 +2239,7 @@ pub struct OrchestrationV2CommandDelegatedTaskWakePolicy {
     pub command_id: CommandId,
     pub parent_thread_id: ThreadId,
     pub task_id: NodeId,
-    pub completion_wake: OrchestrationV2CommandDelegatedTaskRequestCompletionWake,
+    pub completion_wake: OrchestrationV2CommandDelegatedTaskWakePolicyCompletionWake,
 }
 
 /// Inline object at `OrchestrationV2CommandDelegatedTaskCompletionDeliveryAcknowledge`.
@@ -2695,6 +2737,24 @@ pub struct OrchestrationV2ContextTransfer {
     pub consumed_at: Option<String>,
 }
 
+crate::wire::string_enum! {
+    /// Inline enum at `OrchestrationV2ConversationMessageRole`.
+    OrchestrationV2ConversationMessageRole {
+        User = "user",
+        Assistant = "assistant",
+        System = "system",
+    }
+}
+
+/// Inline object at `OrchestrationV2ConversationMessageDelegatedCompletion`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OrchestrationV2ConversationMessageDelegatedCompletion {
+    pub parent_run_id: RunId,
+    pub generation: PositiveInt,
+    pub task_ids: Vec<NodeId>,
+}
+
 /// `OrchestrationV2ConversationMessage` from `orchestrationV2.ts`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -2719,7 +2779,7 @@ pub struct OrchestrationV2ConversationMessage {
     pub thread_id: ThreadId,
     pub run_id: Option<RunId>,
     pub node_id: Option<NodeId>,
-    pub role: OrchestrationV2LatestVisibleMessageSummaryRole,
+    pub role: OrchestrationV2ConversationMessageRole,
     pub text: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub context: Option<OrchestrationMessageContext>,
@@ -2728,7 +2788,7 @@ pub struct OrchestrationV2ConversationMessage {
     pub created_at: String,
     pub updated_at: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub delegated_completion: Option<OrchestrationV2CommandMessageDispatchDelegatedCompletion>,
+    pub delegated_completion: Option<OrchestrationV2ConversationMessageDelegatedCompletion>,
 }
 
 crate::wire::string_enum! {
@@ -2806,8 +2866,8 @@ pub struct OrchestrationV2DomainEventThreadCreated {
 }
 
 crate::wire::string_enum! {
-    /// Inline enum at `OrchestrationV2DomainEventThreadArchivedOrThreadUnarchivedOrThreadDeletedOrThreadSettledOrThreadUnsettledOrThreadSnoozedOrThreadUnsnoozedOrThreadPinnedOrThreadAutoSettleSetOrThreadUnpinnedOrThreadPinReorderedOrThreadActiveReorderedOrThreadTagsUpdatedOrThreadVisitedOrThreadMarkedUnreadOrThreadMetadataUpdatedOrThreadPullRequestSyncedOrThreadIssueSyncedOrThreadRuntimeModeUpdatedOrThreadInteractionModeUpdatedOrThreadModelSelectionUpdatedOrThreadProviderSwitchedOrThreadGuestShareUpdatedType`.
-    OrchestrationV2DomainEventThreadArchivedOrThreadUnarchivedOrThreadDeletedOrThreadSettledOrThreadUnsettledOrThreadSnoozedOrThreadUnsnoozedOrThreadPinnedOrThreadAutoSettleSetOrThreadUnpinnedOrThreadPinReorderedOrThreadActiveReorderedOrThreadTagsUpdatedOrThreadVisitedOrThreadMarkedUnreadOrThreadMetadataUpdatedOrThreadPullRequestSyncedOrThreadIssueSyncedOrThreadRuntimeModeUpdatedOrThreadInteractionModeUpdatedOrThreadModelSelectionUpdatedOrThreadProviderSwitchedOrThreadGuestShareUpdatedType {
+    /// Inline enum at `OrchestrationV2DomainEventThreadChangedType`.
+    OrchestrationV2DomainEventThreadChangedType {
         ThreadArchived = "thread.archived",
         ThreadUnarchived = "thread.unarchived",
         ThreadDeleted = "thread.deleted",
@@ -2834,10 +2894,10 @@ crate::wire::string_enum! {
     }
 }
 
-/// Inline object at `OrchestrationV2DomainEventThreadArchivedOrThreadUnarchivedOrThreadDeletedOrThreadSettledOrThreadUnsettledOrThreadSnoozedOrThreadUnsnoozedOrThreadPinnedOrThreadAutoSettleSetOrThreadUnpinnedOrThreadPinReorderedOrThreadActiveReorderedOrThreadTagsUpdatedOrThreadVisitedOrThreadMarkedUnreadOrThreadMetadataUpdatedOrThreadPullRequestSyncedOrThreadIssueSyncedOrThreadRuntimeModeUpdatedOrThreadInteractionModeUpdatedOrThreadModelSelectionUpdatedOrThreadProviderSwitchedOrThreadGuestShareUpdated`.
+/// Inline object at `OrchestrationV2DomainEventThreadChanged`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct OrchestrationV2DomainEventThreadArchivedOrThreadUnarchivedOrThreadDeletedOrThreadSettledOrThreadUnsettledOrThreadSnoozedOrThreadUnsnoozedOrThreadPinnedOrThreadAutoSettleSetOrThreadUnpinnedOrThreadPinReorderedOrThreadActiveReorderedOrThreadTagsUpdatedOrThreadVisitedOrThreadMarkedUnreadOrThreadMetadataUpdatedOrThreadPullRequestSyncedOrThreadIssueSyncedOrThreadRuntimeModeUpdatedOrThreadInteractionModeUpdatedOrThreadModelSelectionUpdatedOrThreadProviderSwitchedOrThreadGuestShareUpdated {
+pub struct OrchestrationV2DomainEventThreadChanged {
     pub id: EventId,
     pub thread_id: ThreadId,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -2851,7 +2911,7 @@ pub struct OrchestrationV2DomainEventThreadArchivedOrThreadUnarchivedOrThreadDel
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub raw_event_id: Option<RawEventId>,
     pub occurred_at: String,
-    pub r#type: OrchestrationV2DomainEventThreadArchivedOrThreadUnarchivedOrThreadDeletedOrThreadSettledOrThreadUnsettledOrThreadSnoozedOrThreadUnsnoozedOrThreadPinnedOrThreadAutoSettleSetOrThreadUnpinnedOrThreadPinReorderedOrThreadActiveReorderedOrThreadTagsUpdatedOrThreadVisitedOrThreadMarkedUnreadOrThreadMetadataUpdatedOrThreadPullRequestSyncedOrThreadIssueSyncedOrThreadRuntimeModeUpdatedOrThreadInteractionModeUpdatedOrThreadModelSelectionUpdatedOrThreadProviderSwitchedOrThreadGuestShareUpdatedType,
+    pub r#type: OrchestrationV2DomainEventThreadChangedType,
     pub payload: OrchestrationV2AppThread,
 }
 
@@ -2945,6 +3005,14 @@ pub struct OrchestrationV2RestartCancelledBackgroundWork {
     pub awaited: Option<crate::wire::True>,
 }
 
+/// Inline object at `OrchestrationV2RunSourcePlanRef`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OrchestrationV2RunSourcePlanRef {
+    pub thread_id: ThreadId,
+    pub plan_id: PlanId,
+}
+
 /// `OrchestrationV2Run` from `orchestrationV2.ts`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -2983,7 +3051,7 @@ pub struct OrchestrationV2Run {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub restart_cancelled_background_work: Option<Vec<OrchestrationV2RestartCancelledBackgroundWork>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub source_plan_ref: Option<OrchestrationV2CommandMessageDispatchSourcePlanRef>,
+    pub source_plan_ref: Option<OrchestrationV2RunSourcePlanRef>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub delegated_completion: Option<OrchestrationV2DelegatedCompletionCohort>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -3247,6 +3315,14 @@ pub struct OrchestrationV2RemoteTaskChild {
 }
 
 crate::wire::string_enum! {
+    /// Inline enum at `OrchestrationV2SubagentCompletionWake`.
+    OrchestrationV2SubagentCompletionWake {
+        Always = "always",
+        SettledOnly = "settled_only",
+    }
+}
+
+crate::wire::string_enum! {
     /// `OrchestrationV2TurnItemStatus` from `orchestrationV2.ts`.
     OrchestrationV2TurnItemStatus {
         Idle = "idle",
@@ -3374,7 +3450,7 @@ pub struct OrchestrationV2Subagent {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub executed_model: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub completion_wake: Option<OrchestrationV2CommandDelegatedTaskRequestCompletionWake>,
+    pub completion_wake: Option<OrchestrationV2SubagentCompletionWake>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub completion_delivery: Option<OrchestrationV2DelegatedCompletionTaskDelivery>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -3830,6 +3906,20 @@ pub struct OrchestrationV2DomainEventProviderTurnUpdated {
 }
 
 crate::wire::string_enum! {
+    /// Inline enum at `OrchestrationV2RuntimeRequestKind`.
+    OrchestrationV2RuntimeRequestKind {
+        Command = "command",
+        FileRead = "file-read",
+        FileChange = "file-change",
+        McpElicitation = "mcp-elicitation",
+        Permission = "permission",
+        DynamicToolCall = "dynamic_tool_call",
+        UserInput = "user_input",
+        AuthRefresh = "auth_refresh",
+    }
+}
+
+crate::wire::string_enum! {
     /// Inline enum at `OrchestrationV2RuntimeRequestStatus`.
     OrchestrationV2RuntimeRequestStatus {
         Pending = "pending",
@@ -3898,7 +3988,7 @@ pub struct OrchestrationV2RuntimeRequest {
     pub node_id: NodeId,
     pub provider_turn_id: Option<ProviderTurnId>,
     pub native_request_ref: Option<OrchestrationV2ProviderRef>,
-    pub kind: OrchestrationV2PendingRuntimeRequestSummaryKind,
+    pub kind: OrchestrationV2RuntimeRequestKind,
     pub status: OrchestrationV2RuntimeRequestStatus,
     pub response_capability: OrchestrationV2RuntimeRequestResponseCapability,
     pub created_at: String,
@@ -3962,6 +4052,17 @@ pub struct OrchestrationV2TurnItemNotificationDeferredWork {
     pub last_ordinal: NonNegativeInt,
 }
 
+crate::wire::string_enum! {
+    /// Inline enum at `OrchestrationV2TurnItemNotificationOutcome`.
+    OrchestrationV2TurnItemNotificationOutcome {
+        Completed = "completed",
+        Failed = "failed",
+        Cancelled = "cancelled",
+        Updated = "updated",
+        Unknown = "unknown",
+    }
+}
+
 /// Inline object at `OrchestrationV2TurnItemNotification`.
 /// Wire tag: `type: "notification"`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
@@ -3992,10 +4093,19 @@ pub struct OrchestrationV2TurnItemNotification {
     pub completed_at: Option<String>,
     pub updated_at: String,
     pub source: OrchestrationV2NotificationSource,
-    pub outcome: OrchestrationV2NotificationSourceMonitorPullRequestSectionOutcome,
+    pub outcome: OrchestrationV2TurnItemNotificationOutcome,
     pub summary: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub detail: Option<String>,
+}
+
+/// Inline object at `OrchestrationV2TurnItemUserMessageDeferredWork`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OrchestrationV2TurnItemUserMessageDeferredWork {
+    pub cursor: String,
+    pub item_count: PositiveInt,
+    pub last_ordinal: NonNegativeInt,
 }
 
 crate::wire::string_enum! {
@@ -4022,7 +4132,7 @@ pub struct OrchestrationV2ModelSwitch {
 #[serde(tag = "type", rename = "user_message", rename_all = "camelCase")]
 pub struct OrchestrationV2TurnItemUserMessage {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub deferred_work: Option<OrchestrationV2TurnItemNotificationDeferredWork>,
+    pub deferred_work: Option<OrchestrationV2TurnItemUserMessageDeferredWork>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_non_execution_kind: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -4071,6 +4181,15 @@ pub struct OrchestrationV2TurnItemUserMessage {
     pub model_switch: Option<OrchestrationV2ModelSwitch>,
 }
 
+/// Inline object at `OrchestrationV2TurnItemAssistantMessageDeferredWork`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OrchestrationV2TurnItemAssistantMessageDeferredWork {
+    pub cursor: String,
+    pub item_count: PositiveInt,
+    pub last_ordinal: NonNegativeInt,
+}
+
 crate::wire::string_enum! {
     /// Inline enum at `OrchestrationV2TurnItemAssistantMessagePhase`.
     OrchestrationV2TurnItemAssistantMessagePhase {
@@ -4086,7 +4205,7 @@ crate::wire::string_enum! {
 #[serde(tag = "type", rename = "assistant_message", rename_all = "camelCase")]
 pub struct OrchestrationV2TurnItemAssistantMessage {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub deferred_work: Option<OrchestrationV2TurnItemNotificationDeferredWork>,
+    pub deferred_work: Option<OrchestrationV2TurnItemAssistantMessageDeferredWork>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_non_execution_kind: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -4120,13 +4239,22 @@ pub struct OrchestrationV2TurnItemAssistantMessage {
     pub streaming: bool,
 }
 
+/// Inline object at `OrchestrationV2TurnItemReasoningDeferredWork`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OrchestrationV2TurnItemReasoningDeferredWork {
+    pub cursor: String,
+    pub item_count: PositiveInt,
+    pub last_ordinal: NonNegativeInt,
+}
+
 /// Inline object at `OrchestrationV2TurnItemReasoning`.
 /// Wire tag: `type: "reasoning"`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(tag = "type", rename = "reasoning", rename_all = "camelCase")]
 pub struct OrchestrationV2TurnItemReasoning {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub deferred_work: Option<OrchestrationV2TurnItemNotificationDeferredWork>,
+    pub deferred_work: Option<OrchestrationV2TurnItemReasoningDeferredWork>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_non_execution_kind: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -4153,13 +4281,22 @@ pub struct OrchestrationV2TurnItemReasoning {
     pub streaming: bool,
 }
 
+/// Inline object at `OrchestrationV2TurnItemProposedPlanDeferredWork`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OrchestrationV2TurnItemProposedPlanDeferredWork {
+    pub cursor: String,
+    pub item_count: PositiveInt,
+    pub last_ordinal: NonNegativeInt,
+}
+
 /// Inline object at `OrchestrationV2TurnItemProposedPlan`.
 /// Wire tag: `type: "proposed_plan"`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(tag = "type", rename = "proposed_plan", rename_all = "camelCase")]
 pub struct OrchestrationV2TurnItemProposedPlan {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub deferred_work: Option<OrchestrationV2TurnItemNotificationDeferredWork>,
+    pub deferred_work: Option<OrchestrationV2TurnItemProposedPlanDeferredWork>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_non_execution_kind: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -4185,6 +4322,15 @@ pub struct OrchestrationV2TurnItemProposedPlan {
     pub plan_id: PlanId,
     pub markdown: String,
     pub streaming: bool,
+}
+
+/// Inline object at `OrchestrationV2TurnItemTodoListDeferredWork`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OrchestrationV2TurnItemTodoListDeferredWork {
+    pub cursor: String,
+    pub item_count: PositiveInt,
+    pub last_ordinal: NonNegativeInt,
 }
 
 crate::wire::string_enum! {
@@ -4215,7 +4361,7 @@ pub struct OrchestrationV2PlanStep {
 #[serde(tag = "type", rename = "todo_list", rename_all = "camelCase")]
 pub struct OrchestrationV2TurnItemTodoList {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub deferred_work: Option<OrchestrationV2TurnItemNotificationDeferredWork>,
+    pub deferred_work: Option<OrchestrationV2TurnItemTodoListDeferredWork>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_non_execution_kind: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -4242,6 +4388,15 @@ pub struct OrchestrationV2TurnItemTodoList {
     pub steps: Vec<OrchestrationV2PlanStep>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub explanation: Option<String>,
+}
+
+/// Inline object at `OrchestrationV2TurnItemUserInputRequestDeferredWork`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OrchestrationV2TurnItemUserInputRequestDeferredWork {
+    pub cursor: String,
+    pub item_count: PositiveInt,
+    pub last_ordinal: NonNegativeInt,
 }
 
 /// Inline object at `OrchestrationV2UserInputQuestionOptionsItem`.
@@ -4287,7 +4442,7 @@ crate::wire::string_enum! {
 #[serde(tag = "type", rename = "user_input_request", rename_all = "camelCase")]
 pub struct OrchestrationV2TurnItemUserInputRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub deferred_work: Option<OrchestrationV2TurnItemNotificationDeferredWork>,
+    pub deferred_work: Option<OrchestrationV2TurnItemUserInputRequestDeferredWork>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_non_execution_kind: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -4318,6 +4473,15 @@ pub struct OrchestrationV2TurnItemUserInputRequest {
     pub response_mode: Option<OrchestrationV2TurnItemUserInputRequestResponseMode>,
 }
 
+/// Inline object at `OrchestrationV2TurnItemFileChangeDeferredWork`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OrchestrationV2TurnItemFileChangeDeferredWork {
+    pub cursor: String,
+    pub item_count: PositiveInt,
+    pub last_ordinal: NonNegativeInt,
+}
+
 /// `OrchestrationV2FileChangeDetail` from `orchestrationV2.ts`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -4338,7 +4502,7 @@ pub struct OrchestrationV2FileChangeDetail {
 #[serde(tag = "type", rename = "file_change", rename_all = "camelCase")]
 pub struct OrchestrationV2TurnItemFileChange {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub deferred_work: Option<OrchestrationV2TurnItemNotificationDeferredWork>,
+    pub deferred_work: Option<OrchestrationV2TurnItemFileChangeDeferredWork>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_non_execution_kind: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -4376,6 +4540,15 @@ pub struct OrchestrationV2TurnItemFileChange {
     pub changes: Option<Vec<OrchestrationV2FileChangeDetail>>,
 }
 
+/// Inline object at `OrchestrationV2TurnItemCommandExecutionDeferredWork`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OrchestrationV2TurnItemCommandExecutionDeferredWork {
+    pub cursor: String,
+    pub item_count: PositiveInt,
+    pub last_ordinal: NonNegativeInt,
+}
+
 crate::wire::string_enum! {
     /// Inline enum at `OrchestrationV2TurnItemCommandExecutionCompletionWake`.
     OrchestrationV2TurnItemCommandExecutionCompletionWake {
@@ -4389,7 +4562,7 @@ crate::wire::string_enum! {
 #[serde(tag = "type", rename = "command_execution", rename_all = "camelCase")]
 pub struct OrchestrationV2TurnItemCommandExecution {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub deferred_work: Option<OrchestrationV2TurnItemNotificationDeferredWork>,
+    pub deferred_work: Option<OrchestrationV2TurnItemCommandExecutionDeferredWork>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_non_execution_kind: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -4427,6 +4600,15 @@ pub struct OrchestrationV2TurnItemCommandExecution {
     pub completion_wake: Option<OrchestrationV2TurnItemCommandExecutionCompletionWake>,
 }
 
+/// Inline object at `OrchestrationV2TurnItemFileSearchDeferredWork`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OrchestrationV2TurnItemFileSearchDeferredWork {
+    pub cursor: String,
+    pub item_count: PositiveInt,
+    pub last_ordinal: NonNegativeInt,
+}
+
 /// `OrchestrationV2FileSearchResult` from `orchestrationV2.ts`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -4446,7 +4628,7 @@ pub struct OrchestrationV2FileSearchResult {
 #[serde(tag = "type", rename = "file_search", rename_all = "camelCase")]
 pub struct OrchestrationV2TurnItemFileSearch {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub deferred_work: Option<OrchestrationV2TurnItemNotificationDeferredWork>,
+    pub deferred_work: Option<OrchestrationV2TurnItemFileSearchDeferredWork>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_non_execution_kind: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -4475,6 +4657,15 @@ pub struct OrchestrationV2TurnItemFileSearch {
     pub results: Option<Vec<OrchestrationV2FileSearchResult>>,
 }
 
+/// Inline object at `OrchestrationV2TurnItemWebSearchDeferredWork`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OrchestrationV2TurnItemWebSearchDeferredWork {
+    pub cursor: String,
+    pub item_count: PositiveInt,
+    pub last_ordinal: NonNegativeInt,
+}
+
 /// `OrchestrationV2WebSearchResult` from `orchestrationV2.ts`.
 #[derive(Debug, Clone, Default, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -4493,7 +4684,7 @@ pub struct OrchestrationV2WebSearchResult {
 #[serde(tag = "type", rename = "web_search", rename_all = "camelCase")]
 pub struct OrchestrationV2TurnItemWebSearch {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub deferred_work: Option<OrchestrationV2TurnItemNotificationDeferredWork>,
+    pub deferred_work: Option<OrchestrationV2TurnItemWebSearchDeferredWork>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_non_execution_kind: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -4522,13 +4713,22 @@ pub struct OrchestrationV2TurnItemWebSearch {
     pub results: Option<Vec<OrchestrationV2WebSearchResult>>,
 }
 
+/// Inline object at `OrchestrationV2TurnItemApprovalRequestDeferredWork`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OrchestrationV2TurnItemApprovalRequestDeferredWork {
+    pub cursor: String,
+    pub item_count: PositiveInt,
+    pub last_ordinal: NonNegativeInt,
+}
+
 /// Inline object at `OrchestrationV2TurnItemApprovalRequest`.
 /// Wire tag: `type: "approval_request"`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(tag = "type", rename = "approval_request", rename_all = "camelCase")]
 pub struct OrchestrationV2TurnItemApprovalRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub deferred_work: Option<OrchestrationV2TurnItemNotificationDeferredWork>,
+    pub deferred_work: Option<OrchestrationV2TurnItemApprovalRequestDeferredWork>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_non_execution_kind: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -4565,13 +4765,22 @@ pub struct OrchestrationV2TurnItemApprovalRequest {
     pub options: Option<Vec<ProviderApprovalOption>>,
 }
 
+/// Inline object at `OrchestrationV2TurnItemCheckpointDeferredWork`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OrchestrationV2TurnItemCheckpointDeferredWork {
+    pub cursor: String,
+    pub item_count: PositiveInt,
+    pub last_ordinal: NonNegativeInt,
+}
+
 /// Inline object at `OrchestrationV2TurnItemCheckpoint`.
 /// Wire tag: `type: "checkpoint"`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(tag = "type", rename = "checkpoint", rename_all = "camelCase")]
 pub struct OrchestrationV2TurnItemCheckpoint {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub deferred_work: Option<OrchestrationV2TurnItemNotificationDeferredWork>,
+    pub deferred_work: Option<OrchestrationV2TurnItemCheckpointDeferredWork>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_non_execution_kind: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -4603,13 +4812,22 @@ pub struct OrchestrationV2TurnItemCheckpoint {
     pub files_omitted: Option<crate::wire::True>,
 }
 
+/// Inline object at `OrchestrationV2TurnItemRunInterruptRequestDeferredWork`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OrchestrationV2TurnItemRunInterruptRequestDeferredWork {
+    pub cursor: String,
+    pub item_count: PositiveInt,
+    pub last_ordinal: NonNegativeInt,
+}
+
 /// Inline object at `OrchestrationV2TurnItemRunInterruptRequest`.
 /// Wire tag: `type: "run_interrupt_request"`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(tag = "type", rename = "run_interrupt_request", rename_all = "camelCase")]
 pub struct OrchestrationV2TurnItemRunInterruptRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub deferred_work: Option<OrchestrationV2TurnItemNotificationDeferredWork>,
+    pub deferred_work: Option<OrchestrationV2TurnItemRunInterruptRequestDeferredWork>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_non_execution_kind: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -4637,13 +4855,22 @@ pub struct OrchestrationV2TurnItemRunInterruptRequest {
     pub unresponsive_at: Option<String>,
 }
 
+/// Inline object at `OrchestrationV2TurnItemRunInterruptResultDeferredWork`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OrchestrationV2TurnItemRunInterruptResultDeferredWork {
+    pub cursor: String,
+    pub item_count: PositiveInt,
+    pub last_ordinal: NonNegativeInt,
+}
+
 /// Inline object at `OrchestrationV2TurnItemRunInterruptResult`.
 /// Wire tag: `type: "run_interrupt_result"`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(tag = "type", rename = "run_interrupt_result", rename_all = "camelCase")]
 pub struct OrchestrationV2TurnItemRunInterruptResult {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub deferred_work: Option<OrchestrationV2TurnItemNotificationDeferredWork>,
+    pub deferred_work: Option<OrchestrationV2TurnItemRunInterruptResultDeferredWork>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_non_execution_kind: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -4669,6 +4896,15 @@ pub struct OrchestrationV2TurnItemRunInterruptResult {
     pub message: String,
 }
 
+/// Inline object at `OrchestrationV2TurnItemSystemNoticeDeferredWork`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OrchestrationV2TurnItemSystemNoticeDeferredWork {
+    pub cursor: String,
+    pub item_count: PositiveInt,
+    pub last_ordinal: NonNegativeInt,
+}
+
 crate::wire::string_enum! {
     /// Inline enum at `OrchestrationV2TurnItemSystemNoticeLevel`.
     OrchestrationV2TurnItemSystemNoticeLevel {
@@ -4684,7 +4920,7 @@ crate::wire::string_enum! {
 #[serde(tag = "type", rename = "system_notice", rename_all = "camelCase")]
 pub struct OrchestrationV2TurnItemSystemNotice {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub deferred_work: Option<OrchestrationV2TurnItemNotificationDeferredWork>,
+    pub deferred_work: Option<OrchestrationV2TurnItemSystemNoticeDeferredWork>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_non_execution_kind: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -4712,6 +4948,15 @@ pub struct OrchestrationV2TurnItemSystemNotice {
     pub level: Option<OrchestrationV2TurnItemSystemNoticeLevel>,
 }
 
+/// Inline object at `OrchestrationV2TurnItemErrorDeferredWork`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OrchestrationV2TurnItemErrorDeferredWork {
+    pub cursor: String,
+    pub item_count: PositiveInt,
+    pub last_ordinal: NonNegativeInt,
+}
+
 /// `OrchestrationV2ProviderRetry` from `orchestrationV2.ts`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -4727,7 +4972,7 @@ pub struct OrchestrationV2ProviderRetry {
 #[serde(tag = "type", rename = "error", rename_all = "camelCase")]
 pub struct OrchestrationV2TurnItemError {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub deferred_work: Option<OrchestrationV2TurnItemNotificationDeferredWork>,
+    pub deferred_work: Option<OrchestrationV2TurnItemErrorDeferredWork>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_non_execution_kind: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -4755,13 +5000,22 @@ pub struct OrchestrationV2TurnItemError {
     pub retry: Option<OrchestrationV2ProviderRetry>,
 }
 
+/// Inline object at `OrchestrationV2TurnItemCompactionDeferredWork`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OrchestrationV2TurnItemCompactionDeferredWork {
+    pub cursor: String,
+    pub item_count: PositiveInt,
+    pub last_ordinal: NonNegativeInt,
+}
+
 /// Inline object at `OrchestrationV2TurnItemCompaction`.
 /// Wire tag: `type: "compaction"`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(tag = "type", rename = "compaction", rename_all = "camelCase")]
 pub struct OrchestrationV2TurnItemCompaction {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub deferred_work: Option<OrchestrationV2TurnItemNotificationDeferredWork>,
+    pub deferred_work: Option<OrchestrationV2TurnItemCompactionDeferredWork>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_non_execution_kind: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -4793,13 +5047,33 @@ pub struct OrchestrationV2TurnItemCompaction {
     pub after_token_count: Option<NonNegativeInt>,
 }
 
+/// Inline object at `OrchestrationV2TurnItemHandoffDeferredWork`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OrchestrationV2TurnItemHandoffDeferredWork {
+    pub cursor: String,
+    pub item_count: PositiveInt,
+    pub last_ordinal: NonNegativeInt,
+}
+
+crate::wire::string_enum! {
+    /// Inline enum at `OrchestrationV2TurnItemHandoffStrategy`.
+    OrchestrationV2TurnItemHandoffStrategy {
+        DeltaSinceTargetLastSeen = "delta_since_target_last_seen",
+        ForkDeltaSummary = "fork_delta_summary",
+        FullThreadSummary = "full_thread_summary",
+        CheckpointSummary = "checkpoint_summary",
+        ManualContext = "manual_context",
+    }
+}
+
 /// Inline object at `OrchestrationV2TurnItemHandoff`.
 /// Wire tag: `type: "handoff"`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(tag = "type", rename = "handoff", rename_all = "camelCase")]
 pub struct OrchestrationV2TurnItemHandoff {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub deferred_work: Option<OrchestrationV2TurnItemNotificationDeferredWork>,
+    pub deferred_work: Option<OrchestrationV2TurnItemHandoffDeferredWork>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_non_execution_kind: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -4831,9 +5105,18 @@ pub struct OrchestrationV2TurnItemHandoff {
     pub from_model_selections: Option<Vec<ModelSelection>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub to_model: Option<String>,
-    pub strategy: OrchestrationV2ContextHandoffStrategy,
+    pub strategy: OrchestrationV2TurnItemHandoffStrategy,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub summary: Option<String>,
+}
+
+/// Inline object at `OrchestrationV2TurnItemForkDeferredWork`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OrchestrationV2TurnItemForkDeferredWork {
+    pub cursor: String,
+    pub item_count: PositiveInt,
+    pub last_ordinal: NonNegativeInt,
 }
 
 /// Inline object at `OrchestrationV2TurnItemFork`.
@@ -4842,7 +5125,7 @@ pub struct OrchestrationV2TurnItemHandoff {
 #[serde(tag = "type", rename = "fork", rename_all = "camelCase")]
 pub struct OrchestrationV2TurnItemFork {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub deferred_work: Option<OrchestrationV2TurnItemNotificationDeferredWork>,
+    pub deferred_work: Option<OrchestrationV2TurnItemForkDeferredWork>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_non_execution_kind: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -4870,13 +5153,22 @@ pub struct OrchestrationV2TurnItemFork {
     pub target_thread_id: ThreadId,
 }
 
+/// Inline object at `OrchestrationV2TurnItemThreadCreatedDeferredWork`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OrchestrationV2TurnItemThreadCreatedDeferredWork {
+    pub cursor: String,
+    pub item_count: PositiveInt,
+    pub last_ordinal: NonNegativeInt,
+}
+
 /// Inline object at `OrchestrationV2TurnItemThreadCreated`.
 /// Wire tag: `type: "thread_created"`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(tag = "type", rename = "thread_created", rename_all = "camelCase")]
 pub struct OrchestrationV2TurnItemThreadCreated {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub deferred_work: Option<OrchestrationV2TurnItemNotificationDeferredWork>,
+    pub deferred_work: Option<OrchestrationV2TurnItemThreadCreatedDeferredWork>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_non_execution_kind: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -4905,6 +5197,15 @@ pub struct OrchestrationV2TurnItemThreadCreated {
     pub target_model: String,
 }
 
+/// Inline object at `OrchestrationV2TurnItemSecretRequestDeferredWork`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OrchestrationV2TurnItemSecretRequestDeferredWork {
+    pub cursor: String,
+    pub item_count: PositiveInt,
+    pub last_ordinal: NonNegativeInt,
+}
+
 crate::wire::string_enum! {
     /// `OrchestrationV2SecretRequestDelivery` from `orchestrationV2.ts`.
     OrchestrationV2SecretRequestDelivery {
@@ -4928,7 +5229,7 @@ crate::wire::string_enum! {
 #[serde(tag = "type", rename = "secret_request", rename_all = "camelCase")]
 pub struct OrchestrationV2TurnItemSecretRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub deferred_work: Option<OrchestrationV2TurnItemNotificationDeferredWork>,
+    pub deferred_work: Option<OrchestrationV2TurnItemSecretRequestDeferredWork>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_non_execution_kind: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -4962,6 +5263,15 @@ pub struct OrchestrationV2TurnItemSecretRequest {
     pub secret_status: OrchestrationV2SecretRequestStatus,
 }
 
+/// Inline object at `OrchestrationV2TurnItemLinkRequestDeferredWork`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OrchestrationV2TurnItemLinkRequestDeferredWork {
+    pub cursor: String,
+    pub item_count: PositiveInt,
+    pub last_ordinal: NonNegativeInt,
+}
+
 crate::wire::string_enum! {
     /// `OrchestrationV2LinkRequestStatus` from `orchestrationV2.ts`.
     OrchestrationV2LinkRequestStatus {
@@ -4979,7 +5289,7 @@ crate::wire::string_enum! {
 #[serde(tag = "type", rename = "link_request", rename_all = "camelCase")]
 pub struct OrchestrationV2TurnItemLinkRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub deferred_work: Option<OrchestrationV2TurnItemNotificationDeferredWork>,
+    pub deferred_work: Option<OrchestrationV2TurnItemLinkRequestDeferredWork>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_non_execution_kind: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -5024,13 +5334,30 @@ pub struct OrchestrationV2TurnItemLinkRequest {
     pub failure: Option<String>,
 }
 
+/// Inline object at `OrchestrationV2TurnItemSubagentDeferredWork`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OrchestrationV2TurnItemSubagentDeferredWork {
+    pub cursor: String,
+    pub item_count: PositiveInt,
+    pub last_ordinal: NonNegativeInt,
+}
+
+crate::wire::string_enum! {
+    /// Inline enum at `OrchestrationV2TurnItemSubagentOrigin`.
+    OrchestrationV2TurnItemSubagentOrigin {
+        ProviderNative = "provider_native",
+        AppOwned = "app_owned",
+    }
+}
+
 /// Inline object at `OrchestrationV2TurnItemSubagent`.
 /// Wire tag: `type: "subagent"`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(tag = "type", rename = "subagent", rename_all = "camelCase")]
 pub struct OrchestrationV2TurnItemSubagent {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub deferred_work: Option<OrchestrationV2TurnItemNotificationDeferredWork>,
+    pub deferred_work: Option<OrchestrationV2TurnItemSubagentDeferredWork>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_non_execution_kind: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -5054,7 +5381,7 @@ pub struct OrchestrationV2TurnItemSubagent {
     pub completed_at: Option<String>,
     pub updated_at: String,
     pub subagent_id: NodeId,
-    pub origin: OrchestrationV2SubagentOrigin,
+    pub origin: OrchestrationV2TurnItemSubagentOrigin,
     pub driver: ProviderDriverKind,
     pub provider_instance_id: ProviderInstanceId,
     pub child_thread_id: Option<ThreadId>,
@@ -5070,13 +5397,22 @@ pub struct OrchestrationV2TurnItemSubagent {
     pub result_omitted: Option<crate::wire::True>,
 }
 
+/// Inline object at `OrchestrationV2TurnItemDynamicToolDeferredWork`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OrchestrationV2TurnItemDynamicToolDeferredWork {
+    pub cursor: String,
+    pub item_count: PositiveInt,
+    pub last_ordinal: NonNegativeInt,
+}
+
 /// Inline object at `OrchestrationV2TurnItemDynamicTool`.
 /// Wire tag: `type: "dynamic_tool"`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(tag = "type", rename = "dynamic_tool", rename_all = "camelCase")]
 pub struct OrchestrationV2TurnItemDynamicTool {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub deferred_work: Option<OrchestrationV2TurnItemNotificationDeferredWork>,
+    pub deferred_work: Option<OrchestrationV2TurnItemDynamicToolDeferredWork>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_non_execution_kind: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -5225,6 +5561,16 @@ pub struct OrchestrationV2PlanArtifactProposedPlan {
     pub markdown: String,
 }
 
+crate::wire::string_enum! {
+    /// Inline enum at `OrchestrationV2PlanArtifactTodoListStatus`.
+    OrchestrationV2PlanArtifactTodoListStatus {
+        Draft = "draft",
+        Active = "active",
+        Completed = "completed",
+        Superseded = "superseded",
+    }
+}
+
 /// Inline object at `OrchestrationV2PlanArtifactTodoList`.
 /// Wire tag: `kind: "todo_list"`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
@@ -5234,7 +5580,7 @@ pub struct OrchestrationV2PlanArtifactTodoList {
     pub thread_id: ThreadId,
     pub run_id: Option<RunId>,
     pub node_id: NodeId,
-    pub status: OrchestrationV2PlanArtifactProposedPlanStatus,
+    pub status: OrchestrationV2PlanArtifactTodoListStatus,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub detail_in_turn_item: Option<crate::wire::True>,
     pub steps: Vec<OrchestrationV2PlanStep>,
@@ -5419,7 +5765,7 @@ pub struct OrchestrationV2DomainEventContextTransferUpdated {
 #[serde(untagged)]
 pub enum OrchestrationV2DomainEvent {
     ThreadCreated(OrchestrationV2DomainEventThreadCreated),
-    ThreadArchivedOrThreadUnarchivedOrThreadDeletedOrThreadSettledOrThreadUnsettledOrThreadSnoozedOrThreadUnsnoozedOrThreadPinnedOrThreadAutoSettleSetOrThreadUnpinnedOrThreadPinReorderedOrThreadActiveReorderedOrThreadTagsUpdatedOrThreadVisitedOrThreadMarkedUnreadOrThreadMetadataUpdatedOrThreadPullRequestSyncedOrThreadIssueSyncedOrThreadRuntimeModeUpdatedOrThreadInteractionModeUpdatedOrThreadModelSelectionUpdatedOrThreadProviderSwitchedOrThreadGuestShareUpdated(OrchestrationV2DomainEventThreadArchivedOrThreadUnarchivedOrThreadDeletedOrThreadSettledOrThreadUnsettledOrThreadSnoozedOrThreadUnsnoozedOrThreadPinnedOrThreadAutoSettleSetOrThreadUnpinnedOrThreadPinReorderedOrThreadActiveReorderedOrThreadTagsUpdatedOrThreadVisitedOrThreadMarkedUnreadOrThreadMetadataUpdatedOrThreadPullRequestSyncedOrThreadIssueSyncedOrThreadRuntimeModeUpdatedOrThreadInteractionModeUpdatedOrThreadModelSelectionUpdatedOrThreadProviderSwitchedOrThreadGuestShareUpdated),
+    ThreadChanged(OrchestrationV2DomainEventThreadChanged),
     ThreadPullRequestLinkUpdated(OrchestrationV2DomainEventThreadPullRequestLinkUpdated),
     ThreadVisitRecorded(OrchestrationV2DomainEventThreadVisitRecorded),
     RunCreated(OrchestrationV2DomainEventRunCreated),
@@ -5452,7 +5798,7 @@ impl<'de> ::serde::Deserialize<'de> for OrchestrationV2DomainEvent {
         Ok(match raw.tag("type")? {
             crate::wire::Tag::Str(tag) => match &*tag {
                 "thread.created" => Self::ThreadCreated(raw.decode()?),
-                "thread.archived" | "thread.unarchived" | "thread.deleted" | "thread.settled" | "thread.unsettled" | "thread.snoozed" | "thread.unsnoozed" | "thread.pinned" | "thread.auto-settle-set" | "thread.unpinned" | "thread.pin-reordered" | "thread.active-reordered" | "thread.tags-updated" | "thread.visited" | "thread.marked-unread" | "thread.metadata-updated" | "thread.pull-request-synced" | "thread.issue-synced" | "thread.runtime-mode-updated" | "thread.interaction-mode-updated" | "thread.model-selection-updated" | "thread.provider-switched" | "thread.guest-share-updated" => Self::ThreadArchivedOrThreadUnarchivedOrThreadDeletedOrThreadSettledOrThreadUnsettledOrThreadSnoozedOrThreadUnsnoozedOrThreadPinnedOrThreadAutoSettleSetOrThreadUnpinnedOrThreadPinReorderedOrThreadActiveReorderedOrThreadTagsUpdatedOrThreadVisitedOrThreadMarkedUnreadOrThreadMetadataUpdatedOrThreadPullRequestSyncedOrThreadIssueSyncedOrThreadRuntimeModeUpdatedOrThreadInteractionModeUpdatedOrThreadModelSelectionUpdatedOrThreadProviderSwitchedOrThreadGuestShareUpdated(raw.decode()?),
+                "thread.archived" | "thread.unarchived" | "thread.deleted" | "thread.settled" | "thread.unsettled" | "thread.snoozed" | "thread.unsnoozed" | "thread.pinned" | "thread.auto-settle-set" | "thread.unpinned" | "thread.pin-reordered" | "thread.active-reordered" | "thread.tags-updated" | "thread.visited" | "thread.marked-unread" | "thread.metadata-updated" | "thread.pull-request-synced" | "thread.issue-synced" | "thread.runtime-mode-updated" | "thread.interaction-mode-updated" | "thread.model-selection-updated" | "thread.provider-switched" | "thread.guest-share-updated" => Self::ThreadChanged(raw.decode()?),
                 "thread.pull-request-link-updated" => Self::ThreadPullRequestLinkUpdated(raw.decode()?),
                 "thread.visit-recorded" => Self::ThreadVisitRecorded(raw.decode()?),
                 "run.created" => Self::RunCreated(raw.decode()?),
@@ -5852,13 +6198,21 @@ pub struct OrchestrationV2ShellStreamItemThreadUpdated {
     pub thread: OrchestrationV2ThreadShell,
 }
 
+crate::wire::string_enum! {
+    /// Inline enum at `OrchestrationV2ShellStreamItemThreadRemovedLocation`.
+    OrchestrationV2ShellStreamItemThreadRemovedLocation {
+        Active = "active",
+        Archive = "archive",
+    }
+}
+
 /// Inline object at `OrchestrationV2ShellStreamItemThreadRemoved`.
 /// Wire tag: `kind: "thread.removed"`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(tag = "kind", rename = "thread.removed", rename_all = "camelCase")]
 pub struct OrchestrationV2ShellStreamItemThreadRemoved {
     pub sequence: NonNegativeInt,
-    pub location: OrchestrationV2ShellStreamItemThreadUpdatedLocation,
+    pub location: OrchestrationV2ShellStreamItemThreadRemovedLocation,
     pub thread_id: ThreadId,
 }
 
@@ -6028,12 +6382,21 @@ impl<'de> ::serde::Deserialize<'de> for OrchestrationV2ThreadProjectionTurnItems
     }
 }
 
+crate::wire::string_enum! {
+    /// Inline enum at `OrchestrationV2ThreadProjectionVisibleTurnItemsItemVisibility`.
+    OrchestrationV2ThreadProjectionVisibleTurnItemsItemVisibility {
+        Local = "local",
+        Inherited = "inherited",
+        Synthetic = "synthetic",
+    }
+}
+
 /// Inline object at `OrchestrationV2ThreadProjectionVisibleTurnItemsItem`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OrchestrationV2ThreadProjectionVisibleTurnItemsItem {
     pub position: NonNegativeInt,
-    pub visibility: OrchestrationV2ProjectedTurnItemVisibility,
+    pub visibility: OrchestrationV2ThreadProjectionVisibleTurnItemsItemVisibility,
     pub source_thread_id: ThreadId,
     pub source_item_id: TurnItemId,
     pub item: OrchestrationV2ThreadProjectionTurnItemsItem,
@@ -6162,6 +6525,13 @@ pub struct OrchestrationV2ThreadLaunchResult {
     pub sequence: Option<NonNegativeInt>,
 }
 
+/// Inline object at `OrchestrationV2ThreadStreamItemSynchronized`.
+/// Wire tag: `kind: "synchronized"`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(tag = "kind", rename = "synchronized", rename_all = "camelCase")]
+pub struct OrchestrationV2ThreadStreamItemSynchronized {
+}
+
 /// Inline object at `OrchestrationV2ThreadStreamItemSnapshot`.
 /// Wire tag: `kind: "snapshot"`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
@@ -6181,16 +6551,13 @@ pub struct OrchestrationV2ThreadStreamItemSnapshot {
     pub id_table: Option<crate::wire::True>,
 }
 
-/// Inline union at `OrchestrationV2ThreadStreamItemEventEvent`.
-pub type OrchestrationV2ThreadStreamItemEventEvent = OrchestrationV2DomainEvent;
-
 /// Inline object at `OrchestrationV2ThreadStreamItemEvent`.
 /// Wire tag: `kind: "event"`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(tag = "kind", rename = "event", rename_all = "camelCase")]
 pub struct OrchestrationV2ThreadStreamItemEvent {
     pub sequence: NonNegativeInt,
-    pub event: OrchestrationV2ThreadStreamItemEventEvent,
+    pub event: OrchestrationV2DomainEvent,
 }
 
 /// `OrchestrationV2ThreadStreamItem` from `orchestrationV2.ts`.
@@ -6198,7 +6565,7 @@ pub struct OrchestrationV2ThreadStreamItemEvent {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum OrchestrationV2ThreadStreamItem {
-    Synchronized(OrchestrationV2ShellStreamItemSynchronized),
+    Synchronized(OrchestrationV2ThreadStreamItemSynchronized),
     Snapshot(OrchestrationV2ThreadStreamItemSnapshot),
     Event(OrchestrationV2ThreadStreamItemEvent),
     /// A value from a newer server.

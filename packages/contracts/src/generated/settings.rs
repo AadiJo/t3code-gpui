@@ -292,6 +292,42 @@ impl<'de> ::serde::Deserialize<'de> for ClientServerSettingsPatchCloudSpeechCred
     }
 }
 
+/// Inline union at `ClientServerSettingsPatchCloudSpeechCredentialsXai`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
+#[serde(untagged)]
+pub enum ClientServerSettingsPatchCloudSpeechCredentialsXai {
+    Text(String),
+    SecretReference(SecretReference),
+}
+impl<'de> ::serde::Deserialize<'de> for ClientServerSettingsPatchCloudSpeechCredentialsXai {
+    fn deserialize<D: ::serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let raw = crate::wire::Raw::new(d)?;
+        Ok(match raw.kind() {
+            crate::wire::JsonKind::String => Self::Text(raw.decode()?),
+            crate::wire::JsonKind::Object => Self::SecretReference(raw.decode()?),
+            other => return Err(raw.unexpected(other, "ClientServerSettingsPatchCloudSpeechCredentialsXai")),
+        })
+    }
+}
+
+/// Inline union at `ClientServerSettingsPatchCloudSpeechCredentialsOpenrouter`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
+#[serde(untagged)]
+pub enum ClientServerSettingsPatchCloudSpeechCredentialsOpenrouter {
+    Text(String),
+    SecretReference(SecretReference),
+}
+impl<'de> ::serde::Deserialize<'de> for ClientServerSettingsPatchCloudSpeechCredentialsOpenrouter {
+    fn deserialize<D: ::serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let raw = crate::wire::Raw::new(d)?;
+        Ok(match raw.kind() {
+            crate::wire::JsonKind::String => Self::Text(raw.decode()?),
+            crate::wire::JsonKind::Object => Self::SecretReference(raw.decode()?),
+            other => return Err(raw.unexpected(other, "ClientServerSettingsPatchCloudSpeechCredentialsOpenrouter")),
+        })
+    }
+}
+
 /// Inline object at `ClientServerSettingsPatchCloudSpeechCredentials`.
 #[derive(Debug, Clone, Default, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -299,9 +335,16 @@ pub struct ClientServerSettingsPatchCloudSpeechCredentials {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub openai: Option<ClientServerSettingsPatchCloudSpeechCredentialsOpenai>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub xai: Option<ClientServerSettingsPatchCloudSpeechCredentialsOpenai>,
+    pub xai: Option<ClientServerSettingsPatchCloudSpeechCredentialsXai>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub openrouter: Option<ClientServerSettingsPatchCloudSpeechCredentialsOpenai>,
+    pub openrouter: Option<ClientServerSettingsPatchCloudSpeechCredentialsOpenrouter>,
+}
+
+/// Inline object at `WorktreeCleanupValueOff`.
+/// Wire tag: `mode: "off"`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(tag = "mode", rename = "off", rename_all = "camelCase")]
+pub struct WorktreeCleanupValueOff {
 }
 
 /// `WorktreeCleanupRules` from `settings.ts`.
@@ -331,7 +374,7 @@ pub struct WorktreeCleanupValueCustom {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
 pub enum WorktreeCleanupValue {
-    Off(ClientServerSettingsPatchWorktreeCleanupOff),
+    Off(WorktreeCleanupValueOff),
     Custom(WorktreeCleanupValueCustom),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
@@ -599,6 +642,24 @@ crate::wire::string_enum! {
     }
 }
 
+/// Inline union at `UsageLimitSourceConfigManagementKey`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
+#[serde(untagged)]
+pub enum UsageLimitSourceConfigManagementKey {
+    Text(String),
+    SecretReference(SecretReference),
+}
+impl<'de> ::serde::Deserialize<'de> for UsageLimitSourceConfigManagementKey {
+    fn deserialize<D: ::serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let raw = crate::wire::Raw::new(d)?;
+        Ok(match raw.kind() {
+            crate::wire::JsonKind::String => Self::Text(raw.decode()?),
+            crate::wire::JsonKind::Object => Self::SecretReference(raw.decode()?),
+            other => return Err(raw.unexpected(other, "UsageLimitSourceConfigManagementKey")),
+        })
+    }
+}
+
 /// `UsageLimitSourceConfig` from `settings.ts`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -608,7 +669,7 @@ pub struct UsageLimitSourceConfig {
     pub label: Option<String>,
     pub url: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub management_key: Option<ClientServerSettingsPatchCloudSpeechCredentialsOpenai>,
+    pub management_key: Option<UsageLimitSourceConfigManagementKey>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enabled: Option<bool>,
 }
@@ -621,6 +682,24 @@ crate::wire::string_enum! {
     }
 }
 
+/// Inline union at `TextGeneratorConfigApiKey`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
+#[serde(untagged)]
+pub enum TextGeneratorConfigApiKey {
+    Text(String),
+    SecretReference(SecretReference),
+}
+impl<'de> ::serde::Deserialize<'de> for TextGeneratorConfigApiKey {
+    fn deserialize<D: ::serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let raw = crate::wire::Raw::new(d)?;
+        Ok(match raw.kind() {
+            crate::wire::JsonKind::String => Self::Text(raw.decode()?),
+            crate::wire::JsonKind::Object => Self::SecretReference(raw.decode()?),
+            other => return Err(raw.unexpected(other, "TextGeneratorConfigApiKey")),
+        })
+    }
+}
+
 /// `TextGeneratorConfig` from `settings.ts`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -630,7 +709,7 @@ pub struct TextGeneratorConfig {
     pub label: Option<String>,
     pub base_url: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub api_key: Option<ClientServerSettingsPatchCloudSpeechCredentialsOpenai>,
+    pub api_key: Option<TextGeneratorConfigApiKey>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enabled: Option<bool>,
 }
@@ -959,6 +1038,16 @@ crate::wire::id_newtype! {
     FontFamilyPreference
 }
 
+/// Inline object at `ClientSettingsSchemaProviderModelPreferencesValue`.
+#[derive(Debug, Clone, Default, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClientSettingsSchemaProviderModelPreferencesValue {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hidden_models: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_order: Option<Vec<String>>,
+}
+
 crate::wire::string_enum! {
     /// Inline enum at `ClientSettingsSchemaSendShortcut`.
     ClientSettingsSchemaSendShortcut {
@@ -1123,7 +1212,7 @@ pub struct SnapShotKeyChord {
 pub enum SnapShotShortcut {
     BothShiftKeys(SnapShotShortcutBothShiftKeys),
     ModifierPair(SnapShotShortcutModifierPair),
-    SnapShotKeyChord(SnapShotKeyChord),
+    KeyChord(SnapShotKeyChord),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
 }
@@ -1136,7 +1225,7 @@ impl<'de> ::serde::Deserialize<'de> for SnapShotShortcut {
                 "modifier-pair" => Self::ModifierPair(raw.decode()?),
                 _ => Self::Unknown(raw.decode()?),
             },
-            crate::wire::Tag::Absent => Self::SnapShotKeyChord(raw.decode()?),
+            crate::wire::Tag::Absent => Self::KeyChord(raw.decode()?),
             _ => Self::Unknown(raw.decode()?),
         })
     }
@@ -1241,7 +1330,7 @@ pub struct ClientSettingsSchema {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub favorites: Option<ModelFavorites>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub provider_model_preferences: Option<::std::collections::BTreeMap<String, ProviderModelPreferencesInnerValue>>,
+    pub provider_model_preferences: Option<::std::collections::BTreeMap<String, ClientSettingsSchemaProviderModelPreferencesValue>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pull_request_merge_method_overrides: Option<::std::collections::BTreeMap<String, PullRequestMergeMethod>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1399,6 +1488,16 @@ pub struct ListTextGeneratorModelsResult {
     pub tested_model: Option<String>,
 }
 
+/// Inline object at `ServerSettingsProviderModelPreferencesValue`.
+#[derive(Debug, Clone, Default, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ServerSettingsProviderModelPreferencesValue {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hidden_models: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_order: Option<Vec<String>>,
+}
+
 /// Inline object at `ServerSettingsStorageCleanup`.
 #[derive(Debug, Clone, Default, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1421,16 +1520,79 @@ pub struct ServerSettingsStorageCleanup {
     pub logs_after_days: Option<u64>,
 }
 
+/// Inline union at `ServerSettingsCloudSpeechCredentialsOpenai`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
+#[serde(untagged)]
+pub enum ServerSettingsCloudSpeechCredentialsOpenai {
+    Text(String),
+    SecretReference(SecretReference),
+}
+impl<'de> ::serde::Deserialize<'de> for ServerSettingsCloudSpeechCredentialsOpenai {
+    fn deserialize<D: ::serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let raw = crate::wire::Raw::new(d)?;
+        Ok(match raw.kind() {
+            crate::wire::JsonKind::String => Self::Text(raw.decode()?),
+            crate::wire::JsonKind::Object => Self::SecretReference(raw.decode()?),
+            other => return Err(raw.unexpected(other, "ServerSettingsCloudSpeechCredentialsOpenai")),
+        })
+    }
+}
+
+/// Inline union at `ServerSettingsCloudSpeechCredentialsXai`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
+#[serde(untagged)]
+pub enum ServerSettingsCloudSpeechCredentialsXai {
+    Text(String),
+    SecretReference(SecretReference),
+}
+impl<'de> ::serde::Deserialize<'de> for ServerSettingsCloudSpeechCredentialsXai {
+    fn deserialize<D: ::serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let raw = crate::wire::Raw::new(d)?;
+        Ok(match raw.kind() {
+            crate::wire::JsonKind::String => Self::Text(raw.decode()?),
+            crate::wire::JsonKind::Object => Self::SecretReference(raw.decode()?),
+            other => return Err(raw.unexpected(other, "ServerSettingsCloudSpeechCredentialsXai")),
+        })
+    }
+}
+
+/// Inline union at `ServerSettingsCloudSpeechCredentialsOpenrouter`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
+#[serde(untagged)]
+pub enum ServerSettingsCloudSpeechCredentialsOpenrouter {
+    Text(String),
+    SecretReference(SecretReference),
+}
+impl<'de> ::serde::Deserialize<'de> for ServerSettingsCloudSpeechCredentialsOpenrouter {
+    fn deserialize<D: ::serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let raw = crate::wire::Raw::new(d)?;
+        Ok(match raw.kind() {
+            crate::wire::JsonKind::String => Self::Text(raw.decode()?),
+            crate::wire::JsonKind::Object => Self::SecretReference(raw.decode()?),
+            other => return Err(raw.unexpected(other, "ServerSettingsCloudSpeechCredentialsOpenrouter")),
+        })
+    }
+}
+
 /// Inline object at `ServerSettingsCloudSpeechCredentials`.
 #[derive(Debug, Clone, Default, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ServerSettingsCloudSpeechCredentials {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub openai: Option<ClientServerSettingsPatchCloudSpeechCredentialsOpenai>,
+    pub openai: Option<ServerSettingsCloudSpeechCredentialsOpenai>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub xai: Option<ClientServerSettingsPatchCloudSpeechCredentialsOpenai>,
+    pub xai: Option<ServerSettingsCloudSpeechCredentialsXai>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub openrouter: Option<ClientServerSettingsPatchCloudSpeechCredentialsOpenai>,
+    pub openrouter: Option<ServerSettingsCloudSpeechCredentialsOpenrouter>,
+}
+
+crate::wire::string_enum! {
+    /// Inline enum at `ServerSettingsProjectSettingsOverridesValueWorktreeSubmodules`.
+    ServerSettingsProjectSettingsOverridesValueWorktreeSubmodules {
+        Recursive = "recursive",
+        TopLevel = "top-level",
+        NoneType = "none",
+    }
 }
 
 /// Inline union at `ServerSettingsProjectSettingsOverridesValueSourceControlWritingStyle`.
@@ -1466,7 +1628,7 @@ pub struct ServerSettingsProjectSettingsOverridesValue {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub new_worktrees_start_from_origin: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "crate::wire::lenient")]
-    pub worktree_submodules: Option<ClientServerSettingsPatchProjectSettingsOverridesValueWorktreeSubmodules>,
+    pub worktree_submodules: Option<ServerSettingsProjectSettingsOverridesValueWorktreeSubmodules>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_auto_pull: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1513,6 +1675,24 @@ pub struct ServerSettingsProjectSettingsOverridesValue {
     pub provider_instances: Option<::std::collections::BTreeMap<String, ProjectProviderInstanceOverride>>,
 }
 
+/// Inline union at `ServerSettingsCompactIdleThreads`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
+#[serde(untagged)]
+pub enum ServerSettingsCompactIdleThreads {
+    Bool(bool),
+    IdleCompactionMode(IdleCompactionMode),
+}
+impl<'de> ::serde::Deserialize<'de> for ServerSettingsCompactIdleThreads {
+    fn deserialize<D: ::serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let raw = crate::wire::Raw::new(d)?;
+        Ok(match raw.kind() {
+            crate::wire::JsonKind::Bool => Self::Bool(raw.decode()?),
+            crate::wire::JsonKind::String => Self::IdleCompactionMode(raw.decode()?),
+            other => return Err(raw.unexpected(other, "ServerSettingsCompactIdleThreads")),
+        })
+    }
+}
+
 /// Inline object at `ServerSettingsBackgroundActivity`.
 #[derive(Debug, Clone, Default, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1532,6 +1712,24 @@ crate::wire::string_enum! {
     ServerSettingsDefaultThreadEnvMode {
         Local = "local",
         Worktree = "worktree",
+    }
+}
+
+/// Inline union at `ServerSettingsSourceControlWritingStyle`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
+#[serde(untagged)]
+pub enum ServerSettingsSourceControlWritingStyle {
+    SourceControlWritingStyleSettings(SourceControlWritingStyleSettings),
+    Text(String),
+}
+impl<'de> ::serde::Deserialize<'de> for ServerSettingsSourceControlWritingStyle {
+    fn deserialize<D: ::serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let raw = crate::wire::Raw::new(d)?;
+        Ok(match raw.kind() {
+            crate::wire::JsonKind::Object => Self::SourceControlWritingStyleSettings(raw.decode()?),
+            crate::wire::JsonKind::String => Self::Text(raw.decode()?),
+            other => return Err(raw.unexpected(other, "ServerSettingsSourceControlWritingStyle")),
+        })
     }
 }
 
@@ -1574,6 +1772,31 @@ pub struct ServerSettingsSecretProvidersValue {
     pub config: Option<::serde_json::Value>,
 }
 
+crate::wire::string_enum! {
+    /// Inline enum at `ServerSettingsUsageHistoryRetentionDaysText`.
+    ServerSettingsUsageHistoryRetentionDaysText {
+        Unlimited = "unlimited",
+    }
+}
+
+/// Inline union at `ServerSettingsUsageHistoryRetentionDays`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
+#[serde(untagged)]
+pub enum ServerSettingsUsageHistoryRetentionDays {
+    Int(u64),
+    Text(ServerSettingsUsageHistoryRetentionDaysText),
+}
+impl<'de> ::serde::Deserialize<'de> for ServerSettingsUsageHistoryRetentionDays {
+    fn deserialize<D: ::serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let raw = crate::wire::Raw::new(d)?;
+        Ok(match raw.kind() {
+            crate::wire::JsonKind::Number => Self::Int(raw.decode()?),
+            crate::wire::JsonKind::String => Self::Text(raw.decode()?),
+            other => return Err(raw.unexpected(other, "ServerSettingsUsageHistoryRetentionDays")),
+        })
+    }
+}
+
 /// Inline object at `ServerSettingsUsageModelFilter`.
 #[derive(Debug, Clone, Default, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1591,7 +1814,7 @@ pub struct ServerSettings {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub favorites: Option<ModelFavorites>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub provider_model_preferences: Option<::std::collections::BTreeMap<String, ProviderModelPreferencesInnerValue>>,
+    pub provider_model_preferences: Option<::std::collections::BTreeMap<String, ServerSettingsProviderModelPreferencesValue>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub worktree_cleanup: Option<WorktreeCleanupValue>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1665,7 +1888,7 @@ pub struct ServerSettings {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sidebar_auto_settle_after_days: Option<SidebarAutoSettleAfterDays>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub compact_idle_threads: Option<ClientServerSettingsPatchCompactIdleThreads>,
+    pub compact_idle_threads: Option<ServerSettingsCompactIdleThreads>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub idle_compaction: Option<IdleCompactionMode>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1729,7 +1952,7 @@ pub struct ServerSettings {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub remove_agent_credits_on_merge: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub source_control_writing_style: Option<ServerSettingsProjectSettingsOverridesValueSourceControlWritingStyle>,
+    pub source_control_writing_style: Option<ServerSettingsSourceControlWritingStyle>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_control_writer_model_selection: Option<ModelSelection>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1755,7 +1978,7 @@ pub struct ServerSettings {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub secret_providers: Option<::std::collections::BTreeMap<String, ServerSettingsSecretProvidersValue>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub usage_history_retention_days: Option<ClientServerSettingsPatchUsageHistoryRetentionDays>,
+    pub usage_history_retention_days: Option<ServerSettingsUsageHistoryRetentionDays>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub usage_price_overrides: Option<::std::collections::BTreeMap<String, UsageModelPriceOverride>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

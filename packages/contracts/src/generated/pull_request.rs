@@ -110,6 +110,28 @@ pub struct PullRequestActionInput {
     pub reply_with_summary: Option<crate::wire::True>,
 }
 
+/// Inline object at `PullRequestActivityAuthor`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PullRequestActivityAuthor {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub is_bot: Option<bool>,
+    pub login: String,
+    pub name: Option<String>,
+    pub avatar_url: Option<String>,
+}
+
+/// Inline object at `PullRequestActivityReviewersItem`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PullRequestActivityReviewersItem {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub is_bot: Option<bool>,
+    pub login: String,
+    pub name: Option<String>,
+    pub avatar_url: Option<String>,
+}
+
 crate::wire::string_enum! {
     /// `PullRequestCommentKind` from `pullRequest.ts`.
     PullRequestCommentKind {
@@ -119,13 +141,24 @@ crate::wire::string_enum! {
     }
 }
 
+/// Inline object at `PullRequestCommentAuthor`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PullRequestCommentAuthor {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub is_bot: Option<bool>,
+    pub login: String,
+    pub name: Option<String>,
+    pub avatar_url: Option<String>,
+}
+
 /// `PullRequestComment` from `pullRequest.ts`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PullRequestComment {
     pub id: String,
     pub kind: PullRequestCommentKind,
-    pub author: Option<IssueCommentAuthor>,
+    pub author: Option<PullRequestCommentAuthor>,
     pub body: String,
     pub created_at: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -147,12 +180,23 @@ crate::wire::string_enum! {
     }
 }
 
+/// Inline object at `PullRequestThreadCommentAuthor`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PullRequestThreadCommentAuthor {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub is_bot: Option<bool>,
+    pub login: String,
+    pub name: Option<String>,
+    pub avatar_url: Option<String>,
+}
+
 /// `PullRequestThreadComment` from `pullRequest.ts`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PullRequestThreadComment {
     pub id: String,
-    pub author: Option<IssueCommentAuthor>,
+    pub author: Option<PullRequestThreadCommentAuthor>,
     pub body: String,
     pub created_at: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -204,6 +248,17 @@ pub struct PullRequestOverviewThread {
     pub can_resolve: Option<bool>,
 }
 
+/// Inline object at `PullRequestCommitAuthorsItem`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PullRequestCommitAuthorsItem {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub is_bot: Option<bool>,
+    pub login: String,
+    pub name: Option<String>,
+    pub avatar_url: Option<String>,
+}
+
 /// `PullRequestCommit` from `pullRequest.ts`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -216,7 +271,7 @@ pub struct PullRequestCommit {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub deletions: Option<NonNegativeInt>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub authors: Option<Vec<IssueCommentAuthor>>,
+    pub authors: Option<Vec<PullRequestCommitAuthorsItem>>,
 }
 
 /// `PullRequestActivity` from `pullRequest.ts`.
@@ -224,9 +279,9 @@ pub struct PullRequestCommit {
 #[serde(rename_all = "camelCase")]
 pub struct PullRequestActivity {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub author: Option<IssueCommentAuthor>,
+    pub author: Option<PullRequestActivityAuthor>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub reviewers: Option<Vec<IssueCommentAuthor>>,
+    pub reviewers: Option<Vec<PullRequestActivityReviewersItem>>,
     pub comments: Vec<PullRequestComment>,
     pub comment_count: NonNegativeInt,
     pub comments_truncated: bool,
@@ -351,16 +406,48 @@ pub struct PullRequestChangeBreakdownValueCode {
     pub deletions: NonNegativeInt,
 }
 
+/// Inline object at `PullRequestChangeBreakdownValueTests`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PullRequestChangeBreakdownValueTests {
+    pub additions: NonNegativeInt,
+    pub deletions: NonNegativeInt,
+}
+
+/// Inline object at `PullRequestChangeBreakdownValueMocks`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PullRequestChangeBreakdownValueMocks {
+    pub additions: NonNegativeInt,
+    pub deletions: NonNegativeInt,
+}
+
+/// Inline object at `PullRequestChangeBreakdownValueGenerated`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PullRequestChangeBreakdownValueGenerated {
+    pub additions: NonNegativeInt,
+    pub deletions: NonNegativeInt,
+}
+
+/// Inline object at `PullRequestChangeBreakdownValueDocs`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PullRequestChangeBreakdownValueDocs {
+    pub additions: NonNegativeInt,
+    pub deletions: NonNegativeInt,
+}
+
 /// Inline object at `PullRequestChangeBreakdownValue`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PullRequestChangeBreakdownValue {
     pub code: PullRequestChangeBreakdownValueCode,
-    pub tests: PullRequestChangeBreakdownValueCode,
-    pub mocks: PullRequestChangeBreakdownValueCode,
-    pub generated: PullRequestChangeBreakdownValueCode,
+    pub tests: PullRequestChangeBreakdownValueTests,
+    pub mocks: PullRequestChangeBreakdownValueMocks,
+    pub generated: PullRequestChangeBreakdownValueGenerated,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub docs: Option<PullRequestChangeBreakdownValueCode>,
+    pub docs: Option<PullRequestChangeBreakdownValueDocs>,
 }
 
 /// `PullRequestChangeBreakdown` from `pullRequest.ts`.
@@ -466,6 +553,49 @@ pub struct PullRequestViewerPermissions {
     pub maintainer_edits: Option<bool>,
 }
 
+/// Inline object at `PullRequestDetailAuthor`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PullRequestDetailAuthor {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub is_bot: Option<bool>,
+    pub login: String,
+    pub name: Option<String>,
+    pub avatar_url: Option<String>,
+}
+
+/// Inline object at `PullRequestDetailMergedBy`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PullRequestDetailMergedBy {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub is_bot: Option<bool>,
+    pub login: String,
+    pub name: Option<String>,
+    pub avatar_url: Option<String>,
+}
+
+/// Inline object at `PullRequestDetailReviewersItem`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PullRequestDetailReviewersItem {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub is_bot: Option<bool>,
+    pub login: String,
+    pub name: Option<String>,
+    pub avatar_url: Option<String>,
+}
+
+/// Inline object at `PullRequestDetailLabelsItem`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PullRequestDetailLabelsItem {
+    pub name: String,
+    pub color: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+}
+
 /// `PullRequestMergeCapabilities` from `pullRequest.ts`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -501,7 +631,7 @@ pub struct PullRequestDetail {
     pub title: String,
     pub body: String,
     pub url: String,
-    pub author: Option<IssueCommentAuthor>,
+    pub author: Option<PullRequestDetailAuthor>,
     pub state: PullRequestState,
     pub is_draft: bool,
     pub mergeability: PullRequestMergeability,
@@ -524,10 +654,10 @@ pub struct PullRequestDetail {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub merge_commit_sha: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub merged_by: Option<IssueCommentAuthor>,
+    pub merged_by: Option<PullRequestDetailMergedBy>,
     pub closed_at: Option<String>,
-    pub reviewers: Vec<IssueCommentAuthor>,
-    pub labels: Vec<IssueDetailLabelsItem>,
+    pub reviewers: Vec<PullRequestDetailReviewersItem>,
+    pub labels: Vec<PullRequestDetailLabelsItem>,
     pub checks: Vec<PullRequestCheck>,
     pub merge_capabilities: PullRequestMergeCapabilities,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -664,6 +794,27 @@ crate::wire::string_enum! {
     }
 }
 
+/// Inline object at `PullRequestFilterOptionsLabelsItem`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PullRequestFilterOptionsLabelsItem {
+    pub name: String,
+    pub color: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+}
+
+/// Inline object at `PullRequestFilterOptionsAuthorsItem`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PullRequestFilterOptionsAuthorsItem {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub is_bot: Option<bool>,
+    pub login: String,
+    pub name: Option<String>,
+    pub avatar_url: Option<String>,
+}
+
 crate::wire::string_enum! {
     /// Inline enum at `PullRequestReferenceCandidateKind`.
     PullRequestReferenceCandidateKind {
@@ -687,8 +838,8 @@ pub struct PullRequestReferenceCandidate {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PullRequestFilterOptions {
-    pub labels: Vec<IssueDetailLabelsItem>,
-    pub authors: Vec<IssueCommentAuthor>,
+    pub labels: Vec<PullRequestFilterOptionsLabelsItem>,
+    pub authors: Vec<PullRequestFilterOptionsAuthorsItem>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub references: Option<Vec<PullRequestReferenceCandidate>>,
     pub truncated: bool,
@@ -812,6 +963,27 @@ pub struct PullRequestStackMembership {
     pub base: String,
 }
 
+/// Inline object at `PullRequestListEntryAuthor`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PullRequestListEntryAuthor {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub is_bot: Option<bool>,
+    pub login: String,
+    pub name: Option<String>,
+    pub avatar_url: Option<String>,
+}
+
+/// Inline object at `PullRequestListEntryLabelsItem`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PullRequestListEntryLabelsItem {
+    pub name: String,
+    pub color: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+}
+
 /// `PullRequestListEntry` from `pullRequest.ts`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -826,7 +998,7 @@ pub struct PullRequestListEntry {
     pub number: PositiveInt,
     pub title: String,
     pub url: String,
-    pub author: Option<IssueCommentAuthor>,
+    pub author: Option<PullRequestListEntryAuthor>,
     pub head_branch: String,
     pub base_branch: String,
     pub state: PullRequestState,
@@ -841,7 +1013,7 @@ pub struct PullRequestListEntry {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub observed_at: Option<f64>,
     pub viewer_review_requested: bool,
-    pub labels: Vec<IssueDetailLabelsItem>,
+    pub labels: Vec<PullRequestListEntryLabelsItem>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub review_decision: Option<PullRequestReviewDecision>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -998,6 +1170,17 @@ pub struct PullRequestOperationError {
     pub cause: Option<::serde_json::Value>,
 }
 
+/// Inline object at `PullRequestPreviewAuthor`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PullRequestPreviewAuthor {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub is_bot: Option<bool>,
+    pub login: String,
+    pub name: Option<String>,
+    pub avatar_url: Option<String>,
+}
+
 /// `PullRequestPreview` from `pullRequest.ts`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1007,7 +1190,7 @@ pub struct PullRequestPreview {
     pub number: PositiveInt,
     pub title: String,
     pub url: String,
-    pub author: Option<IssueCommentAuthor>,
+    pub author: Option<PullRequestPreviewAuthor>,
     pub state: PullRequestState,
     pub is_draft: bool,
     pub created_at: String,
@@ -1015,6 +1198,20 @@ pub struct PullRequestPreview {
     pub updated_at: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub observed_at: Option<f64>,
+}
+
+crate::wire::string_enum! {
+    /// Inline enum at `PullRequestReactionInputContent`.
+    PullRequestReactionInputContent {
+        ThumbsUp = "thumbs-up",
+        ThumbsDown = "thumbs-down",
+        Laugh = "laugh",
+        Hooray = "hooray",
+        Confused = "confused",
+        Heart = "heart",
+        Rocket = "rocket",
+        Eyes = "eyes",
+    }
 }
 
 /// `PullRequestReactionInput` from `pullRequest.ts`.
@@ -1032,7 +1229,7 @@ pub struct PullRequestReactionInput {
     pub number: PositiveInt,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub subject_id: Option<String>,
-    pub content: IssueCommentReactionsItemContent,
+    pub content: PullRequestReactionInputContent,
     pub reacted: bool,
 }
 
@@ -1268,6 +1465,17 @@ pub struct PullRequestSetFilesViewedInput {
     pub files: Vec<PullRequestSetFilesViewedInputFilesItem>,
 }
 
+/// Inline object at `PullRequestSummaryAuthor`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PullRequestSummaryAuthor {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub is_bot: Option<bool>,
+    pub login: String,
+    pub name: Option<String>,
+    pub avatar_url: Option<String>,
+}
+
 /// `PullRequestSummary` from `pullRequest.ts`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1291,7 +1499,7 @@ pub struct PullRequestSummary {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub observed_at: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub author: Option<IssueCommentAuthor>,
+    pub author: Option<PullRequestSummaryAuthor>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub additions: Option<NonNegativeInt>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

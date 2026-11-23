@@ -11,6 +11,13 @@ pub struct SecretRequestAnswerInputAnswerSave {
     pub secret: String,
 }
 
+/// Inline object at `SecretRequestAnswerInputAnswerDecline`.
+/// Wire tag: `type: "decline"`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(tag = "type", rename = "decline", rename_all = "camelCase")]
+pub struct SecretRequestAnswerInputAnswerDecline {
+}
+
 /// Inline object at `SecretRequestAnswerInputAnswerReference`.
 /// Wire tag: `type: "reference"`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
@@ -25,7 +32,7 @@ pub struct SecretRequestAnswerInputAnswerReference {
 #[serde(untagged)]
 pub enum SecretRequestAnswerInputAnswer {
     Save(SecretRequestAnswerInputAnswerSave),
-    Decline(PeerLinkRequestAnswerInputAnswerDecline),
+    Decline(SecretRequestAnswerInputAnswerDecline),
     Reference(SecretRequestAnswerInputAnswerReference),
     /// A value from a newer server.
     Unknown(::serde_json::Value),
