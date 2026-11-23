@@ -57,7 +57,11 @@ pub fn init(cx: &mut App) {
         KeyBinding::new("end", SelectLast, Some(KEY_CONTEXT)),
         KeyBinding::new("enter", Confirm, Some(KEY_CONTEXT)),
         KeyBinding::new("escape", Cancel, Some(KEY_CONTEXT)),
-        KeyBinding::new("secondary-f", FocusSearch, Some(KEY_CONTEXT)),
+        KeyBinding::new(
+            if cfg!(target_os = "macos") { "cmd-f" } else { "ctrl-f" },
+            FocusSearch,
+            Some(KEY_CONTEXT),
+        ),
     ]);
 }
 

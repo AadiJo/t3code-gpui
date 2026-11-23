@@ -15,6 +15,7 @@ pub type SceneBuilder = fn(&mut Window, &mut App) -> AnyView;
 pub fn scenes() -> &'static [(&'static str, SceneBuilder)] {
     &[
         ("app", app::build),
+        ("app-mac", app::build_mac),
         ("ui", ui::build),
         ("sidebar", sidebar::build),
         ("chat", chat::build),
