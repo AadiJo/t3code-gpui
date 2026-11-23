@@ -206,7 +206,8 @@ impl LatestFrame {
         }
     }
 
-    fn put(&self, sequence: u64, jpeg: Arc<[u8]>) {
+    /// Replaces the waiting frame; the stream calls it, fixtures and recordings may too.
+    pub fn put(&self, sequence: u64, jpeg: Arc<[u8]>) {
         *self.frame.lock().unwrap() = Some((sequence, jpeg));
         self.ready.notify_one();
     }
@@ -444,4 +445,33 @@ async fn connect_once(
     _ = events.send(PreviewStreamEvent::Control(None));
     _ = events.send(PreviewStreamEvent::Connected(false));
     ended
+}
+
+/// Answers a page's file chooser: POSTs each file as a multipart `file`
+/// part to the chooser's upload URL. No files cancels the page's picker.
+pub async fn upload_files(chooser: &FileChooser, files: Vec<(String, Vec<u8>)>) -> Result<(), String> {
+    let boundary = format!("t3code-{:016x}", rand::random::<u64>());
+    let mut body = Vec::new();
+    for (name, bytes) in files {
+        let name = name.replace(['"', '\r', '\n'], "_");
+        body.extend_from_slice(
+            format!("--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"{name}\"\r\nContent-Type: application/octet-stream\r\n\r\n")
+                .as_bytes(),
+        );
+        body.extend_from_slice(&bytes);
+        body.extend_from_slice(b"\r\n");
+    }
+    body.extend_from_slice(format!("--{boundary}--\r\n").as_bytes());
+    let response = crate::rpc::http::http_client()
+        .post(&chooser.upload_url)
+        .header("content-type", format!("multipart/form-data; boundary={boundary}"))
+        .body(body)
+        .send()
+        .await
+        .map_err(|error| error.to_string())?;
+    if response.status().is_success() {
+        return Ok(());
+    }
+    let text = response.text().await.unwrap_or_default();
+    Err(if text.is_empty() { "The upload was refused.".into() } else { text })
 }

@@ -43,6 +43,7 @@ pub mod git_actions_control_source;
 pub mod git_actions_control;
 pub mod branch_picker;
 pub mod branch_toolbar;
+pub mod preview;
 pub mod previous_worktree_item_content;
 pub mod git_actions_control_fixture;
 pub mod project_scripts_control;

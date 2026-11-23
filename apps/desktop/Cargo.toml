@@ -20,6 +20,11 @@ required-features = ["headless"]
 
 # Drives the terminal against a local PTY and benchmarks it. Usage: terminal-check <pty|bench> <out-dir>
 [[bin]]
+name = "preview-check"
+path = "src/preview_check.rs"
+required-features = ["headless"]
+
+[[bin]]
 name = "terminal-check"
 path = "src/terminal_check.rs"
 required-features = ["headless"]
@@ -50,6 +55,7 @@ base64.workspace = true
 sha2.workspace = true
 tokio.workspace = true
 t3code-contracts.workspace = true
+url.workspace = true
 futures.workspace = true
 jiff.workspace = true
 
