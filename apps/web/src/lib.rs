@@ -7,8 +7,10 @@ extern crate self as t3code_web;
 pub mod app_root;
 pub mod appearance_fonts;
 pub mod assets;
+pub mod command_palette_store;
 pub mod components;
 pub mod fixtures;
+pub mod connection;
 pub mod i18n;
 pub mod composer_code_block;
 pub mod composer_code_languages;
@@ -21,23 +23,35 @@ pub mod composer_rich_text;
 pub mod composer_rich_text_doc;
 pub mod composer_text_direction;
 pub mod composer_undo_grouping;
+pub mod desktop_notifications;
 pub mod model_ordering;
 pub mod model_search;
 pub mod model_selection;
 pub mod markdown_pipeline;
 pub mod right_panel_store;
 pub mod router;
+pub mod keybindings;
+pub mod navigation_history;
 pub mod routes;
 pub mod scenes;
+pub mod shortcut_modifier_state;
+pub mod shortcuts;
 pub mod terminal;
 pub mod terminal_links;
 pub mod terminal_ui_state_store;
 pub mod text_direction;
 pub mod theme_color;
 pub mod theme_component;
+pub mod diff_count;
+pub mod diff_file_kind;
+pub mod diff_file_order;
+pub mod diff_panel_store;
+pub mod diff_patch;
+pub mod syntax;
 pub mod theme_palette;
 pub mod theme_tokens;
 pub mod thread_routes;
+pub mod thread_notifications;
 pub mod timestamp_format;
 pub mod ui_state_store;
 
@@ -69,10 +83,20 @@ pub fn init(cx: &mut App) {
     theme_palette::install(settings, cx);
     components::ui::toast::Toaster::init(cx);
     i18n::runtime::init(cx);
+    desktop_notifications::NotificationInbox::init(cx);
+    components::background_thread_announcer::BackgroundThreadAnnouncer::init(cx);
+    components::thread_notification_coordinator::ThreadNotificationCoordinator::init(
+        cfg!(any(target_os = "macos", target_os = "windows")),
+        Default::default(),
+        cx,
+    );
     components::sidebar::init(cx);
     components::chat::composer::init(cx);
     terminal::surface::init(cx);
     components::thread_terminal_drawer::init(cx);
     cx.set_global(terminal_ui_state_store::TerminalUiStateStore::default());
     app_root::init(cx);
+    components::diffs::init(cx);
+    // Last: app keybindings must follow every widget's bindings.
+    shortcuts::init(cx);
 }

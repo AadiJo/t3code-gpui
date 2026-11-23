@@ -1,6 +1,6 @@
 //! On/off switch. Ports `switch.tsx` at desktop width.
 
-use gpui_kit::{App, ClickEvent, ElementId, IntoElement, RenderOnce, Window, div, prelude::*, px};
+use gpui_kit::{TestSupportExt as _, App, ClickEvent, ElementId, IntoElement, RenderOnce, Window, div, prelude::*, px};
 
 use super::{ControlState, DISABLED_OPACITY, focus_ring_inset};
 use crate::ActiveAppTheme as _;
@@ -92,5 +92,6 @@ impl RenderOnce for Switch {
             .when_some(self.on_change.filter(|_| live), |s, handler| {
                 s.cursor_pointer().on_click(move |_: &ClickEvent, window, cx| handler(!checked, window, cx))
             })
+            .test_support()
     }
 }

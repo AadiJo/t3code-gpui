@@ -1,0 +1,633 @@
+{
+ "start": "2026-11-23T10:00:00.000Z",
+ "steps": [
+  {
+   "label": "settings, then both environments seen for the first time",
+   "advance": 0,
+   "events": [
+    {
+     "settings": {
+      "mode": "notifications-and-sound",
+      "inApp": true,
+      "appIconBadge": true
+     }
+    },
+    {
+     "environment": {
+      "id": "env-a",
+      "label": "Studio Mac",
+      "threads": [
+       {
+        "id": "t1",
+        "title": "Fix login bug",
+        "project": "web-app",
+        "runtime": "running",
+        "run": {
+         "id": "r1",
+         "status": "running"
+        },
+        "activeRunId": "r1",
+        "lastVisitedAt": 0
+       },
+       {
+        "id": "t2",
+        "title": "Refactor billing",
+        "project": "api",
+        "runtime": "completed",
+        "run": {
+         "id": "r0",
+         "status": "completed",
+         "completedAt": -600000
+        },
+        "lastVisitedAt": -300000
+       },
+       {
+        "id": "t3",
+        "title": "Write docs",
+        "project": "docs"
+       },
+       {
+        "id": "t4",
+        "title": "Explore codebase",
+        "project": "web-app",
+        "lineage": "subagent",
+        "runtime": "running",
+        "run": {
+         "id": "r9",
+         "status": "running"
+        }
+       },
+       {
+        "id": "t5",
+        "title": "Side question",
+        "project": "web-app",
+        "lineage": "side-chat",
+        "runtime": "running",
+        "run": {
+         "id": "r8",
+         "status": "running"
+        }
+       },
+       {
+        "id": "t7",
+        "title": "Nightly report",
+        "project": "api",
+        "runtime": "running",
+        "run": {
+         "id": "r20",
+         "status": "running"
+        },
+        "activeRunId": "r20"
+       }
+      ]
+     }
+    },
+    {
+     "environment": {
+      "id": "env-b",
+      "label": "Cloud box",
+      "threads": [
+       {
+        "id": "t6",
+        "title": "Deploy script",
+        "project": "infra",
+        "runtime": "running",
+        "run": {
+         "id": "r30",
+         "status": "running"
+        },
+        "activeRunId": "r30",
+        "lastVisitedAt": 0
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "label": "t1 completes while the window is unfocused",
+   "advance": 60000,
+   "events": [
+    {
+     "patch": {
+      "env": "env-a",
+      "thread": "t1",
+      "set": {
+       "runtime": "completed",
+       "run": {
+        "id": "r1",
+        "status": "completed",
+        "completedAt": 60000
+       },
+       "activeRunId": null
+      }
+     }
+    }
+   ]
+  },
+  {
+   "label": "t2 asks for approval",
+   "advance": 5000,
+   "events": [
+    {
+     "patch": {
+      "env": "env-a",
+      "thread": "t2",
+      "set": {
+       "approvals": true,
+       "requestId": "q1",
+       "runtime": "waiting",
+       "run": {
+        "id": "r2",
+        "status": "waiting"
+       },
+       "activeRunId": "r2"
+      }
+     }
+    }
+   ]
+  },
+  {
+   "label": "window focused on t6",
+   "advance": 5000,
+   "events": [
+    {
+     "focus": true
+    },
+    {
+     "route": {
+      "env": "env-b",
+      "thread": "t6"
+     }
+    }
+   ]
+  },
+  {
+   "label": "t6 asks a question while on screen",
+   "advance": 5000,
+   "events": [
+    {
+     "patch": {
+      "env": "env-b",
+      "thread": "t6",
+      "set": {
+       "userInput": true,
+       "requestId": "q2",
+       "runtime": "waiting",
+       "run": {
+        "id": "r30",
+        "status": "waiting"
+       }
+      }
+     }
+    }
+   ]
+  },
+  {
+   "label": "t7 hits the usage limit in the background",
+   "advance": 5000,
+   "events": [
+    {
+     "patch": {
+      "env": "env-a",
+      "thread": "t7",
+      "set": {
+       "runtime": "failed",
+       "errorClass": "usage_limit",
+       "run": {
+        "id": "r20",
+        "status": "failed",
+        "completedAt": 85000
+       }
+      }
+     }
+    }
+   ]
+  },
+  {
+   "label": "t2 approved and running",
+   "advance": 5000,
+   "events": [
+    {
+     "patch": {
+      "env": "env-a",
+      "thread": "t2",
+      "set": {
+       "approvals": false,
+       "requestId": null,
+       "runtime": "running",
+       "run": {
+        "id": "r2",
+        "status": "running"
+       }
+      }
+     }
+    }
+   ]
+  },
+  {
+   "label": "open t1, which reads its completion",
+   "advance": 5000,
+   "events": [
+    {
+     "route": {
+      "env": "env-a",
+      "thread": "t1"
+     }
+    }
+   ]
+  },
+  {
+   "label": "snooze t3 for an hour, then it completes",
+   "advance": 5000,
+   "events": [
+    {
+     "patch": {
+      "env": "env-a",
+      "thread": "t3",
+      "set": {
+       "snoozedUntil": 3705000,
+       "snoozedAt": 105000,
+       "runtime": "running",
+       "run": {
+        "id": "r3",
+        "status": "running"
+       },
+       "activeRunId": "r3"
+      }
+     }
+    },
+    {
+     "patch": {
+      "env": "env-a",
+      "thread": "t3",
+      "set": {
+       "runtime": "completed",
+       "run": {
+        "id": "r3",
+        "status": "completed",
+        "completedAt": 105000
+       },
+       "activeRunId": null
+      }
+     }
+    }
+   ]
+  },
+  {
+   "label": "window unfocused; t2 fails",
+   "advance": 5000,
+   "events": [
+    {
+     "focus": false
+    },
+    {
+     "patch": {
+      "env": "env-a",
+      "thread": "t2",
+      "set": {
+       "runtime": "failed",
+       "run": {
+        "id": "r2",
+        "status": "failed",
+        "completedAt": 110000
+       }
+      }
+     }
+    }
+   ]
+  },
+  {
+   "label": "snoozed t3 asks a question (hand raised)",
+   "advance": 5000,
+   "events": [
+    {
+     "patch": {
+      "env": "env-a",
+      "thread": "t3",
+      "set": {
+       "userInput": true,
+       "requestId": "q4",
+       "handRaised": true,
+       "runtime": "waiting",
+       "run": {
+        "id": "r6",
+        "status": "waiting"
+       }
+      }
+     }
+    }
+   ]
+  },
+  {
+   "label": "t1 completes a background wake: grace starts",
+   "advance": 5000,
+   "events": [
+    {
+     "patch": {
+      "env": "env-a",
+      "thread": "t1",
+      "set": {
+       "runtime": "completed",
+       "run": {
+        "id": "r4",
+        "status": "completed",
+        "completedAt": 120000
+       },
+       "backgroundWake": true
+      }
+     }
+    }
+   ]
+  },
+  {
+   "label": "grace still running",
+   "advance": 3000,
+   "events": []
+  },
+  {
+   "label": "grace ends: completion notifies",
+   "advance": 3000,
+   "events": []
+  },
+  {
+   "label": "the server records t1's visit",
+   "advance": 2000,
+   "events": [
+    {
+     "patch": {
+      "env": "env-a",
+      "thread": "t1",
+      "set": {
+       "lastVisitedAt": 128000
+      }
+     }
+    }
+   ]
+  },
+  {
+   "label": "t1 marked unread on another client",
+   "advance": 5000,
+   "events": [
+    {
+     "patch": {
+      "env": "env-a",
+      "thread": "t1",
+      "set": {
+       "lastVisitedAt": 100000
+      }
+     }
+    }
+   ]
+  },
+  {
+   "label": "read one entry from the inbox, then turn the app icon badge off",
+   "advance": 5000,
+   "events": [
+    {
+     "read": [
+      "t3-work-2"
+     ]
+    },
+    {
+     "settings": {
+      "mode": "notifications-and-sound",
+      "inApp": true,
+      "appIconBadge": false
+     }
+    }
+   ]
+  },
+  {
+   "label": "env-b goes offline; t6 completes meanwhile",
+   "advance": 5000,
+   "events": [
+    {
+     "offline": "env-b"
+    },
+    {
+     "patch": {
+      "env": "env-b",
+      "thread": "t6",
+      "set": {
+       "userInput": false,
+       "requestId": null,
+       "runtime": "completed",
+       "run": {
+        "id": "r30",
+        "status": "completed",
+        "completedAt": 143000
+       }
+      }
+     }
+    }
+   ]
+  },
+  {
+   "label": "env-b reconnects",
+   "advance": 5000,
+   "events": [
+    {
+     "online": "env-b"
+    }
+   ]
+  },
+  {
+   "label": "env-b removed",
+   "advance": 5000,
+   "events": [
+    {
+     "remove": "env-b"
+    }
+   ]
+  },
+  {
+   "label": "notifications off; t2 asks for input",
+   "advance": 5000,
+   "events": [
+    {
+     "settings": {
+      "mode": "off",
+      "inApp": false,
+      "appIconBadge": true
+     }
+    },
+    {
+     "patch": {
+      "env": "env-a",
+      "thread": "t2",
+      "set": {
+       "runtime": "waiting",
+       "userInput": true,
+       "requestId": "q3",
+       "run": {
+        "id": "r5",
+        "status": "waiting"
+       },
+       "activeRunId": "r5"
+      }
+     }
+    }
+   ]
+  },
+  {
+   "label": "notifications back on: a silent baseline",
+   "advance": 5000,
+   "events": [
+    {
+     "settings": {
+      "mode": "notifications",
+      "inApp": false,
+      "appIconBadge": true
+     }
+    }
+   ]
+  },
+  {
+   "label": "t7 runs, a stop is requested, it completes",
+   "advance": 5000,
+   "events": [
+    {
+     "patch": {
+      "env": "env-a",
+      "thread": "t7",
+      "set": {
+       "runtime": "running",
+       "errorClass": null,
+       "run": {
+        "id": "r21",
+        "status": "running"
+       },
+       "activeRunId": "r21"
+      }
+     }
+    },
+    {
+     "patch": {
+      "env": "env-a",
+      "thread": "t7",
+      "set": {
+       "stopRequested": true,
+       "runtime": "completed",
+       "run": {
+        "id": "r21",
+        "status": "completed",
+        "completedAt": 168000
+       },
+       "activeRunId": null
+      }
+     }
+    }
+   ]
+  },
+  {
+   "label": "a guest message waits on t1",
+   "advance": 5000,
+   "events": [
+    {
+     "patch": {
+      "env": "env-a",
+      "thread": "t1",
+      "set": {
+       "guestMessages": 1,
+       "backgroundWake": false
+      }
+     }
+    }
+   ]
+  },
+  {
+   "label": "settle t1 and archive t3",
+   "advance": 5000,
+   "events": [
+    {
+     "patch": {
+      "env": "env-a",
+      "thread": "t1",
+      "set": {
+       "settled": true
+      }
+     }
+    },
+    {
+     "patch": {
+      "env": "env-a",
+      "thread": "t3",
+      "set": {
+       "archived": true
+      }
+     }
+    }
+   ]
+  },
+  {
+   "label": "a subagent of t2 needs approval",
+   "advance": 5000,
+   "events": [
+    {
+     "patch": {
+      "env": "env-a",
+      "thread": "t2",
+      "set": {
+       "subagentRequest": "approval"
+      }
+     }
+    }
+   ]
+  },
+  {
+   "label": "mark all read",
+   "advance": 5000,
+   "events": [
+    {
+     "readAll": true
+    }
+   ]
+  },
+  {
+   "label": "t7 runs again and completes, then focus opens t7",
+   "advance": 5000,
+   "events": [
+    {
+     "patch": {
+      "env": "env-a",
+      "thread": "t7",
+      "set": {
+       "stopRequested": false,
+       "runtime": "running",
+       "run": {
+        "id": "r22",
+        "status": "running"
+       },
+       "activeRunId": "r22"
+      }
+     }
+    },
+    {
+     "patch": {
+      "env": "env-a",
+      "thread": "t7",
+      "set": {
+       "runtime": "completed",
+       "run": {
+        "id": "r22",
+        "status": "completed",
+        "completedAt": 193000
+       },
+       "activeRunId": null
+      }
+     }
+    },
+    {
+     "focus": true
+    },
+    {
+     "route": {
+      "env": "env-a",
+      "thread": "t7"
+     }
+    }
+   ]
+  }
+ ]
+}

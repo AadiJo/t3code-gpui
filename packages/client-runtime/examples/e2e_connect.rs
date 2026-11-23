@@ -27,15 +27,19 @@ use t3code_client_runtime::connection::{
 };
 use t3code_client_runtime::platform::{ClientPresentation, FileSecretStore, SecretStore};
 use t3code_client_runtime::relay::DpopKey;
-use t3code_client_runtime::rpc::e2e_methods::{Empty, ServerProbe, SubscribeShell, SubscribeShellInput};
 use t3code_client_runtime::rpc::{FrameDirection, FrameTap, RpcClient, RpcError, RpcSessionOptions};
+use t3code_contracts::rpc::methods::{OrchestrationSubscribeShell as SubscribeShell, ServerProbe};
 use t3code_contracts::rpc::{RpcMethod, RpcStream};
+use t3code_contracts::wire::Empty;
+use t3code_contracts::{OrchestrationV2ShellStreamItem, OrchestrationV2SubscribeShellInput as SubscribeShellInput};
 
 /// A method the server does not have, to see a `Die` exit on the wire.
 struct NoSuchMethod;
 
 impl RpcMethod for NoSuchMethod {
     const TAG: &'static str = "no.such.method";
+    const SCOPE: t3code_contracts::AuthEnvironmentScope = <ServerProbe as RpcMethod>::SCOPE;
+    const CLIENT_GUARDED: bool = false;
     type Payload = Empty;
     type Success = Empty;
     type Error = Empty;
@@ -46,6 +50,8 @@ struct ShellWithBadPayload;
 
 impl RpcMethod for ShellWithBadPayload {
     const TAG: &'static str = "orchestration.subscribeShell";
+    const SCOPE: t3code_contracts::AuthEnvironmentScope = <SubscribeShell as RpcMethod>::SCOPE;
+    const CLIENT_GUARDED: bool = false;
     type Payload = serde_json::Value;
     type Success = serde_json::Value;
     type Error = serde_json::Value;
@@ -224,26 +230,33 @@ async fn run(
     let session = handle.session.borrow().clone().expect("connected has a session");
     transcript.note(&format!(
         "initial config snapshot: {} bytes, {} direct endpoints reported",
-        session.initial_config.get().len(),
+        serde_json::to_string(&*session.initial_config).map_or(0, |json| json.len()),
         session.direct_endpoints.len()
     ));
     let client = session.client.clone();
 
     // 3. Shell stream until the server says it caught up.
-    let mut shell = client.subscribe::<SubscribeShell>(SubscribeShellInput { after_sequence: None, request_completion_marker: true });
+    let mut shell = client.subscribe::<SubscribeShell>(SubscribeShellInput { request_completion_marker: Some(true), ..Default::default() });
     let mut kinds: Vec<String> = Vec::new();
     while !kinds.iter().any(|kind| kind == "synchronized") {
         let chunk = tokio::time::timeout(Duration::from_secs(20), shell.next()).await?.expect("shell stream open")?;
-        kinds.extend(chunk.into_iter().map(|item| item.kind));
+        kinds.extend(chunk.into_iter().map(|item| {
+            match item {
+                OrchestrationV2ShellStreamItem::Snapshot(_) => "snapshot",
+                OrchestrationV2ShellStreamItem::Synchronized(_) => "synchronized",
+                _ => "delta",
+            }
+            .to_owned()
+        }));
     }
     transcript.note(&format!("shell stream items: {kinds:?}"));
     drop(shell);
     transcript.note("dropped the shell subscription (expect an Interrupt frame)");
 
     // 4. Unary calls: success, unknown method (Die), schema-invalid payload (Die).
-    client.call::<ServerProbe>(Empty {}).await?;
+    client.call::<ServerProbe>(Empty).await?;
     transcript.note("server.probe succeeded");
-    match client.call::<NoSuchMethod>(Empty {}).await {
+    match client.call::<NoSuchMethod>(Empty).await {
         Err(RpcError::Defect(message)) => transcript.note(&format!("no.such.method -> defect: {message}")),
         other => anyhow::bail!("unexpected result for unknown method: {other:?}"),
     }
@@ -269,7 +282,7 @@ async fn run(
     let reconnected = wait_for(&handle, "reconnect", |s| s.phase == ConnectionPhase::Connected && s.generation >= 2).await;
     transcript.note(&format!("reconnected: generation {}", reconnected.generation));
     let session = handle.session.borrow().clone().expect("reconnected has a session");
-    session.client.call::<ServerProbe>(Empty {}).await?;
+    session.client.call::<ServerProbe>(Empty).await?;
     transcript.note("server.probe succeeded on the new socket");
 
     // 6. DPoP renewal with the host, then a ticket minted with the renewed token.
@@ -310,7 +323,7 @@ async fn run(
     append_orchestration_protocol(&mut url);
     url.query_pairs_mut().append_pair("frameParts", "1");
     let bearer_client = RpcClient::connect(url.as_str(), Some(tap.clone())).await?;
-    bearer_client.call::<ServerProbe>(Empty {}).await?;
+    bearer_client.call::<ServerProbe>(Empty).await?;
     transcript.note("bearer socket: server.probe succeeded");
     bearer_client.close();
 

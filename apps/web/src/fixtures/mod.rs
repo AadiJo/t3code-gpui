@@ -4,6 +4,7 @@
 //! reply, sends during a reply steer or queue, and pending questions and
 //! approvals resolve when answered.
 
+pub mod palette_source;
 pub mod timelines;
 
 use std::collections::{HashMap, VecDeque};
@@ -19,6 +20,7 @@ use crate::components::sidebar::fixtures as sidebar_fixtures;
 use crate::components::sidebar::model::{
     self as sidebar, EnvironmentId, ProjectRef, SidebarSnapshot, SidebarThread, ThreadId, ThreadKey, TimestampMs,
 };
+use crate::desktop_notifications::{DesktopNotification, DesktopNotificationKind};
 use crate::router::{DraftId, ThreadTarget};
 use timelines::{NOW_MS, TimelineBuilder};
 
@@ -102,6 +104,48 @@ impl FixtureStore {
     pub fn large(threads: usize, long_every: usize) -> Self {
         let snapshot = sidebar_fixtures::large_snapshot(threads, 24);
         Self::from_snapshot(snapshot, move |index| if index % long_every == 0 { 1_000 } else { 4 + index % 5 })
+    }
+
+    /// No projects or threads: the app as it starts with no fixtures.
+    pub fn empty() -> Self {
+        Self::from_sidebar(sidebar_fixtures::empty_snapshot())
+    }
+
+    /// Whether the store has no projects and no threads.
+    pub fn is_empty(&self) -> bool {
+        self.snapshot.projects.is_empty() && self.snapshot.threads.is_empty()
+    }
+
+    /// Inbox entries for the store's threads that wait on an approval or an
+    /// answer (unread), plus one read completion, as a desktop host would
+    /// have saved them. Checks seed the inbox with these where no host runs.
+    pub fn inbox_items(&self) -> Arc<[DesktopNotification]> {
+        let project = |thread: &SidebarThread| {
+            self.snapshot.projects.iter().find(|p| p.project_ref.project_id == thread.project_id).map(|p| p.title.clone())
+        };
+        let entry = |thread: &SidebarThread, kind, read| DesktopNotification {
+            id: format!("fixture-{}-{kind:?}", thread.key.thread_id.0).into(),
+            environment_id: thread.key.environment_id.0.clone(),
+            thread_id: thread.key.thread_id.0.clone(),
+            kind,
+            thread_title: thread.title.clone(),
+            project_title: project(thread).unwrap_or_default(),
+            environment_title: "devbox".into(),
+            created_at: "2026-11-23T10:00:00.000Z".into(),
+            read,
+            resolved: false,
+        };
+        let waiting = self.snapshot.threads.iter().filter_map(|thread| {
+            if thread.has_pending_approvals {
+                Some(entry(thread, DesktopNotificationKind::Approval, false))
+            } else if thread.has_pending_user_input {
+                Some(entry(thread, DesktopNotificationKind::Input, false))
+            } else {
+                None
+            }
+        });
+        let done = self.snapshot.threads.iter().find(|t| !t.has_pending_approvals && !t.has_pending_user_input);
+        waiting.chain(done.map(|t| entry(t, DesktopNotificationKind::Completed, true))).collect()
     }
 
     /// Any sidebar snapshot, each thread with a short timeline.

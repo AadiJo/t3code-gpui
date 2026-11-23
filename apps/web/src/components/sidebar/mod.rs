@@ -81,17 +81,6 @@ pub enum SidebarEvent {
     /// A context-menu command on a project.
     ProjectCommand(ProjectRef, MenuCommand),
     DiscardDraft(ThreadKey),
-    /// A notification in the inbox was opened, marked read, or all were.
-    OpenNotification(SharedString),
-    MarkNotificationRead(SharedString),
-    MarkAllNotificationsRead,
-}
-
-/// Which notifications the inbox lists.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum InboxFilter {
-    Unread,
-    All,
 }
 
 /// The sidebar view.
@@ -114,13 +103,11 @@ pub struct Sidebar {
     pub(crate) focus_handle: FocusHandle,
     pub(crate) search: Entity<InputState>,
     pub(crate) context_menu: Option<ContextMenu>,
-    pub(crate) notifications_open: bool,
     pub(crate) hovered_control: Option<sidebar_thread_header::HeaderControl>,
     /// Header row height: the platform topbar height.
     pub(crate) topbar_height: Pixels,
     /// Left inset of the header row's content, clearing the sidebar toggle.
     pub(crate) header_inset: Pixels,
-    pub(crate) inbox_filter: InboxFilter,
     /// Current clock; ticks once a second while something shows a duration.
     pub(crate) now: TimestampMs,
     /// Six-step phase of the terminal pulse.
@@ -162,11 +149,9 @@ impl Sidebar {
             focus_handle: cx.focus_handle(),
             search,
             context_menu: None,
-            notifications_open: false,
             hovered_control: None,
             topbar_height: style::TOPBAR_HEIGHT_OVERLAY,
             header_inset: px(53.),
-            inbox_filter: InboxFilter::Unread,
             now,
             pulse: 0,
             _subscriptions: vec![subscription],
@@ -208,11 +193,6 @@ impl Sidebar {
         self.context_menu.is_some()
     }
 
-    /// Whether the notifications inbox is open.
-    pub fn is_notifications_open(&self) -> bool {
-        self.notifications_open
-    }
-
     /// Bounds of list entry `ix` from the last frame, if laid out.
     pub fn entry_bounds(&self, ix: usize) -> Option<Bounds<Pixels>> {
         self.list_state.bounds_for_item(ix)
@@ -227,12 +207,6 @@ impl Sidebar {
     pub fn options_mut(&mut self, cx: &mut Context<Self>, f: impl FnOnce(&mut SidebarListOptions)) {
         f(&mut self.options);
         self.rebuild(cx);
-    }
-
-    /// Opens the notifications inbox (scenes and tests).
-    pub fn set_notifications_open(&mut self, open: bool, cx: &mut Context<Self>) {
-        self.notifications_open = open;
-        cx.notify();
     }
 
     /// Forces a hover state (scenes), as if the pointer sat on `entry`.
@@ -493,7 +467,7 @@ impl Sidebar {
     }
 
     fn cancel(&mut self, _: &Cancel, _: &mut Window, cx: &mut Context<Self>) {
-        if self.context_menu.take().is_some() || std::mem::take(&mut self.notifications_open) {
+        if self.context_menu.take().is_some() {
         } else if !self.selected.is_empty() {
             self.selected.clear();
         } else {
@@ -555,7 +529,6 @@ impl Sidebar {
             }
             _ => return,
         };
-        self.notifications_open = false;
         self.context_menu = Some(menu);
         cx.notify();
     }
@@ -565,7 +538,6 @@ impl Sidebar {
         let Some(SidebarListEntry::Thread { thread, .. }) = self.list.entries.get(entry) else {
             return;
         };
-        self.notifications_open = false;
         self.context_menu = Some(ContextMenu {
             target: MenuTarget::Thread(thread.key.clone()),
             position,

@@ -1,13 +1,14 @@
 //! The application menu and quit. Ports `DesktopApplicationMenu.ts`: the app
 //! menu (macOS), File, Edit, View and Window, with the web app's items bound
-//! to the same actions the shortcuts use. Edit items use the OS roles, so
+//! to the command registry's actions, the same ones the shortcuts and the
+//! palette dispatch. Edit items use the OS roles, so
 //! they act on whatever text field has focus.
 
 use gpui_kit::*;
 use t3code_web::AppRoot;
-use t3code_web::app_root::{
-    Minimize, NavigateBack, NavigateForward, NewThread, OpenSettings, Quit, ToggleFullScreen, ToggleRightPanel,
-    ToggleSidebar, ToggleTerminal, ZoomWindow,
+use t3code_web::app_root::{Minimize, OpenSettings, Quit, ToggleFullScreen, ZoomWindow};
+use t3code_web::shortcuts::commands::{
+    NavigateBack, NavigateForward, NewChat, ToggleCommandPalette, ToggleRightPanel, ToggleSidebar, ToggleTerminal,
 };
 use t3code_web::i18n::t;
 
@@ -15,7 +16,7 @@ actions!(desktop_menu, [Undo, Redo, Cut, Copy, Paste, SelectAll]);
 
 /// Sets the menus and makes Quit write state before exiting, whether it
 /// comes from the menu, mod+q or the last window closing.
-pub fn install(handle: AnyWindowHandle, root: Entity<AppRoot>, cx: &mut App) {
+pub fn install(root: Entity<AppRoot>, cx: &mut App) {
     let quit_root = root.downgrade();
     cx.on_action(move |_: &Quit, cx| {
         if let Some(root) = quit_root.upgrade() {
@@ -33,7 +34,6 @@ pub fn install(handle: AnyWindowHandle, root: Entity<AppRoot>, cx: &mut App) {
         }
     })
     .detach();
-    let _ = handle;
     cx.set_menus(menus());
 }
 
@@ -58,7 +58,7 @@ fn menus() -> Vec<Menu> {
         file.push(MenuItem::action(t!("Settings..."), OpenSettings));
         file.push(MenuItem::separator());
     }
-    file.push(MenuItem::action(t!("New thread"), NewThread));
+    file.push(MenuItem::action(t!("New thread"), NewChat));
     file.push(MenuItem::separator());
     file.push(MenuItem::action(
         if cfg!(target_os = "windows") { t!("Exit", context = "File menu item, quits the app") } else { t!("Quit") },
@@ -82,6 +82,8 @@ fn menus() -> Vec<Menu> {
     menus.push(Menu {
         name: t!("View", context = "menu bar title"),
         items: vec![
+            MenuItem::action(t!("Command Palette: Toggle"), ToggleCommandPalette),
+            MenuItem::separator(),
             MenuItem::action(t!("Toggle Sidebar"), ToggleSidebar),
             MenuItem::action(t!("Toggle terminal drawer"), ToggleTerminal),
             MenuItem::action(t!("Toggle right panel"), ToggleRightPanel),

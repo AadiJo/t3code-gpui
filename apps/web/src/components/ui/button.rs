@@ -1,5 +1,6 @@
 //! Button. Ports `button.tsx` at desktop width (the `sm:` values).
 
+use gpui_kit::TestSupportExt as _;
 use gpui_kit::{
     App, BoxShadow, ClickEvent, ElementId, FocusHandle, Hsla, IntoElement, Pixels, RenderOnce,
     SharedString, StyleRefinement, Window, black, div, prelude::*, px, white,
@@ -518,5 +519,6 @@ impl RenderOnce for Button {
             .when_some(self.on_click.filter(|_| live), |b, handler| {
                 b.on_click(move |event, window, cx| handler(event, window, cx))
             })
+            .test_support()
     }
 }

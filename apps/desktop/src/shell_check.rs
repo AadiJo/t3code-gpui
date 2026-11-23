@@ -13,6 +13,9 @@ use gpui_kit::*;
 use image::RgbaImage;
 use t3code_web::components::app_sidebar_layout::TitlebarPlatform;
 use t3code_web::components::sidebar::fixtures;
+use t3code_web::components::sidebar::sidebar_notifications::SidebarNotifications;
+use t3code_web::desktop_notifications::NotificationInbox;
+use t3code_web::fixtures::FixtureStore;
 use t3code_web::components::sidebar::model::SidebarSnapshot;
 use t3code_web::components::sidebar_logic::SidebarListEntry;
 use t3code_web::theme_palette::{Appearance, ThemeDocument, set_app_theme};
@@ -155,7 +158,11 @@ fn main() -> anyhow::Result<()> {
         report: String::from("# shell_check\n\n"),
         failures: 0,
     };
-    check.cx.update(t3code_web::init);
+    check.cx.update(|cx| {
+        t3code_web::init(cx);
+        // The footer bell shows once an inbox has items (the desktop host loads them).
+        NotificationInbox::set_items(FixtureStore::from_sidebar(fixtures::showcase_snapshot()).inbox_items(), cx);
+    });
 
     if bench {
         run_bench(&mut check)?;
@@ -278,7 +285,7 @@ fn run_interactions(check: &mut Check) -> anyhow::Result<()> {
         w.pointer_down(bell, MouseButton::Left, cx);
         w.pointer_up(bell, MouseButton::Left, cx);
     })?;
-    let open = check.cx.update(|cx| sidebar.read(cx).is_notifications_open());
+    let open = check.cx.update(|cx| SidebarNotifications::view(sidebar.downgrade(), cx).read(cx).is_open());
     check.expect(open, "bell opens the notifications inbox");
     check.shot(app, "interact-inbox.png")?;
     let outside = point(px(900.), px(300.));
@@ -286,7 +293,7 @@ fn run_interactions(check: &mut Check) -> anyhow::Result<()> {
         w.pointer_down(outside, MouseButton::Left, cx);
         w.pointer_up(outside, MouseButton::Left, cx);
     })?;
-    let open = check.cx.update(|cx| sidebar.read(cx).is_notifications_open());
+    let open = check.cx.update(|cx| SidebarNotifications::view(sidebar.downgrade(), cx).read(cx).is_open());
     check.expect(!open, "a click outside closes the inbox");
 
     // Keyboard: focus moves with arrows, enter opens.

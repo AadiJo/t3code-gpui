@@ -54,7 +54,6 @@ pub const CONTENT_INSET: Pixels = px(8.);
 pub const LIST_FADE: Pixels = px(12.);
 pub const ROW_RADIUS: Pixels = px(6.);
 pub const CONTROL_RADIUS: Pixels = px(8.);
-pub const NOTIFICATIONS_WIDTH: Pixels = px(384.);
 pub const MENU_MIN_WIDTH: Pixels = px(128.);
 pub const MENU_MAX_WIDTH: Pixels = px(384.);
 pub const MENU_ROW_HEIGHT: Pixels = px(28.);

@@ -164,8 +164,14 @@ impl RenderOnce for Modal {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let focus = window.use_keyed_state((self.id.clone(), "focus"), cx, |_, cx| cx.focus_handle());
         let handle: FocusHandle = focus.read(cx).clone();
-        if !handle.contains_focused(window, cx) {
-            window.focus(&handle, cx);
+        // Take focus once, when the modal opens. Taking it back on every
+        // render would steal it from a dialog opened on top of this one.
+        let opened = window.use_keyed_state((self.id.clone(), "opened"), cx, |_, _| false);
+        if !*opened.read(cx) {
+            opened.update(cx, |opened, _| *opened = true);
+            if !handle.contains_focused(window, cx) {
+                window.focus(&handle, cx);
+            }
         }
         let theme = cx.app_theme();
         // Sheets use `background/60`; dialogs use `dialog-backdrop`.
@@ -204,7 +210,7 @@ impl RenderOnce for Modal {
                             .size_full()
                             .flex()
                             .when(side == SheetSide::Right, |d| d.justify_end())
-                            .child(div().h_full().w((viewport.width - px(48.)).min(theme.rem(28.))).child(self.content)),
+                            .child(div().occlude().h_full().w((viewport.width - px(48.)).min(theme.rem(28.))).child(self.content)),
                         None => div()
                             .absolute()
                             .size_full()
@@ -212,7 +218,8 @@ impl RenderOnce for Modal {
                             .items_center()
                             .justify_center()
                             .p(theme.sp(4.))
-                            .child(self.content),
+                            // Presses inside the dialog must not reach the backdrop.
+                            .child(div().occlude().w_full().flex().justify_center().child(self.content)),
                     }),
             ),
         )

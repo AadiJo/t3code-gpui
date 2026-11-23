@@ -44,11 +44,19 @@ pub struct ToastData {
     pub title: SharedString,
     pub description: Option<SharedString>,
     pub action: Option<(SharedString, Action)>,
+    /// A leading icon in place of the kind's (`data.leadingIcon`).
+    pub icon: Option<(IconName, Hsla)>,
 }
 
 impl ToastData {
     pub fn new(kind: ToastKind, title: impl Into<SharedString>) -> Self {
-        Self { kind, title: title.into(), description: None, action: None }
+        Self { kind, title: title.into(), description: None, action: None, icon: None }
+    }
+
+    /// Replaces the kind's leading icon.
+    pub fn icon(mut self, icon: IconName, color: Hsla) -> Self {
+        self.icon = Some((icon, color));
+        self
     }
 
     pub fn description(mut self, description: impl Into<SharedString>) -> Self {
@@ -111,7 +119,7 @@ impl RenderOnce for ToastSurface {
         let line = px(TextSize::Sm.line_height(theme.fonts.interface));
         let icon = match self.data.kind {
             ToastKind::Loading => Some(Spinner::new(SpinnerSize::Md).color(with_alpha(c.foreground(), 0.8)).into_any_element()),
-            kind => kind_icon(theme, kind).map(|(name, color)| Icon::new(name).size(IconSize::Md).color(color).into_any_element()),
+            kind => self.data.icon.or_else(|| kind_icon(theme, kind)).map(|(name, color)| Icon::new(name).size(IconSize::Md).color(color).into_any_element()),
         };
         let has_action = self.data.action.is_some();
         let close = self.on_close.clone();

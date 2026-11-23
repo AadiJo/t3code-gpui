@@ -3,8 +3,12 @@
 
 mod app;
 mod chat;
+mod command_palette;
+pub mod connections;
 mod i18n;
+mod notifications;
 pub mod composer;
+pub mod diffs;
 mod sidebar;
 mod terminal;
 pub mod ui;
@@ -30,6 +34,18 @@ pub fn scenes() -> &'static [(&'static str, SceneBuilder)] {
         ("composer-light", composer::build_light),
         ("composer-popovers", composer::build_popovers),
         ("composer-popovers-light", composer::build_popovers_light),
+        ("diffs", diffs::build),
+        ("command-palette", command_palette::build),
+        ("command-palette-root", command_palette::build_root),
+        ("command-palette-nested", command_palette::build_nested),
+        ("command-palette-empty", command_palette::build_empty),
+        ("connections", connections::build),
+        ("connections-add", connections::build_add),
+        ("connections-signed-out", connections::build_signed_out),
+        ("connections-sign-in", connections::build_sign_in),
+        ("connections-empty", connections::build_empty),
+        ("notifications", notifications::build),
+        ("notifications-empty", notifications::build_empty),
     ]
 }
 

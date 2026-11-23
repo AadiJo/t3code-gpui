@@ -2,7 +2,6 @@
 //! session, and shared HTTP plumbing.
 
 pub mod client;
-pub mod e2e_methods;
 pub mod http;
 pub mod protocol;
 pub mod session;

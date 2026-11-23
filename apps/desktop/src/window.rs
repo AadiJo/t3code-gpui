@@ -10,8 +10,7 @@ use std::time::Duration;
 
 use gpui_kit::{component::TitleBar, *};
 use serde::{Deserialize, Serialize};
-use t3code_web::AppRoot;
-use t3code_web::app_root::AppRootOptions;
+use t3code_web::app_root::{AppRootOptions, WindowRoot};
 use t3code_web::components::app_sidebar_layout::TitlebarPlatform;
 use t3code_web::theme_palette::ThemeSettings;
 use t3code_web::ui_state_store::StateDir;
@@ -107,19 +106,18 @@ pub fn main_window_options(cx: &App) -> WindowOptions {
     }
 }
 
-/// Opens the main window and keeps its bounds saved.
-pub fn open_main_window(
-    options: WindowOptions,
-    cx: &mut App,
-) -> anyhow::Result<(AnyWindowHandle, Entity<AppRoot>)> {
-    let (handle, root) = gpui_kit::open_window(options, cx, |window, cx| {
-        ThemeSettings::follow_window(window, cx);
-        let options = AppRootOptions { state_dir: StateDir(data_dir()), ..AppRootOptions::fixtures(TitlebarPlatform::current()) };
-        cx.new(|cx| AppRoot::with_options(options, window, cx))
-    })?;
+/// Opens the main window and keeps its bounds saved. `fixtures` loads the
+/// showcase data; without it the app starts empty (first-run state until an
+/// environment is saved). Needs the connection runtime.
+pub fn open_main_window(options: WindowOptions, fixtures: bool, cx: &mut App) -> anyhow::Result<(AnyWindowHandle, WindowRoot)> {
+    let platform = TitlebarPlatform::current();
+    let app = if fixtures { AppRootOptions::fixtures(platform) } else { AppRootOptions::without_fixtures(platform) };
+    let app = AppRootOptions { state_dir: StateDir(data_dir()), ..app };
+    let (handle, root) = WindowRoot::open_window(options, app, cx)?;
     handle.update(cx, |_, window, cx| {
-        root.update(cx, |root, cx| {
-            root.start_clock(cx);
+        ThemeSettings::follow_window(window, cx);
+        root.app.update(cx, |app, cx| {
+            app.start_clock(cx);
             persist_bounds(window, cx);
         });
     })?;
@@ -127,7 +125,7 @@ pub fn open_main_window(
 }
 
 /// Saves bounds 500ms after the last move, resize or maximize.
-fn persist_bounds(window: &mut Window, cx: &mut Context<AppRoot>) {
+fn persist_bounds<T: 'static>(window: &mut Window, cx: &mut Context<T>) {
     let generation = Rc::new(Cell::new(0u64));
     cx.observe_window_bounds(window, move |_, window, cx| {
         let (bounds, maximized) = match window.window_bounds() {

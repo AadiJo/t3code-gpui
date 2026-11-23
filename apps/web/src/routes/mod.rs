@@ -3,6 +3,9 @@
 //! `_chat.usage.tsx`, `welcome.tsx`, the settings layout). Their bodies are
 //! built by other areas; until they land each draws its header and an empty
 //! state, so navigation, history and restore already work end to end.
+//! Settings is not a page here: it opens the [`settings::SettingsRoute`] modal.
+
+pub mod settings;
 
 use gpui_kit::*;
 

@@ -7,7 +7,9 @@
 
 use gpui_kit::{Context, EventEmitter, SharedString};
 
+use crate::components::settings::settings_search::SettingsPath;
 use crate::components::sidebar::model::{EnvironmentId, ThreadId, ThreadKey};
+use crate::navigation_history::{HistoryDirection, NavigationHistory};
 
 /// A draft thread's local id (`DraftId`).
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -82,6 +84,42 @@ impl SettingsPanel {
             "storage" => Some(Self::Maintenance),
             "beta" => Some(Self::Labs),
             _ => Self::ALL.iter().find(|(_, s)| *s == slug).map(|(panel, _)| *panel),
+        }
+    }
+}
+
+impl From<SettingsPath> for SettingsPanel {
+    fn from(path: SettingsPath) -> Self {
+        Self::from_slug(path.slug()).unwrap_or(Self::General)
+    }
+}
+
+impl SettingsPanel {
+    /// The settings page that draws this panel. Panels the settings shell
+    /// has no page for open the page that holds them.
+    pub fn settings_path(self) -> SettingsPath {
+        match self {
+            Self::General => SettingsPath::General,
+            Self::Appearance => SettingsPath::Appearance,
+            Self::Chat => SettingsPath::Chat,
+            Self::Diffs => SettingsPath::Diffs,
+            Self::Keybindings => SettingsPath::Keybindings,
+            Self::Providers => SettingsPath::Providers,
+            Self::Threads => SettingsPath::Threads,
+            Self::Browser => SettingsPath::Browser,
+            Self::Devices => SettingsPath::Devices,
+            Self::ScheduledTasks => SettingsPath::ScheduledTasks,
+            Self::SourceControl => SettingsPath::SourceControl,
+            Self::Worktrees => SettingsPath::Worktrees,
+            Self::Connections | Self::Secrets => SettingsPath::Connections,
+            Self::Access => SettingsPath::Access,
+            Self::Maintenance | Self::Diagnostics => SettingsPath::Maintenance,
+            Self::Labs => SettingsPath::Labs,
+            Self::About | Self::OpenSourceLicenses => SettingsPath::About,
+            Self::Archived => SettingsPath::Archived,
+            Self::Voice => SettingsPath::Voice,
+            Self::SnapShot => SettingsPath::SnapShot,
+            Self::Projects => SettingsPath::Projects,
         }
     }
 }
@@ -177,6 +215,11 @@ impl Route {
         }
     }
 
+    /// Settings on `path`.
+    pub fn settings(path: SettingsPath) -> Self {
+        Self::Settings { panel: path.into(), query: SharedString::default() }
+    }
+
     /// Settings opens as a modal over the last thread (`isAppModalPage`).
     pub fn is_modal(&self) -> bool {
         matches!(self, Self::Settings { .. })
@@ -234,81 +277,85 @@ pub struct RouteChanged {
     pub route: Route,
 }
 
-/// The current route and the back/forward stacks. The sidebar, links,
-/// commands and the app menu all navigate through it.
+/// The current route and the in-app history. The sidebar, links, commands,
+/// the palette, the inbox and the app menu all navigate through it, and it
+/// handles `navigation.back` / `navigation.forward`.
 pub struct Router {
-    current: Route,
-    back: Vec<Route>,
-    forward: Vec<Route>,
+    history: NavigationHistory<Route>,
 }
 
-/// Most back entries kept.
+/// Most history entries kept.
 const HISTORY_LIMIT: usize = 200;
 
 impl EventEmitter<RouteChanged> for Router {}
 
 impl Router {
     pub fn new(initial: Route) -> Self {
-        Self { current: initial, back: Vec::new(), forward: Vec::new() }
+        Self { history: NavigationHistory::new(initial, HISTORY_LIMIT) }
     }
 
     pub fn current(&self) -> &Route {
-        &self.current
+        self.history.current()
     }
 
     pub fn can_go_back(&self) -> bool {
-        !self.back.is_empty()
+        self.history.can_navigate(HistoryDirection::Back)
     }
 
     pub fn can_go_forward(&self) -> bool {
-        !self.forward.is_empty()
+        self.history.can_navigate(HistoryDirection::Forward)
     }
 
     /// Pushes `route` (no-op when it is already current).
     pub fn navigate(&mut self, route: Route, cx: &mut Context<Self>) {
-        if route == self.current {
+        if route == *self.current() {
             return;
         }
-        let previous = std::mem::replace(&mut self.current, route);
-        self.back.push(previous);
-        if self.back.len() > HISTORY_LIMIT {
-            self.back.remove(0);
-        }
-        self.forward.clear();
+        self.history.push(route);
         self.changed(cx);
     }
 
     /// Replaces the current entry, as `navigate({ replace: true })` does.
     pub fn replace(&mut self, route: Route, cx: &mut Context<Self>) {
-        if route == self.current {
+        if route == *self.current() {
             return;
         }
-        self.current = route;
+        self.history.replace(route);
         self.changed(cx);
     }
 
     pub fn back(&mut self, cx: &mut Context<Self>) {
-        if let Some(route) = self.back.pop() {
-            self.forward.push(std::mem::replace(&mut self.current, route));
+        if self.history.navigate(HistoryDirection::Back).is_some() {
             self.changed(cx);
         }
     }
 
     pub fn forward(&mut self, cx: &mut Context<Self>) {
-        if let Some(route) = self.forward.pop() {
-            self.back.push(std::mem::replace(&mut self.current, route));
+        if self.history.navigate(HistoryDirection::Forward).is_some() {
             self.changed(cx);
+        }
+    }
+
+    /// Leaves a modal route (settings): back to the page under it when that
+    /// is the previous entry, else replaces it with [`Route::Index`].
+    pub fn close_modal(&mut self, cx: &mut Context<Self>) {
+        if !self.current().is_modal() {
+            return;
+        }
+        if self.history.previous().is_some_and(|route| !route.is_modal()) {
+            self.back(cx);
+        } else {
+            self.replace(Route::Index, cx);
         }
     }
 
     /// Drops history entries for which `keep` is false (deleted threads).
     pub fn retain_history(&mut self, keep: impl Fn(&Route) -> bool) {
-        self.back.retain(&keep);
-        self.forward.retain(&keep);
+        self.history.retain(keep);
     }
 
     fn changed(&mut self, cx: &mut Context<Self>) {
-        cx.emit(RouteChanged { route: self.current.clone() });
+        cx.emit(RouteChanged { route: self.current().clone() });
         cx.notify();
     }
 }

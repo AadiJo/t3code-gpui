@@ -15,13 +15,29 @@ use crate::components::chat::composer::ChatComposer;
 use crate::components::no_active_thread_state::NoActiveThreadState;
 use crate::components::persistent_thread_terminals::PersistentThreadTerminals;
 use crate::components::right_panel_tabs::{RightPanel, RightPanelEvent};
-use crate::components::sidebar::model::ThreadKey;
+use crate::components::settings::settings_search::SettingsPath;
+use crate::components::sidebar::model::{ProjectRef, ThreadKey};
 use crate::components::sidebar::{Sidebar, SidebarEvent};
 use crate::components::thread_route_view::{ThreadRouteEvent, ThreadRouteView};
 use crate::components::thread_terminal_drawer::{BackendFactory, TerminalLaunch};
-use crate::components::ui::toast::Toaster;
+use crate::components::command_palette::CommandPalette;
+use crate::components::command_palette_logic::PaletteEvent;
+use crate::components::command_palette_lookups::CommandPaletteSource;
+use crate::components::sidebar_logic::SidebarListEntry;
+use crate::components::thread_notification_coordinator::{NotificationInput, ThreadNotificationCoordinator};
+use crate::connection::shell::EnvironmentShell;
+use crate::desktop_notifications::{InboxEvent, NotificationInbox};
+use crate::fixtures::palette_source::FixturePaletteSource;
+use crate::router::SettingsPanel;
+use crate::shortcuts::ShortcutRoot;
+use crate::shortcuts::commands::{
+    CloseRightPanelTab, JumpToThread1, JumpToThread2, JumpToThread3, JumpToThread4, JumpToThread5, JumpToThread6,
+    JumpToThread7, JumpToThread8, JumpToThread9, NavigateBack, NavigateForward, NewChat, NewLocalChat,
+    NewRightPanelTab, NextThread, OpenUsage, PreviousThread, ReopenClosedView, ToggleDiff, TogglePreview,
+    ToggleRightPanel, ToggleRightPanelMaximized, ToggleSidebar, ToggleTerminal,
+};
 use crate::fixtures::{FixtureEvent, FixtureStore, scoped_key};
-use crate::right_panel_store::RightPanelStore;
+use crate::right_panel_store::{RightPanelStore, SingletonKind};
 use crate::router::{Route, RouteChanged, Router, ThreadTarget};
 use crate::routes::RoutePage;
 use crate::terminal::local_pty::LocalPty;
@@ -31,27 +47,8 @@ use crate::ui_state_store::{StateDir, UiStateStore, files};
 actions!(
     app,
     [
-        /// `sidebar.toggle`
-        ToggleSidebar,
-        /// `terminal.toggle`
-        ToggleTerminal,
-        /// `rightPanel.toggle`
-        ToggleRightPanel,
-        /// `rightPanel.toggleMaximized`
-        ToggleMaximizePanel,
-        /// `rightPanel.new`: show the panel's surface launcher.
-        NewPanelTab,
-        /// `rightPanel.close`
-        ClosePanelTab,
-        /// `view.reopenClosed`
-        ReopenClosedView,
-        /// `navigation.back`
-        NavigateBack,
-        /// `navigation.forward`
-        NavigateForward,
-        /// `chat.new`
-        NewThread,
-        /// Settings… (mod+,)
+        /// Settings… (mod+,). The web app opens settings from the sidebar
+        /// and the palette; the desktop menu adds this.
         OpenSettings,
         /// Quit the app, writing state first.
         Quit,
@@ -64,8 +61,6 @@ actions!(
     ]
 );
 
-const CONTEXT: &str = "AppRoot";
-
 /// The web keymap's `mod`: `cmd` on macOS, `ctrl` elsewhere.
 macro_rules! mod_key {
     ($keys:literal) => {
@@ -73,24 +68,11 @@ macro_rules! mod_key {
     };
 }
 
-/// Binds the app shortcuts from the default keymap (`keybindings.ts`).
-/// Terminal and composer contexts sit deeper, so their own bindings win.
+/// Binds the desktop menu's shortcuts. App commands (sidebar, panels,
+/// history, new thread, palette) bind through [`crate::shortcuts`] from the
+/// keybinding rules, and this view handles their registry actions.
 pub fn init(cx: &mut App) {
-    let not_terminal = "AppRoot && !Terminal";
-    cx.bind_keys([
-        KeyBinding::new(mod_key!("b"), ToggleSidebar, Some(CONTEXT)),
-        KeyBinding::new(mod_key!("j"), ToggleTerminal, Some(CONTEXT)),
-        KeyBinding::new(mod_key!("alt-b"), ToggleRightPanel, Some(CONTEXT)),
-        KeyBinding::new(mod_key!("["), NavigateBack, Some(not_terminal)),
-        KeyBinding::new(mod_key!("]"), NavigateForward, Some(not_terminal)),
-        KeyBinding::new(mod_key!("t"), NewPanelTab, Some(not_terminal)),
-        KeyBinding::new(mod_key!("w"), ClosePanelTab, Some(not_terminal)),
-        KeyBinding::new(mod_key!("shift-t"), ReopenClosedView, Some(CONTEXT)),
-        KeyBinding::new(mod_key!("n"), NewThread, Some(not_terminal)),
-        KeyBinding::new(mod_key!("shift-o"), NewThread, Some(CONTEXT)),
-        KeyBinding::new(mod_key!(","), OpenSettings, None),
-        KeyBinding::new(mod_key!("q"), Quit, None),
-    ]);
+    cx.bind_keys([KeyBinding::new(mod_key!(","), OpenSettings, None), KeyBinding::new(mod_key!("q"), Quit, None)]);
 }
 
 /// How to build the window: which data, which titlebar, where state lives
@@ -106,6 +88,53 @@ impl AppRootOptions {
     /// The showcase fixtures, nothing persisted, terminals on a local shell.
     pub fn fixtures(platform: TitlebarPlatform) -> Self {
         Self { store: FixtureStore::showcase(), platform, state_dir: StateDir(None), terminal_backend: local_shell_backend() }
+    }
+
+    /// No fixture data: the app shows what the environments provide, and the
+    /// first-run empty state while none is saved.
+    pub fn without_fixtures(platform: TitlebarPlatform) -> Self {
+        Self { store: FixtureStore::empty(), ..Self::fixtures(platform) }
+    }
+}
+
+/// The main window's views, outermost first: keyboard control, palette,
+/// toaster and announcer; the environment screens and settings modal; the app.
+pub struct WindowRoot {
+    pub shortcuts: Entity<ShortcutRoot>,
+    pub shell: Entity<EnvironmentShell>,
+    pub app: Entity<AppRoot>,
+}
+
+impl WindowRoot {
+    /// Builds the window's views. Requires [`ConnectionRuntime::init`](crate::connection::ConnectionRuntime::init).
+    pub fn new(options: AppRootOptions, window: &mut Window, cx: &mut App) -> Self {
+        let app = cx.new(|cx| AppRoot::with_options(options, window, cx));
+        let shell = cx.new(|cx| EnvironmentShell::new(app.clone(), window, cx));
+        let source = app.read(cx).palette_source();
+        let shortcuts = cx.new(|cx| {
+            let mut root = ShortcutRoot::new(shell.clone().into(), source, window, cx);
+            root.set_default_focus(app.read(cx).focus.clone());
+            root
+        });
+        let palette = shortcuts.read(cx).palette().clone();
+        app.update(cx, |app, cx| app.attach_palette(&palette, window, cx));
+        Self { shortcuts, shell, app }
+    }
+
+    /// Opens a window with these views as its root.
+    pub fn open_window(
+        window_options: WindowOptions,
+        options: AppRootOptions,
+        cx: &mut App,
+    ) -> anyhow::Result<(AnyWindowHandle, Self)> {
+        let mut parts = None;
+        let (handle, _) = gpui_kit::open_window(window_options, cx, |window, cx| {
+            let root = Self::new(options, window, cx);
+            let shortcuts = root.shortcuts.clone();
+            parts = Some(root);
+            shortcuts
+        })?;
+        Ok((handle, parts.expect("window built")))
     }
 }
 
@@ -158,6 +187,10 @@ pub struct AppRoot {
     terminals: Entity<PersistentThreadTerminals>,
     /// The thread under the main pane; it stays shown under modal routes.
     shown: Option<ThreadTarget>,
+    /// Whether the store started with data (fixtures); without it the
+    /// environment shell shows the first-run empty state.
+    has_fixture_data: bool,
+    palette_source: Rc<FixturePaletteSource>,
     focus: FocusHandle,
     _subscriptions: Vec<Subscription>,
 }
@@ -191,10 +224,14 @@ impl AppRoot {
         }
         cx.set_global(ui);
 
+        let has_fixture_data = !store.is_empty();
+        let palette_source = Rc::new(FixturePaletteSource::new(store.snapshot(None)));
         let store = cx.new(|_| store);
+        // A modal route (settings) is not restored: the app opens on the page under it.
         let initial = Route::parse(&layout_state.last_route);
         let initial = match initial.thread_target() {
             Some(target) if !store.read(cx).thread_exists(&target) => Route::Index,
+            _ if initial.is_modal() => Route::Index,
             _ => initial,
         };
         let router = cx.new(|_| Router::new(initial));
@@ -242,6 +279,11 @@ impl AppRoot {
                 RightPanelEvent::OpenTerminal => this.set_terminal_open(true, window, cx),
             }),
             cx.observe_global_in::<TerminalUiStateStore>(window, |this, window, cx| this.panels_changed(window, cx)),
+            // A native notification or an inbox row opened a thread.
+            cx.subscribe(&NotificationInbox::global(cx), |this, _, event: &InboxEvent, cx| {
+                let InboxEvent::OpenThread(key) = event;
+                this.navigate(Route::Thread(key.clone()), cx);
+            }),
         ];
 
         let mut this = Self {
@@ -255,6 +297,8 @@ impl AppRoot {
             right_panels,
             terminals,
             shown: None,
+            has_fixture_data,
+            palette_source,
             focus: cx.focus_handle(),
             _subscriptions: subscriptions,
         };
@@ -289,6 +333,27 @@ impl AppRoot {
 
     pub fn terminals(&self) -> &Entity<PersistentThreadTerminals> {
         &self.terminals
+    }
+
+    /// Whether the app was built with fixture data.
+    pub fn has_fixture_data(&self, _: &App) -> bool {
+        self.has_fixture_data
+    }
+
+    /// The app's own main pane view (route content), for whoever swapped it out.
+    pub fn main_view(&self) -> AnyView {
+        self.main.clone().into()
+    }
+
+    /// The palette's data source.
+    pub fn palette_source(&self) -> Rc<dyn CommandPaletteSource> {
+        self.palette_source.clone()
+    }
+
+    /// Handles what the window's command palette asks for.
+    pub fn attach_palette(&mut self, palette: &Entity<CommandPalette>, window: &mut Window, cx: &mut Context<Self>) {
+        let subscription = cx.subscribe_in(palette, window, Self::on_palette_event);
+        self._subscriptions.push(subscription);
     }
 
     pub fn composer(&self, cx: &App) -> Entity<ChatComposer> {
@@ -346,7 +411,11 @@ impl AppRoot {
         } else if !route.is_modal() {
             self.shown = None;
         }
-        let page = (route.thread_target().is_none() && route != Route::Index).then(|| route.clone());
+        // Settings is a modal over whatever the main pane showed.
+        let page = (route.thread_target().is_none() && route != Route::Index && !route.is_modal()).then(|| route.clone());
+        if route.is_modal() && self.main.read(cx).page.is_some() {
+            return self.persist_route(&route, cx);
+        }
         let has_thread = self.shown.is_some();
         self.main.update(cx, |main, cx| {
             main.page = page;
@@ -355,14 +424,20 @@ impl AppRoot {
         });
         let active = self.shown_key();
         self.sidebar.update(cx, |sidebar, cx| sidebar.set_active_thread(active.clone(), cx));
+        self.palette_source.set_active_thread(active.clone());
+        ThreadNotificationCoordinator::apply(NotificationInput::Route(active.clone()), cx);
         if let Some(key) = &active {
             let visited = jiff::Timestamp::now().to_string();
             let key = scoped_key(key);
             UiStateStore::update_ui(cx, |ui| ui.mark_thread_visited(&key, visited));
         }
+        self.persist_route(&route, cx);
+        self.sync_panels(cx);
+    }
+
+    fn persist_route(&self, route: &Route, cx: &mut Context<Self>) {
         let path = route.path();
         UiStateStore::update_layout(cx, |layout| layout.last_route = path);
-        self.sync_panels(cx);
     }
 
     /// Pushes the shown thread's panel state into the layout, panel and drawer.
@@ -450,20 +525,11 @@ impl AppRoot {
     fn on_sidebar_event(&mut self, _: &Entity<Sidebar>, event: &SidebarEvent, window: &mut Window, cx: &mut Context<Self>) {
         match event {
             SidebarEvent::ActivateThread(key) => self.navigate(Route::Thread(key.clone()), cx),
-            SidebarEvent::NewThread(project) => {
-                let project = project.clone();
-                let draft = self.store.update(cx, |store, _| {
-                    let project = project.or_else(|| store.most_recent_project());
-                    store.create_draft(project)
-                });
-                self.navigate(Route::Draft(draft), cx);
-                self.restore_focus(window, cx);
-            }
-            SidebarEvent::OpenSettings => self.navigate(Route::parse("/settings/general"), cx),
+            SidebarEvent::NewThread(project) => self.new_thread(project.clone(), window, cx),
+            SidebarEvent::OpenSettings => self.open_settings(cx),
             SidebarEvent::OpenPullRequests => self.navigate(Route::parse("/pull-requests"), cx),
             SidebarEvent::OpenIssues => self.navigate(Route::parse("/issues"), cx),
             SidebarEvent::OpenUsage => self.navigate(Route::Usage, cx),
-            SidebarEvent::OpenNotification(_) => {}
             SidebarEvent::DiscardDraft(key) => {
                 let route = Route::Thread(key.clone());
                 self.router.update(cx, |router, _| router.retain_history(|r| *r != route));
@@ -471,9 +537,78 @@ impl AppRoot {
             SidebarEvent::AddProject
             | SidebarEvent::OpenProjectFilter
             | SidebarEvent::ThreadCommand(..)
-            | SidebarEvent::ProjectCommand(..)
-            | SidebarEvent::MarkNotificationRead(_)
-            | SidebarEvent::MarkAllNotificationsRead => {}
+            | SidebarEvent::ProjectCommand(..) => {}
+        }
+    }
+
+    /// Starts a draft in `project` (or the most recent one) and shows it (`chat.new`).
+    fn new_thread(&mut self, project: Option<ProjectRef>, window: &mut Window, cx: &mut Context<Self>) {
+        let draft = self.store.update(cx, |store, _| {
+            let project = project.or_else(|| store.most_recent_project());
+            store.create_draft(project)
+        });
+        self.navigate(Route::Draft(draft), cx);
+        self.restore_focus(window, cx);
+    }
+
+    /// Opens settings on General, as the sidebar gear and the palette do.
+    fn open_settings(&self, cx: &mut App) {
+        self.navigate(Route::settings(SettingsPath::General), cx);
+    }
+
+    /// Shows the thread `offset` rows from the shown one in sidebar order
+    /// (`thread.previous` / `thread.next`), or the `n`th row (`thread.jump.n`).
+    fn step_thread(&mut self, step: ThreadStep, cx: &mut Context<Self>) {
+        let keys: Vec<ThreadKey> = self
+            .sidebar
+            .read(cx)
+            .list()
+            .entries
+            .iter()
+            .filter_map(|entry| match entry {
+                SidebarListEntry::Thread { thread, .. } => Some(thread.key.clone()),
+                _ => None,
+            })
+            .collect();
+        let current = self.shown_key().and_then(|key| keys.iter().position(|k| *k == key));
+        let target = match step {
+            ThreadStep::Jump(n) => keys.get(n),
+            ThreadStep::Next => keys.get(current.map_or(0, |ix| (ix + 1) % keys.len().max(1))),
+            ThreadStep::Previous => keys.get(current.map_or(0, |ix| (ix + keys.len() - 1) % keys.len().max(1))),
+        };
+        if let Some(key) = target.cloned() {
+            self.navigate(Route::Thread(key), cx);
+        }
+    }
+
+    fn on_palette_event(&mut self, _: &Entity<CommandPalette>, event: &PaletteEvent, window: &mut Window, cx: &mut Context<Self>) {
+        match event {
+            PaletteEvent::OpenThread { thread, .. } => self.navigate(Route::Thread(thread.clone()), cx),
+            PaletteEvent::NewThreadIn(project) => self.new_thread(Some(project.clone()), window, cx),
+            PaletteEvent::NewThreadWithoutProject(_) => self.new_thread(None, window, cx),
+            PaletteEvent::OpenSettings => self.open_settings(cx),
+            PaletteEvent::OpenSetting(id) => {
+                let panel = SettingsPanel::from_slug(id).unwrap_or(SettingsPanel::General);
+                self.navigate(Route::Settings { panel, query: SharedString::default() }, cx);
+            }
+            PaletteEvent::OpenProjectSettings(project) => self.navigate(
+                Route::Settings { panel: SettingsPanel::Projects, query: format!("project={}", project.project_id.0).into() },
+                cx,
+            ),
+            PaletteEvent::OpenPullRequests => self.navigate(Route::parse("/pull-requests"), cx),
+            PaletteEvent::OpenIssues => self.navigate(Route::parse("/issues"), cx),
+            // Need the sync layer or server features the fixture store does not have.
+            PaletteEvent::Triage
+            | PaletteEvent::CopyPromptLink { .. }
+            | PaletteEvent::LinkPullRequest
+            | PaletteEvent::ShowLinkedItems
+            | PaletteEvent::ShareWithGuest
+            | PaletteEvent::RestartAgentSession
+            | PaletteEvent::NewProject
+            | PaletteEvent::AddProject(_)
+            | PaletteEvent::UseInAnotherApp
+            | PaletteEvent::ToggleProjectPin(_)
+            | PaletteEvent::PortForward(_) => {}
         }
     }
 
@@ -511,6 +646,7 @@ impl AppRoot {
         if let FixtureEvent::SnapshotChanged = event {
             let active = self.shown_key();
             let snapshot = store.read(cx).snapshot(active.as_ref());
+            self.palette_source.set_snapshot(snapshot.clone());
             self.sidebar.update(cx, |sidebar, cx| sidebar.set_snapshot(snapshot, cx));
         }
     }
@@ -528,11 +664,19 @@ impl AppRoot {
     }
 }
 
+/// Which thread `thread.previous`, `thread.next` and `thread.jump.n` show.
+#[derive(Clone, Copy)]
+enum ThreadStep {
+    Previous,
+    Next,
+    /// Zero-based row among the sidebar's thread rows.
+    Jump(usize),
+}
+
 impl Render for AppRoot {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         div()
             .id("app-root")
-            .key_context(CONTEXT)
             .track_focus(&self.focus)
             .size_full()
             .on_action(cx.listener(|this, _: &ToggleSidebar, _, cx| this.layout.update(cx, |l, cx| l.toggle_sidebar(cx))))
@@ -540,14 +684,14 @@ impl Render for AppRoot {
             .on_action(cx.listener(|this, _: &ToggleRightPanel, window, cx| {
                 this.edit_right_panel(window, cx, |store, key| store.toggle_visibility(key))
             }))
-            .on_action(cx.listener(|this, _: &ToggleMaximizePanel, window, cx| {
+            .on_action(cx.listener(|this, _: &ToggleRightPanelMaximized, window, cx| {
                 this.edit_right_panel(window, cx, |store, key| {
                     let maximized = store.state(key).maximized;
                     store.set_maximized(key, !maximized);
                 })
             }))
-            .on_action(cx.listener(|this, _: &NewPanelTab, window, cx| this.edit_right_panel(window, cx, |store, key| store.show(key))))
-            .on_action(cx.listener(|this, _: &ClosePanelTab, window, cx| {
+            .on_action(cx.listener(|this, _: &NewRightPanelTab, window, cx| this.edit_right_panel(window, cx, |store, key| store.show(key))))
+            .on_action(cx.listener(|this, _: &CloseRightPanelTab, window, cx| {
                 this.edit_right_panel(window, cx, |store, key| store.close_active(key))
             }))
             .on_action(cx.listener(|this, _: &ReopenClosedView, window, cx| {
@@ -555,17 +699,32 @@ impl Render for AppRoot {
                     store.reopen_closed(key);
                 })
             }))
+            .on_action(cx.listener(|this, _: &ToggleDiff, window, cx| {
+                this.edit_right_panel(window, cx, |store, key| store.toggle(key, SingletonKind::Diff))
+            }))
+            .on_action(cx.listener(|this, _: &TogglePreview, window, cx| {
+                this.edit_right_panel(window, cx, |store, key| store.toggle(key, SingletonKind::Preview))
+            }))
             .on_action(cx.listener(|this, _: &NavigateBack, _, cx| this.router.update(cx, |r, cx| r.back(cx))))
             .on_action(cx.listener(|this, _: &NavigateForward, _, cx| this.router.update(cx, |r, cx| r.forward(cx))))
-            .on_action(cx.listener(|this, _: &NewThread, window, cx| {
-                this.on_sidebar_event(&this.sidebar.clone(), &SidebarEvent::NewThread(None), window, cx)
-            }))
-            .on_action(cx.listener(|this, _: &OpenSettings, _, cx| this.navigate(Route::parse("/settings/general"), cx)))
+            .on_action(cx.listener(|this, _: &NewChat, window, cx| this.new_thread(None, window, cx)))
+            .on_action(cx.listener(|this, _: &NewLocalChat, window, cx| this.new_thread(None, window, cx)))
+            .on_action(cx.listener(|this, _: &OpenUsage, _, cx| this.navigate(Route::Usage, cx)))
+            .on_action(cx.listener(|this, _: &PreviousThread, _, cx| this.step_thread(ThreadStep::Previous, cx)))
+            .on_action(cx.listener(|this, _: &NextThread, _, cx| this.step_thread(ThreadStep::Next, cx)))
+            .on_action(cx.listener(|this, _: &JumpToThread1, _, cx| this.step_thread(ThreadStep::Jump(0), cx)))
+            .on_action(cx.listener(|this, _: &JumpToThread2, _, cx| this.step_thread(ThreadStep::Jump(1), cx)))
+            .on_action(cx.listener(|this, _: &JumpToThread3, _, cx| this.step_thread(ThreadStep::Jump(2), cx)))
+            .on_action(cx.listener(|this, _: &JumpToThread4, _, cx| this.step_thread(ThreadStep::Jump(3), cx)))
+            .on_action(cx.listener(|this, _: &JumpToThread5, _, cx| this.step_thread(ThreadStep::Jump(4), cx)))
+            .on_action(cx.listener(|this, _: &JumpToThread6, _, cx| this.step_thread(ThreadStep::Jump(5), cx)))
+            .on_action(cx.listener(|this, _: &JumpToThread7, _, cx| this.step_thread(ThreadStep::Jump(6), cx)))
+            .on_action(cx.listener(|this, _: &JumpToThread8, _, cx| this.step_thread(ThreadStep::Jump(7), cx)))
+            .on_action(cx.listener(|this, _: &JumpToThread9, _, cx| this.step_thread(ThreadStep::Jump(8), cx)))
+            .on_action(cx.listener(|this, _: &OpenSettings, _, cx| this.open_settings(cx)))
             .on_action(|_: &ToggleFullScreen, window, _| window.toggle_fullscreen())
             .on_action(|_: &Minimize, window, _| window.minimize_window())
             .on_action(|_: &ZoomWindow, window, _| window.zoom_window())
-            .child(base::TextSelectionLayer)
             .child(self.layout.clone())
-            .child(Toaster::view(cx))
     }
 }
