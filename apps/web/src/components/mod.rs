@@ -20,3 +20,6 @@ pub mod branch_picker;
 pub mod branch_toolbar;
 pub mod previous_worktree_item_content;
 pub mod git_actions_control_fixture;
+pub mod project_scripts_control;
+pub mod pull_request_thread_dialog;
+pub mod worktree_base_branch_picker;

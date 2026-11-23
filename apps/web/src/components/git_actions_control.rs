@@ -166,6 +166,10 @@ impl GitActionsControl {
         &self.model
     }
 
+    pub fn props(&self) -> &GitActionsProps {
+        &self.props
+    }
+
     pub fn set_props(&mut self, props: GitActionsProps, cx: &mut Context<Self>) {
         if self.props != props {
             self.props = props;
