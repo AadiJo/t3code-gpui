@@ -1,8 +1,7 @@
 //! Scene `diffs`: the diff panel over a fixture patch with every file status
 //! and a 5,000-line file. `T3_DIFFS_SCENE` picks a variant as a comma list:
-//! `light`, `split`, `nowrap`, `expanded`, `tree`, `find`, `comment`,
-//! `select`, `context`, `perf` (300 files, 60,000 changed lines), `file`
-//! (the plain code view).
+//! `light`, `split`, `nowrap`, `expanded`, `tree`, `find`, `context`,
+//! `perf` (300 files, 60,000 changed lines), `file` (the plain code view).
 
 use std::{collections::HashSet, fmt::Write as _, sync::Arc};
 
