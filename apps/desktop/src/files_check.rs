@@ -389,6 +389,38 @@ fn checks(root: &Path, appearance: Appearance, out: &Path) -> anyhow::Result<(St
     let editor = h.editor_text();
     h.check("keep my changes writes the editor's text", disk == editor && disk.starts_with('y'), format!("{} bytes", disk.len()));
 
+    // Highlighting follows edits: opening a block comment recolours the lines below it.
+    h.set_caret(Pos::new(4, 0));
+    h.type_text("/*");
+    h.frame();
+    let below = h.read(|p, cx| p.editor().and_then(|e| e.read(cx).line_tokens(10)));
+    let commented = below.as_ref().is_some_and(|t| !t.is_empty() && t.iter().all(|t| matches!(t, t3code_web::syntax::SyntaxToken::Comment | t3code_web::syntax::SyntaxToken::CommentDoc)));
+    h.check("typing /* turns the lines below into a comment", commented, format!("{below:?}"));
+    h.shot(&format!("15b-highlight-after-edit-{suffix}"))?;
+    h.press("backspace");
+    h.press("backspace");
+    h.frame();
+    let restored = h.read(|p, cx| p.editor().and_then(|e| e.read(cx).line_tokens(10)));
+    let code = restored.as_ref().is_some_and(|t| t.iter().any(|t| !matches!(t, t3code_web::syntax::SyntaxToken::Comment | t3code_web::syntax::SyntaxToken::CommentDoc)));
+    h.check("deleting it restores the code colours", code, format!("{restored:?}"));
+    h.cx.advance_clock(Duration::from_millis(650));
+    h.wait_until("save after comment test", |p, _| p.save_state() == Some(&SaveState::Saved));
+
+    // Unsaved edits that cannot be written ask before another file opens.
+    std::fs::write(root.join("src/main.rs"), "// changed again elsewhere\n")?;
+    h.type_text("z");
+    h.press(&format!("{m}-s"));
+    h.wait_until("second conflict", |p, _| matches!(p.save_state(), Some(SaveState::Conflict(_))));
+    h.open("Cargo.toml", None);
+    let prompted = h.read(|p, _| p.prompt_open() && p.open_path().map(|s| s.as_ref()) == Some("src/main.rs"));
+    h.check("leaving unsaveable edits asks first", prompted, "prompt shown, main.rs still open");
+    h.shot(&format!("15c-unsaved-prompt-{suffix}"))?;
+    h.with(|panel, window, cx| panel.update(cx, |panel, cx| panel.discard_unsaved(window, cx)));
+    h.settle();
+    let opened = h.read(|p, _| p.open_path().map(|s| s.to_string()));
+    let disk = std::fs::read_to_string(root.join("src/main.rs"))?;
+    h.check("discard opens the other file and leaves the disk copy", opened.as_deref() == Some("Cargo.toml") && disk == "// changed again elsewhere\n", format!("{opened:?}"));
+
     // Content search: query, move, open at the line.
     h.with(|panel, window, cx| panel.update(cx, |panel, cx| panel.open_content_search(window, cx)));
     h.frame();
@@ -511,6 +543,7 @@ fn perf(out: &Path) -> anyhow::Result<String> {
     let work = out.join("perf-workspace");
     std::fs::create_dir_all(work.join("src"))?;
     std::fs::write(work.join("src/big.rs"), big_rust())?;
+    std::fs::write(work.join("src/big.txt"), big_rust())?;
     // A 5 MB text file (over the 1 MB read limit, so it opens read-only through the asset bytes).
     let mut five = String::with_capacity(5 * 1024 * 1024 + 100);
     let mut line = 0;
@@ -560,6 +593,15 @@ fn perf(out: &Path) -> anyhow::Result<String> {
     let (median, p95, max) = stats(&mut enters);
     writeln!(report, "editor enter (line inserted), same file: median {median:.3}  p95 {p95:.3}  max {max:.3} ms over 50")?;
     h.shot("perf-editor-typing")?;
+
+    // The same file as plain text: typing without syntax highlighting.
+    h.open("src/big.txt", Some(5_000));
+    h.focus_editor();
+    h.set_caret(Pos::new(5_001, 10));
+    measure(&mut h, 40);
+    let mut plain = measure(&mut h, 500);
+    let (median, p95, max) = stats(&mut plain);
+    writeln!(report, "editor typing, same 10,000 lines as plain text (no highlighter): median {median:.3}  p95 {p95:.3}  max {max:.3} ms over 500 keys")?;
 
     // Resident memory with a 5 MB file open.
     let before = rss_kib();

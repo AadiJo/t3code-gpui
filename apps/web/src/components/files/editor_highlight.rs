@@ -11,8 +11,10 @@ use syntect::parsing::{ParseState, Scope, ScopeStack, ScopeStackOp};
 
 use crate::syntax::{LanguageId, SyntaxToken, TokenSpan};
 
-/// Lines between stored parser states.
-const CHECKPOINT: usize = 32;
+/// Lines between stored parser states. An edit re-parses its block of this
+/// many lines (syntect with fancy-regex takes ~0.1ms a line), and the states
+/// cost a few hundred bytes each.
+const CHECKPOINT: usize = 4;
 /// Longer lines stay plain, as the shared highlighter leaves them.
 const MAX_LINE_BYTES: usize = 2_000;
 
@@ -84,33 +86,12 @@ impl EditorHighlighter {
             return true;
         }
         let started = Instant::now();
-        let start_checkpoint = (self.valid / CHECKPOINT).min(self.checkpoints.len() - 1);
-        let mut line = start_checkpoint * CHECKPOINT;
-        let mut state = self.checkpoints[start_checkpoint].clone();
+        // Resume at the stored state at or before the first line without spans.
+        let mut index = (self.valid / CHECKPOINT).min(self.checkpoints.len() - 1);
+        let mut line = index * CHECKPOINT;
+        let mut state = self.checkpoints[index].clone();
         let mut buffer = String::new();
-        while line <= through {
-            if line % CHECKPOINT == 0 && line > 0 {
-                let index = line / CHECKPOINT;
-                if index >= self.stale_from && index < self.checkpoints.len() && self.checkpoints[index] == state {
-                    // Same state as before the edit: everything up to the old valid line still holds.
-                    self.valid = self.stale_valid.max(line);
-                    self.stale_from = usize::MAX;
-                    if self.valid > through {
-                        return true;
-                    }
-                    line = self.valid - self.valid % CHECKPOINT;
-                    state = self.checkpoints[line / CHECKPOINT].clone();
-                    if line > through {
-                        return true;
-                    }
-                    continue;
-                }
-                if index < self.checkpoints.len() {
-                    self.checkpoints[index] = state.clone();
-                } else {
-                    self.checkpoints.push(state.clone());
-                }
-            }
+        while line <= through && line < lines.len() {
             let spans = parse_line(&lines[line], &mut state, &mut buffer, &mut self.tokens);
             if line < self.spans.len() {
                 self.spans[line] = spans;
@@ -119,7 +100,27 @@ impl EditorHighlighter {
             }
             line += 1;
             self.valid = self.valid.max(line);
-            if line % 64 == 0 && started.elapsed().as_secs_f32() * 1000. > budget_ms {
+            if line % CHECKPOINT == 0 {
+                index = line / CHECKPOINT;
+                if index >= self.stale_from && index < self.checkpoints.len() && self.checkpoints[index] == state {
+                    // Same state as before the edit: the spans after it still hold.
+                    self.stale_from = usize::MAX;
+                    self.valid = self.stale_valid.max(line).min(lines.len());
+                    if self.valid > through {
+                        return true;
+                    }
+                    index = (self.valid / CHECKPOINT).min(self.checkpoints.len() - 1);
+                    line = index * CHECKPOINT;
+                    state = self.checkpoints[index].clone();
+                    continue;
+                }
+                if index < self.checkpoints.len() {
+                    self.checkpoints[index] = state.clone();
+                } else {
+                    self.checkpoints.push(state.clone());
+                }
+            }
+            if line % 32 == 0 && started.elapsed().as_secs_f32() * 1000. > budget_ms {
                 return line > through;
             }
         }

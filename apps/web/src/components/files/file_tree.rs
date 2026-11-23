@@ -120,10 +120,33 @@ impl Render for FileDragPreview {
     }
 }
 
+/// One listed entry, with the strings rows share and its icon resolved once.
+#[derive(Clone, Debug)]
+pub struct TreeEntry {
+    pub path: SharedString,
+    pub name: SharedString,
+    pub directory: bool,
+    pub ignored: bool,
+    icon: Option<PierreIcon>,
+}
+
+impl TreeEntry {
+    fn new(entry: ProjectEntry) -> Self {
+        let directory = entry.kind == ProjectEntryKind::Directory;
+        Self {
+            name: name_of(&entry.path).to_owned().into(),
+            icon: (!directory).then(|| resolve_file_icon(&entry.path)),
+            ignored: entry.ignored == Some(true),
+            path: entry.path.into(),
+            directory,
+        }
+    }
+}
+
 /// One folder's listing.
 #[derive(Clone)]
 struct Listing {
-    entries: Arc<[ProjectEntry]>,
+    entries: Arc<[TreeEntry]>,
 }
 
 #[derive(Clone, Debug)]
@@ -148,7 +171,10 @@ pub struct FileTree {
     expanded: HashSet<SharedString>,
     /// Expand every folder that is not ignored as listings arrive.
     expand_all: bool,
+    /// Every folder that is not ignored is open (cached at each rebuild).
+    all_expanded: bool,
     rows: Vec<Row>,
+    rows_dirty: bool,
     selected: Option<SharedString>,
     cursor: Option<usize>,
     search: Entity<InputState>,
@@ -204,7 +230,9 @@ impl FileTree {
             loading: HashSet::new(),
             expanded: HashSet::new(),
             expand_all: false,
+            all_expanded: false,
             rows: Vec::new(),
+            rows_dirty: false,
             selected: None,
             cursor: None,
             search,
@@ -239,7 +267,7 @@ impl FileTree {
     }
 
     /// A listed folder's entries (`""` is the root), for galleries and breadcrumbs.
-    pub fn folder_entries(&self, folder: &str) -> Option<Arc<[ProjectEntry]>> {
+    pub fn folder_entries(&self, folder: &str) -> Option<Arc<[TreeEntry]>> {
         self.listings.get(folder).map(|listing| listing.entries.clone())
     }
 
@@ -271,16 +299,11 @@ impl FileTree {
         self.loading.remove(&directory);
         match result {
             Ok(listing) => {
-                let entries: Arc<[ProjectEntry]> = listing.entries.into();
+                let entries: Arc<[TreeEntry]> = listing.entries.into_iter().map(TreeEntry::new).collect();
                 // A folder holding a single folder shows as one row; open the inner one too.
-                let single_folder = (entries.len() == 1 && entries[0].kind == ProjectEntryKind::Directory)
-                    .then(|| SharedString::from(entries[0].path.clone()));
+                let single_folder = (entries.len() == 1 && entries[0].directory).then(|| entries[0].path.clone());
                 let expand_children: Vec<SharedString> = if self.expand_all {
-                    entries
-                        .iter()
-                        .filter(|e| e.kind == ProjectEntryKind::Directory && e.ignored != Some(true))
-                        .map(|e| SharedString::from(e.path.clone()))
-                        .collect()
+                    entries.iter().filter(|e| e.directory && !e.ignored).map(|e| e.path.clone()).collect()
                 } else {
                     single_folder.filter(|_| self.expanded.contains(&directory)).into_iter().collect()
                 };
@@ -295,10 +318,8 @@ impl FileTree {
             }
             Err(error) => self.error = Some(error.message.into()),
         }
-        self.rebuild_rows();
-        if let Some(path) = self.selected.clone() {
-            self.sync_cursor(&path);
-        }
+        // Many listings can land in one frame (expand all); rows rebuild once, at render.
+        self.rows_dirty = true;
         cx.notify();
     }
 
@@ -364,8 +385,8 @@ impl FileTree {
                 .listings
                 .values()
                 .flat_map(|l| l.entries.iter())
-                .filter(|e| e.kind == ProjectEntryKind::Directory && e.ignored != Some(true))
-                .map(|e| SharedString::from(e.path.clone()))
+                .filter(|e| e.directory && !e.ignored)
+                .map(|e| e.path.clone())
                 .collect();
             for folder in folders {
                 self.expanded.insert(folder.clone());
@@ -384,11 +405,12 @@ impl FileTree {
         self.listings
             .values()
             .flat_map(|l| l.entries.iter())
-            .filter(|e| e.kind == ProjectEntryKind::Directory && e.ignored != Some(true))
-            .all(|e| self.expanded.contains(e.path.as_str()))
+            .filter(|e| e.directory && !e.ignored)
+            .all(|e| self.expanded.contains(&e.path))
     }
 
     fn rebuild_rows(&mut self) {
+        self.rows_dirty = false;
         let mut rows = Vec::with_capacity(self.rows.len().max(64));
         match &self.matches {
             Some(matches) if !matches.pending || !matches.entries.is_empty() => {
@@ -401,46 +423,50 @@ impl FileTree {
         }
         self.rows = rows;
         self.cursor = self.cursor.map(|c| c.min(self.rows.len().saturating_sub(1)));
+        self.all_expanded = self.expand_all || self.all_expanded();
+        if let Some(path) = self.selected.clone() {
+            self.sync_cursor(&path);
+        }
     }
 
     fn walk_listing(&self, directory: &str, depth: u16, rows: &mut Vec<Row>) {
         let Some(listing) = self.listings.get(directory) else { return };
         for entry in listing.entries.iter() {
-            let ignored = entry.ignored == Some(true);
-            if entry.kind == ProjectEntryKind::File {
+            if !entry.directory {
                 rows.push(Row {
-                    path: entry.path.clone().into(),
-                    name: name_of(&entry.path).to_owned().into(),
+                    path: entry.path.clone(),
+                    name: entry.name.clone(),
                     depth,
                     directory: false,
                     expanded: false,
-                    ignored,
+                    ignored: entry.ignored,
                     loading: false,
-                    icon: Some(resolve_file_icon(&entry.path)),
+                    icon: entry.icon,
                 });
                 continue;
             }
             // Flatten a chain of folders that each hold one folder.
-            let mut path = entry.path.as_str();
-            let mut name = name_of(path).to_owned();
-            while let Some(inner) = self.listings.get(path).filter(|l| l.entries.len() == 1 && l.entries[0].kind == ProjectEntryKind::Directory) {
-                path = &inner.entries[0].path;
+            let mut inner = entry;
+            let mut chain: Option<String> = None;
+            while let Some(only) = self.listings.get(&inner.path).filter(|l| l.entries.len() == 1 && l.entries[0].directory) {
+                inner = &only.entries[0];
+                let name = chain.get_or_insert_with(|| entry.name.to_string());
                 name.push('/');
-                name.push_str(name_of(path));
+                name.push_str(&inner.name);
             }
-            let expanded = self.expanded.contains(path);
+            let expanded = self.expanded.contains(&inner.path);
             rows.push(Row {
-                path: path.to_owned().into(),
-                name: name.into(),
+                path: inner.path.clone(),
+                name: chain.map_or_else(|| entry.name.clone(), SharedString::from),
                 depth,
                 directory: true,
                 expanded,
-                ignored,
-                loading: expanded && self.loading.contains(path),
+                ignored: entry.ignored,
+                loading: expanded && self.loading.contains(&inner.path),
                 icon: None,
             });
             if expanded {
-                self.walk_listing(path, depth + 1, rows);
+                self.walk_listing(&inner.path, depth + 1, rows);
             }
         }
     }
@@ -796,8 +822,8 @@ fn search_tree<'a>(
     let mut seen: HashSet<String> = HashSet::new();
     let mut ignored = HashSet::new();
     for listing in listings.values() {
-        for entry in listing.entries.iter().filter(|e| e.ignored == Some(true)) {
-            ignored.insert(entry.path.clone());
+        for entry in listing.entries.iter().filter(|e| e.ignored) {
+            ignored.insert(entry.path.to_string());
         }
     }
     for entry in matches {
@@ -865,8 +891,11 @@ impl Render for FileTree {
         });
         let theme = cx.app_theme().clone();
         let colors = theme.colors;
-        let has_directories = self.listings.get("").is_some_and(|l| l.entries.iter().any(|e| e.kind == ProjectEntryKind::Directory));
-        let all_expanded = self.expand_all || (has_directories && self.all_expanded());
+        if self.rows_dirty {
+            self.rebuild_rows();
+        }
+        let has_directories = self.listings.get("").is_some_and(|l| l.entries.iter().any(|e| e.directory));
+        let all_expanded = has_directories && self.all_expanded;
         let searching = self.matches.is_some();
         let pending = self.matches.as_ref().is_some_and(|m| m.pending) || !self.listings.contains_key("");
         let no_matches = self.matches.as_ref().is_some_and(|m| !m.pending && m.entries.is_empty());

@@ -15,7 +15,7 @@ use std::{sync::Arc, time::Duration};
 
 use gpui_kit::{
     AnyElement, App, AppContext as _, ClipboardItem, Context, Entity, EventEmitter, FocusHandle, Focusable,
-    IntoElement, KeyBinding, MouseButton, MouseMoveEvent, ParentElement as _, Render, actions, SharedString, Styled as _,
+    IntoElement, KeyBinding, MouseButton, StyleRefinement, MouseMoveEvent, ParentElement as _, Render, actions, SharedString, Styled as _,
     Subscription, Task, Window, div, prelude::*, px,
 };
 use t3code_contracts::{EditorId, ProjectFileFailure};
@@ -252,6 +252,16 @@ impl FilesPanel {
             Some(FileView::Large(view)) => Some(view),
             _ => None,
         }
+    }
+
+    /// Whether the unsaved-changes prompt is showing.
+    pub fn prompt_open(&self) -> bool {
+        self.prompt.is_some()
+    }
+
+    /// Answers the unsaved-changes prompt: discard the edits and open the file.
+    pub fn discard_unsaved(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.discard_and_open(window, cx);
     }
 
     /// True while the open file is still loading.
@@ -526,11 +536,12 @@ impl FilesPanel {
         if matches!(text.save, SaveState::Conflict(_)) {
             return;
         }
-        if text.save != SaveState::Saving {
-            text.save = SaveState::Pending;
-        }
         text._timer = Some(timer);
-        cx.notify();
+        // Re-render the bar only when the state changes, not on every keystroke.
+        if !matches!(text.save, SaveState::Saving | SaveState::Pending) {
+            text.save = SaveState::Pending;
+            cx.notify();
+        }
     }
 
     /// Writes the editor's text now: reads the file first and stops on a conflict.
@@ -638,18 +649,18 @@ impl FilesPanel {
         let Some(entries) = self.tree.read(cx).folder_entries(folder) else { return (vec![current], 0) };
         let mut items = Vec::new();
         let mut index = 0;
-        for entry in entries.iter().filter(|e| e.kind == t3code_contracts::ProjectEntryKind::File) {
+        for entry in entries.iter().filter(|e| !e.directory) {
             if workspace_preview_kind(&entry.path) != FilePreviewKind::Image {
                 continue;
             }
-            if entry.path == path.as_ref() {
+            if entry.path == *path {
                 index = items.len();
                 items.push(current.clone());
                 continue;
             }
-            let relative: SharedString = entry.path.clone().into();
+            let relative = entry.path.clone();
             items.push(ExpandedImageItem {
-                name: entry.path.rsplit('/').next().unwrap_or(&entry.path).to_owned().into(),
+                name: entry.name.clone(),
                 kind: MediaKind::Image,
                 bytes: MediaBytes::Workspace { files: self.files.clone(), path: relative.clone() },
                 absolute_path: Some(absolute_path(self.files.root(), &relative).into()),
@@ -958,7 +969,8 @@ impl FilesPanel {
                 let body: AnyElement = match (&text.table, &text.markdown) {
                     (Some(table), _) if open.rendered => table.clone().into_any_element(),
                     (_, Some(markdown)) if open.rendered => self.render_markdown(markdown.clone(), window, cx),
-                    _ => text.editor.clone().into_any_element(),
+                    // Cached: a keystroke re-renders the editor alone, not the panel around it.
+                    _ => text.editor.clone().cached(StyleRefinement::default().size_full()).into_any_element(),
                 };
                 div().size_full().flex().flex_col().children(notice).child(div().flex_1().min_h_0().child(body)).into_any_element()
             }
@@ -1166,7 +1178,7 @@ impl Render for FilesPanel {
                                 .h_full()
                                 .when(has_file, |el| el.w(px(explorer_width)).flex_none().border_l_1().border_color(colors.border.opacity(0.6)))
                                 .when(!has_file, |el| el.flex_1())
-                                .child(self.tree.clone())
+                                .child(self.tree.clone().cached(StyleRefinement::default().size_full()))
                                 .when(has_file, |el| {
                                     el.child(
                                         div()

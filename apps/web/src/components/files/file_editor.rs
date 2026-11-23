@@ -301,6 +301,11 @@ impl FileEditor {
         self.buffer.heap_size() + self.saved_text.capacity() + self.highlighter.as_ref().map_or(0, |h| h.heap_size())
     }
 
+    /// The syntax tokens of a line as last highlighted, for checks.
+    pub fn line_tokens(&self, line: usize) -> Option<Vec<crate::syntax::SyntaxToken>> {
+        self.highlighter.as_ref()?.line(line).map(|spans| spans.iter().map(|s| s.token).collect())
+    }
+
     /// Opens the find bar with `query`, for scripted checks.
     pub fn find(&mut self, query: &str, window: &mut Window, cx: &mut Context<Self>) {
         self.open_find(&OpenFind, window, cx);
