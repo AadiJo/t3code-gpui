@@ -171,6 +171,12 @@ static DEFAULTS_DOCUMENT: LazyLock<Map<String, Value>> = LazyLock::new(|| {
     serde_json::from_slice(&bytes).expect("client settings defaults parse")
 });
 
+/// `DEFAULT_SERVER_SETTINGS`, dumped the same way.
+static SERVER_DEFAULTS_DOCUMENT: LazyLock<Map<String, Value>> = LazyLock::new(|| {
+    let bytes = Assets::get("settings/server-settings-defaults.json").expect("server settings defaults are embedded");
+    serde_json::from_slice(&bytes).expect("server settings defaults parse")
+});
+
 static DEFAULTS: LazyLock<ClientSettings> = LazyLock::new(|| {
     let (schema, rest) = decode_known(DEFAULTS_DOCUMENT.clone());
     assert!(rest.is_empty(), "every default decodes: {:?}", rest.keys().collect::<Vec<_>>());
@@ -575,6 +581,16 @@ impl ServerSettingsStore {
     /// Environments with a config, in no particular order.
     pub fn environment_ids(cx: &App) -> Vec<EnvironmentId> {
         cx.try_global::<Self>().map(|this| this.environments.keys().cloned().collect()).unwrap_or_default()
+    }
+
+    /// An environment's settings with every key the server left unset filled
+    /// from `DEFAULT_SERVER_SETTINGS`, for controls that show a value.
+    pub fn resolved(cx: &App, id: &EnvironmentId) -> Option<ServerSettings> {
+        let config = Self::config(cx, id)?;
+        let Ok(Value::Object(set)) = serde_json::to_value(&config.settings) else { return None };
+        let mut document = SERVER_DEFAULTS_DOCUMENT.clone();
+        document.extend(set);
+        ServerSettings::deserialize(Value::Object(document)).ok().or_else(|| Some(config.settings.clone()))
     }
 
     /// An environment's config, once its first snapshot arrived.
