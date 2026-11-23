@@ -22,7 +22,9 @@ use theme_palette::{Appearance, ThemeDocument, ThemeMode, ThemeSettings};
 
 /// Registers components, fonts, and the theme. Call once before opening a window.
 /// The theme starts as Graphite following the OS appearance; call
-/// [`ThemeSettings::follow_window`] for each window so it tracks changes.
+/// [`ThemeSettings::follow_window`] for each window so it tracks OS changes
+/// and uses the Interface size as its rem. Render `Toaster::view(cx)` once
+/// at each window root for toasts.
 pub fn init(cx: &mut App) {
     gpui_kit::init(cx);
     if let Err(error) = appearance_fonts::load_fonts(cx) {
@@ -35,4 +37,5 @@ pub fn init(cx: &mut App) {
         fonts: Default::default(),
     };
     theme_palette::install(settings, cx);
+    components::ui::toast::Toaster::init(cx);
 }

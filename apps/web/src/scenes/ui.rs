@@ -39,7 +39,7 @@ use crate::components::ui::{
     tooltip::{TooltipSurface, TooltipVariant},
 };
 use crate::theme_color::{flatten, with_alpha};
-use crate::theme_palette::{ThemeMode, ThemeSettings};
+use crate::theme_palette::{ThemeDocument, ThemeMode, ThemeSettings};
 use crate::{ActiveAppTheme as _, AppTheme};
 
 /// Left edge of every swatch strip.
@@ -94,10 +94,17 @@ pub fn build(window: &mut Window, cx: &mut App) -> AnyView {
 }
 
 /// Builds a gallery page in a mode.
+/// `UI_GALLERY_THEME=<theme.json>` draws the gallery with that theme file
+/// instead of Graphite, to check how partial and custom themes load.
 pub fn build_page(page: Page, mode: ThemeMode, window: &mut Window, cx: &mut App) -> AnyView {
+    if let Ok(path) = std::env::var("UI_GALLERY_THEME") {
+        match std::fs::read(&path).map_err(anyhow::Error::from).and_then(|json| Ok(ThemeDocument::parse(&json)?)) {
+            Ok(document) => ThemeSettings::set_document(document, cx),
+            Err(error) => eprintln!("UI_GALLERY_THEME {path}: {error:#}"),
+        }
+    }
     ThemeSettings::set_mode(mode, cx);
     if page == Page::Dialog {
-        Toaster::init(cx);
         Toaster::push(ToastData::new(ToastKind::Warning, "Server is reconnecting").description("Retrying in 3s"), cx);
         Toaster::push(ToastData::new(ToastKind::Info, "Pull request opened"), cx);
         Toaster::push(

@@ -349,9 +349,11 @@ impl ThemeSettings {
         Self::update(cx, |settings| settings.document = Arc::new(document));
     }
 
-    /// Tracks a window's OS appearance so follow-system mode switches with it.
-    /// Call once per window after it opens.
+    /// Tracks a window's OS appearance so follow-system mode switches with it,
+    /// and sets the window's rem to the Interface size. Call once per window
+    /// after it opens.
     pub fn follow_window(window: &mut Window, cx: &mut App) {
+        window.set_rem_size(gpui_kit::px(cx.global::<ThemeSettings>().fonts.clamped().interface));
         let system = window.appearance().into();
         if cx.global::<ThemeSettings>().system != system {
             Self::update(cx, |settings| settings.system = system);
