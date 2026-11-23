@@ -58,25 +58,29 @@ pub struct SourceControlDefinition {
     pub terminology: ChangeRequestTerminology,
 }
 
-/// The built-in hosts, in registry order.
+/// The built-in hosts, in registry order. GitHub is first: a repository with
+/// no recognised host reads as GitHub.
 pub const SOURCE_CONTROL_DEFINITIONS: &[SourceControlDefinition] = &[
     SourceControlDefinition { kind: "github", label: "GitHub", terminology: PULL_REQUEST },
+    SourceControlDefinition { kind: "cursor-origin", label: "Cursor Origin", terminology: PULL_REQUEST },
     SourceControlDefinition { kind: "gitlab", label: "GitLab", terminology: MERGE_REQUEST },
+    SourceControlDefinition { kind: "gitcafe", label: "GitCafe", terminology: PULL_REQUEST },
+    SourceControlDefinition { kind: "forgejo", label: "Forgejo", terminology: PULL_REQUEST },
     SourceControlDefinition { kind: "bitbucket", label: "Bitbucket", terminology: PULL_REQUEST },
     SourceControlDefinition { kind: "azure-devops", label: "Azure DevOps", terminology: PULL_REQUEST },
-    SourceControlDefinition { kind: "forgejo", label: "Forgejo", terminology: PULL_REQUEST },
-    SourceControlDefinition { kind: "gitcafe", label: "GitCafe", terminology: PULL_REQUEST },
-    SourceControlDefinition { kind: "cursor-origin", label: "Cursor Origin", terminology: PULL_REQUEST },
 ];
 
 /// `UNKNOWN_SOURCE_CONTROL_CLIENT`.
 pub const UNKNOWN_SOURCE_CONTROL: SourceControlDefinition =
     SourceControlDefinition { kind: "unknown", label: "source control", terminology: UNKNOWN };
 
-/// `sourceControlClients.get(kind)`: the definition for a kind, or the unknown host.
+/// `sourceControlClients.get(kind)`: no kind is the first host; an unrecognised
+/// kind is the unknown host.
 pub fn source_control_definition(kind: Option<&str>) -> SourceControlDefinition {
-    kind.and_then(|kind| SOURCE_CONTROL_DEFINITIONS.iter().find(|d| d.kind == kind).copied())
-        .unwrap_or(UNKNOWN_SOURCE_CONTROL)
+    match kind {
+        None => SOURCE_CONTROL_DEFINITIONS[0],
+        Some(kind) => SOURCE_CONTROL_DEFINITIONS.iter().find(|d| d.kind == kind).copied().unwrap_or(UNKNOWN_SOURCE_CONTROL),
+    }
 }
 
 /// What the git controls show for a repository's host.
