@@ -4,6 +4,7 @@
 mod app;
 mod chat;
 mod composer;
+pub mod connections;
 mod i18n;
 mod sidebar;
 mod terminal;
@@ -26,6 +27,11 @@ pub fn scenes() -> &'static [(&'static str, SceneBuilder)] {
         ("terminal-light", terminal::build_light),
         ("terminal-find", terminal::build_find),
         ("i18n", i18n::build),
+        ("connections", connections::build),
+        ("connections-add", connections::build_add),
+        ("connections-signed-out", connections::build_signed_out),
+        ("connections-sign-in", connections::build_sign_in),
+        ("connections-empty", connections::build_empty),
     ]
 }
 

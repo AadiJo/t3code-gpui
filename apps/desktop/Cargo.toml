@@ -24,6 +24,19 @@ name = "terminal-check"
 path = "src/terminal_check.rs"
 required-features = ["headless"]
 
+# Pairs with a real server through the Environments UI, then reconnects,
+# disables and removes it in a second run. Usage: connections-check <out> <data> <pair|restart>
+[[bin]]
+name = "connections-check"
+path = "src/settings/connections_check.rs"
+required-features = ["headless"]
+
+# Imports made-up Electron catalogs encrypted with the Windows and macOS
+# safeStorage schemes. Usage: import-check <out-dir>
+[[bin]]
+name = "import-check"
+path = "src/import/import_check.rs"
+
 [dependencies]
 t3code-client-runtime.workspace = true
 t3code-web.workspace = true
@@ -33,6 +46,9 @@ gpui-kit.workspace = true
 image.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+base64.workspace = true
+sha2.workspace = true
+tokio.workspace = true
 
 # Scripted end-to-end checks of the app shell: screenshots with hover, click,
 # menus and resize, pixel samples, row metrics and frame times.

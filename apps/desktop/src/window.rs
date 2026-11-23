@@ -11,6 +11,7 @@ use std::time::Duration;
 use gpui_kit::{component::TitleBar, *};
 use serde::{Deserialize, Serialize};
 use t3code_web::AppRoot;
+use t3code_web::connection::shell::EnvironmentShell;
 
 const DEFAULT_SIZE: Size<Pixels> = Size {
     width: px(1100.),
@@ -98,24 +99,26 @@ pub fn main_window_options(cx: &App) -> WindowOptions {
     }
 }
 
-/// Opens the main window and keeps its bounds saved.
+/// Opens the main window and keeps its bounds saved. The root is the
+/// connection shell around the app; it needs the connection runtime.
 pub fn open_main_window(
     options: WindowOptions,
     cx: &mut App,
-) -> anyhow::Result<(AnyWindowHandle, Entity<AppRoot>)> {
-    let (handle, root) =
-        gpui_kit::open_window(options, cx, |window, cx| cx.new(|cx| AppRoot::new(window, cx)))?;
+) -> anyhow::Result<(AnyWindowHandle, Entity<EnvironmentShell>)> {
+    let (handle, root) = gpui_kit::open_window(options, cx, |window, cx| {
+        let app = cx.new(|cx| AppRoot::new(window, cx));
+        cx.new(|cx| EnvironmentShell::new(app, window, cx))
+    })?;
     handle.update(cx, |_, window, cx| {
-        root.update(cx, |root, cx| {
-            root.start_clock(cx);
-            persist_bounds(window, cx);
-        });
+        let app = root.read(cx).app().clone();
+        app.update(cx, |app, cx| app.start_clock(cx));
+        root.update(cx, |_, cx| persist_bounds(window, cx));
     })?;
     Ok((handle, root))
 }
 
 /// Saves bounds 500ms after the last move, resize or maximize.
-fn persist_bounds(window: &mut Window, cx: &mut Context<AppRoot>) {
+fn persist_bounds<T: 'static>(window: &mut Window, cx: &mut Context<T>) {
     let generation = Rc::new(Cell::new(0u64));
     cx.observe_window_bounds(window, move |_, window, cx| {
         let (bounds, maximized) = match window.window_bounds() {

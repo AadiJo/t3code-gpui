@@ -6,6 +6,7 @@
 
 use gpui_kit::component::input::{Input, InputEvent, InputState};
 use gpui_kit::{
+    TestSupportExt as _,
     App, Context, Entity, EventEmitter, FocusHandle, Focusable, IntoElement, Render, ScrollHandle, SharedString,
     Subscription, Window, div, prelude::*, px,
 };
@@ -52,6 +53,17 @@ impl SettingsRoute {
     /// Opens on `path`. `/settings` itself opens General on the web; the
     /// caller picks the page.
     pub fn new(path: SettingsPath, window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let state = crate::connection::ConnectionRuntime::state(cx);
+        Self::with_state(path, state, window, cx)
+    }
+
+    /// Settings over given connection state (scenes use fixtures).
+    pub fn with_state(
+        path: SettingsPath,
+        state: Entity<crate::connection::ConnectionsState>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let search = cx.new(|cx| InputState::new(window, cx).placeholder(t!("Search")));
         let subscription = cx.subscribe_in(&search, window, |this, state, event: &InputEvent, window, cx| match event {
             InputEvent::Change => {
@@ -66,7 +78,7 @@ impl SettingsRoute {
             }
             _ => {}
         });
-        let environments = cx.new(|cx| ConnectionsSettings::new(window, cx));
+        let environments = cx.new(|cx| ConnectionsSettings::with_state(state, window, cx));
         Self {
             path,
             search,
@@ -254,6 +266,7 @@ impl SettingsRoute {
                                 path == self.path,
                             )
                             .on_click(cx.listener(move |this, _, _, cx| this.navigate(path, cx)))
+                            .test_support()
                         }))
                         .into_any_element()
                 }))

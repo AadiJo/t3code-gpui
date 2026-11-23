@@ -12,6 +12,7 @@ use std::time::{Duration, SystemTime};
 
 use gpui_kit::component::input::{InputEvent, InputState};
 use gpui_kit::{
+    TestSupportExt as _,
     AnyElement, App, ClipboardItem, Context, Entity, IntoElement, Render, SharedString, Subscription, Task, WeakEntity,
     Window, div, prelude::*, px,
 };
@@ -125,11 +126,14 @@ impl ConnectionsSettings {
         &self.state
     }
 
-    /// Shows the routes and diagnosis details of every row (scenes).
-    pub fn expand_all(&mut self, cx: &mut Context<Self>) {
-        for env in &self.state.read(cx).environments {
-            self.routes_open.insert(env.id().clone());
-            self.diagnosis_open.insert(env.id().clone());
+    /// Opens one row's routes and diagnosis details (scenes and checks).
+    pub fn toggle_for_scene(&mut self, id: &str, routes: bool, details: bool, cx: &mut Context<Self>) {
+        let id = EnvironmentId::from(id);
+        if routes {
+            self.routes_open.insert(id.clone());
+        }
+        if details {
+            self.diagnosis_open.insert(id);
         }
         cx.notify();
     }
@@ -391,6 +395,7 @@ impl ConnectionsSettings {
                 }))
                 .child(routes_label)
                 .child(chevron(routes_open, c.muted_foreground))
+                .test_support()
                 .into_any_element(),
         );
         let dot = ConnectionStatusDot::for_phase(phase, Some(status_text(env)), SharedString::from(format!("env-dot-{key}")));
@@ -750,7 +755,7 @@ impl ConnectionsSettings {
             .border_color(with_alpha(c.border, 0.5))
             .child(div().flex().flex_col().children(rows))
             .child(
-                div().pt(sp(1.)).child(
+                div().flex().ml(-sp(1.5)).pt(sp(1.)).child(
                     Button::new(SharedString::from(format!("route-add-{key}")))
                         .label(t!("Add route"))
                         .icon(IconName::Plus)

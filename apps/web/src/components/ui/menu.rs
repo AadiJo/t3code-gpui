@@ -5,6 +5,7 @@
 
 use std::rc::Rc;
 
+use gpui_kit::TestSupportExt as _;
 use gpui_kit::{
     AnyElement, App, ElementId, IntoElement, MouseButton, Pixels, Point, RenderOnce, SharedString, Window,
     anchored, deferred, div, prelude::*, px, svg,
@@ -250,6 +251,7 @@ fn render_item(theme: &AppTheme, index: usize, item: MenuItem, dismiss: Option<A
                 dismiss(window, cx);
             }
         })
+        .test_support()
         .into_any_element()
 }
 
@@ -334,7 +336,7 @@ impl RenderOnce for ContextMenu {
                         .snap_to_window_with_margin(px(8.))
                         .child(PopupOpen::dismissable(&open_state, popup)),
                 )
-                .with_priority(2),
+                .with_priority(5),
             );
         }
         root

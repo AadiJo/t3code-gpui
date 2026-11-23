@@ -5,6 +5,7 @@
 
 use gpui_kit::component::input::{InputEvent, InputState};
 use gpui_kit::{
+    TestSupportExt as _,
     App, Context, Entity, EventEmitter, IntoElement, Render, SharedString, Subscription, Window, div, prelude::*, px,
 };
 use t3code_client_runtime::connection::onboarding::{parse_host_and_code, parse_pairing_url};
@@ -197,7 +198,8 @@ impl Render for AddEnvironmentDialog {
                     .flex_1()
                     .min_w_0()
                     .child(field_label(t!("Host"), cx))
-                    .child(TextInput::new(&self.host).disabled(self.adding)),
+                    .child(TextInput::new(&self.host).disabled(self.adding))
+                    .test_support(),
             )
             .child(
                 div()
@@ -205,7 +207,8 @@ impl Render for AddEnvironmentDialog {
                     .w(theme.rem(10.))
                     .flex_none()
                     .child(field_label(t!("Pairing code"), cx))
-                    .child(TextInput::new(&self.code).disabled(self.adding)),
+                    .child(TextInput::new(&self.code).disabled(self.adding))
+                    .test_support(),
             );
         let submit_label = if self.adding {
             t!("Adding…")
