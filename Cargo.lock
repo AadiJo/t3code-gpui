@@ -6994,12 +6994,17 @@ version = "0.1.11"
 dependencies = [
  "anyhow",
  "gpui-kit",
+ "regex",
  "rust-embed",
  "serde",
  "serde_json",
+ "smallvec",
+ "syntect",
  "t3code-client-runtime",
  "t3code-contracts",
  "t3code-shared",
+ "two-face",
+ "unicode-width",
 ]
 
 [[package]]

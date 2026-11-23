@@ -4,6 +4,7 @@
 mod app;
 mod chat;
 mod composer;
+pub mod diffs;
 mod sidebar;
 mod ui;
 
@@ -19,6 +20,7 @@ pub fn scenes() -> &'static [(&'static str, SceneBuilder)] {
         ("sidebar", sidebar::build),
         ("chat", chat::build),
         ("composer", composer::build),
+        ("diffs", diffs::build),
     ]
 }
 

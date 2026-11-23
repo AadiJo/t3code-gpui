@@ -34,10 +34,17 @@ futures = "0.3"
 rust-embed = "8"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+regex = "1"
 sha2 = "0.10"
+smallvec = { version = "1", features = ["union"] }
+# Diff and code view highlighting. Same features gpui-component already builds,
+# so these add no compile work.
+syntect = { version = "5.3", default-features = false, features = ["parsing", "default-syntaxes", "regex-fancy"] }
+two-face = { version = "0.4.5", default-features = false, features = ["syntect-fancy"] }
 thiserror = "2"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "net", "io-util", "fs"] }
 tracing = "0.1"
+unicode-width = "0.2"
 url = "2"
 uuid = { version = "1", features = ["v4"] }
 
