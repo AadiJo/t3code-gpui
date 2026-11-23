@@ -4,6 +4,7 @@
 mod app;
 mod chat;
 mod i18n;
+mod notifications;
 pub mod composer;
 mod sidebar;
 mod terminal;
@@ -30,6 +31,8 @@ pub fn scenes() -> &'static [(&'static str, SceneBuilder)] {
         ("composer-light", composer::build_light),
         ("composer-popovers", composer::build_popovers),
         ("composer-popovers-light", composer::build_popovers_light),
+        ("notifications", notifications::build),
+        ("notifications-empty", notifications::build_empty),
     ]
 }
 

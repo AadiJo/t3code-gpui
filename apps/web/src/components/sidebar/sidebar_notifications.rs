@@ -60,24 +60,33 @@ impl SidebarNotifications {
         if let Some(existing) = cx.try_global::<GlobalSidebarNotifications>() {
             return existing.0.clone();
         }
-        let view = cx.new(|cx| {
-            let inbox = NotificationInbox::global(cx);
-            Self {
-                open: false,
-                show_all: false,
-                highlighted: None,
-                hovered: false,
-                focus: cx.focus_handle(),
-                scroll: UniformListScrollHandle::new(),
-                sidebar,
-                _inbox: cx.observe(&inbox, |this: &mut Self, _, cx| {
-                    this.clamp_highlight(cx);
-                    cx.notify();
-                }),
-            }
-        });
+        let view = cx.new(|cx| Self::new(sidebar, cx));
         cx.set_global(GlobalSidebarNotifications(view.clone()));
         view
+    }
+
+    /// A bell of its own, outside the sidebar (scenes). Use [`Self::view`] in the app.
+    pub fn new(sidebar: WeakEntity<Sidebar>, cx: &mut Context<Self>) -> Self {
+        let inbox = NotificationInbox::global(cx);
+        Self {
+            open: false,
+            show_all: false,
+            highlighted: None,
+            hovered: false,
+            focus: cx.focus_handle(),
+            scroll: UniformListScrollHandle::new(),
+            sidebar,
+            _inbox: cx.observe(&inbox, |this: &mut Self, _, cx| {
+                this.clamp_highlight(cx);
+                cx.notify();
+            }),
+        }
+    }
+
+    /// Points the keyboard highlight at a visible row (scenes and tests).
+    pub fn set_highlighted(&mut self, row: Option<usize>, cx: &mut Context<Self>) {
+        self.highlighted = row;
+        cx.notify();
     }
 
     /// Opens or closes the popover (scenes and tests).
@@ -278,11 +287,12 @@ impl SidebarNotifications {
         let (icon, color) = kind_icon(item.kind, theme);
         let kind_title = item.kind.title();
         let (accent, accent_fg, muted, popover_fg) =
-            (colors.accent, colors.accent_foreground, colors.muted_foreground, colors.foreground());
+            (colors.accent_surface, colors.accent_surface_foreground, colors.muted_foreground, colors.foreground());
         let open = item.clone();
         let read_id = item.id.clone();
         let thread_title = item.thread_title.clone();
         div()
+            .w_full()
             .flex()
             .items_center()
             .gap(theme.sp(2.))
@@ -370,7 +380,8 @@ impl Render for SidebarNotifications {
             )
             .with_priority(1)
         });
-        div().relative().flex_none().child(bell).children(popover)
+        // The popover comes first so it anchors at the bell's top edge.
+        div().relative().flex_none().children(popover).child(bell)
     }
 }
 
