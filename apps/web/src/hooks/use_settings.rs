@@ -328,10 +328,12 @@ impl ClientSettingsStore {
         let document = read_json_object(path)?
             .map(unwrap_document)
             .ok_or_else(|| anyhow::anyhow!("{} does not exist", path.display()))?;
-        let (imported, _) = decode_known(document);
+        let (imported, unknown) = decode_known(document);
         let Ok(Value::Object(applied)) = serde_json::to_value(&imported) else { unreachable!() };
         let current = cx.global::<Self>().settings.to_schema();
         let next = ClientSettings::layered(imported, &current);
+        // Settings from a newer desktop app are kept for when this one learns them.
+        cx.global_mut::<Self>().kept.extend(unknown);
         Self::replace(next, cx);
         Ok(applied.len())
     }

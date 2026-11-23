@@ -43,9 +43,19 @@ path = "src/import/import_check.rs"
 name = "theme-import-check"
 path = "src/settings/theme_import_check.rs"
 
+# Changes each wired setting headlessly and screenshots its view, imports a
+# fixture Electron settings file, records a keybinding, then checks a
+# relaunch. Usage: settings-check <out-dir> <data-dir> <run|relaunch>
+[[bin]]
+name = "settings-check"
+path = "src/settings/settings_check.rs"
+required-features = ["headless"]
+
 [dependencies]
 t3code-client-runtime.workspace = true
 t3code-web.workspace = true
+t3code-shared.workspace = true
+t3code-contracts.workspace = true
 anyhow.workspace = true
 dirs.workspace = true
 gpui-kit.workspace = true

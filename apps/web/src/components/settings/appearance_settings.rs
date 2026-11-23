@@ -13,7 +13,7 @@ use std::rc::Rc;
 use gpui_kit::component::input::{InputEvent, InputState, TextareaState};
 use gpui_kit::component::slider::{Slider, SliderEvent, SliderState};
 use gpui_kit::{
-    Focusable as _, AnyElement, App, AppContext as _, Context, Entity, Hsla, IntoElement, Render, SharedString, Subscription, Window,
+    TestSupportExt as _, Focusable as _, AnyElement, App, AppContext as _, Context, Entity, Hsla, IntoElement, Render, SharedString, Subscription, Window,
     div, prelude::*, px,
 };
 use t3code_contracts::{ChatWidth, EffortDisplay, EnvironmentIdentificationMode};
@@ -401,6 +401,7 @@ impl AppearanceSettings {
             .cursor_pointer()
             .tooltip(tooltip(tooltip_text))
             .on_click(use_card)
+            .test_support()
             .child(div().flex().min_h(px(64.)).items_center().justify_center().gap(theme.sp(2.5)).px(theme.sp(3.)).pt(theme.sp(3.)).children(circles))
             .child(
                 div()

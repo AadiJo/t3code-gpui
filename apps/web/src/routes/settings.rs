@@ -363,6 +363,7 @@ impl SettingsRoute {
             .child(
                 div()
                     .id("settings-content")
+                    .test_support()
                     .flex_1()
                     .min_h_0()
                     .overflow_y_scroll()
