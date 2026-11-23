@@ -108,7 +108,7 @@ pub fn init(cx: &mut App) {
     cx.set_global(terminal_ui_state_store::TerminalUiStateStore::default());
     app_root::init(cx);
     components::diffs::init(cx);
+    components::files::init(cx);
     // Last: app keybindings must follow every widget's bindings.
     shortcuts::init(cx);
-    components::files::init(cx);
 }
