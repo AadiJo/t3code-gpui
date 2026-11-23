@@ -36,3 +36,8 @@ unicode-properties.workspace = true
 [[example]]
 name = "i18n_switch"
 required-features = ["test-support"]
+
+# Drives keyboard control and the command palette headlessly; writes a transcript, screenshots and timings.
+[[example]]
+name = "palette_check"
+required-features = ["test-support"]

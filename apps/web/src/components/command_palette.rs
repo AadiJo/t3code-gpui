@@ -805,13 +805,9 @@ fn register_shortcut_overrides(
     ]);
     let weak = cx.weak_entity();
     let listener: Rc<dyn Fn(StaticCommand, &mut Window, &mut App)> = Rc::new(move |command, window, cx| {
-        if !overrides.contains(&command) {
-            cx.propagate();
-            return;
-        }
         weak.update(cx, |palette, cx| palette.run_shortcut(command, window, cx)).ok();
     });
-    commands::on_every_command(popup, listener)
+    commands::on_commands(popup, move |command| overrides.contains(&command), listener)
 }
 
 fn footer_height(theme: &AppTheme) -> gpui_kit::Pixels {

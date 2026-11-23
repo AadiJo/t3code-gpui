@@ -20,6 +20,7 @@ use crate::command_palette_store::OpenIntent;
 use crate::components::command_palette::{self, CommandPalette};
 use crate::components::command_palette_lookups::CommandPaletteSource;
 use crate::components::command_palette_theme_items::cycle_appearance;
+use crate::components::ui::toast::Toaster;
 use crate::shortcut_modifier_state::{ModifierEvent, ShortcutModifierStore};
 
 /// Binds the palette's keys, installs the default keymap and the modifier
@@ -32,7 +33,8 @@ pub fn init(cx: &mut App) {
 
 /// The window root for keyboard control. It carries the shortcut state's key
 /// context, keeps focus inside the window, tracks held modifiers, hosts the
-/// command palette and answers the palette's commands (`commandPaletteCommands.ts`).
+/// command palette and the toaster, and answers the palette's commands
+/// (`commandPaletteCommands.ts`).
 pub struct ShortcutRoot {
     content: AnyView,
     palette: Entity<CommandPalette>,
@@ -102,5 +104,6 @@ impl Render for ShortcutRoot {
             .on_action(|_: &commands::CycleAppearance, _, cx| cycle_appearance(cx))
             .child(self.content.clone())
             .child(palette)
+            .child(Toaster::view(cx))
     }
 }

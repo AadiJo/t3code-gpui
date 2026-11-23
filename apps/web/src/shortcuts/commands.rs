@@ -88,16 +88,19 @@ macro_rules! command_registry {
             }
         }
 
-        /// Adds a listener for every built-in command's action to `element`.
-        /// The listener runs only for actions no deeper element handled.
-        pub fn on_every_command<E: InteractiveElement>(
-            element: E,
+        /// Adds `listener` to `element` for the action of every built-in
+        /// command `handles` accepts, which makes those commands available
+        /// on paths through `element`. It runs only for actions no deeper
+        /// element handled.
+        pub fn on_commands<E: InteractiveElement>(
+            mut element: E,
+            handles: impl Fn(StaticCommand) -> bool,
             listener: Rc<dyn Fn(StaticCommand, &mut Window, &mut App)>,
         ) -> E {
-            $(let element = {
+            $(if handles(StaticCommand::$variant) {
                 let listener = listener.clone();
-                element.on_action(move |_: &$action, window, cx| listener(StaticCommand::$variant, window, cx))
-            };)*
+                element = element.on_action(move |_: &$action, window, cx| listener(StaticCommand::$variant, window, cx));
+            })*
             element
         }
     };
