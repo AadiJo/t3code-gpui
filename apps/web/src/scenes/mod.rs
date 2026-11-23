@@ -13,6 +13,7 @@ pub mod diffs;
 mod sidebar;
 mod terminal;
 pub mod ui;
+mod usage;
 
 use gpui_kit::{AnyView, App, Window};
 
@@ -51,6 +52,15 @@ pub fn scenes() -> &'static [(&'static str, SceneBuilder)] {
         ("git-actions-light", git_actions::build_light),
         ("git-actions-panel", git_actions::build_panel),
         ("git-actions-panel-light", git_actions::build_panel_light),
+        ("usage", usage::build),
+        ("usage-light", usage::build_light),
+        ("usage-cost", usage::build_cost),
+        ("usage-cost-light", usage::build_cost_light),
+        ("usage-tokens", usage::build_tokens),
+        ("usage-day", usage::build_day),
+        ("usage-day-breakdown", usage::build_time_breakdown),
+        ("usage-model", usage::build_model),
+        ("usage-loading", usage::build_loading),
     ]
 }
 

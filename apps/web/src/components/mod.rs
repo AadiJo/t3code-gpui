@@ -36,6 +36,7 @@ pub mod thread_terminal_drawer;
 pub mod sidebar_logic;
 pub mod thread_status_indicators;
 pub mod ui;
+pub mod usage;
 pub mod branch_toolbar_logic;
 pub mod git_actions_control_logic;
 pub mod git_actions_control_source;
