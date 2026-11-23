@@ -31,6 +31,7 @@ unicode-properties.workspace = true
 smallvec.workspace = true
 syntect.workspace = true
 unicode-segmentation.workspace = true
+unicode-normalization.workspace = true
 markdown.workspace = true
 two-face.workspace = true
 regex.workspace = true
