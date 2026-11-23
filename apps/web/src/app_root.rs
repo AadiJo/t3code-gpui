@@ -40,6 +40,7 @@ use crate::fixtures::{FixtureEvent, FixtureStore, scoped_key};
 use crate::right_panel_store::{RightPanelStore, SingletonKind};
 use crate::router::{Route, RouteChanged, Router, ThreadTarget};
 use crate::routes::RoutePage;
+#[cfg(unix)]
 use crate::terminal::local_pty::LocalPty;
 use crate::terminal_ui_state_store::{self as terminal_store, TerminalUiStateStore};
 use crate::ui_state_store::{StateDir, UiStateStore, files};
@@ -139,12 +140,20 @@ impl WindowRoot {
 }
 
 /// Terminals as a local login shell in the thread's directory (or home).
+#[cfg(unix)]
 pub fn local_shell_backend() -> BackendFactory {
     Rc::new(|launch: &TerminalLaunch, _: &mut App| {
         let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".into());
         let cwd = Some(PathBuf::from(launch.cwd.as_ref())).filter(|p| p.is_dir()).or_else(|| std::env::var_os("HOME").map(PathBuf::from));
         Box::new(LocalPty::new(&shell, &["-i"], cwd))
     })
+}
+
+/// Windows has no local shell backend; terminals stay empty until they run
+/// on the server's terminal RPCs.
+#[cfg(not(unix))]
+pub fn local_shell_backend() -> BackendFactory {
+    Rc::new(|_: &TerminalLaunch, _: &mut App| Box::new(crate::terminal::backend::RecordedBackend::new(Vec::new())))
 }
 
 /// The main pane: the chat for a thread route, a page, or the no-thread state.
