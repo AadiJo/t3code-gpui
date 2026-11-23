@@ -31,6 +31,8 @@ unicode-properties.workspace = true
 smallvec.workspace = true
 syntect.workspace = true
 unicode-segmentation.workspace = true
+markdown.workspace = true
+two-face.workspace = true
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

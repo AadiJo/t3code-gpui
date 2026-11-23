@@ -7294,6 +7294,7 @@ dependencies = [
  "image",
  "jiff",
  "libc",
+ "markdown",
  "rust-embed",
  "serde",
  "serde_json",
@@ -7305,6 +7306,7 @@ dependencies = [
  "t3code-i18n-macros",
  "t3code-shared",
  "thiserror 2.0.21",
+ "two-face",
  "unicode-properties",
  "unicode-segmentation",
 ]

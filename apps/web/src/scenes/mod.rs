@@ -21,6 +21,7 @@ pub fn scenes() -> &'static [(&'static str, SceneBuilder)] {
         ("ui", ui::build),
         ("sidebar", sidebar::build),
         ("chat", chat::build),
+        ("chat-light", chat::build_light),
         ("composer", composer::build),
         ("terminal", terminal::build),
         ("terminal-light", terminal::build_light),

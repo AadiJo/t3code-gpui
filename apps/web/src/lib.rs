@@ -23,6 +23,7 @@ pub mod composer_undo_grouping;
 pub mod model_ordering;
 pub mod model_search;
 pub mod model_selection;
+pub mod markdown_pipeline;
 pub mod scenes;
 pub mod terminal;
 pub mod terminal_links;

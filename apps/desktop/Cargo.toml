@@ -47,3 +47,9 @@ required-features = ["headless"]
 name = "composer-bench"
 path = "src/composer_bench.rs"
 required-features = ["headless"]
+
+# Scripted chat screenshots and timeline measurements. Usage: chat-bench <shots|perf> <out-dir>
+[[bin]]
+name = "chat-bench"
+path = "src/chat_bench.rs"
+required-features = ["headless"]
