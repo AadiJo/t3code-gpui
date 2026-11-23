@@ -18,6 +18,12 @@ name = "shot"
 path = "src/shot.rs"
 required-features = ["headless"]
 
+# Drives the terminal against a local PTY and benchmarks it. Usage: terminal-check <pty|bench> <out-dir>
+[[bin]]
+name = "terminal-check"
+path = "src/terminal_check.rs"
+required-features = ["headless"]
+
 [dependencies]
 t3code-client-runtime.workspace = true
 t3code-web.workspace = true

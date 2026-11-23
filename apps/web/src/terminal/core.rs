@@ -87,6 +87,31 @@ impl TerminalCore {
         }
     }
 
+    /// Changes how many lines of history are kept.
+    pub fn set_scrollback(&mut self, lines: usize) {
+        self.scrollback = lines;
+        self.term.set_options(Self::config(lines));
+    }
+
+    /// The visible rows as text, trailing blanks trimmed. Used by scripted checks.
+    pub fn screen_text(&self) -> String {
+        let grid = self.term.grid();
+        let offset = grid.display_offset() as i32;
+        let mut out = String::new();
+        for row in 0..self.size.rows as i32 {
+            let line = &grid[Line(row - offset)];
+            let mut text: String = (0..self.size.cols as usize)
+                .map(|col| &line[Column(col)])
+                .filter(|cell| !cell.flags.contains(Flags::WIDE_CHAR_SPACER))
+                .map(|cell| cell.c)
+                .collect();
+            text.truncate(text.trim_end().len());
+            out.push_str(&text);
+            out.push('\n');
+        }
+        out
+    }
+
     /// Parses program output.
     pub fn feed(&mut self, bytes: &[u8]) {
         self.parser.advance(&mut self.term, bytes);

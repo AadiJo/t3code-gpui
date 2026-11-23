@@ -39,6 +39,12 @@ impl LocalPty {
         }
     }
 
+    /// Adds an environment variable for the child.
+    pub fn with_env(mut self, key: &str, value: &str) -> Self {
+        self.options.env.insert(key.to_string(), value.to_string());
+        self
+    }
+
     /// The child's process id, once connected.
     pub fn pid(&self) -> Option<u32> {
         self.pty.as_ref().map(|pty| pty.child().id())

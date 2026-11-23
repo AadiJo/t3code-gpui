@@ -560,7 +560,7 @@ impl TerminalSurface {
         });
 
         let history = self.core.history_size();
-        let scrollbar = (history > 0).then(|| {
+        let scrollbar = (history > 0 && !self.core.is_alternate_screen()).then(|| {
             let total = (history + rows) as f32;
             let track = geometry.line_height * rows as f32;
             let height = track * (rows as f32 / total);
