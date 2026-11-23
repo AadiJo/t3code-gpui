@@ -393,7 +393,7 @@ pub struct PendingQuestion {
 /// Everything row derivation reads (`deriveMessagesTimelineRows` input).
 #[derive(Clone, Debug, Default)]
 pub struct TimelineInput {
-    pub entries: Arc<[TimelineEntry]>,
+    pub entries: Arc<Vec<TimelineEntry>>,
     pub pending_approval_ids: Vec<RequestId>,
     pub latest_run: Option<LatestRun>,
     pub is_working: bool,

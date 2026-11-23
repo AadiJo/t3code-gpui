@@ -19,7 +19,7 @@ use super::chat::{
     chat_icons::{ChatIcon, icon},
     chat_style::{ChatColors, TEXT_2XS, TEXT_CODE, TEXT_SM_RELAXED, TEXT_XS, alpha, mono, sans},
     rich_text::{LinkHandler, RichText, TextBox, TextIcon},
-    syntax_highlighting::{highlight, is_plain_language},
+    syntax_highlighting::{highlight, highlight_or_schedule, is_plain_language},
     syntax_theme::SyntaxTheme,
 };
 use crate::markdown_pipeline::{
@@ -114,24 +114,31 @@ struct Rendered {
 
 struct Renderer<'a> {
     view: &'a MarkdownView<'a>,
+    app: &'a App,
     theme: &'static SyntaxTheme,
     next_id: u64,
+    /// Set while rendering the last piece of a streaming message, the only one still growing.
+    growing: bool,
     text_color: Hsla,
     link_handler: LinkHandler,
 }
 
 /// Renders a message's markdown as one column.
-pub fn render_markdown(view: &MarkdownView<'_>, _window: &mut Window, _cx: &mut App) -> Div {
+pub fn render_markdown(view: &MarkdownView<'_>, _window: &mut Window, cx: &mut App) -> Div {
     let actions = view.actions.clone();
     let mut renderer = Renderer {
         view,
+        app: cx,
         theme: SyntaxTheme::for_appearance(view.colors.appearance),
         next_id: 0,
+        growing: false,
         text_color: if view.user { view.colors.theme.message_foreground } else { view.colors.prose() },
         link_handler: Rc::new(move |target, window, cx| actions(MarkdownAction::OpenLink(target.clone()), window, cx)),
     };
     let mut rendered = Vec::new();
+    let last_piece = view.pieces.len().saturating_sub(1);
     for (piece_index, piece) in view.pieces.iter().enumerate() {
+        renderer.growing = view.streaming && piece_index == last_piece;
         let opacity = view.piece_opacity.and_then(|o| o.get(piece_index)).copied().unwrap_or(1.);
         for block in piece.iter() {
             let mut block = renderer.block(block, 0, true);
@@ -467,7 +474,13 @@ impl Renderer<'_> {
                         }),
                     ),
             );
-        let highlights = if is_plain_language(&language) { None } else { highlight(&language, &source, self.view.streaming) };
+        let highlights = if is_plain_language(&language) {
+            None
+        } else if self.growing {
+            highlight(&language, &source, true)
+        } else {
+            highlight_or_schedule(&language, &source, self.app)
+        };
         let runs = code_runs(&source, highlights.as_deref(), self.theme, colors.theme.code_foreground);
         let text = RichText::new(id, source, runs).selection_color(colors.selection);
         let body = div()

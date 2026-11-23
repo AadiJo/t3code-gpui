@@ -371,7 +371,7 @@ pub fn fixture_thread() -> TimelineInput {
     b.work(40, "run-c", ToolStatus::Failed, "Command", command("curl -sf localhost:4310/health", "curl: (7) Failed to connect", 7));
 
     TimelineInput {
-        entries: b.entries.into(),
+        entries: Arc::new(b.entries),
         pending_approval_ids: vec![RequestId::new("req-1")],
         latest_run: Some(LatestRun {
             run_id: RunId::new("run-c"),
@@ -439,7 +439,7 @@ pub fn perf_thread(turns: usize) -> TimelineInput {
         };
         b.assistant(ago - 60, &run, &body, false);
     }
-    TimelineInput { entries: b.entries.into(), ..Default::default() }
+    TimelineInput { entries: Arc::new(b.entries), ..Default::default() }
 }
 
 /// A long reply with prose, lists and code, for streaming measurements.
@@ -458,7 +458,7 @@ pub fn streaming_reply(chars: usize) -> String {
 
 /// A thread whose last turn is streaming `reply`.
 pub fn streaming_thread(history: TimelineInput, reply: &str) -> TimelineInput {
-    let mut entries = history.entries.to_vec();
+    let mut entries = (*history.entries).clone();
     let prompt_id = format!("stream-user-{}", entries.len());
     entries.push(TimelineEntry {
         id: EntryId::new(prompt_id.clone()),
@@ -495,7 +495,7 @@ pub fn streaming_thread(history: TimelineInput, reply: &str) -> TimelineInput {
         }),
     });
     TimelineInput {
-        entries: entries.into(),
+        entries: Arc::new(entries),
         latest_run: Some(LatestRun {
             run_id: RunId::new("run-stream"),
             status: RunStatus::Running,

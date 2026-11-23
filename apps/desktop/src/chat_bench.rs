@@ -19,7 +19,7 @@ use t3code_web::{
         chat::{
             messages_timeline::MessagesTimeline,
             messages_timeline_logic::RowKind,
-            timeline_entries::{EntryKind, TimelineInput},
+            timeline_entries::TimelineInput,
             timeline_fixtures::{FIXTURE_NOW, fixture_thread, perf_thread, streaming_reply, streaming_thread},
             timeline_viewport::TimelineFollow,
         },
@@ -340,30 +340,31 @@ fn perf(out: &Path) -> anyhow::Result<()> {
     s.settle()?;
     s.cx.update(|cx| timeline.read(cx).list_state().follow_end());
     let mut stream = Stats(Vec::new());
-    let mut stream_update = Stats(Vec::new());
+    let reply_id = t3code_web::components::chat::timeline_entries::MessageId::new("stream-reply");
     let mut cut = 0;
     while cut < reply.len() {
         cut = (cut + 40).min(reply.len());
         while !reply.is_char_boundary(cut) {
             cut += 1;
         }
-        let mut entries = base.entries.to_vec();
-        if let Some(last) = entries.last_mut()
-            && let EntryKind::Message(message) = &mut last.kind
-        {
-            message.text = reply[..cut].to_owned().into();
-            message.streaming = cut < reply.len();
-        }
-        let next = TimelineInput { entries: entries.into(), ..base.clone() };
+        let text: gpui_kit::SharedString = reply[..cut].to_owned().into();
+        let streaming = cut < reply.len();
         let started = Instant::now();
-        s.cx.update(|cx| timeline.update(cx, |t, cx| t.update_input(next, cx)));
-        stream_update.0.push(started.elapsed());
+        s.cx.update(|cx| timeline.update(cx, |t, cx| t.update_message_text(&reply_id, text, streaming, cx)));
         s.frame()?;
         stream.0.push(started.elapsed());
     }
+    // The cost the fast path avoids: re-deriving every row from the entries.
+    let mut derive = Stats(Vec::new());
+    for _ in 0..50 {
+        let next = s.cx.update(|cx| timeline.read(cx).input().clone());
+        let started = Instant::now();
+        s.cx.update(|cx| timeline.update(cx, |t, cx| t.update_input(next, cx)));
+        derive.0.push(started.elapsed());
+    }
     let following = s.cx.update(|cx| timeline.read(cx).follow()) == TimelineFollow::Following;
-    writeln!(report, "streaming frames (20,000 chars, 40-char deltas, input update + frame): {}", stream.summary())?;
-    writeln!(report, "  of which input update (row derivation over all entries): {}", stream_update.summary())?;
+    writeln!(report, "streaming frames (20,000 chars in 40-char deltas at the end of the 3000-row thread, delta + frame): {}", stream.summary())?;
+    writeln!(report, "full row re-derivation of the 3000-row thread (update_input, not used per delta): {}", derive.summary())?;
     writeln!(report, "  still following the end after streaming: {following}")?;
     s.shot(&out.join("perf-streamed-end.png"))?;
     let rss_end = rss_kib();

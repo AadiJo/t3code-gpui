@@ -4,15 +4,19 @@
 //! TextMate scope maps to the Zed highlight name Pierre's themes are keyed by.
 //!
 //! Finished code is cached by content. Code that grows (a streaming fence)
-//! resumes from the parser state at the last complete line it saw.
+//! resumes from the parser state at the last complete line it saw. Large
+//! finished code highlights on a background thread the first time it shows,
+//! so scrolling onto it never waits for the parser.
 
 use std::{
     cell::RefCell,
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     hash::{DefaultHasher, Hash, Hasher},
     ops::Range,
-    sync::{Arc, LazyLock},
+    sync::{Arc, LazyLock, Mutex},
 };
+
+use gpui_kit::{App, SharedString};
 
 use syntect::{
     parsing::{ParseState, Scope, ScopeStack, SyntaxReference, SyntaxSet},
@@ -68,7 +72,6 @@ struct Incremental {
 
 #[derive(Default)]
 struct HighlightCache {
-    finished: HashMap<u64, Highlights>,
     growing: Vec<Incremental>,
     names: HashMap<Scope, Option<&'static str>>,
 }
@@ -82,28 +85,74 @@ const FINISHED_CAPACITY: usize = 500;
 /// Growing documents tracked at once.
 const GROWING_CAPACITY: usize = 8;
 
-/// Highlights for `code` in `language`. Pass `growing` for code that is still
-/// streaming in, so the next call can resume where this one stopped.
+/// Finished highlights by content, shared with the background highlighter.
+static FINISHED: LazyLock<Mutex<HashMap<u64, Highlights>>> = LazyLock::new(Default::default);
+/// Keys being highlighted on a background thread.
+static PENDING: LazyLock<Mutex<HashSet<u64>>> = LazyLock::new(Default::default);
+/// Finished code at least this long highlights off the UI thread.
+const BACKGROUND_THRESHOLD: usize = 2_000;
+
+fn content_key(language: &str, code: &str) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    language.hash(&mut hasher);
+    code.hash(&mut hasher);
+    hasher.finish()
+}
+
+fn finished(key: u64) -> Option<Highlights> {
+    FINISHED.lock().ok()?.get(&key).cloned()
+}
+
+/// Parses finished code on the calling thread and caches the result.
+fn compute(syntax: &'static SyntaxReference, language: &str, code: &str, key: u64) -> Highlights {
+    let highlights: Highlights = CACHE.with_borrow_mut(|cache| cache.parse_from(syntax, language, code, false)).into();
+    if let Ok(mut map) = FINISHED.lock() {
+        if map.len() >= FINISHED_CAPACITY {
+            map.clear();
+        }
+        map.insert(key, highlights.clone());
+    }
+    highlights
+}
+
+/// Highlights for `code` in `language`, computed now. Pass `growing` for code
+/// that is still streaming in, so the next call can resume where this one stopped.
 pub fn highlight(language: &str, code: &str, growing: bool) -> Option<Highlights> {
     let syntax = find_syntax(language)?;
-    CACHE.with_borrow_mut(|cache| {
-        if !growing {
-            let mut hasher = DefaultHasher::new();
-            language.hash(&mut hasher);
-            code.hash(&mut hasher);
-            let key = hasher.finish();
-            if let Some(found) = cache.finished.get(&key) {
-                return Some(found.clone());
+    if growing {
+        return Some(CACHE.with_borrow_mut(|cache| cache.parse_from(syntax, language, code, true)).into());
+    }
+    let key = content_key(language, code);
+    Some(finished(key).unwrap_or_else(|| compute(syntax, language, code, key)))
+}
+
+/// Highlights for finished code. Short code is highlighted now; long code not
+/// yet cached returns `None` and is highlighted on a background thread, after
+/// which windows redraw with the colours.
+pub fn highlight_or_schedule(language: &str, code: &SharedString, cx: &App) -> Option<Highlights> {
+    let syntax = find_syntax(language)?;
+    let key = content_key(language, code);
+    if let Some(found) = finished(key) {
+        return Some(found);
+    }
+    if code.len() < BACKGROUND_THRESHOLD {
+        return Some(compute(syntax, language, code, key));
+    }
+    if PENDING.lock().is_ok_and(|mut pending| pending.insert(key)) {
+        let (language, code) = (language.to_owned(), code.clone());
+        let work = cx.background_executor().spawn(async move {
+            compute(syntax, &language, &code, key);
+        });
+        cx.spawn(async move |cx| {
+            work.await;
+            if let Ok(mut pending) = PENDING.lock() {
+                pending.remove(&key);
             }
-            let highlights: Highlights = cache.parse_from(syntax, language, code, false).into();
-            if cache.finished.len() >= FINISHED_CAPACITY {
-                cache.finished.clear();
-            }
-            cache.finished.insert(key, highlights.clone());
-            return Some(highlights);
-        }
-        Some(cache.parse_from(syntax, language, code, true).into())
-    })
+            cx.update(|cx| cx.refresh_windows());
+        })
+        .detach();
+    }
+    None
 }
 
 impl HighlightCache {

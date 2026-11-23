@@ -21,7 +21,7 @@ use super::{
     chat_style::ChatColors,
     markdown_stream_blocks::parse_message_blocks,
     messages_timeline_logic::{RowKind, TimelineExpansion, TimelineRow, derive_timeline_rows},
-    timeline_entries::{EntryId, MessageRole, RunId, AttemptId, TimelineInput},
+    timeline_entries::{AttemptId, EntryId, EntryKind, MessageId, MessageRole, RunId, TimelineInput},
     timeline_viewport::TimelineFollow,
     virtual_list::{AT_END_THRESHOLD, ListViewport, RowSlot, ScrollMemory, VirtualListState, virtual_list},
 };
@@ -166,6 +166,37 @@ impl MessagesTimeline {
     /// Height of the composer overlay the list keeps clear.
     pub fn composer_bottom(&self) -> Pixels {
         self.composer_inset
+    }
+
+    /// A streaming delta: replaces one message's text without re-deriving
+    /// rows. Finishing the stream (`streaming: false`) re-derives, since the
+    /// meta row and folds depend on it.
+    pub fn update_message_text(&mut self, id: &MessageId, text: SharedString, streaming: bool, cx: &mut Context<Self>) {
+        let entries = Arc::make_mut(&mut self.input.entries);
+        let Some(message) = entries.iter_mut().rev().find_map(|entry| match &mut entry.kind {
+            EntryKind::Message(message) if message.id == *id => Some(message),
+            _ => None,
+        }) else {
+            return;
+        };
+        let was_streaming = message.streaming;
+        message.text = text.clone();
+        message.streaming = streaming;
+        if was_streaming && !streaming {
+            self.rebuild_rows();
+        } else {
+            let rows = Arc::make_mut(&mut self.rows);
+            for row in rows.iter_mut().rev() {
+                if let RowKind::Message(row) = &mut row.kind
+                    && row.message.id == *id
+                {
+                    row.message.text = text;
+                    row.message.streaming = streaming;
+                    break;
+                }
+            }
+        }
+        cx.notify();
     }
 
     pub fn input(&self) -> &TimelineInput {
