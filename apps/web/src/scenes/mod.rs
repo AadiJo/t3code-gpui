@@ -11,6 +11,7 @@ mod notifications;
 pub mod composer;
 pub mod diffs;
 pub mod files;
+pub mod settings_server;
 mod sidebar;
 mod terminal;
 pub mod ui;
@@ -64,6 +65,24 @@ pub fn scenes() -> &'static [(&'static str, SceneBuilder)] {
         ("files-search-light", files::build_search_light),
         ("files-goto", files::build_goto),
         ("files-goto-light", files::build_goto_light),
+        ("settings-server", settings_server::build),
+        ("settings-server-light", settings_server::build_light),
+        ("settings-server-claude", settings_server::build_claude),
+        ("settings-server-claude-light", settings_server::build_claude_light),
+        ("settings-server-add", settings_server::build_add),
+        ("settings-server-add-light", settings_server::build_add_light),
+        ("settings-server-threads", settings_server::build_threads),
+        ("settings-server-threads-light", settings_server::build_threads_light),
+        ("settings-server-source-control", settings_server::build_source_control),
+        ("settings-server-source-control-light", settings_server::build_source_control_light),
+        ("settings-server-task-editor", settings_server::build_task_editor),
+        ("settings-server-task-editor-light", settings_server::build_task_editor_light),
+        ("settings-server-tasks", settings_server::build_tasks),
+        ("settings-server-worktrees", settings_server::build_worktrees),
+        ("settings-server-maintenance", settings_server::build_maintenance),
+        ("settings-server-devices", settings_server::build_devices),
+        ("settings-server-projects", settings_server::build_projects),
+        ("settings-server-access", settings_server::build_access),
     ]
 }
 

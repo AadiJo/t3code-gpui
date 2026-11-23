@@ -16,6 +16,7 @@ use crate::appearance_fonts::{TextSize, weight};
 use crate::components::icons::{Icon, IconName, IconSize};
 use crate::components::settings::connections_settings::ConnectionsSettings;
 use crate::components::settings::settings_layout::page_container;
+use crate::components::settings::server_settings_pages::ServerSettingsPages;
 use crate::components::settings::settings_search::{SearchItem, SettingsPath, nav_groups, search_settings};
 use crate::components::ui::TextStyleExt as _;
 use crate::components::ui::button::{Button, ButtonSize, ButtonVariant};
@@ -36,6 +37,8 @@ pub struct SettingsRoute {
     query: SharedString,
     active_result: usize,
     environments: Entity<ConnectionsSettings>,
+    /// The selected environment's server-side pages, once a source is set.
+    server_pages: Option<Entity<ServerSettingsPages>>,
     scroll: ScrollHandle,
     focus: FocusHandle,
     _subscriptions: Vec<Subscription>,
@@ -85,6 +88,7 @@ impl SettingsRoute {
             query: SharedString::default(),
             active_result: 0,
             environments,
+            server_pages: None,
             scroll: ScrollHandle::new(),
             focus: cx.focus_handle(),
             _subscriptions: vec![subscription],
@@ -98,6 +102,16 @@ impl SettingsRoute {
     /// The Environments page, for callers that open one of its dialogs.
     pub fn environments(&self) -> &Entity<ConnectionsSettings> {
         &self.environments
+    }
+
+    /// Shows the server-side pages (Providers, Threads, …) for one environment.
+    pub fn set_server_pages(&mut self, pages: Entity<ServerSettingsPages>, cx: &mut Context<Self>) {
+        self.server_pages = Some(pages);
+        cx.notify();
+    }
+
+    pub fn server_pages(&self) -> Option<&Entity<ServerSettingsPages>> {
+        self.server_pages.as_ref()
     }
 
     pub fn navigate(&mut self, path: SettingsPath, cx: &mut Context<Self>) {
@@ -295,7 +309,13 @@ impl SettingsRoute {
             .children(crate::components::clerk::t3_connect_sidebar_sign_in(self.environments.clone(), cx))
     }
 
-    fn render_content(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render_content(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let path = self.path;
+        let server_page = self
+            .server_pages
+            .clone()
+            .filter(|_| ServerSettingsPages::handles(path))
+            .and_then(|pages| pages.update(cx, |pages, cx| pages.page(path, window, cx)));
         let theme = cx.app_theme();
         let c = &theme.colors;
         let sp = |n: f32| theme.sp(n);
@@ -329,7 +349,9 @@ impl SettingsRoute {
                         .on_click(cx.listener(|_, _, _, cx| cx.emit(SettingsRouteEvent::Close))),
                 ),
             );
-        let body = if self.path.is_built() {
+        let body = if let Some(page) = server_page {
+            page.into_any_element()
+        } else if self.path.is_built() {
             self.environments.clone().into_any_element()
         } else {
             page_container(cx)
@@ -363,7 +385,7 @@ impl SettingsRoute {
 impl Render for SettingsRoute {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let nav = self.render_nav(window, cx).into_any_element();
-        let content = self.render_content(cx).into_any_element();
+        let content = self.render_content(window, cx).into_any_element();
         let theme = cx.app_theme();
         let viewport = window.viewport_size();
         // `sm:p-6 lg:p-10`, `sm:max-w-[80rem] sm:max-h-[60rem]`; the Modal adds 16px.
