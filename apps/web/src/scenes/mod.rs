@@ -3,6 +3,7 @@
 
 mod app;
 mod chat;
+mod command_palette;
 mod i18n;
 pub mod composer;
 pub mod diffs;
@@ -32,6 +33,10 @@ pub fn scenes() -> &'static [(&'static str, SceneBuilder)] {
         ("composer-popovers", composer::build_popovers),
         ("composer-popovers-light", composer::build_popovers_light),
         ("diffs", diffs::build),
+        ("command-palette", command_palette::build),
+        ("command-palette-root", command_palette::build_root),
+        ("command-palette-nested", command_palette::build_nested),
+        ("command-palette-empty", command_palette::build_empty),
     ]
 }
 

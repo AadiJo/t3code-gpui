@@ -38,6 +38,11 @@ unicode-width.workspace = true
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
+t3code-i18n-macros.workspace = true
+flate2.workspace = true
+jiff.workspace = true
+sys-locale.workspace = true
+unicode-properties.workspace = true
 
 # Clicks through the languages in the `i18n` scene headlessly and screenshots each.
 [[example]]
@@ -47,4 +52,9 @@ required-features = ["test-support"]
 # Headless end-to-end checks and measurements for the diff panel.
 [[example]]
 name = "diffs_harness"
+required-features = ["test-support"]
+
+# Drives keyboard control and the command palette headlessly; writes a transcript, screenshots and timings.
+[[example]]
+name = "palette_check"
 required-features = ["test-support"]
