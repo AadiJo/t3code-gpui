@@ -7266,8 +7266,11 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "t3code-client-runtime",
+ "t3code-contracts",
+ "t3code-shared",
  "t3code-web",
  "tokio",
+ "uuid",
 ]
 
 [[package]]
@@ -7326,6 +7329,7 @@ dependencies = [
  "unicode-segmentation",
  "unicode-width",
  "url",
+ "uuid",
 ]
 
 [[package]]

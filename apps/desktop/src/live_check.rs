@@ -275,13 +275,17 @@ fn wait_task<T: 'static>(check: &mut Check, task: Task<T>) -> anyhow::Result<T> 
 }
 
 fn run_seed(check: &mut Check) -> anyhow::Result<()> {
-    let url = std::env::var("T3_PAIRING_URL").context("T3_PAIRING_URL")?;
-    let request = parse_pairing_url(&url)?;
-    let pairing = check.cx.update(|cx| ConnectionRuntime::global(cx).pair(request, None, cx));
-    let id = wait_task(check, pairing)?.map_err(|e| anyhow::anyhow!("{}", e.0))?;
-    check.note(format!("paired environment {id}"));
+    let paired = check.cx.update(|cx| !ConnectionRuntime::state(cx).read(cx).environments.is_empty());
+    if !paired {
+        let url = std::env::var("T3_PAIRING_URL").context("T3_PAIRING_URL")?;
+        let request = parse_pairing_url(&url)?;
+        let pairing = check.cx.update(|cx| ConnectionRuntime::global(cx).pair(request, None, cx));
+        let label = wait_task(check, pairing)?.map_err(|e| anyhow::anyhow!("{}", e.0))?;
+        check.note(format!("paired {label}"));
+    }
     check.pump(|c| c.connected(), Duration::from_secs(30), "connected")?;
-    let environment_id = t3code_contracts::EnvironmentId::new(id.as_ref());
+    let id = check.cx.update(|cx| ConnectionRuntime::state(cx).read(cx).environments[0].entry.environment_id.to_string());
+    let environment_id = t3code_contracts::EnvironmentId::new(id.as_str());
     check.pump(|c| c.cx.update(|cx| StateBridge::environment(&environment_id, cx).is_some()), Duration::from_secs(10), "store open")?;
     let commands: EnvironmentCommands =
         check.cx.update(|cx| StateBridge::environment(&environment_id, cx).map(|env| env.read(cx).commands.clone())).context("store")?;
@@ -289,7 +293,7 @@ fn run_seed(check: &mut Check) -> anyhow::Result<()> {
     let mut projects = Vec::new();
     for name in ["atlas", "harbor", "meridian"] {
         let project_id = ProjectId::new(uuid::Uuid::new_v4().to_string());
-        let root = workspaces.join(name);
+        let root = workspaces.join(format!("{name}-{}", now_ms()));
         let commands = commands.clone();
         let mutation = ProjectMutation::ProjectCreate(ProjectMutationProjectCreate {
             command_id: CommandId::new(uuid::Uuid::new_v4().to_string()),
@@ -322,6 +326,17 @@ fn run_seed(check: &mut Check) -> anyhow::Result<()> {
         Ok(thread_id)
     };
     let send_and_settle = |check: &mut Check, thread: &ThreadId, text: &str| -> anyhow::Result<()> {
+        let latest = |c: &mut Check, env: &t3code_contracts::EnvironmentId, thread: &ThreadId| {
+            c.cx.update(|cx| {
+                StateBridge::shell(cx)
+                    .read(cx)
+                    .presented()
+                    .iter()
+                    .find(|row| &row.environment_id == env && row.id() == thread)
+                    .map(|row| (row.latest_run.as_ref().map(|r| (r.run_id.clone(), r.completed_at.is_some())), row_status(row)))
+            })
+        };
+        let before = latest(check, &environment_id, thread).and_then(|(run, _)| run).map(|(id, _)| id);
         let commands = commands.clone();
         let message = SendMessage::text(thread.clone(), text);
         block(check, async move { commands.send_message(message).await })?.map_err(|e| anyhow::anyhow!("{e}"))?;
@@ -329,13 +344,10 @@ fn run_seed(check: &mut Check) -> anyhow::Result<()> {
         let thread = thread.clone();
         check.pump(
             move |c| {
-                c.cx.update(|cx| {
-                    StateBridge::shell(cx).read(cx).presented().iter().any(|row| {
-                        row.environment_id == env
-                            && row.id() == &thread
-                            && row.latest_run.as_ref().is_some_and(|run| run.completed_at.is_some())
-                            && !row.runtime.as_ref().is_some_and(|r| t3code_client_runtime::state::models::is_active_status(r.status))
-                    })
+                let seen = latest(c, &env, &thread);
+                seen.is_some_and(|(run, status)| {
+                    run.is_some_and(|(id, done)| Some(&id) != before.as_ref() && done)
+                        && !matches!(status, t3code_client_runtime::state::sidebar::ThreadStatus::Working | t3code_client_runtime::state::sidebar::ThreadStatus::Preparing)
                 })
             },
             Duration::from_secs(60),

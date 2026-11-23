@@ -8,7 +8,7 @@ use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::sync::Arc;
 
-use gpui_kit::{App, Context, Entity, SharedString, Subscription, Task};
+use gpui_kit::{App, Context, Entity, SharedString, Subscription};
 use t3code_client_runtime::state::client_store::ClientStore;
 use t3code_client_runtime::state::drafts::{Drafts, scoped_thread_key};
 use t3code_client_runtime::state::models::{EpochMs, ThreadRow, now_ms, parse_ms};
@@ -22,7 +22,7 @@ use t3code_contracts::{
     OrchestrationV2ThreadShellSettledOverride as Settled,
 };
 
-use super::{Environments, FRAME, LiveEnvironment};
+use super::{Environments, LiveEnvironment};
 use crate::components::sidebar::model::{
     self as model, ErrorClass, LatestRun, ProjectRef, RunStatus, RuntimeStatus, SettledOverride, SidebarProject,
     SidebarSettings, SidebarSnapshot, SidebarThread, SubagentRequest, ThreadKey, ThreadRuntime, TimestampMs,
@@ -40,7 +40,7 @@ struct MappedRow {
     thread: Arc<SidebarThread>,
 }
 
-/// Every environment's shell, joined. Notifies once per frame at most when any shell changes.
+/// Every environment's shell, joined. Notifies once per update cycle when any shell changes.
 pub struct LiveShell {
     environments: Entity<Environments>,
     drafts: Rc<ClientStore<Drafts>>,
@@ -53,7 +53,7 @@ pub struct LiveShell {
     active_thread: Option<ThreadKey>,
     /// Bumped on each rebuild; sources that cache derived lists compare it.
     revision: u64,
-    rebuild: Option<Task<()>>,
+    rebuild_pending: bool,
     rebuilds: u64,
     _environment_subscriptions: Vec<Subscription>,
     _subscriptions: Vec<Subscription>,
@@ -200,7 +200,7 @@ impl LiveShell {
             snapshot: SidebarSnapshot::default(),
             active_thread: None,
             revision: 0,
-            rebuild: None,
+            rebuild_pending: false,
             rebuilds: 0,
             _environment_subscriptions: Vec::new(),
             _subscriptions: vec![subscription],
@@ -247,18 +247,20 @@ impl LiveShell {
         self.active_thread.as_ref()
     }
 
-    /// Rebuilds after the current frame, once however many shells changed in it.
+    /// Rebuilds once at the end of the current update cycle, however many shells changed in
+    /// it. Each environment's shell already arrives at most once per frame.
     fn schedule(&mut self, cx: &mut Context<Self>) {
-        if self.rebuild.is_some() {
+        if self.rebuild_pending {
             return;
         }
-        self.rebuild = Some(cx.spawn(async move |this, cx| {
-            cx.background_executor().timer(FRAME).await;
+        self.rebuild_pending = true;
+        let this = cx.weak_entity();
+        cx.defer(move |cx| {
             _ = this.update(cx, |this, cx| {
-                this.rebuild = None;
+                this.rebuild_pending = false;
                 this.rebuild_now(cx);
             });
-        }));
+        });
     }
 
     /// Rebuilds the snapshot from the environments' current shells.

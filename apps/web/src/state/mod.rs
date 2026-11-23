@@ -8,9 +8,11 @@
 //! thread and the mapped view models of recently shown ones.
 //!
 //! Every runtime value arrives through a `tokio::sync::watch` receiver. The GPUI tasks here
-//! await those receivers directly (tokio's sync primitives need no tokio runtime to await) and
-//! wait one frame after each update, so a burst of stream events costs at most one view update
-//! per frame: the watch keeps only the latest value.
+//! await those receivers directly (tokio's sync primitives need no tokio runtime to await).
+//! A watch keeps only the latest value, so however many stream events land between two
+//! foreground wakes, the view sees one update; views then repaint at most once per frame.
+//! (A timer between updates would cap them further, but GPUI timers do not fire under the
+//! headless dispatcher the end-to-end checks run on.)
 
 pub mod composer;
 pub mod palette;
@@ -22,7 +24,6 @@ use std::cell::RefCell;
 use std::future::Future;
 use std::rc::Rc;
 use std::sync::Arc;
-use std::time::Duration;
 
 use gpui_kit::{App, AppContext as _, AsyncApp, Context, Entity, Global, Task};
 use t3code_client_runtime::operations::EnvironmentCommands;
@@ -36,12 +37,9 @@ use tokio::sync::watch;
 
 use crate::connection::ConnectionRuntime;
 
-/// One frame at 120 Hz: the shortest gap between two view updates from one source.
-pub const FRAME: Duration = Duration::from_micros(8_333);
-
 /// Follows `receiver` on the GPUI thread: calls `apply` with the current value at once and
-/// then with the latest value after each change, at most once per [`FRAME`]. Stops when the
-/// sender is dropped or `apply` returns `false`.
+/// then with the latest value after each change (changes between two wakes collapse into
+/// one). Stops when the sender is dropped or `apply` returns `false`.
 pub fn follow_watch<T: Clone + 'static>(
     mut receiver: watch::Receiver<T>,
     cx: &mut App,
@@ -60,7 +58,6 @@ pub fn follow_watch<T: Clone + 'static>(
             if !apply(value, cx) {
                 return;
             }
-            cx.background_executor().timer(FRAME).await;
         }
     })
 }
