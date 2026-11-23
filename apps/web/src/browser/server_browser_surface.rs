@@ -15,7 +15,7 @@ use std::time::{Duration, Instant};
 use gpui_kit::{
     App, Bounds, Context, EventEmitter, FocusHandle, Focusable, ImageSource, IntoElement, KeyDownEvent, KeyUpEvent, Modifiers,
     MouseButton as GpuiButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ObjectFit, Pixels, Point, Render, RenderImage, ScrollDelta,
-    ScrollWheelEvent, SharedString, Task, Window, canvas, div, img, prelude::*, px,
+    ScrollEvent, SharedString, Task, Window, canvas, div, img, prelude::*, px,
 };
 use t3code_client_runtime::preview::server_browser_stream::{
     Controller, FileChooser, HostSetup, HostSetupNeed, KeyAction, MouseAction, MouseButton, PreviewStreamControl, PreviewStreamEvent,
@@ -505,7 +505,7 @@ impl ServerBrowserSurface {
         }
     }
 
-    fn on_scroll(&mut self, event: &ScrollWheelEvent, _: &mut Window, cx: &mut Context<Self>) {
+    fn on_scroll(&mut self, event: &ScrollEvent, _: &mut Window, cx: &mut Context<Self>) {
         let Some((x, y)) = self.page_point(event.position, false) else { return };
         let (dx, dy) = match event.delta {
             ScrollDelta::Pixels(delta) => (f32::from(delta.x), f32::from(delta.y)),
@@ -611,7 +611,7 @@ impl ServerBrowserSurface {
 fn void(_: bool) {}
 
 impl Render for ServerBrowserSurface {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.app_theme().clone();
         let c = &theme.colors;
         let bounds_cell = self.bounds.clone();
@@ -672,7 +672,7 @@ impl Render for ServerBrowserSurface {
             .on_mouse_up(GpuiButton::Right, cx.listener(Self::on_mouse_up))
             .on_mouse_up(GpuiButton::Middle, cx.listener(Self::on_mouse_up))
             .on_mouse_move(cx.listener(Self::on_mouse_move))
-            .on_scroll_wheel(cx.listener(Self::on_scroll))
+            .on_scroll(cx.listener(Self::on_scroll))
             .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| this.on_key(KeyAction::Down, &event.keystroke, window, cx)))
             .on_key_up(cx.listener(|this, event: &KeyUpEvent, window, cx| this.on_key(KeyAction::Up, &event.keystroke, window, cx)));
         let overlay = |content: gpui_kit::Div| {

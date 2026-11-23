@@ -55,7 +55,8 @@ fn nav_title(snapshot: &PreviewSessionSnapshot) -> String {
     if !title.trim().is_empty() {
         return title.to_owned();
     }
-    url::Url::parse(nav_url(snapshot)).ok().and_then(|u| u.host_str().map(str::to_owned)).unwrap_or_else(|| t!("New tab").to_string())
+    let url = nav_url(snapshot);
+    url::Url::parse(url).ok().and_then(|u| u.host_str().map(str::to_owned)).unwrap_or_else(|| if url.is_empty() { "about:blank".into() } else { url.to_owned() })
 }
 
 /// The browser panel for one thread.
