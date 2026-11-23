@@ -24,6 +24,12 @@ name = "terminal-check"
 path = "src/terminal_check.rs"
 required-features = ["headless"]
 
+# Runs a scripted notification sequence through the engine and inbox and logs
+# every decision. Usage: notification-check <fixture.json> <out.jsonl> <darwin|linux> [--notify]
+[[bin]]
+name = "notification-check"
+path = "src/notification_check.rs"
+
 [dependencies]
 t3code-client-runtime.workspace = true
 t3code-contracts.workspace = true

@@ -64,22 +64,22 @@ pub trait NativeBackend {
 }
 
 #[cfg(target_os = "linux")]
-fn backend(activations: UnboundedSender<Activation>) -> Option<Rc<dyn NativeBackend>> {
+pub(crate) fn backend(activations: UnboundedSender<Activation>) -> Option<Rc<dyn NativeBackend>> {
     linux::LinuxBackend::new(activations).map(|backend| Rc::new(backend) as Rc<dyn NativeBackend>)
 }
 
 #[cfg(target_os = "macos")]
-fn backend(activations: UnboundedSender<Activation>) -> Option<Rc<dyn NativeBackend>> {
+pub(crate) fn backend(activations: UnboundedSender<Activation>) -> Option<Rc<dyn NativeBackend>> {
     macos::MacBackend::new(activations).map(|backend| Rc::new(backend) as Rc<dyn NativeBackend>)
 }
 
 #[cfg(target_os = "windows")]
-fn backend(activations: UnboundedSender<Activation>) -> Option<Rc<dyn NativeBackend>> {
+pub(crate) fn backend(activations: UnboundedSender<Activation>) -> Option<Rc<dyn NativeBackend>> {
     windows::WindowsBackend::new(activations).map(|backend| Rc::new(backend) as Rc<dyn NativeBackend>)
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
-fn backend(_: UnboundedSender<Activation>) -> Option<Rc<dyn NativeBackend>> {
+pub(crate) fn backend(_: UnboundedSender<Activation>) -> Option<Rc<dyn NativeBackend>> {
     None
 }
 
