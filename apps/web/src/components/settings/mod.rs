@@ -1,10 +1,15 @@
-//! Settings. This port builds the shell and the Environments page; the
-//! other pages are listed in the nav and marked as not built.
+//! Settings: the shell, its search, and the pages.
 
 pub mod add_environment_dialog;
+pub mod appearance_settings;
+pub mod archived_threads_panel;
 pub mod connections_settings;
 pub mod import_desktop_dialog;
+pub mod keybindings_settings;
+pub mod settings_controls;
 pub mod settings_layout;
+pub mod settings_pages;
+pub mod settings_panels;
 pub mod settings_search;
 pub mod provider_driver_meta;
 pub mod provider_status;
@@ -27,3 +32,6 @@ pub mod server_settings_pages;
 pub mod source_control_settings;
 pub mod threads_settings;
 pub mod worktrees_settings;
+pub mod settings_search_catalog;
+pub mod snap_shot_settings;
+pub mod voice_settings_panel;

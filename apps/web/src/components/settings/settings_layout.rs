@@ -104,6 +104,8 @@ impl RenderOnce for SettingsSection {
 #[derive(IntoElement)]
 pub struct SettingsRow {
     title: SharedString,
+    reset: Option<AnyElement>,
+    disabled: bool,
     description: Option<SharedString>,
     status: Option<AnyElement>,
     control: Option<AnyElement>,
@@ -112,7 +114,33 @@ pub struct SettingsRow {
 
 impl SettingsRow {
     pub fn new(title: impl Into<SharedString>) -> Self {
-        Self { title: title.into(), description: None, status: None, control: None, children: Vec::new() }
+        Self {
+            title: title.into(),
+            reset: None,
+            disabled: false,
+            description: None,
+            status: None,
+            control: None,
+            children: Vec::new(),
+        }
+    }
+
+    /// Replaces the title, for a row titled differently from its catalog entry.
+    pub fn title(mut self, title: impl Into<SharedString>) -> Self {
+        self.title = title.into();
+        self
+    }
+
+    /// The reset button beside the title, shown while the value is not its default.
+    pub fn reset(mut self, reset: impl IntoElement) -> Self {
+        self.reset = Some(reset.into_any_element());
+        self
+    }
+
+    /// `aria-disabled`: the row dims to 64%.
+    pub fn disabled(mut self, disabled: bool) -> Self {
+        self.disabled = disabled;
+        self
     }
 
     pub fn description(mut self, description: impl Into<SharedString>) -> Self {
@@ -144,6 +172,7 @@ impl RenderOnce for SettingsRow {
         let has_children = !self.children.is_empty();
         div()
             .px(theme.sp(4.))
+            .when(self.disabled, |d| d.opacity(0.64))
             .when(has_children, |d| d.pt(theme.sp(3.)).pb(theme.sp(1.)))
             .when(!has_children, |d| d.py(theme.sp(3.)))
             .child(
@@ -160,10 +189,25 @@ impl RenderOnce for SettingsRow {
                             .gap(theme.sp(1.))
                             .child(
                                 div()
+                                    .flex()
+                                    .items_center()
+                                    .gap(theme.sp(1.5))
                                     .min_h(theme.sp(5.))
-                                    .ui_text(theme, TextSize::Sm, weight::MEDIUM)
-                                    .text_color(c.foreground())
-                                    .child(self.title),
+                                    .child(
+                                        div()
+                                            .ui_text(theme, TextSize::Sm, weight::MEDIUM)
+                                            .text_color(c.foreground())
+                                            .child(self.title),
+                                    )
+                                    .child(
+                                        div()
+                                            .flex()
+                                            .flex_none()
+                                            .items_center()
+                                            .justify_center()
+                                            .size(theme.sp(5.))
+                                            .children(self.reset),
+                                    ),
                             )
                             .children(self.description.map(|text| {
                                 div()

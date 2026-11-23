@@ -12,6 +12,7 @@ pub mod composer;
 pub mod diffs;
 pub mod files;
 pub mod settings_server;
+pub mod settings;
 mod sidebar;
 mod terminal;
 pub mod ui;
@@ -83,6 +84,17 @@ pub fn scenes() -> &'static [(&'static str, SceneBuilder)] {
         ("settings-server-devices", settings_server::build_devices),
         ("settings-server-projects", settings_server::build_projects),
         ("settings-server-access", settings_server::build_access),
+        ("settings", settings::build),
+        ("settings-appearance", settings::build_appearance),
+        ("settings-chat", settings::build_chat),
+        ("settings-diffs", settings::build_diffs),
+        ("settings-keybindings", settings::build_keybindings),
+        ("settings-keybindings-recording", settings::build_keybindings_recording),
+        ("settings-voice", settings::build_voice),
+        ("settings-snap-shot", settings::build_snap_shot),
+        ("settings-labs", settings::build_labs),
+        ("settings-archived", settings::build_archived),
+        ("settings-about", settings::build_about),
     ]
 }
 

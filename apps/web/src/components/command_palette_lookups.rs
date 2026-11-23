@@ -189,7 +189,7 @@ impl FixtureSource {
                 .into_iter()
                 .map(|id| PaletteEnvironment { id, label: "devbox".into(), connected: true })
                 .collect(),
-            settings: fixture_settings(),
+            settings: crate::components::settings::settings_search::palette_settings(Default::default()),
             ports: Vec::new(),
             now_ms: snapshot.now.0,
         }
@@ -199,24 +199,6 @@ impl FixtureSource {
         self.ports = ports;
         self
     }
-}
-
-fn fixture_settings() -> Arc<[PaletteSetting]> {
-    let setting = |id: &str, title: &str, section: &str, terms: &[&str]| PaletteSetting {
-        id: id.to_owned().into(),
-        title: title.to_owned().into(),
-        section: section.to_owned().into(),
-        terms: terms.iter().map(|t| SharedString::from(t.to_string())).collect(),
-        secondary: false,
-    };
-    [
-        setting("keybindings", "Keybindings", "Keybindings", &["shortcuts", "keys", "hotkeys"]),
-        setting("theme", "Theme", "Appearance", &["colors", "dark", "light"]),
-        setting("send-shortcut", "Send shortcut", "Chat", &["enter", "submit"]),
-        setting("project-grouping", "Project grouping", "General", &["sidebar", "folders"]),
-        setting("language", "Language", "General", &["locale", "translation"]),
-    ]
-    .into()
 }
 
 impl CommandPaletteSource for FixtureSource {

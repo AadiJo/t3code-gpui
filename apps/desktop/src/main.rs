@@ -14,6 +14,7 @@ fn main() {
                 cx.quit();
                 return;
             }
+            t3code_web::hooks::load(&t3code_client_runtime::platform::default_data_dir(), cx);
             let options = window::main_window_options(cx);
             // `T3CODE_FIXTURES=0` starts without the showcase data.
             let fixtures = std::env::var("T3CODE_FIXTURES").map_or(true, |v| v != "0");

@@ -550,11 +550,11 @@ impl DiffPanel {
                     .rounded(px(8.))
                     .bg(colors.input.opacity(0.4))
                     .child(segment("diff-stacked", "icons/diffs/rows-3.svg", settings.diff_layout == DiffLayout::Stacked).on_click(cx.listener(|this, _, _, cx| {
-                        cx.global_mut::<DiffPanelStore>().settings.diff_layout = DiffLayout::Stacked;
+                        crate::hooks::settings_bridge::set_diff_layout(DiffLayout::Stacked, cx);
                         this.sync_options(cx);
                     })))
                     .child(segment("diff-split", "icons/diffs/columns-2.svg", settings.diff_layout == DiffLayout::Split).on_click(cx.listener(|this, _, _, cx| {
-                        cx.global_mut::<DiffPanelStore>().settings.diff_layout = DiffLayout::Split;
+                        crate::hooks::settings_bridge::set_diff_layout(DiffLayout::Split, cx);
                         this.sync_options(cx);
                     }))),
             )

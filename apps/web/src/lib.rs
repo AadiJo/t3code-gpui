@@ -7,11 +7,13 @@ extern crate self as t3code_web;
 pub mod app_root;
 pub mod appearance_fonts;
 pub mod assets;
+pub mod client_persistence_storage;
 pub mod command_palette_store;
 pub mod components;
 pub mod fixtures;
 pub mod connection;
 pub mod editor_preferences;
+pub mod hooks;
 pub mod i18n;
 pub mod composer_code_block;
 pub mod composer_code_languages;
@@ -69,6 +71,8 @@ pub mod thread_notifications;
 pub mod timestamp_format;
 pub mod worktree_cleanup;
 pub mod ui_state_store;
+pub mod open_vsx_themes;
+pub mod vscode_theme_import;
 
 pub use app_root::AppRoot;
 pub use assets::Assets;
@@ -105,6 +109,7 @@ pub fn init(cx: &mut App) {
         Default::default(),
         cx,
     );
+    hooks::init(cx);
     components::sidebar::init(cx);
     components::chat::composer::init(cx);
     components::branch_picker::bind_keys(cx);

@@ -37,9 +37,25 @@ required-features = ["headless"]
 name = "import-check"
 path = "src/import/import_check.rs"
 
+# Runs the theme importers over fixture files for comparison with the
+# TypeScript originals. Usage: theme-import-check <vscode|openvsx> <in> <out>
+[[bin]]
+name = "theme-import-check"
+path = "src/settings/theme_import_check.rs"
+
+# Changes each wired setting headlessly and screenshots its view, imports a
+# fixture Electron settings file, records a keybinding, then checks a
+# relaunch. Usage: settings-check <out-dir> <data-dir> <run|relaunch>
+[[bin]]
+name = "settings-check"
+path = "src/settings/settings_check.rs"
+required-features = ["headless"]
+
 [dependencies]
 t3code-client-runtime.workspace = true
 t3code-web.workspace = true
+t3code-shared.workspace = true
+t3code-contracts.workspace = true
 anyhow.workspace = true
 dirs.workspace = true
 gpui-kit.workspace = true
@@ -49,7 +65,6 @@ serde_json.workspace = true
 base64.workspace = true
 sha2.workspace = true
 tokio.workspace = true
-t3code-contracts.workspace = true
 futures.workspace = true
 jiff.workspace = true
 

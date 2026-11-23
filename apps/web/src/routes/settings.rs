@@ -17,6 +17,7 @@ use crate::components::icons::{Icon, IconName, IconSize};
 use crate::components::settings::connections_settings::ConnectionsSettings;
 use crate::components::settings::settings_layout::page_container;
 use crate::components::settings::server_settings_pages::ServerSettingsPages;
+use crate::components::settings::settings_pages::{SettingsPages, is_device_page};
 use crate::components::settings::settings_search::{SearchItem, SettingsPath, nav_groups, search_settings};
 use crate::components::ui::TextStyleExt as _;
 use crate::components::ui::button::{Button, ButtonSize, ButtonVariant};
@@ -39,6 +40,7 @@ pub struct SettingsRoute {
     environments: Entity<ConnectionsSettings>,
     /// The selected environment's server-side pages, once a source is set.
     server_pages: Option<Entity<ServerSettingsPages>>,
+    pages: Entity<SettingsPages>,
     scroll: ScrollHandle,
     focus: FocusHandle,
     _subscriptions: Vec<Subscription>,
@@ -82,6 +84,7 @@ impl SettingsRoute {
             _ => {}
         });
         let environments = cx.new(|cx| ConnectionsSettings::with_state(state, window, cx));
+        let pages = cx.new(|cx| SettingsPages::new(path, window, cx));
         Self {
             path,
             search,
@@ -89,6 +92,7 @@ impl SettingsRoute {
             active_result: 0,
             environments,
             server_pages: None,
+            pages,
             scroll: ScrollHandle::new(),
             focus: cx.focus_handle(),
             _subscriptions: vec![subscription],
@@ -114,7 +118,13 @@ impl SettingsRoute {
         self.server_pages.as_ref()
     }
 
+    /// The device preference pages, for callers and scripted checks.
+    pub fn pages(&self) -> &Entity<SettingsPages> {
+        &self.pages
+    }
+
     pub fn navigate(&mut self, path: SettingsPath, cx: &mut Context<Self>) {
+        self.pages.update(cx, |pages, cx| pages.set_path(path, cx));
         if self.path != path {
             self.path = path;
             self.scroll.set_offset(gpui_kit::point(px(0.), px(0.)));
@@ -341,7 +351,7 @@ impl SettingsRoute {
                     .child(div().truncate().font_weight(weight::MEDIUM).text_color(c.foreground()).child(self.path.section_label())),
             )
             .child(
-                div().ml_auto().flex().items_center().gap(sp(1.)).child(
+                div().ml_auto().flex().items_center().gap(sp(1.)).children(SettingsPages::restore_button(&self.pages, cx)).child(
                     Button::new("settings-close")
                         .variant(ButtonVariant::Ghost)
                         .size(ButtonSize::IconSm)
@@ -351,6 +361,8 @@ impl SettingsRoute {
             );
         let body = if let Some(page) = server_page {
             page.into_any_element()
+        } else if is_device_page(self.path) {
+            self.pages.clone().into_any_element()
         } else if self.path.is_built() {
             self.environments.clone().into_any_element()
         } else {
@@ -373,6 +385,7 @@ impl SettingsRoute {
             .child(
                 div()
                     .id("settings-content")
+                    .test_support()
                     .flex_1()
                     .min_h_0()
                     .overflow_y_scroll()

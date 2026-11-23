@@ -7534,6 +7534,7 @@ dependencies = [
  "sha2 0.10.9",
  "t3code-client-runtime",
  "t3code-contracts",
+ "t3code-shared",
  "t3code-web",
  "tokio",
  "windows 0.62.2",
@@ -7569,6 +7570,7 @@ version = "0.1.11"
 dependencies = [
  "alacritty_terminal",
  "anyhow",
+ "base64 0.22.1",
  "fancy-regex",
  "flate2",
  "futures",
@@ -7579,11 +7581,13 @@ dependencies = [
  "libc",
  "markdown",
  "regex",
+ "reqwest",
  "resvg 0.46.0",
  "rodio",
  "rust-embed",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "smallvec",
  "syntect",
  "sys-locale",
@@ -7595,10 +7599,13 @@ dependencies = [
  "tokio",
  "tracing",
  "two-face",
+ "unicode-normalization",
  "unicode-properties",
  "unicode-segmentation",
  "unicode-width",
  "url",
+ "uuid",
+ "zip",
 ]
 
 [[package]]
@@ -8111,6 +8118,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "typed-path"
+version = "0.12.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "54ec2755506471f54baf5e4bb5499d8e510cc1caf271270e778a736bd2d7336c"
+
+[[package]]
 name = "typenum"
 version = "1.20.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8174,6 +8187,15 @@ name = "unicode-linebreak"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3b09c83c3c29d37506a3e260c08c03743a6bb66a9cd432c6934ab501a190571f"
+
+[[package]]
+name = "unicode-normalization"
+version = "0.1.26"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "75cd3fb03d5288b3ba9a1ee103ac7e9cbb59f0b03d64f8ddfcc04dd42758a85d"
+dependencies = [
+ "tinyvec",
+]
 
 [[package]]
 name = "unicode-properties"
@@ -10085,6 +10107,19 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 3.0.10",
+]
+
+[[package]]
+name = "zip"
+version = "8.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2d04a6b5381502aa6087c94c669499eb1602eb9c5e8198e534de571f7154809b"
+dependencies = [
+ "crc32fast",
+ "flate2",
+ "indexmap",
+ "memchr",
+ "typed-path",
 ]
 
 [[package]]
