@@ -60,7 +60,8 @@ impl ConnectionRegistry {
                 running: Default::default(),
             }),
         };
-        registry.sync();
+        let entries = registry.inner.entries.borrow().clone();
+        registry.sync(&entries);
         Ok(registry)
     }
 
@@ -215,15 +216,17 @@ impl ConnectionRegistry {
         let mut document = self.inner.document.lock().await;
         change(&mut document);
         self.inner.store.save(&document).await?;
-        self.inner.entries.send_replace(Arc::from(document.entries()));
+        let entries: Arc<[CatalogEntry]> = Arc::from(document.entries());
         drop(document);
-        self.sync();
+        // Supervisors start before observers see the entries, so an entry
+        // that reads as enabled always has its supervisor.
+        self.sync(&entries);
+        self.inner.entries.send_replace(entries);
         Ok(())
     }
 
     /// Starts, updates and stops supervisors to match the entries.
-    fn sync(&self) {
-        let entries = self.inner.entries.borrow().clone();
+    fn sync(&self, entries: &[CatalogEntry]) {
         let mut running = self.inner.running.lock().expect("registry lock");
         running.retain(|id, _| entries.iter().any(|entry| entry.environment_id == *id && entry.enabled));
         for entry in entries.iter().filter(|entry| entry.enabled) {

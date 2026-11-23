@@ -7306,6 +7306,8 @@ dependencies = [
  "t3code-i18n-macros",
  "t3code-shared",
  "thiserror 2.0.21",
+ "tokio",
+ "tracing",
  "unicode-properties",
 ]
 

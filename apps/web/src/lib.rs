@@ -8,6 +8,7 @@ pub mod app_root;
 pub mod appearance_fonts;
 pub mod assets;
 pub mod components;
+pub mod connection;
 pub mod i18n;
 pub mod scenes;
 pub mod terminal;
