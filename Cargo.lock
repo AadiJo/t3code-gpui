@@ -7302,6 +7302,7 @@ dependencies = [
  "t3code-contracts",
  "t3code-i18n-macros",
  "t3code-shared",
+ "thiserror 2.0.21",
  "unicode-properties",
 ]
 

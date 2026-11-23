@@ -16,6 +16,7 @@ t3code-shared.workspace = true
 alacritty_terminal.workspace = true
 anyhow.workspace = true
 futures.workspace = true
+thiserror.workspace = true
 gpui-kit.workspace = true
 fancy-regex.workspace = true
 image.workspace = true

@@ -22,6 +22,14 @@ impl Assets {
 
 impl AssetSource for Assets {
     fn load(&self, path: &str) -> Result<Option<Cow<'static, [u8]>>> {
+        // `icons/lucide/x.svg?stroke=2.25` is the icon with an explicit stroke width.
+        if let Some((base, width)) = path.split_once("?stroke=") {
+            let width: f32 = width.parse()?;
+            let svg = Self::get(base).ok_or_else(|| anyhow!("missing asset {base}"))?;
+            let svg = std::str::from_utf8(&svg)?
+                .replacen(r#"stroke-width="1.75""#, &format!(r#"stroke-width="{width}""#), 1);
+            return Ok(Some(Cow::Owned(svg.into_bytes())));
+        }
         if let Some(data) = Self::get(path) {
             return Ok(Some(data));
         }

@@ -7,7 +7,7 @@ mod composer;
 mod i18n;
 mod sidebar;
 mod terminal;
-mod ui;
+pub mod ui;
 
 use gpui_kit::{AnyView, App, Window};
 
@@ -30,5 +30,5 @@ pub fn scenes() -> &'static [(&'static str, SceneBuilder)] {
 }
 
 pub fn scene(name: &str) -> Option<SceneBuilder> {
-    scenes().iter().find(|(n, _)| *n == name).map(|(_, build)| *build)
+    scenes().iter().chain(ui::SCENES).find(|(n, _)| *n == name).map(|(_, build)| *build)
 }

@@ -1,140 +1,67 @@
 //! Theme documents and the colour roles the UI draws with. Ports
-//! `themePalette.ts`: a theme is a JSON file whose colours are `oklch(L C H)`
-//! strings, with an optional variant for the other appearance.
+//! `themePalette.ts`: a theme is a JSON file whose colours are literal CSS
+//! colours (canonically `oklch(L C H)`), with an optional variant for the
+//! other appearance. Roles a theme omits come from the T3 Chat palette.
 
-use gpui_kit::{App, Global, Hsla, component::oklch};
+use std::sync::Arc;
+
+use gpui_kit::{App, Global, Hsla, Window, WindowAppearance};
 use serde::{Deserialize, Deserializer, de::Error as _};
 
 use crate::Assets;
+use crate::appearance_fonts::FontSettings;
+use crate::theme_color::{Srgb8, parse_css_color};
+use crate::theme_component::apply_component_theme;
+use crate::theme_tokens::{DerivedColors, FixedColors, Motion, Radii, Shadows, Spacing};
 
-/// Every colour role a theme sets. Field names are the theme JSON keys in snake_case.
-#[derive(Clone, Copy, Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ThemePalette {
-    #[serde(deserialize_with = "oklch_color")]
-    pub canvas: Hsla,
-    #[serde(deserialize_with = "oklch_color")]
-    pub chrome: Hsla,
-    #[serde(deserialize_with = "oklch_color")]
-    pub toolbar: Hsla,
-    #[serde(deserialize_with = "oklch_color")]
-    pub toolbar_foreground: Hsla,
-    #[serde(deserialize_with = "oklch_color")]
-    pub toolbar_border: Hsla,
-    #[serde(deserialize_with = "oklch_color")]
-    pub toolbar_control: Hsla,
-    #[serde(deserialize_with = "oklch_color")]
-    pub toolbar_control_foreground: Hsla,
-    #[serde(deserialize_with = "oklch_color")]
-    pub toolbar_control_hover: Hsla,
-    #[serde(deserialize_with = "oklch_color")]
-    pub surface: Hsla,
-    #[serde(deserialize_with = "oklch_color")]
-    pub surface_raised: Hsla,
-    #[serde(deserialize_with = "oklch_color")]
-    pub surface_overlay: Hsla,
-    #[serde(deserialize_with = "oklch_color")]
-    pub text: Hsla,
-    #[serde(deserialize_with = "oklch_color")]
-    pub text_muted: Hsla,
-    #[serde(deserialize_with = "oklch_color")]
-    pub border: Hsla,
-    #[serde(deserialize_with = "oklch_color")]
-    pub input: Hsla,
-    #[serde(deserialize_with = "oklch_color")]
-    pub focus: Hsla,
-    #[serde(deserialize_with = "oklch_color")]
-    pub accent: Hsla,
-    #[serde(deserialize_with = "oklch_color")]
-    pub accent_foreground: Hsla,
-    #[serde(deserialize_with = "oklch_color")]
-    pub secondary: Hsla,
-    #[serde(deserialize_with = "oklch_color")]
-    pub secondary_foreground: Hsla,
-    #[serde(deserialize_with = "oklch_color")]
-    pub muted: Hsla,
-    #[serde(deserialize_with = "oklch_color")]
-    pub muted_foreground: Hsla,
-    #[serde(deserialize_with = "oklch_color")]
-    pub placeholder: Hsla,
-    #[serde(deserialize_with = "oklch_color")]
-    pub secondary_label: Hsla,
-    #[serde(deserialize_with = "oklch_color")]
-    pub icon_muted: Hsla,
-    #[serde(deserialize_with = "oklch_color")]
-    pub error: Hsla,
-    #[serde(deserialize_with = "oklch_color")]
-    pub error_foreground: Hsla,
-    #[serde(deserialize_with = "oklch_color")]
-    pub error_surface: Hsla,
-    #[serde(deserialize_with = "oklch_color")]
-    pub warning: Hsla,
-    #[serde(deserialize_with = "oklch_color")]
-    pub warning_foreground: Hsla,
-    #[serde(deserialize_with = "oklch_color")]
-    pub warning_surface: Hsla,
-    #[serde(deserialize_with = "oklch_color")]
-    pub update: Hsla,
-    #[serde(deserialize_with = "oklch_color")]
-    pub update_foreground: Hsla,
-    #[serde(deserialize_with = "oklch_color")]
-    pub update_surface: Hsla,
-    #[serde(deserialize_with = "oklch_color")]
-    pub accent_surface: Hsla,
-    #[serde(deserialize_with = "oklch_color")]
-    pub accent_surface_foreground: Hsla,
-    #[serde(deserialize_with = "oklch_color")]
-    pub message_surface: Hsla,
-    #[serde(deserialize_with = "oklch_color")]
-    pub message_foreground: Hsla,
-    #[serde(deserialize_with = "oklch_color")]
-    pub message_action: Hsla,
-    #[serde(deserialize_with = "oklch_color")]
-    pub message_action_foreground: Hsla,
-    #[serde(deserialize_with = "oklch_color")]
-    pub message_action_hover: Hsla,
-    #[serde(deserialize_with = "oklch_color")]
-    pub code_background: Hsla,
-    #[serde(deserialize_with = "oklch_color")]
-    pub code_foreground: Hsla,
-    #[serde(deserialize_with = "oklch_color")]
-    pub search_match_background: Hsla,
-    #[serde(deserialize_with = "oklch_color")]
-    pub search_match_foreground: Hsla,
-    #[serde(deserialize_with = "oklch_color")]
-    pub search_match_active_background: Hsla,
-    #[serde(deserialize_with = "oklch_color")]
-    pub search_match_active_foreground: Hsla,
-    #[serde(deserialize_with = "oklch_color")]
-    pub sidebar: Hsla,
-    #[serde(deserialize_with = "oklch_color")]
-    pub sidebar_foreground: Hsla,
-    #[serde(deserialize_with = "oklch_color")]
-    pub sidebar_muted_foreground: Hsla,
-    #[serde(deserialize_with = "oklch_color")]
-    pub sidebar_control_surface: Hsla,
-    #[serde(deserialize_with = "oklch_color")]
-    pub sidebar_row_hover: Hsla,
-    #[serde(deserialize_with = "oklch_color")]
-    pub sidebar_row_active: Hsla,
-    #[serde(deserialize_with = "oklch_color")]
-    pub sidebar_row_selected: Hsla,
-    #[serde(deserialize_with = "oklch_color")]
-    pub sidebar_border: Hsla,
-    #[serde(deserialize_with = "oklch_color")]
-    pub terminal_background: Hsla,
-    #[serde(deserialize_with = "oklch_color")]
-    pub terminal_foreground: Hsla,
-    #[serde(deserialize_with = "oklch_color")]
-    pub terminal_cursor: Hsla,
-    #[serde(deserialize_with = "oklch_color")]
-    pub terminal_selection: Hsla,
-    #[serde(deserialize_with = "oklch_color")]
-    pub terminal_scrollbar: Hsla,
-    #[serde(deserialize_with = "oklch_color")]
-    pub terminal_scrollbar_hover: Hsla,
+/// Defines [`ThemePalette`] (every role resolved) and [`PaletteOverrides`]
+/// (the roles one theme file sets) from one list of roles.
+macro_rules! theme_roles {
+    ($($field:ident),* $(,)?) => {
+        /// Every colour role a theme sets. Field names are the theme JSON keys in snake_case.
+        #[derive(Clone, Copy, Debug, PartialEq)]
+        pub struct ThemePalette {
+            $(pub $field: Hsla,)*
+        }
+
+        /// The roles one theme file sets; the rest fall back to a default palette.
+        #[derive(Clone, Copy, Debug, Default, Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        pub struct PaletteOverrides {
+            $(#[serde(default, deserialize_with = "css_color")] pub $field: Option<Hsla>,)*
+        }
+
+        impl PaletteOverrides {
+            /// The full palette: these roles over `defaults`.
+            pub fn over(&self, defaults: &ThemePalette) -> ThemePalette {
+                ThemePalette { $($field: self.$field.unwrap_or(defaults.$field),)* }
+            }
+
+            /// The palette when every role is set, else `None`.
+            fn complete(&self) -> Option<ThemePalette> {
+                Some(ThemePalette { $($field: self.$field?,)* })
+            }
+        }
+    };
 }
 
+theme_roles! {
+    canvas, chrome, toolbar, toolbar_foreground, toolbar_border, toolbar_control,
+    toolbar_control_foreground, toolbar_control_hover, surface, surface_raised,
+    surface_overlay, text, text_muted, border, input, focus, accent, accent_foreground,
+    secondary, secondary_foreground, muted, muted_foreground, placeholder, secondary_label,
+    icon_muted, error, error_foreground, error_surface, warning, warning_foreground,
+    warning_surface, update, update_foreground, update_surface, accent_surface,
+    accent_surface_foreground, message_surface, message_foreground, message_action,
+    message_action_foreground, message_action_hover, code_background, code_foreground,
+    search_match_background, search_match_foreground, search_match_active_background,
+    search_match_active_foreground, sidebar, sidebar_foreground, sidebar_muted_foreground,
+    sidebar_control_surface, sidebar_row_hover, sidebar_row_active, sidebar_row_selected,
+    sidebar_border, terminal_background, terminal_foreground, terminal_cursor,
+    terminal_selection, terminal_scrollbar, terminal_scrollbar_hover,
+}
+
+/// Light or dark: which half of a theme is drawn.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Appearance {
@@ -142,14 +69,41 @@ pub enum Appearance {
     Light,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+impl Appearance {
+    pub fn is_dark(self) -> bool {
+        self == Self::Dark
+    }
+}
+
+impl From<WindowAppearance> for Appearance {
+    fn from(appearance: WindowAppearance) -> Self {
+        match appearance {
+            WindowAppearance::Dark | WindowAppearance::VibrantDark => Self::Dark,
+            WindowAppearance::Light | WindowAppearance::VibrantLight => Self::Light,
+        }
+    }
+}
+
+/// The appearance setting: a fixed half, or whatever the OS uses.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ThemeMode {
+    Dark,
+    Light,
+    #[default]
+    System,
+}
+
+/// The resolved palettes of the other appearance, when a theme has one.
+#[derive(Clone, Debug)]
 pub struct ThemeVariants {
     pub dark: Option<ThemePalette>,
     pub light: Option<ThemePalette>,
 }
 
-/// A theme file as written on disk.
-#[derive(Clone, Debug, Deserialize)]
+/// A theme file, parsed with `parseThemeFile`'s rules: version 1, a name, a
+/// base appearance, and each palette completed from the T3 Chat defaults.
+#[derive(Clone, Debug)]
 pub struct ThemeDocument {
     pub id: String,
     pub name: String,
@@ -158,45 +112,199 @@ pub struct ThemeDocument {
     pub variants: Option<ThemeVariants>,
 }
 
+/// Why a theme file was rejected.
+#[derive(Debug, thiserror::Error)]
+pub enum ThemeError {
+    #[error("theme JSON is invalid: {0}")]
+    Json(#[from] serde_json::Error),
+    #[error("theme files must be version 1")]
+    Version,
+    #[error("theme files need a name of 48 characters or fewer")]
+    Name,
+    #[error("theme ids may only contain lowercase letters, numbers and hyphens")]
+    Id,
+    #[error("theme variants must not repeat the base appearance")]
+    RepeatedVariant,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RawThemeDocument {
+    version: u32,
+    id: Option<String>,
+    name: String,
+    appearance: Appearance,
+    colors: PaletteOverrides,
+    #[serde(default)]
+    variants: RawVariants,
+}
+
+#[derive(Default, Deserialize)]
+struct RawVariants {
+    dark: Option<PaletteOverrides>,
+    light: Option<PaletteOverrides>,
+}
+
 impl ThemeDocument {
+    /// Parses a theme file. Roles it omits come from the T3 Chat palette.
+    pub fn parse(json: &[u8]) -> Result<Self, ThemeError> {
+        let raw: RawThemeDocument = serde_json::from_slice(json)?;
+        let name = raw.name.trim();
+        if raw.version != 1 {
+            return Err(ThemeError::Version);
+        }
+        if name.is_empty() || name.chars().count() > 48 {
+            return Err(ThemeError::Name);
+        }
+        let id = raw.id.unwrap_or_else(|| theme_id_from_name(name));
+        let valid_id = !id.is_empty()
+            && id.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-');
+        if !valid_id {
+            return Err(ThemeError::Id);
+        }
+        let repeats = match raw.appearance {
+            Appearance::Dark => raw.variants.dark.is_some(),
+            Appearance::Light => raw.variants.light.is_some(),
+        };
+        if repeats {
+            return Err(ThemeError::RepeatedVariant);
+        }
+        let dark = raw.variants.dark.map(|o| o.over(&default_palette(Appearance::Dark)));
+        let light = raw.variants.light.map(|o| o.over(&default_palette(Appearance::Light)));
+        Ok(Self {
+            id,
+            name: name.to_owned(),
+            appearance: raw.appearance,
+            colors: raw.colors.over(&default_palette(raw.appearance)),
+            variants: (dark.is_some() || light.is_some()).then_some(ThemeVariants { dark, light }),
+        })
+    }
+
     /// The bundled Graphite theme.
     pub fn graphite() -> Self {
         let bytes = Assets::get("themes/graphite.json").expect("graphite theme is embedded");
-        serde_json::from_slice(&bytes).expect("graphite theme parses")
+        Self::parse(&bytes).expect("graphite theme parses")
     }
 
-    /// The palette for an appearance: the base colours, or the matching variant.
-    pub fn palette(&self, appearance: Appearance) -> ThemePalette {
+    /// The palette for an appearance, or `None` when the theme has no such half.
+    pub fn palette_for(&self, appearance: Appearance) -> Option<ThemePalette> {
         if appearance == self.appearance {
-            return self.colors;
+            return Some(self.colors);
         }
-        let variant = self.variants.as_ref().and_then(|v| match appearance {
-            Appearance::Dark => v.dark,
-            Appearance::Light => v.light,
-        });
-        variant.unwrap_or(self.colors)
+        let variants = self.variants.as_ref()?;
+        match appearance {
+            Appearance::Dark => variants.dark,
+            Appearance::Light => variants.light,
+        }
+    }
+
+    /// The palette for an appearance, or the base colours when that half is missing.
+    pub fn palette(&self, appearance: Appearance) -> ThemePalette {
+        self.palette_for(appearance).unwrap_or(self.colors)
+    }
+
+    /// The appearance actually drawn for a mode (`resolveThemeAppearance`):
+    /// a single-appearance theme always draws its own half.
+    pub fn resolve_appearance(&self, mode: ThemeMode, system: Appearance) -> Appearance {
+        let wanted = match mode {
+            ThemeMode::Dark => Appearance::Dark,
+            ThemeMode::Light => Appearance::Light,
+            ThemeMode::System => system,
+        };
+        if self.palette_for(wanted).is_some() { wanted } else { self.appearance }
     }
 }
 
-/// The theme the app is drawing with. Read it through [`ActiveAppTheme`].
+/// `themeIdFromName`: lowercase, runs of other characters become one hyphen.
+fn theme_id_from_name(name: &str) -> String {
+    let mut id = String::new();
+    for c in name.chars().flat_map(char::to_lowercase) {
+        if c.is_ascii_lowercase() || c.is_ascii_digit() {
+            id.push(c);
+        } else if !id.is_empty() && !id.ends_with('-') {
+            id.push('-');
+        }
+    }
+    id.trim_end_matches('-').to_owned()
+}
+
+/// The T3 Chat palette for an appearance (`getDefaultThemeColors`).
+pub fn default_palette(appearance: Appearance) -> ThemePalette {
+    #[derive(Deserialize)]
+    struct Defaults {
+        colors: PaletteOverrides,
+        variants: RawVariants,
+    }
+    let bytes = Assets::get("themes/t3-chat.json").expect("t3 chat theme is embedded");
+    let defaults: Defaults = serde_json::from_slice(&bytes).expect("t3 chat theme parses");
+    let overrides = match appearance {
+        Appearance::Light => Some(defaults.colors),
+        Appearance::Dark => defaults.variants.dark,
+    };
+    overrides
+        .and_then(|o| o.complete())
+        .expect("t3 chat theme sets every role in both appearances")
+}
+
+/// The theme the app is drawing with: one appearance of one theme document,
+/// plus every value derived from it. Read it through [`ActiveAppTheme`].
 #[derive(Clone, Debug)]
 pub struct AppTheme {
     pub id: String,
     pub name: String,
     pub appearance: Appearance,
     pub colors: ThemePalette,
+    /// The stylesheet's `color-mix` and opacity results for this palette.
+    pub derived: DerivedColors,
+    /// Tailwind palette colours the theme cannot change.
+    pub fixed: FixedColors,
+    pub fonts: FontSettings,
+    pub radii: Radii,
+    pub shadows: Shadows,
+    pub spacing: Spacing,
+    pub motion: Motion,
 }
 
 impl Global for AppTheme {}
 
 impl AppTheme {
+    /// One appearance of a theme with the default font settings.
     pub fn new(document: &ThemeDocument, appearance: Appearance) -> Self {
+        Self::with_fonts(document, appearance, FontSettings::default())
+    }
+
+    /// One appearance of a theme with the given font settings.
+    pub fn with_fonts(document: &ThemeDocument, appearance: Appearance, fonts: FontSettings) -> Self {
+        let colors = document.palette(appearance);
+        let fonts = fonts.clamped();
         Self {
             id: document.id.clone(),
             name: document.name.clone(),
             appearance,
-            colors: document.palette(appearance),
+            colors,
+            derived: DerivedColors::new(&colors, appearance),
+            fixed: FixedColors::new(appearance),
+            fonts,
+            radii: Radii::new(fonts.interface),
+            shadows: Shadows::new(appearance),
+            spacing: Spacing::new(fonts.interface),
+            motion: Motion::default(),
         }
+    }
+
+    pub fn is_dark(&self) -> bool {
+        self.appearance.is_dark()
+    }
+
+    /// `n` root ems in pixels. Tailwind sizes are rem-based, so every metric
+    /// scales with the Interface size setting.
+    pub fn rem(&self, n: f32) -> gpui_kit::Pixels {
+        gpui_kit::px(n * self.fonts.interface)
+    }
+
+    /// Tailwind's spacing unit: `--spacing(n)` = n x 0.25rem.
+    pub fn sp(&self, n: f32) -> gpui_kit::Pixels {
+        self.rem(n * 0.25)
     }
 }
 
@@ -211,26 +319,78 @@ impl ActiveAppTheme for App {
     }
 }
 
+/// The user's theme choice and what the OS reports. Changing it rebuilds
+/// [`AppTheme`] and refreshes every window.
+#[derive(Clone, Debug)]
+pub struct ThemeSettings {
+    pub document: Arc<ThemeDocument>,
+    pub mode: ThemeMode,
+    pub system: Appearance,
+    pub fonts: FontSettings,
+}
+
+impl Global for ThemeSettings {}
+
+impl ThemeSettings {
+    /// Applies a change to the theme settings, then rebuilds the theme.
+    pub fn update(cx: &mut App, change: impl FnOnce(&mut ThemeSettings)) {
+        let mut settings = cx.global::<ThemeSettings>().clone();
+        change(&mut settings);
+        install(settings, cx);
+    }
+
+    /// Switches dark, light, or follow-system at runtime.
+    pub fn set_mode(mode: ThemeMode, cx: &mut App) {
+        Self::update(cx, |settings| settings.mode = mode);
+    }
+
+    /// Replaces the theme document, keeping the mode.
+    pub fn set_document(document: ThemeDocument, cx: &mut App) {
+        Self::update(cx, |settings| settings.document = Arc::new(document));
+    }
+
+    /// Tracks a window's OS appearance so follow-system mode switches with it,
+    /// and sets the window's rem to the Interface size. Call once per window
+    /// after it opens.
+    pub fn follow_window(window: &mut Window, cx: &mut App) {
+        window.set_rem_size(gpui_kit::px(cx.global::<ThemeSettings>().fonts.clamped().interface));
+        let system = window.appearance().into();
+        if cx.global::<ThemeSettings>().system != system {
+            Self::update(cx, |settings| settings.system = system);
+        }
+        window
+            .observe_window_appearance(|window, cx| {
+                let system = window.appearance().into();
+                ThemeSettings::update(cx, |settings| settings.system = system);
+            })
+            .detach();
+    }
+}
+
+/// Installs settings as the app-wide theme, mirrored onto gpui-component's theme.
+pub fn install(settings: ThemeSettings, cx: &mut App) {
+    let appearance = settings.document.resolve_appearance(settings.mode, settings.system);
+    let theme = AppTheme::with_fonts(&settings.document, appearance, settings.fonts);
+    cx.set_global(settings);
+    set_app_theme(theme, cx);
+}
+
 /// Installs a theme as the app-wide theme.
 pub fn set_app_theme(theme: AppTheme, cx: &mut App) {
+    apply_component_theme(&theme, cx);
     cx.set_global(theme);
+    cx.refresh_windows();
 }
 
-/// Parses `oklch(L C H)` where L is 0..1 or a percentage.
+/// Parses a literal CSS colour into a GPUI colour, using the app's own
+/// OKLCH conversion so each role lands on the same 8-bit value as the browser.
 pub fn parse_oklch(value: &str) -> Option<Hsla> {
-    let inner = value.trim().strip_prefix("oklch(")?.strip_suffix(')')?;
-    let mut parts = inner.split_whitespace();
-    let lightness = parts.next()?;
-    let lightness = match lightness.strip_suffix('%') {
-        Some(percent) => percent.parse::<f32>().ok()? / 100.0,
-        None => lightness.parse::<f32>().ok()?,
-    };
-    let chroma = parts.next()?.parse::<f32>().ok()?;
-    let hue = parts.next()?.parse::<f32>().ok()?;
-    Some(oklch(lightness, chroma, hue))
+    parse_css_color(value).map(Srgb8::hsla)
 }
 
-fn oklch_color<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Hsla, D::Error> {
+fn css_color<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Option<Hsla>, D::Error> {
     let value = String::deserialize(deserializer)?;
-    parse_oklch(&value).ok_or_else(|| D::Error::custom(format!("not an oklch colour: {value}")))
+    parse_oklch(&value)
+        .map(Some)
+        .ok_or_else(|| D::Error::custom(format!("not a literal CSS colour: {value}")))
 }
