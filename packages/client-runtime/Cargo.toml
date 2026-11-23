@@ -17,6 +17,7 @@ futures.workspace = true
 jiff.workspace = true
 keyring.workspace = true
 rand.workspace = true
+regex.workspace = true
 reqwest.workspace = true
 ring.workspace = true
 rustls.workspace = true
