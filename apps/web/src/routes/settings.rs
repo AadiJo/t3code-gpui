@@ -347,7 +347,7 @@ impl SettingsRoute {
                     .min_w_0()
                     .ui_text(theme, TextSize::Sm, weight::NORMAL)
                     .child(div().text_color(c.muted_foreground).child(t!("Settings")))
-                    .child(Icon::new(IconName::ChevronRight).size(IconSize::Sm).color(c.muted_foreground))
+                    .child(div().text_color(c.muted_foreground).child("/"))
                     .child(div().truncate().font_weight(weight::MEDIUM).text_color(c.foreground()).child(self.path.section_label())),
             )
             .child(

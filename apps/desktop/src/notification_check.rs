@@ -168,6 +168,7 @@ fn thread_input(env: &str, thread: &FixtureThread, start: i64) -> Arc<Notificati
         }),
     });
     let row = SidebarThread {
+        provider: None,
         key,
         project_id: ProjectId(thread.project.clone().into()),
         title: thread.title.clone().into(),

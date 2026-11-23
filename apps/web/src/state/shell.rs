@@ -103,6 +103,7 @@ fn map_row(row: &ThreadRow, local_visit: Option<EpochMs>, woke_at: Option<EpochM
         key: thread_key(&row.environment_id, &source.id),
         project_id: model::ProjectId(SharedString::from(Arc::clone(&source.project_id.0))),
         title: SharedString::from(source.title.clone()),
+        provider: None,
         branch: source.branch.clone().map(SharedString::from),
         in_worktree: source.worktree_path.is_some(),
         created_at: TimestampMs(row.created_at.unwrap_or_default()),

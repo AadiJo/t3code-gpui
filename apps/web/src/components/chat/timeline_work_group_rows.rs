@@ -171,6 +171,7 @@ impl MessagesTimeline {
                         div()
                             .ml_auto()
                             .text_size(TEXT_XS.size)
+                            .text_color(colors.theme.muted_foreground)
                             .opacity(0.)
                             .group_hover(ROW_GROUP, |s| s.opacity(1.))
                             .children(row.created_at.map(|t| format_clock(t.0))),

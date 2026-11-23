@@ -230,3 +230,64 @@ pub fn canned_reply(prompt: &str) -> String {
         rust_code(12, prompt.len())
     )
 }
+
+/// The Replay agent's showcase reply, as the reference thread shows it.
+pub const REFERENCE_SHOWCASE: &str = "## Done\n\nI added `clamp` next to `sum` and the tests pass. The change touches **one file** and keeps the public API stable.\n\n- Reads the manifest first\n- Asks before it writes\n- Streams a terminal result\n\n1. Read `package.json`\n2. Edit `src/math.ts`\n3. Run `vp test run`\n\n```ts\nexport function clamp(value: number, min: number, max: number) {\n  return Math.min(Math.max(value, min), max);\n}\n\nclamp(12, 0, 10); // 10\nclamp(-3, 0, 10); // 0\n```\n\n| Step | Tool | Result |\n| --- | --- | --- |\n| Read | `read` | 1 file |\n| Edit | `edit` | +4 lines |\n| Test | `execute` | 12 passed |\n\n> This turn is a replay. It costs nothing, so run it as often as you like.\n\nSee [the docs](https://example.com/docs) for more.";
+
+/// "Sync engine audit" as the visual-parity reference captured it: two turns
+/// of the Replay showcase (thought, task list, read, edit, test, markdown
+/// reply), the second after a typed user message, ending in a changed-files card.
+pub fn reference_thread(prefix: &str) -> TimelineInput {
+    let mut b = TimelineBuilder::new(SharedString::from(prefix.to_string()));
+    let mut last_reply = None;
+    let mut last_run = None;
+    let prompts = [
+        (300_000, "Audit the sync engine's reconnect path. Something drops events after a network blip."),
+        (120_000, "Run the tests once more and keep the retry delay under five seconds."),
+    ];
+    for (ago, prompt) in prompts {
+        let run = b.run_id();
+        b.user(ts(ago), prompt, InputIntent::Prompt);
+        let at = |offset: i64| ts(ago - offset);
+        b.work(at(400), &run, ToolStatus::Completed, "Thought", WorkItem::Reasoning {
+            text: "The user wants a short tour. I will read the manifest, add a small helper, run the tests, and then summarize with some markdown.".into(),
+        });
+        b.work(at(900), &run, ToolStatus::Completed, "Todo", WorkItem::TodoList {
+            steps: Arc::from([
+                (TodoState::Completed, SharedString::from("Read the package manifest")),
+                (TodoState::Completed, SharedString::from("Add a clamp helper")),
+                (TodoState::Completed, SharedString::from("Run the tests")),
+            ]),
+        });
+        b.work(at(1_200), &run, ToolStatus::Completed, "Read", WorkItem::FileRead {
+            paths: Arc::from([SharedString::from("package.json")]),
+            output: Some("{\n  \"name\": \"demo\",\n  \"scripts\": { \"test\": \"vp test run\" }\n}".into()),
+        });
+        b.assistant(at(1_800), &run, "The project has a single math module. I will add a `clamp` helper beside `sum`.", false);
+        b.work(at(2_600), &run, ToolStatus::Completed, "Edit", WorkItem::FileChange {
+            changes: Arc::from([FileChange { path: "src/math.ts".into(), additions: 4, deletions: 0, operation: "update".into() }]),
+            raw_diff: None,
+        });
+        b.work(at(4_200), &run, ToolStatus::Completed, "Command", WorkItem::Command {
+            command: "vp test run".into(),
+            output: Some("12 passed".into()),
+            exit_code: Some(0),
+        });
+        last_reply = Some(b.assistant(at(5_400), &run, REFERENCE_SHOWCASE, false));
+        last_run = Some((run, at(0), at(5_400)));
+    }
+    let (run_id, started, completed) = last_run.expect("two turns");
+    TimelineInput {
+        entries: Arc::new(b.entries),
+        latest_run: Some(LatestRun { run_id, status: RunStatus::Completed, started_at: Some(started), completed_at: Some(completed), turn_ended: true }),
+        turn_diff_summaries: Arc::from([TurnDiffSummary {
+            assistant_message_id: last_reply.expect("two turns"),
+            files: Arc::from([
+                FileChange { path: "src/math.ts".into(), additions: 4, deletions: 0, operation: "update".into() },
+                FileChange { path: "src/retry.ts".into(), additions: 3, deletions: 0, operation: "create".into() },
+            ]),
+        }]),
+        supports_rollback: true,
+        ..Default::default()
+    }
+}

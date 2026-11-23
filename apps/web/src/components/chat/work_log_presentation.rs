@@ -6,7 +6,7 @@ use crate::components::icons::IconName;
 use gpui_kit::SharedString;
 
 use super::{
-    timeline_entries::{DynamicToolKind, ToolStatus, WorkItem, WorkLogEntry},
+    timeline_entries::{DynamicToolKind, TodoState, ToolStatus, WorkItem, WorkLogEntry},
 };
 
 /// What a tool call did, for grouping and summaries (`ToolGroupAction`).
@@ -84,12 +84,12 @@ pub fn tool_action(entry: &WorkLogEntry) -> ToolAction {
     }
 }
 
-/// Whether an entry is a tool call rather than a notice or thought (`workLogEntryIsToolLike`).
+/// Whether an entry reads as a tool call or a thought rather than a notice
+/// (`workLogEntryIsToolLike`: tone tool or thinking).
 pub fn is_tool_like(entry: &WorkLogEntry) -> bool {
     !matches!(
         entry.item,
-        WorkItem::Reasoning { .. }
-            | WorkItem::SystemNotice { .. }
+        WorkItem::SystemNotice { .. }
             | WorkItem::Notification { .. }
             | WorkItem::Error { .. }
             | WorkItem::Compaction { .. }
@@ -293,6 +293,17 @@ pub fn entry_label(entry: &WorkLogEntry) -> SharedString {
             queries.first().map(|q| SharedString::from(format!("Searched the web for {q}"))).unwrap_or_else(|| "Web search".into())
         }
         WorkItem::DynamicTool { title, .. } => title.clone(),
+        WorkItem::TodoList { steps } => {
+            let done = steps.iter().filter(|(state, _)| *state == TodoState::Completed).count();
+            let current = steps
+                .iter()
+                .find(|(state, _)| *state == TodoState::Running)
+                .or_else(|| steps.iter().find(|(state, _)| *state == TodoState::Pending));
+            match current {
+                Some((_, step)) => format!("Tasks {done}/{} · {step}", steps.len()).into(),
+                None => format!("Tasks {done}/{}", steps.len()).into(),
+            }
+        }
         WorkItem::Approval { detail, .. } => detail.clone(),
         WorkItem::SystemNotice { text, .. } | WorkItem::Notification { text } => text.clone(),
         WorkItem::Error { message, .. } => message.clone(),

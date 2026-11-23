@@ -12,14 +12,14 @@ use super::style::GRAIN_OPACITY;
 const TILE: u32 = 256;
 
 static GRAIN_TILE: LazyLock<Arc<RenderImage>> = LazyLock::new(|| {
-    // feTurbulence fractalNoise averages ~0.5 per channel and alpha; a hashed
-    // noise with the same mean and spread at the rect's 3.5% opacity matches
-    // the 1-2 level lift the browser shows.
+    // Chromium's feTurbulence tile, measured over the Graphite sidebar in
+    // both appearances, composites as a grey of about 0.78 at about 59% of
+    // the rect's 3.5% opacity (+3.7 levels on #141415, -0.9 on light).
     let mut image = RgbaImage::new(TILE, TILE);
     for (x, y, pixel) in image.enumerate_pixels_mut() {
         let h = hash(x, y);
-        let value = 0.25 + 0.5 * ((h & 0xff) as f32 / 255.);
-        let alpha = (0.25 + 0.5 * (((h >> 8) & 0xff) as f32 / 255.)) * GRAIN_OPACITY;
+        let value = 0.63 + 0.3 * ((h & 0xff) as f32 / 255.);
+        let alpha = (0.388 + 0.4 * (((h >> 8) & 0xff) as f32 / 255.)) * GRAIN_OPACITY;
         // Grey, so BGRA and RGBA order agree; the sprite shader takes straight alpha.
         let grey = (value * 255.).round() as u8;
         *pixel = image::Rgba([grey, grey, grey, (alpha * 255.).round() as u8]);

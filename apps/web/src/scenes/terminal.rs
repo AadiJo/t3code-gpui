@@ -10,7 +10,7 @@ use crate::components::persistent_thread_terminals::PersistentThreadTerminals;
 use crate::terminal::GridSize;
 use crate::terminal::backend::RecordedBackend;
 use crate::terminal_ui_state_store::{SplitDirection, TerminalUiStateStore, ThreadKey};
-use crate::theme_palette::{ActiveAppTheme as _, AppTheme, Appearance, ThemeDocument, set_app_theme};
+use crate::theme_palette::{ActiveAppTheme as _, Appearance};
 
 /// Output that exercises colours, styles and wide characters.
 pub fn showcase_output() -> Vec<u8> {
@@ -124,7 +124,7 @@ pub fn full_screen_output(size: GridSize) -> Vec<u8> {
 }
 
 fn build_scene(appearance: Appearance, with_find: bool, window: &mut Window, cx: &mut App) -> AnyView {
-    set_app_theme(AppTheme::new(&ThemeDocument::graphite(), appearance), cx);
+    crate::theme_palette::ThemeSettings::set_appearance(appearance, cx);
     let thread = ThreadKey("environment-1:thread-1".into());
     cx.update_global::<TerminalUiStateStore, _>(|store, _| {
         store.new_terminal(&thread, "term-1");

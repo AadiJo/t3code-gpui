@@ -808,7 +808,8 @@ pub fn build_sidebar_list(snapshot: &SidebarSnapshot, options: &SidebarListOptio
                      variant: RowVariant,
                      section: SidebarSection,
                      limit: usize| {
-        if threads.is_empty() {
+        // The Settled header stays, at 0, whenever the list has rows (`Sidebar.tsx:1984`).
+        if threads.is_empty() && (shelf != Shelf::Settled || nothing_listed) {
             return;
         }
         if !spacer_placed {

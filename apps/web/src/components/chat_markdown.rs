@@ -8,6 +8,8 @@
 //! margins (`.chat-markdown > :first-child`).
 
 use crate::components::icons::{Icon, IconName, IconSize};
+use crate::pierre_icons::{pierre_icon, resolve_file_icon};
+use gpui_kit::prelude::FluentBuilder as _;
 use crate::components::chat::chat_style::chat_icon_stroke;
 use std::{collections::HashSet, ops::Range, rc::Rc};
 
@@ -344,7 +346,13 @@ impl Renderer<'_> {
                             ),
                             None => bullet_marker(depth).to_string(),
                         };
-                        div().child(label).into_any_element()
+                        // Chromium's outside markers: a disc sits 12px before the text, a
+                        // number 6px (`1. ` with tabular figures).
+                        div()
+                            .when(list.start.is_none(), |d| d.pr(px(5.5)))
+                            .when(list.start.is_some(), |d| d.font_features(TABULAR_FIGURES.clone()))
+                            .child(label)
+                            .into_any_element()
                     }
                 };
                 let (children, top, bottom) =
@@ -434,7 +442,6 @@ impl Renderer<'_> {
         let language = code.language.clone().unwrap_or_default();
         let source = code.code.clone();
         let header_color = alpha(colors.theme.code_foreground, 0.72);
-        let label = code.title.clone().or_else(|| code.language.clone());
         let actions = self.view.actions.clone();
         let copy_text: SharedString = source.trim_end_matches('\n').to_owned().into();
         let wrap_actions = self.view.actions.clone();
@@ -449,10 +456,14 @@ impl Renderer<'_> {
             .text_color(header_color)
             .child(
                 div()
+                    .flex()
+                    .min_w_0()
+                    .items_center()
+                    .gap(px(6.))
                     .font_family(mono().family)
                     .text_size(TEXT_2XS.size)
                     .line_height(TEXT_2XS.line_height)
-                    .children(label),
+                    .children(code_title(code.title.as_ref(), code.language.as_ref(), colors)),
             )
             .child(
                 div()
@@ -616,6 +627,8 @@ fn style_inlines(inlines: &Inlines, base: InlineBase, colors: &ChatColors, user:
     boundaries.sort_unstable();
     boundaries.dedup();
     let code_ink = if user { colors.theme.message_foreground } else { colors.theme.text };
+    // File chips take the mention chip ink (`contextChipVariables`, solved for Graphite).
+    let file_ink = gpui_kit::rgb(if colors.is_dark() { 0x1aa0b9 } else { 0x00788d }).into();
     let mut styled = StyledInlines { runs: Vec::new(), boxes: Vec::new(), icons: Vec::new(), links: Vec::new() };
     for window in boundaries.windows(2) {
         let (start, end) = (window[0], window[1]);
@@ -637,7 +650,10 @@ fn style_inlines(inlines: &Inlines, base: InlineBase, colors: &ChatColors, user:
                     color = code_ink;
                 }
                 InlineStyle::Link(_) => color = colors.info_foreground,
-                InlineStyle::FileLink(_) => font.weight = FontWeight::MEDIUM,
+                InlineStyle::FileLink(_) => {
+                    font.weight = FontWeight::MEDIUM;
+                    color = file_ink;
+                }
                 InlineStyle::FootnoteRef => {
                     font.weight = FontWeight::SEMIBOLD;
                     color = colors.theme.muted_foreground;
@@ -657,12 +673,12 @@ fn style_inlines(inlines: &Inlines, base: InlineBase, colors: &ChatColors, user:
             InlineStyle::Link(target) => styled.links.push((span.range.clone(), target.clone())),
             InlineStyle::FileLink(target) => {
                 if text[span.range.clone()].starts_with(FILE_CHIP_PLACEHOLDER) {
-                    styled.icons.push(TextIcon {
-                        index: span.range.start,
-                        path: IconName::File.path().into(),
-                        size: px(14.),
-                        color: base.color,
-                    });
+                    // The file's Pierre icon when it is one tinted layer, else the generic file.
+                    let (path, color) = match resolve_file_icon(target).layers() {
+                        [layer] => (layer.asset.into(), layer.tint.color(colors.appearance, colors.theme.muted_foreground)),
+                        _ => (IconName::File.path().into(), file_ink),
+                    };
+                    styled.icons.push(TextIcon { index: span.range.start, path, size: px(14.), color });
                 }
                 styled.links.push((span.range.clone(), target.clone()));
             }
@@ -715,6 +731,57 @@ fn code_runs(
     }
     runs
 }
+
+/// `MarkdownCodeBlockTitleContent`: a fence title gets its file icon and name;
+/// a bare language gets the icon of a synthetic `file.<ext>`, or its name when
+/// Pierre has no specific icon for it.
+fn code_title(title: Option<&SharedString>, language: Option<&SharedString>, colors: &ChatColors) -> Vec<AnyElement> {
+    let icon = |path: &str| {
+        pierre_icon(resolve_file_icon(path), px(14.), colors.appearance, colors.theme.muted_foreground).into_any_element()
+    };
+    match (title, language) {
+        (Some(title), _) => vec![icon(title), div().truncate().child(title.clone()).into_any_element()],
+        (None, Some(language)) => {
+            let file = synthetic_file_name(language);
+            if resolve_file_icon(&file).is_default() {
+                vec![div().truncate().child(language.clone()).into_any_element()]
+            } else {
+                vec![icon(&file)]
+            }
+        }
+        (None, None) => Vec::new(),
+    }
+}
+
+/// `syntheticFileNameForLanguageId` (`pierre-icons.ts`).
+fn synthetic_file_name(language: &str) -> String {
+    let language = language.to_lowercase();
+    if language == "dockerfile" {
+        return "Dockerfile".into();
+    }
+    let ext = match language.as_str() {
+        "bash" | "shell" | "shellscript" => "sh",
+        "csharp" => "cs",
+        "elixir" => "ex",
+        "haskell" => "hs",
+        "javascript" => "js",
+        "kotlin" => "kt",
+        "markdown" => "md",
+        "plaintext" => "txt",
+        "powershell" => "ps1",
+        "python" => "py",
+        "ruby" => "rb",
+        "rust" => "rs",
+        "typescript" => "ts",
+        "yaml" => "yml",
+        other => other,
+    };
+    format!("file.{ext}")
+}
+
+/// `font-variant-numeric: tabular-nums`, as `ol > li::marker` sets it.
+static TABULAR_FIGURES: std::sync::LazyLock<gpui_kit::FontFeatures> =
+    std::sync::LazyLock::new(|| gpui_kit::FontFeatures(std::sync::Arc::new(vec![("tnum".into(), 1)])));
 
 fn bullet_marker(depth: usize) -> &'static str {
     match depth {

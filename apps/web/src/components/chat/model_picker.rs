@@ -29,8 +29,11 @@ use crate::model_selection::{
     display_model_name,
 };
 
-/// Row height in the virtualized list: a 28px row and a 2px separator.
-pub const MODEL_ROW_HEIGHT: Pixels = px(30.);
+/// Row height in the virtualized list: a 32px option (`py-1` around the
+/// 24px icon-and-label content) and the list's 2px gap.
+pub const MODEL_ROW_HEIGHT: Pixels = px(34.);
+/// One option's own height.
+const MODEL_OPTION_HEIGHT: Pixels = px(32.);
 const PICKER_CONTEXT: &str = "ModelPicker";
 /// Footer: `py-2` around a 28px control, plus its 1px top border.
 const FOOTER_HEIGHT: Pixels = px(45.);
@@ -421,7 +424,7 @@ impl ModelPicker {
             .pb(px(2.))
             .child(
                 div()
-                    .h(px(28.))
+                    .h(MODEL_OPTION_HEIGHT)
                     .px(px(8.))
                     .flex()
                     .items_center()
@@ -737,7 +740,9 @@ pub fn popup_shadow(c: &ComposerColors) -> Vec<BoxShadow> {
 }
 
 impl Render for ModelPicker {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // `focus-within:border-ring`: the search field owns the picker's focus.
+        let search_focused = self.focus_handle.is_focused(window);
         let c = ComposerColors::new(cx);
         let rows = self.rows.clone();
         let empty = rows.is_empty();
@@ -759,7 +764,7 @@ impl Render for ModelPicker {
         let search = div().flex_none().px(px(12.)).pt(px(10.)).child(
             div()
                 .border_b_1()
-                .border_color(c.border.opacity(0.7))
+                .border_color(if search_focused { c.ring } else { c.border.opacity(0.7) })
                 .pb(px(6.))
                 .relative()
                 .h(px(26.) + px(7.))

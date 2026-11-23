@@ -12,7 +12,7 @@ use crate::Assets;
 use crate::appearance_fonts::FontSettings;
 use crate::theme_color::{Srgb8, parse_css_color};
 use crate::theme_component::apply_component_theme;
-use crate::theme_tokens::{DerivedColors, FixedColors, Motion, Radii, Shadows, Spacing};
+use crate::theme_tokens::{DerivedColors, FixedColors, GlassOpacity, Motion, Radii, Shadows, Spacing};
 
 /// Defines [`ThemePalette`] (every role resolved) and [`PaletteOverrides`]
 /// (the roles one theme file sets) from one list of roles.
@@ -259,6 +259,8 @@ pub struct AppTheme {
     /// Tailwind palette colours the theme cannot change.
     pub fixed: FixedColors,
     pub fonts: FontSettings,
+    /// The Glass opacity setting every glass fill is derived from.
+    pub glass_opacity: GlassOpacity,
     pub radii: Radii,
     pub shadows: Shadows,
     pub spacing: Spacing,
@@ -275,6 +277,16 @@ impl AppTheme {
 
     /// One appearance of a theme with the given font settings.
     pub fn with_fonts(document: &ThemeDocument, appearance: Appearance, fonts: FontSettings) -> Self {
+        Self::with_settings(document, appearance, fonts, GlassOpacity::default())
+    }
+
+    /// One appearance of a theme with the given font and glass settings.
+    pub fn with_settings(
+        document: &ThemeDocument,
+        appearance: Appearance,
+        fonts: FontSettings,
+        glass_opacity: GlassOpacity,
+    ) -> Self {
         let colors = document.palette(appearance);
         let fonts = fonts.clamped();
         Self {
@@ -282,9 +294,10 @@ impl AppTheme {
             name: document.name.clone(),
             appearance,
             colors,
-            derived: DerivedColors::new(&colors, appearance),
+            derived: DerivedColors::new(&colors, appearance, glass_opacity),
             fixed: FixedColors::new(appearance),
             fonts,
+            glass_opacity,
             radii: Radii::new(fonts.interface),
             shadows: Shadows::new(appearance),
             spacing: Spacing::new(fonts.interface),
@@ -327,6 +340,8 @@ pub struct ThemeSettings {
     pub mode: ThemeMode,
     pub system: Appearance,
     pub fonts: FontSettings,
+    /// The Glass opacity client setting (`glassOpacity`, 40 to 100, default 80).
+    pub glass_opacity: GlassOpacity,
 }
 
 impl Global for ThemeSettings {}
@@ -342,6 +357,20 @@ impl ThemeSettings {
     /// Switches dark, light, or follow-system at runtime.
     pub fn set_mode(mode: ThemeMode, cx: &mut App) {
         Self::update(cx, |settings| settings.mode = mode);
+    }
+
+    /// Applies the Glass opacity client setting; every glass fill follows it.
+    pub fn set_glass_opacity(glass_opacity: GlassOpacity, cx: &mut App) {
+        Self::update(cx, |settings| settings.glass_opacity = glass_opacity);
+    }
+
+    /// Pins one appearance of the current theme, keeping every other setting.
+    pub fn set_appearance(appearance: Appearance, cx: &mut App) {
+        let mode = match appearance {
+            Appearance::Dark => ThemeMode::Dark,
+            Appearance::Light => ThemeMode::Light,
+        };
+        Self::set_mode(mode, cx);
     }
 
     /// Replaces the theme document, keeping the mode.
@@ -370,7 +399,8 @@ impl ThemeSettings {
 /// Installs settings as the app-wide theme, mirrored onto gpui-component's theme.
 pub fn install(settings: ThemeSettings, cx: &mut App) {
     let appearance = settings.document.resolve_appearance(settings.mode, settings.system);
-    let theme = AppTheme::with_fonts(&settings.document, appearance, settings.fonts);
+    let theme =
+        AppTheme::with_settings(&settings.document, appearance, settings.fonts, settings.glass_opacity);
     cx.set_global(settings);
     set_app_theme(theme, cx);
 }

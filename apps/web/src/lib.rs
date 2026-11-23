@@ -31,6 +31,7 @@ pub mod composer_undo_grouping;
 pub mod desktop_notifications;
 pub mod model_ordering;
 pub mod port_discovery_state;
+pub mod project_icon_colors;
 pub mod project_scripts;
 pub mod remote_open;
 pub mod model_search;
@@ -105,6 +106,7 @@ pub fn init(cx: &mut App) {
         mode: ThemeMode::System,
         system: Appearance::from(cx.window_appearance()),
         fonts: Default::default(),
+        glass_opacity: Default::default(),
     };
     theme_palette::install(settings, cx);
     components::ui::toast::Toaster::init(cx);

@@ -3,12 +3,14 @@
 //! Rows derive everything from the thread and the sidebar's hover, cursor and
 //! selection, so hovering re-renders only the visible rows.
 
+use crate::ActiveAppTheme as _;
+use crate::components::project_favicon::ProjectFavicon;
 use crate::components::icons::{Icon, IconName, IconSize};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
 use super::context_menu::MenuCommand;
-use super::model::{PullRequestState, SidebarThread};
+use super::model::{PullRequestState, SidebarProvider, SidebarProviderMark, SidebarThread};
 use super::style::*;
 use super::{Sidebar, SidebarEvent};
 use crate::components::sidebar_logic::*;
@@ -173,7 +175,7 @@ impl Sidebar {
             .when(thread.has_unsent_draft, |d| {
                 d.child(Icon::new(IconName::SquarePen).size(IconSize::Custom(px(12.))).color(colors.warning_foreground))
             })
-            .child(project_favicon(colors))
+            .child(project_favicon(project_label.clone()))
             .when(thread.pinned_at.is_some(), |d| d.child(self.pin_indicator(ix, thread, colors, cx)))
             .child(
                 div()
@@ -206,7 +208,8 @@ impl Sidebar {
             .items_center()
             .gap(px(6.))
             .child(title)
-            .when(!has_meta && thread.remote_machine, |d| d.child(remote_icon(colors)));
+            .when(!has_meta && thread.remote_machine, |d| d.child(remote_icon(colors)))
+            .when(!has_meta, |d| d.children(thread.provider.as_ref().map(|p| provider_stack(p, colors, cx))));
         div()
             .relative()
             .h(if has_meta {
@@ -220,7 +223,7 @@ impl Sidebar {
             .flex_col()
             .child(line1)
             .child(line2)
-            .when(has_meta, |d| d.child(self.meta_line(thread, colors)))
+            .when(has_meta, |d| d.child(self.meta_line(thread, colors, cx)))
     }
 
     /// Status label or relative time; on hover the action cluster.
@@ -308,7 +311,7 @@ impl Sidebar {
     }
 
     /// Branch, terminals, PR, issue and diff (`SidebarThreadRow.tsx:1281-1322`).
-    fn meta_line(&self, thread: &SidebarThread, colors: &ShellColors) -> Div {
+    fn meta_line(&self, thread: &SidebarThread, colors: &ShellColors, cx: &App) -> Div {
         let mut line = div()
             .mt(px(2.))
             .flex()
@@ -368,8 +371,17 @@ impl Sidebar {
                     .child(div().text_color(colors.diff_deletion).child(format!("−{}", diff.deletions))),
             );
         }
-        if thread.remote_machine {
-            line = line.child(div().ml_auto().child(remote_icon(colors)));
+        if thread.remote_machine || thread.provider.is_some() {
+            line = line.child(
+                div()
+                    .ml_auto()
+                    .flex()
+                    .flex_none()
+                    .items_center()
+                    .gap_1()
+                    .when(thread.remote_machine, |d| d.child(remote_icon(colors)))
+                    .children(thread.provider.as_ref().map(|p| provider_stack(p, colors, cx))),
+            );
         }
         line
     }
@@ -440,7 +452,8 @@ impl Sidebar {
             .px(px(10.))
             .when(in_folder, |d| d.pl(px(36.)))
             .when(!in_folder, |d| {
-                d.child(div().flex_none().opacity(if favicon_full { 1. } else { 0.4 }).child(project_favicon(colors)))
+                let label = self.list.project_labels.get(&thread.project_ref()).cloned().unwrap_or_default();
+                d.child(div().flex_none().opacity(if favicon_full { 1. } else { 0.4 }).child(project_favicon(label)))
             })
             .when(thread.has_unsent_draft, |d| {
                 d.child(Icon::new(IconName::SquarePen).size(IconSize::Custom(px(12.))).color(colors.warning_foreground))
@@ -559,10 +572,58 @@ fn row_action(id: impl Into<ElementId>, colors: &ShellColors) -> Stateful<Div> {
         .hover(|s| s.text_color(colors.foreground))
 }
 
-/// The 16px project favicon. Fetched favicons are not wired yet, so every
-/// project shows the `FolderCodeIcon` fallback.
-pub(crate) fn project_favicon(colors: &ShellColors) -> Icon {
-    Icon::new(IconName::FolderCode).size(IconSize::Custom(px(16.))).color(colors.sidebar_icon)
+/// The 16px project favicon: the monogram derived from the project's name.
+pub(crate) fn project_favicon(name: SharedString) -> ProjectFavicon {
+    ProjectFavicon::new(name)
+}
+
+/// `SidebarProviderStack` for one instance: the compact (14px) provider mark
+/// at 60% opacity, with the instance-initials badge hanging off its corner.
+fn provider_stack(provider: &SidebarProvider, colors: &ShellColors, cx: &App) -> Div {
+    let size = px(14.);
+    let mark = match provider.mark {
+        SidebarProviderMark::Brand(mark) => {
+            let composer = crate::components::chat::composer_theme::ComposerColors::new(cx);
+            crate::components::chat::composer_icons::provider_icon(mark, size, &provider.initials, &composer, cx)
+        }
+        SidebarProviderMark::AcpRegistry => Icon::new(crate::components::icons::BrandIcon::AcpRegistry)
+            .size(IconSize::Custom(size))
+            .color(colors.muted_foreground)
+            .into_any_element(),
+    };
+    let card = cx.app_theme().colors.card();
+    div()
+        .relative()
+        .flex()
+        .flex_none()
+        .size(size)
+        .items_center()
+        .justify_center()
+        .child(div().opacity(0.6).child(mark))
+        .when(provider.show_badge, |d| {
+            d.child(
+                div()
+                    .absolute()
+                    .right(px(-3.))
+                    .bottom(px(-3.))
+                    .flex()
+                    .h(px(12.))
+                    .min_w(px(12.))
+                    .px(px(2.))
+                    .items_center()
+                    .justify_center()
+                    .rounded_full()
+                    .border_1()
+                    .border_color(card)
+                    .bg(card)
+                    .shadow(cx.app_theme().shadows.sm5.clone())
+                    .text_size(px(7.))
+                    .line_height(px(7.))
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(colors.muted_foreground)
+                    .child(provider.initials.clone()),
+            )
+        })
 }
 
 fn remote_icon(colors: &ShellColors) -> Icon {

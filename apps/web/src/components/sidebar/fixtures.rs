@@ -83,6 +83,7 @@ fn thread(id: &str, project: &str, title: &str, age: i64) -> SidebarThread {
         issue_key: None,
         running_terminal_count: 0,
         remote_machine: false,
+        provider: None,
     }
 }
 
@@ -352,6 +353,66 @@ pub fn large_snapshot(thread_count: usize, project_count: usize) -> SidebarSnaps
             ..SidebarSettings::default()
         },
         active_thread: None,
+        environment_pill: None,
+        now: FIXTURE_NOW,
+    }
+}
+
+/// The sidebar the visual-parity reference was captured with: four projects,
+/// seven threads on `main`, all on the Replay agent ("RR" badge), the open
+/// thread "Sync engine audit" at the top and one waiting on input.
+pub fn reference_snapshot() -> SidebarSnapshot {
+    let projects = vec![
+        project("t3code", "t3code", 4),
+        project("relay", "relay", 4),
+        project("marketing", "marketing-site", 4),
+        project("infra", "infra", 4),
+    ];
+    let replay = SidebarProvider {
+        mark: SidebarProviderMark::AcpRegistry,
+        initials: "RR".into(),
+        show_badge: true,
+    };
+    // Oldest first, as the reference server seeded them.
+    let rows = [
+        ("r-ci", "infra", "Migrate CI runners to arm64"),
+        ("r-handshake", "relay", "Explain the relay handshake"),
+        ("r-hero", "marketing", "Fix hero image layout shift"),
+        ("r-tls", "relay", "Rotate relay TLS certificates"),
+        ("r-launch", "marketing", "Draft launch copy for the changelog"),
+        ("r-sidebar", "t3code", "Port sidebar virtualization to GPUI"),
+        ("r-sync", "t3code", "Sync engine audit"),
+    ];
+    let threads = rows
+        .iter()
+        .enumerate()
+        .map(|(ix, (id, project, title))| {
+            // Runs finish 2 minutes after they start, 10s apart, newest last.
+            let finished_ago = (rows.len() - 1 - ix) as i64 * 10_000;
+            let mut t = thread(id, project, title, 2 * MIN + finished_ago);
+            t.branch = Some("main".into());
+            t.provider = Some(replay.clone());
+            match *id {
+                "r-sync" => t.last_visited_at = Some(FIXTURE_NOW),
+                "r-launch" => {
+                    t = running(t, RunStatus::Waiting, finished_ago);
+                    t.has_pending_user_input = true;
+                }
+                _ => t = unread(t),
+            }
+            Arc::new(t)
+        })
+        .collect();
+    let notifications = vec![
+        notification("rn1", NotificationKind::Approval, "r-tls", "Rotate relay TLS certificates", "relay", true, false),
+        notification("rn2", NotificationKind::Input, "r-launch", "Draft launch copy for the changelog", "marketing-site", true, false),
+    ];
+    SidebarSnapshot {
+        projects,
+        threads,
+        notifications,
+        settings: SidebarSettings::default(),
+        active_thread: Some(ThreadKey { environment_id: env(), thread_id: ThreadId("r-sync".into()) }),
         environment_pill: None,
         now: FIXTURE_NOW,
     }

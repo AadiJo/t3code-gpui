@@ -56,6 +56,8 @@ pub mod branch_toolbar;
 pub mod preview;
 pub mod previous_worktree_item_content;
 pub mod git_actions_control_fixture;
+pub mod project_favicon;
+pub mod project_monogram;
 pub mod project_scripts_control;
 pub mod pull_request;
 pub mod pull_request_thread_dialog;

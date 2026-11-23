@@ -125,7 +125,7 @@ impl Focusable for Sidebar {
 
 impl Sidebar {
     pub fn new(snapshot: SidebarSnapshot, window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let search = cx.new(|cx| InputState::new(window, cx).placeholder("Search"));
+        let search = cx.new(|cx| InputState::new(window, cx));
         let subscription = cx.subscribe_in(&search, window, |this, state, event, _, cx| {
             if matches!(event, InputEvent::Change) {
                 this.options.search = state.read(cx).value();

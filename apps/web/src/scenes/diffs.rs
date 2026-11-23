@@ -14,7 +14,7 @@ use crate::{
     },
     diff_panel_store::{DiffLayout, DiffPanelStore},
     diff_patch::{FileContents, renderable_patch},
-    theme_palette::{AppTheme, Appearance, ThemeDocument, set_app_theme},
+    theme_palette::Appearance,
 };
 
 /// Variant flags from `T3_DIFFS_SCENE`.
@@ -35,7 +35,7 @@ impl Render for DiffsScene {
 pub fn build(window: &mut Window, cx: &mut App) -> AnyView {
     let flags = scene_flags();
     let appearance = if flags.contains("light") { Appearance::Light } else { Appearance::Dark };
-    set_app_theme(AppTheme::new(&ThemeDocument::graphite(), appearance), cx);
+    crate::theme_palette::ThemeSettings::set_appearance(appearance, cx);
     // Text inputs come from gpui-component, which keeps its own light/dark theme.
     gpui_kit::component::Theme::change(
         if appearance == Appearance::Light { gpui_kit::component::ThemeMode::Light } else { gpui_kit::component::ThemeMode::Dark },

@@ -1,0 +1,3952 @@
+{
+ "tolerance": {
+  "px": 0.5,
+  "text_px": 1.0,
+  "channel": 1
+ },
+ "scenes": {
+  "window-thread": {
+   "elements": [
+    {
+     "name": "titlebar fill",
+     "kind": "fill",
+     "at": [
+      600,
+      30
+     ]
+    },
+    {
+     "name": "sidebar fill (top)",
+     "kind": "fill",
+     "at": [
+      240,
+      40
+     ]
+    },
+    {
+     "name": "sidebar edge",
+     "kind": "hscan",
+     "at": [
+      400,
+      250,
+      262
+     ]
+    },
+    {
+     "name": "sidebar toggle",
+     "kind": "ink",
+     "at": [
+      84,
+      14,
+      112,
+      40
+     ]
+    },
+    {
+     "name": "right toggles",
+     "kind": "ink",
+     "at": [
+      995,
+      14,
+      1090,
+      40
+     ]
+    },
+    {
+     "name": "breadcrumb monogram",
+     "kind": "ink",
+     "at": [
+      272,
+      16,
+      293,
+      37
+     ]
+    },
+    {
+     "name": "breadcrumb project",
+     "kind": "ink",
+     "at": [
+      294,
+      14,
+      350,
+      40
+     ],
+     "text": true
+    },
+    {
+     "name": "breadcrumb slash",
+     "kind": "ink",
+     "at": [
+      350,
+      14,
+      366,
+      40
+     ],
+     "text": true
+    },
+    {
+     "name": "breadcrumb title",
+     "kind": "ink",
+     "at": [
+      368,
+      14,
+      520,
+      40
+     ],
+     "text": true
+    },
+    {
+     "name": "dev badge",
+     "kind": "ink",
+     "at": [
+      2,
+      15,
+      34,
+      37
+     ],
+     "exclude": "dev builds only; never on the owner's build"
+    },
+    {
+     "name": "search icon",
+     "kind": "ink",
+     "at": [
+      12,
+      62,
+      36,
+      90
+     ]
+    },
+    {
+     "name": "search placeholder",
+     "kind": "ink",
+     "at": [
+      38,
+      62,
+      110,
+      90
+     ],
+     "text": true
+    },
+    {
+     "name": "header actions",
+     "kind": "ink",
+     "at": [
+      150,
+      60,
+      245,
+      92
+     ]
+    },
+    {
+     "name": "row 1 card edges",
+     "kind": "hscan",
+     "at": [
+      140,
+      0,
+      256
+     ]
+    },
+    {
+     "name": "row 1 card top/bottom",
+     "kind": "vscan",
+     "at": [
+      12,
+      95,
+      192
+     ]
+    },
+    {
+     "name": "row 1 monogram",
+     "kind": "ink",
+     "at": [
+      16,
+      110,
+      36,
+      130
+     ]
+    },
+    {
+     "name": "row 1 project",
+     "kind": "ink",
+     "at": [
+      38,
+      108,
+      150,
+      130
+     ],
+     "text": true
+    },
+    {
+     "name": "row 1 time",
+     "kind": "ink",
+     "at": [
+      190,
+      108,
+      242,
+      130
+     ],
+     "text": "right"
+    },
+    {
+     "name": "row 1 title",
+     "kind": "ink",
+     "at": [
+      16,
+      133,
+      240,
+      157
+     ],
+     "text": true
+    },
+    {
+     "name": "row 1 branch",
+     "kind": "ink",
+     "at": [
+      16,
+      156,
+      70,
+      176
+     ],
+     "text": true
+    },
+    {
+     "name": "row 1 provider",
+     "kind": "ink",
+     "at": [
+      218,
+      152,
+      245,
+      178
+     ]
+    },
+    {
+     "name": "row 2 status",
+     "kind": "ink",
+     "at": [
+      168,
+      190,
+      242,
+      214
+     ],
+     "text": "right"
+    },
+    {
+     "name": "row 2 title",
+     "kind": "ink",
+     "at": [
+      16,
+      216,
+      240,
+      240
+     ],
+     "text": true
+    },
+    {
+     "name": "row 3 status",
+     "kind": "ink",
+     "at": [
+      168,
+      273,
+      242,
+      297
+     ],
+     "text": "right"
+    },
+    {
+     "name": "settled label",
+     "kind": "ink",
+     "at": [
+      14,
+      700,
+      80,
+      724
+     ],
+     "text": true
+    },
+    {
+     "name": "settled count",
+     "kind": "ink",
+     "at": [
+      200,
+      700,
+      245,
+      724
+     ]
+    },
+    {
+     "name": "footer icons",
+     "kind": "ink",
+     "at": [
+      8,
+      735,
+      200,
+      772
+     ]
+    },
+    {
+     "name": "update button",
+     "kind": "ink",
+     "at": [
+      210,
+      740,
+      245,
+      772
+     ],
+     "exclude": "Check for updates: the native shell has its own updater, so the port leaves it out"
+    },
+    {
+     "name": "composer left edge",
+     "kind": "hscan",
+     "at": [
+      700,
+      290,
+      312
+     ],
+     "blur": true
+    },
+    {
+     "name": "composer right edge",
+     "kind": "hscan",
+     "at": [
+      700,
+      1040,
+      1070
+     ],
+     "blur": true
+    },
+    {
+     "name": "composer card top/bottom",
+     "kind": "vscan",
+     "at": [
+      800,
+      630,
+      779
+     ],
+     "blur": true
+    },
+    {
+     "name": "composer fill",
+     "kind": "fill",
+     "at": [
+      420,
+      700
+     ]
+    },
+    {
+     "name": "composer placeholder",
+     "kind": "ink",
+     "at": [
+      310,
+      662,
+      760,
+      690
+     ],
+     "text": true
+    },
+    {
+     "name": "attach icon",
+     "kind": "ink",
+     "at": [
+      310,
+      718,
+      352,
+      750
+     ]
+    },
+    {
+     "name": "send icon",
+     "kind": "ink",
+     "at": [
+      1005,
+      718,
+      1048,
+      750
+     ]
+    },
+    {
+     "name": "model control",
+     "kind": "ink",
+     "at": [
+      820,
+      718,
+      1005,
+      750
+     ],
+     "exclude": "fixture: the composer catalog is the Claude fixture (thread_route_view.rs), not Replay"
+    },
+    {
+     "name": "card top/bottom",
+     "kind": "vscan",
+     "at": [
+      700,
+      435,
+      560
+     ]
+    },
+    {
+     "name": "card sides",
+     "kind": "hscan",
+     "at": [
+      488,
+      300,
+      1060
+     ]
+    },
+    {
+     "name": "card title",
+     "kind": "ink",
+     "at": [
+      320,
+      450,
+      420,
+      475
+     ],
+     "text": true
+    },
+    {
+     "name": "card +7 -0",
+     "kind": "ink",
+     "at": [
+      420,
+      450,
+      470,
+      475
+     ]
+    },
+    {
+     "name": "card buttons",
+     "kind": "ink",
+     "at": [
+      830,
+      448,
+      1040,
+      478
+     ]
+    },
+    {
+     "name": "folder row",
+     "kind": "ink",
+     "at": [
+      316,
+      488,
+      400,
+      512
+     ]
+    },
+    {
+     "name": "folder stats",
+     "kind": "ink",
+     "at": [
+      960,
+      488,
+      1040,
+      512
+     ]
+    },
+    {
+     "name": "blockquote",
+     "kind": "ink",
+     "at": [
+      280,
+      375,
+      900,
+      405
+     ]
+    },
+    {
+     "name": "link line",
+     "kind": "ink",
+     "at": [
+      280,
+      408,
+      900,
+      432
+     ],
+     "text": true
+    },
+    {
+     "name": "assistant meta row",
+     "kind": "ink",
+     "at": [
+      280,
+      528,
+      480,
+      550
+     ],
+     "note": "copy, fork and revert actions with the time"
+    }
+   ]
+  },
+  "sidebar-selected": {
+   "elements": [
+    {
+     "name": "titlebar fill",
+     "kind": "fill",
+     "at": [
+      600,
+      30
+     ]
+    },
+    {
+     "name": "sidebar fill (top)",
+     "kind": "fill",
+     "at": [
+      240,
+      40
+     ]
+    },
+    {
+     "name": "sidebar edge",
+     "kind": "hscan",
+     "at": [
+      400,
+      250,
+      262
+     ]
+    },
+    {
+     "name": "sidebar toggle",
+     "kind": "ink",
+     "at": [
+      84,
+      14,
+      112,
+      40
+     ]
+    },
+    {
+     "name": "right toggles",
+     "kind": "ink",
+     "at": [
+      995,
+      14,
+      1090,
+      40
+     ]
+    },
+    {
+     "name": "breadcrumb monogram",
+     "kind": "ink",
+     "at": [
+      272,
+      16,
+      293,
+      37
+     ]
+    },
+    {
+     "name": "breadcrumb project",
+     "kind": "ink",
+     "at": [
+      294,
+      14,
+      350,
+      40
+     ],
+     "text": true
+    },
+    {
+     "name": "breadcrumb slash",
+     "kind": "ink",
+     "at": [
+      350,
+      14,
+      366,
+      40
+     ],
+     "text": true
+    },
+    {
+     "name": "breadcrumb title",
+     "kind": "ink",
+     "at": [
+      368,
+      14,
+      520,
+      40
+     ],
+     "text": true
+    },
+    {
+     "name": "dev badge",
+     "kind": "ink",
+     "at": [
+      2,
+      15,
+      34,
+      37
+     ],
+     "exclude": "dev builds only; never on the owner's build"
+    },
+    {
+     "name": "search icon",
+     "kind": "ink",
+     "at": [
+      12,
+      62,
+      36,
+      90
+     ]
+    },
+    {
+     "name": "search placeholder",
+     "kind": "ink",
+     "at": [
+      38,
+      62,
+      110,
+      90
+     ],
+     "text": true
+    },
+    {
+     "name": "header actions",
+     "kind": "ink",
+     "at": [
+      150,
+      60,
+      245,
+      92
+     ]
+    },
+    {
+     "name": "row 1 card edges",
+     "kind": "hscan",
+     "at": [
+      140,
+      0,
+      256
+     ]
+    },
+    {
+     "name": "row 1 card top/bottom",
+     "kind": "vscan",
+     "at": [
+      12,
+      95,
+      192
+     ]
+    },
+    {
+     "name": "row 1 monogram",
+     "kind": "ink",
+     "at": [
+      16,
+      110,
+      36,
+      130
+     ]
+    },
+    {
+     "name": "row 1 project",
+     "kind": "ink",
+     "at": [
+      38,
+      108,
+      150,
+      130
+     ],
+     "text": true
+    },
+    {
+     "name": "row 1 time",
+     "kind": "ink",
+     "at": [
+      190,
+      108,
+      242,
+      130
+     ],
+     "text": "right"
+    },
+    {
+     "name": "row 1 title",
+     "kind": "ink",
+     "at": [
+      16,
+      133,
+      240,
+      157
+     ],
+     "text": true
+    },
+    {
+     "name": "row 1 branch",
+     "kind": "ink",
+     "at": [
+      16,
+      156,
+      70,
+      176
+     ],
+     "text": true
+    },
+    {
+     "name": "row 1 provider",
+     "kind": "ink",
+     "at": [
+      218,
+      152,
+      245,
+      178
+     ]
+    },
+    {
+     "name": "row 2 status",
+     "kind": "ink",
+     "at": [
+      168,
+      190,
+      242,
+      214
+     ],
+     "text": "right"
+    },
+    {
+     "name": "row 2 title",
+     "kind": "ink",
+     "at": [
+      16,
+      216,
+      240,
+      240
+     ],
+     "text": true
+    },
+    {
+     "name": "row 3 status",
+     "kind": "ink",
+     "at": [
+      168,
+      273,
+      242,
+      297
+     ],
+     "text": "right"
+    },
+    {
+     "name": "settled label",
+     "kind": "ink",
+     "at": [
+      14,
+      700,
+      80,
+      724
+     ],
+     "text": true
+    },
+    {
+     "name": "settled count",
+     "kind": "ink",
+     "at": [
+      200,
+      700,
+      245,
+      724
+     ]
+    },
+    {
+     "name": "footer icons",
+     "kind": "ink",
+     "at": [
+      8,
+      735,
+      200,
+      772
+     ]
+    },
+    {
+     "name": "update button",
+     "kind": "ink",
+     "at": [
+      210,
+      740,
+      245,
+      772
+     ],
+     "exclude": "Check for updates: the native shell has its own updater, so the port leaves it out"
+    },
+    {
+     "name": "composer left edge",
+     "kind": "hscan",
+     "at": [
+      700,
+      290,
+      312
+     ],
+     "blur": true
+    },
+    {
+     "name": "composer right edge",
+     "kind": "hscan",
+     "at": [
+      700,
+      1040,
+      1070
+     ],
+     "blur": true
+    },
+    {
+     "name": "composer card top/bottom",
+     "kind": "vscan",
+     "at": [
+      800,
+      630,
+      779
+     ],
+     "blur": true
+    },
+    {
+     "name": "composer fill",
+     "kind": "fill",
+     "at": [
+      420,
+      700
+     ]
+    },
+    {
+     "name": "composer placeholder",
+     "kind": "ink",
+     "at": [
+      310,
+      662,
+      760,
+      690
+     ],
+     "text": true
+    },
+    {
+     "name": "attach icon",
+     "kind": "ink",
+     "at": [
+      310,
+      718,
+      352,
+      750
+     ]
+    },
+    {
+     "name": "send icon",
+     "kind": "ink",
+     "at": [
+      1005,
+      718,
+      1048,
+      750
+     ]
+    },
+    {
+     "name": "model control",
+     "kind": "ink",
+     "at": [
+      820,
+      718,
+      1005,
+      750
+     ],
+     "exclude": "fixture: the composer catalog is the Claude fixture (thread_route_view.rs), not Replay"
+    }
+   ]
+  },
+  "sidebar-hover": {
+   "elements": [
+    {
+     "name": "titlebar fill",
+     "kind": "fill",
+     "at": [
+      600,
+      30
+     ]
+    },
+    {
+     "name": "sidebar fill (top)",
+     "kind": "fill",
+     "at": [
+      240,
+      40
+     ]
+    },
+    {
+     "name": "sidebar edge",
+     "kind": "hscan",
+     "at": [
+      400,
+      250,
+      262
+     ]
+    },
+    {
+     "name": "sidebar toggle",
+     "kind": "ink",
+     "at": [
+      84,
+      14,
+      112,
+      40
+     ]
+    },
+    {
+     "name": "right toggles",
+     "kind": "ink",
+     "at": [
+      995,
+      14,
+      1090,
+      40
+     ]
+    },
+    {
+     "name": "breadcrumb monogram",
+     "kind": "ink",
+     "at": [
+      272,
+      16,
+      293,
+      37
+     ]
+    },
+    {
+     "name": "breadcrumb project",
+     "kind": "ink",
+     "at": [
+      294,
+      14,
+      350,
+      40
+     ],
+     "text": true
+    },
+    {
+     "name": "breadcrumb slash",
+     "kind": "ink",
+     "at": [
+      350,
+      14,
+      366,
+      40
+     ],
+     "text": true
+    },
+    {
+     "name": "breadcrumb title",
+     "kind": "ink",
+     "at": [
+      368,
+      14,
+      520,
+      40
+     ],
+     "text": true
+    },
+    {
+     "name": "dev badge",
+     "kind": "ink",
+     "at": [
+      2,
+      15,
+      34,
+      37
+     ],
+     "exclude": "dev builds only; never on the owner's build"
+    },
+    {
+     "name": "search icon",
+     "kind": "ink",
+     "at": [
+      12,
+      62,
+      36,
+      90
+     ]
+    },
+    {
+     "name": "search placeholder",
+     "kind": "ink",
+     "at": [
+      38,
+      62,
+      110,
+      90
+     ],
+     "text": true
+    },
+    {
+     "name": "header actions",
+     "kind": "ink",
+     "at": [
+      150,
+      60,
+      245,
+      92
+     ]
+    },
+    {
+     "name": "row 1 card edges",
+     "kind": "hscan",
+     "at": [
+      140,
+      0,
+      256
+     ]
+    },
+    {
+     "name": "row 1 card top/bottom",
+     "kind": "vscan",
+     "at": [
+      12,
+      95,
+      192
+     ]
+    },
+    {
+     "name": "row 1 monogram",
+     "kind": "ink",
+     "at": [
+      16,
+      110,
+      36,
+      130
+     ]
+    },
+    {
+     "name": "row 1 project",
+     "kind": "ink",
+     "at": [
+      38,
+      108,
+      150,
+      130
+     ],
+     "text": true
+    },
+    {
+     "name": "row 1 time",
+     "kind": "ink",
+     "at": [
+      190,
+      108,
+      242,
+      130
+     ],
+     "text": "right"
+    },
+    {
+     "name": "row 1 title",
+     "kind": "ink",
+     "at": [
+      16,
+      133,
+      240,
+      157
+     ],
+     "text": true
+    },
+    {
+     "name": "row 1 branch",
+     "kind": "ink",
+     "at": [
+      16,
+      156,
+      70,
+      176
+     ],
+     "text": true
+    },
+    {
+     "name": "row 1 provider",
+     "kind": "ink",
+     "at": [
+      218,
+      152,
+      245,
+      178
+     ]
+    },
+    {
+     "name": "row 2 status",
+     "kind": "ink",
+     "at": [
+      168,
+      190,
+      242,
+      214
+     ],
+     "text": "right"
+    },
+    {
+     "name": "row 2 title",
+     "kind": "ink",
+     "at": [
+      16,
+      216,
+      240,
+      240
+     ],
+     "text": true
+    },
+    {
+     "name": "row 3 status",
+     "kind": "ink",
+     "at": [
+      168,
+      273,
+      242,
+      297
+     ],
+     "text": "right"
+    },
+    {
+     "name": "settled label",
+     "kind": "ink",
+     "at": [
+      14,
+      700,
+      80,
+      724
+     ],
+     "text": true
+    },
+    {
+     "name": "settled count",
+     "kind": "ink",
+     "at": [
+      200,
+      700,
+      245,
+      724
+     ]
+    },
+    {
+     "name": "footer icons",
+     "kind": "ink",
+     "at": [
+      8,
+      735,
+      200,
+      772
+     ]
+    },
+    {
+     "name": "update button",
+     "kind": "ink",
+     "at": [
+      210,
+      740,
+      245,
+      772
+     ],
+     "exclude": "Check for updates: the native shell has its own updater, so the port leaves it out"
+    },
+    {
+     "name": "hovered row fill",
+     "kind": "fill",
+     "at": [
+      120,
+      190
+     ]
+    },
+    {
+     "name": "row 2 hover actions",
+     "kind": "ink",
+     "at": [
+      150,
+      190,
+      245,
+      214
+     ]
+    }
+   ]
+  },
+  "sidebar-context-menu": {
+   "elements": [
+    {
+     "name": "titlebar fill",
+     "kind": "fill",
+     "at": [
+      600,
+      30
+     ]
+    },
+    {
+     "name": "sidebar fill (top)",
+     "kind": "fill",
+     "at": [
+      240,
+      40
+     ]
+    },
+    {
+     "name": "sidebar edge",
+     "kind": "hscan",
+     "at": [
+      400,
+      250,
+      262
+     ]
+    },
+    {
+     "name": "sidebar toggle",
+     "kind": "ink",
+     "at": [
+      84,
+      14,
+      112,
+      40
+     ]
+    },
+    {
+     "name": "right toggles",
+     "kind": "ink",
+     "at": [
+      995,
+      14,
+      1090,
+      40
+     ]
+    },
+    {
+     "name": "breadcrumb monogram",
+     "kind": "ink",
+     "at": [
+      272,
+      16,
+      293,
+      37
+     ]
+    },
+    {
+     "name": "breadcrumb project",
+     "kind": "ink",
+     "at": [
+      294,
+      14,
+      350,
+      40
+     ],
+     "text": true
+    },
+    {
+     "name": "breadcrumb slash",
+     "kind": "ink",
+     "at": [
+      350,
+      14,
+      366,
+      40
+     ],
+     "text": true
+    },
+    {
+     "name": "breadcrumb title",
+     "kind": "ink",
+     "at": [
+      368,
+      14,
+      520,
+      40
+     ],
+     "text": true
+    },
+    {
+     "name": "dev badge",
+     "kind": "ink",
+     "at": [
+      2,
+      15,
+      34,
+      37
+     ],
+     "exclude": "dev builds only; never on the owner's build"
+    },
+    {
+     "name": "menu left edge",
+     "kind": "hscan",
+     "at": [
+      300,
+      120,
+      145
+     ],
+     "blur": true
+    },
+    {
+     "name": "menu top edge",
+     "kind": "vscan",
+     "at": [
+      200,
+      215,
+      245
+     ],
+     "blur": true
+    },
+    {
+     "name": "menu fill",
+     "kind": "fill",
+     "at": [
+      300,
+      290
+     ]
+    },
+    {
+     "name": "item 1 icon",
+     "kind": "ink",
+     "at": [
+      136,
+      233,
+      158,
+      255
+     ]
+    },
+    {
+     "name": "item 1 label",
+     "kind": "ink",
+     "at": [
+      160,
+      233,
+      300,
+      255
+     ],
+     "text": true
+    },
+    {
+     "name": "menu row pitch",
+     "kind": "vscan",
+     "at": [
+      136.5,
+      225,
+      300
+     ]
+    }
+   ]
+  },
+  "sidebar-inbox": {
+   "elements": [
+    {
+     "name": "titlebar fill",
+     "kind": "fill",
+     "at": [
+      600,
+      30
+     ]
+    },
+    {
+     "name": "sidebar fill (top)",
+     "kind": "fill",
+     "at": [
+      240,
+      40
+     ]
+    },
+    {
+     "name": "sidebar edge",
+     "kind": "hscan",
+     "at": [
+      400,
+      250,
+      262
+     ]
+    },
+    {
+     "name": "sidebar toggle",
+     "kind": "ink",
+     "at": [
+      84,
+      14,
+      112,
+      40
+     ]
+    },
+    {
+     "name": "right toggles",
+     "kind": "ink",
+     "at": [
+      995,
+      14,
+      1090,
+      40
+     ]
+    },
+    {
+     "name": "breadcrumb monogram",
+     "kind": "ink",
+     "at": [
+      272,
+      16,
+      293,
+      37
+     ]
+    },
+    {
+     "name": "breadcrumb project",
+     "kind": "ink",
+     "at": [
+      294,
+      14,
+      350,
+      40
+     ],
+     "text": true
+    },
+    {
+     "name": "breadcrumb slash",
+     "kind": "ink",
+     "at": [
+      350,
+      14,
+      366,
+      40
+     ],
+     "text": true
+    },
+    {
+     "name": "breadcrumb title",
+     "kind": "ink",
+     "at": [
+      368,
+      14,
+      520,
+      40
+     ],
+     "text": true
+    },
+    {
+     "name": "dev badge",
+     "kind": "ink",
+     "at": [
+      2,
+      15,
+      34,
+      37
+     ],
+     "exclude": "dev builds only; never on the owner's build"
+    },
+    {
+     "name": "inbox popover",
+     "kind": "ink",
+     "at": [
+      270,
+      440,
+      1000,
+      780
+     ]
+    },
+    {
+     "name": "inbox fill",
+     "kind": "fill",
+     "at": [
+      500,
+      590
+     ]
+    },
+    {
+     "name": "inbox title",
+     "kind": "ink",
+     "at": [
+      300,
+      462,
+      450,
+      490
+     ],
+     "text": true
+    },
+    {
+     "name": "mark all read",
+     "kind": "ink",
+     "at": [
+      700,
+      462,
+      870,
+      490
+     ],
+     "text": true
+    },
+    {
+     "name": "tabs",
+     "kind": "ink",
+     "at": [
+      300,
+      490,
+      450,
+      515
+     ],
+     "text": true
+    },
+    {
+     "name": "item 1 icon",
+     "kind": "ink",
+     "at": [
+      278,
+      520,
+      300,
+      545
+     ]
+    },
+    {
+     "name": "item 1 title",
+     "kind": "ink",
+     "at": [
+      316,
+      520,
+      760,
+      543
+     ],
+     "text": true
+    },
+    {
+     "name": "item 1 subtitle",
+     "kind": "ink",
+     "at": [
+      316,
+      543,
+      760,
+      562
+     ],
+     "text": true
+    },
+    {
+     "name": "item 1 meta",
+     "kind": "ink",
+     "at": [
+      316,
+      562,
+      760,
+      582
+     ],
+     "text": true
+    },
+    {
+     "name": "bell active fill",
+     "kind": "fill",
+     "at": [
+      160,
+      755
+     ]
+    }
+   ]
+  },
+  "timeline-top": {
+   "elements": [
+    {
+     "name": "titlebar fill",
+     "kind": "fill",
+     "at": [
+      600,
+      30
+     ]
+    },
+    {
+     "name": "sidebar fill (top)",
+     "kind": "fill",
+     "at": [
+      240,
+      40
+     ]
+    },
+    {
+     "name": "sidebar edge",
+     "kind": "hscan",
+     "at": [
+      400,
+      250,
+      262
+     ]
+    },
+    {
+     "name": "sidebar toggle",
+     "kind": "ink",
+     "at": [
+      84,
+      14,
+      112,
+      40
+     ]
+    },
+    {
+     "name": "right toggles",
+     "kind": "ink",
+     "at": [
+      995,
+      14,
+      1090,
+      40
+     ]
+    },
+    {
+     "name": "breadcrumb monogram",
+     "kind": "ink",
+     "at": [
+      272,
+      16,
+      293,
+      37
+     ]
+    },
+    {
+     "name": "breadcrumb project",
+     "kind": "ink",
+     "at": [
+      294,
+      14,
+      350,
+      40
+     ],
+     "text": true
+    },
+    {
+     "name": "breadcrumb slash",
+     "kind": "ink",
+     "at": [
+      350,
+      14,
+      366,
+      40
+     ],
+     "text": true
+    },
+    {
+     "name": "breadcrumb title",
+     "kind": "ink",
+     "at": [
+      368,
+      14,
+      520,
+      40
+     ],
+     "text": true
+    },
+    {
+     "name": "dev badge",
+     "kind": "ink",
+     "at": [
+      2,
+      15,
+      34,
+      37
+     ],
+     "exclude": "dev builds only; never on the owner's build"
+    },
+    {
+     "name": "first prompt",
+     "kind": "ink",
+     "at": [
+      300,
+      75,
+      1060,
+      112
+     ],
+     "exclude": "the fork folds a message from another agent into an Agent pill; the port has no agent attribution yet"
+    },
+    {
+     "name": "worked-for anchor",
+     "kind": "ink",
+     "at": [
+      360,
+      110,
+      440,
+      200
+     ],
+     "exclude": "locator: finds the turn, whose offset follows the Agent pill"
+    },
+    {
+     "name": "worked for",
+     "kind": "ink",
+     "at": [
+      300,
+      130,
+      500,
+      155
+     ],
+     "text": true,
+     "anchor": "worked-for anchor"
+    },
+    {
+     "name": "turn rule",
+     "kind": "vscan",
+     "at": [
+      700,
+      152,
+      175
+     ],
+     "anchor": "worked-for anchor"
+    },
+    {
+     "name": "h2 Done",
+     "kind": "ink",
+     "at": [
+      300,
+      170,
+      400,
+      196
+     ],
+     "text": true,
+     "anchor": "worked-for anchor"
+    },
+    {
+     "name": "paragraph 1",
+     "kind": "ink",
+     "at": [
+      300,
+      205,
+      1060,
+      231
+     ],
+     "text": true,
+     "anchor": "worked-for anchor"
+    },
+    {
+     "name": "inline code chip",
+     "kind": "fill",
+     "at": [
+      369,
+      216
+     ],
+     "anchor": "worked-for anchor"
+    },
+    {
+     "name": "bullet 1",
+     "kind": "ink",
+     "at": [
+      300,
+      240,
+      900,
+      262
+     ],
+     "text": true,
+     "anchor": "worked-for anchor"
+    },
+    {
+     "name": "bullet 3",
+     "kind": "ink",
+     "at": [
+      300,
+      293,
+      900,
+      315
+     ],
+     "text": true,
+     "anchor": "worked-for anchor"
+    },
+    {
+     "name": "ordered 1",
+     "kind": "ink",
+     "at": [
+      300,
+      326,
+      900,
+      350
+     ],
+     "text": true,
+     "anchor": "worked-for anchor"
+    },
+    {
+     "name": "ordered 2 file chip",
+     "kind": "ink",
+     "at": [
+      300,
+      354,
+      900,
+      378
+     ],
+     "text": true,
+     "anchor": "worked-for anchor"
+    },
+    {
+     "name": "ordered 3",
+     "kind": "ink",
+     "at": [
+      300,
+      381,
+      900,
+      405
+     ],
+     "text": true,
+     "anchor": "worked-for anchor"
+    },
+    {
+     "name": "code block top",
+     "kind": "vscan",
+     "at": [
+      1000,
+      405,
+      440
+     ],
+     "anchor": "worked-for anchor"
+    },
+    {
+     "name": "code header badge",
+     "kind": "ink",
+     "at": [
+      315,
+      420,
+      345,
+      445
+     ],
+     "anchor": "worked-for anchor"
+    },
+    {
+     "name": "code header buttons",
+     "kind": "ink",
+     "at": [
+      960,
+      420,
+      1045,
+      445
+     ],
+     "anchor": "worked-for anchor"
+    },
+    {
+     "name": "code line 1",
+     "kind": "ink",
+     "at": [
+      320,
+      458,
+      900,
+      478
+     ],
+     "text": true,
+     "anchor": "worked-for anchor"
+    },
+    {
+     "name": "code line 2",
+     "kind": "ink",
+     "at": [
+      320,
+      478,
+      900,
+      496
+     ],
+     "text": true,
+     "anchor": "worked-for anchor"
+    },
+    {
+     "name": "code block fill",
+     "kind": "fill",
+     "at": [
+      1000,
+      520
+     ],
+     "anchor": "worked-for anchor"
+    },
+    {
+     "name": "composer left edge",
+     "kind": "hscan",
+     "at": [
+      700,
+      290,
+      312
+     ],
+     "blur": true
+    },
+    {
+     "name": "composer right edge",
+     "kind": "hscan",
+     "at": [
+      700,
+      1040,
+      1070
+     ],
+     "blur": true
+    },
+    {
+     "name": "composer card top/bottom",
+     "kind": "vscan",
+     "at": [
+      800,
+      630,
+      779
+     ],
+     "blur": true
+    },
+    {
+     "name": "composer fill",
+     "kind": "fill",
+     "at": [
+      420,
+      700
+     ]
+    },
+    {
+     "name": "composer placeholder",
+     "kind": "ink",
+     "at": [
+      310,
+      662,
+      760,
+      690
+     ],
+     "text": true
+    },
+    {
+     "name": "attach icon",
+     "kind": "ink",
+     "at": [
+      310,
+      718,
+      352,
+      750
+     ]
+    },
+    {
+     "name": "send icon",
+     "kind": "ink",
+     "at": [
+      1005,
+      718,
+      1048,
+      750
+     ]
+    },
+    {
+     "name": "model control",
+     "kind": "ink",
+     "at": [
+      820,
+      718,
+      1005,
+      750
+     ],
+     "exclude": "fixture: the composer catalog is the Claude fixture (thread_route_view.rs), not Replay"
+    }
+   ]
+  },
+  "timeline-tools-expanded": {
+   "elements": [
+    {
+     "name": "titlebar fill",
+     "kind": "fill",
+     "at": [
+      600,
+      30
+     ]
+    },
+    {
+     "name": "sidebar fill (top)",
+     "kind": "fill",
+     "at": [
+      240,
+      40
+     ]
+    },
+    {
+     "name": "sidebar edge",
+     "kind": "hscan",
+     "at": [
+      400,
+      250,
+      262
+     ]
+    },
+    {
+     "name": "sidebar toggle",
+     "kind": "ink",
+     "at": [
+      84,
+      14,
+      112,
+      40
+     ]
+    },
+    {
+     "name": "right toggles",
+     "kind": "ink",
+     "at": [
+      995,
+      14,
+      1090,
+      40
+     ]
+    },
+    {
+     "name": "breadcrumb monogram",
+     "kind": "ink",
+     "at": [
+      272,
+      16,
+      293,
+      37
+     ]
+    },
+    {
+     "name": "breadcrumb project",
+     "kind": "ink",
+     "at": [
+      294,
+      14,
+      350,
+      40
+     ],
+     "text": true
+    },
+    {
+     "name": "breadcrumb slash",
+     "kind": "ink",
+     "at": [
+      350,
+      14,
+      366,
+      40
+     ],
+     "text": true
+    },
+    {
+     "name": "breadcrumb title",
+     "kind": "ink",
+     "at": [
+      368,
+      14,
+      520,
+      40
+     ],
+     "text": true
+    },
+    {
+     "name": "dev badge",
+     "kind": "ink",
+     "at": [
+      2,
+      15,
+      34,
+      37
+     ],
+     "exclude": "dev builds only; never on the owner's build"
+    },
+    {
+     "name": "worked-for anchor",
+     "kind": "ink",
+     "at": [
+      360,
+      110,
+      440,
+      200
+     ],
+     "exclude": "locator: finds the turn, whose offset follows the Agent pill"
+    },
+    {
+     "name": "worked for",
+     "kind": "ink",
+     "at": [
+      300,
+      130,
+      500,
+      155
+     ],
+     "text": true,
+     "anchor": "worked-for anchor"
+    },
+    {
+     "name": "worked time",
+     "kind": "ink",
+     "at": [
+      900,
+      130,
+      1050,
+      155
+     ],
+     "text": "right",
+     "anchor": "worked-for anchor"
+    },
+    {
+     "name": "thought row",
+     "kind": "ink",
+     "at": [
+      300,
+      172,
+      1060,
+      196
+     ],
+     "text": true,
+     "anchor": "worked-for anchor"
+    },
+    {
+     "name": "tasks row",
+     "kind": "ink",
+     "at": [
+      300,
+      200,
+      1060,
+      224
+     ],
+     "text": true,
+     "anchor": "worked-for anchor"
+    },
+    {
+     "name": "read row",
+     "kind": "ink",
+     "at": [
+      300,
+      228,
+      1060,
+      252
+     ],
+     "text": true,
+     "anchor": "worked-for anchor"
+    },
+    {
+     "name": "interim reply",
+     "kind": "ink",
+     "at": [
+      300,
+      262,
+      1060,
+      290
+     ],
+     "text": true,
+     "anchor": "worked-for anchor"
+    },
+    {
+     "name": "changed 1 file row",
+     "kind": "ink",
+     "at": [
+      300,
+      298,
+      1060,
+      326
+     ],
+     "text": true,
+     "anchor": "worked-for anchor"
+    },
+    {
+     "name": "h2 Done",
+     "kind": "ink",
+     "at": [
+      300,
+      334,
+      400,
+      360
+     ],
+     "text": true,
+     "anchor": "worked-for anchor"
+    }
+   ]
+  },
+  "timeline-bottom": {
+   "elements": [
+    {
+     "name": "titlebar fill",
+     "kind": "fill",
+     "at": [
+      600,
+      30
+     ]
+    },
+    {
+     "name": "sidebar fill (top)",
+     "kind": "fill",
+     "at": [
+      240,
+      40
+     ]
+    },
+    {
+     "name": "sidebar edge",
+     "kind": "hscan",
+     "at": [
+      400,
+      250,
+      262
+     ]
+    },
+    {
+     "name": "sidebar toggle",
+     "kind": "ink",
+     "at": [
+      84,
+      14,
+      112,
+      40
+     ]
+    },
+    {
+     "name": "right toggles",
+     "kind": "ink",
+     "at": [
+      995,
+      14,
+      1090,
+      40
+     ]
+    },
+    {
+     "name": "breadcrumb monogram",
+     "kind": "ink",
+     "at": [
+      272,
+      16,
+      293,
+      37
+     ]
+    },
+    {
+     "name": "breadcrumb project",
+     "kind": "ink",
+     "at": [
+      294,
+      14,
+      350,
+      40
+     ],
+     "text": true
+    },
+    {
+     "name": "breadcrumb slash",
+     "kind": "ink",
+     "at": [
+      350,
+      14,
+      366,
+      40
+     ],
+     "text": true
+    },
+    {
+     "name": "breadcrumb title",
+     "kind": "ink",
+     "at": [
+      368,
+      14,
+      520,
+      40
+     ],
+     "text": true
+    },
+    {
+     "name": "dev badge",
+     "kind": "ink",
+     "at": [
+      2,
+      15,
+      34,
+      37
+     ],
+     "exclude": "dev builds only; never on the owner's build"
+    },
+    {
+     "name": "composer left edge",
+     "kind": "hscan",
+     "at": [
+      700,
+      290,
+      312
+     ],
+     "blur": true
+    },
+    {
+     "name": "composer right edge",
+     "kind": "hscan",
+     "at": [
+      700,
+      1040,
+      1070
+     ],
+     "blur": true
+    },
+    {
+     "name": "composer card top/bottom",
+     "kind": "vscan",
+     "at": [
+      800,
+      630,
+      779
+     ],
+     "blur": true
+    },
+    {
+     "name": "composer fill",
+     "kind": "fill",
+     "at": [
+      420,
+      700
+     ]
+    },
+    {
+     "name": "composer placeholder",
+     "kind": "ink",
+     "at": [
+      310,
+      662,
+      760,
+      690
+     ],
+     "text": true
+    },
+    {
+     "name": "attach icon",
+     "kind": "ink",
+     "at": [
+      310,
+      718,
+      352,
+      750
+     ]
+    },
+    {
+     "name": "send icon",
+     "kind": "ink",
+     "at": [
+      1005,
+      718,
+      1048,
+      750
+     ]
+    },
+    {
+     "name": "model control",
+     "kind": "ink",
+     "at": [
+      820,
+      718,
+      1005,
+      750
+     ],
+     "exclude": "fixture: the composer catalog is the Claude fixture (thread_route_view.rs), not Replay"
+    }
+   ]
+  },
+  "timeline-user-message": {
+   "elements": [
+    {
+     "name": "titlebar fill",
+     "kind": "fill",
+     "at": [
+      600,
+      30
+     ]
+    },
+    {
+     "name": "sidebar fill (top)",
+     "kind": "fill",
+     "at": [
+      240,
+      40
+     ]
+    },
+    {
+     "name": "sidebar edge",
+     "kind": "hscan",
+     "at": [
+      400,
+      250,
+      262
+     ]
+    },
+    {
+     "name": "sidebar toggle",
+     "kind": "ink",
+     "at": [
+      84,
+      14,
+      112,
+      40
+     ]
+    },
+    {
+     "name": "right toggles",
+     "kind": "ink",
+     "at": [
+      995,
+      14,
+      1090,
+      40
+     ]
+    },
+    {
+     "name": "breadcrumb monogram",
+     "kind": "ink",
+     "at": [
+      272,
+      16,
+      293,
+      37
+     ]
+    },
+    {
+     "name": "breadcrumb project",
+     "kind": "ink",
+     "at": [
+      294,
+      14,
+      350,
+      40
+     ],
+     "text": true
+    },
+    {
+     "name": "breadcrumb slash",
+     "kind": "ink",
+     "at": [
+      350,
+      14,
+      366,
+      40
+     ],
+     "text": true
+    },
+    {
+     "name": "breadcrumb title",
+     "kind": "ink",
+     "at": [
+      368,
+      14,
+      520,
+      40
+     ],
+     "text": true
+    },
+    {
+     "name": "dev badge",
+     "kind": "ink",
+     "at": [
+      2,
+      15,
+      34,
+      37
+     ],
+     "exclude": "dev builds only; never on the owner's build"
+    },
+    {
+     "name": "bubble anchor",
+     "kind": "ink",
+     "at": [
+      1040,
+      300,
+      1056,
+      500
+     ],
+     "exclude": "locator: the bubble's right end; scroll position is not styling"
+    },
+    {
+     "name": "user bubble",
+     "kind": "ink",
+     "at": [
+      540,
+      385,
+      1060,
+      445
+     ],
+     "anchor": "bubble anchor"
+    },
+    {
+     "name": "bubble fill",
+     "kind": "fill",
+     "at": [
+      1000,
+      412
+     ],
+     "anchor": "bubble anchor"
+    },
+    {
+     "name": "bubble text",
+     "kind": "ink",
+     "at": [
+      560,
+      400,
+      1040,
+      425
+     ],
+     "text": true,
+     "anchor": "bubble anchor"
+    },
+    {
+     "name": "message meta",
+     "kind": "ink",
+     "at": [
+      860,
+      445,
+      1050,
+      470
+     ],
+     "anchor": "bubble anchor"
+    },
+    {
+     "name": "composer left edge",
+     "kind": "hscan",
+     "at": [
+      700,
+      290,
+      312
+     ],
+     "blur": true
+    },
+    {
+     "name": "composer right edge",
+     "kind": "hscan",
+     "at": [
+      700,
+      1040,
+      1070
+     ],
+     "blur": true
+    },
+    {
+     "name": "composer card top/bottom",
+     "kind": "vscan",
+     "at": [
+      800,
+      630,
+      779
+     ],
+     "blur": true
+    },
+    {
+     "name": "composer fill",
+     "kind": "fill",
+     "at": [
+      420,
+      700
+     ]
+    },
+    {
+     "name": "composer placeholder",
+     "kind": "ink",
+     "at": [
+      310,
+      662,
+      760,
+      690
+     ],
+     "text": true
+    },
+    {
+     "name": "attach icon",
+     "kind": "ink",
+     "at": [
+      310,
+      718,
+      352,
+      750
+     ]
+    },
+    {
+     "name": "send icon",
+     "kind": "ink",
+     "at": [
+      1005,
+      718,
+      1048,
+      750
+     ]
+    },
+    {
+     "name": "model control",
+     "kind": "ink",
+     "at": [
+      820,
+      718,
+      1005,
+      750
+     ],
+     "exclude": "fixture: the composer catalog is the Claude fixture (thread_route_view.rs), not Replay"
+    }
+   ]
+  },
+  "composer-empty": {
+   "elements": [
+    {
+     "name": "titlebar fill",
+     "kind": "fill",
+     "at": [
+      600,
+      30
+     ]
+    },
+    {
+     "name": "sidebar fill (top)",
+     "kind": "fill",
+     "at": [
+      240,
+      40
+     ]
+    },
+    {
+     "name": "sidebar edge",
+     "kind": "hscan",
+     "at": [
+      400,
+      250,
+      262
+     ]
+    },
+    {
+     "name": "sidebar toggle",
+     "kind": "ink",
+     "at": [
+      84,
+      14,
+      112,
+      40
+     ]
+    },
+    {
+     "name": "right toggles",
+     "kind": "ink",
+     "at": [
+      995,
+      14,
+      1090,
+      40
+     ]
+    },
+    {
+     "name": "breadcrumb monogram",
+     "kind": "ink",
+     "at": [
+      272,
+      16,
+      293,
+      37
+     ]
+    },
+    {
+     "name": "breadcrumb project",
+     "kind": "ink",
+     "at": [
+      294,
+      14,
+      350,
+      40
+     ],
+     "text": true
+    },
+    {
+     "name": "breadcrumb slash",
+     "kind": "ink",
+     "at": [
+      350,
+      14,
+      366,
+      40
+     ],
+     "text": true
+    },
+    {
+     "name": "breadcrumb title",
+     "kind": "ink",
+     "at": [
+      368,
+      14,
+      520,
+      40
+     ],
+     "text": true
+    },
+    {
+     "name": "dev badge",
+     "kind": "ink",
+     "at": [
+      2,
+      15,
+      34,
+      37
+     ],
+     "exclude": "dev builds only; never on the owner's build"
+    },
+    {
+     "name": "composer left edge",
+     "kind": "hscan",
+     "at": [
+      700,
+      290,
+      312
+     ],
+     "blur": true
+    },
+    {
+     "name": "composer right edge",
+     "kind": "hscan",
+     "at": [
+      700,
+      1040,
+      1070
+     ],
+     "blur": true
+    },
+    {
+     "name": "composer card top/bottom",
+     "kind": "vscan",
+     "at": [
+      800,
+      630,
+      779
+     ],
+     "blur": true
+    },
+    {
+     "name": "composer fill",
+     "kind": "fill",
+     "at": [
+      420,
+      700
+     ]
+    },
+    {
+     "name": "composer placeholder",
+     "kind": "ink",
+     "at": [
+      310,
+      662,
+      760,
+      690
+     ],
+     "text": true
+    },
+    {
+     "name": "attach icon",
+     "kind": "ink",
+     "at": [
+      310,
+      718,
+      352,
+      750
+     ]
+    },
+    {
+     "name": "send icon",
+     "kind": "ink",
+     "at": [
+      1005,
+      718,
+      1048,
+      750
+     ]
+    },
+    {
+     "name": "model control",
+     "kind": "ink",
+     "at": [
+      820,
+      718,
+      1005,
+      750
+     ],
+     "exclude": "fixture: the composer catalog is the Claude fixture (thread_route_view.rs), not Replay"
+    }
+   ]
+  },
+  "composer-focused": {
+   "elements": [
+    {
+     "name": "titlebar fill",
+     "kind": "fill",
+     "at": [
+      600,
+      30
+     ]
+    },
+    {
+     "name": "sidebar fill (top)",
+     "kind": "fill",
+     "at": [
+      240,
+      40
+     ]
+    },
+    {
+     "name": "sidebar edge",
+     "kind": "hscan",
+     "at": [
+      400,
+      250,
+      262
+     ]
+    },
+    {
+     "name": "sidebar toggle",
+     "kind": "ink",
+     "at": [
+      84,
+      14,
+      112,
+      40
+     ]
+    },
+    {
+     "name": "right toggles",
+     "kind": "ink",
+     "at": [
+      995,
+      14,
+      1090,
+      40
+     ]
+    },
+    {
+     "name": "breadcrumb monogram",
+     "kind": "ink",
+     "at": [
+      272,
+      16,
+      293,
+      37
+     ]
+    },
+    {
+     "name": "breadcrumb project",
+     "kind": "ink",
+     "at": [
+      294,
+      14,
+      350,
+      40
+     ],
+     "text": true
+    },
+    {
+     "name": "breadcrumb slash",
+     "kind": "ink",
+     "at": [
+      350,
+      14,
+      366,
+      40
+     ],
+     "text": true
+    },
+    {
+     "name": "breadcrumb title",
+     "kind": "ink",
+     "at": [
+      368,
+      14,
+      520,
+      40
+     ],
+     "text": true
+    },
+    {
+     "name": "dev badge",
+     "kind": "ink",
+     "at": [
+      2,
+      15,
+      34,
+      37
+     ],
+     "exclude": "dev builds only; never on the owner's build"
+    },
+    {
+     "name": "composer left edge",
+     "kind": "hscan",
+     "at": [
+      700,
+      290,
+      312
+     ],
+     "blur": true
+    },
+    {
+     "name": "composer right edge",
+     "kind": "hscan",
+     "at": [
+      700,
+      1040,
+      1070
+     ],
+     "blur": true
+    },
+    {
+     "name": "composer card top/bottom",
+     "kind": "vscan",
+     "at": [
+      800,
+      630,
+      779
+     ],
+     "blur": true
+    },
+    {
+     "name": "composer fill",
+     "kind": "fill",
+     "at": [
+      420,
+      700
+     ]
+    },
+    {
+     "name": "composer placeholder",
+     "kind": "ink",
+     "at": [
+      310,
+      662,
+      760,
+      690
+     ],
+     "text": true
+    },
+    {
+     "name": "attach icon",
+     "kind": "ink",
+     "at": [
+      310,
+      718,
+      352,
+      750
+     ]
+    },
+    {
+     "name": "send icon",
+     "kind": "ink",
+     "at": [
+      1005,
+      718,
+      1048,
+      750
+     ]
+    },
+    {
+     "name": "model control",
+     "kind": "ink",
+     "at": [
+      820,
+      718,
+      1005,
+      750
+     ],
+     "exclude": "fixture: the composer catalog is the Claude fixture (thread_route_view.rs), not Replay"
+    }
+   ]
+  },
+  "composer-multiline": {
+   "elements": [
+    {
+     "name": "titlebar fill",
+     "kind": "fill",
+     "at": [
+      600,
+      30
+     ]
+    },
+    {
+     "name": "sidebar fill (top)",
+     "kind": "fill",
+     "at": [
+      240,
+      40
+     ]
+    },
+    {
+     "name": "sidebar edge",
+     "kind": "hscan",
+     "at": [
+      400,
+      250,
+      262
+     ]
+    },
+    {
+     "name": "sidebar toggle",
+     "kind": "ink",
+     "at": [
+      84,
+      14,
+      112,
+      40
+     ]
+    },
+    {
+     "name": "right toggles",
+     "kind": "ink",
+     "at": [
+      995,
+      14,
+      1090,
+      40
+     ]
+    },
+    {
+     "name": "breadcrumb monogram",
+     "kind": "ink",
+     "at": [
+      272,
+      16,
+      293,
+      37
+     ]
+    },
+    {
+     "name": "breadcrumb project",
+     "kind": "ink",
+     "at": [
+      294,
+      14,
+      350,
+      40
+     ],
+     "text": true
+    },
+    {
+     "name": "breadcrumb slash",
+     "kind": "ink",
+     "at": [
+      350,
+      14,
+      366,
+      40
+     ],
+     "text": true
+    },
+    {
+     "name": "breadcrumb title",
+     "kind": "ink",
+     "at": [
+      368,
+      14,
+      520,
+      40
+     ],
+     "text": true
+    },
+    {
+     "name": "dev badge",
+     "kind": "ink",
+     "at": [
+      2,
+      15,
+      34,
+      37
+     ],
+     "exclude": "dev builds only; never on the owner's build"
+    },
+    {
+     "name": "composer left edge",
+     "kind": "hscan",
+     "at": [
+      700,
+      290,
+      312
+     ],
+     "blur": true
+    },
+    {
+     "name": "composer right edge",
+     "kind": "hscan",
+     "at": [
+      700,
+      1040,
+      1070
+     ],
+     "blur": true
+    },
+    {
+     "name": "composer card top/bottom",
+     "kind": "vscan",
+     "at": [
+      800,
+      560,
+      779
+     ],
+     "blur": true
+    },
+    {
+     "name": "composer fill",
+     "kind": "fill",
+     "at": [
+      420,
+      650
+     ]
+    },
+    {
+     "name": "composer text",
+     "kind": "ink",
+     "at": [
+      310,
+      570,
+      900,
+      700
+     ],
+     "text": true
+    }
+   ]
+  },
+  "composer-model-picker": {
+   "elements": [
+    {
+     "name": "titlebar fill",
+     "kind": "fill",
+     "at": [
+      600,
+      30
+     ]
+    },
+    {
+     "name": "sidebar fill (top)",
+     "kind": "fill",
+     "at": [
+      240,
+      40
+     ]
+    },
+    {
+     "name": "sidebar edge",
+     "kind": "hscan",
+     "at": [
+      400,
+      250,
+      262
+     ]
+    },
+    {
+     "name": "sidebar toggle",
+     "kind": "ink",
+     "at": [
+      84,
+      14,
+      112,
+      40
+     ]
+    },
+    {
+     "name": "right toggles",
+     "kind": "ink",
+     "at": [
+      995,
+      14,
+      1090,
+      40
+     ]
+    },
+    {
+     "name": "breadcrumb monogram",
+     "kind": "ink",
+     "at": [
+      272,
+      16,
+      293,
+      37
+     ]
+    },
+    {
+     "name": "breadcrumb project",
+     "kind": "ink",
+     "at": [
+      294,
+      14,
+      350,
+      40
+     ],
+     "text": true
+    },
+    {
+     "name": "breadcrumb slash",
+     "kind": "ink",
+     "at": [
+      350,
+      14,
+      366,
+      40
+     ],
+     "text": true
+    },
+    {
+     "name": "breadcrumb title",
+     "kind": "ink",
+     "at": [
+      368,
+      14,
+      520,
+      40
+     ],
+     "text": true
+    },
+    {
+     "name": "dev badge",
+     "kind": "ink",
+     "at": [
+      2,
+      15,
+      34,
+      37
+     ],
+     "exclude": "dev builds only; never on the owner's build"
+    },
+    {
+     "name": "picker left edge",
+     "kind": "hscan",
+     "at": [
+      600,
+      440,
+      480
+     ],
+     "blur": true
+    },
+    {
+     "name": "picker right edge",
+     "kind": "hscan",
+     "at": [
+      600,
+      990,
+      1035
+     ],
+     "blur": true
+    },
+    {
+     "name": "picker top edge",
+     "kind": "vscan",
+     "at": [
+      700,
+      330,
+      370
+     ],
+     "blur": true
+    },
+    {
+     "name": "picker bottom edge",
+     "kind": "vscan",
+     "at": [
+      700,
+      690,
+      735
+     ],
+     "blur": true
+    },
+    {
+     "name": "picker rail fill",
+     "kind": "fill",
+     "at": [
+      482,
+      640
+     ]
+    },
+    {
+     "name": "picker list fill",
+     "kind": "fill",
+     "at": [
+      700,
+      640
+     ]
+    },
+    {
+     "name": "picker effort fill",
+     "kind": "fill",
+     "at": [
+      920,
+      600
+     ]
+    },
+    {
+     "name": "picker footer fill",
+     "kind": "fill",
+     "at": [
+      600,
+      702
+     ]
+    },
+    {
+     "name": "search underline",
+     "kind": "vscan",
+     "at": [
+      600,
+      375,
+      395
+     ]
+    },
+    {
+     "name": "option pitch",
+     "kind": "vscan",
+     "at": [
+      520,
+      398,
+      610
+     ],
+     "exclude": "option rows hold fixture content (Claude catalog, not Replay)"
+    }
+   ]
+  },
+  "composer-mention": {
+   "elements": [
+    {
+     "name": "titlebar fill",
+     "kind": "fill",
+     "at": [
+      600,
+      30
+     ]
+    },
+    {
+     "name": "sidebar fill (top)",
+     "kind": "fill",
+     "at": [
+      240,
+      40
+     ]
+    },
+    {
+     "name": "sidebar edge",
+     "kind": "hscan",
+     "at": [
+      400,
+      250,
+      262
+     ]
+    },
+    {
+     "name": "sidebar toggle",
+     "kind": "ink",
+     "at": [
+      84,
+      14,
+      112,
+      40
+     ]
+    },
+    {
+     "name": "right toggles",
+     "kind": "ink",
+     "at": [
+      995,
+      14,
+      1090,
+      40
+     ]
+    },
+    {
+     "name": "breadcrumb monogram",
+     "kind": "ink",
+     "at": [
+      272,
+      16,
+      293,
+      37
+     ]
+    },
+    {
+     "name": "breadcrumb project",
+     "kind": "ink",
+     "at": [
+      294,
+      14,
+      350,
+      40
+     ],
+     "text": true
+    },
+    {
+     "name": "breadcrumb slash",
+     "kind": "ink",
+     "at": [
+      350,
+      14,
+      366,
+      40
+     ],
+     "text": true
+    },
+    {
+     "name": "breadcrumb title",
+     "kind": "ink",
+     "at": [
+      368,
+      14,
+      520,
+      40
+     ],
+     "text": true
+    },
+    {
+     "name": "dev badge",
+     "kind": "ink",
+     "at": [
+      2,
+      15,
+      34,
+      37
+     ],
+     "exclude": "dev builds only; never on the owner's build"
+    },
+    {
+     "name": "mention menu top",
+     "kind": "vscan",
+     "at": [
+      700,
+      460,
+      500
+     ],
+     "blur": true
+    },
+    {
+     "name": "mention rows",
+     "kind": "vscan",
+     "at": [
+      340,
+      495,
+      650
+     ],
+     "exclude": "rows hold fixture files"
+    },
+    {
+     "name": "mention menu fill",
+     "kind": "fill",
+     "at": [
+      1000,
+      600
+     ]
+    }
+   ]
+  },
+  "command-palette": {
+   "elements": [
+    {
+     "name": "palette left edge",
+     "kind": "hscan",
+     "at": [
+      300,
+      240,
+      290
+     ],
+     "blur": true
+    },
+    {
+     "name": "palette right edge",
+     "kind": "hscan",
+     "at": [
+      300,
+      815,
+      860
+     ],
+     "blur": true
+    },
+    {
+     "name": "palette top edge",
+     "kind": "vscan",
+     "at": [
+      550,
+      60,
+      100
+     ],
+     "blur": true
+    },
+    {
+     "name": "palette bottom edge",
+     "kind": "vscan",
+     "at": [
+      550,
+      470,
+      520
+     ],
+     "exclude": "height follows the command list, which is registry content"
+    },
+    {
+     "name": "palette fill",
+     "kind": "fill",
+     "at": [
+      800,
+      420
+     ]
+    },
+    {
+     "name": "highlighted item",
+     "kind": "fill",
+     "at": [
+      600,
+      178
+     ]
+    },
+    {
+     "name": "search placeholder",
+     "kind": "ink",
+     "at": [
+      270,
+      80,
+      600,
+      115
+     ],
+     "text": true
+    },
+    {
+     "name": "section label",
+     "kind": "ink",
+     "at": [
+      270,
+      135,
+      400,
+      160
+     ],
+     "text": true
+    },
+    {
+     "name": "item pitch",
+     "kind": "vscan",
+     "at": [
+      266,
+      158,
+      200
+     ]
+    },
+    {
+     "name": "backdrop over sidebar",
+     "kind": "fill",
+     "at": [
+      230,
+      300
+     ]
+    }
+   ]
+  },
+  "settings-environments": {
+   "elements": [
+    {
+     "name": "modal left edge",
+     "kind": "hscan",
+     "at": [
+      400,
+      20,
+      60
+     ],
+     "blur": true
+    },
+    {
+     "name": "modal right edge",
+     "kind": "hscan",
+     "at": [
+      400,
+      1040,
+      1080
+     ],
+     "blur": true
+    },
+    {
+     "name": "modal top edge",
+     "kind": "vscan",
+     "at": [
+      600,
+      20,
+      60
+     ],
+     "blur": true
+    },
+    {
+     "name": "modal bottom edge",
+     "kind": "vscan",
+     "at": [
+      600,
+      720,
+      760
+     ],
+     "blur": true
+    },
+    {
+     "name": "nav divider",
+     "kind": "hscan",
+     "at": [
+      600,
+      270,
+      292
+     ]
+    },
+    {
+     "name": "nav fill",
+     "kind": "fill",
+     "at": [
+      150,
+      700
+     ]
+    },
+    {
+     "name": "content fill",
+     "kind": "fill",
+     "at": [
+      700,
+      650
+     ]
+    },
+    {
+     "name": "breadcrumb",
+     "kind": "ink",
+     "at": [
+      290,
+      45,
+      500,
+      75
+     ],
+     "text": true
+    },
+    {
+     "name": "backdrop",
+     "kind": "fill",
+     "at": [
+      1080,
+      400
+     ]
+    }
+   ]
+  },
+  "terminal-drawer": {
+   "elements": [
+    {
+     "name": "titlebar fill",
+     "kind": "fill",
+     "at": [
+      600,
+      30
+     ]
+    },
+    {
+     "name": "sidebar fill (top)",
+     "kind": "fill",
+     "at": [
+      240,
+      40
+     ]
+    },
+    {
+     "name": "sidebar edge",
+     "kind": "hscan",
+     "at": [
+      400,
+      250,
+      262
+     ]
+    },
+    {
+     "name": "sidebar toggle",
+     "kind": "ink",
+     "at": [
+      84,
+      14,
+      112,
+      40
+     ]
+    },
+    {
+     "name": "right toggles",
+     "kind": "ink",
+     "at": [
+      995,
+      14,
+      1090,
+      40
+     ]
+    },
+    {
+     "name": "breadcrumb monogram",
+     "kind": "ink",
+     "at": [
+      272,
+      16,
+      293,
+      37
+     ]
+    },
+    {
+     "name": "breadcrumb project",
+     "kind": "ink",
+     "at": [
+      294,
+      14,
+      350,
+      40
+     ],
+     "text": true
+    },
+    {
+     "name": "breadcrumb slash",
+     "kind": "ink",
+     "at": [
+      350,
+      14,
+      366,
+      40
+     ],
+     "text": true
+    },
+    {
+     "name": "breadcrumb title",
+     "kind": "ink",
+     "at": [
+      368,
+      14,
+      520,
+      40
+     ],
+     "text": true
+    },
+    {
+     "name": "dev badge",
+     "kind": "ink",
+     "at": [
+      2,
+      15,
+      34,
+      37
+     ],
+     "exclude": "dev builds only; never on the owner's build"
+    },
+    {
+     "name": "drawer top border",
+     "kind": "vscan",
+     "at": [
+      900,
+      485,
+      520
+     ]
+    },
+    {
+     "name": "terminal line 1",
+     "kind": "ink",
+     "at": [
+      258,
+      503,
+      700,
+      522
+     ],
+     "text": true
+    },
+    {
+     "name": "terminal line 2",
+     "kind": "ink",
+     "at": [
+      258,
+      522,
+      700,
+      540
+     ],
+     "text": true
+    },
+    {
+     "name": "terminal line 3",
+     "kind": "ink",
+     "at": [
+      258,
+      540,
+      700,
+      558
+     ],
+     "text": true
+    },
+    {
+     "name": "terminal toolbar",
+     "kind": "ink",
+     "at": [
+      1000,
+      505,
+      1095,
+      535
+     ]
+    },
+    {
+     "name": "terminal fill",
+     "kind": "fill",
+     "at": [
+      900,
+      650
+     ]
+    }
+   ]
+  },
+  "right-panel-diff": {
+   "elements": [
+    {
+     "name": "titlebar fill",
+     "kind": "fill",
+     "at": [
+      600,
+      30
+     ]
+    },
+    {
+     "name": "sidebar fill (top)",
+     "kind": "fill",
+     "at": [
+      240,
+      40
+     ]
+    },
+    {
+     "name": "sidebar edge",
+     "kind": "hscan",
+     "at": [
+      400,
+      250,
+      262
+     ]
+    },
+    {
+     "name": "sidebar toggle",
+     "kind": "ink",
+     "at": [
+      84,
+      14,
+      112,
+      40
+     ]
+    },
+    {
+     "name": "right toggles",
+     "kind": "ink",
+     "at": [
+      995,
+      14,
+      1090,
+      40
+     ]
+    },
+    {
+     "name": "breadcrumb monogram",
+     "kind": "ink",
+     "at": [
+      272,
+      16,
+      293,
+      37
+     ]
+    },
+    {
+     "name": "breadcrumb project",
+     "kind": "ink",
+     "at": [
+      294,
+      14,
+      350,
+      40
+     ],
+     "text": true
+    },
+    {
+     "name": "breadcrumb slash",
+     "kind": "ink",
+     "at": [
+      350,
+      14,
+      366,
+      40
+     ],
+     "text": true
+    },
+    {
+     "name": "breadcrumb title",
+     "kind": "ink",
+     "at": [
+      368,
+      14,
+      520,
+      40
+     ],
+     "text": true
+    },
+    {
+     "name": "dev badge",
+     "kind": "ink",
+     "at": [
+      2,
+      15,
+      34,
+      37
+     ],
+     "exclude": "dev builds only; never on the owner's build"
+    },
+    {
+     "name": "panel left edge",
+     "kind": "hscan",
+     "at": [
+      400,
+      600,
+      640
+     ]
+    },
+    {
+     "name": "panel fill",
+     "kind": "fill",
+     "at": [
+      900,
+      600
+     ]
+    },
+    {
+     "name": "panel header",
+     "kind": "ink",
+     "at": [
+      620,
+      52,
+      1100,
+      90
+     ]
+    }
+   ]
+  },
+  "window-thread-light": {
+   "elements": [
+    {
+     "name": "titlebar fill",
+     "kind": "fill",
+     "at": [
+      600,
+      30
+     ]
+    },
+    {
+     "name": "sidebar fill",
+     "kind": "fill",
+     "at": [
+      240,
+      40
+     ]
+    },
+    {
+     "name": "sidebar edge",
+     "kind": "hscan",
+     "at": [
+      400,
+      250,
+      262
+     ]
+    },
+    {
+     "name": "composer card sides",
+     "kind": "hscan",
+     "at": [
+      700,
+      290,
+      1070
+     ]
+    },
+    {
+     "name": "composer card top/bottom",
+     "kind": "vscan",
+     "at": [
+      1046,
+      630,
+      779
+     ],
+     "blur": true
+    },
+    {
+     "name": "composer fill",
+     "kind": "fill",
+     "at": [
+      420,
+      700
+     ]
+    },
+    {
+     "name": "composer placeholder",
+     "kind": "ink",
+     "at": [
+      310,
+      662,
+      760,
+      690
+     ],
+     "text": true
+    },
+    {
+     "name": "row 1 title",
+     "kind": "ink",
+     "at": [
+      16,
+      133,
+      240,
+      157
+     ],
+     "text": true
+    },
+    {
+     "name": "row 1 card edges",
+     "kind": "hscan",
+     "at": [
+      140,
+      0,
+      256
+     ]
+    }
+   ]
+  }
+ }
+}

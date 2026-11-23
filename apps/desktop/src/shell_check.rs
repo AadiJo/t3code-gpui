@@ -187,10 +187,11 @@ fn run_shots(check: &mut Check) -> anyhow::Result<()> {
         let dark = appearance == Appearance::Dark;
         let t = |d: &'static str, l: &'static str| if dark { d } else { l };
         check.sample(&image, "main canvas", 700., 200., t("#141415", "#fcfcfc"), 3);
-        check.sample(&image, "sidebar fill", 200., 20., t("#141415", "#f3f3f3"), 3);
+        // The surface grain lifts the fill about 4 levels in dark mode, as Chromium's does.
+        check.sample(&image, "sidebar fill", 200., 20., t("#141415", "#f3f3f3"), 5);
         check.sample(&image, "sidebar right border", 255.5, 400., t("#262627", "#dddddd"), 4);
         // The window opens on a draft thread; the chat header has no bottom rule (`06-ui-chat.md` 2.2).
-        check.sample(&image, "draft row fill", 200., 700., t("#1d1918", "#f1ece9"), 4);
+        check.sample(&image, "draft row fill", 200., 700., t("#1d1918", "#f1ece9"), 6);
         check.sample(&image, "bell unread dot", 177., 747., t("#ff6b66", "#be1744"), 24);
         let (min, _) = check.open_app(fixtures::showcase_snapshot(), TitlebarPlatform::Overlay, 400., 360.)?;
         check.shot(min, &format!("app-{tag}-400x360.png"))?;
