@@ -9,5 +9,7 @@ mod text_lines;
 
 pub use highlighter::{DocKey, HighlightStats, SyntaxStore, TokenSpan};
 pub use language::{LanguageId, language_for_path};
+/// For the file editor's incremental highlighter.
+pub(crate) use language::{SYNTAXES, scope_token};
 pub use palette::{SyntaxPalette, SyntaxToken, hex};
 pub use text_lines::TextLines;

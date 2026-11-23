@@ -11,6 +11,7 @@ pub mod diff_file_path_copy_button;
 pub mod diff_panel;
 pub mod diff_panel_shell;
 pub mod diffs;
+pub mod files;
 pub mod sidebar;
 pub mod thread_terminal_drawer;
 pub mod sidebar_logic;
