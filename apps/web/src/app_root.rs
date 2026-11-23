@@ -434,7 +434,7 @@ impl AppRoot {
 
     /// Shows what `route` names. Selecting a thread updates the chat view,
     /// the sidebar's active row and both panels in the same frame.
-    fn apply_route(&mut self, route: Route, _window: &mut Window, cx: &mut Context<Self>) {
+    fn apply_route(&mut self, route: Route, window: &mut Window, cx: &mut Context<Self>) {
         if route == Route::Index {
             // `_chat.index.tsx`: start a draft in the most recent project.
             let draft = self.store.update(cx, |store, _| {
@@ -475,7 +475,12 @@ impl AppRoot {
             UiStateStore::update_ui(cx, |ui| ui.mark_thread_visited(&key, visited));
         }
         self.persist_route(&route, cx);
+        let panel_focused = self.right_panel.focus_handle(cx).contains_focused(window, cx);
         self.sync_panels(cx);
+        // Focus in a panel the new thread does not show would leave shortcuts with no handler.
+        if panel_focused && !self.layout.read(cx).is_right_panel_open() {
+            self.restore_focus(window, cx);
+        }
     }
 
     fn persist_route(&self, route: &Route, cx: &mut Context<Self>) {
