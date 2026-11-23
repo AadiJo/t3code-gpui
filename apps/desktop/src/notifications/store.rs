@@ -53,11 +53,13 @@ impl InboxStore {
     }
 
     /// The full state, as saved.
+    #[allow(dead_code, reason = "the notification-check binary compares it after a reload")]
     pub fn state(&self) -> &NotificationState {
         &self.state
     }
 
     /// The file the inbox is saved to.
+    #[allow(dead_code, reason = "the notification-check binary reloads it")]
     pub fn path(&self) -> &Path {
         &self.path
     }

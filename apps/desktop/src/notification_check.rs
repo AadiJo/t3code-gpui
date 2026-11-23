@@ -124,7 +124,7 @@ enum Event {
     Focus(bool),
     Route(Option<ThreadRef>),
     Read(Vec<String>),
-    ReadAll(bool),
+    ReadAll(serde::de::IgnoredAny),
 }
 
 #[derive(Debug, Deserialize)]
@@ -527,7 +527,7 @@ fn send_real_notification() -> anyhow::Result<()> {
     // A click (the `default` action) comes back as an activation.
     for _ in 0..20 {
         std::thread::sleep(std::time::Duration::from_millis(100));
-        if let Ok(Some(activation)) = clicks.try_next() {
+        if let Ok(activation) = clicks.try_recv() {
             println!("clicked: {activation:?}");
             return Ok(());
         }

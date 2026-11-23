@@ -50,13 +50,12 @@ zbus = "5"
 [target.'cfg(target_os = "macos")'.dependencies]
 block2 = "0.6"
 objc2 = "0.6"
-objc2-foundation = { version = "0.3", features = ["NSString", "NSArray", "NSSet", "NSError", "NSThread"] }
+objc2-foundation = { version = "0.3", features = ["NSArray", "NSBundle", "NSError", "NSObject", "NSString"] }
 objc2-app-kit = { version = "0.3", features = ["NSApplication", "NSDockTile", "NSResponder"] }
 objc2-user-notifications = { version = "0.3", features = ["UNUserNotificationCenter", "UNNotification", "UNNotificationRequest", "UNNotificationContent", "UNNotificationResponse", "UNNotificationSettings", "UNNotificationTrigger", "block2"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
-windows = { version = "0.62", features = ["Data_Xml_Dom", "Foundation", "UI_Notifications", "Win32_Foundation", "Win32_Graphics_Gdi", "Win32_System_Com", "Win32_System_Registry", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
-raw-window-handle = "0.6"
+windows = { version = "0.62", features = ["Data_Xml_Dom", "Foundation", "UI_Notifications", "Win32_Foundation", "Win32_Graphics_Gdi", "Win32_Security", "Win32_System_Com", "Win32_System_Registry", "Win32_System_Threading", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
 
 # Scripted end-to-end checks of the app shell: screenshots with hover, click,
 # menus and resize, pixel samples, row metrics and frame times.
