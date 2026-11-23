@@ -500,9 +500,9 @@ fn main() -> anyhow::Result<()> {
 }
 
 /// Sends one notification and one badge update through the Linux backend,
-/// then waits two seconds for the worker to report a failure.
+/// then waits two seconds for a click or a failure.
 fn send_real_notification() -> anyhow::Result<()> {
-    let (activations, _clicks) = futures::channel::mpsc::unbounded();
+    let (activations, mut clicks) = futures::channel::mpsc::unbounded();
     let backend = notifications::backend(activations).ok_or_else(|| anyhow::anyhow!("no notification backend"))?;
     backend.show(notifications::NativeNotification {
         id: "check".into(),
@@ -514,7 +514,14 @@ fn send_real_notification() -> anyhow::Result<()> {
         }),
     });
     backend.set_badge(1);
-    std::thread::sleep(std::time::Duration::from_secs(2));
-    eprintln!("sent through the backend; failures, if any, are printed above");
+    // A click (the `default` action) comes back as an activation.
+    for _ in 0..20 {
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        if let Ok(Some(activation)) = clicks.try_next() {
+            println!("clicked: {activation:?}");
+            return Ok(());
+        }
+    }
+    eprintln!("sent through the backend; no click within two seconds; failures, if any, are printed above");
     Ok(())
 }
