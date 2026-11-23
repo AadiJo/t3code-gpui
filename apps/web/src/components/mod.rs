@@ -1,4 +1,5 @@
 pub mod app_sidebar_layout;
+pub mod background_thread_announcer;
 pub mod chat;
 pub mod command_palette;
 pub mod command_palette_add_project;
@@ -29,6 +30,8 @@ pub mod diff_panel;
 pub mod diff_panel_shell;
 pub mod diffs;
 pub mod sidebar;
+pub mod thread_notification_coordinator;
+pub mod thread_notification_coordinator_logic;
 pub mod thread_terminal_drawer;
 pub mod sidebar_logic;
 pub mod thread_status_indicators;

@@ -22,6 +22,7 @@ pub mod composer_rich_text;
 pub mod composer_rich_text_doc;
 pub mod composer_text_direction;
 pub mod composer_undo_grouping;
+pub mod desktop_notifications;
 pub mod model_ordering;
 pub mod model_search;
 pub mod model_selection;
@@ -46,6 +47,7 @@ pub mod diff_patch;
 pub mod syntax;
 pub mod theme_palette;
 pub mod theme_tokens;
+pub mod thread_notifications;
 pub mod timestamp_format;
 
 pub use app_root::AppRoot;
@@ -76,6 +78,13 @@ pub fn init(cx: &mut App) {
     theme_palette::install(settings, cx);
     components::ui::toast::Toaster::init(cx);
     i18n::runtime::init(cx);
+    desktop_notifications::NotificationInbox::init(cx);
+    components::background_thread_announcer::BackgroundThreadAnnouncer::init(cx);
+    components::thread_notification_coordinator::ThreadNotificationCoordinator::init(
+        cfg!(any(target_os = "macos", target_os = "windows")),
+        Default::default(),
+        cx,
+    );
     components::sidebar::init(cx);
     components::chat::composer::init(cx);
     terminal::surface::init(cx);

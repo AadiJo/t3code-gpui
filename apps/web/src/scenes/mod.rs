@@ -6,6 +6,7 @@ mod chat;
 mod command_palette;
 pub mod connections;
 mod i18n;
+mod notifications;
 pub mod composer;
 pub mod diffs;
 mod sidebar;
@@ -43,6 +44,8 @@ pub fn scenes() -> &'static [(&'static str, SceneBuilder)] {
         ("connections-signed-out", connections::build_signed_out),
         ("connections-sign-in", connections::build_sign_in),
         ("connections-empty", connections::build_empty),
+        ("notifications", notifications::build),
+        ("notifications-empty", notifications::build_empty),
     ]
 }
 

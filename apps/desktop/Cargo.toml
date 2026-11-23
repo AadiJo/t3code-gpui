@@ -49,6 +49,9 @@ serde_json.workspace = true
 base64.workspace = true
 sha2.workspace = true
 tokio.workspace = true
+t3code-contracts.workspace = true
+futures.workspace = true
+jiff.workspace = true
 
 # Scripted end-to-end checks of the app shell: screenshots with hover, click,
 # menus and resize, pixel samples, row metrics and frame times.
@@ -69,3 +72,23 @@ required-features = ["headless"]
 name = "chat-bench"
 path = "src/chat_bench.rs"
 required-features = ["headless"]
+
+# Runs a scripted notification sequence through the engine and inbox and logs
+# every decision. Usage: notification-check <fixture.json> <out.jsonl> <darwin|linux> [--notify]
+[[bin]]
+name = "notification-check"
+path = "src/notification_check.rs"
+
+# Native notifications and the app icon badge (`src/notifications`).
+[target.'cfg(target_os = "linux")'.dependencies]
+zbus = "5"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+block2 = "0.6"
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", features = ["NSArray", "NSBundle", "NSError", "NSObject", "NSString"] }
+objc2-app-kit = { version = "0.3", features = ["NSApplication", "NSDockTile", "NSResponder"] }
+objc2-user-notifications = { version = "0.3", features = ["UNUserNotificationCenter", "UNNotification", "UNNotificationRequest", "UNNotificationContent", "UNNotificationResponse", "UNNotificationSettings", "UNNotificationTrigger", "block2"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { version = "0.62", features = ["Data_Xml_Dom", "Foundation", "UI_Notifications", "Win32_Foundation", "Win32_Graphics_Gdi", "Win32_Security", "Win32_System_Com", "Win32_System_Registry", "Win32_System_Threading", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
