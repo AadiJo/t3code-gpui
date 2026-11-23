@@ -2,7 +2,7 @@
 //! stacks resolved per platform, the bundled Inter Variable, and the four
 //! size settings (interface, prompt, code, terminal).
 
-use std::sync::LazyLock;
+use std::sync::{LazyLock, RwLock};
 
 use gpui_kit::{App, Font, FontFallbacks, FontFeatures, FontStyle, FontWeight, SharedString};
 
@@ -59,28 +59,81 @@ static MONO_FALLBACKS: LazyLock<FontFallbacks> = LazyLock::new(|| {
     )
 });
 
+/// The font family settings (`fontFamilySans`, `fontFamilyCode`,
+/// `fontFamilyComposer`, `fontFamilyTerminal`): a family name each, or
+/// `None` for the default stack. Set by the theme store.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct FamilyOverrides {
+    pub sans: Option<SharedString>,
+    pub code: Option<SharedString>,
+    /// Only while "Separate fonts" is on; otherwise the composer uses sans.
+    pub composer: Option<SharedString>,
+    /// Only while "Separate fonts" is on; otherwise the terminal uses code.
+    pub terminal: Option<SharedString>,
+}
+
+/// A custom family with the default stack behind it, built once per change
+/// so the per-frame font helpers only clone `Arc`s.
+type Resolved = Option<(SharedString, FontFallbacks)>;
+
+struct ResolvedFamilies {
+    sans: Resolved,
+    code: Resolved,
+    composer: Resolved,
+    terminal: Resolved,
+}
+
+static FAMILY_OVERRIDES: RwLock<ResolvedFamilies> =
+    RwLock::new(ResolvedFamilies { sans: None, code: None, composer: None, terminal: None });
+
+/// `appearanceFontStack`: the custom family first, then the default family and its fallbacks.
+fn resolve(custom: Option<SharedString>, family: SharedString, fallbacks: &FontFallbacks) -> Resolved {
+    let custom = custom?;
+    let mut list = vec![family.to_string()];
+    list.extend(fallbacks.fallback_list().iter().cloned());
+    Some((custom, FontFallbacks::from_fonts(list)))
+}
+
+/// Replaces the family settings every font helper reads.
+pub fn set_family_overrides(overrides: FamilyOverrides) {
+    let resolved = ResolvedFamilies {
+        sans: resolve(overrides.sans, ui_font_family(), &UI_FALLBACKS),
+        code: resolve(overrides.code, mono_font_family(), &MONO_FALLBACKS),
+        composer: resolve(overrides.composer, ui_font_family(), &UI_FALLBACKS),
+        terminal: resolve(overrides.terminal, mono_font_family(), &MONO_FALLBACKS),
+    };
+    *FAMILY_OVERRIDES.write().expect("font overrides lock") = resolved;
+}
+
+fn font_with(pick: fn(&ResolvedFamilies) -> &Resolved, weight: FontWeight) -> Option<Font> {
+    let families = FAMILY_OVERRIDES.read().expect("font overrides lock");
+    let (family, fallbacks) = pick(&families).clone()?;
+    Some(Font { family, features: FontFeatures::default(), fallbacks: Some(fallbacks), weight, style: FontStyle::Normal })
+}
+
+fn default_font(family: SharedString, fallbacks: &FontFallbacks, weight: FontWeight) -> Font {
+    Font { family, features: FontFeatures::default(), fallbacks: Some(fallbacks.clone()), weight, style: FontStyle::Normal }
+}
+
 /// The UI font at a weight, with the Inter subsets as fallbacks.
 pub fn ui_font(weight: FontWeight) -> Font {
-    Font {
-        family: ui_font_family(),
-        features: FontFeatures::default(),
-        fallbacks: Some(UI_FALLBACKS.clone()),
-        weight,
-        style: FontStyle::Normal,
-    }
+    font_with(|f| &f.sans, weight).unwrap_or_else(|| default_font(ui_font_family(), &UI_FALLBACKS, weight))
 }
 
 /// The mono font at a weight.
 pub fn mono_font(weight: FontWeight) -> Font {
-    Font {
-        family: mono_font_family(),
-        features: FontFeatures::default(),
-        fallbacks: Some(MONO_FALLBACKS.clone()),
-        weight,
-        style: FontStyle::Normal,
-    }
+    font_with(|f| &f.code, weight).unwrap_or_else(|| default_font(mono_font_family(), &MONO_FALLBACKS, weight))
 }
 
+/// The composer's font: its own family when fonts are separate, else the UI font.
+pub fn composer_font(weight: FontWeight) -> Font {
+    font_with(|f| &f.composer, weight).unwrap_or_else(|| ui_font(weight))
+}
+
+/// The terminal's font: its own family when fonts are separate, else the code font.
+pub fn terminal_font(weight: FontWeight) -> Font {
+    font_with(|f| &f.terminal, weight).unwrap_or_else(|| mono_font(weight))
+}
 /// Registers the bundled Inter subsets with GPUI's text system.
 pub fn load_fonts(cx: &mut App) -> anyhow::Result<()> {
     let fonts = INTER_SUBSETS

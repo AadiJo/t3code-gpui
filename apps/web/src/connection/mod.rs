@@ -318,6 +318,11 @@ impl ConnectionRuntime {
         }
     }
 
+    /// The supervisor of a running environment: its status and live session.
+    pub fn supervisor(&self, id: &EnvironmentId) -> Option<SupervisorHandle> {
+        self.registry.supervisor(id)
+    }
+
     /// A user's "Retry now" on one environment.
     pub fn retry(&self, id: &EnvironmentId) {
         if let Some(handle) = self.registry.supervisor(id) {

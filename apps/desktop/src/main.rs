@@ -12,6 +12,7 @@ fn main() {
                 cx.quit();
                 return;
             }
+            t3code_web::hooks::load(&t3code_client_runtime::platform::default_data_dir(), cx);
             let options = window::main_window_options(cx);
             window::open_main_window(options, cx).expect("open main window");
             cx.activate(true);
