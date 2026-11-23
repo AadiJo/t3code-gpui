@@ -12,7 +12,6 @@ use std::sync::Arc;
 
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
-use gpui_kit::TestSupportExt as _;
 
 use super::sidebar_thread_header::sidebar_icon_button;
 use super::style::ShellColors;
