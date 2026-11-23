@@ -72,6 +72,8 @@ pub struct DisplayLine {
     /// A rule drawn as a line instead of text.
     pub rule: bool,
     pub code_block: Option<usize>,
+    /// The line shaped at its last wrap width, reused while the line and width are unchanged.
+    pub shaped: RefCell<Option<(Pixels, Rc<WrappedLine>)>>,
 }
 
 impl DisplayLine {
@@ -425,13 +427,14 @@ fn finish(
         quote,
         rule,
         code_block,
+        shaped: RefCell::new(None),
     }
 }
 
 /// Display lines kept across frames, keyed by everything a line's display depends on.
 #[derive(Default)]
 pub struct DisplayCache {
-    entries: HashMap<u64, Arc<DisplayLine>>,
+    entries: HashMap<u64, Rc<DisplayLine>>,
     highlight: HighlightCache,
 }
 
@@ -439,8 +442,8 @@ pub struct DisplayCache {
 pub struct LaidLine {
     pub y: Pixels,
     pub height: Pixels,
-    pub wrapped: WrappedLine,
-    pub display: Arc<DisplayLine>,
+    pub wrapped: Rc<WrappedLine>,
+    pub display: Rc<DisplayLine>,
     pub source_start: usize,
 }
 
@@ -585,7 +588,7 @@ thread_local! {
     static DISPLAY_CACHES: RefCell<HashMap<gpui_kit::EntityId, DisplayCache>> = RefCell::new(HashMap::new());
 }
 
-fn display_lines(editor: &ComposerPromptEditor, colors: &ComposerColors, focused: bool, cache: &mut DisplayCache) -> Vec<Arc<DisplayLine>> {
+fn display_lines(editor: &ComposerPromptEditor, colors: &ComposerColors, focused: bool, cache: &mut DisplayCache) -> Vec<Rc<DisplayLine>> {
     let doc = &editor.doc;
     let selection = editor.selection();
     let rich = editor.rich_text;
@@ -643,7 +646,7 @@ fn display_lines(editor: &ComposerPromptEditor, colors: &ComposerColors, focused
                 .entries
                 .entry(key)
                 .or_insert_with(|| {
-                    Arc::new(build_display_line(line, &BuildCtx { colors, rich, focused, active: active.clone(), code: code.as_deref() }))
+                    Rc::new(build_display_line(line, &BuildCtx { colors, rich, focused, active: active.clone(), code: code.as_deref() }))
                 })
                 .clone()
         })
@@ -656,23 +659,29 @@ fn display_lines(editor: &ComposerPromptEditor, colors: &ComposerColors, focused
     lines
 }
 
-/// Shapes every line at a wrap width.
-fn shape(lines: &[Arc<DisplayLine>], width: Pixels, window: &mut Window) -> (Vec<WrappedLine>, Pixels) {
+/// Shapes every line at a wrap width. A line keeps its shaped result across
+/// frames, so a keystroke shapes only the line it changed.
+fn shape(lines: &[Rc<DisplayLine>], width: Pixels, window: &mut Window) -> (Vec<Rc<WrappedLine>>, Pixels) {
     let mut total = px(0.);
     let shaped = lines
         .iter()
         .map(|line| {
             let wrap = (width - line.indent).max(px(1.));
-            let wrapped = if line.text.is_empty() {
-                WrappedLine::default()
-            } else {
-                window
-                    .text_system()
-                    .shape_text(line.text.clone(), line.font_size, &line.runs, Some(wrap), None)
-                    .ok()
-                    .and_then(|mut v| v.pop())
-                    .unwrap_or_default()
-            };
+            let cached = line.shaped.borrow().as_ref().filter(|(w, _)| *w == wrap).map(|(_, l)| l.clone());
+            let wrapped = cached.unwrap_or_else(|| {
+                let wrapped = Rc::new(if line.text.is_empty() {
+                    WrappedLine::default()
+                } else {
+                    window
+                        .text_system()
+                        .shape_text(line.text.clone(), line.font_size, &line.runs, Some(wrap), None)
+                        .ok()
+                        .and_then(|mut v| v.pop())
+                        .unwrap_or_default()
+                });
+                *line.shaped.borrow_mut() = Some((wrap, wrapped.clone()));
+                wrapped
+            });
             let rows = wrapped.wrap_boundaries().len() + 1;
             total += line.line_height * rows as f32;
             wrapped
@@ -684,8 +693,8 @@ fn shape(lines: &[Arc<DisplayLine>], width: Pixels, window: &mut Window) -> (Vec
 /// Measured state shared between layout and prepaint.
 #[derive(Default)]
 pub struct MeasureState {
-    lines: Vec<Arc<DisplayLine>>,
-    shaped: Option<(Pixels, Vec<WrappedLine>, Pixels)>,
+    lines: Vec<Rc<DisplayLine>>,
+    shaped: Option<(Pixels, Vec<Rc<WrappedLine>>, Pixels)>,
     placeholder: Option<(Pixels, WrappedLine)>,
 }
 
@@ -724,6 +733,7 @@ impl Element for PromptEditorElement {
             let mut caches = caches.borrow_mut();
             display_lines(editor, &colors, focused, caches.entry(id).or_default())
         });
+        let last_width = editor.layout.borrow().as_ref().map_or(px(600.), |l| l.wrap_width);
         let show_placeholder = editor.text().is_empty();
         let placeholder: SharedString = editor.placeholder.clone();
         let state = Rc::new(RefCell::new(MeasureState { lines, shaped: None, placeholder: None }));
@@ -731,9 +741,11 @@ impl Element for PromptEditorElement {
         let mut style = Style::default();
         style.size.width = relative(1.).into();
         let layout_id = window.request_measured_layout(style, move |known, available, window, _cx| {
+            // Intrinsic-size passes give no definite width; use the last laid-out
+            // width so they hit the same shaped lines instead of reshaping.
             let width = known.width.unwrap_or(match available.width {
                 AvailableSpace::Definite(w) => w,
-                _ => px(600.),
+                _ => last_width,
             });
             let mut state = measure_state.borrow_mut();
             let (shaped, height) = shape(&state.lines, width, window);
@@ -786,25 +798,28 @@ impl Element for PromptEditorElement {
             })
             .collect();
         let layout = Rc::new(EditorLayout { lines, bounds, content_height, wrap_width: width });
-        let focused = self.editor.read(cx).focus_handle.is_focused(window);
-        let scroll_y = self.editor.update(cx, |editor, cx| {
-            editor.sync_focus(focused, cx);
-            let max = (content_height - bounds.size.height).max(px(0.));
-            if editor.scroll_to_caret {
-                editor.scroll_to_caret = false;
-                if let Some(p) = layout.position_for_offset(&editor.doc, editor.cursor()) {
-                    let h = layout.row_height_at(&editor.doc, editor.cursor());
-                    if p.y < editor.scroll_y {
-                        editor.scroll_y = p.y;
-                    } else if p.y + h > editor.scroll_y + bounds.size.height {
-                        editor.scroll_y = p.y + h - bounds.size.height;
-                    }
-                }
+        let editor = self.editor.read(cx);
+        let focused = editor.focus_handle.is_focused(window);
+        let focus_changed = editor.focus_changed(focused);
+        let max = (content_height - bounds.size.height).max(px(0.));
+        let mut scroll_y = editor.scroll_y.get();
+        if editor.scroll_to_caret.replace(false)
+            && let Some(p) = layout.position_for_offset(&editor.doc, editor.cursor())
+        {
+            let h = layout.row_height_at(&editor.doc, editor.cursor());
+            if p.y < scroll_y {
+                scroll_y = p.y;
+            } else if p.y + h > scroll_y + bounds.size.height {
+                scroll_y = p.y + h - bounds.size.height;
             }
-            editor.scroll_y = editor.scroll_y.clamp(px(0.), max);
-            editor.layout = Some(layout.clone());
-            editor.scroll_y
-        });
+        }
+        let scroll_y = scroll_y.clamp(px(0.), max);
+        editor.scroll_y.set(scroll_y);
+        *editor.layout.borrow_mut() = Some(layout.clone());
+        if focus_changed {
+            let entity = self.editor.clone();
+            window.defer(cx, move |_, cx| entity.update(cx, |e, cx| e.sync_focus(focused, cx)));
+        }
         let hitbox = window.insert_hitbox(bounds, HitboxBehavior::Normal);
         Prepaint { hitbox, layout, placeholder, scroll_y, focused }
     }

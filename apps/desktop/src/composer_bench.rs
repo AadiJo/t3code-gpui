@@ -171,9 +171,10 @@ fn measure(h: &mut Harness, count: usize) -> Vec<f64> {
     for i in 0..count {
         let c = chars[i % chars.len()];
         let key = if c == ' ' { "space".to_owned() } else { c.to_string() };
+        // The headless app draws the dirty window when the keystroke's update
+        // flushes, as the platform's next frame would: this is input to drawn frame.
         let start = Instant::now();
         h.key(&key);
-        h.cx.update_window(h.window, |_, window, cx| window.draw(cx).clear(cx)).ok();
         samples.push(start.elapsed().as_secs_f64() * 1000.);
         h.cx.run_until_parked();
     }
@@ -190,7 +191,7 @@ fn typing_report(out: &std::path::Path) -> anyhow::Result<String> {
     let mut report = String::new();
     let chars = h.text().chars().count();
     writeln!(report, "draft: {chars} chars, chips and a rust code block, caret mid-paragraph")?;
-    writeln!(report, "time per keystroke: dispatch_keystroke + Window::draw (CPU frame, no GPU raster), ms")?;
+    writeln!(report, "time per keystroke: dispatch_keystroke through the frame drawn when its update flushes (CPU layout, prepaint, paint; no GPU raster), ms")?;
     let mut plain = measure(&mut h, 500);
     let (m, p95, max) = stats(&mut plain);
     writeln!(report, "composer focused:        median {m:.3}  p95 {p95:.3}  max {max:.3}  (500 keys)")?;
@@ -221,7 +222,6 @@ fn typing_report(out: &std::path::Path) -> anyhow::Result<String> {
         let key = if c == ' ' { "space".to_owned() } else { c.to_string() };
         let start = Instant::now();
         h.key(&key);
-        h.cx.update_window(h.window, |_, window, cx| window.draw(cx).clear(cx)).ok();
         search.push(start.elapsed().as_secs_f64() * 1000.);
         h.cx.run_until_parked();
         if search.len() % 11 == 0 {
@@ -391,6 +391,7 @@ fn main() -> anyhow::Result<()> {
     std::fs::create_dir_all(&out)?;
     let typing = typing_report(&out)?;
     print!("{typing}");
+    if std::env::var("BENCH_TYPING_ONLY").is_ok() { return Ok(()); }
     std::fs::write(out.join("typing.txt"), &typing)?;
     let mut checks = scripted(Appearance::Dark, "dark", &out)?;
     checks.push_str(&scripted(Appearance::Light, "light", &out)?);

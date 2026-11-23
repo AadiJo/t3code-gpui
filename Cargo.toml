@@ -65,6 +65,21 @@ ttf-parser = { opt-level = 3 }
 smol = { opt-level = 3 }
 ropey = { opt-level = 3 }
 markdown = { opt-level = 3 }
+# Text shaping on Linux and Windows (cosmic-text and its font stack) runs on every
+# keystroke that changes a line.
+cosmic-text = { opt-level = 3 }
+harfrust = { opt-level = 3 }
+skrifa = { opt-level = 3 }
+read-fonts = { opt-level = 3 }
+font-types = { opt-level = 3 }
+swash = { opt-level = 3 }
+yazi = { opt-level = 3 }
+zeno = { opt-level = 3 }
+fontdb = { opt-level = 3 }
+unicode-linebreak = { opt-level = 3 }
+unicode-bidi = { opt-level = 3 }
+gpui-pre-wgpu = { opt-level = 3 }
+gpui-pre-linux = { opt-level = 3 }
 # Composer code-block highlighting runs on keystrokes.
 syntect = { opt-level = 3 }
 fancy-regex = { opt-level = 3 }

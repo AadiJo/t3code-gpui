@@ -31,6 +31,14 @@ use crate::model_selection::{
 /// Row height in the virtualized list: a 28px row and a 2px separator.
 pub const MODEL_ROW_HEIGHT: Pixels = px(30.);
 const PICKER_CONTEXT: &str = "ModelPicker";
+/// Footer: `py-2` around a 28px control, plus its 1px top border.
+const FOOTER_HEIGHT: Pixels = px(45.);
+/// The popup's outer size: list, effort column, footer and the 1px border.
+/// Fixed, so the composer can cache the picker's subtree with a known layout.
+pub const MODEL_PICKER_SIZE: gpui_kit::Size<Pixels> = gpui_kit::Size {
+    width: px(360. + 192. + 2.),
+    height: px(320. + 45. + 2.),
+};
 
 actions!(model_picker, [PickerUp, PickerDown, PickerConfirm, PickerClose, PickerBackspace, PreviousProvider, NextProvider]);
 
@@ -661,7 +669,8 @@ impl ModelPicker {
         let mode = self.runtime_mode;
         div()
             .flex()
-            .flex_wrap()
+            .h(FOOTER_HEIGHT)
+            .flex_none()
             .items_center()
             .gap(px(8.))
             .border_t_1()
@@ -786,6 +795,8 @@ impl Render for ModelPicker {
             .bg(c.popup_background)
             .border_1()
             .border_color(c.popup_border)
+            .w(MODEL_PICKER_SIZE.width)
+            .h(MODEL_PICKER_SIZE.height)
             .rounded(POPUP_RADIUS)
             .shadow(popup_shadow(&c))
             .overflow_hidden()

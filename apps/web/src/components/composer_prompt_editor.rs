@@ -8,6 +8,7 @@
 //! belong to the composer (send, menus, history, attachments) leave as
 //! [`ComposerEditorEvent`]s.
 
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::ops::Range;
@@ -243,9 +244,11 @@ pub struct ComposerPromptEditor {
     pub placeholder: SharedString,
     /// What the composer knows about sending; read when a send key is pressed.
     pub submit_context: ComposerSubmitContext,
-    pub(crate) layout: Option<Rc<EditorLayout>>,
-    pub(crate) scroll_y: Pixels,
-    pub(crate) scroll_to_caret: bool,
+    /// Written by the element each frame through `Entity::read`, so drawing never
+    /// updates the entity (an update mid-draw leaves the window dirty for another frame).
+    pub(crate) layout: RefCell<Option<Rc<EditorLayout>>>,
+    pub(crate) scroll_y: Cell<Pixels>,
+    pub(crate) scroll_to_caret: Cell<bool>,
     goal_x: Option<Pixels>,
     selecting: Option<SelectMode>,
     was_focused: bool,
@@ -274,9 +277,9 @@ impl ComposerPromptEditor {
             disabled: false,
             placeholder: "Ask anything. @ files, $ skills, / commands".into(),
             submit_context: ComposerSubmitContext::default(),
-            layout: None,
-            scroll_y: px(0.),
-            scroll_to_caret: false,
+            layout: RefCell::new(None),
+            scroll_y: Cell::new(px(0.)),
+            scroll_to_caret: Cell::new(false),
             goal_x: None,
             selecting: None,
             was_focused: false,
@@ -317,12 +320,12 @@ impl ComposerPromptEditor {
 
     /// Whether the caret is on the first visual row (for history recall).
     pub fn caret_on_first_row(&self) -> bool {
-        self.layout.as_ref().is_none_or(|l| l.row_of(&self.doc, self.cursor()).0 == 0)
+        self.layout.borrow().as_ref().is_none_or(|l| l.row_of(&self.doc, self.cursor()).0 == 0)
     }
 
     /// Whether the caret is on the last visual row.
     pub fn caret_on_last_row(&self) -> bool {
-        self.layout.as_ref().is_none_or(|l| {
+        self.layout.borrow().as_ref().is_none_or(|l| {
             let (row, total) = l.row_of(&self.doc, self.cursor());
             row + 1 >= total
         })
@@ -330,8 +333,8 @@ impl ComposerPromptEditor {
 
     /// The window point at the middle of the caret position for `offset`, from the last frame.
     pub fn window_point_for(&self, offset: usize) -> Option<Point<Pixels>> {
-        let layout = self.layout.as_ref()?;
-        let bounds = layout.window_bounds_for_offset(&self.doc, offset, self.scroll_y)?;
+        let layout = self.layout.borrow().clone()?;
+        let bounds = layout.window_bounds_for_offset(&self.doc, offset, self.scroll_y.get())?;
         Some(bounds.center())
     }
 
@@ -353,7 +356,7 @@ impl ComposerPromptEditor {
         self.marked = None;
         self.history.clear();
         self.rebuild_doc();
-        self.scroll_to_caret = true;
+        self.scroll_to_caret.set(true);
         cx.emit(ComposerEditorEvent::Changed);
         cx.notify();
     }
@@ -381,7 +384,7 @@ impl ComposerPromptEditor {
         self.selected = self.snap(range.start, false)..self.snap(range.end, true);
         self.reversed = false;
         self.goal_x = None;
-        self.scroll_to_caret = true;
+        self.scroll_to_caret.set(true);
         cx.emit(ComposerEditorEvent::SelectionChanged);
         cx.notify();
     }
@@ -584,7 +587,7 @@ impl ComposerPromptEditor {
         let offset = self.snap(offset, true);
         self.selected = offset..offset;
         self.reversed = false;
-        self.scroll_to_caret = true;
+        self.scroll_to_caret.set(true);
         cx.emit(ComposerEditorEvent::SelectionChanged);
         cx.notify();
     }
@@ -600,13 +603,13 @@ impl ComposerPromptEditor {
             self.reversed = !self.reversed;
             self.selected = self.selected.end..self.selected.start;
         }
-        self.scroll_to_caret = true;
+        self.scroll_to_caret.set(true);
         cx.emit(ComposerEditorEvent::SelectionChanged);
         cx.notify();
     }
 
     fn vertical_target(&mut self, down: bool, page: bool) -> Option<usize> {
-        let layout = self.layout.clone()?;
+        let layout = self.layout.borrow().clone()?;
         let head = self.cursor();
         let pos = layout.position_for_offset(&self.doc, head)?;
         let x = *self.goal_x.get_or_insert(pos.x);
@@ -634,7 +637,7 @@ impl ComposerPromptEditor {
     }
 
     fn row_bounds(&self) -> Option<Range<usize>> {
-        let layout = self.layout.as_ref()?;
+        let layout = self.layout.borrow().clone()?;
         layout.row_range_at(&self.doc, self.cursor())
     }
 
@@ -666,7 +669,7 @@ impl ComposerPromptEditor {
         self.selected = selection_after.start.min(self.text.len())..selection_after.end.min(self.text.len());
         self.reversed = false;
         self.goal_x = None;
-        self.scroll_to_caret = true;
+        self.scroll_to_caret.set(true);
         cx.emit(ComposerEditorEvent::Changed);
         cx.notify();
     }
@@ -689,7 +692,7 @@ impl ComposerPromptEditor {
         self.reversed = false;
         self.marked = None;
         self.rebuild_doc();
-        self.scroll_to_caret = true;
+        self.scroll_to_caret.set(true);
         cx.emit(ComposerEditorEvent::Changed);
         cx.notify();
     }
@@ -1135,8 +1138,8 @@ impl ComposerPromptEditor {
     }
 
     fn on_page(&mut self, down: bool, cx: &mut Context<Self>) {
-        let can_scroll = self.layout.as_ref().is_some_and(|l| {
-            if down { self.scroll_y + l.visible_height() < l.content_height } else { self.scroll_y > px(0.) }
+        let can_scroll = self.layout.borrow().as_ref().is_some_and(|l| {
+            if down { self.scroll_y.get() + l.visible_height() < l.content_height } else { self.scroll_y.get() > px(0.) }
         });
         if !can_scroll {
             cx.emit(ComposerEditorEvent::PageScroll { down });
@@ -1171,7 +1174,7 @@ impl ComposerPromptEditor {
 
     pub(crate) fn on_mouse_down_at(&mut self, position: Point<Pixels>, click_count: usize, shift: bool, window: &mut Window, cx: &mut Context<Self>) {
         window.focus(&self.focus_handle, cx);
-        let Some(offset) = self.layout.as_ref().and_then(|l| l.offset_for_window_point(&self.doc, position, self.scroll_y)) else {
+        let Some(offset) = self.layout.borrow().as_ref().and_then(|l| l.offset_for_window_point(&self.doc, position, self.scroll_y.get())) else {
             return;
         };
         self.goal_x = None;
@@ -1199,7 +1202,7 @@ impl ComposerPromptEditor {
 
     pub(crate) fn on_mouse_drag_to(&mut self, position: Point<Pixels>, cx: &mut Context<Self>) {
         let Some(mode) = self.selecting.clone() else { return };
-        let Some(offset) = self.layout.as_ref().and_then(|l| l.offset_for_window_point(&self.doc, position, self.scroll_y)) else {
+        let Some(offset) = self.layout.borrow().as_ref().and_then(|l| l.offset_for_window_point(&self.doc, position, self.scroll_y.get())) else {
             return;
         };
         let anchor = match &mode {
@@ -1220,7 +1223,7 @@ impl ComposerPromptEditor {
             self.selected = anchor.start..unit.end.max(anchor.end);
             self.reversed = false;
         }
-        self.scroll_to_caret = true;
+        self.scroll_to_caret.set(true);
         cx.notify();
     }
 
@@ -1229,16 +1232,21 @@ impl ComposerPromptEditor {
     }
 
     pub(crate) fn scroll_by(&mut self, delta: Pixels, cx: &mut Context<Self>) {
-        let Some(layout) = self.layout.as_ref() else { return };
+        let Some(layout) = self.layout.borrow().clone() else { return };
         let max = (layout.content_height - layout.visible_height()).max(px(0.));
-        let next = (self.scroll_y - delta).clamp(px(0.), max);
-        if next != self.scroll_y {
-            self.scroll_y = next;
+        let next = (self.scroll_y.get() - delta).clamp(px(0.), max);
+        if next != self.scroll_y.get() {
+            self.scroll_y.set(next);
             cx.notify();
         }
     }
 
-    /// Called by the element each frame to report focus changes.
+    /// Whether focus differs from what was last reported.
+    pub(crate) fn focus_changed(&self, focused: bool) -> bool {
+        focused != self.was_focused
+    }
+
+    /// Records and reports a focus change (deferred from the element).
     pub(crate) fn sync_focus(&mut self, focused: bool, cx: &mut Context<Self>) {
         if focused != self.was_focused {
             self.was_focused = focused;
@@ -1409,12 +1417,12 @@ impl EntityInputHandler for ComposerPromptEditor {
         _: &mut Context<Self>,
     ) -> Option<gpui_kit::Bounds<Pixels>> {
         let range = self.range_from_utf16(&range_utf16);
-        let layout = self.layout.as_ref()?;
-        layout.window_bounds_for_offset(&self.doc, range.start, self.scroll_y)
+        let layout = self.layout.borrow().clone()?;
+        layout.window_bounds_for_offset(&self.doc, range.start, self.scroll_y.get())
     }
 
     fn character_index_for_point(&mut self, point: Point<Pixels>, _: &mut Window, _: &mut Context<Self>) -> Option<usize> {
-        let offset = self.layout.as_ref()?.offset_for_window_point(&self.doc, point, self.scroll_y)?;
+        let offset = self.layout.borrow().as_ref()?.offset_for_window_point(&self.doc, point, self.scroll_y.get())?;
         Some(self.offset_to_utf16(offset))
     }
 }
