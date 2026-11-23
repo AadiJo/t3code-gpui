@@ -6,6 +6,7 @@ mod chat;
 mod i18n;
 pub mod composer;
 pub mod diffs;
+pub mod files;
 mod sidebar;
 mod terminal;
 pub mod ui;
@@ -32,6 +33,18 @@ pub fn scenes() -> &'static [(&'static str, SceneBuilder)] {
         ("composer-popovers", composer::build_popovers),
         ("composer-popovers-light", composer::build_popovers_light),
         ("diffs", diffs::build),
+        ("files", files::build),
+        ("files-light", files::build_light),
+        ("files-markdown", files::build_markdown),
+        ("files-markdown-light", files::build_markdown_light),
+        ("files-image", files::build_image),
+        ("files-image-light", files::build_image_light),
+        ("files-csv", files::build_csv),
+        ("files-csv-light", files::build_csv_light),
+        ("files-search", files::build_search),
+        ("files-search-light", files::build_search_light),
+        ("files-goto", files::build_goto),
+        ("files-goto-light", files::build_goto_light),
     ]
 }
 

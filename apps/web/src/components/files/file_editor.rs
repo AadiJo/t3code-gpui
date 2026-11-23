@@ -1232,7 +1232,7 @@ fn shape_code_line(
 
 /// A monospace family that exists on this machine, preferring the web's stack
 /// (the same choice as the diff code view).
-fn mono_family(window: &Window) -> SharedString {
+pub fn mono_family(window: &Window) -> SharedString {
     let names = window.text_system().all_font_names();
     let candidates: &[&str] = if cfg!(target_os = "macos") {
         &["SF Mono", "Menlo", "Monaco"]

@@ -4,13 +4,13 @@
 //! leading search icon, the list panel, and the footer of key hints.
 
 use gpui_kit::{
-    AnyElement, Div, Entity, IntoElement, ParentElement as _, Pixels, SharedString, Styled as _,
-    component::input::{Input, InputState},
-    div, prelude::*, px,
+    AnyElement, App, Div, Entity, IntoElement, MouseButton, ParentElement as _, Pixels, SharedString, Styled as _,
+    Window, anchored, component::input::{Input, InputState},
+    deferred, div, point, prelude::*, px,
 };
 
 use crate::{
-    ActiveAppTheme as _, AppTheme,
+    AppTheme,
     components::{
         icons::{Icon, IconName, IconSize},
         ui::{dialog::dialog_glass, kbd::Kbd},
@@ -24,7 +24,8 @@ pub const PALETTE_WIDTH: f32 = 576.;
 /// The popup frame; `height` fixes it (`h-105` for content search).
 pub fn palette_frame(theme: &AppTheme, width: Pixels, height: Option<Pixels>) -> Div {
     dialog_glass(theme)
-        .w(width)
+        .w_full()
+        .max_w(width)
         .max_h(px(420.).max(height.unwrap_or(px(0.))))
         .when_some(height, |el, height| el.h(height))
         .overflow_hidden()
@@ -42,7 +43,7 @@ pub fn palette_input(theme: &AppTheme, input: &Entity<InputState>, accessory: Op
             .pl(px(12.))
             .pr(px(10.))
             .child(Icon::new(IconName::Search).size(IconSize::Md).color(theme.colors.icon_muted))
-            .child(div().flex_1().min_w_0().text_size(px(14.)).child(Input::new(input).appearance(false).w_full()))
+            .child(div().flex_1().min_w_0().child(Input::new(input).appearance(false).bordered(false).focus_bordered(false).p_0().h(px(20.)).text_size(px(14.)).w_full()))
             .children(accessory),
     )
 }
@@ -83,4 +84,38 @@ pub fn highlighted_text(value: &SharedString, indices: &[usize], strong: gpui_ki
         })
         .collect::<Vec<_>>();
     gpui_kit::StyledText::new(value.clone()).with_highlights(highlights)
+}
+
+/// `CommandDialogViewport` and its backdrop: the palette centred across,
+/// `max(16px, 10vh)` from the top, 16px from the sides. A press on the
+/// backdrop runs `on_close`; the palette handles Escape itself. Unlike the
+/// shared `Modal`, this leaves focus where the palette put it (its field).
+pub fn palette_overlay(content: AnyElement, on_close: impl Fn(&mut Window, &mut App) + 'static, window: &Window, theme: &AppTheme) -> impl IntoElement {
+    let viewport = window.viewport_size();
+    deferred(
+        anchored().position(point(px(0.), px(0.))).child(
+            div()
+                .id("palette-overlay")
+                .occlude()
+                .relative()
+                .w(viewport.width)
+                .h(viewport.height)
+                .flex()
+                .flex_col()
+                .items_center()
+                .px(px(16.))
+                .pt((viewport.height * 0.1).max(px(16.)))
+                .child(
+                    div()
+                        .absolute()
+                        .top_0()
+                        .left_0()
+                        .size_full()
+                        .bg(theme.derived.dialog_backdrop)
+                        .on_mouse_down(MouseButton::Left, move |_, window, cx| on_close(window, cx)),
+                )
+                .child(div().relative().w_full().flex().justify_center().child(content)),
+        ),
+    )
+    .with_priority(2)
 }

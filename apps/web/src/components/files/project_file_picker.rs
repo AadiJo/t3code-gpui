@@ -118,7 +118,9 @@ impl ProjectFilePicker {
         let subscription = cx.subscribe_in(&input, window, |this, input, event: &InputEvent, _, cx| match event {
             InputEvent::Change => {
                 let query = input.read(cx).value().to_string();
-                this.set_query(query, cx);
+                if query != this.query {
+                    this.set_query(query, cx);
+                }
             }
             InputEvent::PressEnter { .. } => this.open_selected(cx),
             _ => {}
@@ -250,10 +252,10 @@ impl ProjectFilePicker {
             .map(|(index, found)| {
                 let active = index == self.selected;
                 let (name_indices, path_indices) = if highlight { (found.name_indices.clone(), found.path_indices.clone()) } else { (vec![], vec![]) };
-                div()
+                let row = div()
                     .id(("file-picker-row", index))
+                    .w_full()
                     .h(px(ROW_HEIGHT))
-                    .mx(px(8.))
                     .px(px(8.))
                     .flex()
                     .items_center()
@@ -288,8 +290,8 @@ impl ProjectFilePicker {
                                     .text_ellipsis()
                                     .child(highlighted_text(&found.path, &path_indices, colors.text)),
                             ),
-                    )
-                    .into_any_element()
+                    );
+                div().w_full().px(px(8.)).child(row).into_any_element()
             })
             .collect()
     }

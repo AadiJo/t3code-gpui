@@ -85,7 +85,9 @@ impl ProjectContentSearch {
         let subscription = cx.subscribe_in(&input, window, |this, input, event: &InputEvent, _, cx| match event {
             InputEvent::Change => {
                 let query = input.read(cx).value().to_string();
-                this.set_query(query, cx);
+                if query != this.query {
+                    this.set_query(query, cx);
+                }
             }
             InputEvent::PressEnter { .. } => this.open_selected(cx),
             _ => {}
@@ -125,10 +127,11 @@ impl ProjectContentSearch {
         self.matches.get(self.selected)
     }
 
-    /// Types a query, for scripted checks.
+    /// Sets the query and searches at once, without the typing debounce (scripted use).
     pub fn set_query_text(&mut self, query: &str, window: &mut Window, cx: &mut Context<Self>) {
         self.input.update(cx, |input, cx| input.set_value(query.to_owned(), window, cx));
-        self.set_query(query.to_owned(), cx);
+        self.query = query.to_owned();
+        self.search(Duration::ZERO, cx);
     }
 
     pub fn set_options(&mut self, case_sensitive: bool, whole_word: bool, use_regex: bool, cx: &mut Context<Self>) {
@@ -235,7 +238,7 @@ impl ProjectContentSearch {
         cx.stop_propagation();
     }
 
-    fn option(&self, id: &'static str, label: SharedString, glyph: &'static str, active: bool, cx: &mut Context<Self>, toggle: fn(&mut Self)) -> AnyElement {
+    fn option(&self, id: &'static str, label: SharedString, glyph: &'static str, active: bool, mono: SharedString, cx: &mut Context<Self>, toggle: fn(&mut Self)) -> AnyElement {
         let theme = cx.app_theme();
         let colors = theme.colors;
         div()
@@ -248,7 +251,7 @@ impl ProjectContentSearch {
             .items_center()
             .justify_center()
             .rounded(theme.radii.md)
-            .font(crate::appearance_fonts::mono_font(gpui_kit::FontWeight::NORMAL))
+            .font_family(mono)
             .text_size(px(12.))
             .text_color(if active { colors.text } else { colors.muted_foreground })
             .when(active, |el| el.bg(theme.derived.toggle_pressed).shadow(theme.shadows.xs5.clone()))
@@ -263,7 +266,7 @@ impl ProjectContentSearch {
             .into_any_element()
     }
 
-    fn render_row(rows: &Arc<Vec<Row>>, matches: &Arc<Vec<ProjectContentMatch>>, selected: usize, entity: &gpui_kit::WeakEntity<Self>, index: usize, cx: &mut App) -> AnyElement {
+    fn render_row(rows: &Arc<Vec<Row>>, matches: &Arc<Vec<ProjectContentMatch>>, selected: usize, entity: &gpui_kit::WeakEntity<Self>, index: usize, window: &mut Window, cx: &mut App) -> AnyElement {
         let theme = cx.app_theme().clone();
         let colors = theme.colors;
         match &rows[index] {
@@ -313,7 +316,7 @@ impl ProjectContentSearch {
                     .items_center()
                     .gap(px(12.))
                     .px(px(12.))
-                    .font(crate::appearance_fonts::mono_font(gpui_kit::FontWeight::NORMAL))
+                    .font_family(crate::components::files::file_editor::mono_family(window))
                     .text_size(px(12.))
                     .cursor_pointer()
                     .when(active, |el| el.bg(colors.accent_surface).text_color(colors.accent_surface_foreground))
@@ -343,9 +346,10 @@ impl ProjectContentSearch {
 }
 
 impl Render for ProjectContentSearch {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.app_theme().clone();
         let colors = theme.colors;
+        let mono = crate::components::files::file_editor::mono_family(window);
         let has_query = !self.query.trim().is_empty();
         let accessory = div()
             .flex_none()
@@ -357,9 +361,9 @@ impl Render for ProjectContentSearch {
             .border_1()
             .border_color(colors.border)
             .bg(colors.muted.opacity(0.3))
-            .child(self.option("search-case", t!("Match case"), "Aa", self.case_sensitive, cx, |this| this.case_sensitive ^= true))
-            .child(self.option("search-word", t!("Match whole word"), "ab", self.whole_word, cx, |this| this.whole_word ^= true))
-            .child(self.option("search-regex", t!("Use regular expression"), ".*", self.use_regex, cx, |this| this.use_regex ^= true))
+            .child(self.option("search-case", t!("Match case"), "Aa", self.case_sensitive, mono.clone(), cx, |this| this.case_sensitive ^= true))
+            .child(self.option("search-word", t!("Match whole word"), "ab", self.whole_word, mono.clone(), cx, |this| this.whole_word ^= true))
+            .child(self.option("search-regex", t!("Use regular expression"), ".*", self.use_regex, mono.clone(), cx, |this| this.use_regex ^= true))
             .into_any_element();
         let status: Option<AnyElement> = (has_query || self.pending || self.error.is_some()).then(|| {
             let content: AnyElement = if self.pending {
@@ -401,7 +405,7 @@ impl Render for ProjectContentSearch {
             div().flex_1().flex().items_center().justify_center().px(px(24.)).text_size(px(13.)).text_color(colors.muted_foreground).child(message).into_any_element()
         } else {
             let (rows, matches, selected, entity) = (self.rows.clone(), self.matches.clone(), self.selected, cx.entity().downgrade());
-            list(self.list.clone(), move |index, _, cx| Self::render_row(&rows, &matches, selected, &entity, index, cx))
+            list(self.list.clone(), move |index, window, cx| Self::render_row(&rows, &matches, selected, &entity, index, window, cx))
                 .flex_1()
                 .py(px(8.))
                 .into_any_element()

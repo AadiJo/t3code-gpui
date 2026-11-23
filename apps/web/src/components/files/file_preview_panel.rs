@@ -27,7 +27,10 @@ use super::{
     preview_image::{ExpandImage, PreviewImage},
     project_file_picker::{FilePickerEvent, ProjectFilePicker},
 };
-use crate::components::search::project_content_search::{ContentSearchEvent, ProjectContentSearch};
+use crate::components::search::{
+    palette_shell::palette_overlay,
+    project_content_search::{ContentSearchEvent, ProjectContentSearch},
+};
 use crate::{
     ActiveAppTheme as _,
     components::{
@@ -72,8 +75,8 @@ pub fn init(cx: &mut App) {
 
 /// The open palette dialog.
 enum Palette {
-    Files(Entity<ProjectFilePicker>, Subscription),
-    Contents(Entity<ProjectContentSearch>, Subscription),
+    Files(Entity<ProjectFilePicker>, #[allow(dead_code)] Subscription),
+    Contents(Entity<ProjectContentSearch>, #[allow(dead_code)] Subscription),
 }
 
 /// `FileSaveCoordinator`'s debounce.
@@ -1112,14 +1115,19 @@ impl Render for FilesPanel {
                 Palette::Files(picker, _) => picker.clone().into_any_element(),
                 Palette::Contents(search, _) => search.clone().into_any_element(),
             };
-            Modal::dialog("files-palette", content, move |_, cx| {
-                close_palette
-                    .update(cx, |panel, cx| {
-                        panel.palette = None;
-                        cx.notify();
-                    })
-                    .ok();
-            })
+            palette_overlay(
+                content,
+                move |_, cx| {
+                    close_palette
+                        .update(cx, |panel, cx| {
+                            panel.palette = None;
+                            cx.notify();
+                        })
+                        .ok();
+                },
+                window,
+                &theme,
+            )
         });
         div()
             .id("files-panel")

@@ -193,7 +193,9 @@ impl FileTree {
         let subscription = cx.subscribe_in(&search, window, |this, input, event: &InputEvent, _, cx| {
             if let InputEvent::Change = event {
                 let query = input.read(cx).value().to_string();
-                this.set_query(query, cx);
+                if query != this.query {
+                    this.set_query(query, cx);
+                }
             }
         });
         let mut tree = Self {
@@ -477,6 +479,43 @@ impl FileTree {
         cx.notify();
     }
 
+    /// Opens a folder and its parents without changing the selection.
+    pub fn expand_folder(&mut self, folder: &str, cx: &mut Context<Self>) {
+        let mut path = String::new();
+        for segment in folder.split('/') {
+            if !path.is_empty() {
+                path.push('/');
+            }
+            path.push_str(segment);
+            let folder = SharedString::from(path.clone());
+            self.expanded.insert(folder.clone());
+            if !self.listings.contains_key(&folder) {
+                self.load(folder, cx);
+            }
+        }
+        self.rebuild_rows();
+        cx.notify();
+    }
+
+    /// Opens the context menu for a row at a window position, as a right click does.
+    pub fn open_context_menu(&mut self, path: &str, position: Point<Pixels>, cx: &mut Context<Self>) {
+        if let Some(index) = self.rows.iter().position(|row| row.path.as_ref() == path) {
+            self.cursor = Some(index);
+            self.menu = Some((position, self.rows[index].path.clone(), self.rows[index].directory));
+            cx.notify();
+        }
+    }
+
+    /// The keyboard cursor row, for checks.
+    pub fn cursor(&self) -> Option<usize> {
+        self.cursor
+    }
+
+    /// Whether the context menu is open, for checks.
+    pub fn menu_open(&self) -> bool {
+        self.menu.is_some()
+    }
+
     /// Clicks a row by path, for scripted checks.
     pub fn activate_path(&mut self, path: &str, cx: &mut Context<Self>) {
         if let Some(index) = self.rows.iter().position(|row| row.path.as_ref() == path) {
@@ -486,6 +525,7 @@ impl FileTree {
 
     fn activate(&mut self, index: usize, cx: &mut Context<Self>) {
         let Some(row) = self.rows.get(index).cloned() else { return };
+        self.menu = None;
         self.cursor = Some(index);
         if row.directory {
             if self.expanded.remove(&row.path) {
@@ -586,6 +626,11 @@ impl FileTree {
 
     fn on_key_down(&mut self, event: &gpui_kit::KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         let keystroke = &event.keystroke;
+        if keystroke.key == "escape" && self.menu.take().is_some() {
+            cx.stop_propagation();
+            cx.notify();
+            return;
+        }
         if keystroke.modifiers.control || keystroke.modifiers.platform || keystroke.modifiers.alt {
             return;
         }
@@ -655,8 +700,8 @@ impl FileTree {
                 let mut el = div()
                     .id(("file-tree-row", index))
                     .relative()
+                    .w_full()
                     .h(px(ROW_HEIGHT))
-                    .mx(px(ITEM_MARGIN_X))
                     .px(px(ITEM_PADDING_X))
                     .flex()
                     .items_center()
@@ -704,12 +749,13 @@ impl FileTree {
                         .when(!row.expanded, |el| el.with_transformation(gpui_kit::Transformation::rotate(gpui_kit::radians(-std::f32::consts::FRAC_PI_2))))
                         .into_any_element(),
                 };
-                el.child(icon)
+                let row = el
+                    .child(icon)
                     .child(div().flex_1().min_w_0().overflow_hidden().whitespace_nowrap().text_ellipsis().child(row.name.clone()))
                     .when(row.loading, |el| {
                         el.child(Icon::new(IconName::LoaderCircle).size(IconSize::Custom(px(ICON_WIDTH))).color(muted).opacity(0.6))
-                    })
-                    .into_any_element()
+                    });
+                div().w_full().px(px(ITEM_MARGIN_X)).child(row).into_any_element()
             })
             .collect()
     }
@@ -884,7 +930,7 @@ impl Render for FileTree {
                             .when(search_focused, |el| el.bg(colors.canvas))
                             .when(!search_focused, |el| el.hover(|el| el.bg(colors.muted.opacity(0.4))))
                             .text_size(px(12.))
-                            .child(Input::new(&self.search).appearance(false).w_full()),
+                            .child(Input::new(&self.search).appearance(false).bordered(false).focus_bordered(false).p_0().h(px(16.)).text_size(px(12.)).w_full()),
                     )
                     .when(has_directories, |el| {
                         el.child(
