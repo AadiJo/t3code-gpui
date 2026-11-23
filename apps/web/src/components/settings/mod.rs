@@ -6,3 +6,5 @@ pub mod connections_settings;
 pub mod import_desktop_dialog;
 pub mod settings_layout;
 pub mod settings_search;
+pub mod provider_driver_meta;
+pub mod provider_status;

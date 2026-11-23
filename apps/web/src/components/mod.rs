@@ -11,6 +11,7 @@ pub mod command_palette_results;
 pub mod command_palette_theme_items;
 pub mod command_palette_thread_items;
 pub mod keybindings_config_warning;
+pub mod managed_policy;
 pub mod keybindings_update_toast;
 pub mod clerk;
 pub mod cloud;
