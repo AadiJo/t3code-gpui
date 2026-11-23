@@ -236,6 +236,11 @@ impl FileTree {
         self.rows.iter().map(|row| &row.path)
     }
 
+    /// A listed folder's entries (`""` is the root), for galleries and breadcrumbs.
+    pub fn folder_entries(&self, folder: &str) -> Option<Arc<[ProjectEntry]>> {
+        self.listings.get(folder).map(|listing| listing.entries.clone())
+    }
+
     /// True while any folder listing or search is in flight.
     pub fn is_loading(&self) -> bool {
         !self.loading.is_empty() || self.matches.as_ref().is_some_and(|m| m.pending)

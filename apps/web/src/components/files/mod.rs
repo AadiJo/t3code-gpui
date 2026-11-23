@@ -5,6 +5,7 @@ pub mod delimited_table;
 pub mod editor_buffer;
 pub mod editor_highlight;
 pub mod file_editor;
+pub mod file_preview_panel;
 pub mod file_tree;
 pub mod preview_image;
 
