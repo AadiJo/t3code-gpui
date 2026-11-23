@@ -18,6 +18,8 @@ pub struct CodexAuthDelivery {
     pub instance_id: String,
     pub flow_id: String,
     pub callback_url: String,
+    /// The return address's fragment as the helper saw it.
+    pub return_hash: String,
     /// Where the app returns to, sanitized.
     pub return_url: String,
 }
@@ -130,6 +132,7 @@ pub fn read_codex_auth_delivery(value: &str) -> Option<CodexAuthDelivery> {
         instance_id,
         flow_id: delivery.flow_id,
         callback_url: delivery.callback_url,
+        return_hash: delivery.return_hash,
         return_url,
     })
 }

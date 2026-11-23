@@ -90,7 +90,7 @@ pub fn format_once_time(iso: &str) -> String {
         _ => (hour - 12, "PM"),
     };
     format!(
-        "{} {}, {}, {}:{:02}\u{202f}{}",
+        "{} {}, {}, {}:{:02} {}",
         MONTHS[(z.month() - 1) as usize],
         z.day(),
         z.year(),
@@ -451,13 +451,36 @@ fn parse_local_date_time(value: &str) -> Option<Timestamp> {
     Some(civil.to_zoned_datetime(TimeZone::system()).ok()?.timestamp())
 }
 
+/// Whether V8 accepts a `YYYY-MM-DDTHH:MM` value that is not a real date or
+/// time (day up to 31, or 24:00) by rolling it forward.
+fn date_rolls_over(value: &str) -> bool {
+    let b = value.as_bytes();
+    let shape = b.len() == 16
+        && b[4] == b'-'
+        && b[7] == b'-'
+        && b[10] == b'T'
+        && b[13] == b':'
+        && [0, 1, 2, 3, 5, 6, 8, 9, 11, 12, 14, 15].iter().all(|&i| b[i].is_ascii_digit());
+    if !shape {
+        return false;
+    }
+    let num = |r: std::ops::Range<usize>| value[r].parse::<u32>().unwrap_or(99);
+    let (month, day, hour, minute) = (num(5..7), num(8..10), num(11..13), num(14..16));
+    (1..=12).contains(&month) && (1..=31).contains(&day) && minute <= 59 && (hour <= 23 || (hour == 24 && minute == 0))
+}
+
 /// `scheduleDraftErrors`.
 pub fn schedule_draft_errors(draft: &DraftState) -> Vec<DraftError> {
     let invalid_run_time = |description: SharedString| vec![DraftError { title: t!("Invalid run time"), description }];
     match draft.schedule_mode {
         ScheduleMode::Once => {
             let Some(run_at) = parse_local_date_time(&draft.run_at) else {
-                return invalid_run_time(t!("Pick a date and time."));
+                // `Date` rolls Feb 30 or 24:00 forward, which then reads back as a different time.
+                return invalid_run_time(if date_rolls_over(&draft.run_at) {
+                    t!("That time does not exist in your time zone.")
+                } else {
+                    t!("Pick a date and time.")
+                });
             };
             if to_date_time_local_value(run_at) != draft.run_at {
                 return invalid_run_time(t!("That time does not exist in your time zone."));
