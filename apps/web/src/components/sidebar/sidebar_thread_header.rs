@@ -107,15 +107,32 @@ impl Sidebar {
             .when(search_focused, |d| d.border_1().border_color(colors.ring.opacity(0.7)))
             .child(Icon::new(IconName::Search).size(IconSize::Custom(px(16.))).color(colors.sidebar_icon))
             .child(
-                div().flex_1().min_w_0().child(
-                    Input::new(&self.search)
-                        .appearance(false)
-                        .bordered(false)
-                        .focus_bordered(false)
-                        .p_0()
-                        .h(px(21.))
-                        .text_sm(),
-                ),
+                // The placeholder is drawn here in `sidebarMutedForeground`: stock inputs
+                // draw theirs in the global placeholder colour.
+                div()
+                    .relative()
+                    .flex_1()
+                    .min_w_0()
+                    .when(!searching, |d| {
+                        d.child(
+                            div()
+                                .absolute()
+                                .inset_0()
+                                .text_sm()
+                                .line_height(px(21.))
+                                .text_color(colors.sidebar_muted_foreground)
+                                .child(crate::i18n::t!("Search")),
+                        )
+                    })
+                    .child(
+                        Input::new(&self.search)
+                            .appearance(false)
+                            .bordered(false)
+                            .focus_bordered(false)
+                            .p_0()
+                            .h(px(21.))
+                            .text_sm(),
+                    ),
             )
             .when(searching, |d| {
                 d.child(
