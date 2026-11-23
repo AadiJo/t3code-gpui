@@ -32,6 +32,8 @@ smallvec.workspace = true
 syntect.workspace = true
 unicode-segmentation.workspace = true
 markdown.workspace = true
+resvg.workspace = true
+rodio.workspace = true
 two-face.workspace = true
 
 [target.'cfg(unix)'.dependencies]

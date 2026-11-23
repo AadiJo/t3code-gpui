@@ -1,4 +1,5 @@
 pub mod app_sidebar_layout;
+pub mod background_thread_announcer;
 pub mod chat;
 pub mod persistent_thread_terminals;
 pub mod relative_time;
@@ -8,6 +9,8 @@ pub mod composer_prompt_editor_element;
 pub mod chat_markdown;
 pub mod chat_view;
 pub mod sidebar;
+pub mod thread_notification_coordinator;
+pub mod thread_notification_coordinator_logic;
 pub mod thread_terminal_drawer;
 pub mod sidebar_logic;
 pub mod thread_status_indicators;
