@@ -63,6 +63,7 @@ pub fn init(cx: &mut App) {
     components::ui::toast::Toaster::init(cx);
     i18n::runtime::init(cx);
     components::sidebar::init(cx);
+    components::chat::composer::init(cx);
     terminal::surface::init(cx);
     components::thread_terminal_drawer::init(cx);
     cx.set_global(terminal_ui_state_store::TerminalUiStateStore::default());
