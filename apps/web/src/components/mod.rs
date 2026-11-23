@@ -1,6 +1,8 @@
 pub mod app_sidebar_layout;
 pub mod chat;
+pub mod no_active_thread_state;
 pub mod persistent_thread_terminals;
+pub mod right_panel_tabs;
 pub mod relative_time;
 pub mod icons;
 pub mod composer_prompt_editor;
@@ -8,6 +10,7 @@ pub mod composer_prompt_editor_element;
 pub mod chat_markdown;
 pub mod chat_view;
 pub mod sidebar;
+pub mod thread_route_view;
 pub mod thread_terminal_drawer;
 pub mod sidebar_logic;
 pub mod thread_status_indicators;

@@ -139,6 +139,9 @@ pub struct ComposerState {
     pub context_strip: Option<ComposerContextStrip>,
     pub voice_available: bool,
     pub validation: Option<SharedString>,
+    /// Replaces the placeholder while the agent waits: a pending approval
+    /// ("Send a message to decline…") or question ("Type your own answer…").
+    pub placeholder: Option<SharedString>,
 }
 
 /// What the composer asks the chat view to do.
@@ -286,7 +289,9 @@ impl ChatComposer {
             software_keyboard_open: false,
             send_shortcut: self.state.send_shortcut,
         };
-        let placeholder: SharedString = if self.state.project_required {
+        let placeholder: SharedString = if let Some(placeholder) = self.state.placeholder.clone() {
+            placeholder
+        } else if self.state.project_required {
             "Choose a project above to start a thread".into()
         } else {
             "Ask anything. @ files, $ skills, / commands".into()

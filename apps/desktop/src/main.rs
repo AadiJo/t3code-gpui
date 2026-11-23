@@ -1,3 +1,4 @@
+mod menu;
 mod window;
 
 fn main() {
@@ -6,7 +7,8 @@ fn main() {
         .run(|cx| {
             t3code_web::init(cx);
             let options = window::main_window_options(cx);
-            window::open_main_window(options, cx).expect("open main window");
+            let (handle, root) = window::open_main_window(options, cx).expect("open main window");
+            menu::install(handle, root, cx);
             cx.activate(true);
         });
 }

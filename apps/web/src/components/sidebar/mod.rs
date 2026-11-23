@@ -191,6 +191,15 @@ impl Sidebar {
         cx.notify();
     }
 
+    /// Marks the thread the main pane shows (navigation from outside the
+    /// sidebar). Only the active key changes, so nothing is rebuilt.
+    pub fn set_active_thread(&mut self, key: Option<ThreadKey>, cx: &mut Context<Self>) {
+        if self.snapshot.active_thread != key {
+            self.snapshot.active_thread = key;
+            cx.notify();
+        }
+    }
+
     /// The thread the main pane shows.
     pub fn active_thread(&self) -> Option<&ThreadKey> {
         self.snapshot.active_thread.as_ref()

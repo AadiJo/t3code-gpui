@@ -58,6 +58,26 @@ impl TitlebarPlatform {
     }
 }
 
+/// A titlebar toggle the app owns when the layout is controlled.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PanelToggle {
+    Terminal,
+    RightPanel,
+    Maximize,
+    Details,
+}
+
+/// What the layout tells the app.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum LayoutEvent {
+    /// A titlebar toggle was pressed (controlled layouts only).
+    Toggle(PanelToggle),
+    /// The sidebar opened or closed, or a resize finished: persist widths.
+    Changed,
+}
+
+impl EventEmitter<LayoutEvent> for AppSidebarLayout {}
+
 /// A pane edge being dragged.
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Resize {
@@ -92,6 +112,9 @@ pub struct AppSidebarLayout {
     count_moves_only: bool,
     /// Draw caption buttons even when the platform would not (scenes).
     force_caption_buttons: bool,
+    /// Panel toggles emit [`LayoutEvent::Toggle`] and the app sets the
+    /// panels with [`AppSidebarLayout::set_panels`].
+    controlled: bool,
     main: Option<AnyView>,
     right_panel: Option<AnyView>,
     terminal: Option<AnyView>,
@@ -119,6 +142,7 @@ impl AppSidebarLayout {
             window_moves: 0,
             count_moves_only: false,
             force_caption_buttons: false,
+            controlled: false,
             main: None,
             right_panel: None,
             terminal: None,
@@ -158,6 +182,70 @@ impl AppSidebarLayout {
     pub fn set_terminal(&mut self, view: AnyView, cx: &mut Context<Self>) {
         self.terminal = Some(view);
         cx.notify();
+    }
+
+    /// Hands the panel toggles to the app: presses emit [`LayoutEvent::Toggle`].
+    pub fn set_controlled(&mut self, controlled: bool) {
+        self.controlled = controlled;
+    }
+
+    /// Shows or hides the right panel (maximized or not) and the terminal.
+    pub fn set_panels(&mut self, right_open: bool, right_maximized: bool, terminal_open: bool, cx: &mut Context<Self>) {
+        let next = (right_open, right_open && right_maximized, terminal_open);
+        if (self.right_open, self.right_maximized, self.terminal_open) != next {
+            (self.right_open, self.right_maximized, self.terminal_open) = next;
+            cx.notify();
+        }
+    }
+
+    pub fn set_details_open(&mut self, open: bool, cx: &mut Context<Self>) {
+        if self.details_open != open {
+            self.details_open = open;
+            cx.notify();
+        }
+    }
+
+    pub fn is_right_panel_maximized(&self) -> bool {
+        self.right_maximized
+    }
+
+    pub fn right_panel_width(&self) -> Pixels {
+        self.right_width
+    }
+
+    /// Restores saved widths and the sidebar's open state.
+    pub fn restore(&mut self, sidebar_open: bool, sidebar_width: Pixels, right_width: Pixels, cx: &mut Context<Self>) {
+        self.sidebar_open = sidebar_open;
+        self.sidebar_width = sidebar_width;
+        self.right_width = right_width;
+        cx.notify();
+    }
+
+    /// Width the right panel's tab row leaves for the fixed titlebar toggles.
+    pub fn right_panel_trailing_inset(&self, window: &Window) -> Pixels {
+        px(112.) + self.caption_width(window)
+    }
+
+    /// Leading inset of the right panel's tab row: it clears the floating
+    /// sidebar toggle while maximized.
+    pub fn right_panel_leading_inset(&self) -> Pixels {
+        if self.right_maximized { self.platform.titlebar_content_left() } else { px(0.) }
+    }
+
+    fn press(&mut self, toggle: PanelToggle, cx: &mut Context<Self>) {
+        if self.controlled {
+            cx.emit(LayoutEvent::Toggle(toggle));
+            return;
+        }
+        match toggle {
+            PanelToggle::Terminal => self.toggle_terminal(cx),
+            PanelToggle::RightPanel => self.toggle_right_panel(cx),
+            PanelToggle::Details => self.toggle_details(cx),
+            PanelToggle::Maximize => {
+                self.right_maximized = !self.right_maximized;
+                cx.notify();
+            }
+        }
     }
 
     /// Draws the caption buttons regardless of decorations (scenes).
@@ -206,6 +294,7 @@ impl AppSidebarLayout {
         } else {
             self.sidebar_open = !self.sidebar_open;
         }
+        cx.emit(LayoutEvent::Changed);
         cx.notify();
     }
 
@@ -489,6 +578,7 @@ impl Render for AppSidebarLayout {
                         .on_click(cx.listener(|this, event: &ClickEvent, _, cx| {
                             if event.click_count() == 2 {
                                 this.sidebar_width = SIDEBAR_DEFAULT_WIDTH;
+                                cx.emit(LayoutEvent::Changed);
                                 cx.notify();
                             }
                         })),
@@ -540,7 +630,8 @@ impl Render for AppSidebarLayout {
                 .into_any_element()
         });
 
-        let terminal = self.terminal_open.then(|| {
+        let terminal_view = self.terminal.clone().map(|view| div().flex_none().w_full().child(view));
+        let terminal = (self.terminal.is_none() && self.terminal_open).then(|| {
             div()
                 .relative()
                 .flex_none()
@@ -582,18 +673,16 @@ impl Render for AppSidebarLayout {
                 .border_l_1()
                 .border_color(colors.border)
                 .bg(colors.canvas)
-                .child(
-                    // Tab bar row: topbar tall, clears the fixed toggles.
-                    div().flex_none().h(topbar).pl_2().pr(px(112.) + caption_width),
-                )
-                .child(
-                    div().flex_1().child(
-                        self.right_panel
-                            .clone()
-                            .map(|v| v.into_any_element())
-                            .unwrap_or_else(|| placeholder("Right panel", &colors).into_any_element()),
-                    ),
-                )
+                .map(|d| match self.right_panel.clone() {
+                    // The panel view draws its own tab row in the titlebar strip.
+                    Some(view) => d.child(div().flex_1().min_h_0().child(view)),
+                    None => d
+                        .child(
+                            // Tab bar row: topbar tall, clears the fixed toggles.
+                            div().flex_none().h(topbar).pl_2().pr(px(112.) + caption_width),
+                        )
+                        .child(div().flex_1().child(placeholder("Right panel", &colors))),
+                })
                 .child(
                     div()
                         .id("right-panel-resize")
@@ -629,7 +718,8 @@ impl Render for AppSidebarLayout {
                         .flex()
                         .flex_col()
                         .child(div().flex_1().min_h_0().child(main_body))
-                        .children(terminal),
+                        .children(terminal)
+                        .children(terminal_view),
                 )
             })
             .children(right_panel);
@@ -677,15 +767,12 @@ impl Render for AppSidebarLayout {
                         self.right_maximized,
                         &colors,
                     )
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.right_maximized = !this.right_maximized;
-                        cx.notify();
-                    })),
+                    .on_click(cx.listener(|this, _, _, cx| this.press(PanelToggle::Maximize, cx))),
                 )
             })
             .child(
                 self.titlebar_toggle("toggle-details", ShellIcon::SquareMenu, "Thread details", self.details_open, &colors)
-                    .on_click(cx.listener(|this, _, _, cx| this.toggle_details(cx))),
+                    .on_click(cx.listener(|this, _, _, cx| this.press(PanelToggle::Details, cx))),
             )
             .child(
                 self.titlebar_toggle(
@@ -699,7 +786,7 @@ impl Render for AppSidebarLayout {
                     false,
                     &colors,
                 )
-                .on_click(cx.listener(|this, _, _, cx| this.toggle_terminal(cx))),
+                .on_click(cx.listener(|this, _, _, cx| this.press(PanelToggle::Terminal, cx))),
             )
             .child(
                 self.titlebar_toggle(
@@ -713,7 +800,7 @@ impl Render for AppSidebarLayout {
                     false,
                     &colors,
                 )
-                .on_click(cx.listener(|this, _, _, cx| this.toggle_right_panel(cx))),
+                .on_click(cx.listener(|this, _, _, cx| this.press(PanelToggle::RightPanel, cx))),
             );
 
         div()
@@ -733,6 +820,7 @@ impl Render for AppSidebarLayout {
                 cx.listener(|this, _, _, cx| {
                     this.drag_pending = false;
                     if this.resizing.take().is_some() {
+                        cx.emit(LayoutEvent::Changed);
                         cx.notify();
                     }
                 }),

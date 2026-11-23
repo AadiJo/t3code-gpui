@@ -234,6 +234,7 @@ pub fn fixture_state(key: &str) -> ComposerState {
         }),
         voice_available: true,
         validation: None,
+        placeholder: None,
     }
 }
 

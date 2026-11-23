@@ -507,6 +507,12 @@ impl ThreadTerminalDrawer {
     }
 }
 
+impl Focusable for ThreadTerminalDrawer {
+    fn focus_handle(&self, _: &App) -> FocusHandle {
+        self.focus.clone()
+    }
+}
+
 impl Render for ThreadTerminalDrawer {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let colors = cx.app_theme().colors;

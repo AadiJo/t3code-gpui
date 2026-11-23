@@ -2,7 +2,12 @@
 //! composer's top edge (`ComposerPendingUserInputPanel.tsx`). The composer
 //! owns where it mounts; this draws the drawer from the timeline's data.
 
-use gpui_kit::{AnyElement, FontWeight, IntoElement, ParentElement as _, Styled as _, div, px};
+use std::rc::Rc;
+
+use gpui_kit::{
+    AnyElement, App, FontWeight, InteractiveElement as _, IntoElement, ParentElement as _,
+    StatefulInteractiveElement as _, Styled as _, Window, div, px,
+};
 
 use super::{
     chat_icons::{ChatIcon, icon},
@@ -14,8 +19,17 @@ use super::{
 const RADIO: gpui_kit::Pixels = px(16.);
 const RADIO_DOT: gpui_kit::Pixels = px(6.);
 
-/// The drawer for `question`, with option `selected` highlighted.
-pub fn pending_user_input_panel(question: &PendingQuestion, selected: Option<usize>, colors: &ChatColors) -> AnyElement {
+/// Called with an option's index when it is clicked.
+pub type OnPick = Rc<dyn Fn(usize, &mut Window, &mut App)>;
+
+/// The drawer for `question`, with option `selected` highlighted. Clicking an
+/// option calls `on_pick`.
+pub fn pending_user_input_panel(
+    question: &PendingQuestion,
+    selected: Option<usize>,
+    on_pick: OnPick,
+    colors: &ChatColors,
+) -> AnyElement {
     let header = div()
         .flex()
         .items_center()
@@ -47,11 +61,17 @@ pub fn pending_user_input_panel(question: &PendingQuestion, selected: Option<usi
                 .border_color(alpha(colors.theme.text, 0.55))
                 .bg(if colors.is_dark() { alpha(colors.theme.input, 0.32) } else { colors.theme.canvas })
         };
+        let on_pick = on_pick.clone();
+        let hover = alpha(colors.theme.muted, 0.3);
         div()
+            .id(("question-option", index))
             .flex()
             .w_full()
             .items_start()
             .gap(px(10.))
+            .cursor_pointer()
+            .hover(move |s| s.bg(hover))
+            .on_click(move |_, window, cx| on_pick(index, window, cx))
             .rounded(px(6.))
             .py(px(6.))
             .pl(px(6.))
