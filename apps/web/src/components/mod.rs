@@ -1,7 +1,12 @@
 pub mod app_sidebar_layout;
 pub mod chat;
+pub mod clerk;
+pub mod cloud;
+pub mod connection_status_dot;
+pub mod hosted_empty_state;
 pub mod persistent_thread_terminals;
 pub mod relative_time;
+pub mod settings;
 pub mod icons;
 pub mod sidebar;
 pub mod thread_terminal_drawer;

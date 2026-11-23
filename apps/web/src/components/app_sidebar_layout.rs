@@ -150,6 +150,12 @@ impl AppSidebarLayout {
         cx.notify();
     }
 
+    /// Returns the main pane to its "No active thread" placeholder.
+    pub fn clear_main(&mut self, cx: &mut Context<Self>) {
+        self.main = None;
+        cx.notify();
+    }
+
     pub fn set_right_panel(&mut self, view: AnyView, cx: &mut Context<Self>) {
         self.right_panel = Some(view);
         cx.notify();

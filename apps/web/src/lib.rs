@@ -10,6 +10,7 @@ pub mod assets;
 pub mod components;
 pub mod connection;
 pub mod i18n;
+pub mod routes;
 pub mod scenes;
 pub mod terminal;
 pub mod terminal_links;

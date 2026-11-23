@@ -7,6 +7,7 @@
 //! the bridge keeps in step with each supervisor's `watch` status. Commands
 //! run on tokio and hand their result back as a GPUI [`Task`].
 
+pub mod presentation;
 pub mod shell;
 
 use std::future::Future;
