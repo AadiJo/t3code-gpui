@@ -173,6 +173,27 @@ pub struct SidebarThread {
     pub running_terminal_count: u32,
     /// The thread lives on a machine other than this one.
     pub remote_machine: bool,
+    /// The provider instance the thread runs on, when the client knows it.
+    pub provider: Option<SidebarProvider>,
+}
+
+/// The provider mark a sidebar row shows (`SidebarProviderStack`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct SidebarProvider {
+    pub mark: SidebarProviderMark,
+    /// `providerInstanceInitials(displayName)`, drawn in the instance badge.
+    pub initials: SharedString,
+    /// `shouldShowInstanceBadge`: another instance shares this driver.
+    pub show_badge: bool,
+}
+
+/// Which glyph a provider instance draws.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SidebarProviderMark {
+    /// A bundled provider or model mark.
+    Brand(crate::model_selection::ProviderIcon),
+    /// An ACP registry agent whose icon has not loaded: the registry's own mark.
+    AcpRegistry,
 }
 
 impl SidebarThread {

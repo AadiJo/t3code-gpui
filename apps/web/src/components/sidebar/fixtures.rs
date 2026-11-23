@@ -83,6 +83,7 @@ fn thread(id: &str, project: &str, title: &str, age: i64) -> SidebarThread {
         issue_key: None,
         running_terminal_count: 0,
         remote_machine: false,
+        provider: None,
     }
 }
 

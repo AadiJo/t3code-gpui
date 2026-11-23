@@ -593,6 +593,7 @@ fn blank_thread(key: &ThreadKey) -> SidebarThread {
         issue_key: None,
         running_terminal_count: 0,
         remote_machine: false,
+        provider: None,
     }
 }
 
