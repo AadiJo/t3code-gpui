@@ -22,4 +22,7 @@ required-features = ["headless"]
 t3code-client-runtime.workspace = true
 t3code-web.workspace = true
 anyhow.workspace = true
+dirs.workspace = true
 gpui-kit.workspace = true
+serde.workspace = true
+serde_json.workspace = true

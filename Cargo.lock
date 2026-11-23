@@ -6974,7 +6974,10 @@ name = "t3code-desktop"
 version = "0.1.11"
 dependencies = [
  "anyhow",
+ "dirs 6.0.0",
  "gpui-kit",
+ "serde",
+ "serde_json",
  "t3code-client-runtime",
  "t3code-web",
 ]
@@ -6994,6 +6997,7 @@ version = "0.1.11"
 dependencies = [
  "anyhow",
  "gpui-kit",
+ "image",
  "rust-embed",
  "serde",
  "serde_json",
