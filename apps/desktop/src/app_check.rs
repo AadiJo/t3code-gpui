@@ -371,22 +371,22 @@ fn pct(samples: &mut [f64], q: f64) -> f64 {
     samples[((samples.len() as f64 - 1.) * q).round() as usize]
 }
 
-/// Navigates the way a sidebar click does and times until the frame is drawn.
-fn switch(r: &mut Run, key: &ThreadKey) -> f64 {
-    let root = r.root.clone();
-    let route = Route::Thread(key.clone());
-    let ms = r
-        .cx
-        .update_window(r.window, |_, w, cx| {
-            let start = Instant::now();
-            let router = root.read(cx).router().clone();
-            router.update(cx, |router, cx| router.navigate(route, cx));
-            w.draw(cx).clear(cx);
-            start.elapsed().as_secs_f64() * 1000.
-        })
-        .unwrap_or(f64::NAN);
+/// Runs `act` in one update (its effects flush when that update ends, as a
+/// real event's do), then draws the frame; returns the time for both.
+fn timed(r: &mut Run, act: impl FnOnce(&mut Window, &mut App)) -> f64 {
+    let start = Instant::now();
+    r.cx.update_window(r.window, |_, w, cx| act(w, cx)).ok();
+    r.cx.update_window(r.window, |_, w, cx| w.draw(cx).clear(cx)).ok();
+    let ms = start.elapsed().as_secs_f64() * 1000.;
     r.cx.run_until_parked();
     ms
+}
+
+/// Navigates the way a sidebar click does and times until the frame is drawn.
+fn switch(r: &mut Run, key: &ThreadKey) -> f64 {
+    let router = r.root.read_with(&r.cx, |root, _| root.router().clone());
+    let route = Route::Thread(key.clone());
+    timed(r, move |_, cx| router.update(cx, |router, cx| router.navigate(route, cx)))
 }
 
 fn bench(out: PathBuf) -> anyhow::Result<String> {
@@ -439,25 +439,62 @@ fn bench(out: PathBuf) -> anyhow::Result<String> {
     log += &row("cold, short thread", &mut cold_short);
     log += &row("revisit, 3,000-row thread", &mut warm_long);
     log += &row("revisit, short thread", &mut warm_short);
+    let rss_revisited = rss_mb();
+
+    // Where a long-thread switch goes: store read, chat view update, then the draw.
+    let (mut read, mut set, mut draw) = (Vec::new(), Vec::new(), Vec::new());
+    for key in long.iter().take(10) {
+        switch(&mut r, &short[0]);
+        let root = r.root.clone();
+        let target = ThreadTarget::Server(key.clone());
+        let (a, b) = r.cx.update(|cx| {
+            let store = root.read(cx).store().clone();
+            let start = Instant::now();
+            let view = store.update(cx, |store, _| store.thread_view(&target)).expect("thread");
+            let a = start.elapsed().as_secs_f64() * 1000.;
+            let chat = root.read(cx).thread_view().read(cx).chat().clone();
+            let start = Instant::now();
+            chat.update(cx, |chat, cx| chat.set_thread(view.key, view.project, view.title, view.timeline, cx));
+            (a, start.elapsed().as_secs_f64() * 1000.)
+        });
+        let start = Instant::now();
+        r.cx.update_window(r.window, |_, w, cx| w.draw(cx).clear(cx)).ok();
+        draw.push(start.elapsed().as_secs_f64() * 1000.);
+        r.cx.run_until_parked();
+        read.push(a);
+        set.push(b);
+    }
+    log += &row("breakdown: store read + timeline clone", &mut read);
+    log += &row("breakdown: chat view set_thread (row derivation)", &mut set);
+    log += &row("breakdown: draw", &mut draw);
+
+    // A short-thread switch split into the route update (effects flushed) and the draw.
+    let (mut apply, mut paint) = (Vec::new(), Vec::new());
+    for key in short.iter().chain(&short) {
+        let router = r.root.read_with(&r.cx, |root, _| root.router().clone());
+        let route = Route::Thread(key.clone());
+        let start = Instant::now();
+        r.cx.update(|cx| router.update(cx, |router, cx| router.navigate(route, cx)));
+        apply.push(start.elapsed().as_secs_f64() * 1000.);
+        let start = Instant::now();
+        r.cx.update_window(r.window, |_, w, cx| w.draw(cx).clear(cx)).ok();
+        paint.push(start.elapsed().as_secs_f64() * 1000.);
+        r.cx.run_until_parked();
+    }
+    log += &row("short switch: route applied", &mut apply);
+    log += &row("short switch: draw", &mut paint);
 
     // Real clicks on visible rows, to show the click path costs the same.
     let mut clicks = Vec::new();
     for (key, at) in r.visible_threads().into_iter().take(6) {
         let _ = key;
-        let t = r
-            .cx
-            .update_window(r.window, |_, w, cx| {
-                let start = Instant::now();
-                w.dispatch_event(
-                    MouseDownEvent { button: MouseButton::Left, position: at, modifiers: Modifiers::default(), click_count: 1, first_mouse: false }.to_platform_input(),
-                    cx,
-                );
-                w.dispatch_event(MouseUpEvent { button: MouseButton::Left, position: at, modifiers: Modifiers::default(), click_count: 1 }.to_platform_input(), cx);
-                w.draw(cx).clear(cx);
-                start.elapsed().as_secs_f64() * 1000.
-            })
-            .unwrap_or(f64::NAN);
-        r.cx.run_until_parked();
+        let t = timed(&mut r, |w, cx| {
+            w.dispatch_event(
+                MouseDownEvent { button: MouseButton::Left, position: at, modifiers: Modifiers::default(), click_count: 1, first_mouse: false }.to_platform_input(),
+                cx,
+            );
+            w.dispatch_event(MouseUpEvent { button: MouseButton::Left, position: at, modifiers: Modifiers::default(), click_count: 1 }.to_platform_input(), cx);
+        });
         clicks.push(t);
     }
     log += &row("sidebar row click (cold, short)", &mut clicks);
@@ -482,21 +519,14 @@ fn bench(out: PathBuf) -> anyhow::Result<String> {
         } else {
             keystroke.key_char = Some(" ".into());
         }
-        let t = r
-            .cx
-            .update_window(r.window, |_, w, cx| {
-                let start = Instant::now();
-                w.dispatch_keystroke(keystroke, cx);
-                w.draw(cx).clear(cx);
-                start.elapsed().as_secs_f64() * 1000.
-            })
-            .unwrap_or(f64::NAN);
-        r.cx.run_until_parked();
+        let t = timed(&mut r, |w, cx| {
+            w.dispatch_keystroke(keystroke, cx);
+        });
         typing.push(t);
     }
     log += &row("keystroke to drawn frame, 3,000-row thread on screen", &mut typing);
     r.shot("bench-long-thread-typed")?;
-    writeln!(log, "\nRSS after visiting 50 threads (25 long, 25 short): {rss_visited:.0} MB; after revisits and typing: {:.0} MB", rss_mb())?;
+    writeln!(log, "\nRSS after visiting 50 threads (25 long, 25 short): {rss_visited:.0} MB; after two revisit rounds: {rss_revisited:.0} MB; after typing 300 keys: {:.0} MB", rss_mb())?;
     let terminals = r.cx.update(|cx| cx.global::<TerminalUiStateStore>().to_json().map(|j| j.len()).unwrap_or(0));
     let _ = terminals;
     Ok(log)

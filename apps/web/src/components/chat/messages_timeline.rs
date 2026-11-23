@@ -5,7 +5,7 @@
 //! stepped animation clock for live rows and fading markdown blocks.
 
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{HashMap, HashSet, VecDeque},
     hash::{DefaultHasher, Hash, Hasher},
     rc::Rc,
     sync::Arc,
@@ -64,6 +64,30 @@ pub(super) struct MessageMarkdown {
     pub(super) first_seen: Vec<Instant>,
 }
 
+/// Threads whose derived rows are kept for a fast switch back.
+const ROW_CACHE_THREADS: usize = 64;
+
+/// Rows derived from `input` with nothing expanded.
+struct CachedRows {
+    input: TimelineInput,
+    rows: Arc<Vec<TimelineRow>>,
+}
+
+/// Whether row derivation would give the same rows for `a` and `b`. The
+/// entries must be the same allocation; the small fields compare by value.
+fn same_input(a: &TimelineInput, b: &TimelineInput) -> bool {
+    Arc::ptr_eq(&a.entries, &b.entries)
+        && a.pending_approval_ids == b.pending_approval_ids
+        && a.latest_run == b.latest_run
+        && a.is_working == b.is_working
+        && a.active_turn_started_at == b.active_turn_started_at
+        && a.turn_diff_summaries == b.turn_diff_summaries
+        && a.supports_rollback == b.supports_rollback
+        && a.worktree_setup == b.worktree_setup
+        && a.queued == b.queued
+        && a.pending_question == b.pending_question
+}
+
 /// The chat timeline for one thread at a time.
 pub struct MessagesTimeline {
     pub(super) input: TimelineInput,
@@ -87,6 +111,10 @@ pub struct MessagesTimeline {
     pub(super) show_scroll_button: bool,
     thread_key: Option<SharedString>,
     scroll_memory: HashMap<SharedString, ScrollMemory>,
+    /// Rows derived for recently shown threads, so switching back to an
+    /// unchanged thread skips row derivation (3,000 rows take ~4 ms).
+    row_cache: HashMap<SharedString, CachedRows>,
+    row_cache_order: VecDeque<SharedString>,
     composer_inset: Pixels,
     pub(super) now: Instant,
     /// Wall-clock milliseconds the fixtures treat as "now", for running timers.
@@ -124,6 +152,8 @@ impl MessagesTimeline {
             show_scroll_button: false,
             thread_key: None,
             scroll_memory: HashMap::new(),
+            row_cache: HashMap::new(),
+            row_cache_order: VecDeque::new(),
             composer_inset: px(0.),
             now: Instant::now(),
             now_millis: 0,
@@ -135,13 +165,18 @@ impl MessagesTimeline {
     /// coming back restores it (`useTimelinePositionRestore`).
     pub fn set_thread(&mut self, key: SharedString, input: TimelineInput, cx: &mut Context<Self>) {
         if let Some(previous) = self.thread_key.take() {
-            self.scroll_memory.insert(previous, self.list.memory());
+            self.scroll_memory.insert(previous.clone(), self.list.memory());
+            self.remember_rows(previous);
         }
         self.expansion = TimelineExpansion::default();
         self.expanded_entries.clear();
         self.group_lists.clear();
+        let cached = self.row_cache.remove(&key).filter(|cached| same_input(&cached.input, &input));
         self.input = input;
-        self.rebuild_rows();
+        match cached {
+            Some(cached) => self.use_rows(cached.rows),
+            None => self.rebuild_rows(),
+        }
         let memory = self.scroll_memory.get(&key).copied();
         match memory {
             Some(memory) => self.list.restore(memory),
@@ -250,6 +285,29 @@ impl MessagesTimeline {
 
     pub fn rows(&self) -> &[TimelineRow] {
         &self.rows
+    }
+
+    /// Keeps the rows of the thread being left, while nothing is expanded
+    /// (a cached row set must match a fresh derivation with default expansion).
+    fn remember_rows(&mut self, key: SharedString) {
+        let unexpanded = self.expansion.runs.is_empty() && self.expansion.attempts.is_empty() && self.expansion.work_groups.is_empty();
+        if !unexpanded || self.input.is_working {
+            return;
+        }
+        self.row_cache_order.retain(|k| *k != key);
+        self.row_cache_order.push_back(key.clone());
+        self.row_cache.insert(key, CachedRows { input: self.input.clone(), rows: self.rows.clone() });
+        while self.row_cache_order.len() > ROW_CACHE_THREADS {
+            if let Some(old) = self.row_cache_order.pop_front() {
+                self.row_cache.remove(&old);
+            }
+        }
+    }
+
+    fn use_rows(&mut self, rows: Arc<Vec<TimelineRow>>) {
+        let slots: Vec<RowSlot> = rows.iter().map(|row| RowSlot { key: row.key, estimate: row.kind.estimate() }).collect();
+        self.list.set_rows(&slots);
+        self.rows = rows;
     }
 
     /// Re-derives rows from the input and current expansions.
