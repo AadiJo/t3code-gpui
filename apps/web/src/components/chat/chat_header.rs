@@ -65,7 +65,7 @@ pub fn chat_header(
                         .child(ProjectFavicon::new(project.clone()).size(px(14.)))
                         .child(project.clone()),
                 )
-                .child(div().text_color(colors.theme.icon_muted).child("/"))
+                .child(div().font_weight(FontWeight::NORMAL).text_color(colors.theme.icon_muted).child("/"))
                 .child(
                     div()
                         .id("thread-title")

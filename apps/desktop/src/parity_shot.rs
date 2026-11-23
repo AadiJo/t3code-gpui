@@ -75,7 +75,9 @@ const SCENES: &[Scene] = &[
         name: "timeline-tools-expanded",
         reference: "timeline-tools-expanded",
         light: false,
-        steps: &[Step::Wheel(700., 400., 20_000.), Step::Click(340., 130.), Step::Move(700., 400.)],
+        // The port's turn sits 39px lower than the fork's: its first prompt is a
+        // bubble, not the fork's one-line Agent pill.
+        steps: &[Step::Wheel(700., 400., 20_000.), Step::Click(340., 181.), Step::Move(700., 400.)],
     },
     Scene { name: "timeline-bottom", reference: "timeline-bottom", light: false, steps: &[] },
     Scene { name: "timeline-user-message", reference: "timeline-user-message", light: false, steps: &[Step::Wheel(700., 400., 600.)] },
@@ -190,6 +192,9 @@ fn render(scene: &Scene, out: &std::path::Path, data: &std::path::Path) -> anyho
         root.update(cx, |root, cx| root.navigate(Route::parse(THREAD), cx));
         NotificationInbox::set_items(reference_inbox(), cx);
     });
+    frame(&mut cx, window);
+    // The capture script leaves the mouse over the conversation before each view.
+    mouse(&mut cx, window, point(px(700.), px(400.)), None);
     frame(&mut cx, window);
     for step in scene.steps {
         match step {

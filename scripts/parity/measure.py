@@ -30,15 +30,17 @@ def dist(a, b):
 
 
 def fill(im, x, y):
+    """The median colour of the 6x6 device pixels at a point (grain averages out)."""
     px = im.load()
     X, Y = int(x * SCALE), int(y * SCALE)
-    samples = sorted(px[X + dx, Y + dy] for dx in (0, 1) for dy in (0, 1))
-    return {"color": hexc(samples[1])}
+    samples = [px[X + dx, Y + dy] for dx in range(-3, 3) for dy in range(-3, 3)]
+    return {"color": hexc(tuple(sorted(c[k] for c in samples)[len(samples) // 2] for k in range(3)))}
 
 
 def ink(im, x0, y0, x1, y1, threshold=24):
     px = im.load()
     X0, Y0, X1, Y1 = (int(v * SCALE) for v in (x0, y0, x1, y1))
+    X1, Y1 = min(X1, im.width), min(Y1, im.height)
     bg = Counter(px[x, y] for x in range(X0, X1) for y in range(Y0, Y1)).most_common(1)[0][0]
     top = left = None
     bottom = right = None
@@ -65,10 +67,17 @@ def ink(im, x0, y0, x1, y1, threshold=24):
     }
 
 
+def settled(values, i):
+    """The median of up to 6 pixels from `i`: a run's colour without grain noise."""
+    window = values[i : i + 6] or values[-1:]
+    return tuple(sorted(c[k] for c in window)[len(window) // 2] for k in range(3))
+
+
 def runs(values, start, threshold=6):
     """Edges along a scan: positions where a new stable colour begins."""
     edges = []
     current = values[0]
+    first = settled(values, 0)
     i = 1
     while i < len(values):
         if dist(values[i], current) > threshold:
@@ -77,11 +86,11 @@ def runs(values, start, threshold=6):
             while j + 1 < len(values) and dist(values[j + 1], values[j]) > threshold:
                 j += 1
             current = values[j]
-            edges.append({"at": (start + i) / SCALE, "color": hexc(current)})
+            edges.append({"at": (start + i) / SCALE, "color": hexc(settled(values, j))})
             i = j + 1
         else:
             i += 1
-    return {"start": hexc(values[0]), "edges": edges}
+    return {"start": hexc(first), "edges": edges}
 
 
 def hscan(im, y, x0, x1):
@@ -93,7 +102,7 @@ def hscan(im, y, x0, x1):
 def vscan(im, x, y0, y1):
     px = im.load()
     X = int(x * SCALE)
-    return runs([px[X, y] for y in range(int(y0 * SCALE), int(y1 * SCALE))], int(y0 * SCALE))
+    return {**runs([px[X, y] for y in range(int(y0 * SCALE), int(y1 * SCALE))], int(y0 * SCALE)), "vertical": True}
 
 
 def measure(im, element):
@@ -108,3 +117,35 @@ def measure(im, element):
     if kind == "vscan":
         return vscan(im, *args)
     raise ValueError(f"unknown kind {kind}")
+
+
+def shifted(element, dy):
+    """The element with its vertical coordinates moved by `dy`."""
+    if not dy:
+        return element
+    at = list(element["at"])
+    kind = element["kind"]
+    if kind == "fill":
+        at[1] += dy
+    elif kind == "ink":
+        at[1] += dy
+        at[3] += dy
+    elif kind == "hscan":
+        at[0] += dy
+    else:
+        at[1] += dy
+        at[2] += dy
+    return {**element, "at": at}
+
+
+def unshift(result, dy):
+    """A measurement taken at a shifted position, moved back by `dy`."""
+    if not dy or result.get("empty"):
+        return result
+    out = dict(result)
+    for key in ("top", "bottom"):
+        if key in out:
+            out[key] -= dy
+    if "edges" in out and isinstance(out.get("edges"), list) and out["edges"] and "vertical" in out:
+        out["edges"] = [{**e, "at": e["at"] - dy} for e in out["edges"]]
+    return out

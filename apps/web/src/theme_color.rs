@@ -133,7 +133,17 @@ fn to_byte(unit: f64) -> u8 {
 
 /// Converts OKLCH to 8-bit sRGB the way `themeOklchToRgb` does.
 pub fn oklch_to_srgb(color: Oklch, alpha: f64) -> Srgb8 {
-    let [r, g, b] = oklch_to_linear(map_to_gamut(color));
+    linear_to_srgb8(oklch_to_linear(map_to_gamut(color)), alpha)
+}
+
+/// Converts OKLCH to 8-bit sRGB the way Chromium draws a CSS literal: an
+/// out-of-gamut colour is clipped per channel, not chroma-reduced. Tailwind's
+/// palette (emerald-400, teal-400, ...) lies partly outside sRGB.
+pub fn oklch_to_srgb_clipped(color: Oklch, alpha: f64) -> Srgb8 {
+    linear_to_srgb8(oklch_to_linear(color), alpha)
+}
+
+fn linear_to_srgb8([r, g, b]: [f64; 3], alpha: f64) -> Srgb8 {
     Srgb8 {
         r: to_byte(linear_to_srgb(r)),
         g: to_byte(linear_to_srgb(g)),
@@ -144,7 +154,18 @@ pub fn oklch_to_srgb(color: Oklch, alpha: f64) -> Srgb8 {
 
 /// Parses a literal CSS colour a theme file may hold: `oklch(L C H [/ A])`,
 /// `#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa`, `rgb(...)` or `rgba(...)`.
+/// OKLCH is gamut-mapped as the theme pipeline does.
 pub fn parse_css_color(value: &str) -> Option<Srgb8> {
+    parse_color(value, oklch_to_srgb)
+}
+
+/// [`parse_css_color`] for a stylesheet literal the browser draws itself
+/// (the Tailwind palette): OKLCH is clipped, as Chromium does.
+pub fn parse_css_literal(value: &str) -> Option<Srgb8> {
+    parse_color(value, oklch_to_srgb_clipped)
+}
+
+fn parse_color(value: &str, from_oklch: fn(Oklch, f64) -> Srgb8) -> Option<Srgb8> {
     let value = value.trim();
     if let Some(hex) = value.strip_prefix('#') {
         return parse_hex(hex);
@@ -170,7 +191,7 @@ pub fn parse_css_color(value: &str) -> Option<Srgb8> {
                 c: parse_number(b, 0.4)?.max(0.),
                 h: parse_number(c.trim_end_matches("deg"), 1.)?,
             };
-            Some(oklch_to_srgb(color, alpha))
+            Some(from_oklch(color, alpha))
         }
         "rgb" | "rgba" => Some(Srgb8 {
             r: to_byte(parse_number(a, 1.)?.min(255.) / percent_or(a, 255.)),

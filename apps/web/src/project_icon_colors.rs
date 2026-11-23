@@ -4,7 +4,8 @@
 use gpui_kit::Hsla;
 use t3code_contracts::ProjectIconColor;
 
-use crate::theme_palette::{Appearance, parse_oklch};
+use crate::theme_color::{Srgb8, parse_css_literal};
+use crate::theme_palette::Appearance;
 
 /// The colours in the order `PROJECT_ICON_COLORS` lists them (the schema
 /// order); the identity hash indexes into this list.
@@ -34,7 +35,7 @@ pub fn project_icon_ink(color: ProjectIconColor, appearance: Appearance) -> Hsla
         C::Pink => ("oklch(71.8% 0.202 349.761)", "oklch(59.2% 0.249 0.584)"),
         C::Rose => ("oklch(71.2% 0.194 13.428)", "oklch(58.6% 0.253 17.585)"),
     };
-    parse_oklch(if appearance.is_dark() { dark } else { light }).expect("valid oklch literal")
+    parse_css_literal(if appearance.is_dark() { dark } else { light }).map(Srgb8::hsla).expect("valid oklch literal")
 }
 
 /// The monogram and colour a project gets from its name (`deriveProjectIdentity`).

@@ -118,6 +118,8 @@ impl Sidebar {
                             div()
                                 .absolute()
                                 .inset_0()
+                                .flex()
+                                .items_center()
                                 .text_sm()
                                 .line_height(px(21.))
                                 .text_color(colors.sidebar_muted_foreground)

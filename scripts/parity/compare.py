@@ -7,8 +7,11 @@
                                           the reference PNGs are available
 
 spec.json lists, per scene, the elements to measure (see measure.py) with a name,
+optionally `anchor: "<element>"` (measure relative to where that element landed,
+for content below a documented difference that moves it),
 and optionally `text: true` (glyph shapes differ by rasteriser, so a text run's
-right edge is reported but not judged) or `exclude: "<reason>"` (a fixture or a
+right edge is reported but not judged; `text: "right"` for right-aligned text
+judges the right edge and reports the left) or `exclude: "<reason>"` (a fixture or a
 documented GPUI limit; measured and shown, never judged).
 """
 import json
@@ -23,6 +26,12 @@ HERE = Path(__file__).resolve().parent
 SPEC = json.loads((HERE / "spec.json").read_text())
 EXPECTED = HERE / "expected.json"
 PX = SPEC["tolerance"]["px"]
+# GPUI places a line's baseline with the font's exact ascent and descent
+# (gpui text_system/line.rs: padding_top = (line_height - ascent - descent) / 2);
+# Chromium rounds both to whole pixels first. A text run therefore sits up to
+# ~0.45px off, which device-pixel snapping can show as 1px. Text runs get this
+# vertical tolerance; everything else keeps PX.
+TEXT_PX = SPEC["tolerance"]["text_px"]
 CHANNEL = SPEC["tolerance"]["channel"]
 
 
@@ -55,8 +64,12 @@ def judge(element, ref, port):
             return rows
         for side in ("top", "left", "bottom", "right"):
             d = port[side] - ref[side]
-            judged = not (element.get("text") and side == "right")
-            rows.append((side, ref[side], port[side], d, abs(d) <= PX if judged else None))
+            # A text run's far edge depends on glyph advances; judge the edge it is anchored to.
+            text = element.get("text")
+            free = {True: "right", "right": "left"}.get(text)
+            judged = side != free
+            limit = TEXT_PX if text and side in ("top", "bottom") else PX
+            rows.append((side, ref[side], port[side], d, abs(d) <= limit if judged else None))
         rh, ph = ref["bottom"] - ref["top"], port["bottom"] - port["top"]
         rows.append(("height", rh, ph, ph - rh, None))
         d = channels(ref["color"], port["color"])
@@ -132,23 +145,35 @@ def compare(port_dir, out_dir, ref_dir=None):
             summary.append((scene, 0, 0, 0, "(no port image)"))
             continue
         im = m.load(port_png)
+        by_name = {e["name"]: e for e in body["elements"]}
         counts = {"pass": 0, "FAIL": 0, "excluded": 0}
         rows_md = []
         marks = []
         for element in body["elements"]:
             ref = expected[scene][element["name"]]
-            port = m.measure(im, element)
+            dy = 0.0
+            if "anchor" in element:
+                # Content below a known, documented difference: measure it where
+                # the anchor actually landed, so spacing compares like for like.
+                anchor = by_name[element["anchor"]]
+                found = m.measure(im, anchor)
+                if not found.get("empty"):
+                    dy = found["top"] - expected[scene][anchor["name"]]["top"]
+            port = m.unshift(m.measure(im, m.shifted(element, dy)), dy)
             rows = judge(element, ref, port)
             verdicts = [ok for *_, ok in rows if ok is not None]
             state = "excluded" if element.get("exclude") else ("pass" if all(verdicts) else "FAIL")
             counts[state] += 1
             if state == "FAIL":
-                failing.append(f"{scene}/{element['name']}")
+                bad = "; ".join(f"{prop} {fmt(r)} -> {fmt(p)}" for prop, r, p, _, ok in rows if ok is False)
+                failing.append(f"- {scene} / {element['name']}: {bad}")
             marks.append((element, state))
             results.setdefault(scene, []).append({"element": element["name"], "state": state, "ref": ref, "port": port})
             for i, (prop, r, p, d, ok) in enumerate(rows):
                 verdict = "excluded" if state == "excluded" else ("" if ok is None else ("ok" if ok else "**fail**"))
                 note = element.get("exclude", element.get("note", "")) if i == 0 else ""
+                if i == 0 and "anchor" in element:
+                    note = (note + " " if note else "") + f"(relative to {element['anchor']}, port offset {dy:+g}px)"
                 name = element["name"] if i == 0 else ""
                 rows_md.append(f"| {name} | {prop} | {fmt(r)} | {fmt(p)} | {fmt(d)} | {verdict} | {note} |")
         summary.append((scene, counts["pass"], counts["FAIL"], counts["excluded"], ""))
@@ -160,7 +185,8 @@ def compare(port_dir, out_dir, ref_dir=None):
     head = [
         "# Visual parity report",
         "",
-        f"Tolerance: {PX}px per edge, {CHANNEL}/255 per channel. Text runs judge top, left and bottom; their right edge is shown only.",
+        f"Tolerance: {PX}px per edge, {CHANNEL}/255 per channel. Text runs judge the edge they are anchored to plus top and bottom at {TEXT_PX}px "
+        "(GPUI does not round font ascent and descent the way Chromium does); their far edge is shown only.",
         "",
         "| scene | pass | fail | excluded |",
         "| --- | --- | --- | --- |",
@@ -168,7 +194,7 @@ def compare(port_dir, out_dir, ref_dir=None):
     head += [f"| {s} {note} | {p} | {f} | {e} |" for s, p, f, e, note in summary]
     head += ["", f"**{total} failing elements.**", ""]
     if failing:
-        head += ["Failing: " + ", ".join(failing), ""]
+        head += ["### Failures", ""] + failing + [""]
     (out_dir / "report.md").write_text("\n".join(head + body_lines) + "\n")
     (out_dir / "results.json").write_text(json.dumps(results, indent=1) + "\n")
     print("\n".join(head))

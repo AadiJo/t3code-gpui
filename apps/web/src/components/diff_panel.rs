@@ -422,8 +422,8 @@ impl DiffPanel {
             let keys = self.shown_keys(cx);
             !keys.is_empty() && keys.iter().all(|k| set.contains(k))
         };
-        let addition_fg = crate::syntax::hex(if dark { "#00d294" } else { "#007857" }).unwrap_or_default();
-        let deletion_fg = crate::syntax::hex(if dark { "#ff6568" } else { "#bf000f" }).unwrap_or_default();
+        let addition_fg = cx.app_theme().fixed.diff_addition_foreground;
+        let deletion_fg = cx.app_theme().fixed.diff_deletion_foreground;
         let pressed_bg = colors.input.opacity(0.64);
         let icon = |path: &'static str| svg().path(path).size(px(14.)).text_color(colors.muted_foreground);
 

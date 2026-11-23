@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use gpui_kit::{BoxShadow, Hsla, Pixels, black, point, px, white};
 
-use crate::theme_color::{Srgb8, flatten, mix_oklab, mix_srgb, parse_css_color, with_alpha};
+use crate::theme_color::{Srgb8, flatten, mix_oklab, mix_srgb, parse_css_color, parse_css_literal, with_alpha};
 use crate::theme_palette::{Appearance, ThemePalette};
 
 /// Semantic names `index.css` maps the theme roles onto (`index.css:1328-1392`).
@@ -222,7 +222,6 @@ impl DerivedColors {
 }
 
 /// Tailwind palette colours the shell uses that no theme can change (spec 1.4).
-/// Hex values are what the browser draws for the Tailwind OKLCH literals.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct FixedColors {
     pub info: Hsla,
@@ -240,23 +239,33 @@ pub struct FixedColors {
 impl FixedColors {
     pub fn new(appearance: Appearance) -> Self {
         let dark = appearance.is_dark();
-        let pick = |d: &str, l: &str| hex(if dark { d } else { l });
+        let pick = |d: &str, l: &str| oklch(if dark { d } else { l });
+        // Tailwind v4 literals, converted the way the browser converts them.
+        let (blue_400, blue_500, blue_700) = ("oklch(70.7% 0.165 254.624)", "oklch(62.3% 0.214 259.815)", "oklch(48.8% 0.243 264.376)");
+        let (emerald_400, emerald_500, emerald_700) = ("oklch(76.5% 0.177 163.223)", "oklch(69.6% 0.17 162.48)", "oklch(50.8% 0.118 165.612)");
+        let (fuchsia_300, fuchsia_500, fuchsia_600) = ("oklch(83.3% 0.145 321.434)", "oklch(66.7% 0.295 322.15)", "oklch(59.1% 0.293 322.896)");
+        let (indigo_300, indigo_600) = ("oklch(78.5% 0.115 274.713)", "oklch(51.1% 0.262 276.966)");
+        let (red_400, red_700) = ("oklch(70.4% 0.191 22.216)", "oklch(50.5% 0.213 27.518)");
         Self {
-            info: hex("#3280ff"),
-            info_foreground: pick("#56a2ff", "#1447e6"),
-            success: hex("#00b981"),
-            success_foreground: pick("#00d294", "#007857"),
-            guest: hex("#e12afb"),
-            guest_foreground: pick("#f2a9ff", "#c500da"),
-            input_status: pick("#a4b4ff", "#4f39f6"),
-            diff_addition_foreground: pick("#00d294", "#007857"),
-            diff_deletion_foreground: pick("#ff6568", "#bf000f"),
+            info: oklch(blue_500),
+            info_foreground: pick(blue_400, blue_700),
+            success: oklch(emerald_500),
+            success_foreground: pick(emerald_400, emerald_700),
+            guest: oklch(fuchsia_500),
+            guest_foreground: pick(fuchsia_300, fuchsia_600),
+            input_status: pick(indigo_300, indigo_600),
+            diff_addition_foreground: pick(emerald_400, emerald_700),
+            diff_deletion_foreground: pick(red_400, red_700),
         }
     }
 }
 
+fn oklch(value: &str) -> Hsla {
+    parse_css_literal(value).map(Srgb8::hsla).expect("valid oklch literal")
+}
+
 fn hex(value: &str) -> Hsla {
-    parse_css_color(value).map(Srgb8::hsla).expect("valid hex literal")
+    parse_css_color(value).map(Srgb8::hsla).expect("valid colour literal")
 }
 
 /// Corner radii (`index.css:292-297`), all derived from `--radius` = 0.5rem.

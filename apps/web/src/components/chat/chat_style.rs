@@ -108,17 +108,16 @@ impl ChatColors {
         });
         let theme = cx.app_theme();
         let dark = theme.appearance == Appearance::Dark;
-        let pick = |dark_rgb: u32, light_rgb: u32| rgb_hsla(if dark { dark_rgb } else { light_rgb });
         Self {
             appearance: theme.appearance,
             theme: theme.colors,
-            info: rgb_hsla(0x3280ff),
-            info_foreground: pick(0x56a2ff, 0x1447e6),
-            success: rgb_hsla(0x00b981),
-            success_foreground: pick(0x00d294, 0x007857),
-            diff_addition: pick(0x00d294, 0x007857),
-            diff_deletion: pick(0xff6568, 0xbf000f),
-            guest: rgb_hsla(0xe12afb),
+            info: theme.fixed.info,
+            info_foreground: theme.fixed.info_foreground,
+            success: theme.fixed.success,
+            success_foreground: theme.fixed.success_foreground,
+            diff_addition: theme.fixed.diff_addition_foreground,
+            diff_deletion: theme.fixed.diff_deletion_foreground,
+            guest: theme.fixed.guest,
             selection: alpha(theme.colors.focus, 0.32),
             scrollbar: if dark { alpha(rgb_hsla(0xffffff), 0.36) } else { rgb_hsla(0xd9d9d9) },
             scrollbar_hover: if dark { alpha(rgb_hsla(0xffffff), 0.45) } else { rgb_hsla(0xbfbfbf) },
