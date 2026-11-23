@@ -80,11 +80,15 @@ impl SupervisorHandle {
 pub struct EnvironmentSupervisor {
     handle: SupervisorHandle,
     task: tokio::task::JoinHandle<()>,
+    /// Cleared on drop: a watch keeps its last value alive for every
+    /// receiver, which would hold the socket open.
+    session: watch::Sender<Option<Arc<RpcSession>>>,
 }
 
 impl Drop for EnvironmentSupervisor {
     fn drop(&mut self) {
         self.task.abort();
+        self.session.send_replace(None);
     }
 }
 
@@ -99,6 +103,7 @@ impl EnvironmentSupervisor {
     ) -> Self {
         let (status_tx, status) = watch::channel(ConnectionStatus::available());
         let (session_tx, session) = watch::channel(None);
+        let session_owner = session_tx.clone();
         let (auth_tx, http_authorization) = watch::channel(None);
         let (signals, signal_rx) = mpsc::unbounded_channel();
         let state = Supervisor {
@@ -115,7 +120,11 @@ impl EnvironmentSupervisor {
             silent_routes: HashMap::new(),
         };
         let task = tokio::spawn(state.run());
-        Self { handle: SupervisorHandle { status, session, http_authorization, signals }, task }
+        Self {
+            handle: SupervisorHandle { status, session, http_authorization, signals },
+            task,
+            session: session_owner,
+        }
     }
 
     pub fn handle(&self) -> &SupervisorHandle {
