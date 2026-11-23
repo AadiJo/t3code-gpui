@@ -1,5 +1,8 @@
-//! The `ui` scene: every primitive in every variant and state, plus the
-//! theme's colour swatches, for screenshots. `ui` is dark, `ui-light` light.
+//! The `ui` scenes: every primitive in every variant and state, plus the
+//! theme's colour swatches, for screenshots. The gallery is split into pages
+//! that each fit a 1080px window: `ui` (swatches, type, buttons),
+//! `ui-forms`, `ui-overlays`, `ui-dialog` (a live modal and toasts) and
+//! `ui-icons`, each with a `-light` twin.
 //!
 //! The swatch strip at the top is laid out on a fixed grid so a script can
 //! sample each swatch's pixels: cell `i` of a strip sits at
@@ -8,7 +11,7 @@
 use gpui_kit::{
     AnyElement, AnyView, App, AppContext as _, Context, Entity, Hsla, IntoElement, Render, SharedString, Window,
     component::input::{InputState, TextareaState},
-    div, prelude::*, px,
+    canvas, div, prelude::*, px,
 };
 
 use crate::appearance_fonts::{TextSize, ui_font, weight};
@@ -26,6 +29,14 @@ use crate::components::ui::{
     spinner::{Spinner, SpinnerSize},
     switch::{Switch, SwitchSize},
     toggle::{Toggle, ToggleSize, ToggleVariant},
+    dialog::{DialogSurface, Modal},
+    menu::{MenuItem, MenuItemKind, MenuPopup},
+    popover::{PopoverPadding, PopoverSurface, PopoverWidth},
+    scroll_area::scroll_area,
+    select::{SelectSize, SelectTrigger, SelectVariant, select_list},
+    sheet::SheetSurface,
+    toast::{ToastData, ToastKind, ToastSurface, Toaster},
+    tooltip::{TooltipSurface, TooltipVariant},
 };
 use crate::theme_color::{flatten, with_alpha};
 use crate::theme_palette::{ThemeMode, ThemeSettings};
@@ -43,36 +54,79 @@ pub const DERIVED_Y: f32 = ROLES_Y + 2. * SWATCH_PITCH + 12.;
 pub const FIXED_Y: f32 = DERIVED_Y + 2. * SWATCH_PITCH + 12.;
 const STRIPS_HEIGHT: f32 = FIXED_Y + SWATCH_PITCH + 12.;
 
-/// The dark gallery.
-pub fn build(window: &mut Window, cx: &mut App) -> AnyView {
-    ThemeSettings::set_mode(ThemeMode::Dark, cx);
-    cx.new(|cx| Gallery::new(window, cx)).into()
+/// One screen of the gallery.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Page {
+    Controls,
+    Forms,
+    Overlays,
+    Dialog,
+    Icons,
 }
 
-/// The light gallery.
-pub fn build_light(window: &mut Window, cx: &mut App) -> AnyView {
-    ThemeSettings::set_mode(ThemeMode::Light, cx);
-    cx.new(|cx| Gallery::new(window, cx)).into()
+macro_rules! pages {
+    ($($fn_name:ident => $name:literal, $page:ident, $mode:ident;)*) => {
+        $(fn $fn_name(window: &mut Window, cx: &mut App) -> AnyView {
+            build_page(Page::$page, ThemeMode::$mode, window, cx)
+        })*
+
+        /// Every gallery page as a scene, dark and light. `ui` itself is in the main list.
+        pub const SCENES: &[(&str, super::SceneBuilder)] = &[$(($name, $fn_name),)*];
+    };
+}
+
+pages! {
+    controls_dark => "ui", Controls, Dark;
+    forms_dark => "ui-forms", Forms, Dark;
+    overlays_dark => "ui-overlays", Overlays, Dark;
+    dialog_dark => "ui-dialog", Dialog, Dark;
+    icons_dark => "ui-icons", Icons, Dark;
+    controls_light => "ui-light", Controls, Light;
+    forms_light => "ui-forms-light", Forms, Light;
+    overlays_light => "ui-overlays-light", Overlays, Light;
+    dialog_light => "ui-dialog-light", Dialog, Light;
+    icons_light => "ui-icons-light", Icons, Light;
+}
+
+/// The first page, dark.
+pub fn build(window: &mut Window, cx: &mut App) -> AnyView {
+    controls_dark(window, cx)
+}
+
+/// Builds a gallery page in a mode.
+pub fn build_page(page: Page, mode: ThemeMode, window: &mut Window, cx: &mut App) -> AnyView {
+    ThemeSettings::set_mode(mode, cx);
+    if page == Page::Dialog {
+        Toaster::init(cx);
+        Toaster::push(ToastData::new(ToastKind::Warning, "Server is reconnecting").description("Retrying in 3s"), cx);
+        Toaster::push(ToastData::new(ToastKind::Info, "Pull request opened"), cx);
+        Toaster::push(
+            ToastData::new(ToastKind::Success, "Thread archived").action("Undo", |_, _| {}),
+            cx,
+        );
+    }
+    cx.new(|cx| Gallery::new(page, window, cx)).into()
 }
 
 struct Gallery {
+    page: Page,
     inputs: Vec<Entity<InputState>>,
     filled: Entity<InputState>,
     textarea: Entity<TextareaState>,
 }
 
 impl Gallery {
-    fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+    fn new(page: Page, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let inputs = (0..ControlState::ALL.len() * 2)
             .map(|_| cx.new(|cx| InputState::new(window, cx).placeholder("Search threads")))
             .collect();
         let filled = cx.new(|cx| InputState::new(window, cx).default_value("feature/gpui-port"));
         let textarea = cx.new(|cx| {
             TextareaState::new(window, cx)
-                .auto_grow(3, 12)
+                .auto_grow(1, 12)
                 .placeholder("Ask anything, @ to mention files")
         });
-        Self { inputs, filled, textarea }
+        Self { page, inputs, filled, textarea }
     }
 }
 
@@ -181,6 +235,36 @@ fn swatch_strips(theme: &AppTheme) -> impl IntoElement {
         .children(strip(DERIVED_Y, derived_swatches(theme)))
         .children(strip(FIXED_Y, fixed))
 }
+
+/// Wraps an element so its laid-out bounds are written, keyed by `name`, to
+/// the JSON file named by `UI_GALLERY_BOUNDS` (for size checks against the spec).
+fn measured(name: impl Into<String>, element: impl IntoElement) -> AnyElement {
+    let name = name.into();
+    div()
+        .relative()
+        .flex_none()
+        .self_start()
+        .child(element)
+        .child(
+            canvas(
+                move |bounds, _, _| {
+                    let Ok(path) = std::env::var("UI_GALLERY_BOUNDS") else { return };
+                    let mut all = MEASURED.lock().unwrap_or_else(|e| e.into_inner());
+                    all.insert(name, [bounds.origin.x.as_f32(), bounds.origin.y.as_f32(), bounds.size.width.as_f32(), bounds.size.height.as_f32()]);
+                    if let Ok(json) = serde_json::to_string_pretty(&*all) {
+                        std::fs::write(path, json).ok();
+                    }
+                },
+                |_, _, _, _| {},
+            )
+            .absolute()
+            .size_full(),
+        )
+        .into_any_element()
+}
+
+static MEASURED: std::sync::Mutex<std::collections::BTreeMap<String, [f32; 4]>> =
+    std::sync::Mutex::new(std::collections::BTreeMap::new());
 
 fn section(theme: &AppTheme, title: &'static str, body: impl IntoElement) -> impl IntoElement {
     div()
@@ -293,7 +377,7 @@ fn buttons(theme: &AppTheme) -> impl IntoElement {
     let sizes = ButtonSize::ALL.iter().map(|&size| {
         let button = Button::new(SharedString::from(format!("s-{}", size.label()))).size(size).variant(ButtonVariant::Outline);
         let button = if size.is_icon() { button.icon(IconName::Settings) } else { button.icon(IconName::Plus).label(size.label()) };
-        button.into_any_element()
+        measured(format!("button/{}", size.label()), button)
     });
     let ghosts = ButtonSize::ALL.iter().filter(|s| s.is_icon()).map(|&size| {
         Button::new(SharedString::from(format!("g-{}", size.label())))
@@ -314,7 +398,7 @@ fn buttons(theme: &AppTheme) -> impl IntoElement {
 fn badges_and_kbd(theme: &AppTheme) -> impl IntoElement {
     let variants = BadgeSize::ALL.iter().map(|&size| {
         let cells = BadgeVariant::ALL.iter().map(move |&variant| {
-            Badge::new(variant.label()).variant(variant).size(size).into_any_element()
+            measured(format!("badge/{}/{}", size.label(), variant.label()), Badge::new(variant.label()).variant(variant).size(size))
         });
         row(std::iter::once(caption(theme, format!("badge {}", size.label())).into_any_element()).chain(cells))
             .into_any_element()
@@ -331,9 +415,9 @@ fn badges_and_kbd(theme: &AppTheme) -> impl IntoElement {
         ]))
         .child(row([
             caption(theme, "kbd").into_any_element(),
-            Kbd::new("⌘K").into_any_element(),
+            measured("kbd/default", Kbd::new("⌘K")),
             Kbd::new("Ctrl").into_any_element(),
-            Kbd::new("Enter").variant(KbdVariant::Outline).into_any_element(),
+            measured("kbd/outline", Kbd::new("Enter").variant(KbdVariant::Outline)),
             Kbd::new("⇧").variant(KbdVariant::Outline).into_any_element(),
         ]))
 }
@@ -356,11 +440,11 @@ fn toggles(theme: &AppTheme) -> impl IntoElement {
         row(std::iter::once(caption(theme, variant.label()).into_any_element()).chain(cells)).into_any_element()
     });
     let sizes = ToggleSize::ALL.iter().map(|&size| {
-        Toggle::new(SharedString::from(format!("ts-{}", size.label())))
+        let toggle = Toggle::new(SharedString::from(format!("ts-{}", size.label())))
             .icon(IconName::Terminal)
             .variant(ToggleVariant::Outline)
-            .size(size)
-            .into_any_element()
+            .size(size);
+        measured(format!("toggle/{}", size.label()), toggle)
     });
     div()
         .flex()
@@ -374,10 +458,12 @@ fn choice_controls(theme: &AppTheme) -> impl IntoElement {
     let switches = [SwitchSize::Default, SwitchSize::Sm].into_iter().map(|size| {
         let cells = [false, true].into_iter().flat_map(move |checked| {
             ControlState::ALL.iter().map(move |&state| {
-                Switch::new(SharedString::from(format!("sw-{size:?}-{checked}-{}", state.label())), checked)
-                    .size(size)
-                    .state(state)
-                    .into_any_element()
+                measured(
+                    format!("switch/{size:?}/{checked}/{}", state.label()),
+                    Switch::new(SharedString::from(format!("sw-{size:?}-{checked}-{}", state.label())), checked)
+                        .size(size)
+                        .state(state),
+                )
             })
         });
         row(std::iter::once(caption(theme, format!("switch {size:?} off/on")).into_any_element()).chain(cells))
@@ -392,7 +478,10 @@ fn choice_controls(theme: &AppTheme) -> impl IntoElement {
                         checked,
                     )
                     .state(state);
-                    if contrast { checkbox.contrast() } else { checkbox }.into_any_element()
+                    measured(
+                        format!("checkbox/{contrast}/{checked:?}/{}", state.label()),
+                        if contrast { checkbox.contrast() } else { checkbox },
+                    )
                 })
             },
         );
@@ -416,7 +505,10 @@ fn inputs(gallery: &Gallery, theme: &AppTheme) -> impl IntoElement {
             .into_any_element()
     });
     let sizes = InputSize::ALL.iter().map(|&size| {
-        div().w(px(160.)).child(TextInput::new(&gallery.filled).size(size).state(ControlState::Idle)).into_any_element()
+        measured(
+            format!("input/{}", size.label()),
+            div().w(px(160.)).child(TextInput::new(&gallery.filled).size(size).state(ControlState::Idle)),
+        )
     });
     div()
         .flex()
@@ -427,7 +519,7 @@ fn inputs(gallery: &Gallery, theme: &AppTheme) -> impl IntoElement {
         .child(row(std::iter::once(caption(theme, "sizes sm/default/lg/compact").into_any_element()).chain(sizes)))
         .child(row([
             caption(theme, "textarea").into_any_element(),
-            div().w(px(420.)).child(TextArea::new(&gallery.textarea).state(ControlState::Idle)).into_any_element(),
+            measured("textarea/idle", div().w(px(420.)).child(TextArea::new(&gallery.textarea).state(ControlState::Idle))),
             div().w(px(420.)).child(TextArea::new(&gallery.textarea).state(ControlState::FocusVisible)).into_any_element(),
         ]))
 }
@@ -439,10 +531,10 @@ fn loading(theme: &AppTheme) -> impl IntoElement {
         Skeleton::new(SkeletonShape::Card).w(px(120.)).h(px(48.)).into_any_element(),
         Skeleton::new(SkeletonShape::Pill).w(px(80.)).h(px(20.)).into_any_element(),
         caption(theme, "spinner xs/sm/md/lg").into_any_element(),
-        Spinner::new(SpinnerSize::Xs).into_any_element(),
-        Spinner::new(SpinnerSize::Sm).into_any_element(),
-        Spinner::new(SpinnerSize::Md).muted().into_any_element(),
-        Spinner::new(SpinnerSize::Lg).into_any_element(),
+        measured("spinner/xs", Spinner::new(SpinnerSize::Xs)),
+        measured("spinner/sm", Spinner::new(SpinnerSize::Sm)),
+        measured("spinner/md", Spinner::new(SpinnerSize::Md).muted()),
+        measured("spinner/lg", Spinner::new(SpinnerSize::Lg)),
         caption(theme, "separator").into_any_element(),
         div().w(px(120.)).child(Separator::horizontal()).into_any_element(),
         div().h(px(24.)).flex().child(Separator::vertical()).into_any_element(),
@@ -470,25 +562,176 @@ fn empty_states(theme: &AppTheme) -> impl IntoElement {
         )
 }
 
+fn select_triggers(theme: &AppTheme) -> impl IntoElement {
+    let variants = [SelectVariant::Default, SelectVariant::Ghost].into_iter().map(|variant| {
+        let cells = ControlState::ALL.iter().map(move |&state| {
+            SelectTrigger::new(state.label()).icon(IconName::GitBranch).variant(variant).state(state).into_any_element()
+        });
+        let label = if variant == SelectVariant::Default { "select default" } else { "select ghost" };
+        row(std::iter::once(caption(theme, label).into_any_element()).chain(cells)).into_any_element()
+    });
+    let sizes = SelectSize::ALL.iter().map(|&size| measured(format!("select/{size:?}"), SelectTrigger::new(format!("{size:?}")).size(size)));
+    div()
+        .flex()
+        .flex_col()
+        .gap(px(8.))
+        .children(variants)
+        .child(row(std::iter::once(caption(theme, "sizes xs/sm/default/compact/lg").into_any_element()).chain(sizes)))
+}
+
+fn demo_menu() -> MenuPopup {
+    MenuPopup::new()
+        .label("Thread")
+        .item(MenuItem::new("Rename").icon(IconName::SquarePen).shortcut("F2"))
+        .item(MenuItem::new("Pin").icon(IconName::Pin).highlighted())
+        .item(MenuItem::new("Move to project").icon(IconName::FolderOpen).kind(MenuItemKind::Submenu))
+        .item(MenuItem::new("Snooze").icon(IconName::AlarmClock).disabled(true))
+        .item(MenuItem::new("Inset item").inset())
+        .separator()
+        .item(MenuItem::new("Show archived").kind(MenuItemKind::Checkbox(true)))
+        .item(MenuItem::new("Show drafts").kind(MenuItemKind::Checkbox(false)))
+        .item(MenuItem::new("Notifications").kind(MenuItemKind::Switch(true)))
+        .item(MenuItem::new("Sounds").kind(MenuItemKind::Switch(false)))
+        .separator()
+        .item(MenuItem::new("Delete").icon(IconName::Trash2).destructive().shortcut("⌘⌫"))
+}
+
+fn overlays(theme: &AppTheme) -> impl IntoElement {
+    let options: Vec<SharedString> = vec!["Comfortable".into(), "Wide".into(), "Full".into()];
+    let toasts = ToastKind::ALL.iter().map(|&kind| {
+        let title = match kind {
+            ToastKind::Plain => "Copied to clipboard",
+            ToastKind::Error => "Could not reach the server",
+            ToastKind::Info => "Update available",
+            ToastKind::Success => "Thread archived",
+            ToastKind::Warning => "Server is reconnecting",
+            ToastKind::Loading => "Creating worktree",
+        };
+        let data = ToastData::new(kind, title);
+        let data = match kind {
+            ToastKind::Error => data.description("ECONNREFUSED on the saved route."),
+            ToastKind::Success => data.action("Undo", |_, _| {}),
+            _ => data,
+        };
+        measured(format!("toast/{kind:?}"), div().w(px(360.)).child(ToastSurface::new(data).on_close(|_, _| {})))
+    });
+    div()
+        .flex()
+        .gap(px(24.))
+        .p(px(24.))
+        .child(
+            div()
+                .flex()
+                .flex_col()
+                .gap(px(16.))
+                .w(px(250.))
+                .child(caption(theme, "menu"))
+                .child(measured("menu/popup", demo_menu()))
+                .child(caption(theme, "select list"))
+                .child(select_list(&options, 1, std::rc::Rc::new(|_, _, _| {}))),
+        )
+        .child(
+            div()
+                .flex()
+                .flex_col()
+                .gap(px(14.))
+                .w(px(420.))
+                .child(caption(theme, "popover sm / compact"))
+                .child(measured(
+                    "popover/sm",
+                    PopoverSurface::new()
+                        .title("Thread details")
+                        .width(PopoverWidth::Sm)
+                        .child(div().text_color(theme.colors.muted_foreground).child("Branch feature/gpui-port, 3 files changed.")),
+                ))
+                .child(PopoverSurface::new().padding(PopoverPadding::Compact).child("Compact popover"))
+                .child(caption(theme, "tooltip default / glass / code"))
+                .child(
+                    div()
+                        .flex()
+                        .gap(px(8.))
+                        .items_start()
+                        .child(measured("tooltip-kbd/default", TooltipSurface::new("Toggle sidebar").shortcut("⌘B")))
+                        .child(measured("tooltip/glass", TooltipSurface::new("Glass tooltip").variant(TooltipVariant::Glass)))
+                        .child(TooltipSurface::new("~/code/t3code/apps/web").variant(TooltipVariant::Code)),
+                )
+                .child(caption(theme, "dialog surface"))
+                .child(measured(
+                    "dialog/surface",
+                    DialogSurface::new("Rename thread")
+                        .description("Give this thread a short, memorable name.")
+                        .child("Names show in the sidebar and window title.")
+                        .footer(Button::new("o-cancel").label("Cancel").variant(ButtonVariant::Outline).size(ButtonSize::Sm))
+                        .footer(Button::new("o-save").label("Save").size(ButtonSize::Sm))
+                        .on_close(|_, _| {}),
+                )),
+        )
+        .child(
+            div()
+                .flex()
+                .flex_col()
+                .gap(px(14.))
+                .w(px(360.))
+                .child(caption(theme, "toasts"))
+                .children(toasts)
+                .child(caption(theme, "sheet surface"))
+                .child(
+                    div().h(px(160.)).child(
+                        SheetSurface::new("Settings").description("Appearance and fonts.").child(Separator::horizontal()),
+                    ),
+                )
+                .child(caption(theme, "scroll area"))
+                .child(
+                    div().h(px(80.)).w_full().border_1().border_color(theme.colors.border).rounded(px(8.)).child(
+                        scroll_area("scroll-demo").size_full().p(px(8.)).children(
+                            (0..30).map(|i| div().ui_text(theme, TextSize::Xs, weight::NORMAL).child(format!("Line {i}"))),
+                        ),
+                    ),
+                ),
+        )
+}
+
 impl Render for Gallery {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.app_theme();
-        div()
+        let root = div()
             .id("ui-gallery")
+            .relative()
             .size_full()
-            .overflow_y_scroll()
+            .overflow_hidden()
             .bg(theme.colors.background())
             .text_color(theme.colors.foreground())
-            .font(ui_font(weight::NORMAL))
-            .child(swatch_strips(theme))
-            .child(section(theme, "TYPOGRAPHY", typography(theme)))
-            .child(section(theme, "BUTTON  variants x states, sizes", buttons(theme)))
-            .child(section(theme, "TOGGLE  variants x off/on x states", toggles(theme)))
-            .child(section(theme, "SWITCH / CHECKBOX", choice_controls(theme)))
-            .child(section(theme, "INPUT / TEXTAREA", inputs(self, theme)))
-            .child(section(theme, "BADGE / KBD", badges_and_kbd(theme)))
-            .child(section(theme, "SKELETON / SPINNER / SEPARATOR", loading(theme)))
-            .child(section(theme, "EMPTY", empty_states(theme)))
-            .child(section(theme, "ICONS  lucide 0.564.0 + brand", icons(theme)))
+            .font(ui_font(weight::NORMAL));
+        match self.page {
+            Page::Controls => root
+                .child(swatch_strips(theme))
+                .child(section(theme, "TYPOGRAPHY", typography(theme)))
+                .child(section(theme, "BUTTON  variants x states, sizes", buttons(theme))),
+            Page::Forms => root
+                .child(section(theme, "TOGGLE  variants x off/on x states", toggles(theme)))
+                .child(section(theme, "SWITCH / CHECKBOX", choice_controls(theme)))
+                .child(section(theme, "INPUT / TEXTAREA", inputs(self, theme)))
+                .child(section(theme, "BADGE / KBD", badges_and_kbd(theme)))
+                .child(section(theme, "SKELETON / SPINNER / SEPARATOR", loading(theme))),
+            Page::Overlays => root.child(overlays(theme)),
+            Page::Dialog => root
+                .child(section(theme, "LIVE MODAL, TOASTER (collapsed stack)", select_triggers(theme)))
+                .child(
+                    Modal::dialog(
+                        "gallery-dialog",
+                        DialogSurface::new("Delete thread?")
+                            .description("This permanently removes the thread and its checkpoints.")
+                            .child(TextInput::new(&self.filled).state(ControlState::Idle))
+                            .footer(Button::new("d-cancel").label("Cancel").variant(ButtonVariant::Outline))
+                            .footer(Button::new("d-delete").label("Delete").variant(ButtonVariant::Destructive))
+                            .on_close(|_, _| {}),
+                        |_, _| {},
+                    ),
+                )
+                .child(Toaster::view(cx)),
+            Page::Icons => root
+                .child(section(theme, "ICONS  lucide 0.564.0 + brand", icons(theme)))
+                .child(section(theme, "EMPTY", empty_states(theme))),
+        }
     }
 }

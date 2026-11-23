@@ -3,7 +3,7 @@
 //! without its own chrome.
 
 use gpui_kit::{
-    AnyElement, App, Entity, Focusable as _, Hsla, IntoElement, Pixels, RenderOnce, Window,
+    AnyElement, App, Entity, Focusable as _, Hsla, IntoElement, Pixels, RenderOnce, Styled, Window,
     component::input::{Input, InputState, Textarea, TextareaState},
     div, prelude::*, px,
 };
@@ -148,12 +148,9 @@ impl RenderOnce for TextInput {
             InputSize::Compact => (sp(7.), sp(2.5) - px(1.), theme.radii.md, TextSize::Xs),
         };
         let paint = frame_paint(theme, is_focused(focused, self.forced), self.invalid, disabled);
-        let field = Input::new(&self.state)
-            .appearance(false)
-            .disabled(disabled)
-            .h(height)
-            .px(padding)
-            .w_full();
+        let field = Input::new(&self.state).appearance(false).disabled(disabled);
+        // `Input::h` is an inherent method that only sizes multi-line inputs.
+        let field = Styled::h(field, height).px(padding).w_full();
         let field = if self.mono {
             field.mono_text(px(TextSize::Sm.size(theme.fonts.interface)), weight::NORMAL)
         } else {
@@ -164,7 +161,8 @@ impl RenderOnce for TextInput {
 }
 
 /// A multi-line field that grows with its content from 70px to 256px.
-/// Create the state with `TextareaState::new(window, cx).auto_grow(3, 12)`.
+/// Create the state with `TextareaState::new(window, cx).auto_grow(1, 12)`;
+/// the 70px minimum comes from this frame, not the row count.
 #[derive(IntoElement)]
 pub struct TextArea {
     state: Entity<TextareaState>,
@@ -204,7 +202,7 @@ impl RenderOnce for TextArea {
             .appearance(false)
             .disabled(disabled)
             .w_full()
-            .min_h(theme.sp(17.5) - px(2.))
+            .min_h(theme.sp(17.5))
             .max_h(theme.sp(64.))
             .px(theme.sp(3.) - px(1.))
             .py(theme.sp(1.5) - px(1.))

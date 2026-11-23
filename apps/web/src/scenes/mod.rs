@@ -16,7 +16,6 @@ pub fn scenes() -> &'static [(&'static str, SceneBuilder)] {
     &[
         ("app", app::build),
         ("ui", ui::build),
-        ("ui-light", ui::build_light),
         ("sidebar", sidebar::build),
         ("chat", chat::build),
         ("composer", composer::build),
@@ -24,5 +23,5 @@ pub fn scenes() -> &'static [(&'static str, SceneBuilder)] {
 }
 
 pub fn scene(name: &str) -> Option<SceneBuilder> {
-    scenes().iter().find(|(n, _)| *n == name).map(|(_, build)| *build)
+    scenes().iter().chain(ui::SCENES).find(|(n, _)| *n == name).map(|(_, build)| *build)
 }

@@ -5,7 +5,7 @@
 pub mod badge;
 pub mod button;
 pub mod checkbox;
-// pub mod dialog;
+pub mod dialog;
 pub mod empty;
 pub mod input;
 pub mod kbd;
@@ -13,13 +13,13 @@ pub mod menu;
 pub mod motion;
 pub mod popover;
 pub mod scroll_area;
-// pub mod select;
+pub mod select;
 pub mod separator;
-// pub mod sheet;
+pub mod sheet;
 pub mod skeleton;
 pub mod spinner;
 pub mod switch;
-// pub mod toast;
+pub mod toast;
 pub mod toggle;
 pub mod tooltip;
 
