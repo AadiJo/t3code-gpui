@@ -212,6 +212,11 @@ impl AppSidebarLayout {
         }
     }
 
+    /// Whether the details toggle draws pressed.
+    pub fn is_details_open(&self) -> bool {
+        self.details_open
+    }
+
     pub fn is_right_panel_maximized(&self) -> bool {
         self.right_maximized
     }

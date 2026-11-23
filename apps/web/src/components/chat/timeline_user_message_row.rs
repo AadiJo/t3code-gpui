@@ -3,6 +3,7 @@
 //! (timestamp, Edit from here, Copy). Ports `TimelineUserMessageRow.tsx`.
 
 use crate::components::icons::{Icon, IconName, IconSize};
+use gpui_kit::base::TestSupportExt as _;
 use gpui_kit::{
     AnyElement, Context, InteractiveElement as _, IntoElement, ParentElement as _, StatefulInteractiveElement as _,
     Styled as _, Window, div, img, linear_color_stop, linear_gradient, px, relative,
@@ -10,7 +11,7 @@ use gpui_kit::{
 
 use super::{
     chat_style::{TEXT_2XS, TEXT_XS, alpha},
-    messages_timeline::MessagesTimeline,
+    messages_timeline::{MessagesTimeline, TimelineAction},
     messages_timeline_logic::{MessageRow, TimelineRow},
     timeline_entries::{AttachmentKind, InputIntent},
     timeline_row_parts::{SMALL_ICON, xs_button},
@@ -52,6 +53,16 @@ impl MessagesTimeline {
         let images: Vec<_> = message.attachments.iter().filter(|a| a.kind != AttachmentKind::File).collect();
         let files: Vec<_> = message.attachments.iter().filter(|a| a.kind == AttachmentKind::File).collect();
         let has_text = !message.text.trim().is_empty();
+        let media: std::sync::Arc<[super::timeline_entries::Attachment]> =
+            message.attachments.iter().filter(|a| a.kind != AttachmentKind::File).cloned().collect();
+        let weak = cx.weak_entity();
+        let open_image = |index: usize| {
+            let (weak, attachments) = (weak.clone(), media.clone());
+            move |_: &gpui_kit::ClickEvent, _: &mut Window, cx: &mut gpui_kit::App| {
+                let action = TimelineAction::OpenImage { attachments: attachments.clone(), index };
+                weak.update(cx, |_, cx| cx.emit(action)).ok();
+            }
+        };
 
         let mut column = div().group(group.clone()).flex().flex_col().items_end().gap_1().w_full();
         if message.sent_by_app {
@@ -80,13 +91,13 @@ impl MessagesTimeline {
         if !has_text && files.is_empty() && images.len() == 1 {
             // Media-only messages drop the bubble.
             column = column.child(
-                img(images[0].source.clone())
+                div().id(("image", key)).cursor_pointer().on_click(open_image(0)).test_support().child(img(images[0].source.clone())
                     .h(LONE_IMAGE_HEIGHT)
                     .min_w(px(96.))
                     .max_w_full()
                     .rounded(BUBBLE_RADIUS)
                     .border_1()
-                    .border_color(if colors.is_dark() { alpha(gpui_kit::white(), 0.12) } else { alpha(gpui_kit::black(), 0.09) }),
+                    .border_color(if colors.is_dark() { alpha(gpui_kit::white(), 0.12) } else { alpha(gpui_kit::black(), 0.09) })),
             );
         } else {
             let tl = BUBBLE_RADIUS;
@@ -105,13 +116,15 @@ impl MessagesTimeline {
                 .p(BUBBLE_PADDING);
             if !images.is_empty() {
                 bubble = bubble.child(
-                    div().mb_2().max_w(INLINE_MEDIA_WIDTH).flex().flex_wrap().gap_2().children(images.iter().map(|image| {
-                        img(image.source.clone())
-                            .w(px(101.))
-                            .h(px(75.75))
-                            .rounded(px(8.))
-                            .border_1()
-                            .border_color(alpha(colors.theme.border, 0.8))
+                    div().mb_2().max_w(INLINE_MEDIA_WIDTH).flex().flex_wrap().gap_2().children(images.iter().enumerate().map(|(index, image)| {
+                        div().id(("image", key.wrapping_add(index as u64 + 1))).cursor_pointer().on_click(open_image(index)).test_support().child(
+                            img(image.source.clone())
+                                .w(px(101.))
+                                .h(px(75.75))
+                                .rounded(px(8.))
+                                .border_1()
+                                .border_color(alpha(colors.theme.border, 0.8)),
+                        )
                     })),
                 );
             }
@@ -148,6 +161,7 @@ impl MessagesTimeline {
                     piece_opacity: None,
                     state: &self.markdown_state,
                     actions,
+                    find: self.find_highlight(),
                 };
                 let markdown = render_markdown(&view, window, cx);
                 if foldable && !unfolded {
@@ -204,7 +218,10 @@ impl MessagesTimeline {
             .group_hover(group, |s| s.opacity(1.))
             .child(div().mr_1().text_color(colors.theme.muted_foreground).child(format_clock(message.created_at.0)))
             .children(message_row.revert_turn_count.map(|_| {
+                let id = message.id.clone();
                 xs_button(("revert", key), Some(IconName::Pencil), None, colors.theme.text, &colors)
+                    .on_click(cx.listener(move |_, _, _, cx| cx.emit(TimelineAction::EditFrom(id.clone()))))
+                    .test_support()
             }))
             .child(
                 xs_button(
@@ -214,7 +231,8 @@ impl MessagesTimeline {
                     if copied { colors.theme.message_action } else { colors.theme.muted_foreground },
                     &colors,
                 )
-                .on_click(cx.listener(move |this, _, _, cx| this.copy(copy_key, text.clone(), cx))),
+                .on_click(cx.listener(move |this, _, _, cx| this.copy(copy_key, text.clone(), cx)))
+                .test_support(),
             );
         column.child(actions).into_any_element()
     }

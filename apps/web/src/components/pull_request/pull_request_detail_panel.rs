@@ -638,7 +638,7 @@ impl PullRequestDetailPanel {
         let (k, pieces) = self.markdown(key, text);
         let colors = ChatColors::get(cx);
         let actions = self.markdown_actions(cx);
-        let view = MarkdownView { key: k, pieces: &pieces, colors: &colors, user: false, streaming: false, piece_opacity: None, state: &self.markdown_state, actions };
+        let view = MarkdownView { key: k, pieces: &pieces, colors: &colors, user: false, streaming: false, piece_opacity: None, find: None, state: &self.markdown_state, actions };
         render_markdown(&view, window, cx).into_any_element()
     }
 }

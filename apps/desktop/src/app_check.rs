@@ -23,7 +23,7 @@ use anyhow::{Context as _, bail, ensure};
 use gpui_kit::test::TestWindowExt as _;
 use gpui_kit::*;
 use t3code_client_runtime::platform::{ClientPresentation, FileSecretStore};
-use t3code_web::app_root::{AppRootOptions, WindowRoot, local_shell_backend};
+use t3code_web::app_root::{AppRootOptions, WindowRoot, local_shell_backend, local_script_backend};
 use t3code_web::connection::shell::EnvironmentShell;
 use t3code_web::connection::{ConnectionRuntime, RuntimeConfig};
 use t3code_web::components::command_palette::CommandPalette;
@@ -41,6 +41,15 @@ use t3code_web::terminal_ui_state_store::TerminalUiStateStore;
 use t3code_web::theme_palette::{ThemeMode, ThemeSettings};
 use t3code_web::ui_state_store::StateDir;
 use t3code_web::{AppRoot, components::chat::timeline_entries::EntryKind};
+use t3code_web::components::chat::composer::FollowUpBehavior;
+use t3code_web::components::chat::messages_timeline::{MessagesTimeline, TimelineAction};
+use t3code_web::components::chat::messages_timeline_logic::{RowKind, TimelineRow};
+use t3code_web::components::chat::thread_details_items::{ThreadDetailsItem, ThreadDetailsItemSettings};
+use t3code_web::components::chat::timeline_entries::{AttachmentKind, MessageRole};
+use t3code_web::components::files::file_preview_panel::FilesPanel;
+use t3code_web::diff_panel_store::{DiffPanelSelection, DiffPanelStore};
+use t3code_web::right_panel_store::{RightPanelKind, SingletonKind};
+use t3code_web::shortcuts::commands::{FocusNextWorkspaceArea, FocusPreviousWorkspaceArea};
 
 struct Run {
     cx: HeadlessAppContext,
@@ -86,6 +95,7 @@ impl Run {
             platform: TitlebarPlatform::Overlay,
             state_dir: state,
             terminal_backend: local_shell_backend(),
+            script_backend: local_script_backend(),
         };
         let (window, parts) = cx.update(|cx| {
             let window_options = WindowOptions {
@@ -589,8 +599,511 @@ fn flow(out: PathBuf, state: PathBuf, tag: &str) -> anyhow::Result<String> {
     r.check("View > Forward goes forward", ok, detail);
     r.shot("forward")?;
 
+    mount(&mut r)?;
+
     ensure!(r.failures == 0, "{} checks failed\n{}", r.failures, r.log);
     Ok(r.log)
+}
+
+impl Run {
+    fn timeline(&mut self) -> Entity<MessagesTimeline> {
+        let root = self.root.clone();
+        self.cx.update(|cx| root.read(cx).thread_view().read(cx).chat().read(cx).timeline().clone())
+    }
+
+    fn rows(&mut self) -> Vec<TimelineRow> {
+        let timeline = self.timeline();
+        self.cx.update(|cx| timeline.read(cx).rows().to_vec())
+    }
+
+    /// Scrolls row `index` near the top so its controls can be clicked.
+    fn scroll_to_row(&mut self, index: usize) {
+        let timeline = self.timeline();
+        self.cx.update(|cx| timeline.read(cx).list_state().scroll_to_row(index, px(80.)));
+        self.frame();
+        self.frame();
+    }
+
+    fn panel_kind(&mut self) -> Option<RightPanelKind> {
+        let root = self.root.clone();
+        self.cx.update(|cx| {
+            let key = root.read(cx).thread_view().read(cx).target().and_then(|t| match t {
+                ThreadTarget::Server(key) => Some(t3code_web::fixtures::scoped_key(key)),
+                ThreadTarget::Draft(_) => None,
+            })?;
+            let state = root.read(cx).right_panels().read(cx).state(&key);
+            state.is_open.then(|| state.active().map(|s| s.kind())).flatten()
+        })
+    }
+
+    fn composer_text(&mut self) -> String {
+        let root = self.root.clone();
+        self.cx.update(|cx| root.read(cx).composer(cx).read(cx).editor().read(cx).text().to_string())
+    }
+
+    fn clear_composer(&mut self) {
+        let root = self.root.clone();
+        self.cx.update(|cx| {
+            let editor = root.read(cx).composer(cx).read(cx).editor().clone();
+            editor.update(cx, |e, cx| e.set_text("", cx));
+        });
+        self.frame();
+    }
+
+    fn store(&mut self) -> Entity<FixtureStore> {
+        let root = self.root.clone();
+        self.cx.update(|cx| root.read(cx).store().clone())
+    }
+
+    fn go(&mut self, key: &ThreadKey) {
+        let root = self.root.clone();
+        let key = key.clone();
+        self.cx.update(|cx| {
+            let router = root.read(cx).router().clone();
+            router.update(cx, |router, cx| router.navigate(Route::Thread(key), cx));
+        });
+        self.frame();
+    }
+
+    fn drag(&mut self, from: impl Into<ElementId>, to: impl Into<ElementId>) {
+        let (from, to) = (from.into(), to.into());
+        self.frame();
+        self.cx.update_window(self.window, |_, w, cx| w.drag_to(from, to, cx)).ok();
+        self.frame();
+    }
+
+    /// Lets timers (question auto-advance, streams) run for `ms`.
+    fn wait(&mut self, ms: u64) {
+        let until = Instant::now() + Duration::from_millis(ms);
+        while Instant::now() < until {
+            std::thread::sleep(Duration::from_millis(20));
+            self.cx.advance_clock(Duration::from_millis(20));
+            self.frame();
+        }
+    }
+
+    fn files_panel(&mut self) -> Option<Entity<FilesPanel>> {
+        let root = self.root.clone();
+        self.cx.update(|cx| root.read(cx).right_panel().clone().update(cx, |panel, cx| panel.files_panel(cx)))
+    }
+
+    fn diff_selection(&mut self) -> DiffPanelSelection {
+        let shown = self.shown();
+        self.cx.update(|cx| match shown {
+            Some(ThreadTarget::Server(key)) => cx.global::<DiffPanelStore>().selection(&t3code_web::fixtures::scoped_key(&key)),
+            _ => DiffPanelSelection::default(),
+        })
+    }
+
+    fn diff_loaded(&mut self) -> bool {
+        self.wait(120);
+        let root = self.root.clone();
+        self.cx.update(|cx| root.read(cx).right_panel().read(cx).diff_loaded(cx))
+    }
+}
+
+/// The surfaces mounted into the window: right-panel tabs, the git
+/// controls, timeline actions, find, drag and drop and the newly available
+/// palette commands. Runs inside `flow`, on the showcase fixtures.
+fn mount(r: &mut Run) -> anyhow::Result<()> {
+    writeln!(r.log, "## mounted surfaces")?;
+    let store = r.store();
+    let snapshot = r.cx.update(|cx| store.read(cx).snapshot(None));
+    let with_diffs = snapshot
+        .threads
+        .iter()
+        .find(|t| {
+            !t.has_pending_approvals
+                && !t.has_pending_user_input
+                && t.key.thread_id.0 != "a1"
+                && r.cx.update(|cx| {
+                    store.update(cx, |s, _| {
+                        s.thread_view(&ThreadTarget::Server(t.key.clone())).is_some_and(|v| !v.timeline.turn_diff_summaries.is_empty())
+                    })
+                })
+        })
+        .map(|t| t.key.clone())
+        .context("no fixture thread with diffs")?;
+    r.go(&with_diffs);
+    focus_composer(r)?;
+
+    // Diff: "Open diff" on a turn's changed-files card.
+    let rows = r.rows();
+    let (index, row) = rows
+        .iter()
+        .enumerate()
+        .find(|(_, row)| matches!(&row.kind, RowKind::Message(m) if m.diff_summary.is_some()))
+        .map(|(i, row)| (i, row.clone()))
+        .context("no changed-files card")?;
+    let RowKind::Message(message) = &row.kind else { unreachable!() };
+    let summary = message.diff_summary.clone().expect("summary");
+    r.scroll_to_row(index);
+    r.click_id(("open-diff-turn", row.key));
+    let opened = r.panel_kind() == Some(RightPanelKind::Diff);
+    r.frame();
+    let loaded = r.diff_loaded();
+    let selection = r.diff_selection();
+    let ok = opened && loaded && matches!(&selection, DiffPanelSelection::Turn { turn_id, .. } if turn_id.as_str() == message.message.id.as_str());
+    r.check("Open diff on a turn opens the diff tab on that turn", ok, format!("{selection:?}, loaded {loaded}"));
+    r.shot("diff-turn")?;
+    let file = summary.files[0].path.clone();
+    // Close the panel so the card is where it was; the click reopens it.
+    focus_composer(r)?;
+    r.press("mod-alt-b");
+    r.scroll_to_row(index);
+    r.click_id(SharedString::from(format!("changed-{file}")));
+    let loaded = r.diff_loaded();
+    let selection = r.diff_selection();
+    let ok = loaded && matches!(&selection, DiffPanelSelection::Turn { file_path: Some(path), .. } if path.as_str() == file.as_ref());
+    r.check("a changed file in the timeline reveals it in the diff", ok, format!("{selection:?}"));
+    r.shot("diff-file-revealed")?;
+    r.click_id("diff-scope");
+    r.shot("diff-scope-menu")?;
+    r.click_id("scope-unstaged");
+    r.frame();
+    let (selection, loaded) = (r.diff_selection(), r.diff_loaded());
+    r.check("the scope menu switches to uncommitted changes", selection == DiffPanelSelection::Unstaged && loaded, format!("{selection:?}"));
+    r.shot("diff-uncommitted")?;
+
+    // Files: go to file and content search, bound to their commands.
+    focus_composer(r)?;
+    r.press("mod-p");
+    let picker = r.files_panel().and_then(|p| r.cx.update(|cx| p.read(cx).file_picker().cloned()));
+    let kind = r.panel_kind();
+    r.check("mod+p opens go to file in the Files tab", kind == Some(RightPanelKind::Files) && picker.is_some(), "");
+    r.type_text("orbit.rs");
+    r.wait(300);
+    r.shot("files-go-to-file")?;
+    r.press("enter");
+    r.wait(200);
+    let open = r.files_panel().and_then(|p| r.cx.update(|cx| p.read(cx).open_path().cloned()));
+    r.check("go to file opens the file", open.as_deref() == Some("src/orbit.rs"), format!("{open:?}"));
+    r.shot("files-opened")?;
+    focus_composer(r)?;
+    r.press("mod-shift-f");
+    let search = r.files_panel().and_then(|p| r.cx.update(|cx| p.read(cx).content_search().cloned()));
+    r.check("mod+shift+f opens content search", search.is_some(), "");
+    r.type_text("cursor");
+    r.wait(400);
+    r.shot("files-content-search")?;
+    r.press("enter");
+    r.wait(200);
+    let open = r.files_panel().and_then(|p| r.cx.update(|cx| p.read(cx).open_path().cloned()));
+    r.check("a content match opens its file", open.is_some(), format!("{open:?}"));
+
+    // Drag and drop into the composer.
+    r.clear_composer();
+    let files = r.files_panel().context("files panel")?;
+    r.cx.update(|cx| files.update(cx, |p, cx| p.set_explorer_open(true, cx)));
+    // The first rows are folders; drag the first file.
+    let mut text = String::new();
+    for row in 0..20usize {
+        r.drag(("file-tree-row", row), "composer-drop");
+        text = r.composer_text();
+        if !text.is_empty() {
+            break;
+        }
+    }
+    r.check("a file dragged from the tree inserts its chip", text.contains("]("), format!("{text:?}"));
+    r.shot("drop-file-chip")?;
+    r.clear_composer();
+    r.press("mod-k");
+    let target = rows_thread(r, 1);
+    let title = r.thread_title(&target);
+    r.type_text(&title);
+    r.wait(200);
+    r.shot("palette-thread-row")?;
+    r.drag(("command-palette-row", 1usize), "composer-drop");
+    let text = r.composer_text();
+    r.check("a thread dragged from the palette inserts its chip", text.contains("thread/"), format!("{text:?}"));
+    r.shot("drop-thread-chip")?;
+    r.clear_composer();
+    let dropped = std::env::temp_dir().join("t3code-fixture-workspaces").join("drop.txt");
+    std::fs::write(&dropped, "dropped from the OS\n")?;
+    let at = r.cx.update_window(r.window, |_, w, _| w.find("composer-drop").bounds().center())?;
+    r.cx.update_window(r.window, |_, w, cx| {
+        w.dispatch_event(PlatformInput::FileDrop(FileDropEvent::Entered { position: at, paths: ExternalPaths(vec![dropped.clone()].into()) }), cx);
+        w.dispatch_event(PlatformInput::FileDrop(FileDropEvent::Submit { position: at }), cx);
+    })?;
+    r.wait(200);
+    let root = r.root.clone();
+    let attached = r.cx.update(|cx| root.read(cx).composer(cx).read(cx).attachments().len());
+    r.check("files dropped from the OS attach", attached == 1, format!("{attached} attachments"));
+    r.shot("drop-os-file")?;
+
+    // A terminal tab.
+    let panel = r.cx.update(|cx| root.read(cx).right_panel().clone());
+    r.cx.update(|cx| panel.update(cx, |p, cx| p.new_terminal_tab(cx)));
+    r.frame();
+    let terminal = r.cx.update(|cx| panel.read(cx).terminal("term-1").is_some());
+    let kind = r.panel_kind();
+    r.check("the + menu's Terminal opens a terminal tab", kind == Some(RightPanelKind::Terminal) && terminal, "");
+    r.wait(400);
+    r.shot("terminal-tab")?;
+
+    // Thread details: the toggle shortcut opens the popover, the toggle stays unpressed.
+    focus_composer(r)?;
+    r.press("mod-shift-b");
+    let (open, pressed) = r.cx.update(|cx| (root.read(cx).thread_view().read(cx).details().is_some(), root.read(cx).layout().read(cx).is_details_open()));
+    r.check("mod+shift+b opens the thread details popover, toggle unpressed", open && !pressed, format!("open {open}, pressed {pressed}"));
+    r.shot("details-popover")?;
+    r.click_id("git-changes-row");
+    let selection = r.diff_selection();
+    let kind = r.panel_kind();
+    r.check("the Changes row opens the diff tab", kind == Some(RightPanelKind::Diff), format!("{selection:?}"));
+    r.press("mod-shift-b");
+    r.cx.update(|cx| {
+        let mut settings = ThreadDetailsItemSettings::get(cx);
+        settings.set(ThreadDetailsItem::Scripts, true);
+        cx.set_global(settings);
+    });
+    r.frame();
+    let scripts = r.cx.update(|cx| root.read(cx).thread_view().read(cx).details().and_then(|d| d.read(cx).scripts().cloned()));
+    if let Some(scripts) = scripts {
+        let mut script = t3code_web::scenes::git_actions::fixture_scripts()[2].clone();
+        // The fixture's `pnpm lint` is not installed here; stream real output instead.
+        script.command = "echo lint: checking; ls; echo lint: done".into();
+        r.cx.update(|cx| scripts.update(cx, |s, cx| s.run(script, cx)));
+        r.frame();
+    }
+    r.wait(600);
+    let kind = r.panel_kind();
+    r.check("running a script opens a terminal tab with it", kind == Some(RightPanelKind::Terminal), format!("{kind:?}"));
+    r.shot("script-terminal")?;
+    r.press("mod-shift-b");
+    r.press("mod-o");
+    let calls = r.cx.update(|cx| root.read(cx).thread_view().read(cx).git_calls());
+    r.check("mod+o opens the checkout in the favorite editor", calls.iter().any(|c| c.contains("pen")), format!("{calls:?}"));
+    r.press("mod-shift-b");
+    let open = r.cx.update(|cx| root.read(cx).thread_view().read(cx).details_open());
+    r.check("and mod+shift+b closes it", !open, "");
+
+    // The branch strip under the composer: pick another branch.
+    r.click_id("strip-branch");
+    r.shot("branch-picker")?;
+    r.type_text("feat");
+    r.press("down");
+    r.press("enter");
+    r.wait(200);
+    let branch = r.cx.update(|cx| store.read(cx).snapshot(None).threads.iter().find(|t| t.key == with_diffs).and_then(|t| t.branch.clone()));
+    r.check("picking a branch updates the thread", branch.as_deref().is_some_and(|b| b != "main"), format!("{branch:?}"));
+    r.shot("branch-changed")?;
+
+    // Timeline actions: copy, reply, edit from here, fork.
+    let rows = r.rows();
+    let (index, row) = rows
+        .iter()
+        .enumerate()
+        .rev()
+        .find(|(_, row)| matches!(&row.kind, RowKind::Message(m) if m.message.role == MessageRole::User && m.revert_turn_count.is_some()))
+        .map(|(i, r)| (i, r.clone()))
+        .context("no revertible user message")?;
+    let RowKind::Message(user) = &row.kind else { unreachable!() };
+    r.scroll_to_row(index);
+    r.click_id(("copy-user", row.key));
+    let clipboard = r.cx.update(|cx| cx.read_from_clipboard().and_then(|c| c.text()));
+    r.check("copy puts the message on the clipboard", clipboard.as_deref() == Some(user.message.text.as_ref()), format!("{clipboard:?}"));
+    let before = r.rows().len();
+    r.click_id(("revert", row.key));
+    let (text, after) = (r.composer_text(), r.rows().len());
+    r.check("edit from here reverts and loads the message", text == user.message.text.as_ref() && after < before, format!("{before} -> {after} rows"));
+    r.shot("edit-from-here")?;
+    r.clear_composer();
+    let rows = r.rows();
+    let (index, reply) = rows
+        .iter()
+        .enumerate()
+        .rev()
+        .find(|(_, row)| matches!(&row.kind, RowKind::Message(m) if m.message.role == MessageRole::Assistant && m.show_meta))
+        .map(|(i, r)| (i, r.clone()))
+        .context("no finished reply")?;
+    let RowKind::Message(assistant) = &reply.kind else { unreachable!() };
+    let meta_key = MessagesTimeline::key_of(assistant.message.id.as_str()).wrapping_add(7);
+    // The actions sit under the reply's end: bring that end into view.
+    let timeline = r.timeline();
+    let count = r.rows().len();
+    r.cx.update(|cx| {
+        let list = timeline.read(cx).list_state().clone();
+        if index + 1 < count { list.scroll_to_row(index + 1, px(400.)) } else { list.follow_end() }
+    });
+    r.frame();
+    r.frame();
+    r.click_id(("reply", meta_key));
+    let text = r.composer_text();
+    r.check("reply quotes the response in the composer", text.contains("response/"), format!("{text:?}"));
+    r.clear_composer();
+    let source_title = r.thread_title(&with_diffs);
+    r.click_id(("fork", meta_key));
+    let route = r.route();
+    let forked = matches!(&route, Route::Thread(key) if key.thread_id.0.starts_with("fork-"));
+    let title = if let Route::Thread(key) = &route { r.thread_title(key) } else { String::new() };
+    r.check("fork opens a new thread with the conversation", forked && title == format!("{source_title} fork"), format!("{} {title:?}", route.path()));
+    r.shot("forked")?;
+
+    // The queue: send now, edit, delete.
+    let fork_key = thread_key(&route);
+    r.cx.update(|cx| {
+        store.update(cx, |s, cx| {
+            let target = ThreadTarget::Server(fork_key.clone());
+            s.submit(&target, "Start a long turn".into(), None, cx);
+            for text in ["Queued one", "Queued two", "Queued three"] {
+                s.submit(&target, text.into(), Some(FollowUpBehavior::Queue), cx);
+            }
+        })
+    });
+    r.frame();
+    let queued = |r: &mut Run| r.cx.update(|cx| store.update(cx, |s, _| s.thread_view(&ThreadTarget::Server(fork_key.clone())).map(|v| v.timeline.queued.to_vec()).unwrap_or_default()));
+    let q = queued(r);
+    r.check("three messages wait in the queue", q.len() == 3, q.len());
+    let last = r.rows().len() - 1;
+    r.scroll_to_row(last);
+    r.shot("queue")?;
+    r.click_id(("queued-remove", MessagesTimeline::key_of(&q[2].id)));
+    r.click_id(("queued-edit", MessagesTimeline::key_of(&q[1].id)));
+    let text = r.composer_text();
+    r.click_id(("queued-send", MessagesTimeline::key_of(&q[0].id)));
+    let left = queued(r);
+    let steered = r.rows().iter().any(|row| matches!(&row.kind, RowKind::Message(m) if m.message.text.as_ref() == "Queued one"));
+    r.check("queue: delete drops, edit loads the composer, send now steers", left.is_empty() && text == "Queued two" && steered, format!("{} left, composer {text:?}", left.len()));
+    r.shot("queue-handled")?;
+    r.clear_composer();
+
+    // Approvals: approve one thread's request, decline another's.
+    let mut approvals: Vec<ThreadKey> = snapshot.threads.iter().filter(|t| t.has_pending_approvals).map(|t| t.key.clone()).collect();
+    // The showcase has one; a second thread asks too, so Decline is exercised.
+    let second = with_diffs.clone();
+    r.cx.update(|cx| store.update(cx, |s, cx| s.request_approval(&second, cx)));
+    approvals.push(second);
+    for (n, key) in approvals.iter().take(2).enumerate() {
+        r.go(key);
+        let rows = r.rows();
+        let Some((index, request)) = rows.iter().enumerate().find_map(|(i, row)| match &row.kind {
+            RowKind::PendingApproval { entry } => Some((i, entry.id.clone())),
+            _ => None,
+        }) else {
+            r.check("an approval row shows", false, key.thread_id.0.clone());
+            continue;
+        };
+        r.scroll_to_row(index);
+        if n == 0 {
+            r.shot("approval")?;
+        }
+        let (id, approve) = if n == 0 { ("approve", true) } else { ("decline", false) };
+        r.click_id((id, MessagesTimeline::key_of(request.as_str())));
+        let waiting = r.cx.update(|cx| store.read(cx).snapshot(None).threads.iter().any(|t| t.key == *key && t.has_pending_approvals));
+        r.check(if approve { "Approve resolves the request and the turn continues" } else { "Decline resolves the request" }, !waiting, key.thread_id.0.clone());
+        r.shot(if approve { "approved" } else { "declined" })?;
+    }
+
+    // A question: digit keys pick, the drawer pages, the last answer submits.
+    let question = snapshot.threads.iter().find(|t| t.has_pending_user_input).map(|t| t.key.clone()).context("no question thread")?;
+    r.go(&question);
+    // Digit keys answer when focus is outside a text field.
+    r.cx.update_window(r.window, |_, w, cx| w.focus(&root.read(cx).sidebar().focus_handle(cx), cx)).ok();
+    let chat = r.cx.update(|cx| root.read(cx).thread_view().read(cx).chat().clone());
+    r.shot("question")?;
+    r.press("2");
+    r.wait(350);
+    let index = r.cx.update(|cx| chat.read(cx).question_index());
+    r.check("key 2 picks an option and moves to the next question", index == 1, index);
+    r.shot("question-second")?;
+    r.click_id("question-previous");
+    let index = r.cx.update(|cx| chat.read(cx).question_index());
+    r.check("previous question goes back", index == 0, index);
+    r.click_id("question-next");
+    r.press("3");
+    r.wait(350);
+    let waiting = r.cx.update(|cx| store.read(cx).snapshot(None).threads.iter().any(|t| t.key == question && t.has_pending_user_input));
+    r.check("answering the last question submits the answers", !waiting, "");
+    r.shot("question-answered")?;
+
+    // The image viewer from a message's image, and file chips.
+    let showcase = ThreadKey { environment_id: with_diffs.environment_id.clone(), thread_id: t3code_web::components::sidebar::model::ThreadId("a1".into()) };
+    r.go(&showcase);
+    let rows = r.rows();
+    let (index, row) = rows
+        .iter()
+        .enumerate()
+        .find(|(_, row)| matches!(&row.kind, RowKind::Message(m) if m.message.attachments.iter().any(|a| a.kind == AttachmentKind::Image)))
+        .map(|(i, r)| (i, r.clone()))
+        .context("no image attachment")?;
+    r.scroll_to_row(index);
+    r.click_id(("image", row.key.wrapping_add(1)));
+    r.wait(300);
+    let open = r.cx.update(|cx| root.read(cx).expanded_image().is_some());
+    r.check("a timeline image opens the viewer", open, "");
+    r.shot("image-viewer")?;
+    r.press("escape");
+    let timeline = r.timeline();
+    r.cx.update(|cx| timeline.update(cx, |_, cx| cx.emit(TimelineAction::OpenLink("assets/orbit.png".into()))));
+    r.wait(300);
+    let open = r.cx.update(|cx| root.read(cx).expanded_image().is_some());
+    r.check("an image file chip opens the viewer", open, "");
+    r.shot("image-chip-viewer")?;
+    r.press("escape");
+    r.cx.update(|cx| timeline.update(cx, |_, cx| cx.emit(TimelineAction::OpenLink("src/replay.rs:15".into()))));
+    r.wait(200);
+    let open = r.files_panel().and_then(|p| r.cx.update(|cx| p.read(cx).open_path().cloned()));
+    r.check("a file chip opens the file in the Files tab", open.as_deref() == Some("src/replay.rs"), format!("{open:?}"));
+    r.shot("file-chip")?;
+
+    // Find in thread.
+    focus_composer(r)?;
+    r.press("mod-f");
+    let bar = r.cx.update(|cx| chat.read(cx).find_bar().cloned());
+    r.check("mod+f opens the find bar", bar.is_some(), "");
+    r.type_text("cursor");
+    let counting = r.cx.update(|cx| timeline.read(cx).find_counting());
+    let label = r.cx.update(|cx| chat.read(cx).find_bar().map(|b| b.read(cx).label(cx)).unwrap_or_default());
+    r.wait(300);
+    let (active, total) = r.cx.update(|cx| timeline.read(cx).find_count());
+    let visible = r.cx.update(|cx| timeline.read(cx).viewport().visible);
+    let outside = r.cx.update(|cx| timeline.read(cx).active_match()).is_some();
+    r.check(
+        "find counts matches in every row",
+        total > 1 && outside,
+        format!("{}/{total}, visible rows {visible:?}; before the index landed: counting {counting}, label {label:?}", active + 1),
+    );
+    r.shot("find")?;
+    r.press("enter");
+    let (next, _) = r.cx.update(|cx| timeline.read(cx).find_count());
+    r.press("shift-enter");
+    let (back, _) = r.cx.update(|cx| timeline.read(cx).find_count());
+    let row = r.cx.update(|cx| timeline.read(cx).active_match().map(|m| m.row));
+    let visible = r.cx.update(|cx| timeline.read(cx).viewport().visible);
+    r.check("enter and shift+enter step and scroll to the match", next == (active + 1) % total && back == active && row.is_some_and(|row| visible.contains(&row)), format!("{active} -> {next} -> {back}, row {row:?} in {visible:?}"));
+    r.shot("find-stepped")?;
+    r.press("escape");
+    let closed = r.cx.update(|cx| chat.read(cx).find_bar().is_none() && timeline.read(cx).find_count().1 == 0);
+    r.check("escape closes find", closed, "");
+
+    // Palette commands that now have views.
+    focus_composer(r)?;
+    r.press("mod-k");
+    let palette = r.palette();
+    let unavailable = r.cx.update(|cx| palette.read(cx).unavailable_titles());
+    let wanted = ["Find in current thread", "Copy thread", "Go to file", "Search project contents", "Focus Next Workspace Area", "Focus Previous Workspace Area"];
+    let still: Vec<_> = wanted.iter().filter(|w| unavailable.iter().any(|u| u.as_ref() == **w)).collect();
+    r.check("the palette offers find, copy, go to file, search and focus area", still.is_empty(), format!("unavailable: {unavailable:?}"));
+    r.shot("palette-commands")?;
+    r.type_text("Copy thread");
+    r.press("enter");
+    let clipboard = r.cx.update(|cx| cx.read_from_clipboard().and_then(|c| c.text()));
+    r.check("Copy thread copies its link", clipboard.as_deref().is_some_and(|c| c.ends_with("/threads/env-local/a1")), format!("{clipboard:?}"));
+    r.shot("thread-copied")?;
+    focus_composer(r)?;
+    r.menu(FocusNextWorkspaceArea);
+    let in_panel = r.cx.update_window(r.window, |_, w, cx| root.read(cx).right_panel().focus_handle(cx).contains_focused(w, cx))?;
+    r.menu(FocusPreviousWorkspaceArea);
+    let back = r.composer_focused();
+    r.check("focus next and previous area move between chat and panel", in_panel && back, format!("panel {in_panel}, composer {back}"));
+    Ok(())
+}
+
+/// The key of the `n`th thread row in the sidebar.
+fn rows_thread(r: &mut Run, n: usize) -> ThreadKey {
+    let rows = r.visible_threads();
+    rows[n.min(rows.len() - 1)].0.clone()
 }
 
 /// Scrolls the settings nav to its Connections group, then opens Environments.
@@ -720,6 +1233,24 @@ fn bench(out: PathBuf) -> anyhow::Result<String> {
     });
     writeln!(log, "fixture timelines for 50 threads built in {:.0} ms (not part of the switch)\n", gen_start.elapsed().as_secs_f64() * 1000.)?;
 
+    // `T3_BENCH_PANEL=diff|files`: every bench thread shows that right-panel tab.
+    let panel = std::env::var("T3_BENCH_PANEL").ok().and_then(|p| match p.as_str() {
+        "diff" => Some(SingletonKind::Diff),
+        "files" => Some(SingletonKind::Files),
+        _ => None,
+    });
+    writeln!(log, "right panel: {}\n", panel.map_or("closed".to_string(), |k| format!("open on the {k:?} tab")))?;
+    if let Some(kind) = panel {
+        r.cx.update(|cx| {
+            let panels = root.read(cx).right_panels().clone();
+            panels.update(cx, |store, _| {
+                for key in &keys {
+                    store.open(&t3code_web::fixtures::scoped_key(key), kind);
+                }
+            });
+        });
+    }
+
     let mut cold_long = Vec::new();
     let mut cold_short = Vec::new();
     for (l, s) in long.iter().zip(&short) {
@@ -800,6 +1331,70 @@ fn bench(out: PathBuf) -> anyhow::Result<String> {
         clicks.push(t);
     }
     log += &row("sidebar row click (cold, short)", &mut clicks);
+
+    // With the diff tab open, its patch loads after the frame that shows the
+    // thread; this is that later frame (load + draw).
+    if panel == Some(SingletonKind::Diff) {
+        let mut later = Vec::new();
+        for key in long.iter().chain(&short).take(20) {
+            switch(&mut r, key);
+            let start = Instant::now();
+            r.cx.advance_clock(Duration::from_millis(60));
+            r.cx.update_window(r.window, |_, w, cx| w.draw(cx).clear(cx)).ok();
+            later.push(start.elapsed().as_secs_f64() * 1000.);
+            r.cx.run_until_parked();
+        }
+        log += &row("diff tab: the frame after the switch (patch load + draw)", &mut later);
+    }
+
+    // In-thread find on a 3,000-row thread: each keystroke searches every row.
+    switch(&mut r, &long[1]);
+    let chat = r.cx.update(|cx| root.read(cx).thread_view().read(cx).chat().clone());
+    let timeline = r.cx.update(|cx| chat.read(cx).timeline().clone());
+    let opened = Instant::now();
+    r.cx.update_window(r.window, |_, w, cx| chat.update(cx, |chat, cx| chat.open_find(w, cx)))?;
+    r.frame();
+    let os = r.cx.update(|cx| cx.platform_info().os);
+    let mut find = Vec::new();
+    let mut counts = Vec::new();
+    for (i, c) in "persists the new".chars().enumerate() {
+        let source = if c == ' ' { "space".to_string() } else { c.to_string() };
+        let mut keystroke = Keystroke::parse_with_os(&source, os).context("keystroke")?;
+        keystroke.key_char = Some(c.to_string());
+        let t = timed(&mut r, |w, cx| {
+            w.dispatch_keystroke(keystroke, cx);
+        });
+        if i > 0 {
+            find.push(t);
+        } else {
+            let counting = r.cx.update(|cx| timeline.read(cx).find_counting());
+            writeln!(log, "\nfind: first keystroke {t:.2} ms (index still folding: {counting})")?;
+            let mut landed = None;
+            while landed.is_none() && opened.elapsed() < Duration::from_secs(5) {
+                std::thread::sleep(Duration::from_millis(1));
+                let start = Instant::now();
+                r.cx.run_until_parked();
+                if r.cx.update(|cx| !timeline.read(cx).find_counting()) {
+                    r.cx.update_window(r.window, |_, w, cx| w.draw(cx).clear(cx)).ok();
+                    landed = Some(start.elapsed().as_secs_f64() * 1000.);
+                }
+            }
+            writeln!(
+                log,
+                "find: index for every row ready {:.1} ms after opening (background thread); the frame it lands in (merge + search + draw) {:.2} ms",
+                opened.elapsed().as_secs_f64() * 1000.,
+                landed.unwrap_or(f64::NAN)
+            )?;
+        }
+        counts.push(r.cx.update(|cx| timeline.read(cx).find_count().1));
+    }
+    let rows = r.cx.update(|cx| timeline.read(cx).rows().len());
+    writeln!(log, "find: {rows} rows, matches per keystroke {counts:?}\n")?;
+    r.shot("bench-find")?;
+    log += "| find | n | p50 ms | p95 ms | max ms |\n|---|---|---|---|---|\n";
+    log += &row("keystroke to drawn frame with counts, 3,000-row thread", &mut find);
+    r.cx.update_window(r.window, |_, w, cx| chat.update(cx, |chat, cx| chat.close_find(w, cx)))?;
+    r.frame();
 
     // Typing with a 3,000-row thread on screen.
     switch(&mut r, &long[0]);

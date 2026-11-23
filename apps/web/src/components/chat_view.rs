@@ -7,22 +7,33 @@
 //! under "What should we work on?".
 
 use std::rc::Rc;
+use std::sync::Arc;
+use std::time::Duration;
 
+use gpui_kit::base::TestSupportExt as _;
 use gpui_kit::{
-    AnyView, App, AppContext as _, Context, Entity, EventEmitter, FontWeight, InteractiveElement as _, IntoElement,
-    ParentElement as _, Pixels, Render, SharedString, StatefulInteractiveElement as _, Styled as _, Window, canvas,
-    div, linear_color_stop, linear_gradient, prelude::FluentBuilder as _, px,
+    AnyView, App, AppContext as _, Context, Entity, EventEmitter, FocusHandle, FontWeight, InteractiveElement as _,
+    IntoElement, KeyDownEvent, ParentElement as _, Pixels, Render, SharedString, StatefulInteractiveElement as _,
+    Styled as _, Subscription, Task, Window, canvas, div, linear_color_stop, linear_gradient,
+    prelude::FluentBuilder as _, px,
 };
 
+use crate::components::command_palette_drag::PaletteThreadDrag;
+use crate::components::files::file_tree::FileReferenceDrag;
 use crate::components::icons::{Icon, IconName, IconSize};
+use crate::components::ui::button::{Button, ButtonSize, ButtonVariant};
+use crate::composer_editor_mentions::format_context_reference;
 use crate::i18n::t;
+use crate::shortcuts::commands::FindInThread;
+use crate::thread_find_store::ThreadFindStore;
 
 use super::chat::{
     chat_header::chat_header,
     chat_style::{ChatColors, TEXT_SM, TEXT_XS, alpha},
-    messages_timeline::{MessagesTimeline, SM_BREAKPOINT, TIMELINE_GUTTER, TIMELINE_GUTTER_NARROW, TIMELINE_TOP_INSET},
+    messages_timeline::{FindUpdated, MessagesTimeline, SM_BREAKPOINT, TIMELINE_GUTTER, TIMELINE_GUTTER_NARROW, TIMELINE_TOP_INSET, TimelineAction},
     pending_user_input_panel::pending_user_input_panel,
-    timeline_entries::TimelineInput,
+    thread_find_bar::{ThreadFindBar, ThreadFindBarEvent},
+    timeline_entries::{PendingQuestion, TimelineInput},
 };
 
 /// The composer lane is 2rem wider than the message lane (fork, `index.css:132-133`).
@@ -43,12 +54,29 @@ const HERO_HEADLINE_SIZE: Pixels = px(30.);
 const HERO_HEADLINE_LINE: Pixels = px(36.);
 /// Below this height the hero composer stays pinned to the bottom (`34rem`).
 const HERO_MIN_HEIGHT: Pixels = px(544.);
+/// A picked option moves to the next question after this (`ComposerPendingUserInputPanel`).
+const QUESTION_ADVANCE_DELAY: Duration = Duration::from_millis(200);
+/// The details popover's inset from the pane's right edge, under the header.
+const DETAILS_POPOVER_INSET: Pixels = px(12.);
 
 /// What the chat view asks the app to do.
 #[derive(Clone, Debug)]
 pub enum ChatViewEvent {
-    /// An option of the pending question was picked.
-    AnswerQuestion(usize),
+    /// Every question of the pending request has an answer: option indices in order.
+    AnswerQuestions(Vec<usize>),
+    /// A timeline button was pressed.
+    Timeline(TimelineAction),
+    /// A file or thread was dropped on the composer: insert this reference.
+    InsertReference(String),
+    /// A click outside the thread details popover.
+    CloseDetails,
+}
+
+/// Where the user is in a multi-question request.
+#[derive(Default)]
+struct QuestionProgress {
+    index: usize,
+    answers: Vec<Option<usize>>,
 }
 
 /// The chat view of one thread.
@@ -64,12 +92,31 @@ pub struct ChatView {
     /// The composer view, mounted by the composer module. A placeholder of the
     /// same shape draws until then.
     composer: Option<AnyView>,
+    composer_focus: Option<FocusHandle>,
+    /// The branch and worktree strip under the composer.
+    toolbar: Option<AnyView>,
+    /// The thread details card, while open as a popover.
+    details: Option<AnyView>,
+    thread_key: SharedString,
+    find_bar: Option<(Entity<ThreadFindBar>, Subscription)>,
+    /// Every question of the pending request.
+    questions: Arc<[PendingQuestion]>,
+    question: QuestionProgress,
+    advance: Option<Task<()>>,
+    _subscriptions: Vec<Subscription>,
 }
 
 impl ChatView {
     pub fn new(cx: &mut Context<Self>) -> Self {
         let timeline = cx.new(MessagesTimeline::new);
         cx.observe(&timeline, |_, _, cx| cx.notify()).detach();
+        let actions = cx.subscribe(&timeline, |_, _, action: &TimelineAction, cx| cx.emit(ChatViewEvent::Timeline(action.clone())));
+        let counted = cx.subscribe(&timeline, |this, timeline, _: &FindUpdated, cx| {
+            let (count, counting) = (timeline.read(cx).find_count(), timeline.read(cx).find_counting());
+            if let Some((bar, _)) = &this.find_bar {
+                bar.update(cx, |bar, cx| bar.set_count(count.0, count.1, counting, cx));
+            }
+        });
         Self {
             timeline,
             project: SharedString::default(),
@@ -78,6 +125,15 @@ impl ChatView {
             header_inset: px(0.),
             hero: false,
             composer: None,
+            composer_focus: None,
+            toolbar: None,
+            details: None,
+            thread_key: SharedString::default(),
+            find_bar: None,
+            questions: Arc::from([]),
+            question: QuestionProgress::default(),
+            advance: None,
+            _subscriptions: vec![actions, counted],
         }
     }
 
@@ -94,8 +150,147 @@ impl ChatView {
         self.project = project;
         self.title = title;
         self.hero = false;
+        self.thread_key = key.clone();
         self.timeline.update(cx, |timeline, cx| timeline.set_thread(key, input, cx));
+        // Find belongs to the thread it was opened in.
+        if !ThreadFindStore::is_open_in(cx, &self.thread_key) {
+            self.find_bar = None;
+        }
         cx.notify();
+    }
+
+    /// The questions of the pending request; a new request starts at its first question.
+    pub fn set_questions(&mut self, questions: Arc<[PendingQuestion]>, cx: &mut Context<Self>) {
+        let same = questions.first().map(|q| &q.request_id) == self.questions.first().map(|q| &q.request_id);
+        if !same || questions.len() != self.question.answers.len() {
+            self.question = QuestionProgress { index: 0, answers: vec![None; questions.len()] };
+            self.advance = None;
+        }
+        self.questions = questions;
+        cx.notify();
+    }
+
+    /// Picks an option of the shown question (a click or a digit key); a
+    /// single-select question moves on after a short pause.
+    pub fn pick_option(&mut self, option: usize, cx: &mut Context<Self>) {
+        let index = self.question.index;
+        let Some(question) = self.questions.get(index) else { return };
+        if option >= question.options.len() {
+            return;
+        }
+        self.question.answers[index] = Some(option);
+        cx.notify();
+        self.advance = Some(cx.spawn(async move |this, cx| {
+            cx.background_executor().timer(QUESTION_ADVANCE_DELAY).await;
+            this.update(cx, |this, cx| this.advance_question(cx)).ok();
+        }));
+    }
+
+    /// Next question, or submits the answers on the last one (`onAdvance`).
+    pub fn advance_question(&mut self, cx: &mut Context<Self>) {
+        self.advance = None;
+        let index = self.question.index;
+        if self.question.answers.get(index).copied().flatten().is_none() {
+            return;
+        }
+        if index + 1 < self.questions.len() {
+            self.question.index += 1;
+        } else if let Some(answers) = self.question.answers.iter().copied().collect::<Option<Vec<_>>>() {
+            cx.emit(ChatViewEvent::AnswerQuestions(answers));
+        }
+        cx.notify();
+    }
+
+    pub fn previous_question(&mut self, cx: &mut Context<Self>) {
+        self.advance = None;
+        self.question.index = self.question.index.saturating_sub(1);
+        cx.notify();
+    }
+
+    /// The shown question's position, for checks.
+    pub fn question_index(&self) -> usize {
+        self.question.index
+    }
+
+    /// Opens find in this thread, or refocuses it (`chat.find`).
+    pub fn open_find(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.thread_key.is_empty() || self.hero {
+            return;
+        }
+        ThreadFindStore::open(cx, self.thread_key.clone());
+        self.timeline.update(cx, |timeline, cx| timeline.prepare_find(cx));
+        let bar = match &self.find_bar {
+            Some((bar, _)) => bar.clone(),
+            None => {
+                let bar = cx.new(|cx| ThreadFindBar::new(window, cx));
+                let subscription = cx.subscribe_in(&bar, window, Self::on_find_event);
+                self.find_bar = Some((bar.clone(), subscription));
+                bar
+            }
+        };
+        bar.update(cx, |bar, cx| bar.focus(window, cx));
+        cx.notify();
+    }
+
+    pub fn find_bar(&self) -> Option<&Entity<ThreadFindBar>> {
+        self.find_bar.as_ref().map(|(bar, _)| bar)
+    }
+
+    fn on_find_event(&mut self, bar: &Entity<ThreadFindBar>, event: &ThreadFindBarEvent, window: &mut Window, cx: &mut Context<Self>) {
+        let count = match event {
+            ThreadFindBarEvent::QueryChanged(query) => {
+                ThreadFindStore::set_query(cx, query.clone());
+                let query = query.clone();
+                self.timeline.update(cx, |timeline, cx| timeline.set_find_query(&query, cx))
+            }
+            ThreadFindBarEvent::Step(delta) => {
+                let delta = *delta;
+                self.timeline.update(cx, |timeline, cx| timeline.step_find(delta, cx))
+            }
+            ThreadFindBarEvent::Close => return self.close_find(window, cx),
+        };
+        let counting = self.timeline.read(cx).find_counting();
+        bar.update(cx, |bar, cx| bar.set_count(count.0, count.1, counting, cx));
+    }
+
+    /// Closes find and puts focus back in the composer.
+    pub fn close_find(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        ThreadFindStore::close(cx);
+        self.find_bar = None;
+        self.timeline.update(cx, |timeline, cx| timeline.clear_find(cx));
+        if let Some(focus) = &self.composer_focus {
+            window.focus(focus, cx);
+        }
+        cx.notify();
+    }
+
+    /// Mounts the branch toolbar under the composer.
+    pub fn set_toolbar(&mut self, toolbar: Option<AnyView>, cx: &mut Context<Self>) {
+        self.toolbar = toolbar;
+        cx.notify();
+    }
+
+    /// Shows the thread details card as a popover under the header, or hides it.
+    pub fn set_details(&mut self, details: Option<AnyView>, cx: &mut Context<Self>) {
+        self.details = details;
+        cx.notify();
+    }
+
+    /// Digit keys pick a question option when focus is not in a text field.
+    /// The app root forwards keys from outside the chat here too, as the web
+    /// listens on the whole document.
+    pub fn on_key_down(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+        let keystroke = &event.keystroke;
+        if self.questions.is_empty() || keystroke.modifiers.modified() || self.find_bar.is_some() {
+            return;
+        }
+        if self.composer_focus.as_ref().is_some_and(|focus| focus.contains_focused(window, cx)) {
+            return;
+        }
+        if let Ok(digit @ 1..=9) = keystroke.key.parse::<usize>() {
+            self.pick_option(digit - 1, cx);
+            cx.stop_propagation();
+        }
     }
 
     /// Shows the draft hero (new thread, no messages) or the timeline.
@@ -115,8 +310,9 @@ impl ChatView {
     }
 
     /// Mounts the composer in the overlay slot.
-    pub fn set_composer(&mut self, composer: AnyView, cx: &mut Context<Self>) {
+    pub fn set_composer(&mut self, composer: AnyView, focus: FocusHandle, cx: &mut Context<Self>) {
         self.composer = Some(composer);
+        self.composer_focus = Some(focus);
         cx.notify();
     }
 
@@ -168,7 +364,38 @@ impl Render for ChatView {
         let measure_timeline = timeline.clone();
         let weak = cx.weak_entity();
         let on_pick: Rc<dyn Fn(usize, &mut Window, &mut App)> = Rc::new(move |index, _, cx| {
-            weak.update(cx, |_, cx| cx.emit(ChatViewEvent::AnswerQuestion(index))).ok();
+            weak.update(cx, |this, cx| this.pick_option(index, cx)).ok();
+        });
+        // The shown question of a multi-question request, with its pick.
+        let question_index = self.question.index;
+        let pending_question = pending_question.map(|first| self.questions.get(question_index).cloned().unwrap_or(first));
+        let selected = self.question.answers.get(question_index).copied().flatten();
+        let question_nav = (pending_question.is_some() && self.questions.len() > 1).then(|| {
+            let last = question_index + 1 >= self.questions.len();
+            let label = if !last { t!("Next question") } else { t!("Submit answers") };
+            div()
+                .flex()
+                .justify_end()
+                .gap_1()
+                .px_3()
+                .pb_1()
+                .when(question_index > 0, |d| {
+                    d.child(
+                        Button::new("question-previous")
+                            .icon(IconName::ArrowLeft)
+                            .size(ButtonSize::IconXs)
+                            .variant(ButtonVariant::GhostMuted)
+                            .on_click(cx.listener(|this, _, _, cx| this.previous_question(cx))),
+                    )
+                })
+                .child(
+                    Button::new("question-next")
+                        .label(label)
+                        .size(ButtonSize::Xs)
+                        .variant(ButtonVariant::Ghost)
+                        .disabled(selected.is_none())
+                        .on_click(cx.listener(|this, _, _, cx| this.advance_question(cx))),
+                )
         });
         let hero = self.hero && window.viewport_size().height >= HERO_MIN_HEIGHT;
 
@@ -197,12 +424,27 @@ impl Render for ChatView {
                             .border_color(alpha(colors.theme.border, 0.8))
                             .bg(colors.composer_glass)
                             .pb_2()
-                            .child(pending_user_input_panel(question, Some(0), on_pick.clone(), &colors))
+                            .child(pending_user_input_panel(question, selected, on_pick.clone(), &colors))
+                            .children(question_nav)
                     }))
-                    .child(match &self.composer {
-                        Some(composer) => composer.clone().into_any_element(),
-                        None => Self::composer_placeholder(&colors).into_any_element(),
-                    })
+                    .child(
+                        div()
+                            .id("composer-drop")
+                            .test_support()
+                            .w_full()
+                            .on_drop(cx.listener(|_, drag: &FileReferenceDrag, _, cx| {
+                                cx.emit(ChatViewEvent::InsertReference(drag.mention()))
+                            }))
+                            .on_drop(cx.listener(|_, drag: &PaletteThreadDrag, _, cx| {
+                                let id = format!("{}:{}", drag.thread.environment_id.0, drag.thread.thread_id.0);
+                                cx.emit(ChatViewEvent::InsertReference(format_context_reference("thread", &id, &drag.title)))
+                            }))
+                            .child(match &self.composer {
+                                Some(composer) => composer.clone().into_any_element(),
+                                None => Self::composer_placeholder(&colors).into_any_element(),
+                            })
+                            .children(self.toolbar.clone()),
+                    )
                     .child(div().h(COMPOSER_BOTTOM_SPACER)),
             )
             .child(
@@ -253,7 +495,28 @@ impl Render for ChatView {
                 linear_color_stop(alpha(colors.theme.canvas, 0.), 1.),
             ));
 
+        let header_height = self.header_height;
+        let details = self.details.clone().map(|details| {
+            div()
+                .id("thread-details-popover")
+                .occlude()
+                .absolute()
+                .top(header_height)
+                .right(DETAILS_POPOVER_INSET)
+                .on_mouse_down_out(cx.listener(move |_, event: &gpui_kit::MouseDownEvent, _, cx| {
+                    // The titlebar toggle closes it itself.
+                    if event.position.y > header_height {
+                        cx.emit(ChatViewEvent::CloseDetails);
+                    }
+                }))
+                .child(details)
+        });
+        let find_bar = self.find_bar.as_ref().map(|(bar, _)| div().absolute().top(header_height).left_0().right_0().child(bar.clone()));
         div()
+            .id("chat-view")
+            .key_context("ChatView")
+            .on_action(cx.listener(|this, _: &FindInThread, window, cx| this.open_find(window, cx)))
+            .on_key_down(cx.listener(Self::on_key_down))
             .relative()
             .flex()
             .size_full()
@@ -284,6 +547,8 @@ impl Render for ChatView {
                             .child(composer_overlay),
                     ),
             )
+            .children(find_bar)
+            .children(details)
     }
 }
 

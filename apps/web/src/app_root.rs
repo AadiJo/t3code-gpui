@@ -14,7 +14,15 @@ use crate::components::app_sidebar_layout::{AppSidebarLayout, LayoutEvent, Panel
 use crate::components::chat::composer::ChatComposer;
 use crate::components::no_active_thread_state::NoActiveThreadState;
 use crate::components::persistent_thread_terminals::PersistentThreadTerminals;
-use crate::components::right_panel_tabs::{RightPanel, RightPanelEvent};
+use crate::components::chat::expanded_image_dialog::{ExpandedImageDialog, ExpandedImageEvent, ExpandedImageItem};
+use crate::components::chat::timeline_entries::Attachment;
+use crate::components::media::media_actions::MediaKind;
+use crate::components::media::media_source::MediaBytes;
+use crate::components::right_panel_tabs::{RightPanel, RightPanelEvent, ScriptBackendFactory, TerminalBackends};
+use crate::components::ui::toast::{ToastData, ToastKind, Toaster};
+use crate::file_source::absolute_path;
+use crate::thread_find_store::ThreadFindStore;
+use crate::i18n::t;
 use crate::components::settings::settings_search::SettingsPath;
 use crate::components::sidebar::model::{ProjectRef, ThreadKey};
 use crate::components::sidebar::{Sidebar, SidebarEvent};
@@ -31,7 +39,8 @@ use crate::fixtures::palette_source::FixturePaletteSource;
 use crate::router::SettingsPanel;
 use crate::shortcuts::ShortcutRoot;
 use crate::shortcuts::commands::{
-    CloseRightPanelTab, JumpToThread1, JumpToThread2, JumpToThread3, JumpToThread4, JumpToThread5, JumpToThread6,
+    CloseRightPanelTab, CopyThreadReference, FindInThread, FocusNextWorkspaceArea, FocusPreviousWorkspaceArea,
+    OpenFavoriteEditor, ToggleFilePicker, ToggleProjectSearch, ToggleThreadPanel, JumpToThread1, JumpToThread2, JumpToThread3, JumpToThread4, JumpToThread5, JumpToThread6,
     JumpToThread7, JumpToThread8, JumpToThread9, NavigateBack, NavigateForward, NewChat, NewChatWithoutProject, NewLocalChat,
     NewRightPanelTab, NextThread, OpenUsage, PreviousThread, ReopenClosedView, ToggleDiff, TogglePreview,
     ToggleRightPanel, ToggleRightPanelMaximized, ToggleSidebar, ToggleTerminal,
@@ -83,12 +92,20 @@ pub struct AppRootOptions {
     pub platform: TitlebarPlatform,
     pub state_dir: StateDir,
     pub terminal_backend: BackendFactory,
+    /// Starts project scripts in terminal tabs.
+    pub script_backend: ScriptBackendFactory,
 }
 
 impl AppRootOptions {
     /// The showcase fixtures, nothing persisted, terminals on a local shell.
     pub fn fixtures(platform: TitlebarPlatform) -> Self {
-        Self { store: FixtureStore::showcase(), platform, state_dir: StateDir(None), terminal_backend: local_shell_backend() }
+        Self {
+            store: FixtureStore::showcase(),
+            platform,
+            state_dir: StateDir(None),
+            terminal_backend: local_shell_backend(),
+            script_backend: local_script_backend(),
+        }
     }
 
     /// No fixture data: the app shows what the environments provide, and the
@@ -156,6 +173,24 @@ pub fn local_shell_backend() -> BackendFactory {
     Rc::new(|_: &TerminalLaunch, _: &mut App| Box::new(crate::terminal::backend::RecordedBackend::new(Vec::new())))
 }
 
+/// Project scripts as a local login shell that runs the command, then stays
+/// open as an interactive shell (the output stays readable).
+#[cfg(unix)]
+pub fn local_script_backend() -> ScriptBackendFactory {
+    Rc::new(|launch: &TerminalLaunch, command: &str, _: &mut App| {
+        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".into());
+        let cwd = Some(PathBuf::from(launch.cwd.as_ref())).filter(|p| p.is_dir()).or_else(|| std::env::var_os("HOME").map(PathBuf::from));
+        let script = format!("{command}; exec {shell} -i");
+        Box::new(LocalPty::new(&shell, &["-ic", &script], cwd))
+    })
+}
+
+/// Windows has no local script backend either; see [`local_shell_backend`].
+#[cfg(not(unix))]
+pub fn local_script_backend() -> ScriptBackendFactory {
+    Rc::new(|_: &TerminalLaunch, _: &str, _: &mut App| Box::new(crate::terminal::backend::RecordedBackend::new(Vec::new())))
+}
+
 /// The main pane: the chat for a thread route, a page, or the no-thread state.
 struct MainPane {
     layout: WeakEntity<AppSidebarLayout>,
@@ -194,6 +229,10 @@ pub struct AppRoot {
     right_panel: Entity<RightPanel>,
     right_panels: Entity<RightPanelStore>,
     terminals: Entity<PersistentThreadTerminals>,
+    /// The media viewer over the whole window, while open.
+    expanded: Option<(Entity<ExpandedImageDialog>, Subscription)>,
+    /// The thread details card is open (a popover; the toggle stays unpressed).
+    details_open: bool,
     /// The thread under the main pane; it stays shown under modal routes.
     shown: Option<ThreadTarget>,
     /// Whether the store started with data (fixtures); without it the
@@ -222,7 +261,7 @@ impl AppRoot {
     }
 
     pub fn with_options(options: AppRootOptions, window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let AppRootOptions { store, platform, state_dir, terminal_backend } = options;
+        let AppRootOptions { store, platform, state_dir, terminal_backend, script_backend } = options;
         let ui = UiStateStore::load(state_dir.clone());
         let layout_state = ui.layout.clone();
         let right_panels = cx.new(|_| {
@@ -258,9 +297,10 @@ impl AppRoot {
             );
             layout
         });
-        let thread_view = cx.new(|cx| ThreadRouteView::new(store.clone(), cx));
+        let thread_view = cx.new(|cx| ThreadRouteView::new(store.clone(), window, cx));
         let main = cx.new(|_| MainPane { layout: layout.downgrade(), thread_view: thread_view.clone(), page: None, has_thread: false });
-        let right_panel = cx.new(|cx| RightPanel::new(right_panels.clone(), layout.downgrade(), cx));
+        let backends = TerminalBackends { shell: terminal_backend.clone(), script: script_backend };
+        let right_panel = cx.new(|cx| RightPanel::new(right_panels.clone(), layout.downgrade(), store.clone(), backends, cx));
         let terminals = cx.new(|cx| PersistentThreadTerminals::new(terminal_backend, cx));
         layout.update(cx, |layout, cx| {
             layout.set_main(main.clone().into(), cx);
@@ -277,15 +317,12 @@ impl AppRoot {
             // Drags end wherever the pointer is released, so widths are saved as they change.
             cx.observe(&layout, |_, layout, cx| Self::persist_layout(&layout, cx)),
             cx.subscribe(&store, Self::on_store_event),
-            cx.subscribe(&thread_view, |this, _, event: &ThreadRouteEvent, cx| {
-                let ThreadRouteEvent::Promoted(target) = event;
-                if let ThreadTarget::Server(key) = target {
-                    this.router.update(cx, |router, cx| router.replace(Route::Thread(key.clone()), cx));
-                }
-            }),
+            cx.subscribe_in(&thread_view, window, Self::on_thread_event),
             cx.subscribe_in(&right_panel, window, |this, _, event: &RightPanelEvent, window, cx| match event {
                 RightPanelEvent::Changed => this.panels_changed(window, cx),
-                RightPanelEvent::OpenTerminal => this.set_terminal_open(true, window, cx),
+                RightPanelEvent::InsertReference(text) => {
+                    this.thread_view.update(cx, |view, cx| view.insert_reference(text, window, cx));
+                }
             }),
             cx.observe_global_in::<TerminalUiStateStore>(window, |this, window, cx| this.panels_changed(window, cx)),
             // A native notification or an inbox row opened a thread.
@@ -305,6 +342,8 @@ impl AppRoot {
             right_panel,
             right_panels,
             terminals,
+            expanded: None,
+            details_open: false,
             shown: None,
             has_fixture_data,
             palette_source,
@@ -342,6 +381,15 @@ impl AppRoot {
 
     pub fn terminals(&self) -> &Entity<PersistentThreadTerminals> {
         &self.terminals
+    }
+
+    pub fn right_panel(&self) -> &Entity<RightPanel> {
+        &self.right_panel
+    }
+
+    /// The media viewer, while open.
+    pub fn expanded_image(&self) -> Option<&Entity<ExpandedImageDialog>> {
+        self.expanded.as_ref().map(|(dialog, _)| dialog)
     }
 
     /// Whether the app was built with fixture data.
@@ -402,7 +450,7 @@ impl AppRoot {
 
     /// Shows what `route` names. Selecting a thread updates the chat view,
     /// the sidebar's active row and both panels in the same frame.
-    fn apply_route(&mut self, route: Route, _window: &mut Window, cx: &mut Context<Self>) {
+    fn apply_route(&mut self, route: Route, window: &mut Window, cx: &mut Context<Self>) {
         if route == Route::Index {
             // `_chat.index.tsx`: start a draft in the most recent project.
             let draft = self.store.update(cx, |store, _| {
@@ -432,6 +480,8 @@ impl AppRoot {
             cx.notify();
         });
         let active = self.shown_key();
+        let shown_key = self.panel_key();
+        ThreadFindStore::retain_for_route(cx, route.is_modal(), shown_key.as_deref());
         self.sidebar.update(cx, |sidebar, cx| sidebar.set_active_thread(active.clone(), cx));
         self.palette_source.set_active_thread(active.clone());
         ThreadNotificationCoordinator::apply(NotificationInput::Route(active.clone()), cx);
@@ -441,7 +491,12 @@ impl AppRoot {
             UiStateStore::update_ui(cx, |ui| ui.mark_thread_visited(&key, visited));
         }
         self.persist_route(&route, cx);
+        let panel_focused = self.right_panel.focus_handle(cx).contains_focused(window, cx);
         self.sync_panels(cx);
+        // Focus in a panel the new thread does not show would leave shortcuts with no handler.
+        if panel_focused && !self.layout.read(cx).is_right_panel_open() {
+            self.restore_focus(window, cx);
+        }
     }
 
     fn persist_route(&self, route: &Route, cx: &mut Context<Self>) {
@@ -462,7 +517,8 @@ impl AppRoot {
         let terminal_open = self
             .terminal_key()
             .is_some_and(|k| cx.global::<TerminalUiStateStore>().state(&k).terminal_open);
-        self.right_panel.update(cx, |panel, cx| panel.set_thread(key.clone(), cx));
+        let shown = self.shown.clone();
+        self.right_panel.update(cx, |panel, cx| panel.set_thread(key.clone(), shown, cx));
         let terminal_thread = self.terminal_key().map(|k| {
             let cwd = self.thread_cwd(cx);
             (k, cwd)
@@ -518,6 +574,152 @@ impl AppRoot {
         let Some(key) = self.terminal_key() else { return };
         let open = cx.global::<TerminalUiStateStore>().state(&key).terminal_open;
         self.set_terminal_open(!open, window, cx);
+    }
+
+    fn on_thread_event(&mut self, _: &Entity<ThreadRouteView>, event: &ThreadRouteEvent, window: &mut Window, cx: &mut Context<Self>) {
+        match event {
+            ThreadRouteEvent::Promoted(target) => {
+                if let ThreadTarget::Server(key) = target {
+                    self.router.update(cx, |router, cx| router.replace(Route::Thread(key.clone()), cx));
+                }
+            }
+            ThreadRouteEvent::OpenThread(key) => self.navigate(Route::Thread(key.clone()), cx),
+            ThreadRouteEvent::OpenDiff { turn, file } => {
+                let (turn, file) = (turn.as_ref().map(|t| t.0.clone()), file.clone());
+                self.right_panel.update(cx, |panel, cx| panel.open_diff(turn, file, cx));
+            }
+            ThreadRouteEvent::OpenImage { attachments, index } => self.open_attachments(attachments, *index, window, cx),
+            ThreadRouteEvent::OpenLink(target) => self.open_link(target, window, cx),
+            ThreadRouteEvent::RunScript(script) => {
+                let script = script.clone();
+                self.right_panel.update(cx, |panel, cx| panel.run_script(script, cx));
+            }
+            ThreadRouteEvent::DetailsClosed => self.details_open = false,
+        }
+    }
+
+    /// Opens or closes the thread details card. It opens as a popover, so
+    /// the titlebar toggle does not draw pressed (fork `12be669d98`).
+    fn toggle_details(&mut self, cx: &mut Context<Self>) {
+        if self.shown.is_none() {
+            return;
+        }
+        self.details_open = !self.details_open;
+        let open = self.details_open;
+        self.thread_view.update(cx, |view, cx| view.set_details_open(open, cx));
+        let pressed = crate::components::chat::thread_details_panel::thread_details_toggle_pressed(
+            crate::components::chat::thread_details_panel::ThreadDetailsMode::Popover,
+            open,
+        );
+        self.layout.update(cx, |layout, cx| layout.set_details_open(pressed, cx));
+    }
+
+    /// Opens the media viewer over the window.
+    fn open_media(&mut self, items: Vec<ExpandedImageItem>, index: usize, window: &mut Window, cx: &mut Context<Self>) {
+        if items.is_empty() {
+            return;
+        }
+        let dialog = cx.new(|cx| ExpandedImageDialog::new(items, index, window, cx));
+        let subscription = cx.subscribe_in(&dialog, window, |this, _, event: &ExpandedImageEvent, window, cx| {
+            this.expanded = None;
+            if let ExpandedImageEvent::OpenFile(path) = event {
+                let path = path.clone();
+                this.right_panel.update(cx, |panel, cx| panel.open_file(path, None, window, cx));
+            } else {
+                this.restore_focus(window, cx);
+            }
+            cx.notify();
+        });
+        window.focus(&dialog.focus_handle(cx), cx);
+        self.expanded = Some((dialog, subscription));
+        cx.notify();
+    }
+
+    /// A message's image attachments in the viewer.
+    fn open_attachments(&mut self, attachments: &[Attachment], index: usize, window: &mut Window, cx: &mut Context<Self>) {
+        let items = attachments
+            .iter()
+            .filter_map(|attachment| {
+                let bytes = cx.asset_source().load(&attachment.source).ok().flatten()?;
+                Some(ExpandedImageItem {
+                    name: attachment.name.clone(),
+                    kind: MediaKind::Image,
+                    bytes: MediaBytes::Ready(bytes.into_owned().into()),
+                    relative_path: None,
+                    absolute_path: None,
+                })
+            })
+            .collect();
+        self.open_media(items, index, window, cx);
+    }
+
+    /// A file chip or relative link: images open in the viewer, other files
+    /// in the Files tab at their line (`path:12` or `path#L12`).
+    fn open_link(&mut self, target: &str, window: &mut Window, cx: &mut Context<Self>) {
+        let (path, line) = split_line_suffix(target);
+        let Some(workspace) = self.right_panel.update(cx, |panel, cx| panel.workspace(cx)) else { return };
+        let root = workspace.files.root().to_string();
+        let relative: SharedString = path.strip_prefix(&format!("{root}/")).unwrap_or(path).to_string().into();
+        let is_image = crate::components::media::media_source::image_format(&relative, &[]).is_some();
+        if is_image {
+            let name: SharedString = relative.rsplit('/').next().unwrap_or(&relative).to_string().into();
+            let item = ExpandedImageItem {
+                name,
+                kind: MediaKind::Image,
+                bytes: MediaBytes::Workspace { files: workspace.files.clone(), path: relative.clone() },
+                absolute_path: Some(absolute_path(&root, &relative).into()),
+                relative_path: Some(relative),
+            };
+            self.open_media(vec![item], 0, window, cx);
+        } else {
+            self.right_panel.update(cx, |panel, cx| panel.open_file(relative, line, window, cx));
+        }
+    }
+
+    /// Copies a link that opens the shown thread from anywhere (`thread.copyReference`).
+    fn copy_thread_reference(&mut self, cx: &mut Context<Self>) {
+        let Some(key) = self.shown_key() else { return };
+        let segment = |s: &str| -> String {
+            s.bytes()
+                .map(|b| if b.is_ascii_alphanumeric() || b"-_.!~*'()".contains(&b) { (b as char).to_string() } else { format!("%{b:02X}") })
+                .collect()
+        };
+        let link = format!("https://app.t3.codes/threads/{}/{}", segment(&key.environment_id.0), segment(&key.thread_id.0));
+        cx.write_to_clipboard(ClipboardItem::new_string(link));
+        Toaster::push(ToastData::new(ToastKind::Success, t!("Thread copied")), cx);
+    }
+
+    /// Moves focus to the next or previous open area: sidebar, chat, right
+    /// panel, terminal drawer (`workspace.focusNext` / `workspace.focusPrevious`).
+    fn focus_area(&mut self, forward: bool, window: &mut Window, cx: &mut Context<Self>) {
+        let (sidebar_open, right_open, terminal_open) = {
+            let layout = self.layout.read(cx);
+            (layout.is_sidebar_open(), layout.is_right_panel_open(), layout.is_terminal_open())
+        };
+        let mut areas: Vec<FocusHandle> = Vec::new();
+        if sidebar_open {
+            areas.push(self.sidebar.focus_handle(cx));
+        }
+        if self.shown.is_some() {
+            areas.push(self.composer(cx).focus_handle(cx));
+        }
+        if right_open {
+            areas.push(self.right_panel.focus_handle(cx));
+        }
+        if terminal_open && let Some(drawer) = self.terminal_key().and_then(|k| self.terminals.read(cx).drawer(&k).cloned()) {
+            areas.push(drawer.focus_handle(cx));
+        }
+        if areas.is_empty() {
+            return;
+        }
+        let current = areas.iter().position(|area| area.contains_focused(window, cx));
+        let next = match (current, forward) {
+            (Some(i), true) => (i + 1) % areas.len(),
+            (Some(i), false) => (i + areas.len() - 1) % areas.len(),
+            (None, true) => 0,
+            (None, false) => areas.len() - 1,
+        };
+        window.focus(&areas[next], cx);
     }
 
     /// Focus goes back to the composer when a panel closes (or to the root
@@ -631,9 +833,7 @@ impl AppRoot {
                 let maximized = store.state(key).maximized;
                 store.set_maximized(key, !maximized);
             }),
-            LayoutEvent::Toggle(PanelToggle::Details) => {
-                layout.update(cx, |layout, cx| layout.toggle_details(cx));
-            }
+            LayoutEvent::Toggle(PanelToggle::Details) => self.toggle_details(cx),
             LayoutEvent::Changed => Self::persist_layout(layout, cx),
         }
     }
@@ -732,9 +932,50 @@ impl Render for AppRoot {
             .on_action(cx.listener(|this, _: &JumpToThread8, _, cx| this.step_thread(ThreadStep::Jump(7), cx)))
             .on_action(cx.listener(|this, _: &JumpToThread9, _, cx| this.step_thread(ThreadStep::Jump(8), cx)))
             .on_action(cx.listener(|this, _: &OpenSettings, _, cx| this.open_settings(cx)))
+            .on_action(cx.listener(|this, _: &ToggleThreadPanel, _, cx| this.toggle_details(cx)))
+            .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
+                if this.shown.is_some() && this.main.read(cx).page.is_none() {
+                    let chat = this.thread_view.read(cx).chat().clone();
+                    chat.update(cx, |chat, cx| chat.on_key_down(event, window, cx));
+                }
+            }))
+            .on_action(cx.listener(|this, _: &FindInThread, window, cx| {
+                let chat = this.thread_view.read(cx).chat().clone();
+                if this.shown.is_some() {
+                    chat.update(cx, |chat, cx| chat.open_find(window, cx));
+                }
+            }))
+            .on_action(cx.listener(|this, _: &CopyThreadReference, _, cx| this.copy_thread_reference(cx)))
+            .on_action(cx.listener(|this, _: &ToggleFilePicker, window, cx| {
+                this.right_panel.update(cx, |panel, cx| panel.open_file_picker(window, cx))
+            }))
+            .on_action(cx.listener(|this, _: &ToggleProjectSearch, window, cx| {
+                this.right_panel.update(cx, |panel, cx| panel.open_content_search(window, cx))
+            }))
+            .on_action(cx.listener(|this, _: &OpenFavoriteEditor, _, cx| {
+                this.thread_view.update(cx, |view, cx| view.open_favorite_editor(cx))
+            }))
+            .on_action(cx.listener(|this, _: &FocusNextWorkspaceArea, window, cx| this.focus_area(true, window, cx)))
+            .on_action(cx.listener(|this, _: &FocusPreviousWorkspaceArea, window, cx| this.focus_area(false, window, cx)))
             .on_action(|_: &ToggleFullScreen, window, _| window.toggle_fullscreen())
             .on_action(|_: &Minimize, window, _| window.minimize_window())
             .on_action(|_: &ZoomWindow, window, _| window.zoom_window())
             .child(self.layout.clone())
+            .children(self.expanded.as_ref().map(|(dialog, _)| dialog.clone()))
     }
+}
+
+/// `src/a.rs:12` or `src/a.rs#L12` into the path and the line.
+fn split_line_suffix(target: &str) -> (&str, Option<u32>) {
+    if let Some((path, line)) = target.rsplit_once("#L")
+        && let Ok(line) = line.parse()
+    {
+        return (path, Some(line));
+    }
+    if let Some((path, line)) = target.rsplit_once(':')
+        && let Ok(line) = line.parse()
+    {
+        return (path, Some(line));
+    }
+    (target, None)
 }

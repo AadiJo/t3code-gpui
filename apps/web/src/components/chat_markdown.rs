@@ -106,6 +106,8 @@ pub struct MarkdownView<'a> {
     pub piece_opacity: Option<&'a [f32]>,
     pub state: &'a MarkdownUiState,
     pub actions: MarkdownActions,
+    /// In-thread find matches to highlight in this message.
+    pub find: Option<crate::components::chat::thread_find::FindHighlight>,
 }
 
 /// A rendered block and the margins it passes to its neighbours.
@@ -124,6 +126,8 @@ struct Renderer<'a> {
     growing: bool,
     text_color: Hsla,
     link_handler: LinkHandler,
+    /// Find matches drawn so far in this message.
+    find_seen: usize,
 }
 
 /// Renders a message's markdown as one column.
@@ -137,6 +141,7 @@ pub fn render_markdown(view: &MarkdownView<'_>, _window: &mut Window, cx: &mut A
         growing: false,
         text_color: if view.user { view.colors.theme.message_foreground } else { view.colors.prose() },
         link_handler: Rc::new(move |target, window, cx| actions(MarkdownAction::OpenLink(target.clone()), window, cx)),
+        find_seen: 0,
     };
     let mut rendered = Vec::new();
     let last_piece = view.pieces.len().saturating_sub(1);
@@ -185,6 +190,15 @@ fn stack(blocks: Vec<Rendered>) -> (Vec<AnyElement>, Pixels, Pixels) {
 }
 
 impl Renderer<'_> {
+    /// Highlights find matches in one text run of the message.
+    fn find_runs(&mut self, text: &str, runs: Vec<TextRun>) -> Vec<TextRun> {
+        let view = self.view;
+        match &view.find {
+            Some(find) => find.apply(text, runs, &mut self.find_seen),
+            None => runs,
+        }
+    }
+
     fn id(&mut self) -> u64 {
         self.next_id += 1;
         self.view.key.wrapping_mul(31).wrapping_add(self.next_id)
@@ -255,7 +269,8 @@ impl Renderer<'_> {
             Block::Details { summary, blocks } => self.details(summary, blocks, depth),
             Block::Math(tex) => {
                 let (_, id) = self.element_id("math");
-                let text = RichText::new(id, tex.clone(), vec![run(tex.len(), sans(FontWeight::NORMAL), self.text_color)])
+                let runs = self.find_runs(tex, vec![run(tex.len(), sans(FontWeight::NORMAL), self.text_color)]);
+                let text = RichText::new(id, tex.clone(), runs)
                     .selection_color(colors.selection);
                 let element = div().px(px(2.)).py(px(3.)).italic().child(text);
                 Rendered { element: element.into_any_element(), top: BLOCK_MARGIN, bottom: BLOCK_MARGIN }
@@ -289,7 +304,8 @@ impl Renderer<'_> {
             }
             Block::Html(html) => {
                 let (_, id) = self.element_id("html");
-                let text = RichText::new(id, html.clone(), vec![run(html.len(), sans(FontWeight::NORMAL), colors.theme.muted_foreground)])
+                let runs = self.find_runs(html, vec![run(html.len(), sans(FontWeight::NORMAL), colors.theme.muted_foreground)]);
+                let text = RichText::new(id, html.clone(), runs)
                     .selection_color(colors.selection);
                 Rendered { element: text.into_any_element(), top: BLOCK_MARGIN, bottom: BLOCK_MARGIN }
             }
@@ -304,7 +320,8 @@ impl Renderer<'_> {
             color: color.unwrap_or(self.text_color),
         };
         let styled = style_inlines(inlines, base, self.view.colors, self.view.user);
-        let mut text = RichText::new(id, inlines.text.clone(), styled.runs)
+        let runs = self.find_runs(&inlines.text, styled.runs);
+        let mut text = RichText::new(id, inlines.text.clone(), runs)
             .boxes(styled.boxes)
             .icons(styled.icons)
             .selection_color(self.view.colors.selection);
@@ -430,6 +447,10 @@ impl Renderer<'_> {
             element = element.child(
                 div().pb_3().pl_6().text_color(alpha(colors.theme.text, 0.9)).flex().flex_col().children(children),
             );
+        } else if let Some(find) = &{ self.view }.find {
+            // Matches in a closed fold still count, so later indices stay aligned.
+            let seen = &mut self.find_seen;
+            crate::components::chat::thread_find::visit_block_texts(blocks, &mut |text| find.skip(text, seen));
         }
         Rendered { element: element.into_any_element(), top: DETAILS_MARGIN, bottom: DETAILS_MARGIN }
     }
@@ -494,6 +515,7 @@ impl Renderer<'_> {
             highlight_or_schedule(&language, &source, self.app)
         };
         let runs = code_runs(&source, highlights.as_deref(), self.theme, colors.theme.code_foreground);
+        let runs = self.find_runs(&source, runs);
         let text = RichText::new(id, source, runs).selection_color(colors.selection);
         let body = div()
             .px(CODE_PAD_X)

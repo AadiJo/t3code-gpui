@@ -234,7 +234,7 @@ impl IssueDetailPanel {
         let pieces = self.markdown.entry(cache_key.clone()).or_insert_with(|| parse_message_blocks(text, MarkdownFlavor::ASSISTANT, false)).clone();
         let colors = ChatColors::get(cx);
         let k = cache_key.bytes().fold(1469598103934665603u64, |h, b| (h ^ u64::from(b)).wrapping_mul(1099511628211));
-        let view = MarkdownView { key: k, pieces: &pieces, colors: &colors, user: false, streaming: false, piece_opacity: None, state: &self.markdown_state, actions: Rc::new(|_, _, _| {}) };
+        let view = MarkdownView { key: k, pieces: &pieces, colors: &colors, user: false, streaming: false, piece_opacity: None, find: None, state: &self.markdown_state, actions: Rc::new(|_, _, _| {}) };
         render_markdown(&view, window, cx).into_any_element()
     }
 

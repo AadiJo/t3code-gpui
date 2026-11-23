@@ -4,6 +4,7 @@
 //! and `ChangedFilesTree.tsx`.
 
 use crate::components::icons::{Icon, IconName, IconSize};
+use gpui_kit::base::TestSupportExt as _;
 use gpui_kit::{
     AnyElement, Context, FontWeight, InteractiveElement as _, IntoElement, ParentElement as _,
     StatefulInteractiveElement as _, Styled as _, Window, div, prelude::FluentBuilder as _, px,
@@ -11,7 +12,7 @@ use gpui_kit::{
 
 use super::{
     chat_style::{TEXT_2XS, TEXT_3XS, TEXT_XS, alpha, mono},
-    messages_timeline::MessagesTimeline,
+    messages_timeline::{MessagesTimeline, TimelineAction},
     messages_timeline_logic::{MessageRow, TimelineRow},
     timeline_entries::{ChatMessage, EntryId, TurnDiffSummary},
     timeline_row_parts::{diff_stat, xs_button},
@@ -55,6 +56,7 @@ impl MessagesTimeline {
                 piece_opacity: opacity.iter().any(|o| *o < 1.).then_some(opacity.as_slice()),
                 state: &self.markdown_state,
                 actions,
+                find: self.find_highlight(),
             };
             render_markdown(&view, window, cx).into_any_element()
         };
@@ -95,8 +97,14 @@ impl MessagesTimeline {
                 )
                 .on_click(cx.listener(move |this, _, _, cx| this.copy(key, text.clone(), cx))),
             )
-            .child(xs_button(("fork", key), Some(IconName::GitFork), None, colors.theme.text, &colors))
-            .child(xs_button(("reply", key), Some(IconName::Reply), None, colors.theme.muted_foreground, &colors))
+            .child(xs_button(("fork", key), Some(IconName::GitFork), None, colors.theme.text, &colors).on_click({
+                let id = message.id.clone();
+                cx.listener(move |_, _, _, cx| cx.emit(TimelineAction::Fork(id.clone())))
+            }).test_support())
+            .child(xs_button(("reply", key), Some(IconName::Reply), None, colors.theme.muted_foreground, &colors).on_click({
+                let (id, text) = (message.id.clone(), message.text.clone());
+                cx.listener(move |_, _, _, cx| cx.emit(TimelineAction::Reply { message: id.clone(), text: text.clone() }))
+            }).test_support())
             .children((!message.streaming).then(|| {
                 div().text_color(colors.theme.muted_foreground).child(format_clock(message.updated_at.0))
             }))
@@ -124,6 +132,7 @@ impl MessagesTimeline {
             piece_opacity: None,
             state: &self.markdown_state,
             actions,
+            find: self.find_highlight(),
         };
         div().px_1().py(px(2.)).child(render_markdown(&view, window, cx)).into_any_element()
     }
@@ -133,6 +142,7 @@ impl MessagesTimeline {
     /// the header's chevrons button expands or collapses them all.
     fn render_changed_files(&mut self, key: u64, summary: &TurnDiffSummary, cx: &mut Context<Self>) -> AnyElement {
         let colors = self.colors;
+        let turn = summary.assistant_message_id.clone();
         let (additions, deletions) = summary.files.iter().fold((0, 0), |(a, d), f| (a + f.additions, d + f.deletions));
         let fill = if colors.is_dark() { alpha(colors.theme.input, 0.2) } else { colors.theme.secondary };
         let toggle = EntryId(format!("changed-files:{}", summary.assistant_message_id.0).into());
@@ -183,7 +193,14 @@ impl MessagesTimeline {
                                 .on_click(cx.listener(move |this, _, _, cx| this.toggle_entry(toggle.clone(), cx))),
                         )
                     })
-                    .child(xs_button(("open-diff-turn", key), Some(IconName::FileDiff), Some("Open diff".into()), colors.theme.muted_foreground, &colors)),
+                    .child(
+                        xs_button(("open-diff-turn", key), Some(IconName::FileDiff), Some("Open diff".into()), colors.theme.muted_foreground, &colors)
+                            .on_click({
+                                let turn = turn.clone();
+                                cx.listener(move |_, _, _, cx| cx.emit(TimelineAction::OpenDiff { turn: Some(turn.clone()), file: None }))
+                            })
+                            .test_support(),
+                    ),
             );
         let row = || div().h(TREE_ROW_HEIGHT).w_full().flex().items_center().gap_2().rounded(px(6.)).py(px(6.)).pr_2();
         // `DiffStatLabel` aligned: two right-aligned 4ch columns, 8px apart.
@@ -258,6 +275,11 @@ impl MessagesTimeline {
                                 .child(name),
                         )
                         .child(stat(file.additions, file.deletions))
+                        .on_click({
+                            let (turn, path) = (turn.clone(), file.path.clone());
+                            cx.listener(move |_, _, _, cx| cx.emit(TimelineAction::OpenDiff { turn: Some(turn.clone()), file: Some(path.clone()) }))
+                        })
+                        .test_support()
                         .into_any_element(),
                 );
             }

@@ -75,6 +75,7 @@ pub mod syntax;
 pub mod theme_palette;
 pub mod theme_tokens;
 pub mod thread_routes;
+pub mod thread_find_store;
 pub mod thread_notifications;
 pub mod timestamp_format;
 pub mod worktree_cleanup;
@@ -121,6 +122,7 @@ pub fn init(cx: &mut App) {
     hooks::init(cx);
     components::sidebar::init(cx);
     components::chat::composer::init(cx);
+    components::chat::thread_find_bar::init(cx);
     components::branch_picker::bind_keys(cx);
     terminal::surface::init(cx);
     components::thread_terminal_drawer::init(cx);

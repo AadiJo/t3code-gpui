@@ -6,6 +6,7 @@
 
 use crate::components::icons::{Icon, IconName, IconSize};
 use crate::components::chat::chat_style::chat_icon_stroke;
+use gpui_kit::base::TestSupportExt as _;
 use gpui_kit::{
     AnyElement, Context, FontWeight, Hsla, InteractiveElement as _, IntoElement, ParentElement as _,
     StatefulInteractiveElement as _, Styled as _, Window, div, linear_color_stop, linear_gradient, px,
@@ -212,7 +213,7 @@ impl MessagesTimeline {
     /// An approval the agent waits on, inline in place of its tool row.
     pub(super) fn render_pending_approval(&mut self, entry: &WorkLogEntry, cx: &mut Context<Self>) -> AnyElement {
         let colors = self.colors;
-        let WorkItem::Approval { request_id, kind, detail, reason } = &entry.item else {
+        let WorkItem::Approval { kind, detail, reason, request_id } = &entry.item else {
             return div().into_any_element();
         };
         let glyph = match kind {
@@ -262,14 +263,18 @@ impl MessagesTimeline {
                             .child(Icon::new(IconName::Shield).size(IconSize::Custom(SMALL_ICON)).color(colors.theme.warning))
                             .child(div().text_color(colors.theme.warning).child("Waiting for approval"))
                             .child(div().text_color(colors.theme.muted_foreground).child("·"))
-                            .child(text_button("decline", "Decline", colors.theme.muted_foreground).on_click(cx.listener({
-                                let request_id = request_id.clone();
-                                move |_, _, _, cx| cx.emit(TimelineAction::Decline(request_id.clone()))
-                            })))
-                            .child(text_button("approve", "Approve", colors.theme.text).on_click(cx.listener({
-                                let request_id = request_id.clone();
-                                move |_, _, _, cx| cx.emit(TimelineAction::Approve(request_id.clone()))
-                            })))
+                            .child(text_button("decline", "Decline", colors.theme.muted_foreground).on_click({
+                                let request = request_id.clone();
+                                cx.listener(move |_, _, _, cx| {
+                                    cx.emit(TimelineAction::RespondToApproval { request: request.clone(), approve: false })
+                                })
+                            }).test_support())
+                            .child(text_button("approve", "Approve", colors.theme.text).on_click({
+                                let request = request_id.clone();
+                                cx.listener(move |_, _, _, cx| {
+                                    cx.emit(TimelineAction::RespondToApproval { request: request.clone(), approve: true })
+                                })
+                            }).test_support())
                             .child(text_button("more", "More", colors.theme.muted_foreground)),
                     ),
             )
@@ -279,7 +284,7 @@ impl MessagesTimeline {
     /// Queued messages as dashed bubbles with their controls.
     pub(super) fn render_queued(&mut self, messages: &[QueuedMessage], cx: &mut Context<Self>) -> AnyElement {
         let colors = self.colors;
-        let _ = cx;
+        let weak = cx.weak_entity();
         div()
             .flex()
             .flex_col()
@@ -288,6 +293,12 @@ impl MessagesTimeline {
             .pb_4()
             .children(messages.iter().enumerate().map(|(index, queued)| {
                 let key = MessagesTimeline::key_of(&queued.id);
+                let emit = |action: TimelineAction| {
+                    let weak = weak.clone();
+                    move |_: &gpui_kit::ClickEvent, _: &mut gpui_kit::Window, cx: &mut gpui_kit::App| {
+                        weak.update(cx, |_, cx| cx.emit(action.clone())).ok();
+                    }
+                };
                 let (border, ink) = if queued.editing {
                     (alpha(colors.theme.message_action, 0.6), colors.theme.text)
                 } else if queued.guest {
@@ -329,13 +340,25 @@ impl MessagesTimeline {
                             .children(if queued.editing {
                                 vec![
                                     div().child("Editing in the composer").into_any_element(),
-                                    xs_button(("queued-cancel", key), None, Some("Cancel".into()), colors.theme.muted_foreground, &colors).into_any_element(),
+                                    xs_button(("queued-cancel", key), None, Some("Cancel".into()), colors.theme.muted_foreground, &colors)
+                                        .on_click(emit(TimelineAction::RemoveQueued(queued.id.clone())))
+                                        .test_support()
+                                        .into_any_element(),
                                 ]
                             } else {
                                 vec![
-                                    xs_button(("queued-send", key), Some(IconName::ArrowUp), Some("Send now".into()), colors.theme.muted_foreground, &colors).into_any_element(),
-                                    xs_button(("queued-edit", key), Some(IconName::Pencil), None, colors.theme.muted_foreground, &colors).into_any_element(),
-                                    xs_button(("queued-remove", key), Some(IconName::X), None, colors.theme.muted_foreground, &colors).into_any_element(),
+                                    xs_button(("queued-send", key), Some(IconName::ArrowUp), Some("Send now".into()), colors.theme.muted_foreground, &colors)
+                                        .on_click(emit(TimelineAction::SendQueuedNow(queued.id.clone())))
+                                        .test_support()
+                                        .into_any_element(),
+                                    xs_button(("queued-edit", key), Some(IconName::Pencil), None, colors.theme.muted_foreground, &colors)
+                                        .on_click(emit(TimelineAction::EditQueued(queued.id.clone())))
+                                        .test_support()
+                                        .into_any_element(),
+                                    xs_button(("queued-remove", key), Some(IconName::X), None, colors.theme.muted_foreground, &colors)
+                                        .on_click(emit(TimelineAction::RemoveQueued(queued.id.clone())))
+                                        .test_support()
+                                        .into_any_element(),
                                 ]
                             }),
                     )
@@ -364,6 +387,7 @@ impl MessagesTimeline {
             piece_opacity: None,
             state: &self.markdown_state,
             actions,
+            find: self.find_highlight(),
         };
         let card = alpha(colors.theme.surface, 0.7);
         div()

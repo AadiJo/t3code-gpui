@@ -21,7 +21,8 @@ use super::{
     chat_style::ChatColors,
     markdown_stream_blocks::parse_message_blocks,
     messages_timeline_logic::{RowKind, TimelineExpansion, TimelineRow, derive_timeline_rows},
-    timeline_entries::{AttemptId, EntryId, EntryKind, MessageId, MessageRole, RunId, TimelineInput},
+    timeline_entries::{AttemptId, Attachment, EntryId, EntryKind, MessageId, MessageRole, RequestId, RunId, TimelineInput},
+    thread_find::{FindHighlight, FindIndex, FindMatch, SharedMatches},
     timeline_viewport::TimelineFollow,
     virtual_list::{AT_END_THRESHOLD, ListViewport, RowSlot, ScrollMemory, VirtualListState, virtual_list},
 };
@@ -52,8 +53,41 @@ pub const ANIMATION_STEP: Duration = Duration::from_micros(73_333);
 pub const SHIMMER_STEPS: u64 = 30;
 /// New markdown blocks fade in over 600ms while a reply streams.
 pub const BLOCK_FADE: Duration = Duration::from_millis(600);
+/// A match scrolled into view sits this far below the top.
+const FIND_SCROLL_MARGIN: Pixels = px(96.);
 /// Copy buttons show a check this long (`MessageCopyButton`, code blocks use 1200ms).
 const COPIED_FOR: Duration = Duration::from_millis(1_200);
+
+/// What a timeline button asks the chat's owner to do.
+#[derive(Clone, Debug)]
+pub enum TimelineAction {
+    /// Approve or decline a pending approval.
+    RespondToApproval { request: RequestId, approve: bool },
+    /// Fork the thread after the run that ends with this reply.
+    Fork(MessageId),
+    /// Quote this reply in the composer.
+    Reply { message: MessageId, text: SharedString },
+    /// "Edit from here": revert to before this user message.
+    EditFrom(MessageId),
+    SendQueuedNow(SharedString),
+    EditQueued(SharedString),
+    RemoveQueued(SharedString),
+    /// Open the diff panel on a turn (by its reply) or, with no turn, the
+    /// branch, revealing `file` when given.
+    OpenDiff { turn: Option<MessageId>, file: Option<SharedString> },
+    /// Open the media viewer on a message's image attachments at `index`.
+    OpenImage { attachments: Arc<[Attachment]>, index: usize },
+    /// A markdown link or file chip that is not a web URL.
+    OpenLink(SharedString),
+}
+
+/// The open find's query and where it stands.
+struct TimelineFind {
+    query: SharedString,
+    folded: SharedString,
+    matches: SharedMatches,
+    active: usize,
+}
 
 /// Parsed markdown of one message, reused across frames.
 pub(super) struct MessageMarkdown {
@@ -89,15 +123,6 @@ fn same_input(a: &TimelineInput, b: &TimelineInput) -> bool {
 }
 
 /// The chat timeline for one thread at a time.
-/// What a click in the timeline asks the chat view to do.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum TimelineAction {
-    Approve(super::timeline_entries::RequestId),
-    Decline(super::timeline_entries::RequestId),
-}
-
-impl gpui_kit::EventEmitter<TimelineAction> for MessagesTimeline {}
-
 pub struct MessagesTimeline {
     pub(super) input: TimelineInput,
     pub(super) rows: Arc<Vec<TimelineRow>>,
@@ -125,6 +150,14 @@ pub struct MessagesTimeline {
     row_cache: HashMap<SharedString, CachedRows>,
     row_cache_order: VecDeque<SharedString>,
     composer_inset: Pixels,
+    /// Folded text of searchable rows, for in-thread find.
+    find_index: FindIndex,
+    /// Folding every row for find, on a background thread.
+    find_preparing: Option<Task<()>>,
+    find_ready: bool,
+    find: Option<TimelineFind>,
+    /// The row being rendered, so its markdown can highlight its matches.
+    pub(super) rendering_row: usize,
     pub(super) now: Instant,
     /// Wall-clock milliseconds the fixtures treat as "now", for running timers.
     pub(super) now_millis: i64,
@@ -164,6 +197,11 @@ impl MessagesTimeline {
             row_cache: HashMap::new(),
             row_cache_order: VecDeque::new(),
             composer_inset: px(0.),
+            find_index: FindIndex::default(),
+            find_preparing: None,
+            find_ready: false,
+            find: None,
+            rendering_row: 0,
             now: Instant::now(),
             now_millis: 0,
             weak,
@@ -179,6 +217,10 @@ impl MessagesTimeline {
         }
         self.expansion = TimelineExpansion::default();
         self.expanded_entries.clear();
+        self.find = None;
+        self.find_index.clear();
+        self.find_preparing = None;
+        self.find_ready = false;
         self.group_lists.clear();
         let cached = self.row_cache.remove(&key).filter(|cached| same_input(&cached.input, &input));
         self.input = input;
@@ -199,7 +241,130 @@ impl MessagesTimeline {
     pub fn update_input(&mut self, input: TimelineInput, cx: &mut Context<Self>) {
         self.input = input;
         self.rebuild_rows();
+        self.refresh_find();
         cx.notify();
+    }
+
+    /// Folds every row for find on a background thread (find opened). Until
+    /// it lands, a query counts as pending ("1/…"); then the search runs and
+    /// [`FindUpdated`] tells the find bar.
+    pub fn prepare_find(&mut self, cx: &mut Context<Self>) {
+        if self.find_preparing.is_some() {
+            return;
+        }
+        let rows = self.rows.clone();
+        let prepare = cx.background_spawn(async move { FindIndex::prepare(&rows) });
+        self.find_preparing = Some(cx.spawn(async move |this, cx| {
+            let prepared = prepare.await;
+            this.update(cx, |this, cx| {
+                this.find_index.merge(prepared);
+                // Keep the finished task's slot so the index is not prepared twice.
+                this.find_preparing = Some(Task::ready(()));
+                this.find_ready = true;
+                if let Some(query) = this.find.as_ref().map(|f| f.query.clone()) {
+                    this.set_find_query(&query, cx);
+                }
+                cx.emit(FindUpdated);
+            })
+            .ok();
+        }));
+    }
+
+    /// The open query still waits for the index.
+    pub fn find_counting(&self) -> bool {
+        self.find.is_some() && !self.find_ready
+    }
+
+    /// Searches every row for `query` and shows the first match at or below
+    /// the top of the viewport. Returns (active, total).
+    pub fn set_find_query(&mut self, query: &str, cx: &mut Context<Self>) -> (usize, usize) {
+        if !self.find_ready && self.find_preparing.is_some() {
+            self.find = (!query.is_empty()).then(|| TimelineFind {
+                query: query.to_string().into(),
+                folded: super::thread_find::fold(query).into(),
+                matches: Arc::from([]),
+                active: 0,
+            });
+            return (0, 0);
+        }
+        let matches: SharedMatches = self.find_index.search(&self.rows, query).into();
+        let top = self.list.viewport().visible.start;
+        let active = matches.iter().position(|m| m.row >= top).unwrap_or(0);
+        self.find = (!query.is_empty()).then(|| TimelineFind {
+            query: query.to_string().into(),
+            folded: super::thread_find::fold(query).into(),
+            matches,
+            active,
+        });
+        self.reveal_active_match();
+        cx.notify();
+        self.find_count()
+    }
+
+    /// Moves to the next (`delta` 1) or previous (-1) match, wrapping.
+    pub fn step_find(&mut self, delta: isize, cx: &mut Context<Self>) -> (usize, usize) {
+        if let Some(find) = self.find.as_mut().filter(|f| !f.matches.is_empty()) {
+            let total = find.matches.len() as isize;
+            find.active = ((find.active as isize + delta).rem_euclid(total)) as usize;
+            self.reveal_active_match();
+            cx.notify();
+        }
+        self.find_count()
+    }
+
+    /// Closes find and drops its index, so a closed find holds no memory.
+    pub fn clear_find(&mut self, cx: &mut Context<Self>) {
+        self.find_index.clear();
+        self.find_preparing = None;
+        self.find_ready = false;
+        if self.find.take().is_some() {
+            cx.notify();
+        }
+    }
+
+    /// (active, total) of the open find.
+    pub fn find_count(&self) -> (usize, usize) {
+        self.find.as_ref().map_or((0, 0), |f| (f.active, f.matches.len()))
+    }
+
+    /// The active match, for checks.
+    pub fn active_match(&self) -> Option<FindMatch> {
+        self.find.as_ref().and_then(|f| f.matches.get(f.active).copied())
+    }
+
+    /// Re-runs the open find after the rows changed, keeping the active index.
+    fn refresh_find(&mut self) {
+        let Some(find) = self.find.as_mut() else { return };
+        find.matches = self.find_index.search(&self.rows, &find.query).into();
+        find.active = find.active.min(find.matches.len().saturating_sub(1));
+    }
+
+    /// Scrolls the active match's row into view and unfolds a clipped user message.
+    fn reveal_active_match(&mut self) {
+        let Some(found) = self.active_match() else { return };
+        if let Some(RowKind::Message(message)) = self.rows.get(found.row).map(|r| &r.kind) {
+            self.unfolded_messages.insert(message.message.id.0.clone());
+        }
+        let visible = self.list.viewport().visible;
+        if !visible.contains(&found.row) || found.row + 1 == visible.end {
+            self.list.scroll_to_row(found.row, FIND_SCROLL_MARGIN);
+        }
+    }
+
+    /// The highlights for the row being rendered, while find has a query.
+    pub(super) fn find_highlight(&self) -> Option<FindHighlight> {
+        let find = self.find.as_ref()?;
+        let row = self.rendering_row;
+        let active = find.matches.get(find.active).filter(|m| m.row == row).map(|m| m.occurrence);
+        let theme = &self.colors.theme;
+        Some(FindHighlight {
+            query: find.folded.clone(),
+            active,
+            background: theme.search_match_background,
+            foreground: theme.search_match_foreground,
+            active_background: theme.search_match_active_background,
+            active_foreground: theme.search_match_active_foreground,
+        })
     }
 
     /// Whether the scroll-to-end button shows (after its 150ms delay).
@@ -416,6 +581,8 @@ impl MessagesTimeline {
             MarkdownAction::OpenLink(target) => {
                 if target.contains("://") {
                     cx.open_url(&target);
+                } else {
+                    cx.emit(TimelineAction::OpenLink(target));
                 }
             }
         }
@@ -556,6 +723,7 @@ impl MessagesTimeline {
 
     /// Renders row `index` inside the lane frame.
     fn render_row(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+        self.rendering_row = index;
         let rows = self.rows.clone();
         let Some(row) = rows.get(index) else {
             return div().into_any_element();
@@ -638,6 +806,14 @@ impl Render for MessagesTimeline {
         .into_any_element()
     }
 }
+
+impl gpui_kit::EventEmitter<TimelineAction> for MessagesTimeline {}
+
+/// The open find's count changed without a keystroke (the index finished).
+#[derive(Clone, Copy, Debug)]
+pub struct FindUpdated;
+
+impl gpui_kit::EventEmitter<FindUpdated> for MessagesTimeline {}
 
 /// Creates a timeline entity.
 pub fn messages_timeline(cx: &mut App) -> Entity<MessagesTimeline> {

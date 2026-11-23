@@ -190,8 +190,11 @@ impl LiveApp {
         let Some(thread) = &self.thread else { return };
         let key = thread.read(cx).key().clone();
         match action {
-            TimelineAction::Approve(id) => composer::respond_to_approval(&key, id.as_str(), ProviderApprovalDecision::Accept, cx),
-            TimelineAction::Decline(id) => composer::respond_to_approval(&key, id.as_str(), ProviderApprovalDecision::Decline, cx),
+            TimelineAction::RespondToApproval { request, approve } => {
+                let decision = if *approve { ProviderApprovalDecision::Accept } else { ProviderApprovalDecision::Decline };
+                composer::respond_to_approval(&key, request.as_str(), decision, cx)
+            }
+            _ => {}
         }
     }
 
@@ -317,7 +320,8 @@ impl LiveApp {
                 composer::handle_event(event, thread, &weak, cx);
             }
         }));
-        self.chat.update(cx, |chat, cx| chat.set_composer(composer.clone().into(), cx));
+        let focus = composer.focus_handle(cx);
+        self.chat.update(cx, |chat, cx| chat.set_composer(composer.clone().into(), focus, cx));
         let focus = composer.read(cx).focus_handle(cx);
         window.focus(&focus, cx);
         self.menu_source = Some(source);

@@ -247,6 +247,11 @@ impl ChatComposer {
     }
 
     /// The prompt editor, for focus and scripted input.
+    /// The attachments waiting to send.
+    pub fn attachments(&self) -> &[ComposerAttachment] {
+        &self.attachments
+    }
+
     pub fn editor(&self) -> &Entity<ComposerPromptEditor> {
         &self.editor
     }

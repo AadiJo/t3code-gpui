@@ -140,7 +140,8 @@ impl ProjectScriptsControl {
             .or_else(|| primary_project_script(&self.scripts))
     }
 
-    fn run(&mut self, script: ProjectScript, cx: &mut Context<Self>) {
+    /// Runs `script` (the row's primary button); checks call it directly.
+    pub fn run(&mut self, script: ProjectScript, cx: &mut Context<Self>) {
         if self.can_run {
             self.preferred_script_id = Some(script.id.clone());
             cx.emit(ProjectScriptsEvent::Run(script));
