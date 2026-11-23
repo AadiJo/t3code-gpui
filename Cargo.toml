@@ -45,6 +45,7 @@ jiff = "1"
 proc-macro2 = "1"
 quote = "1"
 sha2 = "0.10"
+zip = { version = "8", default-features = false, features = ["deflate-flate2"] }
 syn = { version = "2", features = ["full"] }
 sys-locale = "0.3"
 thiserror = "2"

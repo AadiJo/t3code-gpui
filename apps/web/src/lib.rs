@@ -49,6 +49,8 @@ pub mod syntax;
 pub mod theme_palette;
 pub mod theme_tokens;
 pub mod timestamp_format;
+pub mod open_vsx_themes;
+pub mod vscode_theme_import;
 
 pub use app_root::AppRoot;
 pub use assets::Assets;

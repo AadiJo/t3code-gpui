@@ -37,6 +37,12 @@ required-features = ["headless"]
 name = "import-check"
 path = "src/import/import_check.rs"
 
+# Runs the theme importers over fixture files for comparison with the
+# TypeScript originals. Usage: theme-import-check <vscode|openvsx> <in> <out>
+[[bin]]
+name = "theme-import-check"
+path = "src/settings/theme_import_check.rs"
+
 [dependencies]
 t3code-client-runtime.workspace = true
 t3code-web.workspace = true
