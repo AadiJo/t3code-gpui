@@ -35,9 +35,13 @@ rust-embed = "8"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
+smallvec = "1"
+# Same version and features gpui-component pulls in, so nothing extra compiles.
+syntect = { version = "5.3", default-features = false, features = ["parsing", "default-syntaxes", "regex-fancy"] }
 thiserror = "2"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "net", "io-util", "fs"] }
 tracing = "0.1"
+unicode-segmentation = "1"
 url = "2"
 uuid = { version = "1", features = ["v4"] }
 
@@ -61,6 +65,15 @@ ttf-parser = { opt-level = 3 }
 smol = { opt-level = 3 }
 ropey = { opt-level = 3 }
 markdown = { opt-level = 3 }
+# Composer code-block highlighting runs on keystrokes.
+syntect = { opt-level = 3 }
+fancy-regex = { opt-level = 3 }
+regex-automata = { opt-level = 3 }
+regex-syntax = { opt-level = 3 }
+unicode-segmentation = { opt-level = 3 }
+flate2 = { opt-level = 3 }
+miniz_oxide = { opt-level = 3 }
+bincode = { opt-level = 3 }
 
 [profile.release]
 debug = false

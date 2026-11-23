@@ -6997,9 +6997,12 @@ dependencies = [
  "rust-embed",
  "serde",
  "serde_json",
+ "smallvec",
+ "syntect",
  "t3code-client-runtime",
  "t3code-contracts",
  "t3code-shared",
+ "unicode-segmentation",
 ]
 
 [[package]]
