@@ -14,7 +14,7 @@ use super::settings_controls::{SettingsScope, restore_device_defaults, restore_d
 use super::settings_panels::{about_panel, chat_panel, diffs_panel, general_panel, labs_panel};
 use super::settings_search::SettingsPath;
 use super::snap_shot_settings::snap_shot_panel;
-use super::voice_settings_panel::voice_panel;
+use super::voice_settings_panel::VoiceSettings;
 use crate::ActiveAppTheme as _;
 use crate::client_persistence_storage::LocalStorage;
 use crate::components::ui::button::{Button, ButtonVariant};
@@ -48,6 +48,7 @@ pub struct SettingsPages {
     appearance: Entity<AppearanceSettings>,
     keybindings: Entity<KeybindingsSettings>,
     archived: Entity<ArchivedThreadsPanel>,
+    voice: Entity<VoiceSettings>,
     /// Labels of what "Restore device defaults" will reset, while it asks.
     confirm_restore: Option<Vec<SharedString>>,
     _subscriptions: Vec<Subscription>,
@@ -68,6 +69,7 @@ impl SettingsPages {
             appearance: cx.new(|cx| AppearanceSettings::new(window, cx)),
             keybindings: cx.new(|cx| KeybindingsSettings::new(window, cx)),
             archived: cx.new(|cx| ArchivedThreadsPanel::new(window, cx)),
+            voice: cx.new(|cx| VoiceSettings::new(window, cx)),
             confirm_restore: None,
             _subscriptions: subscriptions,
         }
@@ -107,7 +109,7 @@ impl SettingsPages {
         ))
     }
 
-    fn render_page(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+    fn render_page(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let this = cx.entity();
         match self.path {
             SettingsPath::General => general_panel(cx),
@@ -123,7 +125,7 @@ impl SettingsPages {
             }
             SettingsPath::Diffs => diffs_panel(cx),
             SettingsPath::Keybindings => self.keybindings.clone().into_any_element(),
-            SettingsPath::Voice => voice_panel(window, cx),
+            SettingsPath::Voice => self.voice.clone().into_any_element(),
             SettingsPath::SnapShot => snap_shot_panel(cx),
             SettingsPath::Labs => labs_panel(cx),
             SettingsPath::Archived => self.archived.clone().into_any_element(),

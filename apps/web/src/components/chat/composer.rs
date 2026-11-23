@@ -215,6 +215,10 @@ impl ChatComposer {
     ) -> Self {
         let editor = cx.new(ComposerPromptEditor::new);
         let subscription = cx.subscribe(&editor, Self::on_editor_event);
+        let settings = cx.observe_global::<crate::hooks::use_settings::ClientSettingsStore>(|this, cx| {
+            this.sync_editor(cx);
+            cx.notify();
+        });
         let mut this = Self {
             editor,
             state,
@@ -231,7 +235,7 @@ impl ChatComposer {
             save_task: None,
             footer_width: COMPOSER_MAX_WIDTH,
             next_attachment_id: 0,
-            _subscriptions: vec![subscription],
+            _subscriptions: vec![subscription, settings],
         };
         this.load_draft(cx);
         this.sync_editor(cx);
@@ -284,14 +288,14 @@ impl ChatComposer {
             is_draft_thread: self.state.is_draft_thread,
             is_running: self.state.running,
             software_keyboard_open: false,
-            send_shortcut: self.state.send_shortcut,
+            send_shortcut: crate::hooks::settings_bridge::composer_send_shortcut(cx),
         };
         let placeholder: SharedString = if self.state.project_required {
             "Choose a project above to start a thread".into()
         } else {
             "Ask anything. @ files, $ skills, / commands".into()
         };
-        let rich = self.state.rich_text;
+        let rich = crate::hooks::settings_bridge::composer_rich_text(cx);
         self.editor.update(cx, |editor, _| {
             editor.submit_context = context;
             editor.placeholder = placeholder;

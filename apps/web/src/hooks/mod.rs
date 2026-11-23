@@ -1,5 +1,6 @@
 //! Ports of `apps/web/src/hooks`: the settings and theme stores.
 
+pub mod settings_bridge;
 pub mod use_settings;
 pub mod use_theme;
 
@@ -17,7 +18,11 @@ use use_theme::ThemeStore;
 /// Called by [`crate::init`]; the app then calls [`load`].
 pub fn init(cx: &mut App) {
     install(cx);
-    cx.observe_global::<ClientSettingsStore>(apply_language).detach();
+    cx.observe_global::<ClientSettingsStore>(|cx| {
+        apply_language(cx);
+        settings_bridge::apply(cx);
+    })
+    .detach();
 }
 
 /// Points the stores at the app's data directory and reloads them from
@@ -35,6 +40,7 @@ fn install(cx: &mut App) {
     ServerSettingsStore::init(cx);
     ThemeStore::init(cx);
     apply_language(cx);
+    settings_bridge::apply(cx);
 }
 
 /// Follows the `language` setting.

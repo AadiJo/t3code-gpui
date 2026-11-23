@@ -1,17 +1,224 @@
-//! Placeholder while the page is built.
+//! Archive. Ports `ArchivedThreadsPanel.tsx`: archived threads from every
+//! connected environment (`orchestration.getArchivedShellSnapshot`), grouped
+//! by project, newest first, with Unarchive and Delete
+//! (`orchestration.dispatchCommand`). Delete asks first while "Delete
+//! confirmation" is on.
 
-use gpui_kit::{Context, IntoElement, Render, Window, div};
+use std::rc::Rc;
 
-pub struct ArchivedThreadsPanel;
+use gpui_kit::{AnyElement, App, Context, IntoElement, Render, SharedString, Window, div, prelude::*};
+use t3code_client_runtime::environment::EnvironmentId;
+use t3code_contracts::rpc::methods::{OrchestrationDispatchCommand, OrchestrationGetArchivedShellSnapshot};
+use t3code_contracts::{
+    CommandId, OrchestrationV2ArchivedShellSnapshot, OrchestrationV2Command, OrchestrationV2CommandThreadDelete,
+    OrchestrationV2CommandThreadUnarchive, ThreadId,
+};
+
+use super::settings_controls::environment_label;
+use super::settings_layout::{SettingsRow, SettingsSection, page_container};
+use super::settings_search::setting_title;
+use crate::components::icons::IconName;
+use crate::components::ui::button::{Button, ButtonSize, ButtonVariant};
+use crate::components::ui::dialog::{DialogSurface, Modal};
+use crate::components::ui::menu::{MenuItem, MenuPopup, dropdown_menu};
+use crate::components::ui::toast::{ToastData, ToastKind, Toaster};
+use crate::connection::ConnectionRuntime;
+use crate::hooks::use_settings::{ClientSettingsStore, ServerSettingsStore};
+use crate::i18n::t;
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ArchiveAction {
+    Unarchive,
+    Delete,
+}
+
+/// One archived thread to show.
+#[derive(Clone)]
+struct ArchivedThread {
+    environment: EnvironmentId,
+    id: ThreadId,
+    title: String,
+    archived_at: String,
+}
+
+/// The Archive page and its last load.
+pub struct ArchivedThreadsPanel {
+    loading: bool,
+    error: Option<SharedString>,
+    snapshots: Vec<(EnvironmentId, OrchestrationV2ArchivedShellSnapshot)>,
+    pending: Vec<ThreadId>,
+    confirm_delete: Option<ArchivedThread>,
+}
 
 impl ArchivedThreadsPanel {
-    pub fn new(_window: &mut Window, _cx: &mut Context<Self>) -> Self {
-        Self
+    pub fn new(_window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let mut this = Self { loading: false, error: None, snapshots: Vec::new(), pending: Vec::new(), confirm_delete: None };
+        this.refresh(cx);
+        this
+    }
+
+    /// Reloads every environment's archived threads.
+    pub fn refresh(&mut self, cx: &mut Context<Self>) {
+        if !ConnectionRuntime::is_running(cx) {
+            return;
+        }
+        let ids = ServerSettingsStore::environment_ids(cx);
+        let calls: Vec<_> = ids
+            .iter()
+            .map(|id| (id.clone(), ServerSettingsStore::call::<OrchestrationGetArchivedShellSnapshot>(id, Default::default(), cx)))
+            .collect();
+        self.loading = true;
+        cx.spawn(async move |this, cx| {
+            let mut snapshots = Vec::new();
+            let mut error = None;
+            for (id, call) in calls {
+                match call.await {
+                    Ok(snapshot) => snapshots.push((id, snapshot)),
+                    Err(e) => error = Some(e.0),
+                }
+            }
+            this.update(cx, |this, cx| {
+                this.loading = false;
+                this.snapshots = snapshots;
+                this.error = error;
+                cx.notify();
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    fn run(&mut self, action: ArchiveAction, thread: ArchivedThread, cx: &mut Context<Self>) {
+        if self.pending.contains(&thread.id) {
+            return;
+        }
+        if action == ArchiveAction::Delete && ClientSettingsStore::get(cx).confirm_thread_delete && self.confirm_delete.is_none() {
+            self.confirm_delete = Some(thread);
+            cx.notify();
+            return;
+        }
+        self.confirm_delete = None;
+        self.pending.push(thread.id.clone());
+        let command_id = CommandId::from(uuid::Uuid::new_v4().to_string().as_str());
+        let command = match action {
+            ArchiveAction::Unarchive => OrchestrationV2Command::ThreadUnarchive(OrchestrationV2CommandThreadUnarchive { command_id, thread_id: thread.id.clone() }),
+            ArchiveAction::Delete => OrchestrationV2Command::ThreadDelete(OrchestrationV2CommandThreadDelete { command_id, thread_id: thread.id.clone(), only_if_unused: None }),
+        };
+        let call = ServerSettingsStore::call::<OrchestrationDispatchCommand>(&thread.environment, command, cx);
+        cx.spawn(async move |this, cx| {
+            let result = call.await;
+            this.update(cx, |this, cx| {
+                this.pending.retain(|id| *id != thread.id);
+                match result {
+                    Ok(_) => this.refresh(cx),
+                    Err(error) => {
+                        let title = if action == ArchiveAction::Unarchive { t!("Failed to unarchive thread") } else { t!("Failed to delete thread") };
+                        Toaster::push(ToastData::new(ToastKind::Error, title).description(error.0), cx);
+                    }
+                }
+                cx.notify();
+            })
+            .ok();
+        })
+        .detach();
+        cx.notify();
     }
 }
 
 impl Render for ArchivedThreadsPanel {
-    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-        div()
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let mut groups: Vec<(String, Vec<ArchivedThread>)> = Vec::new();
+        let multiple = self.snapshots.iter().filter(|(_, s)| !s.threads.is_empty()).count() > 1;
+        for (environment, snapshot) in &self.snapshots {
+            for project in &snapshot.projects {
+                let mut threads: Vec<ArchivedThread> = snapshot
+                    .threads
+                    .iter()
+                    .filter(|thread| thread.project_id == project.id)
+                    .map(|thread| ArchivedThread {
+                        environment: environment.clone(),
+                        id: thread.id.clone(),
+                        title: thread.title.clone(),
+                        archived_at: thread.archived_at.clone().unwrap_or_else(|| thread.created_at.clone()),
+                    })
+                    .collect();
+                if threads.is_empty() {
+                    continue;
+                }
+                threads.sort_by(|a, b| b.archived_at.cmp(&a.archived_at));
+                groups.push((project.title.clone(), threads));
+            }
+        }
+        let this = cx.entity();
+        let sections: Vec<AnyElement> = if groups.is_empty() {
+            let (title, description) = if self.loading {
+                (t!("Loading archived threads"), t!("Checking connected environments."))
+            } else if let Some(error) = &self.error {
+                (t!("Could not load archived threads"), error.clone())
+            } else {
+                (t!("No archived threads"), t!("Archived threads will appear here."))
+            };
+            vec![SettingsSection::new(setting_title("archive")).child(SettingsRow::new(title).description(description)).into_any_element()]
+        } else {
+            groups
+                .into_iter()
+                .map(|(title, threads)| {
+                    SettingsSection::new(title)
+                        .children(threads.into_iter().map(|thread| {
+                            let when = crate::timestamp_format::format_short_timestamp(&thread.archived_at, crate::hooks::settings_bridge::timestamp_format(cx));
+                            let description = if multiple {
+                                format!("{} · {}", environment_label(&thread.environment, cx), when)
+                            } else {
+                                when.to_string()
+                            };
+                            let menu_thread = thread.clone();
+                            let handle = this.clone();
+                            let busy = self.pending.contains(&thread.id);
+                            let menu = dropdown_menu(
+                                SharedString::from(format!("archived-{}", thread.id.as_str())),
+                                Button::new(SharedString::from(format!("archived-trigger-{}", thread.id.as_str())))
+                                    .variant(ButtonVariant::GhostMuted)
+                                    .size(ButtonSize::IconSm)
+                                    .icon(IconName::Ellipsis)
+                                    .disabled(busy),
+                                move |_, _| {
+                                    let (a, b) = (menu_thread.clone(), menu_thread.clone());
+                                    let (h1, h2) = (handle.clone(), handle.clone());
+                                    MenuPopup::new()
+                                        .item(MenuItem::new(t!("Unarchive")).icon(IconName::ArchiveX).on_select(move |_, cx| {
+                                            h1.update(cx, |this, cx| this.run(ArchiveAction::Unarchive, a.clone(), cx))
+                                        }))
+                                        .item(MenuItem::new(t!("Delete", context = "verb, deletes a thread")).icon(IconName::Trash2).destructive().on_select(move |_, cx| {
+                                            h2.update(cx, |this, cx| this.run(ArchiveAction::Delete, b.clone(), cx))
+                                        }))
+                                },
+                            );
+                            SettingsRow::new(thread.title.clone()).description(description).control(menu)
+                        }))
+                        .into_any_element()
+                })
+                .collect()
+        };
+        let confirm = self.confirm_delete.clone().map(|thread| {
+            let close = Rc::new(cx.listener(|this, _: &(), _, cx| {
+                this.confirm_delete = None;
+                cx.notify();
+            }));
+            let cancel = close.clone();
+            let delete = cx.listener(move |this, _: &gpui_kit::ClickEvent, _, cx| this.run(ArchiveAction::Delete, thread.clone(), cx));
+            Modal::dialog(
+                "archived-delete-dialog",
+                DialogSurface::new(t!("Delete {title}", title = self.confirm_delete.as_ref().map(|t| t.title.clone()).unwrap_or_default())).footer(
+                    div()
+                        .flex()
+                        .justify_end()
+                        .gap(gpui_kit::rems(0.5))
+                        .child(Button::new("archived-delete-cancel").variant(ButtonVariant::Ghost).label(t!("Cancel")).on_click(move |_, w, cx| cancel(&(), w, cx)))
+                        .child(Button::new("archived-delete-confirm").variant(ButtonVariant::Destructive).label(t!("Delete", context = "verb, deletes a thread")).on_click(delete)),
+                ),
+                move |w, cx: &mut App| close(&(), w, cx),
+            )
+        });
+        page_container(cx).children(sections).children(confirm)
     }
 }

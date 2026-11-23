@@ -125,6 +125,12 @@ impl SettingsRow {
         }
     }
 
+    /// Replaces the title, for a row titled differently from its catalog entry.
+    pub fn title(mut self, title: impl Into<SharedString>) -> Self {
+        self.title = title.into();
+        self
+    }
+
     /// The reset button beside the title, shown while the value is not its default.
     pub fn reset(mut self, reset: impl IntoElement) -> Self {
         self.reset = Some(reset.into_any_element());

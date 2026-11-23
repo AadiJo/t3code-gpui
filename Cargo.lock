@@ -7329,6 +7329,7 @@ dependencies = [
  "unicode-segmentation",
  "unicode-width",
  "url",
+ "uuid",
  "zip",
 ]
 
