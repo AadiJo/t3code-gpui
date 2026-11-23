@@ -7,7 +7,10 @@ use gpui_kit::{
     AnyView, AppContext as _, HeadlessAppContext, IntoElement, Render, WindowBounds, WindowOptions,
     component::TitleBar, px, size, test::TestWindowExt as _,
 };
-use t3code_web::scenes;
+use t3code_web::{
+    scenes,
+    theme_palette::{ThemeMode, ThemeSettings},
+};
 
 /// Wraps a scene so it can be the window's root view.
 struct SceneHost(AnyView);
@@ -33,7 +36,13 @@ fn main() -> anyhow::Result<()> {
         Arc::new(t3code_web::Assets),
         gpui_kit::platform::current_headless_renderer,
     );
-    cx.update(t3code_web::init);
+    cx.update(|cx| {
+        t3code_web::init(cx);
+        // The headless platform reports a light system appearance; pin the mode
+        // so a screenshot does not depend on it.
+        let mode = if name.ends_with("-light") { ThemeMode::Light } else { ThemeMode::Dark };
+        ThemeSettings::set_mode(mode, cx);
+    });
     let (handle, _host) = cx.update(|cx| {
         let options = WindowOptions {
             window_bounds: Some(WindowBounds::centered(None, size(px(width), px(height)), cx)),
