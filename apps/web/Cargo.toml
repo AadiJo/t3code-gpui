@@ -67,3 +67,8 @@ required-features = ["test-support"]
 [[example]]
 name = "server_settings_check"
 required-features = ["test-support"]
+
+# Decodes wire-fixtures.json into the server settings panels and renders them.
+[[example]]
+name = "server_settings_wire_check"
+required-features = ["test-support"]
