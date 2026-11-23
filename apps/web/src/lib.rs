@@ -4,6 +4,7 @@
 pub mod app_root;
 pub mod assets;
 pub mod components;
+pub mod markdown_pipeline;
 pub mod scenes;
 pub mod theme_palette;
 
