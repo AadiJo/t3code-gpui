@@ -30,7 +30,7 @@ use crate::thread_find_store::ThreadFindStore;
 use super::chat::{
     chat_header::chat_header,
     chat_style::{ChatColors, TEXT_SM, TEXT_XS, alpha},
-    messages_timeline::{MessagesTimeline, SM_BREAKPOINT, TIMELINE_GUTTER, TIMELINE_GUTTER_NARROW, TIMELINE_TOP_INSET, TimelineAction},
+    messages_timeline::{FindUpdated, MessagesTimeline, SM_BREAKPOINT, TIMELINE_GUTTER, TIMELINE_GUTTER_NARROW, TIMELINE_TOP_INSET, TimelineAction},
     pending_user_input_panel::pending_user_input_panel,
     thread_find_bar::{ThreadFindBar, ThreadFindBarEvent},
     timeline_entries::{PendingQuestion, TimelineInput},
@@ -111,6 +111,12 @@ impl ChatView {
         let timeline = cx.new(MessagesTimeline::new);
         cx.observe(&timeline, |_, _, cx| cx.notify()).detach();
         let actions = cx.subscribe(&timeline, |_, _, action: &TimelineAction, cx| cx.emit(ChatViewEvent::Timeline(action.clone())));
+        let counted = cx.subscribe(&timeline, |this, timeline, _: &FindUpdated, cx| {
+            let (count, counting) = (timeline.read(cx).find_count(), timeline.read(cx).find_counting());
+            if let Some((bar, _)) = &this.find_bar {
+                bar.update(cx, |bar, cx| bar.set_count(count.0, count.1, counting, cx));
+            }
+        });
         Self {
             timeline,
             project: SharedString::default(),
@@ -127,7 +133,7 @@ impl ChatView {
             questions: Arc::from([]),
             question: QuestionProgress::default(),
             advance: None,
-            _subscriptions: vec![actions],
+            _subscriptions: vec![actions, counted],
         }
     }
 
@@ -212,6 +218,7 @@ impl ChatView {
             return;
         }
         ThreadFindStore::open(cx, self.thread_key.clone());
+        self.timeline.update(cx, |timeline, cx| timeline.prepare_find(cx));
         let bar = match &self.find_bar {
             Some((bar, _)) => bar.clone(),
             None => {
@@ -242,7 +249,8 @@ impl ChatView {
             }
             ThreadFindBarEvent::Close => return self.close_find(window, cx),
         };
-        bar.update(cx, |bar, cx| bar.set_count(count.0, count.1, cx));
+        let counting = self.timeline.read(cx).find_counting();
+        bar.update(cx, |bar, cx| bar.set_count(count.0, count.1, counting, cx));
     }
 
     /// Closes find and puts focus back in the composer.

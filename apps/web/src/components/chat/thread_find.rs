@@ -95,7 +95,27 @@ pub struct FindIndex {
     rows: HashMap<SharedString, RowText>,
 }
 
+/// Rows folded off the main thread, merged in with [`FindIndex::merge`].
+pub struct PreparedRows(Vec<(SharedString, RowText)>);
+
 impl FindIndex {
+    /// Reads and folds every searchable row of `rows`. Pure, so it runs on a
+    /// background thread when find opens; the first keystroke then only scans.
+    pub fn prepare(rows: &[TimelineRow]) -> PreparedRows {
+        PreparedRows(
+            rows.iter()
+                .filter_map(|row| {
+                    let (source, flavor) = row_source(row)?;
+                    Some((row.id.clone(), RowText { source: source.clone(), segments: fold_segments(source, flavor) }))
+                })
+                .collect(),
+        )
+    }
+
+    pub fn merge(&mut self, prepared: PreparedRows) {
+        self.rows.extend(prepared.0);
+    }
+
     /// Every match of `query` in `rows`, in timeline order.
     pub fn search(&mut self, rows: &[TimelineRow], query: &str) -> Vec<FindMatch> {
         let query = fold(query);
@@ -115,12 +135,7 @@ impl FindIndex {
     fn row_text(&mut self, id: &SharedString, source: &SharedString, flavor: MarkdownFlavor) -> &RowText {
         let stale = self.rows.get(id).is_none_or(|cached| cached.source != *source);
         if stale {
-            let pieces = parse_message_blocks(source, flavor, false);
-            let mut segments = Vec::new();
-            for piece in &pieces {
-                visit_block_texts(piece, &mut |text| segments.push(fold(text)));
-            }
-            self.rows.insert(id.clone(), RowText { source: source.clone(), segments });
+            self.rows.insert(id.clone(), RowText { source: source.clone(), segments: fold_segments(source, flavor) });
         }
         &self.rows[id]
     }
@@ -129,6 +144,15 @@ impl FindIndex {
     pub fn clear(&mut self) {
         self.rows.clear();
     }
+}
+
+/// A message's searchable texts, folded, in render order.
+fn fold_segments(source: &str, flavor: MarkdownFlavor) -> Vec<String> {
+    let mut segments = Vec::new();
+    for piece in &parse_message_blocks(source, flavor, false) {
+        visit_block_texts(piece, &mut |text| segments.push(fold(text)));
+    }
+    segments
 }
 
 /// `n/total`, clamped (`formatThreadFindCount`).

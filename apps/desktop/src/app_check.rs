@@ -48,7 +48,7 @@ use t3code_web::components::chat::thread_details_items::{ThreadDetailsItem, Thre
 use t3code_web::components::chat::timeline_entries::{AttachmentKind, MessageRole};
 use t3code_web::components::files::file_preview_panel::FilesPanel;
 use t3code_web::diff_panel_store::{DiffPanelSelection, DiffPanelStore};
-use t3code_web::right_panel_store::RightPanelKind;
+use t3code_web::right_panel_store::{RightPanelKind, SingletonKind};
 use t3code_web::shortcuts::commands::{FocusNextWorkspaceArea, FocusPreviousWorkspaceArea};
 
 struct Run {
@@ -1053,10 +1053,17 @@ fn mount(r: &mut Run) -> anyhow::Result<()> {
     let bar = r.cx.update(|cx| chat.read(cx).find_bar().cloned());
     r.check("mod+f opens the find bar", bar.is_some(), "");
     r.type_text("cursor");
+    let counting = r.cx.update(|cx| timeline.read(cx).find_counting());
+    let label = r.cx.update(|cx| chat.read(cx).find_bar().map(|b| b.read(cx).label(cx)).unwrap_or_default());
+    r.wait(300);
     let (active, total) = r.cx.update(|cx| timeline.read(cx).find_count());
     let visible = r.cx.update(|cx| timeline.read(cx).viewport().visible);
     let outside = r.cx.update(|cx| timeline.read(cx).active_match()).is_some();
-    r.check("find counts matches in every row", total > 1 && outside, format!("{}/{total}, visible rows {visible:?}", active + 1));
+    r.check(
+        "find counts matches in every row",
+        total > 1 && outside,
+        format!("{}/{total}, visible rows {visible:?}; before the index landed: counting {counting}, label {label:?}", active + 1),
+    );
     r.shot("find")?;
     r.press("enter");
     let (next, _) = r.cx.update(|cx| timeline.read(cx).find_count());
@@ -1226,6 +1233,24 @@ fn bench(out: PathBuf) -> anyhow::Result<String> {
     });
     writeln!(log, "fixture timelines for 50 threads built in {:.0} ms (not part of the switch)\n", gen_start.elapsed().as_secs_f64() * 1000.)?;
 
+    // `T3_BENCH_PANEL=diff|files`: every bench thread shows that right-panel tab.
+    let panel = std::env::var("T3_BENCH_PANEL").ok().and_then(|p| match p.as_str() {
+        "diff" => Some(SingletonKind::Diff),
+        "files" => Some(SingletonKind::Files),
+        _ => None,
+    });
+    writeln!(log, "right panel: {}\n", panel.map_or("closed".to_string(), |k| format!("open on the {k:?} tab")))?;
+    if let Some(kind) = panel {
+        r.cx.update(|cx| {
+            let panels = root.read(cx).right_panels().clone();
+            panels.update(cx, |store, _| {
+                for key in &keys {
+                    store.open(&t3code_web::fixtures::scoped_key(key), kind);
+                }
+            });
+        });
+    }
+
     let mut cold_long = Vec::new();
     let mut cold_short = Vec::new();
     for (l, s) in long.iter().zip(&short) {
@@ -1306,6 +1331,70 @@ fn bench(out: PathBuf) -> anyhow::Result<String> {
         clicks.push(t);
     }
     log += &row("sidebar row click (cold, short)", &mut clicks);
+
+    // With the diff tab open, its patch loads after the frame that shows the
+    // thread; this is that later frame (load + draw).
+    if panel == Some(SingletonKind::Diff) {
+        let mut later = Vec::new();
+        for key in long.iter().chain(&short).take(20) {
+            switch(&mut r, key);
+            let start = Instant::now();
+            r.cx.advance_clock(Duration::from_millis(60));
+            r.cx.update_window(r.window, |_, w, cx| w.draw(cx).clear(cx)).ok();
+            later.push(start.elapsed().as_secs_f64() * 1000.);
+            r.cx.run_until_parked();
+        }
+        log += &row("diff tab: the frame after the switch (patch load + draw)", &mut later);
+    }
+
+    // In-thread find on a 3,000-row thread: each keystroke searches every row.
+    switch(&mut r, &long[1]);
+    let chat = r.cx.update(|cx| root.read(cx).thread_view().read(cx).chat().clone());
+    let timeline = r.cx.update(|cx| chat.read(cx).timeline().clone());
+    let opened = Instant::now();
+    r.cx.update_window(r.window, |_, w, cx| chat.update(cx, |chat, cx| chat.open_find(w, cx)))?;
+    r.frame();
+    let os = r.cx.update(|cx| cx.platform_info().os);
+    let mut find = Vec::new();
+    let mut counts = Vec::new();
+    for (i, c) in "persists the new".chars().enumerate() {
+        let source = if c == ' ' { "space".to_string() } else { c.to_string() };
+        let mut keystroke = Keystroke::parse_with_os(&source, os).context("keystroke")?;
+        keystroke.key_char = Some(c.to_string());
+        let t = timed(&mut r, |w, cx| {
+            w.dispatch_keystroke(keystroke, cx);
+        });
+        if i > 0 {
+            find.push(t);
+        } else {
+            let counting = r.cx.update(|cx| timeline.read(cx).find_counting());
+            writeln!(log, "\nfind: first keystroke {t:.2} ms (index still folding: {counting})")?;
+            let mut landed = None;
+            while landed.is_none() && opened.elapsed() < Duration::from_secs(5) {
+                std::thread::sleep(Duration::from_millis(1));
+                let start = Instant::now();
+                r.cx.run_until_parked();
+                if r.cx.update(|cx| !timeline.read(cx).find_counting()) {
+                    r.cx.update_window(r.window, |_, w, cx| w.draw(cx).clear(cx)).ok();
+                    landed = Some(start.elapsed().as_secs_f64() * 1000.);
+                }
+            }
+            writeln!(
+                log,
+                "find: index for every row ready {:.1} ms after opening (background thread); the frame it lands in (merge + search + draw) {:.2} ms",
+                opened.elapsed().as_secs_f64() * 1000.,
+                landed.unwrap_or(f64::NAN)
+            )?;
+        }
+        counts.push(r.cx.update(|cx| timeline.read(cx).find_count().1));
+    }
+    let rows = r.cx.update(|cx| timeline.read(cx).rows().len());
+    writeln!(log, "find: {rows} rows, matches per keystroke {counts:?}\n")?;
+    r.shot("bench-find")?;
+    log += "| find | n | p50 ms | p95 ms | max ms |\n|---|---|---|---|---|\n";
+    log += &row("keystroke to drawn frame with counts, 3,000-row thread", &mut find);
+    r.cx.update_window(r.window, |_, w, cx| chat.update(cx, |chat, cx| chat.close_find(w, cx)))?;
+    r.frame();
 
     // Typing with a 3,000-row thread on screen.
     switch(&mut r, &long[0]);

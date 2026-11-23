@@ -40,6 +40,7 @@ pub struct ThreadFindBar {
     active: usize,
     total: usize,
     last_query: SharedString,
+    counting: bool,
     _subscription: Subscription,
 }
 
@@ -59,7 +60,7 @@ impl ThreadFindBar {
             InputEvent::PressEnter { shift, .. } => cx.emit(ThreadFindBarEvent::Step(if *shift { -1 } else { 1 })),
             _ => {}
         });
-        Self { input, active: 0, total: 0, last_query: SharedString::default(), _subscription: subscription }
+        Self { input, active: 0, total: 0, last_query: SharedString::default(), counting: false, _subscription: subscription }
     }
 
     /// Focuses the field and selects its query, as each Mod+F does.
@@ -78,15 +79,20 @@ impl ThreadFindBar {
         self.input.read(cx).value().clone()
     }
 
-    pub fn set_count(&mut self, active: usize, total: usize, cx: &mut Context<Self>) {
-        if (self.active, self.total) != (active, total) {
-            (self.active, self.total) = (active, total);
+    /// The count to show; `counting` while the thread is still being read.
+    pub fn set_count(&mut self, active: usize, total: usize, counting: bool, cx: &mut Context<Self>) {
+        if (self.active, self.total, self.counting) != (active, total, counting) {
+            (self.active, self.total, self.counting) = (active, total, counting);
             cx.notify();
         }
     }
 
     pub fn label(&self, cx: &App) -> String {
-        if self.query(cx).trim().is_empty() { String::new() } else { format_count(self.active, self.total) }
+        match (self.query(cx).trim().is_empty(), self.counting) {
+            (true, _) => String::new(),
+            (false, true) => "1/…".to_owned(),
+            (false, false) => format_count(self.active, self.total),
+        }
     }
 }
 
@@ -95,8 +101,8 @@ impl Render for ThreadFindBar {
         let theme = cx.app_theme();
         let c = &theme.colors;
         let has_query = !self.query(cx).trim().is_empty();
-        let no_results = has_query && self.total == 0;
-        let nav_disabled = self.total == 0;
+        let no_results = has_query && self.total == 0 && !self.counting;
+        let nav_disabled = self.total == 0 || self.counting;
         let weak = cx.weak_entity();
         let button = |id: &'static str, icon: IconName, event: ThreadFindBarEvent, disabled: bool| {
             let weak = weak.clone();

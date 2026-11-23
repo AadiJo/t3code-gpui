@@ -152,6 +152,9 @@ pub struct MessagesTimeline {
     composer_inset: Pixels,
     /// Folded text of searchable rows, for in-thread find.
     find_index: FindIndex,
+    /// Folding every row for find, on a background thread.
+    find_preparing: Option<Task<()>>,
+    find_ready: bool,
     find: Option<TimelineFind>,
     /// The row being rendered, so its markdown can highlight its matches.
     pub(super) rendering_row: usize,
@@ -195,6 +198,8 @@ impl MessagesTimeline {
             row_cache_order: VecDeque::new(),
             composer_inset: px(0.),
             find_index: FindIndex::default(),
+            find_preparing: None,
+            find_ready: false,
             find: None,
             rendering_row: 0,
             now: Instant::now(),
@@ -214,6 +219,8 @@ impl MessagesTimeline {
         self.expanded_entries.clear();
         self.find = None;
         self.find_index.clear();
+        self.find_preparing = None;
+        self.find_ready = false;
         self.group_lists.clear();
         let cached = self.row_cache.remove(&key).filter(|cached| same_input(&cached.input, &input));
         self.input = input;
@@ -238,9 +245,48 @@ impl MessagesTimeline {
         cx.notify();
     }
 
+    /// Folds every row for find on a background thread (find opened). Until
+    /// it lands, a query counts as pending ("1/…"); then the search runs and
+    /// [`FindUpdated`] tells the find bar.
+    pub fn prepare_find(&mut self, cx: &mut Context<Self>) {
+        if self.find_preparing.is_some() {
+            return;
+        }
+        let rows = self.rows.clone();
+        let prepare = cx.background_spawn(async move { FindIndex::prepare(&rows) });
+        self.find_preparing = Some(cx.spawn(async move |this, cx| {
+            let prepared = prepare.await;
+            this.update(cx, |this, cx| {
+                this.find_index.merge(prepared);
+                // Keep the finished task's slot so the index is not prepared twice.
+                this.find_preparing = Some(Task::ready(()));
+                this.find_ready = true;
+                if let Some(query) = this.find.as_ref().map(|f| f.query.clone()) {
+                    this.set_find_query(&query, cx);
+                }
+                cx.emit(FindUpdated);
+            })
+            .ok();
+        }));
+    }
+
+    /// The open query still waits for the index.
+    pub fn find_counting(&self) -> bool {
+        self.find.is_some() && !self.find_ready
+    }
+
     /// Searches every row for `query` and shows the first match at or below
     /// the top of the viewport. Returns (active, total).
     pub fn set_find_query(&mut self, query: &str, cx: &mut Context<Self>) -> (usize, usize) {
+        if !self.find_ready && self.find_preparing.is_some() {
+            self.find = (!query.is_empty()).then(|| TimelineFind {
+                query: query.to_string().into(),
+                folded: super::thread_find::fold(query).into(),
+                matches: Arc::from([]),
+                active: 0,
+            });
+            return (0, 0);
+        }
         let matches: SharedMatches = self.find_index.search(&self.rows, query).into();
         let top = self.list.viewport().visible.start;
         let active = matches.iter().position(|m| m.row >= top).unwrap_or(0);
@@ -758,6 +804,12 @@ impl Render for MessagesTimeline {
 }
 
 impl gpui_kit::EventEmitter<TimelineAction> for MessagesTimeline {}
+
+/// The open find's count changed without a keystroke (the index finished).
+#[derive(Clone, Copy, Debug)]
+pub struct FindUpdated;
+
+impl gpui_kit::EventEmitter<FindUpdated> for MessagesTimeline {}
 
 /// Creates a timeline entity.
 pub fn messages_timeline(cx: &mut App) -> Entity<MessagesTimeline> {
