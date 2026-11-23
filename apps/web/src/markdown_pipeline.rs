@@ -58,6 +58,8 @@ pub struct List {
     pub items: Vec<ListItem>,
     /// Nesting depth, 0 for a top-level list; picks the marker style.
     pub depth: usize,
+    /// A loose list wraps item text in paragraphs, which keep their margins.
+    pub spread: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -247,6 +249,8 @@ impl Converter {
             Node::List(list) => Block::List(List {
                 start: list.ordered.then(|| list.start.unwrap_or(1)),
                 depth,
+                spread: list.spread
+                    || list.children.iter().any(|item| matches!(item, Node::ListItem(item) if item.spread)),
                 items: list
                     .children
                     .iter()
@@ -374,12 +378,12 @@ impl InlineBuilder {
                 return;
             }
             Node::InlineCode(code) => {
-                self.text.push_str(&code.value);
                 if looks_like_file_path(&code.value) {
-                    InlineStyle::FileLink(code.value.clone().into())
-                } else {
-                    InlineStyle::Code
+                    self.push_file_chip(code.value.trim(), None);
+                    return;
                 }
+                self.text.push_str(&code.value);
+                InlineStyle::Code
             }
             Node::InlineMath(math) => {
                 self.text.push_str(&math.value);
@@ -397,13 +401,15 @@ impl InlineBuilder {
                 n.children.iter().for_each(|c| self.push(c, flavor));
                 InlineStyle::Strikethrough
             }
+            Node::Link(link) if is_file_target(&link.url) => {
+                let label: String = link.children.iter().map(plain_text).collect();
+                let label = (label.trim() != link.url && !label.trim().is_empty()).then_some(label);
+                self.push_file_chip(&link.url, label.as_deref());
+                return;
+            }
             Node::Link(link) => {
                 link.children.iter().for_each(|c| self.push(c, flavor));
-                if is_file_target(&link.url) {
-                    InlineStyle::FileLink(link.url.clone().into())
-                } else {
-                    InlineStyle::Link(link.url.clone().into())
-                }
+                InlineStyle::Link(link.url.clone().into())
             }
             Node::LinkReference(n) => {
                 n.children.iter().for_each(|c| self.push(c, flavor));
@@ -444,21 +450,46 @@ impl InlineBuilder {
                 break;
             };
             self.text.push_str(&rest[..path.start]);
-            let start = self.text.len();
-            let target = &rest[path.clone()];
-            self.text.push_str(target);
-            self.spans.push(InlineSpan {
-                range: start..self.text.len(),
-                style: InlineStyle::FileLink(target.to_owned().into()),
-            });
+            self.push_file_chip(&rest[path.clone()], None);
             rest = &rest[path.end..];
         }
+    }
+
+    /// A file chip: an icon placeholder, then the label or the file's basename.
+    fn push_file_chip(&mut self, target: &str, label: Option<&str>) {
+        let start = self.text.len();
+        self.text.push_str(FILE_CHIP_PLACEHOLDER);
+        match label {
+            Some(label) => self.text.push_str(label),
+            None => self.text.push_str(file_display_name(target)),
+        }
+        self.spans.push(InlineSpan {
+            range: start..self.text.len(),
+            style: InlineStyle::FileLink(target.to_owned().into()),
+        });
     }
 
     fn finish(mut self) -> Inlines {
         // Nested styles push the inner span first; renderers want outer-first order.
         self.spans.sort_by_key(|span| (span.range.start, std::cmp::Reverse(span.range.end)));
         Inlines { text: self.text.into(), spans: self.spans }
+    }
+}
+
+/// Space the file icon is painted over: an em for the 1em icon, then a thin gap.
+pub const FILE_CHIP_PLACEHOLDER: &str = "\u{2003}\u{2009}";
+
+/// `src/app/main.rs:12` → `main.rs:12`.
+fn file_display_name(target: &str) -> &str {
+    let trimmed = target.trim_end_matches('/');
+    trimmed.rsplit('/').next().unwrap_or(trimmed)
+}
+
+fn plain_text(node: &Node) -> String {
+    match node {
+        Node::Text(t) => t.value.clone(),
+        Node::InlineCode(c) => c.value.clone(),
+        other => other.children().map(|c| c.iter().map(plain_text).collect()).unwrap_or_default(),
     }
 }
 

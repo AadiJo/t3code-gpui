@@ -23,6 +23,16 @@ pub struct TextBox {
     pub radius: Pixels,
 }
 
+/// An icon painted over a placeholder glyph, such as the file icon of a file chip.
+#[derive(Clone, Debug)]
+pub struct TextIcon {
+    /// Byte offset of the placeholder the icon covers.
+    pub index: usize,
+    pub path: SharedString,
+    pub size: Pixels,
+    pub color: Hsla,
+}
+
 /// Called with a link target when a link is clicked.
 pub type LinkHandler = Rc<dyn Fn(&SharedString, &mut Window, &mut App)>;
 
@@ -32,6 +42,7 @@ pub struct RichText {
     text: SharedString,
     styled: StyledText,
     boxes: Rc<[TextBox]>,
+    icons: Rc<[TextIcon]>,
     links: Rc<[(Range<usize>, SharedString)]>,
     on_link: Option<LinkHandler>,
     selection_color: Hsla,
@@ -45,6 +56,7 @@ impl RichText {
             styled: StyledText::new(text.clone()).with_runs(runs),
             text,
             boxes: Rc::from([]),
+            icons: Rc::from([]),
             links: Rc::from([]),
             on_link: None,
             selection_color: Hsla::transparent_black(),
@@ -53,6 +65,11 @@ impl RichText {
 
     pub fn boxes(mut self, boxes: impl Into<Rc<[TextBox]>>) -> Self {
         self.boxes = boxes.into();
+        self
+    }
+
+    pub fn icons(mut self, icons: impl Into<Rc<[TextIcon]>>) -> Self {
+        self.icons = icons.into();
         self
     }
 
@@ -160,6 +177,21 @@ impl Element for RichText {
             }
         }
         self.styled.paint(global_id, inspector_id, bounds, &mut (), &mut (), window, cx);
+        for text_icon in self.icons.iter() {
+            let Some(origin) = layout.position_for_index(text_icon.index) else {
+                continue;
+            };
+            let top = origin.y + (line_height - text_icon.size) / 2.;
+            let icon_bounds = Bounds::new(point(origin.x, top), gpui_kit::size(text_icon.size, text_icon.size));
+            let _ = window.paint_svg(
+                icon_bounds,
+                text_icon.path.clone(),
+                None,
+                gpui_kit::TransformationMatrix::unit(),
+                text_icon.color,
+                cx,
+            );
+        }
 
         if self.links.is_empty() {
             return;
