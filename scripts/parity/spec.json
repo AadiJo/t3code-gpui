@@ -295,11 +295,20 @@
      "exclude": "Check for updates: the native shell has its own updater, so the port leaves it out"
     },
     {
-     "name": "composer card sides",
+     "name": "composer left edge",
      "kind": "hscan",
      "at": [
       700,
       290,
+      312
+     ]
+    },
+    {
+     "name": "composer right edge",
+     "kind": "hscan",
+     "at": [
+      700,
+      1040,
       1070
      ]
     },
@@ -307,7 +316,7 @@
      "name": "composer card top/bottom",
      "kind": "vscan",
      "at": [
-      1046,
+      800,
       630,
       779
      ]
@@ -755,11 +764,20 @@
      "exclude": "Check for updates: the native shell has its own updater, so the port leaves it out"
     },
     {
-     "name": "composer card sides",
+     "name": "composer left edge",
      "kind": "hscan",
      "at": [
       700,
       290,
+      312
+     ]
+    },
+    {
+     "name": "composer right edge",
+     "kind": "hscan",
+     "at": [
+      700,
+      1040,
       1070
      ]
     },
@@ -767,7 +785,7 @@
      "name": "composer card top/bottom",
      "kind": "vscan",
      "at": [
-      1046,
+      800,
       630,
       779
      ]
@@ -1235,31 +1253,29 @@
      "exclude": "dev builds only; never on the owner's build"
     },
     {
-     "name": "menu",
-     "kind": "ink",
+     "name": "menu left edge",
+     "kind": "hscan",
      "at": [
+      300,
       120,
-      220,
-      340,
-      580
-     ],
-     "exclude": "width follows the missing Auto-settle item (a feature, not styling)"
+      145
+     ]
+    },
+    {
+     "name": "menu top edge",
+     "kind": "vscan",
+     "at": [
+      200,
+      215,
+      245
+     ]
     },
     {
      "name": "menu fill",
      "kind": "fill",
      "at": [
       300,
-      236
-     ]
-    },
-    {
-     "name": "menu left edge",
-     "kind": "hscan",
-     "at": [
-      300,
-      100,
-      160
+      290
      ]
     },
     {
@@ -1284,34 +1300,13 @@
      "text": true
     },
     {
-     "name": "item 2 icon",
-     "kind": "ink",
-     "at": [
-      136,
-      261,
-      158,
-      283
-     ]
-    },
-    {
-     "name": "menu rows",
+     "name": "menu row pitch",
      "kind": "vscan",
      "at": [
-      145,
+      136.5,
       225,
       300
      ]
-    },
-    {
-     "name": "delete icon",
-     "kind": "ink",
-     "at": [
-      136,
-      596,
-      158,
-      618
-     ],
-     "exclude": "row offset follows the missing Auto-settle item"
     }
    ]
   },
@@ -1824,11 +1819,20 @@
      "anchor": "worked-for anchor"
     },
     {
-     "name": "composer card sides",
+     "name": "composer left edge",
      "kind": "hscan",
      "at": [
       700,
       290,
+      312
+     ]
+    },
+    {
+     "name": "composer right edge",
+     "kind": "hscan",
+     "at": [
+      700,
+      1040,
       1070
      ]
     },
@@ -1836,7 +1840,7 @@
      "name": "composer card top/bottom",
      "kind": "vscan",
      "at": [
-      1046,
+      800,
       630,
       779
      ]
@@ -2038,6 +2042,7 @@
       1060,
       196
      ],
+     "text": true,
      "anchor": "worked-for anchor"
     },
     {
@@ -2049,6 +2054,7 @@
       1060,
       224
      ],
+     "text": true,
      "anchor": "worked-for anchor"
     },
     {
@@ -2060,6 +2066,7 @@
       1060,
       252
      ],
+     "text": true,
      "anchor": "worked-for anchor"
     },
     {
@@ -2083,6 +2090,7 @@
       1060,
       326
      ],
+     "text": true,
      "anchor": "worked-for anchor"
     },
     {
@@ -2201,11 +2209,20 @@
      "exclude": "dev builds only; never on the owner's build"
     },
     {
-     "name": "composer card sides",
+     "name": "composer left edge",
      "kind": "hscan",
      "at": [
       700,
       290,
+      312
+     ]
+    },
+    {
+     "name": "composer right edge",
+     "kind": "hscan",
+     "at": [
+      700,
+      1040,
       1070
      ]
     },
@@ -2213,7 +2230,7 @@
      "name": "composer card top/bottom",
      "kind": "vscan",
      "at": [
-      1046,
+      800,
       630,
       779
      ]
@@ -2426,11 +2443,20 @@
      "anchor": "bubble anchor"
     },
     {
-     "name": "composer card sides",
+     "name": "composer left edge",
      "kind": "hscan",
      "at": [
       700,
       290,
+      312
+     ]
+    },
+    {
+     "name": "composer right edge",
+     "kind": "hscan",
+     "at": [
+      700,
+      1040,
       1070
      ]
     },
@@ -2438,7 +2464,7 @@
      "name": "composer card top/bottom",
      "kind": "vscan",
      "at": [
-      1046,
+      800,
       630,
       779
      ]
@@ -2597,11 +2623,20 @@
      "exclude": "dev builds only; never on the owner's build"
     },
     {
-     "name": "composer card sides",
+     "name": "composer left edge",
      "kind": "hscan",
      "at": [
       700,
       290,
+      312
+     ]
+    },
+    {
+     "name": "composer right edge",
+     "kind": "hscan",
+     "at": [
+      700,
+      1040,
       1070
      ]
     },
@@ -2609,7 +2644,7 @@
      "name": "composer card top/bottom",
      "kind": "vscan",
      "at": [
-      1046,
+      800,
       630,
       779
      ]
@@ -2768,11 +2803,20 @@
      "exclude": "dev builds only; never on the owner's build"
     },
     {
-     "name": "composer card sides",
+     "name": "composer left edge",
      "kind": "hscan",
      "at": [
       700,
       290,
+      312
+     ]
+    },
+    {
+     "name": "composer right edge",
+     "kind": "hscan",
+     "at": [
+      700,
+      1040,
       1070
      ]
     },
@@ -2780,7 +2824,7 @@
      "name": "composer card top/bottom",
      "kind": "vscan",
      "at": [
-      1046,
+      800,
       630,
       779
      ]
@@ -2939,11 +2983,20 @@
      "exclude": "dev builds only; never on the owner's build"
     },
     {
-     "name": "composer card sides",
+     "name": "composer left edge",
      "kind": "hscan",
      "at": [
-      650,
+      700,
       290,
+      312
+     ]
+    },
+    {
+     "name": "composer right edge",
+     "kind": "hscan",
+     "at": [
+      700,
+      1040,
       1070
      ]
     },
@@ -2951,7 +3004,7 @@
      "name": "composer card top/bottom",
      "kind": "vscan",
      "at": [
-      1046,
+      800,
       560,
       779
      ]
@@ -3079,13 +3132,47 @@
      "exclude": "dev builds only; never on the owner's build"
     },
     {
-     "name": "picker popup",
-     "kind": "ink",
+     "name": "picker left edge",
+     "kind": "hscan",
      "at": [
+      600,
       440,
+      480
+     ]
+    },
+    {
+     "name": "picker right edge",
+     "kind": "hscan",
+     "at": [
+      600,
+      990,
+      1035
+     ]
+    },
+    {
+     "name": "picker top edge",
+     "kind": "vscan",
+     "at": [
+      700,
       330,
-      1000,
-      700
+      370
+     ]
+    },
+    {
+     "name": "picker bottom edge",
+     "kind": "vscan",
+     "at": [
+      700,
+      690,
+      735
+     ]
+    },
+    {
+     "name": "picker rail fill",
+     "kind": "fill",
+     "at": [
+      482,
+      640
      ]
     },
     {
@@ -3097,57 +3184,39 @@
      ]
     },
     {
-     "name": "picker rail fill",
-     "kind": "fill",
-     "at": [
-      470,
-      640
-     ]
-    },
-    {
      "name": "picker effort fill",
      "kind": "fill",
      "at": [
-      900,
+      920,
       600
      ]
     },
     {
-     "name": "search underline",
-     "kind": "hscan",
+     "name": "picker footer fill",
+     "kind": "fill",
      "at": [
-      384.5,
-      510,
-      820
+      600,
+      702
+     ]
+    },
+    {
+     "name": "search underline",
+     "kind": "vscan",
+     "at": [
+      600,
+      375,
+      395
      ]
     },
     {
      "name": "option pitch",
      "kind": "vscan",
      "at": [
-      540,
-      395,
+      520,
+      398,
       610
-     ]
-    },
-    {
-     "name": "option 1",
-     "kind": "ink",
-     "at": [
-      515,
-      400,
-      830,
-      432
      ],
-     "exclude": "fixture: the composer catalog is the Claude fixture (thread_route_view.rs), not Replay"
-    },
-    {
-     "name": "footer fill",
-     "kind": "fill",
-     "at": [
-      600,
-      690
-     ]
+     "exclude": "option rows hold fixture content (Claude catalog, not Replay)"
     }
    ]
   },
@@ -3253,20 +3322,29 @@
      "exclude": "dev builds only; never on the owner's build"
     },
     {
-     "name": "mention menu",
-     "kind": "ink",
+     "name": "mention menu top",
+     "kind": "vscan",
      "at": [
-      300,
-      380,
-      1060,
-      680
+      700,
+      460,
+      500
      ]
     },
     {
-     "name": "menu fill",
+     "name": "mention rows",
+     "kind": "vscan",
+     "at": [
+      340,
+      495,
+      650
+     ],
+     "exclude": "rows hold fixture files"
+    },
+    {
+     "name": "mention menu fill",
      "kind": "fill",
      "at": [
-      700,
+      1000,
       600
      ]
     }
@@ -3275,84 +3353,152 @@
   "command-palette": {
    "elements": [
     {
-     "name": "palette",
-     "kind": "ink",
+     "name": "palette left edge",
+     "kind": "hscan",
      "at": [
-      250,
-      60,
-      850,
-      520
+      300,
+      240,
+      290
      ]
+    },
+    {
+     "name": "palette right edge",
+     "kind": "hscan",
+     "at": [
+      300,
+      815,
+      860
+     ]
+    },
+    {
+     "name": "palette top edge",
+     "kind": "vscan",
+     "at": [
+      550,
+      60,
+      100
+     ]
+    },
+    {
+     "name": "palette bottom edge",
+     "kind": "vscan",
+     "at": [
+      550,
+      470,
+      520
+     ],
+     "exclude": "height follows the command list, which is registry content"
     },
     {
      "name": "palette fill",
      "kind": "fill",
      "at": [
-      550,
-      300
+      800,
+      420
      ]
     },
     {
-     "name": "search field",
+     "name": "highlighted item",
+     "kind": "fill",
+     "at": [
+      600,
+      178
+     ]
+    },
+    {
+     "name": "search placeholder",
      "kind": "ink",
      "at": [
       270,
-      70,
-      830,
-      120
-     ]
-    },
-    {
-     "name": "search divider",
-     "kind": "hscan",
-     "at": [
-      125,
-      260,
-      840
-     ]
+      80,
+      600,
+      115
+     ],
+     "text": true
     },
     {
      "name": "section label",
      "kind": "ink",
      "at": [
       270,
-      130,
+      135,
       400,
-      155
+      160
      ],
      "text": true
     },
     {
-     "name": "footer hints",
-     "kind": "ink",
+     "name": "item pitch",
+     "kind": "vscan",
      "at": [
-      270,
-      470,
-      830,
-      515
-     ],
-     "text": true
+      266,
+      158,
+      200
+     ]
+    },
+    {
+     "name": "backdrop over sidebar",
+     "kind": "fill",
+     "at": [
+      230,
+      300
+     ]
     }
    ]
   },
   "settings-environments": {
    "elements": [
     {
-     "name": "settings modal",
-     "kind": "ink",
+     "name": "modal left edge",
+     "kind": "hscan",
      "at": [
-      0,
-      0,
-      1100,
-      780
+      400,
+      20,
+      60
+     ]
+    },
+    {
+     "name": "modal right edge",
+     "kind": "hscan",
+     "at": [
+      400,
+      1040,
+      1080
+     ]
+    },
+    {
+     "name": "modal top edge",
+     "kind": "vscan",
+     "at": [
+      600,
+      20,
+      60
+     ]
+    },
+    {
+     "name": "modal bottom edge",
+     "kind": "vscan",
+     "at": [
+      600,
+      720,
+      760
+     ]
+    },
+    {
+     "name": "nav divider",
+     "kind": "hscan",
+     "at": [
+      600,
+      270,
+      292
      ]
     },
     {
      "name": "nav fill",
      "kind": "fill",
      "at": [
-      100,
-      400
+      150,
+      700
      ]
     },
     {
@@ -3360,19 +3506,27 @@
      "kind": "fill",
      "at": [
       700,
-      400
+      650
      ]
     },
     {
      "name": "breadcrumb",
      "kind": "ink",
      "at": [
-      240,
-      10,
-      600,
-      50
+      290,
+      45,
+      500,
+      75
      ],
      "text": true
+    },
+    {
+     "name": "backdrop",
+     "kind": "fill",
+     "at": [
+      1080,
+      400
+     ]
     }
    ]
   },
@@ -3478,41 +3632,63 @@
      "exclude": "dev builds only; never on the owner's build"
     },
     {
-     "name": "drawer border",
-     "kind": "hscan",
-     "at": [
-      456,
-      260,
-      1090
-     ]
-    },
-    {
-     "name": "terminal lines",
+     "name": "drawer top border",
      "kind": "vscan",
      "at": [
-      300,
-      455,
-      560
+      900,
+      485,
+      520
      ]
     },
     {
-     "name": "terminal text",
+     "name": "terminal line 1",
      "kind": "ink",
      "at": [
-      260,
-      460,
+      258,
+      503,
       700,
-      530
-     ]
+      522
+     ],
+     "text": true
+    },
+    {
+     "name": "terminal line 2",
+     "kind": "ink",
+     "at": [
+      258,
+      522,
+      700,
+      540
+     ],
+     "text": true
+    },
+    {
+     "name": "terminal line 3",
+     "kind": "ink",
+     "at": [
+      258,
+      540,
+      700,
+      558
+     ],
+     "text": true
     },
     {
      "name": "terminal toolbar",
      "kind": "ink",
      "at": [
-      905,
-      460,
+      1000,
+      505,
       1095,
-      490
+      535
+     ]
+    },
+    {
+     "name": "terminal fill",
+     "kind": "fill",
+     "at": [
+      900,
+      650
      ]
     }
    ]
@@ -3619,13 +3795,12 @@
      "exclude": "dev builds only; never on the owner's build"
     },
     {
-     "name": "right panel",
-     "kind": "ink",
+     "name": "panel left edge",
+     "kind": "hscan",
      "at": [
+      400,
       600,
-      52,
-      1100,
-      780
+      640
      ]
     },
     {
@@ -3633,7 +3808,17 @@
      "kind": "fill",
      "at": [
       900,
-      400
+      600
+     ]
+    },
+    {
+     "name": "panel header",
+     "kind": "ink",
+     "at": [
+      620,
+      52,
+      1100,
+      90
      ]
     }
    ]

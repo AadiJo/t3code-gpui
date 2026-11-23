@@ -84,12 +84,12 @@ pub fn tool_action(entry: &WorkLogEntry) -> ToolAction {
     }
 }
 
-/// Whether an entry is a tool call rather than a notice or thought (`workLogEntryIsToolLike`).
+/// Whether an entry reads as a tool call or a thought rather than a notice
+/// (`workLogEntryIsToolLike`: tone tool or thinking).
 pub fn is_tool_like(entry: &WorkLogEntry) -> bool {
     !matches!(
         entry.item,
-        WorkItem::Reasoning { .. }
-            | WorkItem::SystemNotice { .. }
+        WorkItem::SystemNotice { .. }
             | WorkItem::Notification { .. }
             | WorkItem::Error { .. }
             | WorkItem::Compaction { .. }

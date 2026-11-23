@@ -270,13 +270,18 @@
    "color": "#525152",
    "bg": "#181819"
   },
-  "composer card sides": {
+  "composer left edge": {
    "start": "#141415",
    "edges": [
     {
      "at": 304.0,
      "color": "#1b1b1b"
-    },
+    }
+   ]
+  },
+  "composer right edge": {
+   "start": "#1b1b1c",
+   "edges": [
     {
      "at": 1052.0,
      "color": "#141415"
@@ -287,11 +292,11 @@
    "start": "#141415",
    "edges": [
     {
-     "at": 653.0,
-     "color": "#1c1c1c"
+     "at": 649.0,
+     "color": "#1d1d1d"
     },
     {
-     "at": 756.5,
+     "at": 760.0,
      "color": "#141415"
     }
    ],
@@ -674,13 +679,18 @@
    "color": "#525152",
    "bg": "#181819"
   },
-  "composer card sides": {
+  "composer left edge": {
    "start": "#141415",
    "edges": [
     {
      "at": 304.0,
      "color": "#1b1b1b"
-    },
+    }
+   ]
+  },
+  "composer right edge": {
+   "start": "#1b1b1c",
+   "edges": [
     {
      "at": 1052.0,
      "color": "#141415"
@@ -691,11 +701,11 @@
    "start": "#141415",
    "edges": [
     {
-     "at": 653.0,
-     "color": "#1c1c1c"
+     "at": 649.0,
+     "color": "#1d1d1d"
     },
     {
-     "at": 756.5,
+     "at": 760.0,
      "color": "#141415"
     }
    ],
@@ -1091,19 +1101,8 @@
    "color": "#f5f5f5",
    "bg": "#212121"
   },
-  "menu": {
-   "top": 221.0,
-   "left": 120.0,
-   "bottom": 580.0,
-   "right": 340.0,
-   "color": "#f5f5f5",
-   "bg": "#181819"
-  },
-  "menu fill": {
-   "color": "#1a1a1b"
-  },
   "menu left edge": {
-   "start": "#181719",
+   "start": "#181818",
    "edges": [
     {
      "at": 127.0,
@@ -1120,24 +1119,29 @@
     {
      "at": 142.0,
      "color": "#202021"
-    },
-    {
-     "at": 146.0,
-     "color": "#8f8f8f"
-    },
-    {
-     "at": 148.0,
-     "color": "#202021"
-    },
-    {
-     "at": 153.5,
-     "color": "#4e4e4f"
-    },
-    {
-     "at": 155.0,
-     "color": "#202021"
     }
    ]
+  },
+  "menu top edge": {
+   "start": "#222224",
+   "edges": [
+    {
+     "at": 224.0,
+     "color": "#2a2a2c"
+    },
+    {
+     "at": 225.0,
+     "color": "#2a2a2c"
+    },
+    {
+     "at": 238.5,
+     "color": "#f5f5f5"
+    }
+   ],
+   "vertical": true
+  },
+  "menu fill": {
+   "color": "#1a1a1b"
   },
   "item 1 icon": {
    "top": 233.0,
@@ -1155,95 +1159,19 @@
    "color": "#f5f5f5",
    "bg": "#181819"
   },
-  "item 2 icon": {
-   "top": 263.5,
-   "left": 142.5,
-   "bottom": 278.5,
-   "right": 153.5,
-   "color": "#8f8f8f",
-   "bg": "#1b1b1d"
-  },
-  "menu rows": {
-   "start": "#2e2e2f",
+  "menu row pitch": {
+   "start": "#2e2e30",
    "edges": [
     {
-     "at": 236.0,
-     "color": "#434344"
+     "at": 240.5,
+     "color": "#272729"
     },
     {
-     "at": 237.5,
-     "color": "#28282a"
-    },
-    {
-     "at": 242.0,
-     "color": "#252527"
-    },
-    {
-     "at": 247.0,
-     "color": "#737374"
-    },
-    {
-     "at": 248.0,
-     "color": "#222223"
-    },
-    {
-     "at": 263.5,
-     "color": "#8f8f8f"
-    },
-    {
-     "at": 265.0,
-     "color": "#505052"
-    },
-    {
-     "at": 266.0,
-     "color": "#505052"
-    },
-    {
-     "at": 267.5,
-     "color": "#424243"
-    },
-    {
-     "at": 270.0,
-     "color": "#717172"
-    },
-    {
-     "at": 272.0,
-     "color": "#717172"
-    },
-    {
-     "at": 273.5,
-     "color": "#1b1b1d"
-    },
-    {
-     "at": 275.0,
-     "color": "#1b1b1d"
-    },
-    {
-     "at": 292.0,
-     "color": "#4d4d4f"
-    },
-    {
-     "at": 293.5,
-     "color": "#1e1e20"
-    },
-    {
-     "at": 298.5,
-     "color": "#323233"
-    },
-    {
-     "at": 299.5,
-     "color": "#1f1f21"
+     "at": 252.5,
+     "color": "#202022"
     }
    ],
    "vertical": true
-  },
-  "delete icon": {
-   "top": 598.5,
-   "left": 141.0,
-   "bottom": 613.5,
-   "right": 155.0,
-   "color": "#ff8681",
-   "bg": "#1a1a1b"
   }
  },
  "sidebar-inbox": {
@@ -1615,13 +1543,18 @@
   "code block fill": {
    "color": "#1a1a1b"
   },
-  "composer card sides": {
+  "composer left edge": {
    "start": "#141415",
    "edges": [
     {
      "at": 304.0,
      "color": "#202021"
-    },
+    }
+   ]
+  },
+  "composer right edge": {
+   "start": "#1b1b1c",
+   "edges": [
     {
      "at": 1052.0,
      "color": "#141415"
@@ -1632,11 +1565,27 @@
    "start": "#141415",
    "edges": [
     {
-     "at": 653.0,
-     "color": "#1c1c1c"
+     "at": 633.0,
+     "color": "#141415"
     },
     {
-     "at": 756.5,
+     "at": 634.0,
+     "color": "#141415"
+    },
+    {
+     "at": 649.0,
+     "color": "#222223"
+    },
+    {
+     "at": 731.0,
+     "color": "#252526"
+    },
+    {
+     "at": 753.5,
+     "color": "#1e1e1e"
+    },
+    {
+     "at": 760.0,
      "color": "#141415"
     }
    ],
@@ -1903,13 +1852,18 @@
    "color": "#f5f5f5",
    "bg": "#212121"
   },
-  "composer card sides": {
+  "composer left edge": {
    "start": "#141415",
    "edges": [
     {
      "at": 304.0,
      "color": "#1b1b1b"
-    },
+    }
+   ]
+  },
+  "composer right edge": {
+   "start": "#1b1b1c",
+   "edges": [
     {
      "at": 1052.0,
      "color": "#141415"
@@ -1920,11 +1874,11 @@
    "start": "#141415",
    "edges": [
     {
-     "at": 653.0,
-     "color": "#1c1c1c"
+     "at": 649.0,
+     "color": "#1d1d1d"
     },
     {
-     "at": 756.5,
+     "at": 760.0,
      "color": "#141415"
     }
    ],
@@ -2073,21 +2027,18 @@
    "color": "#8f8f8f",
    "bg": "#141415"
   },
-  "composer card sides": {
+  "composer left edge": {
    "start": "#141415",
    "edges": [
     {
      "at": 304.0,
      "color": "#1e1e1e"
-    },
-    {
-     "at": 337.5,
-     "color": "#242424"
-    },
-    {
-     "at": 468.0,
-     "color": "#1d1d1e"
-    },
+    }
+   ]
+  },
+  "composer right edge": {
+   "start": "#1b1b1c",
+   "edges": [
     {
      "at": 1052.0,
      "color": "#141415"
@@ -2098,12 +2049,20 @@
    "start": "#141415",
    "edges": [
     {
-     "at": 653.0,
-     "color": "#1c1c1c"
+     "at": 649.0,
+     "color": "#1d1d1d"
     },
     {
-     "at": 756.5,
+     "at": 760.0,
      "color": "#141415"
+    },
+    {
+     "at": 773.0,
+     "color": "#1a1a1b"
+    },
+    {
+     "at": 774.0,
+     "color": "#1a1a1b"
     }
    ],
    "vertical": true
@@ -2220,13 +2179,18 @@
    "color": "#f5f5f5",
    "bg": "#212121"
   },
-  "composer card sides": {
+  "composer left edge": {
    "start": "#141415",
    "edges": [
     {
      "at": 304.0,
      "color": "#1b1b1b"
-    },
+    }
+   ]
+  },
+  "composer right edge": {
+   "start": "#1b1b1c",
+   "edges": [
     {
      "at": 1052.0,
      "color": "#141415"
@@ -2237,11 +2201,11 @@
    "start": "#141415",
    "edges": [
     {
-     "at": 653.0,
-     "color": "#1c1c1c"
+     "at": 649.0,
+     "color": "#1d1d1d"
     },
     {
-     "at": 756.5,
+     "at": 760.0,
      "color": "#141415"
     }
    ],
@@ -2359,13 +2323,18 @@
    "color": "#f5f5f5",
    "bg": "#212121"
   },
-  "composer card sides": {
+  "composer left edge": {
    "start": "#141415",
    "edges": [
     {
      "at": 304.0,
      "color": "#1b1b1b"
-    },
+    }
+   ]
+  },
+  "composer right edge": {
+   "start": "#1b1b1c",
+   "edges": [
     {
      "at": 1052.0,
      "color": "#141415"
@@ -2376,11 +2345,11 @@
    "start": "#141415",
    "edges": [
     {
-     "at": 653.0,
-     "color": "#1c1c1c"
+     "at": 649.0,
+     "color": "#1d1d1d"
     },
     {
-     "at": 756.5,
+     "at": 760.0,
      "color": "#141415"
     }
    ],
@@ -2498,237 +2467,18 @@
    "color": "#f5f5f5",
    "bg": "#212121"
   },
-  "composer card sides": {
+  "composer left edge": {
    "start": "#141415",
    "edges": [
     {
      "at": 304.0,
      "color": "#1b1b1b"
-    },
-    {
-     "at": 322.0,
-     "color": "#565656"
-    },
-    {
-     "at": 323.5,
-     "color": "#1b1b1b"
-    },
-    {
-     "at": 331.5,
-     "color": "#f5f5f5"
-    },
-    {
-     "at": 333.5,
-     "color": "#f0f0f0"
-    },
-    {
-     "at": 336.0,
-     "color": "#1b1b1b"
-    },
-    {
-     "at": 339.5,
-     "color": "#f4f4f4"
-    },
-    {
-     "at": 341.5,
-     "color": "#eeeeee"
-    },
-    {
-     "at": 344.0,
-     "color": "#1b1b1b"
-    },
-    {
-     "at": 347.5,
-     "color": "#f4f4f4"
-    },
-    {
-     "at": 349.5,
-     "color": "#e8e8e8"
-    },
-    {
-     "at": 352.0,
-     "color": "#1b1b1b"
-    },
-    {
-     "at": 355.0,
-     "color": "#f5f5f5"
-    },
-    {
-     "at": 358.0,
-     "color": "#f5f5f5"
-    },
-    {
-     "at": 360.5,
-     "color": "#1b1b1b"
-    },
-    {
-     "at": 363.5,
-     "color": "#f5f5f5"
-    },
-    {
-     "at": 365.5,
-     "color": "#f2f2f2"
-    },
-    {
-     "at": 367.5,
-     "color": "#1b1b1b"
-    },
-    {
-     "at": 369.5,
-     "color": "#1b1b1b"
-    },
-    {
-     "at": 376.0,
-     "color": "#adadad"
-    },
-    {
-     "at": 379.0,
-     "color": "#9c9c9c"
-    },
-    {
-     "at": 382.0,
-     "color": "#f5f5f5"
-    },
-    {
-     "at": 385.0,
-     "color": "#f5f5f5"
-    },
-    {
-     "at": 387.5,
-     "color": "#1b1b1b"
-    },
-    {
-     "at": 390.5,
-     "color": "#f5f5f5"
-    },
-    {
-     "at": 392.5,
-     "color": "#f0f0f0"
-    },
-    {
-     "at": 395.0,
-     "color": "#1b1b1b"
-    },
-    {
-     "at": 401.5,
-     "color": "#2e2e2e"
-    },
-    {
-     "at": 403.0,
-     "color": "#1b1b1b"
-    },
-    {
-     "at": 405.5,
-     "color": "#f5f5f5"
-    },
-    {
-     "at": 407.5,
-     "color": "#1b1b1b"
-    },
-    {
-     "at": 410.0,
-     "color": "#d8d8d8"
-    },
-    {
-     "at": 411.5,
-     "color": "#adadad"
-    },
-    {
-     "at": 413.0,
-     "color": "#c8c8c8"
-    },
-    {
-     "at": 417.5,
-     "color": "#c6c6c6"
-    },
-    {
-     "at": 419.0,
-     "color": "#aeaeae"
-    },
-    {
-     "at": 421.0,
-     "color": "#f5f5f5"
-    },
-    {
-     "at": 424.0,
-     "color": "#f5f5f5"
-    },
-    {
-     "at": 426.5,
-     "color": "#1b1b1b"
-    },
-    {
-     "at": 432.0,
-     "color": "#282828"
-    },
-    {
-     "at": 436.5,
-     "color": "#9a9a9a"
-    },
-    {
-     "at": 439.5,
-     "color": "#282828"
-    },
-    {
-     "at": 443.0,
-     "color": "#282828"
-    },
-    {
-     "at": 452.5,
-     "color": "#282828"
-    },
-    {
-     "at": 457.5,
-     "color": "#9a9a9a"
-    },
-    {
-     "at": 460.5,
-     "color": "#282828"
-    },
-    {
-     "at": 464.5,
-     "color": "#969696"
-    },
-    {
-     "at": 465.5,
-     "color": "#282828"
-    },
-    {
-     "at": 472.5,
-     "color": "#282828"
-    },
-    {
-     "at": 487.5,
-     "color": "#9b9b9b"
-    },
-    {
-     "at": 490.0,
-     "color": "#282828"
-    },
-    {
-     "at": 494.0,
-     "color": "#acacac"
-    },
-    {
-     "at": 496.0,
-     "color": "#282828"
-    },
-    {
-     "at": 501.0,
-     "color": "#c8c8c8"
-    },
-    {
-     "at": 504.0,
-     "color": "#282828"
-    },
-    {
-     "at": 508.0,
-     "color": "#282828"
-    },
-    {
-     "at": 516.0,
-     "color": "#1b1b1b"
-    },
+    }
+   ]
+  },
+  "composer right edge": {
+   "start": "#1b1b1c",
+   "edges": [
     {
      "at": 1052.0,
      "color": "#141415"
@@ -2739,11 +2489,11 @@
    "start": "#141415",
    "edges": [
     {
-     "at": 605.0,
-     "color": "#1c1c1c"
+     "at": 601.0,
+     "color": "#1d1d1d"
     },
     {
-     "at": 756.5,
+     "at": 760.0,
      "color": "#141415"
     }
    ],
@@ -2837,159 +2587,98 @@
    "color": "#f5f5f5",
    "bg": "#212121"
   },
-  "picker popup": {
-   "top": 348.0,
-   "left": 440.0,
-   "bottom": 698.5,
-   "right": 1000.0,
-   "color": "#5a9bff",
-   "bg": "#1c1c1c"
-  },
-  "picker list fill": {
-   "color": "#1c1c1c"
-  },
-  "picker rail fill": {
-   "color": "#1b1b1c"
-  },
-  "picker effort fill": {
-   "color": "#1b1b1b"
-  },
-  "search underline": {
-   "start": "#1d1d1d",
-   "edges": []
-  },
-  "option pitch": {
-   "start": "#1c1c1c",
+  "picker left edge": {
+   "start": "#131314",
    "edges": [
     {
-     "at": 415.5,
-     "color": "#212121"
-    },
-    {
-     "at": 420.5,
-     "color": "#2d2d2d"
-    },
-    {
-     "at": 422.0,
-     "color": "#212121"
-    },
-    {
-     "at": 424.5,
-     "color": "#1f1f1f"
-    },
-    {
-     "at": 449.5,
-     "color": "#212121"
-    },
-    {
-     "at": 454.5,
-     "color": "#2d2d2d"
-    },
-    {
-     "at": 456.0,
-     "color": "#212121"
-    },
-    {
-     "at": 458.5,
-     "color": "#1f1f1f"
-    },
-    {
-     "at": 461.5,
+     "at": 460.0,
      "color": "#1a1a1b"
     },
     {
-     "at": 483.5,
-     "color": "#212121"
+     "at": 461.0,
+     "color": "#1a1a1b"
+    }
+   ]
+  },
+  "picker right edge": {
+   "start": "#1b1b1c",
+   "edges": [
+    {
+     "at": 1013.0,
+     "color": "#101011"
     },
     {
-     "at": 488.5,
-     "color": "#2d2d2d"
+     "at": 1014.0,
+     "color": "#101011"
+    }
+   ]
+  },
+  "picker top edge": {
+   "start": "#131314",
+   "edges": [
+    {
+     "at": 343.0,
+     "color": "#131314"
     },
     {
-     "at": 490.0,
-     "color": "#212121"
+     "at": 344.0,
+     "color": "#131314"
     },
     {
-     "at": 492.5,
-     "color": "#1f1f1f"
-    },
-    {
-     "at": 495.5,
+     "at": 348.0,
      "color": "#1b1b1b"
     },
     {
-     "at": 517.5,
-     "color": "#212121"
-    },
-    {
-     "at": 522.5,
-     "color": "#2d2d2d"
-    },
-    {
-     "at": 524.0,
-     "color": "#212121"
-    },
-    {
-     "at": 526.5,
-     "color": "#1f1f1f"
-    },
-    {
-     "at": 529.5,
-     "color": "#1b1b1c"
-    },
-    {
-     "at": 551.5,
-     "color": "#212121"
-    },
-    {
-     "at": 556.5,
-     "color": "#2d2d2d"
-    },
-    {
-     "at": 558.0,
-     "color": "#212121"
-    },
-    {
-     "at": 560.5,
-     "color": "#1f1f1f"
-    },
-    {
-     "at": 563.5,
+     "at": 349.0,
      "color": "#1b1b1b"
-    },
-    {
-     "at": 585.5,
-     "color": "#212121"
-    },
-    {
-     "at": 590.5,
-     "color": "#2d2d2d"
-    },
-    {
-     "at": 592.0,
-     "color": "#212121"
-    },
-    {
-     "at": 594.5,
-     "color": "#1f1f1f"
-    },
-    {
-     "at": 597.5,
-     "color": "#1a1a1a"
     }
    ],
    "vertical": true
   },
-  "option 1": {
-   "top": 412.5,
-   "left": 526.0,
-   "bottom": 425.0,
-   "right": 796.0,
-   "color": "#ffffff",
-   "bg": "#1c1c1c"
+  "picker bottom edge": {
+   "start": "#1d1d1d",
+   "edges": [
+    {
+     "at": 714.0,
+     "color": "#101010"
+    },
+    {
+     "at": 715.0,
+     "color": "#101010"
+    }
+   ],
+   "vertical": true
   },
-  "footer fill": {
-   "color": "#1e1e1e"
+  "picker rail fill": {
+   "color": "#1b1b1c"
+  },
+  "picker list fill": {
+   "color": "#1c1c1c"
+  },
+  "picker effort fill": {
+   "color": "#1b1b1b"
+  },
+  "picker footer fill": {
+   "color": "#1d1d1d"
+  },
+  "search underline": {
+   "start": "#1b1b1b",
+   "edges": [
+    {
+     "at": 390.0,
+     "color": "#1b1b1c"
+    },
+    {
+     "at": 391.0,
+     "color": "#1b1b1c"
+    }
+   ],
+   "vertical": true
+  },
+  "option pitch": {
+   "start": "#1c1c1c",
+   "edges": [],
+   "vertical": true
   }
  },
  "composer-mention": {
@@ -3068,40 +2757,37 @@
    "color": "#f5f5f5",
    "bg": "#212121"
   },
-  "mention menu": {
-   "top": 392.5,
-   "left": 314.0,
-   "bottom": 680.0,
-   "right": 1039.5,
-   "color": "#ffffff",
-   "bg": "#141415"
+  "mention menu top": {
+   "start": "#141415",
+   "edges": [
+    {
+     "at": 493.0,
+     "color": "#1e1e1e"
+    }
+   ],
+   "vertical": true
   },
-  "menu fill": {
+  "mention rows": {
+   "start": "#262627",
+   "edges": [
+    {
+     "at": 543.0,
+     "color": "#202020"
+    },
+    {
+     "at": 643.0,
+     "color": "#191919"
+    }
+   ],
+   "vertical": true
+  },
+  "mention menu fill": {
    "color": "#1b1b1b"
   }
  },
  "command-palette": {
-  "palette": {
-   "top": 96.5,
-   "left": 279.0,
-   "bottom": 485.0,
-   "right": 819.5,
-   "color": "#f5f5f5",
-   "bg": "#141414"
-  },
-  "palette fill": {
-   "color": "#141414"
-  },
-  "search field": {
-   "top": 96.5,
-   "left": 282.5,
-   "bottom": 111.0,
-   "right": 585.0,
-   "color": "#727272",
-   "bg": "#141414"
-  },
-  "search divider": {
-   "start": "#111111",
+  "palette left edge": {
+   "start": "#121213",
    "edges": [
     {
      "at": 262.0,
@@ -3110,16 +2796,67 @@
     {
      "at": 263.0,
      "color": "#141414"
-    },
+    }
+   ]
+  },
+  "palette right edge": {
+   "start": "#151515",
+   "edges": [
     {
      "at": 837.0,
-     "color": "#121212"
+     "color": "#0e0e0e"
     },
     {
      "at": 838.0,
-     "color": "#121212"
+     "color": "#0e0e0e"
     }
    ]
+  },
+  "palette top edge": {
+   "start": "#131314",
+   "edges": [
+    {
+     "at": 78.0,
+     "color": "#1f1e1f"
+    },
+    {
+     "at": 79.0,
+     "color": "#161517"
+    },
+    {
+     "at": 80.0,
+     "color": "#161517"
+    }
+   ],
+   "vertical": true
+  },
+  "palette bottom edge": {
+   "start": "#191919",
+   "edges": [
+    {
+     "at": 497.0,
+     "color": "#0b0b0b"
+    },
+    {
+     "at": 498.0,
+     "color": "#0b0b0b"
+    }
+   ],
+   "vertical": true
+  },
+  "palette fill": {
+   "color": "#141414"
+  },
+  "highlighted item": {
+   "color": "#28282b"
+  },
+  "search placeholder": {
+   "top": 96.5,
+   "left": 282.5,
+   "bottom": 111.0,
+   "right": 585.0,
+   "color": "#727272",
+   "bg": "#171617"
   },
   "section label": {
    "top": 144.0,
@@ -3127,35 +2864,101 @@
    "bottom": 153.5,
    "right": 322.0,
    "color": "#8f8f8f",
-   "bg": "#161516"
+   "bg": "#141414"
   },
-  "footer hints": {
-   "top": 471.0,
-   "left": 285.0,
-   "bottom": 485.0,
-   "right": 565.5,
-   "color": "#f5f5f5",
-   "bg": "#191919"
+  "item pitch": {
+   "start": "#141414",
+   "edges": [],
+   "vertical": true
+  },
+  "backdrop over sidebar": {
+   "color": "#131314"
   }
  },
  "settings-environments": {
-  "settings modal": {
-   "top": 58.5,
-   "left": 22.0,
-   "bottom": 717.0,
-   "right": 1041.5,
-   "color": "#f5f5f5",
-   "bg": "#141415"
+  "modal left edge": {
+   "start": "#1b1b1b",
+   "edges": [
+    {
+     "at": 40.0,
+     "color": "#141415"
+    },
+    {
+     "at": 41.0,
+     "color": "#141415"
+    }
+   ]
+  },
+  "modal right edge": {
+   "start": "#141415",
+   "edges": [
+    {
+     "at": 1059.0,
+     "color": "#121213"
+    },
+    {
+     "at": 1060.0,
+     "color": "#121213"
+    }
+   ]
+  },
+  "modal top edge": {
+   "start": "#151516",
+   "edges": [
+    {
+     "at": 40.0,
+     "color": "#141415"
+    },
+    {
+     "at": 41.0,
+     "color": "#141415"
+    }
+   ],
+   "vertical": true
+  },
+  "modal bottom edge": {
+   "start": "#141415",
+   "edges": [
+    {
+     "at": 739.0,
+     "color": "#0f0f10"
+    },
+    {
+     "at": 740.0,
+     "color": "#0f0f10"
+    }
+   ],
+   "vertical": true
+  },
+  "nav divider": {
+   "start": "#141415",
+   "edges": [
+    {
+     "at": 280.0,
+     "color": "#141415"
+    },
+    {
+     "at": 281.0,
+     "color": "#141415"
+    }
+   ]
   },
   "nav fill": {
    "color": "#141415"
   },
   "content fill": {
-   "color": "#191919"
+   "color": "#141415"
   },
   "breadcrumb": {
-   "empty": true,
+   "top": 59.0,
+   "left": 301.5,
+   "bottom": 73.0,
+   "right": 475.0,
+   "color": "#f5f5f5",
    "bg": "#141415"
+  },
+  "backdrop": {
+   "color": "#141415"
   }
  },
  "terminal-drawer": {
@@ -3234,204 +3037,7 @@
    "color": "#f5f5f5",
    "bg": "#212121"
   },
-  "drawer border": {
-   "start": "#141415",
-   "edges": [
-    {
-     "at": 304.0,
-     "color": "#1b1b1c"
-    },
-    {
-     "at": 325.5,
-     "color": "#424243"
-    },
-    {
-     "at": 328.0,
-     "color": "#707071"
-    },
-    {
-     "at": 330.5,
-     "color": "#4c4c4d"
-    },
-    {
-     "at": 332.0,
-     "color": "#8c8c8c"
-    },
-    {
-     "at": 333.5,
-     "color": "#1b1b1c"
-    },
-    {
-     "at": 916.0,
-     "color": "#262627"
-    },
-    {
-     "at": 917.0,
-     "color": "#212121"
-    },
-    {
-     "at": 919.5,
-     "color": "#4b4b4b"
-    },
-    {
-     "at": 922.0,
-     "color": "#212121"
-    },
-    {
-     "at": 924.5,
-     "color": "#4b4b4b"
-    },
-    {
-     "at": 927.0,
-     "color": "#212121"
-    },
-    {
-     "at": 931.0,
-     "color": "#1a1a1b"
-    },
-    {
-     "at": 932.0,
-     "color": "#1a1a1b"
-    },
-    {
-     "at": 936.5,
-     "color": "#838383"
-    },
-    {
-     "at": 938.5,
-     "color": "#1b1b1c"
-    },
-    {
-     "at": 942.0,
-     "color": "#c9c9c9"
-    },
-    {
-     "at": 944.0,
-     "color": "#c6c6c7"
-    },
-    {
-     "at": 946.0,
-     "color": "#c6c6c7"
-    },
-    {
-     "at": 947.5,
-     "color": "#1b1b1c"
-    },
-    {
-     "at": 950.5,
-     "color": "#afafaf"
-    },
-    {
-     "at": 952.0,
-     "color": "#a6a6a7"
-    },
-    {
-     "at": 954.0,
-     "color": "#a4a4a4"
-    },
-    {
-     "at": 955.5,
-     "color": "#1f1f20"
-    },
-    {
-     "at": 958.5,
-     "color": "#959596"
-    },
-    {
-     "at": 960.0,
-     "color": "#1b1b1c"
-    },
-    {
-     "at": 963.0,
-     "color": "#484849"
-    },
-    {
-     "at": 967.5,
-     "color": "#c9c9c9"
-    },
-    {
-     "at": 969.0,
-     "color": "#1b1b1c"
-    },
-    {
-     "at": 974.0,
-     "color": "#a4a4a4"
-    },
-    {
-     "at": 975.5,
-     "color": "#1d1d1e"
-    },
-    {
-     "at": 978.5,
-     "color": "#a9a9a9"
-    },
-    {
-     "at": 980.0,
-     "color": "#a9a9a9"
-    },
-    {
-     "at": 981.5,
-     "color": "#4d4d4e"
-    },
-    {
-     "at": 983.0,
-     "color": "#1b1b1c"
-    },
-    {
-     "at": 986.0,
-     "color": "#b7b7b7"
-    },
-    {
-     "at": 987.5,
-     "color": "#747474"
-    },
-    {
-     "at": 989.5,
-     "color": "#979798"
-    },
-    {
-     "at": 991.0,
-     "color": "#1b1b1c"
-    },
-    {
-     "at": 994.0,
-     "color": "#919191"
-    },
-    {
-     "at": 995.5,
-     "color": "#1b1b1c"
-    },
-    {
-     "at": 998.0,
-     "color": "#656566"
-    },
-    {
-     "at": 999.5,
-     "color": "#1b1b1c"
-    },
-    {
-     "at": 1002.5,
-     "color": "#919191"
-    },
-    {
-     "at": 1004.0,
-     "color": "#1b1b1c"
-    },
-    {
-     "at": 1021.0,
-     "color": "#252525"
-    },
-    {
-     "at": 1022.5,
-     "color": "#1b1b1b"
-    },
-    {
-     "at": 1052.0,
-     "color": "#141415"
-    }
-   ]
-  },
-  "terminal lines": {
+  "drawer top border": {
    "start": "#141415",
    "edges": [
     {
@@ -3441,49 +3047,44 @@
     {
      "at": 501.0,
      "color": "#141415"
-    },
-    {
-     "at": 510.5,
-     "color": "#141415"
-    },
-    {
-     "at": 516.0,
-     "color": "#141415"
-    },
-    {
-     "at": 528.5,
-     "color": "#141415"
-    },
-    {
-     "at": 534.0,
-     "color": "#141415"
-    },
-    {
-     "at": 546.5,
-     "color": "#141415"
-    },
-    {
-     "at": 552.0,
-     "color": "#141415"
     }
    ],
    "vertical": true
   },
-  "terminal text": {
-   "top": 460.0,
-   "left": 262.0,
-   "bottom": 530.0,
-   "right": 366.0,
+  "terminal line 1": {
+   "top": 508.0,
+   "left": 267.5,
+   "bottom": 518.5,
+   "right": 359.5,
    "color": "#e6f5f5",
    "bg": "#141415"
   },
-  "terminal toolbar": {
-   "top": 460.0,
-   "left": 917.0,
-   "bottom": 463.0,
-   "right": 931.0,
-   "color": "#333334",
+  "terminal line 2": {
+   "top": 526.0,
+   "left": 262.0,
+   "bottom": 538.0,
+   "right": 366.5,
+   "color": "#e6f5f5",
    "bg": "#141415"
+  },
+  "terminal line 3": {
+   "top": 544.0,
+   "left": 260.0,
+   "bottom": 556.0,
+   "right": 381.0,
+   "color": "#f5f5e0",
+   "bg": "#141415"
+  },
+  "terminal toolbar": {
+   "top": 514.5,
+   "left": 1009.0,
+   "bottom": 526.5,
+   "right": 1086.0,
+   "color": "#f3f3f3",
+   "bg": "#141415"
+  },
+  "terminal fill": {
+   "color": "#141415"
   }
  },
  "right-panel-diff": {
@@ -3562,16 +3163,29 @@
    "color": "#f5f5f5",
    "bg": "#212121"
   },
-  "right panel": {
-   "top": 54.0,
-   "left": 630.5,
-   "bottom": 148.0,
-   "right": 1087.5,
-   "color": "#ff6467",
-   "bg": "#141415"
+  "panel left edge": {
+   "start": "#141415",
+   "edges": [
+    {
+     "at": 616.0,
+     "color": "#141415"
+    },
+    {
+     "at": 617.0,
+     "color": "#141415"
+    }
+   ]
   },
   "panel fill": {
    "color": "#141415"
+  },
+  "panel header": {
+   "top": 54.0,
+   "left": 633.5,
+   "bottom": 78.0,
+   "right": 1084.0,
+   "color": "#ff6467",
+   "bg": "#141415"
   }
  },
  "window-thread-light": {

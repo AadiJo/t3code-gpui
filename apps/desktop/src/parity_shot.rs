@@ -77,7 +77,7 @@ const SCENES: &[Scene] = &[
         light: false,
         // The port's turn sits 39px lower than the fork's: its first prompt is a
         // bubble, not the fork's one-line Agent pill.
-        steps: &[Step::Wheel(700., 400., 20_000.), Step::Click(340., 181.), Step::Move(700., 400.)],
+        steps: &[Step::Wheel(700., 400., 20_000.), Step::Click(340., 181.)],
     },
     Scene { name: "timeline-bottom", reference: "timeline-bottom", light: false, steps: &[] },
     Scene { name: "timeline-user-message", reference: "timeline-user-message", light: false, steps: &[Step::Wheel(700., 400., 600.)] },
