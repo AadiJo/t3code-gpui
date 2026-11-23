@@ -730,6 +730,45 @@ fn run_bench(check: &mut Check) -> anyhow::Result<()> {
     timeline_input(&mut mapper, &wide, &[]);
     check.note(format!("remap of the same 3,000 rows with the memo: {:.2} ms ({} mapped)", ms(started.elapsed()), mapper.last_mapped));
 
+    // The mapping of three real threads, for comparison with the TypeScript.
+    let mut dump = Vec::new();
+    for thread in [&state.long_thread, &state.approval_thread, &state.queue_thread] {
+        let Some(cached) = cache.load_thread(&environment_id, &ThreadId::new(thread.as_str())) else { continue };
+        let input = timeline_input(&mut TimelineMapper::default(), &cached.projection, &[]);
+        let entries: Vec<serde_json::Value> = input
+            .entries
+            .iter()
+            .map(|entry| {
+                use t3code_web::components::chat::timeline_entries::{EntryKind, ToolStatus};
+                let (kind, label, status) = match &entry.kind {
+                    EntryKind::Message(m) => ("message", m.text.to_string(), None),
+                    EntryKind::Work(w) => (
+                        "work",
+                        w.label.to_string(),
+                        Some(match w.status {
+                            ToolStatus::InProgress => "inProgress",
+                            ToolStatus::Completed => "completed",
+                            ToolStatus::Failed => "failed",
+                            ToolStatus::Declined => "declined",
+                            ToolStatus::Stopped => "stopped",
+                        }),
+                    ),
+                    EntryKind::ProposedPlan(_) => ("proposed-plan", String::new(), None),
+                    EntryKind::Event(_) => ("event", String::new(), None),
+                    EntryKind::SentMessage { text, .. } => ("sent-message", text.to_string(), None),
+                    EntryKind::HtmlRender { .. } => ("html-render", String::new(), None),
+                    EntryKind::McpApp { .. } => ("mcp-app", String::new(), None),
+                };
+                serde_json::json!({ "id": entry.id.0.as_ref(), "kind": kind, "label": label, "status": status })
+            })
+            .collect();
+        let projection_path = check.out.join(format!("projection-{thread}.json"));
+        std::fs::write(&projection_path, serde_json::to_vec(&*cached.projection)?)?;
+        dump.push(serde_json::json!({ "thread": thread, "projection": projection_path, "entries": entries }));
+    }
+    std::fs::write(check.out.join("rust-timeline.json"), serde_json::to_vec_pretty(&dump)?)?;
+    check.note(format!("wrote rust-timeline.json for {} threads", dump.len()));
+
     // The data dir holds a 5,000-row shell and 20 thread caches (written before start), and
     // the server is stopped, so both come from the disk cache.
     check.pump(|c| c.sidebar_threads() >= 5_000, Duration::from_secs(10), "5,000 rows in the sidebar")?;

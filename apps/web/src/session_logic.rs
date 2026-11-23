@@ -568,6 +568,11 @@ fn map_row(row: &VisibleTurnItem, superseded_attempt: Option<AttemptId>, folded_
         })),
         _ => EntryKind::Work(work_entry(item, created_at, superseded_attempt)),
     };
+    // A message entry is keyed by its message id, as in the TypeScript.
+    let id = match &kind {
+        EntryKind::Message(message) => EntryId(message.id.0.clone()),
+        _ => id,
+    };
     Some(TimelineEntry { id, created_at, kind })
 }
 
