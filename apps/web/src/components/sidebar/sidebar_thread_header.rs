@@ -1,0 +1,204 @@
+//! Search field and the filter / add project / new thread buttons. Ports
+//! `SidebarThreadHeader.tsx` (`05-ui-shell.md` 6.3).
+
+use gpui_kit::component::input::Input;
+use gpui_kit::prelude::FluentBuilder as _;
+use gpui_kit::*;
+
+use super::icons::{ShellIcon, icon};
+use super::style::*;
+use super::{Sidebar, SidebarEvent};
+
+/// A 28x28 sidebar icon button (`SidebarMenuButton size="icon"`): icon in
+/// `--sidebar-icon-color`, hover fill `sidebar-row-hover` and icon
+/// `sidebar-foreground`, pressed fill `sidebar-row-active`. Swap for the shared
+/// Button once it lands.
+pub fn sidebar_icon_button(
+    id: impl Into<ElementId>,
+    glyph: ShellIcon,
+    size: Pixels,
+    hovered: bool,
+    colors: &ShellColors,
+) -> Stateful<Div> {
+    let active = colors.sidebar_row_active;
+    div()
+        .id(id)
+        .occlude()
+        .relative()
+        .size(size)
+        .flex_none()
+        .flex()
+        .items_center()
+        .justify_center()
+        .rounded(CONTROL_RADIUS)
+        .cursor_pointer()
+        .when(hovered, |d| d.bg(colors.sidebar_row_hover))
+        .active(move |s| s.bg(active))
+        .child(icon(
+            glyph,
+            px(16.),
+            if hovered {
+                colors.sidebar_foreground
+            } else {
+                colors.sidebar_icon
+            },
+        ))
+}
+
+/// Header controls that track hover in sidebar state (icons swap colour).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HeaderControl {
+    Search,
+    Filter,
+    AddProject,
+    NewThread,
+    Settings,
+    PullRequests,
+    Issues,
+    Usage,
+    Notifications,
+}
+
+impl Sidebar {
+    pub(crate) fn control_hover_listener(
+        &self,
+        control: HeaderControl,
+        cx: &mut Context<Self>,
+    ) -> impl Fn(&bool, &mut Window, &mut App) + 'static {
+        cx.listener(move |this, hovered: &bool, _, cx| {
+            let next = if *hovered {
+                Some(control)
+            } else if this.hovered_control == Some(control) {
+                None
+            } else {
+                return;
+            };
+            this.hovered_control = next;
+            cx.notify();
+        })
+    }
+
+    /// The `p-2` group holding search and the three action buttons.
+    pub(crate) fn render_search_row(
+        &mut self,
+        colors: &ShellColors,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let search_focused = self.search.focus_handle(cx).is_focused(window);
+        let searching = !self.options.search.is_empty();
+        let search_hot = search_focused || self.hovered_control == Some(HeaderControl::Search);
+        let hovered = |control| self.hovered_control == Some(control);
+        let field = div()
+            .id("sidebar-search")
+            .occlude()
+            .flex()
+            .h(px(32.))
+            .min_w_0()
+            .flex_1()
+            .items_center()
+            .gap_2()
+            .px_2()
+            .py(px(6.))
+            .rounded(ROW_RADIUS)
+            .text_sm()
+            .font_weight(FontWeight::MEDIUM)
+            .text_color(if search_hot {
+                colors.sidebar_foreground
+            } else {
+                colors.sidebar_muted_foreground
+            })
+            .when(search_hot, |d| d.bg(colors.sidebar_row_hover))
+            .when(search_focused, |d| d.border_1().border_color(colors.ring.opacity(0.7)))
+            .child(icon(ShellIcon::Search, px(16.), colors.sidebar_icon))
+            .child(
+                div().flex_1().min_w_0().child(
+                    Input::new(&self.search)
+                        .appearance(false)
+                        .bordered(false)
+                        .focus_bordered(false)
+                        .p_0()
+                        .h(px(21.))
+                        .text_sm(),
+                ),
+            )
+            .when(searching, |d| {
+                d.child(
+                    div()
+                        .id("sidebar-search-clear")
+                        .size(px(20.))
+                        .flex()
+                        .flex_none()
+                        .items_center()
+                        .justify_center()
+                        .rounded(px(4.))
+                        .cursor_pointer()
+                        .hover(|s| s.bg(colors.accent))
+                        .child(icon(ShellIcon::X, px(12.), colors.muted_foreground))
+                        .on_click(cx.listener(|this, _, window, cx| {
+                            this.search.update(cx, |state, cx| state.set_value("", window, cx));
+                            this.options.search = SharedString::default();
+                            this.rebuild(cx);
+                        })),
+                )
+            })
+            .on_hover(self.control_hover_listener(HeaderControl::Search, cx))
+            .on_click(cx.listener(|this, _, window, cx| {
+                this.search.update(cx, |state, cx| state.focus(window, cx));
+            }));
+
+        div()
+            .p(CONTENT_INSET)
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_1()
+                    .child(field)
+                    .child(
+                        div()
+                            .flex()
+                            .child(
+                                sidebar_icon_button(
+                                    "sidebar-filter",
+                                    ShellIcon::ListFilter,
+                                    px(28.),
+                                    hovered(HeaderControl::Filter),
+                                    colors,
+                                )
+                                .tooltip(super::tooltip::tooltip("Filter projects"))
+                                .on_hover(self.control_hover_listener(HeaderControl::Filter, cx))
+                                .on_click(cx.listener(|_, _, _, cx| {
+                                    cx.emit(SidebarEvent::OpenProjectFilter)
+                                })),
+                            )
+                            .child(
+                                sidebar_icon_button(
+                                    "sidebar-add-project",
+                                    ShellIcon::FolderPlus,
+                                    px(28.),
+                                    hovered(HeaderControl::AddProject),
+                                    colors,
+                                )
+                                .tooltip(super::tooltip::tooltip("Add project"))
+                                .on_hover(self.control_hover_listener(HeaderControl::AddProject, cx))
+                                .on_click(cx.listener(|_, _, _, cx| cx.emit(SidebarEvent::AddProject))),
+                            )
+                            .child(
+                                sidebar_icon_button(
+                                    "sidebar-new-thread",
+                                    ShellIcon::SquarePen,
+                                    px(28.),
+                                    hovered(HeaderControl::NewThread),
+                                    colors,
+                                )
+                                .tooltip(super::tooltip::tooltip("New thread"))
+                                .on_hover(self.control_hover_listener(HeaderControl::NewThread, cx))
+                                .on_click(cx.listener(|_, _, _, cx| {
+                                    cx.emit(SidebarEvent::NewThread(None))
+                                })),
+                            ),
+                    ),
+            )
+    }
+}

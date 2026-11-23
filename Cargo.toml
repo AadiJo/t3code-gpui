@@ -31,8 +31,10 @@ gpui-kit = { version = "=0.11.0", features = ["syntect"] }
 alacritty_terminal = { version = "0.26", default-features = false }
 anyhow = "1"
 base64 = "0.22"
+dirs = "6"
 futures = "0.3"
 fancy-regex = "0.16"
+image = { version = "0.25", default-features = false }
 rust-embed = "8"
 serde = { version = "1", features = ["derive", "rc"] }
 serde_json = { version = "1", features = ["raw_value"] }
@@ -41,7 +43,6 @@ thiserror = "2"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "net", "io-util", "fs"] }
 tracing = "0.1"
 url = { version = "2", features = ["serde"] }
-dirs = "6"
 keyring = "4.2"
 rand = "0.9"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls-webpki-roots-no-provider", "http2"] }

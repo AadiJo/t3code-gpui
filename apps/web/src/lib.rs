@@ -23,5 +23,6 @@ pub fn init(cx: &mut App) {
     terminal::surface::init(cx);
     components::thread_terminal_drawer::init(cx);
     cx.set_global(terminal_ui_state_store::TerminalUiStateStore::default());
+    components::sidebar::init(cx);
     set_app_theme(AppTheme::new(&ThemeDocument::graphite(), Appearance::Dark), cx);
 }

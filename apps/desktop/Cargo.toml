@@ -28,4 +28,16 @@ required-features = ["headless"]
 t3code-client-runtime.workspace = true
 t3code-web.workspace = true
 anyhow.workspace = true
+dirs.workspace = true
 gpui-kit.workspace = true
+image.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+# Scripted end-to-end checks of the app shell: screenshots with hover, click,
+# menus and resize, pixel samples, row metrics and frame times.
+# Usage: shell_check <out-dir>
+[[bin]]
+name = "shell_check"
+path = "src/shell_check.rs"
+required-features = ["headless"]
