@@ -1,10 +1,13 @@
 //! Decodes real encoded values with the generated types, encodes them again and compares.
 //!
 //!   cargo run -p t3code-contracts --example wire_check -- fixtures [report dir]
+//!   cargo run -p t3code-contracts --example wire_check -- id-table [report dir]
 //!   cargo run -p t3code-contracts --example wire_check -- frames <transcript> [report dir]
 //!
 //! `fixtures` checks every value in `schema/wire-fixtures.json` (sampled by effect's Arbitrary and
-//! encoded with the TypeScript codec). `frames` checks every RPC payload, chunk value, exit value
+//! encoded with the TypeScript codec). `id-table` expands each sample in
+//! `schema/id-table-fixtures.json` and compares it with the same value encoded without the table.
+//! `frames` checks every RPC payload, chunk value, exit value
 //! and typed error in a WebSocket transcript: one frame per line, JSON starting at the first `{`.
 //! Each mode prints a summary and, with a report dir, writes `<mode>-report.json` and `.md`.
 //!
@@ -147,6 +150,36 @@ fn check_fixtures() -> BTreeMap<String, TypeResult> {
     results
 }
 
+/// Expands each id-table sample and compares it with the same value encoded without the table.
+fn check_id_tables() -> BTreeMap<String, TypeResult> {
+    use t3code_contracts::orchestration_v2_id_table as id_table;
+    #[derive(serde::Deserialize)]
+    struct Pair {
+        plain: Box<RawValue>,
+        compact: Box<RawValue>,
+    }
+    fn expand<T: id_table::RecordIdTable + Serialize>(text: &str) -> Result<Value, serde_json::Error> {
+        serde_json::to_value(id_table::from_str::<T>(text)?)
+    }
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("schema/id-table-fixtures.json");
+    let text = std::fs::read_to_string(&path).expect("read id-table-fixtures.json");
+    let pairs: BTreeMap<String, Vec<Pair>> = serde_json::from_str(&text).expect("parse id-table fixtures");
+    let mut results = BTreeMap::new();
+    for (name, pairs) in &pairs {
+        let result: &mut TypeResult = results.entry(name.clone()).or_default();
+        for pair in pairs {
+            let decoded = match name.as_str() {
+                "OrchestrationV2ThreadBoundedSnapshot" => expand::<t3code_contracts::OrchestrationV2ThreadBoundedSnapshot>(pair.compact.get()),
+                "OrchestrationV2ThreadHistoryPage" => expand::<t3code_contracts::OrchestrationV2ThreadHistoryPage>(pair.compact.get()),
+                "OrchestrationV2ThreadStreamItem" => expand::<t3code_contracts::OrchestrationV2ThreadStreamItem>(pair.compact.get()),
+                other => panic!("no id-table type {other}"),
+            };
+            check(result, pair.plain.get(), decoded);
+        }
+    }
+    results
+}
+
 /// Checks every RPC value in a transcript, matching responses to requests by id.
 fn check_frames(transcript: &Path) -> BTreeMap<String, TypeResult> {
     let text = std::fs::read_to_string(transcript).expect("read transcript");
@@ -255,13 +288,17 @@ fn main() {
             let out = args.get(1).map(PathBuf::from);
             write_report("fixtures", &check_fixtures(), out.as_deref());
         }
+        Some("id-table") => {
+            let out = args.get(1).map(PathBuf::from);
+            write_report("id-table", &check_id_tables(), out.as_deref());
+        }
         Some("frames") => {
             let transcript = PathBuf::from(args.get(1).expect("frames <transcript> [report dir]"));
             let out = args.get(2).map(PathBuf::from);
             write_report("frames", &check_frames(&transcript), out.as_deref());
         }
         _ => {
-            eprintln!("usage: wire_check fixtures [report dir] | frames <transcript> [report dir]");
+            eprintln!("usage: wire_check fixtures|id-table [report dir] | frames <transcript> [report dir]");
             std::process::exit(2);
         }
     }

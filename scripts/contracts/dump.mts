@@ -14,7 +14,8 @@ import * as fs from "node:fs";
 import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
 // Must load before effect/contracts: registers the in-memory source patches (brands, forward-compatible fields).
-import { assertAllApplied, FORWARD_COMPAT_KEY, ID_TABLE_KEY } from "./hooks.mts";
+import { FORWARD_COMPAT_KEY, ID_TABLE_KEY, assertAllApplied, installPatches } from "./hooks.mts";
+installPatches({ idTable: true });
 
 const cwd = process.cwd();
 const outFile = process.argv[2];

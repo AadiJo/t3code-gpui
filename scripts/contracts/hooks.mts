@@ -10,7 +10,7 @@ import { registerHooks } from "node:module";
 export const FORWARD_COMPAT_KEY = "x-forward-compatible";
 export const ID_TABLE_KEY = "x-record-id-table";
 
-type Patch = { file: RegExp; find: string; replace: string; count?: number };
+type Patch = { file: RegExp; find: string; replace: string; idTable?: true };
 
 const patches: Patch[] = [
   {
@@ -55,6 +55,7 @@ const patches: Patch[] = [
     // withRecordIdTable decodes from an opaque ParsedJson declaration, so the snapshot, history page and
     // thread stream item export as `{}`. Without the opt-in (idTable: true) the wire equals the inner
     // codec; with it, id-like keys hold indexes into a top-level `ids` array (orchestrationV2IdTable.ts).
+    idTable: true,
     file: /\/packages\/contracts\/src\/orchestrationV2IdTable\.ts$/,
     // Early-return the inner schema itself (tagged) so its children keep their names; the rest is dead code.
     find: "  const codec = Schema.toCodecJson(schema);\n",
@@ -63,23 +64,31 @@ const patches: Patch[] = [
 ];
 
 export const applied = new Map<string, number>();
+let active: Patch[] = [];
 
-registerHooks({
-  load(url, context, nextLoad) {
-    const result = nextLoad(url, context);
-    const mine = patches.filter((p) => p.file.test(url));
-    if (mine.length === 0) return result;
-    let src = String(result.source);
-    for (const p of mine) {
-      if (!src.includes(p.find)) throw new Error(`patch target missing in ${url}:\n${p.find}`);
-      src = src.replace(p.find, p.replace);
-      applied.set(p.find.slice(0, 50), (applied.get(p.find.slice(0, 50)) ?? 0) + 1);
-    }
-    return { ...result, source: src };
-  },
-});
+/**
+ * Registers the patches; call before the first dynamic import of effect or the contracts.
+ * `idTable: false` keeps the real id-table codec (fixtures.mts encodes id-table samples with it).
+ */
+export const installPatches = ({ idTable }: { idTable: boolean }) => {
+  active = patches.filter((p) => idTable || !p.idTable);
+  registerHooks({
+    load(url, context, nextLoad) {
+      const result = nextLoad(url, context);
+      const mine = active.filter((p) => p.file.test(url));
+      if (mine.length === 0) return result;
+      let src = String(result.source);
+      for (const p of mine) {
+        if (!src.includes(p.find)) throw new Error(`patch target missing in ${url}:\n${p.find}`);
+        src = src.replace(p.find, p.replace);
+        applied.set(p.find.slice(0, 50), (applied.get(p.find.slice(0, 50)) ?? 0) + 1);
+      }
+      return { ...result, source: src };
+    },
+  });
+};
 
 export const assertAllApplied = () => {
-  if (applied.size !== patches.length)
-    throw new Error(`only ${applied.size}/${patches.length} source patches applied: ${[...applied.keys()].join(" | ")}`);
+  if (applied.size !== active.length)
+    throw new Error(`only ${applied.size}/${active.length} source patches applied: ${[...applied.keys()].join(" | ")}`);
 };

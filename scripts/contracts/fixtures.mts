@@ -9,7 +9,8 @@ import * as path from "node:path";
 import * as fs from "node:fs";
 import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
-import { assertAllApplied } from "./hooks.mts";
+import { assertAllApplied, installPatches } from "./hooks.mts";
+installPatches({ idTable: false });
 
 const cwd = process.cwd();
 const [specFile, fixturesFile] = process.argv.slice(2);
@@ -103,6 +104,34 @@ for (const [tag, rpc] of group.requests) {
   if (error.ast._tag !== "Never") await check(`${tag}.error`, error, entry.error);
 }
 for (const p of spec.persisted) await check(`persisted.${p.name}`, contracts[p.exportName], p.schema);
+
+// Id-table pairs: the same value encoded plain and with `idTable: true`, by the real codec. The Rust
+// check expands the compact form and compares it with the plain one.
+const idTableFixtures: Record<string, Array<{ plain: unknown; compact: unknown }>> = {};
+for (const name of ["OrchestrationV2ThreadBoundedSnapshot", "OrchestrationV2ThreadHistoryPage", "OrchestrationV2ThreadStreamItem"]) {
+  const schema: AnySchema = contracts[name];
+  const encode = Schema.encodeUnknownEffect(Schema.toCodecJson(schema));
+  let values: ReadonlyArray<any> = [];
+  try {
+    values = await Effect.runPromise(Arbitrary.sampleEffect(Arbitrary.schema(schema), { count: samples * 4, seed: `idTable.${name}` }));
+  } catch (e) {
+    problems.push({ where: `idTable.${name}`, kind: "sample", detail: (e instanceof Error ? e.message : JSON.stringify(e)).slice(0, 300) });
+  }
+  for (const value of values) {
+    if (typeof value !== "object" || value === null) continue;
+    try {
+      const { idTable: _idTable, ...rest } = value;
+      const plain = wellFormed(await Effect.runPromise(encode(rest) as any));
+      const compact = wellFormed(await Effect.runPromise(encode({ ...value, idTable: true }) as any));
+      if (typeof compact === "object" && compact !== null && "ids" in compact) (idTableFixtures[name] ??= []).push({ plain, compact });
+    } catch (e) {
+      problems.push({ where: `idTable.${name}`, kind: "encode", detail: (e instanceof Error ? e.message : String(e)).slice(0, 300) });
+    }
+  }
+}
+const idTableFile = path.join(path.dirname(fixturesFile), "id-table-fixtures.json");
+fs.writeFileSync(idTableFile, JSON.stringify(idTableFixtures) + "\n");
+console.log(JSON.stringify({ idTablePairs: Object.fromEntries(Object.entries(idTableFixtures).map(([k, v]) => [k, v.length])) }));
 
 fs.writeFileSync(fixturesFile, JSON.stringify(fixtures) + "\n");
 console.log(JSON.stringify({ samplesPerSchema: samples, ...stats, fixtureTypes: Object.keys(fixtures).length, fixturesFile }, null, 2));
