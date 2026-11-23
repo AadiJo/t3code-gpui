@@ -313,6 +313,9 @@ impl Supervisor {
         let session = lease.session;
         let active_route_id = session.prepared.route_id.clone();
         let connected_at = Instant::now();
+        // Observers that see `Connected` must already see its session.
+        self.auth.send_replace(Some(session.prepared.http_authorization.clone()));
+        self.session.send_replace(Some(session.clone()));
         self.publish(|s| {
             s.phase = ConnectionPhase::Connected;
             s.stage = None;
@@ -328,8 +331,6 @@ impl Supervisor {
         ) {
             learn(&entry, active, &session.direct_endpoints);
         }
-        self.auth.send_replace(Some(session.prepared.http_authorization.clone()));
-        self.session.send_replace(Some(session.clone()));
         let renewal = tokio::spawn(renew_before_expiry(
             self.context.clone(),
             session.prepared.http_authorization.clone(),

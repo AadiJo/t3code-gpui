@@ -95,19 +95,10 @@ pub struct ExitEncoded<'a> {
     pub tag: std::borrow::Cow<'a, str>,
     #[serde(borrow, default)]
     pub value: Option<&'a RawValue>,
+    /// Effect encodes a cause as an array of reasons (seen on the wire:
+    /// `[{"_tag":"Interrupt","fiberId":2064}]`).
     #[serde(borrow, default)]
-    pub cause: Option<CauseEncoded<'a>>,
-}
-
-/// Effect encodes a cause as an array of reasons. Older encoders sent a
-/// single object, so accept both.
-#[derive(Deserialize, Debug)]
-#[serde(untagged)]
-pub enum CauseEncoded<'a> {
-    #[serde(borrow)]
-    Many(Vec<CauseReason<'a>>),
-    #[serde(borrow)]
-    One(CauseReason<'a>),
+    pub cause: Vec<CauseReason<'a>>,
 }
 
 /// One cause reason: `Fail` (typed error), `Die` (defect) or `Interrupt`.
@@ -138,11 +129,7 @@ impl<'a> ExitEncoded<'a> {
         if self.tag == "Success" {
             return ExitKind::Success(self.value);
         }
-        let reasons: &[CauseReason<'a>] = match &self.cause {
-            Some(CauseEncoded::Many(reasons)) => reasons,
-            Some(CauseEncoded::One(reason)) => std::slice::from_ref(reason),
-            None => &[],
-        };
+        let reasons = &self.cause;
         if let Some(error) = reasons.iter().find(|r| r.tag == "Fail").and_then(|r| r.error) {
             return ExitKind::Fail(error);
         }

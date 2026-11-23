@@ -155,7 +155,7 @@ pub enum ConnectionCredential {
 
 /// The catalog file. Ordered targets (contiguous per environment), their
 /// profiles, and the environments switched off. Credentials are not here.
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ConnectionCatalogDocument {
     #[serde(default = "schema_version")]
@@ -170,6 +170,17 @@ pub struct ConnectionCatalogDocument {
 
 fn schema_version() -> u32 {
     1
+}
+
+impl Default for ConnectionCatalogDocument {
+    fn default() -> Self {
+        Self {
+            schema_version: schema_version(),
+            targets: Vec::new(),
+            profiles: Vec::new(),
+            disabled_environment_ids: Vec::new(),
+        }
+    }
 }
 
 /// Drops elements that do not decode (a target kind this client does not

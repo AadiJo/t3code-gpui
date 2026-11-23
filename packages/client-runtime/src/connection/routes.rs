@@ -292,10 +292,12 @@ pub fn merge_learned_routes(
             Some(credential) => format!("learned:{}:{origin}@{credential}", entry.environment_id),
             None => format!("learned:{}:{origin}", entry.environment_id),
         };
-        let ws_scheme = if url.scheme() == "https" { "wss" } else { "ws" };
-        let http_base_url = Url::parse(&format!("{origin}/")).expect("origin is a URL");
-        let ws_base_url = Url::parse(&format!("{ws_scheme}://{}/", &origin[origin.find("://").map_or(0, |i| i + 3)..]))
-            .expect("origin host is a URL");
+        let mut http_base_url = url.clone();
+        http_base_url.set_path("/");
+        http_base_url.set_query(None);
+        http_base_url.set_fragment(None);
+        let mut ws_base_url = http_base_url.clone();
+        _ = ws_base_url.set_scheme(if url.scheme() == "https" { "wss" } else { "ws" });
         insert_route(
             &mut next,
             ConnectionRoute {

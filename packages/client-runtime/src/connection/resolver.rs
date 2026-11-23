@@ -1,6 +1,5 @@
 //! Prepares one route: authorize it, gate the protocol, build the socket URL.
 
-use std::sync::Arc;
 use std::time::Duration;
 
 use super::catalog::{ConnectionCredential, ConnectionRoute, ProfileAuthorization, TargetRoute};
@@ -95,20 +94,15 @@ async fn prepare_route(
     let mut socket_url = authorized.socket_url;
     append_orchestration_protocol(&mut socket_url);
     socket_url.query_pairs_mut().append_pair(FRAME_PARTS_QUERY_PARAM, "1");
+    let label = if authorized.descriptor.label.is_empty() { label.to_owned() } else { authorized.descriptor.label.clone() };
     Ok(PreparedConnection {
         environment_id: environment_id.clone(),
-        label: Arc::<str>::from(authorized.descriptor.label.as_str()).to_string(),
+        label,
         route_id: route_id(&route.target).to_owned(),
         via: authorized.via,
         http_base_url: authorized.http_base_url,
         socket_url,
         http_authorization: authorized.http_authorization,
         descriptor: authorized.descriptor,
-    })
-    .map(|mut prepared| {
-        if prepared.label.is_empty() {
-            prepared.label = label.to_owned();
-        }
-        prepared
     })
 }
