@@ -10,7 +10,7 @@
 use gpui_kit::{
     AnyElement, App, AppContext as _, Context, Anchor, Entity, EventEmitter, Focusable as _, Hsla, IntoElement,
     ParentElement as _, Pixels, Render, SharedString, Styled as _, Subscription, Window, anchored, deferred, div,
-    point, prelude::*, px,
+    point, prelude::*, px, TestSupportExt as _,
 };
 use t3code_contracts::{EnvironmentId, VcsCreateRefInput, VcsListRefsInput, VcsListRefsResult, VcsRef, VcsSwitchRefInput};
 
@@ -21,11 +21,11 @@ use super::branch_toolbar_logic::{
     resolve_branch_trigger_label, resolve_current_workspace_label, resolve_env_mode_label,
     resolve_locked_workspace_label, sanitize_new_ref_name, should_show_environment_indicator,
 };
-use super::chat::thread_details_panel_styles::{locked_row, row_icon, select_row};
+use super::chat::thread_details_panel_styles::{DismissPress, below_row, locked_row, row_icon, select_row};
 use super::git_actions_control_source::SourceControlModel;
 use super::icons::{Icon, IconName, IconSize};
 use super::previous_worktree_item_content::previous_worktree_item_content;
-use super::ui::popover::{below, glass_surface};
+use super::ui::popover::glass_surface;
 use super::ui::toast::{ToastData, ToastKind, Toaster};
 use super::ui::tooltip::tooltip;
 use super::ui::{DISABLED_OPACITY, TextStyleExt as _};
@@ -110,6 +110,7 @@ pub struct BranchToolbar {
     picker: Option<(Entity<BranchPicker>, Subscription)>,
     /// A checkout or create is in flight.
     pending: bool,
+    dismissed: DismissPress,
 }
 
 impl EventEmitter<BranchToolbarEvent> for BranchToolbar {}
@@ -146,7 +147,7 @@ impl BranchToolbar {
         cx: &mut Context<Self>,
     ) -> Self {
         cx.observe(&model, |_, _, cx| cx.notify()).detach();
-        let mut toolbar = Self { layout, props, model, refs: None, open: None, picker: None, pending: false };
+        let mut toolbar = Self { layout, props, model, refs: None, open: None, picker: None, pending: false, dismissed: DismissPress::default() };
         toolbar.load_refs(cx);
         toolbar
     }
@@ -326,7 +327,12 @@ impl BranchToolbar {
         let refs = self.refs().to_vec();
         let picker = cx.new(|cx| BranchPicker::new(refs, value, options, cx));
         let subscription = cx.subscribe(&picker, |this, _, event: &BranchPickerEvent, cx| match event {
-            BranchPickerEvent::Dismiss => this.close(cx),
+            BranchPickerEvent::Dismiss(at) => {
+                if let Some(at) = at {
+                    this.dismissed.record(*at);
+                }
+                this.close(cx)
+            }
             BranchPickerEvent::StartFromOriginChanged(on) => cx.emit(BranchToolbarEvent::StartFromOriginChanged(*on)),
             BranchPickerEvent::Select(item) => {
                 let item = item.clone();
@@ -361,6 +367,12 @@ impl BranchToolbar {
         self.open = None;
         self.picker = None;
         cx.notify();
+    }
+
+    fn toggle_from(&mut self, popup: Popup, event: &gpui_kit::ClickEvent, cx: &mut Context<Self>) {
+        if !self.dismissed.consumes(event) {
+            self.toggle(popup, cx);
+        }
     }
 
     fn toggle(&mut self, popup: Popup, cx: &mut Context<Self>) {
@@ -646,9 +658,10 @@ impl BranchToolbar {
             .min_w(theme.rem(10.))
             .when_some(width, |s, w| s.w(w))
             .p(theme.sp(1.))
-            .on_mouse_down_out(cx.listener(|this, _, _, cx| {
+            .on_mouse_down_out(cx.listener(|this, event: &gpui_kit::MouseDownEvent, _, cx| {
                 if this.open != Some(Popup::Branch) {
                     this.open = None;
+                    this.dismissed.record(event.position);
                     cx.notify();
                 }
             }))
@@ -694,13 +707,13 @@ impl BranchToolbar {
             let control = if locked || !self.can_pick_environment() {
                 control.cursor_default()
             } else {
-                control.on_click(cx.listener(|this, _, _, cx| this.toggle(Popup::Environment, cx)))
+                control.on_click(cx.listener(|this, e, _, cx| this.toggle_from(Popup::Environment, e, cx)))
             };
             let menu = (self.open == Some(Popup::Environment)).then(|| {
                 let rows = self.environment_rows(theme, cx);
                 div().absolute().top_0().left_0().child(above(Anchor::BottomLeft, Self::popup_surface(theme, None, rows, cx)))
             });
-            left = left.child(div().relative().child(control).children(menu));
+            left = left.child(div().relative().child(control.test_support()).children(menu));
             if self.props.show_git_controls {
                 left = left.child(div().mx(px(2.)).w(px(1.)).h(px(14.)).bg(theme.colors.border));
             }
@@ -720,14 +733,14 @@ impl BranchToolbar {
             let mode = if locked {
                 mode.cursor_default().text_color(with_alpha(theme.colors.muted_foreground, 0.7))
             } else {
-                mode.on_click(cx.listener(|this, _, _, cx| this.toggle(Popup::Workspace, cx)))
+                mode.on_click(cx.listener(|this, e, _, cx| this.toggle_from(Popup::Workspace, e, cx)))
             };
             let menu = (self.open == Some(Popup::Workspace)).then(|| {
                 let rows = self.workspace_rows(theme, cx);
                 let width = self.props.previous_worktree.as_ref().map(|_| theme.rem(21.));
                 div().absolute().top_0().left_0().child(above(Anchor::BottomLeft, Self::popup_surface(theme, width, rows, cx)))
             });
-            left = left.child(div().relative().min_w_0().child(mode).children(menu));
+            left = left.child(div().relative().min_w_0().child(mode.test_support()).children(menu));
         }
         let mut strip = div()
             .flex()
@@ -747,7 +760,10 @@ impl BranchToolbar {
                 .child(Icon::new(IconName::GitBranch).size(IconSize::Xs))
                 .child(div().min_w_0().truncate().child(self.trigger_label(cx)))
                 .when(!disabled, |c| {
-                    c.on_click(cx.listener(|this, _, window, cx| {
+                    c.on_click(cx.listener(|this, e, window, cx| {
+                        if this.dismissed.consumes(e) {
+                            return;
+                        }
                         let open = this.open != Some(Popup::Branch);
                         this.set_branch_picker_open(open, window, cx);
                     }))
@@ -755,7 +771,7 @@ impl BranchToolbar {
             let picker = self.picker.as_ref().filter(|_| self.open == Some(Popup::Branch)).map(|(picker, _)| {
                 div().absolute().top_0().right_0().child(above(Anchor::BottomRight, picker.clone()))
             });
-            strip = strip.child(div().relative().ml_auto().min_w_0().child(branch).children(picker));
+            strip = strip.child(div().relative().ml_auto().min_w_0().child(branch.test_support()).children(picker));
         }
         strip.into_any_element()
     }
@@ -804,7 +820,7 @@ impl BranchToolbar {
         }
         let open = self.open == Some(Popup::RunContext);
         let trigger = select_row("run-context", theme, content, false, open)
-            .on_click(cx.listener(|this, _, _, cx| this.toggle(Popup::RunContext, cx)));
+            .on_click(cx.listener(|this, e, _, cx| this.toggle_from(Popup::RunContext, e, cx)));
         let menu = open.then(|| {
             let mut rows = Vec::new();
             if self.can_pick_environment() && !self.props.environments.is_empty() {
@@ -812,9 +828,9 @@ impl BranchToolbar {
                 rows.push(div().mx(theme.sp(2.)).my(theme.sp(1.)).h(px(1.)).bg(theme.colors.border).into_any_element());
             }
             rows.extend(self.workspace_rows(theme, cx));
-            below(Self::popup_surface(theme, Some(theme.spacing.thread_details_panel_width - px(16.)), rows, cx))
+            below_row(Self::popup_surface(theme, Some(theme.spacing.thread_details_panel_width - px(16.)), rows, cx))
         });
-        div().flex().flex_col().w_full().child(trigger).children(menu).into_any_element()
+        div().flex().flex_col().w_full().child(trigger.test_support()).children(menu).into_any_element()
     }
 
     fn render_panel_branch(&mut self, theme: &AppTheme, cx: &mut Context<Self>) -> AnyElement {
@@ -830,13 +846,16 @@ impl BranchToolbar {
             .child(row_icon(theme, IconName::GitBranch))
             .child(div().flex_1().min_w_0().truncate().child(label));
         let trigger = select_row("branch-select", theme, content, disabled, open).when(!disabled, |t| {
-            t.on_click(cx.listener(|this, _, window, cx| {
-                let open = this.open != Some(Popup::Branch);
+            t.on_click(cx.listener(|this, e, window, cx| {
+                if this.dismissed.consumes(e) {
+                            return;
+                        }
+                        let open = this.open != Some(Popup::Branch);
                 this.set_branch_picker_open(open, window, cx);
             }))
         });
-        let picker = self.picker.as_ref().filter(|_| open).map(|(picker, _)| below(picker.clone()));
-        div().flex().flex_col().w_full().child(trigger).children(picker).into_any_element()
+        let picker = self.picker.as_ref().filter(|_| open).map(|(picker, _)| below_row(picker.clone()));
+        div().flex().flex_col().w_full().child(trigger.test_support()).children(picker).into_any_element()
     }
 }
 

@@ -12,10 +12,10 @@ use gpui_kit::{
 };
 use t3code_contracts::{EditorId, LaunchEditorInput};
 
-use super::thread_details_panel_styles::{row_base, row_icon, split_row, split_secondary};
+use super::thread_details_panel_styles::{DismissPress, below_row, row_base, row_icon, split_row, split_secondary};
 use crate::components::git_actions_control_source::GitActionsSource;
 use crate::components::icons::{BrandIcon, Icon, IconName, IconSize, IconSource};
-use crate::components::ui::popover::{below, glass_surface};
+use crate::components::ui::popover::glass_surface;
 use crate::components::ui::toast::{ToastData, ToastKind, Toaster};
 use crate::components::ui::tooltip::tooltip;
 use crate::components::ui::{DISABLED_OPACITY, TextStyleExt as _};
@@ -62,6 +62,7 @@ pub struct OpenInPicker {
     can_operate_host: bool,
     platform: Platform,
     menu_open: bool,
+    dismissed: DismissPress,
 }
 
 impl OpenInPicker {
@@ -81,6 +82,7 @@ impl OpenInPicker {
             can_operate_host: true,
             platform: Platform::current(),
             menu_open: false,
+            dismissed: DismissPress::default(),
         }
     }
 
@@ -173,9 +175,8 @@ impl OpenInPicker {
         let disabled_row = |text: SharedString| {
             div()
                 .min_h(theme.sp(7.))
-                .flex()
-                .items_center()
                 .px(theme.sp(2.))
+                .py(theme.sp(1.5))
                 .ui_text(theme, TextSize::Sm, weight::NORMAL)
                 .opacity(DISABLED_OPACITY)
                 .child(text)
@@ -232,16 +233,18 @@ impl OpenInPicker {
                 }));
             }
         }
-        below(
+        below_row(
             glass_surface(theme)
                 .id("open-in-menu")
                 .occlude()
                 .w(theme.spacing.thread_details_panel_width - px(16.))
                 .p(theme.sp(1.))
-                .on_mouse_down_out(cx.listener(|this, _, _, cx| this.set_menu_open(false, cx)))
+                .on_mouse_down_out(cx.listener(|this, event: &gpui_kit::MouseDownEvent, _, cx| {
+                    this.dismissed.record(event.position);
+                    this.set_menu_open(false, cx);
+                }))
                 .children(rows),
         )
-        .into_any_element()
     }
 }
 
@@ -270,7 +273,10 @@ impl Render for OpenInPicker {
         let chevron = split_secondary("open-in-menu-trigger", &theme, host_denied, self.menu_open)
             .tooltip(tooltip(t!("Choose editor")))
             .when(!host_denied, |r| {
-                r.on_click(cx.listener(|this, _, _, cx| {
+                r.on_click(cx.listener(|this, event, _, cx| {
+                    if this.dismissed.consumes(event) {
+                        return;
+                    }
                     let open = !this.menu_open;
                     this.set_menu_open(open, cx);
                 }))

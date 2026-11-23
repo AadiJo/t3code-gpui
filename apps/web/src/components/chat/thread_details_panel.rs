@@ -11,7 +11,7 @@
 
 use gpui_kit::{
     AnyElement, App, Context, Entity, EventEmitter, IntoElement, MouseButton, ParentElement as _, Pixels, Point,
-    Render, Styled as _, Window, anchored, deferred, div, prelude::*, px,
+    Render, Styled as _, TestSupportExt as _, Window, anchored, deferred, div, prelude::*, px,
 };
 use t3code_contracts::ThreadIssueLink;
 
@@ -132,6 +132,12 @@ impl ThreadDetailsPanel {
     /// Opens the "Show in thread details" menu at a window position.
     pub fn open_items_menu(&mut self, at: Point<Pixels>, cx: &mut Context<Self>) {
         self.items_menu = Some(at);
+        cx.notify();
+    }
+
+    /// Closes the items menu, as choosing an item does.
+    pub fn close_items_menu(&mut self, cx: &mut Context<Self>) {
+        self.items_menu = None;
         cx.notify();
     }
 
@@ -264,6 +270,7 @@ impl Render for ThreadDetailsPanel {
             .children(sections)
             .children(empty)
             .children(menu)
+            .test_support()
     }
 }
 

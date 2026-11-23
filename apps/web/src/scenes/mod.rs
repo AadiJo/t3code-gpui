@@ -33,6 +33,8 @@ pub fn scenes() -> &'static [(&'static str, SceneBuilder)] {
         ("composer-popovers-light", composer::build_popovers_light),
         ("git-actions", git_actions::build),
         ("git-actions-light", git_actions::build_light),
+        ("git-actions-panel", git_actions::build_panel),
+        ("git-actions-panel-light", git_actions::build_panel_light),
     ]
 }
 

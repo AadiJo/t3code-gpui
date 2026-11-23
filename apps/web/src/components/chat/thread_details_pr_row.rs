@@ -234,7 +234,7 @@ pub fn pull_request_row(
                 .tooltip(tooltip(tooltip_text))
                 .on_click(move |_, window, cx| open(window, cx))
                 .child(div().mt(px(1.)).child(title_icon))
-                .child(div().flex_1().min_w_0().line_clamp(2).line_height(px(18.)).child(data.title.clone())),
+                .child(div().flex_1().min_w_0().overflow_hidden().text_ellipsis().line_clamp(2).line_height(px(18.)).child(data.title.clone())),
         )
         .child(
             div()

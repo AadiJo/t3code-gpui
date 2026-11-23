@@ -4,7 +4,8 @@
 //! rows whose hairline shows only while the pair is in use.
 
 use gpui_kit::{
-    AnyElement, Div, ElementId, Hsla, IntoElement, ParentElement as _, Pixels, SharedString, Stateful, Styled as _, div,
+    AnyElement, Div, ElementId, Hsla, IntoElement, ParentElement as _, Pixels, SharedString, Stateful, Styled as _,
+    TestSupportExt as _, div,
     prelude::*, px,
 };
 
@@ -99,7 +100,7 @@ pub fn split_row(
         .when(busy, |g| g.bg(row_busy_fill(theme)))
         .when(open, |g| g.bg(hover))
         .when(!busy, |g| g.hover(move |s| s.bg(hover)))
-        .child(primary.flex_1().rounded_r(px(0.)))
+        .child(primary.flex_1().rounded_r(px(0.)).test_support())
         .child(
             div()
                 .h(px(16.))
@@ -108,7 +109,7 @@ pub fn split_row(
                 .when(open, |h| h.bg(hairline))
                 .group_hover(group, move |h| h.bg(hairline)),
         )
-        .child(secondary)
+        .child(secondary.test_support())
 }
 
 /// The chevron half of a split row.
@@ -203,4 +204,33 @@ pub fn section(theme: &AppTheme, separated: bool, rows: Vec<AnyElement>) -> Opti
             .children(rows)
             .into_any_element(),
     )
+}
+
+/// Wraps a control drawn by a primitive (a [`Button`](crate::components::ui::button::Button)
+/// or checkbox) in an observed element, so scripted checks can find and click it.
+/// Without `test-support` the wrapper is a plain div.
+pub fn observed(id: impl Into<ElementId>, control: impl IntoElement) -> AnyElement {
+    div().id(id).child(control).test_support().into_any_element()
+}
+
+/// Floats a popup just below the row before it. `below` positions at its
+/// parent's origin, so a zero-height spacer after the row gives it that origin.
+pub fn below_row(content: impl IntoElement) -> AnyElement {
+    div().w_full().h(px(0.)).child(crate::components::ui::popover::below(content)).into_any_element()
+}
+
+/// Remembers the press that closed a popup from outside, so the trigger's own
+/// click at that spot does not reopen it (the `PopupOpen` rule of `popover.rs`).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct DismissPress(Option<gpui_kit::Point<Pixels>>);
+
+impl DismissPress {
+    pub fn record(&mut self, at: gpui_kit::Point<Pixels>) {
+        self.0 = Some(at);
+    }
+
+    /// Whether this click is the press that just closed the popup.
+    pub fn consumes(&mut self, click: &gpui_kit::ClickEvent) -> bool {
+        self.0.take() == Some(crate::components::ui::popover::press_position(click))
+    }
 }

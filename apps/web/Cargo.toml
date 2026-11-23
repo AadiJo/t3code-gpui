@@ -41,3 +41,8 @@ libc = "0.2"
 [[example]]
 name = "i18n_switch"
 required-features = ["test-support"]
+
+# Clicks through the git actions, branch picker, dialogs and menus headlessly and screenshots each step.
+[[example]]
+name = "git_actions_check"
+required-features = ["test-support"]

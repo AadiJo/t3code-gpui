@@ -32,6 +32,8 @@ pub struct FixtureGitSource {
     pub pull_request: Option<PullRequestDetail>,
     /// Makes every write fail with this message.
     pub fail_with: Option<String>,
+    /// The status stream reports this error after its snapshot.
+    pub status_error: Option<String>,
     pub calls: Arc<Mutex<Vec<String>>>,
 }
 
@@ -41,7 +43,7 @@ fn ready<T: Send + 'static>(value: Result<T, SourceControlError>) -> RpcFuture<T
 
 impl FixtureGitSource {
     pub fn new(status: VcsStatusResult) -> Self {
-        Self { status, refs: fixture_refs(), pull_request: None, fail_with: None, calls: Arc::default() }
+        Self { status, refs: fixture_refs(), pull_request: None, fail_with: None, status_error: None, calls: Arc::default() }
     }
 
     fn record(&self, tag: &str) {
@@ -84,7 +86,8 @@ impl GitActionsSource for FixtureGitSource {
                 pr: s.pr.clone(),
             }),
         });
-        stream::iter([Ok(event)]).boxed()
+        let error = self.status_error.clone().map(|e| Err(SourceControlError(e.into())));
+        stream::iter(std::iter::once(Ok(event)).chain(error)).boxed()
     }
 
     fn refresh_status(&self, _: VcsRefreshStatusPayload) -> RpcFuture<VcsStatusResult> {

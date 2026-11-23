@@ -14,7 +14,7 @@ use super::branch_picker::{BranchPicker, BranchPickerEvent, BranchPickerItem, Br
 use super::branch_toolbar_logic::{EnvMode, resolve_branch_trigger_label};
 use super::git_actions_control_source::GitActionsSource;
 use super::icons::{Icon, IconName, IconSize};
-use super::ui::popover::below;
+use super::chat::thread_details_panel_styles::below_row;
 use super::ui::{DISABLED_OPACITY, TextStyleExt as _};
 use crate::ActiveAppTheme as _;
 use crate::appearance_fonts::{TextSize, weight};
@@ -141,6 +141,6 @@ impl Render for WorktreeBaseBranchPicker {
                 let hover = theme.derived.outline_hover;
                 t.cursor_pointer().hover(move |s| s.bg(hover)).on_click(cx.listener(|this, _, window, cx| this.open(window, cx)))
             });
-        div().flex().flex_col().w_full().child(trigger).children(self.picker.as_ref().map(|(p, _)| below(p.clone())))
+        div().flex().flex_col().w_full().child(trigger).children(self.picker.as_ref().map(|(p, _)| below_row(p.clone())))
     }
 }

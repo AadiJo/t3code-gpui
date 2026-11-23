@@ -3,11 +3,10 @@
 //! draft thread on its head branch in the main checkout or a new worktree.
 
 use std::sync::Arc;
-use std::time::Duration;
 
 use gpui_kit::{
     AppContext as _, Context, Entity, EventEmitter, IntoElement, ParentElement as _, Render, SharedString, Styled as _,
-    Task, Window, component::input::{InputEvent, InputState}, div, px,
+    Task, Window, component::input::{InputEvent, InputState}, div, prelude::*, px,
 };
 use t3code_contracts::{
     GitPreparePullRequestThreadInput, GitPreparePullRequestThreadResultPullRequest, GitPullRequestRefInput,
@@ -16,6 +15,7 @@ use t3code_contracts::{
 
 use super::branch_picker::parse_pull_request_reference;
 use super::git_actions_control_source::GitActionsSource;
+use super::chat::thread_details_panel_styles::observed;
 use super::chat::thread_details_pr_row::pull_request_state_tone;
 use super::ui::button::{Button, ButtonSize, ButtonVariant};
 use super::ui::dialog::{DialogSurface, Modal};
@@ -97,7 +97,7 @@ impl PullRequestThreadDialog {
         parse_pull_request_reference(&self.reference.read(cx).value())
     }
 
-    /// Resolves the typed reference after a short pause (`git.resolvePullRequest`).
+    /// Resolves the typed reference (`git.resolvePullRequest`); a newer edit drops the older request.
     fn resolve(&mut self, cx: &mut Context<Self>) {
         self.resolved = None;
         self.error = None;
@@ -110,7 +110,6 @@ impl PullRequestThreadDialog {
         self.resolving = true;
         let request = self.source.resolve_pull_request(GitPullRequestRefInput { cwd: self.cwd.clone(), reference });
         self._resolve = Some(cx.spawn(async move |this, cx| {
-            cx.background_executor().timer(Duration::from_millis(150)).await;
             let result = request.await;
             this.update(cx, |this, cx| {
                 this.resolving = false;
@@ -235,11 +234,11 @@ impl Render for PullRequestThreadDialog {
                 .flex_col()
                 .gap(px(6.))
                 .child(
-                    div().ui_text(&theme, TextSize::Xs, weight::MEDIUM).child(t!(
+                    div().ui_text(&theme, TextSize::Xs, weight::MEDIUM).child(capitalize_words(&t!(
                         "{term, select, mr {merge request} cr {change request} other {pull request}}",
                         context = "field label, capitalized by CSS",
                         term = term
-                    )),
+                    ))),
                 )
                 .child(TextInput::new(&self.reference)),
         )
@@ -275,8 +274,9 @@ impl Render for PullRequestThreadDialog {
                 .disabled(!ready)
                 .on_click(cx.listener(|this, _, _, cx| this.prepare(ThreadEnvMode::Local, cx))),
         )
-        .footer(
-            Button::new("pr-worktree")
+        .footer(observed(
+            "pr-worktree",
+            Button::new("pr-worktree-button")
                 .size(ButtonSize::Sm)
                 .label(if self.preparing == Some(ThreadEnvMode::Worktree) {
                     t!("Preparing worktree...")
@@ -285,9 +285,9 @@ impl Render for PullRequestThreadDialog {
                 })
                 .disabled(!ready)
                 .on_click(cx.listener(|this, _, _, cx| this.prepare(ThreadEnvMode::Worktree, cx))),
-        );
+        ));
         let this = cx.entity();
-        Modal::dialog("pull-request-thread-dialog", surface, move |_, cx| {
+        Modal::dialog("pull-request-thread-dialog", div().id("dialog-content").occlude().w_full().max_w(cx.app_theme().rem(32.)).child(surface), move |_, cx| {
             this.update(cx, |this, cx| {
                 if this.preparing.is_none() {
                     cx.emit(PullRequestThreadEvent::Close);
@@ -295,4 +295,19 @@ impl Render for PullRequestThreadDialog {
             })
         })
     }
+}
+
+/// CSS `text-transform: capitalize`: the first letter of each word upper-cased.
+fn capitalize_words(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut start = true;
+    for ch in text.chars() {
+        if start {
+            out.extend(ch.to_uppercase());
+        } else {
+            out.push(ch);
+        }
+        start = ch.is_whitespace();
+    }
+    out
 }

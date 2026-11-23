@@ -9,19 +9,19 @@ use std::sync::Arc;
 
 use gpui_kit::{
     AnyElement, AppContext as _, Context, Entity, EventEmitter, IntoElement, ParentElement as _, Render,
-    SharedString, Styled as _, Window, component::input::InputState, div, prelude::*, px,
+    SharedString, Styled as _, TestSupportExt as _, Window, component::input::InputState, div, prelude::*, px,
 };
 use t3code_contracts::{
     CommandId, ProjectId, ProjectMutation, ProjectMutationProjectUpdate, ProjectScript, ProjectScriptIcon,
 };
 
-use super::chat::thread_details_panel_styles::{row, row_base, row_icon, split_row, split_secondary};
+use super::chat::thread_details_panel_styles::{DismissPress, below_row, observed, row, row_base, row_icon, split_row, split_secondary};
 use super::git_actions_control_source::{GitActionsSource, now_ms};
 use super::icons::{Icon, IconName, IconSize};
 use super::ui::button::{Button, ButtonSize, ButtonVariant};
 use super::ui::dialog::{DialogSurface, Modal};
 use super::ui::input::TextInput;
-use super::ui::popover::{below, glass_surface};
+use super::ui::popover::glass_surface;
 use super::ui::switch::Switch;
 use super::ui::toast::{ToastData, ToastKind, Toaster};
 use super::ui::tooltip::tooltip;
@@ -77,6 +77,7 @@ pub struct ProjectScriptsControl {
     /// The session may run terminal commands.
     can_run: bool,
     menu_open: bool,
+    dismissed: DismissPress,
     editor: Option<EditorDialog>,
 }
 
@@ -89,7 +90,8 @@ impl ProjectScriptsControl {
         scripts: Vec<ProjectScript>,
         can_run: bool,
     ) -> Self {
-        Self { source, project_id, scripts, preferred_script_id: None, can_run, menu_open: false, editor: None }
+        Self { source, project_id, scripts, preferred_script_id: None, can_run, menu_open: false,
+            dismissed: DismissPress::default(), editor: None }
     }
 
     pub fn set_scripts(&mut self, scripts: Vec<ProjectScript>, cx: &mut Context<Self>) {
@@ -282,8 +284,10 @@ impl ProjectScriptsControl {
                             .on_click(cx.listener(move |this, _, window, cx| {
                                 cx.stop_propagation();
                                 this.open_editor(Some(&edit), window, cx);
-                            })),
+                            }))
+                            .test_support(),
                     )
+                    .test_support()
                     .into_any_element()
             })
             .collect();
@@ -304,16 +308,18 @@ impl ProjectScriptsControl {
                 .on_click(cx.listener(|this, _, window, cx| this.open_editor(None, window, cx)))
                 .into_any_element(),
         );
-        below(
+        below_row(
             glass_surface(theme)
                 .id("scripts-menu")
                 .occlude()
                 .w(theme.spacing.thread_details_panel_width - px(16.))
                 .p(theme.sp(1.))
-                .on_mouse_down_out(cx.listener(|this, _, _, cx| this.set_menu_open(false, cx)))
+                .on_mouse_down_out(cx.listener(|this, event: &gpui_kit::MouseDownEvent, _, cx| {
+                    this.dismissed.record(event.position);
+                    this.set_menu_open(false, cx);
+                }))
                 .children(rows),
         )
-        .into_any_element()
     }
 
     fn render_editor(&self, editor: &EditorDialog, theme: &AppTheme, cx: &mut Context<Self>) -> AnyElement {
@@ -410,15 +416,16 @@ impl ProjectScriptsControl {
             );
         }
         let surface = surface
-            .footer(
-                Button::new("script-cancel")
+            .footer(observed(
+                "script-cancel",
+                Button::new("script-cancel-button")
                     .variant(ButtonVariant::Outline)
                     .label(t!("Cancel"))
                     .on_click(cx.listener(|this, _, _, cx| {
                         this.editor = None;
                         cx.notify();
                     })),
-            )
+            ))
             .footer(
                 Button::new("script-save")
                     .size(ButtonSize::Default)
@@ -429,7 +436,7 @@ impl ProjectScriptsControl {
             this.editor = None;
             cx.notify();
         }));
-        Modal::dialog("script-editor", surface, move |window, cx| close(&(), window, cx)).into_any_element()
+        Modal::dialog("script-editor", div().id("dialog-content").occlude().w_full().max_w(cx.app_theme().rem(32.)).child(surface), move |window, cx| close(&(), window, cx)).into_any_element()
     }
 }
 
@@ -453,7 +460,10 @@ impl Render for ProjectScriptsControl {
                     .on_click(cx.listener(move |this, _, _, cx| this.run(run.clone(), cx)));
                 let chevron = split_secondary("script-menu", &theme, false, self.menu_open)
                     .tooltip(tooltip(t!("Script actions")))
-                    .on_click(cx.listener(|this, _, _, cx| {
+                    .on_click(cx.listener(|this, event, _, cx| {
+                        if this.dismissed.consumes(event) {
+                            return;
+                        }
                         let open = !this.menu_open;
                         this.set_menu_open(open, cx);
                     }));

@@ -12,7 +12,7 @@ use std::ops::Range;
 use gpui_kit::{
     App, Context, EntityInputHandler, EventEmitter, FocusHandle, Focusable, IntoElement, KeyBinding,
     ParentElement as _, Pixels, Render, ScrollStrategy, SharedString, Styled as _, UTF16Selection,
-    UniformListScrollHandle, Window, actions, div, prelude::*, px, uniform_list,
+    TestSupportExt as _, UniformListScrollHandle, Window, actions, div, prelude::*, px, uniform_list,
 };
 use t3code_contracts::VcsRef;
 
@@ -116,7 +116,8 @@ pub struct BranchPickerOptions {
 pub enum BranchPickerEvent {
     Select(BranchPickerItem),
     StartFromOriginChanged(bool),
-    Dismiss,
+    /// Closed by Escape (`None`) or a press outside at this point.
+    Dismiss(Option<gpui_kit::Point<Pixels>>),
 }
 
 /// The open picker.
@@ -258,7 +259,7 @@ impl BranchPicker {
     }
 
     fn on_close(&mut self, _: &PickerClose, _: &mut Window, cx: &mut Context<Self>) {
-        cx.emit(BranchPickerEvent::Dismiss);
+        cx.emit(BranchPickerEvent::Dismiss(None));
     }
 
     fn on_backspace(&mut self, _: &PickerBackspace, _: &mut Window, cx: &mut Context<Self>) {
@@ -334,6 +335,7 @@ impl BranchPicker {
         let highlight = c.highlight();
         div()
             .id(("branch-picker-row", index))
+            .w_full()
             .h(PICKER_ROW_HEIGHT)
             .flex()
             .items_center()
@@ -454,14 +456,15 @@ impl Render for BranchPicker {
         glass_surface(&theme)
             .id("branch-picker")
             .key_context(CONTEXT)
-            .track_focus(&self.focus_handle)
             .on_action(cx.listener(Self::on_up))
             .on_action(cx.listener(Self::on_down))
             .on_action(cx.listener(Self::on_confirm))
             .on_action(cx.listener(Self::on_close))
             .on_action(cx.listener(Self::on_backspace))
             .occlude()
-            .on_mouse_down_out(cx.listener(|_, _, _, cx| cx.emit(BranchPickerEvent::Dismiss)))
+            .on_mouse_down_out(cx.listener(|_, event: &gpui_kit::MouseDownEvent, _, cx| {
+                cx.emit(BranchPickerEvent::Dismiss(Some(event.position)))
+            }))
             .w(self.options.width.unwrap_or(px(320.)))
             .overflow_hidden()
             .child(search)
@@ -470,6 +473,8 @@ impl Render for BranchPicker {
             .children(origin)
             .children(self.options.notice.clone().map(status_line))
             .children(self.options.status.clone().map(status_line))
+            .test_support()
+            .track_focus(&self.focus_handle)
     }
 }
 

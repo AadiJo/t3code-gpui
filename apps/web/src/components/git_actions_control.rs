@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use gpui_kit::{
     AnyElement, App, AppContext as _, Context, Entity, EventEmitter, IntoElement, ParentElement as _, Render,
-    SharedString, Styled as _, Task, Window, component::input::TextareaState, div, prelude::*, px,
+    SharedString, Styled as _, Task, TestSupportExt as _, Window, component::input::TextareaState, div, prelude::*, px,
 };
 use t3code_contracts::{
     GitRunStackedActionInput, GitRunStackedActionResultPrStatus, GitStackedAction, ProjectId, ThreadId,
@@ -17,7 +17,7 @@ use t3code_contracts::{
 };
 
 use super::chat::thread_details_panel_styles::{
-    ROW_HEIGHT, row, row_base, row_busy_fill, row_icon, split_row, split_secondary,
+    DismissPress, ROW_HEIGHT, below_row, observed, row, row_base, row_busy_fill, row_icon, split_row, split_secondary,
 };
 use super::git_actions_control_logic::{
     GitActionIcon, GitActionMenuItem, GitDialogAction, GitQuickAction, GitQuickActionKind, ToastOutcome,
@@ -33,7 +33,7 @@ use super::ui::button::{Button, ButtonSize, ButtonVariant};
 use super::ui::checkbox::{CheckState, Checkbox};
 use super::ui::dialog::{DialogSurface, Modal};
 use super::ui::input::TextArea;
-use super::ui::popover::{below, glass_surface};
+use super::ui::popover::glass_surface;
 use super::ui::spinner::{Spinner, SpinnerSize};
 use super::ui::toast::{ToastData, ToastKind, Toaster};
 use super::ui::tooltip::tooltip;
@@ -104,6 +104,7 @@ pub struct GitActionsControl {
     menu_open: bool,
     commit_dialog: Option<CommitDialog>,
     pending_default: Option<PendingDefaultBranchAction>,
+    dismissed: DismissPress,
     /// A message from a commit that failed, offered again when the dialog reopens.
     restore_message: Option<String>,
     /// Re-renders once a second while an action runs, for the elapsed time.
@@ -159,7 +160,7 @@ fn error_toast(title: SharedString, error: &SourceControlError, cx: &mut App) {
 impl GitActionsControl {
     pub fn new(model: Entity<SourceControlModel>, props: GitActionsProps, cx: &mut Context<Self>) -> Self {
         cx.observe(&model, |_, _, cx| cx.notify()).detach();
-        Self { model, props, menu_open: false, commit_dialog: None, pending_default: None, restore_message: None, ticker: None }
+        Self { model, props, menu_open: false, commit_dialog: None, pending_default: None, dismissed: DismissPress::default(), restore_message: None, ticker: None }
     }
 
     pub fn model(&self) -> &Entity<SourceControlModel> {
@@ -478,6 +479,7 @@ impl GitActionsControl {
                             this.choose_menu_item(&item_for_click, window, cx)
                         }))
                     })
+                    .test_support()
                     .into_any_element()
             })
             .collect();
@@ -524,11 +526,12 @@ impl GitActionsControl {
         if let Some(error) = self.model.read(cx).status_error.clone() {
             rows.push(notice(error, c.destructive()));
         }
-        let close = cx.listener(|this, _, _, cx| {
+        let close = cx.listener(|this, event: &gpui_kit::MouseDownEvent, _, cx| {
             this.menu_open = false;
+            this.dismissed.record(event.position);
             cx.notify();
         });
-        below(
+        below_row(
             glass_surface(theme)
                 .id("git-actions-menu")
                 .occlude()
@@ -537,7 +540,6 @@ impl GitActionsControl {
                 .on_mouse_down_out(close)
                 .children(rows),
         )
-        .into_any_element()
     }
 
     fn render_changes_row(&self, status: Option<&VcsStatusResult>, theme: &AppTheme, cx: &mut Context<Self>) -> AnyElement {
@@ -607,8 +609,9 @@ impl GitActionsControl {
                 .hover(|s| s.bg(with_alpha(c.highlight(), 0.5)))
                 .when(dialog.editing_files, |r| {
                     let path = path.clone();
-                    r.child(
-                        Checkbox::new(("include-file", i), if excluded { CheckState::Unchecked } else { CheckState::Checked })
+                    r.child(observed(
+                        ("include-file", i),
+                        Checkbox::new(("include-file-box", i), if excluded { CheckState::Unchecked } else { CheckState::Checked })
                             .on_change({
                                 let this = cx.entity();
                                 move |_, _, cx| {
@@ -622,7 +625,7 @@ impl GitActionsControl {
                                     })
                                 }
                             }),
-                    )
+                    ))
                 })
                 .child(
                     div()
@@ -711,8 +714,9 @@ impl GitActionsControl {
                             }),
                     )
                     .when(!files.is_empty(), |d| {
-                        d.child(
-                            Button::new("commit-edit-files")
+                        d.child(observed(
+                            "commit-edit-files",
+                            Button::new("commit-edit-files-button")
                                 .variant(ButtonVariant::Ghost)
                                 .size(ButtonSize::Xs)
                                 .label(if dialog.editing_files {
@@ -726,7 +730,7 @@ impl GitActionsControl {
                                     }
                                     cx.notify();
                                 })),
-                        )
+                        ))
                     }),
             )
             .child(if files.is_empty() {
@@ -788,16 +792,17 @@ impl GitActionsControl {
                     .disabled(!self.props.can_change_thread_branch || none_selected)
                     .on_click(cx.listener(|this, _, _, cx| this.commit_from_dialog(true, cx))),
             )
-            .footer(
-                Button::new("commit-confirm")
+            .footer(observed(
+                "commit-confirm",
+                Button::new("commit-confirm-button")
                     .size(ButtonSize::Sm)
                     .label(t!("Commit", context = "verb"))
                     .disabled(!self.props.can_write_source_control || none_selected)
                     .on_click(cx.listener(|this, _, _, cx| this.commit_from_dialog(false, cx))),
-            );
+            ));
         let close = cx.listener(|this, _: &(), _, cx| this.close_commit_dialog(cx));
         let close = std::rc::Rc::new(close);
-        Modal::dialog("commit-dialog", surface, move |window, cx| close(&(), window, cx)).into_any_element()
+        Modal::dialog("commit-dialog", div().id("dialog-content").occlude().w_full().max_w(cx.app_theme().rem(32.)).child(surface), move |window, cx| close(&(), window, cx)).into_any_element()
     }
 
     fn render_default_branch_dialog(
@@ -838,14 +843,15 @@ impl GitActionsControl {
                         })),
                 ),
             )
-            .footer(
-                Button::new("default-continue")
+            .footer(observed(
+                "default-continue",
+                Button::new("default-continue-button")
                     .variant(ButtonVariant::Outline)
                     .size(ButtonSize::Sm)
                     .label(copy.continue_label)
                     .disabled(!self.props.can_write_source_control)
                     .on_click(cx.listener(|this, _, _, cx| this.continue_pending(false, cx))),
-            )
+            ))
             .footer(
                 Button::new("default-feature")
                     .size(ButtonSize::Sm)
@@ -857,7 +863,7 @@ impl GitActionsControl {
             this.pending_default = None;
             cx.notify();
         }));
-        Modal::dialog("default-branch-dialog", surface, move |window, cx| abort(&(), window, cx)).into_any_element()
+        Modal::dialog("default-branch-dialog", div().id("dialog-content").occlude().w_full().max_w(cx.app_theme().rem(32.)).child(surface), move |window, cx| abort(&(), window, cx)).into_any_element()
     }
 }
 
@@ -1006,7 +1012,10 @@ impl Render for GitActionsControl {
                 let busy = progress.is_some();
                 let secondary = split_secondary("git-menu-trigger", &theme, is_busy || !has_menu, self.menu_open)
                     .tooltip(tooltip(t!("Git action options")))
-                    .on_click(cx.listener(|this, _, _, cx| {
+                    .on_click(cx.listener(|this, event, _, cx| {
+                        if this.dismissed.consumes(event) {
+                            return;
+                        }
                         let open = !this.menu_open;
                         this.set_menu_open(open, cx);
                     }));
