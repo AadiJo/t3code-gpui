@@ -345,6 +345,15 @@ pub fn derive_timeline_rows(input: &TimelineInput, expansion: &TimelineExpansion
     {
         failed_runs.insert(latest.run_id.clone());
     }
+    // A run with a failed error item stays unfolded (`failedTimelineRunIds`).
+    for entry in entries {
+        if let EntryKind::Work(w) = &entry.kind
+            && matches!(w.item, WorkItem::Error { .. })
+            && let Some(run) = &w.run_id
+        {
+            failed_runs.insert(run.clone());
+        }
+    }
     let unfolded: HashSet<RunId> = active_runs.union(&failed_runs).cloned().collect();
     let folds = derive_turn_folds(entries, &terminal_ids, input, &unfolded);
     let mut collapsed: HashSet<SharedString> = HashSet::new();
