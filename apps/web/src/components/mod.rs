@@ -3,6 +3,7 @@ pub mod chat;
 pub mod persistent_thread_terminals;
 pub mod relative_time;
 pub mod icons;
+pub mod media;
 pub mod composer_prompt_editor;
 pub mod composer_prompt_editor_element;
 pub mod chat_markdown;

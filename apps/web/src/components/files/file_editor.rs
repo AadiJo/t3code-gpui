@@ -10,7 +10,7 @@ use gpui_kit::{
     App, Bounds, ClipboardItem, Context, CursorStyle, DispatchPhase, Element, ElementId, ElementInputHandler, Entity,
     EntityInputHandler, EventEmitter, FocusHandle, Focusable, Font, FontStyle, FontWeight, GlobalElementId, Hitbox,
     HitboxBehavior, Hsla, InspectorElementId, IntoElement, KeyBinding, LayoutId, MouseButton, MouseDownEvent,
-    MouseMoveEvent, MouseUpEvent, ParentElement as _, Pixels, Point, Render, ScrollWheelEvent, ShapedLine, SharedString,
+    MouseMoveEvent, MouseUpEvent, ParentElement as _, Pixels, Point, Render, ScrollEvent, ShapedLine, SharedString,
     Style, Styled as _, TextAlign, TextRun, UTF16Selection, Window, actions, div, fill, font, point, prelude::*, px,
     relative, size,
 };
@@ -561,7 +561,7 @@ impl FileEditor {
         let colors = theme.colors;
         let status = match (find.current, find.matches.len()) {
             (_, 0) if find.query.is_empty() => SharedString::default(),
-            (_, 0) => t!("No results"),
+            (_, 0) => t!("No results found."),
             (Some(current), total) => format!("{}/{}", current + 1, total).into(),
             (None, total) => total.to_string().into(),
         };
@@ -1148,7 +1148,7 @@ impl EditorElement {
         });
         let editor = self.editor.clone();
         let hb = hitbox.clone();
-        window.on_mouse_event(move |event: &ScrollWheelEvent, phase, window, cx| {
+        window.on_mouse_event(move |event: &ScrollEvent, phase, window, cx| {
             if phase == DispatchPhase::Bubble && hb.is_hovered(window) {
                 let delta = event.delta.pixel_delta(px(EDITOR_LINE_HEIGHT));
                 editor.update(cx, |editor, cx| editor.scroll_by(delta, cx));
