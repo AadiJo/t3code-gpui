@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use gpui_kit::component::input::InputState;
+use gpui_kit::base::TestSupportExt as _;
 use gpui_kit::{
     AnyElement, AppContext as _, Context, Entity, EventEmitter, InteractiveElement as _, IntoElement, ParentElement as _,
     Render, SharedString, StatefulInteractiveElement as _, Styled as _, Window, div, prelude::FluentBuilder as _, px,
@@ -247,7 +248,7 @@ impl Render for IssueDetailPanel {
         let theme = cx.app_theme().clone();
         let Some(detail) = self.detail.clone() else {
             let text = self.error.clone().unwrap_or_else(|| t!("Loading issue"));
-            return div().id("issue-detail").size_full().p(px(20.)).bg(theme.colors.background()).text_color(theme.colors.muted_foreground).child(text);
+            return div().id("issue-detail").test_support().size_full().p(px(20.)).bg(theme.colors.background()).text_color(theme.colors.muted_foreground).child(text);
         };
         let access = self.access().expect("detail loaded");
         let now = self.now_ms.unwrap_or_else(crate::timestamp_format::now_ms);
@@ -329,13 +330,14 @@ impl Render for IssueDetailPanel {
                     let name = c.name.clone();
                     div()
                         .id(SharedString::from(format!("issue-label-{name}")))
+                        .test_support()
                         .flex()
                         .items_center()
                         .gap(px(8.))
                         .h(px(26.))
                         .px(px(6.))
                         .rounded(px(4.))
-                        .hover(|s| s.bg(theme.colors.accent))
+                        .hover(|s| s.bg(theme.colors.accent_surface))
                         .child(Icon::new(if on { IconName::Check } else { IconName::Plus }).size(IconSize::Xs).color(theme.colors.muted_foreground))
                         .child(label_chip(&theme, &c.name, c.color.as_deref()))
                         .on_click(cx.listener(move |this, _, _, cx| this.toggle_label(c.clone(), cx)))
@@ -355,6 +357,7 @@ impl Render for IssueDetailPanel {
             reaction_row = reaction_row.child(
                 div()
                     .id(SharedString::from(format!("issue-react-{}", content.as_str())))
+                    .test_support()
                     .flex()
                     .items_center()
                     .gap(px(4.))
@@ -375,6 +378,7 @@ impl Render for IssueDetailPanel {
         let reference = self.reference.clone();
         div()
             .id("issue-detail")
+            .test_support()
             .size_full()
             .flex()
             .flex_col()
@@ -422,6 +426,7 @@ impl Render for IssueDetailPanel {
             .child(
                 div()
                     .id("issue-detail-body")
+                    .test_support()
                     .flex_1()
                     .min_h_0()
                     .overflow_y_scroll()

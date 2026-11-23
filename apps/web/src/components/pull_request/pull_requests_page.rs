@@ -14,6 +14,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use gpui_kit::component::input::{InputEvent, InputState};
+use gpui_kit::base::TestSupportExt as _;
 use gpui_kit::{
     AnyElement, App, AppContext as _, Context, Entity, EventEmitter, FocusHandle, Focusable, InteractiveElement as _,
     IntoElement, KeyBinding, ListAlignment, ListState, ParentElement as _, Render, SharedString,
@@ -50,9 +51,7 @@ pub fn init(cx: &mut App) {
     let find = if cfg!(target_os = "macos") { "cmd-f" } else { "ctrl-f" };
     cx.bind_keys([
         KeyBinding::new("down", SelectNext, Some(KEY_CONTEXT)),
-        KeyBinding::new("j", SelectNext, Some(KEY_CONTEXT)),
         KeyBinding::new("up", SelectPrevious, Some(KEY_CONTEXT)),
-        KeyBinding::new("k", SelectPrevious, Some(KEY_CONTEXT)),
         KeyBinding::new("enter", OpenSelected, Some(KEY_CONTEXT)),
         KeyBinding::new(find, FocusSearch, Some(KEY_CONTEXT)),
     ]);
@@ -188,6 +187,21 @@ impl PullRequestsPage {
         };
         page.load(false, cx);
         page
+    }
+
+    /// Moves keyboard focus to the search box.
+    pub fn focus_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.search.update(cx, |s, cx| s.focus(window, cx));
+    }
+
+    /// Moves keyboard focus to the list, for arrow-key navigation.
+    pub fn focus_list(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        window.focus(&self.focus, cx);
+    }
+
+    /// The selected row's key.
+    pub fn selected_key(&self) -> Option<SharedString> {
+        self.selected.clone()
     }
 
     /// The saved views the menu offers.
@@ -684,6 +698,7 @@ impl PullRequestsPage {
                 .children(chips.into_iter().enumerate().map(|(i, (label, without))| {
                     div()
                         .id(("pr-chip", i))
+                        .test_support()
                         .flex()
                         .items_center()
                         .gap(px(4.))
@@ -699,8 +714,9 @@ impl PullRequestsPage {
                         .child(
                             div()
                                 .id(("pr-chip-clear", i))
+                                .test_support()
                                 .rounded_full()
-                                .hover(|s| s.bg(theme.colors.accent))
+                                .hover(|s| s.bg(theme.colors.accent_surface))
                                 .child(Icon::new(IconName::X).size(IconSize::Xs).color(theme.colors.muted_foreground))
                                 .on_click(cx.listener(move |this, _, _, cx| this.set_menu_filters(without.clone(), cx))),
                         )
@@ -723,6 +739,7 @@ impl PullRequestsPage {
             out.push(
                 div()
                     .id("pr-failed")
+                    .test_support()
                     .flex()
                     .items_center()
                     .justify_between()
@@ -928,6 +945,7 @@ fn render_row(
             el.child(
                 div()
                     .id(SharedString::from(format!("stack-{key}")))
+                    .test_support()
                     .flex()
                     .items_center()
                     .gap(px(3.))
@@ -974,14 +992,15 @@ fn render_row(
     }));
     div()
         .id(SharedString::from(format!("pr-row-{key}")))
+        .test_support()
         .group("pr-row")
         .w_full()
         .h(px(ROW_HEIGHT))
         .flex()
         .items_center()
         .rounded(theme.radii.md)
-        .when(selected, |el| el.bg(theme.colors.accent))
-        .when(!selected, |el| el.hover(|s| s.bg(theme.colors.accent.opacity(0.6))))
+        .when(selected, |el| el.bg(theme.colors.accent_surface))
+        .when(!selected, |el| el.hover(|s| s.bg(theme.colors.accent_surface.opacity(0.6))))
         .cursor_pointer()
         .on_click(move |_, _, cx| open_page.update(cx, |p, cx| p.open_row(&open_row, cx)))
         .child(
@@ -1089,6 +1108,7 @@ impl Render for PullRequestsPage {
         let _ = window;
         div()
             .id("pull-requests-page")
+            .test_support()
             .key_context(KEY_CONTEXT)
             .track_focus(&self.focus)
             .on_action(cx.listener(|this, _: &SelectNext, _, cx| this.move_selection(1, cx)))

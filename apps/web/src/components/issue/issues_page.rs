@@ -8,6 +8,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::rc::Rc;
 
 use gpui_kit::component::input::{InputEvent, InputState, Textarea, TextareaState};
+use gpui_kit::base::TestSupportExt as _;
 use gpui_kit::{
     AnyElement, AppContext as _, Context, Entity, EventEmitter, InteractiveElement as _, IntoElement, ParentElement as _,
     Render, SharedString, StatefulInteractiveElement as _, Styled as _, Subscription, Window, div, prelude::FluentBuilder as _, px,
@@ -393,13 +394,14 @@ impl Render for IssuesPage {
                 column = column.child(
                     div()
                         .id(SharedString::from(format!("issue-row-{}", entry.url)))
+                        .test_support()
                         .flex()
                         .gap(px(8.))
                         .px(px(12.))
                         .py(px(10.))
                         .rounded(theme.radii.md)
-                        .when(selected, |el| el.bg(theme.colors.accent))
-                        .hover(|s| s.bg(theme.colors.accent.opacity(0.6)))
+                        .when(selected, |el| el.bg(theme.colors.accent_surface))
+                        .hover(|s| s.bg(theme.colors.accent_surface.opacity(0.6)))
                         .cursor_pointer()
                         .on_click(cx.listener({
                             let entry = entry.clone();
@@ -456,6 +458,7 @@ impl Render for IssuesPage {
         }
         div()
             .id("issues-page")
+            .test_support()
             .size_full()
             .flex()
             .flex_col()
@@ -464,6 +467,7 @@ impl Render for IssuesPage {
             .child(
                 div()
                     .id("issues-body")
+                    .test_support()
                     .flex_1()
                     .min_h_0()
                     .overflow_y_scroll()

@@ -43,7 +43,7 @@ pub fn build(window: &mut Window, cx: &mut App) -> AnyView {
 
 use gpui_kit::{Context, Entity, IntoElement, ParentElement as _, Render, Styled as _, Subscription, div, px};
 
-use crate::components::pull_request::pull_request_detail_panel::{DetailTab, PullRequestDetailPanel};
+use crate::components::pull_request::pull_request_detail_panel::{DetailTab, PullRequestDetailEvent, PullRequestDetailPanel};
 use crate::components::pull_request::pull_request_source::{PullRequestDetailSource, pull_request_ref};
 use crate::components::pull_request::pull_requests_page::PullRequestsPageEvent;
 use crate::ActiveAppTheme as _;
@@ -54,6 +54,7 @@ pub struct PullRequestsWorkspace {
     pub detail: Option<Entity<PullRequestDetailPanel>>,
     pub fixture: FixtureSource,
     _events: Subscription,
+    _detail_events: Option<Subscription>,
 }
 
 impl PullRequestsWorkspace {
@@ -70,7 +71,7 @@ impl PullRequestsWorkspace {
             let PullRequestsPageEvent::Open { reference, .. } = event;
             this.open(reference.clone(), DetailTab::Summary, window, cx);
         });
-        let mut workspace = Self { page, detail: None, fixture, _events: events };
+        let mut workspace = Self { page, detail: None, fixture, _events: events, _detail_events: None };
         if let Some(tab) = tab {
             let entry = workspace.fixture.state.lock().unwrap().data.list_studio.entries[0].clone();
             workspace.open(pull_request_ref(&entry), tab, window, cx);
@@ -92,6 +93,13 @@ impl PullRequestsWorkspace {
             }
             p.set_tab(tab, window, cx);
         });
+        // A host action changes the row the list shows, so the list reads again.
+        let page = self.page.clone();
+        self._detail_events = Some(cx.subscribe(&detail, move |_, _, event: &PullRequestDetailEvent, cx| {
+            if let PullRequestDetailEvent::Acted(_) = event {
+                page.update(cx, |p, cx| p.load(false, cx));
+            }
+        }));
         self.detail = Some(detail);
         cx.notify();
     }

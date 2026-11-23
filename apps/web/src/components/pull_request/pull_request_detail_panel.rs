@@ -10,6 +10,7 @@ use std::rc::Rc;
 use std::time::Instant;
 
 use gpui_kit::component::input::InputState;
+use gpui_kit::base::TestSupportExt as _;
 use gpui_kit::{
     AnyElement, App, AppContext as _, Context, Div, Entity, EventEmitter, InteractiveElement as _, IntoElement,
     ParentElement as _, Render, SharedString, StatefulInteractiveElement as _, Styled as _, Subscription, WeakEntity,
@@ -702,6 +703,7 @@ impl CodeViewDecorations for DetailDecorations {
                                 .child(
                                     div()
                                         .id(SharedString::from(format!("code-resolve-{id}")))
+                                        .test_support()
                                         .ml_auto()
                                         .cursor_pointer()
                                         .hover(|s| s.text_color(theme.colors.text))
@@ -743,6 +745,7 @@ impl CodeViewDecorations for DetailDecorations {
         Some(
             div()
                 .id(SharedString::from(format!("viewed-{file_key}")))
+                .test_support()
                 .flex()
                 .items_center()
                 .gap(px(4.))
@@ -751,7 +754,7 @@ impl CodeViewDecorations for DetailDecorations {
                 .rounded(px(4.))
                 .border_1()
                 .border_color(if viewed { theme.colors.border } else { theme.colors.border.opacity(0.6) })
-                .when(viewed, |el| el.bg(theme.colors.accent))
+                .when(viewed, |el| el.bg(theme.colors.accent_surface))
                 .ui_text(&theme, TextSize::Xs3, weight::MEDIUM)
                 .text_color(if viewed { theme.colors.text } else { theme.colors.muted_foreground })
                 .child(Icon::new(if viewed { IconName::Check } else { IconName::Eye }).size(IconSize::Xs))
@@ -996,6 +999,7 @@ impl PullRequestDetailPanel {
                 };
                 div()
                     .id(SharedString::from(format!("pr-tab-{}", tab.label())))
+                    .test_support()
                     .flex()
                     .items_center()
                     .gap(px(6.))
@@ -1051,13 +1055,14 @@ impl PullRequestDetailPanel {
                         let this = this.clone();
                         div()
                             .id(("pr-check", i))
+                            .test_support()
                             .flex()
                             .items_center()
                             .gap(px(8.))
                             .h(px(28.))
                             .px(px(8.))
                             .rounded(theme.radii.md)
-                            .hover(|s| s.bg(theme.colors.accent.opacity(0.6)))
+                            .hover(|s| s.bg(theme.colors.accent_surface.opacity(0.6)))
                             .child(Icon::new(icon).size(IconSize::Sm).color(color))
                             .child(div().ui_text(theme, TextSize::Xs, weight::MEDIUM).text_color(theme.colors.text).child(SharedString::from(check.name.clone())))
                             .when(check.required == Some(true), |el| el.child(div().ui_text(theme, TextSize::Xs3, weight::NORMAL).text_color(theme.colors.muted_foreground).child(t!("Required"))))
@@ -1118,6 +1123,7 @@ impl PullRequestDetailPanel {
             row = row.child(
                 div()
                     .id(SharedString::from(format!("react-{key}-{}", content.as_str())))
+                    .test_support()
                     .flex()
                     .items_center()
                     .gap(px(4.))
@@ -1139,6 +1145,7 @@ impl PullRequestDetailPanel {
         row = row.child(
             div()
                 .id(SharedString::from(format!("react-add-{key}")))
+                .test_support()
                 .flex()
                 .items_center()
                 .justify_center()
@@ -1147,7 +1154,7 @@ impl PullRequestDetailPanel {
                 .border_1()
                 .border_color(theme.colors.border)
                 .cursor_pointer()
-                .hover(|st| st.bg(theme.colors.accent))
+                .hover(|st| st.bg(theme.colors.accent_surface))
                 .child(Icon::new(IconName::SmilePlus).size(IconSize::Xs).color(theme.colors.muted_foreground))
                 .on_click(cx.listener(move |this, _, _, cx| {
                     this.picker_open = if this.picker_open == Some(s.clone()) { None } else { Some(s.clone()) };
@@ -1159,13 +1166,14 @@ impl PullRequestDetailPanel {
                 let s = subject.clone();
                 div()
                     .id(SharedString::from(format!("react-pick-{key}-{}", content.as_str())))
+                    .test_support()
                     .size(px(22.))
                     .flex()
                     .items_center()
                     .justify_center()
                     .rounded_full()
                     .cursor_pointer()
-                    .hover(|st| st.bg(theme.colors.accent))
+                    .hover(|st| st.bg(theme.colors.accent_surface))
                     .child(pull_request_reaction_emoji(content))
                     .on_click(cx.listener(move |this, _, _, cx| this.toggle_reaction(s.clone(), content, cx)))
             })));
@@ -1209,6 +1217,7 @@ impl PullRequestDetailPanel {
         let edit_target = comment.clone();
         div()
             .id(SharedString::from(format!("comment-{}", comment.id)))
+            .test_support()
             .flex()
             .gap(px(10.))
             .child(avatar(theme, Some(&login), 24.))
@@ -1235,6 +1244,7 @@ impl PullRequestDetailPanel {
                                 el.child(
                                     div()
                                         .id(SharedString::from(format!("edit-{}", comment.id)))
+                                        .test_support()
                                         .ml_auto()
                                         .cursor_pointer()
                                         .child(Icon::new(IconName::Pencil).size(IconSize::Xs).color(theme.colors.muted_foreground))
@@ -1515,6 +1525,7 @@ impl PullRequestDetailPanel {
                     .children(guide.stops.iter().enumerate().map(|(i, s)| {
                         div()
                             .id(("guide-stop", i))
+                            .test_support()
                             .flex_1()
                             .h(px(4.))
                             .rounded_full()
@@ -1597,6 +1608,7 @@ impl Render for PullRequestDetailPanel {
         let scrolls = self.tab != DetailTab::Code;
         div()
             .id("pr-detail")
+            .test_support()
             .size_full()
             .flex()
             .flex_col()

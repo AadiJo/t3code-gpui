@@ -72,3 +72,8 @@ required-features = ["test-support"]
 # Runs the ported pull request and issue logic over the TypeScript runner's cases.
 [[example]]
 name = "pull_request_logic"
+
+# Clicks through the pull request and issue surfaces and measures list filtering and the Code tab.
+[[example]]
+name = "pull_requests_check"
+required-features = ["test-support"]

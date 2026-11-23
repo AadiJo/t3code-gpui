@@ -467,4 +467,37 @@ fn main() {
     });
 
     std::fs::write(&args[2], serde_json::to_string(&out).unwrap()).unwrap();
+
+    // Every wire fixture of a type the data sources return decodes through the same types.
+    if let Some(path) = args.get(3) {
+        let wire: BTreeMap<String, Vec<Value>> = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+        fn check<T: serde::de::DeserializeOwned>(values: Option<&Vec<Value>>) -> (usize, usize) {
+            let values = values.map(Vec::as_slice).unwrap_or(&[]);
+            (values.iter().filter(|v| serde_json::from_value::<T>((*v).clone()).is_ok()).count(), values.len())
+        }
+        let rows = [
+            ("PullRequestListStatsResult", check::<PullRequestListStatsResult>(wire.get("PullRequestListStatsResult"))),
+            ("PullRequestFilterOptions", check::<PullRequestFilterOptions>(wire.get("PullRequestFilterOptions"))),
+            ("PullRequestSummary", check::<PullRequestSummary>(wire.get("PullRequestSummary"))),
+            ("PullRequestLinkedThreadsResult", check::<PullRequestLinkedThreadsResult>(wire.get("PullRequestLinkedThreadsResult"))),
+            ("PullRequestPreview", check::<PullRequestPreview>(wire.get("PullRequestPreview"))),
+            ("PullRequestReviewGuideResult", check::<PullRequestReviewGuideResult>(wire.get("PullRequestReviewGuideResult"))),
+            ("PullRequestThreadCommentsResult", check::<PullRequestThreadCommentsResult>(wire.get("PullRequestThreadCommentsResult"))),
+            ("PullRequestDiffFileContentsResult", check::<PullRequestDiffFileContentsResult>(wire.get("PullRequestDiffFileContentsResult"))),
+            ("PullRequestFilesViewedResult", check::<PullRequestFilesViewedResult>(wire.get("PullRequestFilesViewedResult"))),
+            ("PullRequestChangeBreakdown", check::<PullRequestChangeBreakdown>(wire.get("PullRequestChangeBreakdown"))),
+            ("PullRequestReviewerCandidateList", check::<PullRequestReviewerCandidateList>(wire.get("PullRequestReviewerCandidateList"))),
+            ("PullRequestLabelCandidateList", check::<PullRequestLabelCandidateList>(wire.get("PullRequestLabelCandidateList"))),
+            ("IssueCommentsPage", check::<IssueCommentsPage>(wire.get("IssueCommentsPage"))),
+            ("IssueTemplateList", check::<IssueTemplateList>(wire.get("IssueTemplateList"))),
+            ("IssueCandidates", check::<IssueCandidates>(wire.get("IssueCandidates"))),
+            ("IssueLinkedThreadsResult", check::<IssueLinkedThreadsResult>(wire.get("IssueLinkedThreadsResult"))),
+            ("IssueCreateResult", check::<IssueCreateResult>(wire.get("IssueCreateResult"))),
+            ("IssueTrackerConnectionList", check::<IssueTrackerConnectionList>(wire.get("IssueTrackerConnectionList"))),
+        ];
+        println!("| wire fixture type | decoded | values |\n|---|---:|---:|");
+        for (name, (ok, total)) in rows {
+            println!("| {name} | {ok} | {total} |");
+        }
+    }
 }
