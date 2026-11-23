@@ -7219,6 +7219,7 @@ dependencies = [
  "base64 0.22.1",
  "dirs 6.0.0",
  "futures",
+ "jiff",
  "keyring",
  "rand 0.9.5",
  "reqwest",
