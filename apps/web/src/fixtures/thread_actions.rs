@@ -62,6 +62,40 @@ impl FixtureStore {
         self.changed(key, cx);
     }
 
+    /// Adds a pending command approval to the end of `key`, as an agent
+    /// asking to run a command does.
+    pub fn request_approval(&mut self, key: &ThreadKey, cx: &mut Context<Self>) {
+        let clock = self.clock;
+        let Some(record) = self.threads.get_mut(key) else { return };
+        if record.timeline.is_none() {
+            record.timeline = Some(super::build_timeline(key, record));
+        }
+        let Some(timeline) = record.timeline.as_mut() else { return };
+        let entries = std::mem::take(Arc::make_mut(&mut timeline.entries));
+        let mut b = TimelineBuilder::resume(key.thread_id.0.clone(), entries, record.next_id);
+        let (run, request) = (b.run_id(), b.request_id());
+        b.work(
+            Timestamp(clock),
+            &run,
+            ToolStatus::InProgress,
+            "Run command",
+            WorkItem::Approval {
+                request_id: request.clone(),
+                kind: ApprovalKind::Command,
+                detail: "pnpm vitest run apps/web/src/router.test.ts".into(),
+                reason: Some("The agent wants to run the router tests.".into()),
+            },
+        );
+        record.next_id = b.next_index();
+        timeline.entries = Arc::new(b.entries);
+        timeline.pending_approval_ids.push(request);
+        timeline.latest_run =
+            Some(LatestRun { run_id: run, status: RunStatus::Waiting, started_at: Some(Timestamp(clock)), completed_at: None, turn_ended: false });
+        record.pending_approval = true;
+        self.set_flags(key, |t| t.has_pending_approvals = true);
+        self.changed(key, cx);
+    }
+
     /// Forks `key` after the run that ends with `message`: a new thread with
     /// the conversation up to there, titled "<title> fork". Returns its key.
     pub fn fork_from_message(&mut self, key: &ThreadKey, message: &MessageId, cx: &mut Context<Self>) -> Option<ThreadKey> {

@@ -3,6 +3,7 @@
 //! (timestamp, Edit from here, Copy). Ports `TimelineUserMessageRow.tsx`.
 
 use crate::components::icons::{Icon, IconName, IconSize};
+use gpui_kit::base::TestSupportExt as _;
 use gpui_kit::{
     AnyElement, Context, InteractiveElement as _, IntoElement, ParentElement as _, StatefulInteractiveElement as _,
     Styled as _, Window, div, img, linear_color_stop, linear_gradient, px, relative,
@@ -90,7 +91,7 @@ impl MessagesTimeline {
         if !has_text && files.is_empty() && images.len() == 1 {
             // Media-only messages drop the bubble.
             column = column.child(
-                div().id(("image", key)).cursor_pointer().on_click(open_image(0)).child(img(images[0].source.clone())
+                div().id(("image", key)).cursor_pointer().on_click(open_image(0)).test_support().child(img(images[0].source.clone())
                     .h(LONE_IMAGE_HEIGHT)
                     .min_w(px(96.))
                     .max_w_full()
@@ -116,7 +117,7 @@ impl MessagesTimeline {
             if !images.is_empty() {
                 bubble = bubble.child(
                     div().mb_2().max_w(INLINE_MEDIA_WIDTH).flex().flex_wrap().gap_2().children(images.iter().enumerate().map(|(index, image)| {
-                        div().id(("image", key.wrapping_add(index as u64 + 1))).cursor_pointer().on_click(open_image(index)).child(
+                        div().id(("image", key.wrapping_add(index as u64 + 1))).cursor_pointer().on_click(open_image(index)).test_support().child(
                             img(image.source.clone())
                                 .w(px(101.))
                                 .h(px(75.75))
@@ -220,6 +221,7 @@ impl MessagesTimeline {
                 let id = message.id.clone();
                 xs_button(("revert", key), Some(IconName::Pencil), None, colors.theme.text, &colors)
                     .on_click(cx.listener(move |_, _, _, cx| cx.emit(TimelineAction::EditFrom(id.clone()))))
+                    .test_support()
             }))
             .child(
                 xs_button(
@@ -229,7 +231,8 @@ impl MessagesTimeline {
                     if copied { colors.theme.message_action } else { colors.theme.muted_foreground },
                     &colors,
                 )
-                .on_click(cx.listener(move |this, _, _, cx| this.copy(copy_key, text.clone(), cx))),
+                .on_click(cx.listener(move |this, _, _, cx| this.copy(copy_key, text.clone(), cx)))
+                .test_support(),
             );
         column.child(actions).into_any_element()
     }

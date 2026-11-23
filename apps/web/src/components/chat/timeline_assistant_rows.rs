@@ -4,6 +4,7 @@
 //! and `ChangedFilesTree.tsx`.
 
 use crate::components::icons::{Icon, IconName, IconSize};
+use gpui_kit::base::TestSupportExt as _;
 use gpui_kit::{
     AnyElement, Context, FontWeight, InteractiveElement as _, IntoElement, ParentElement as _,
     StatefulInteractiveElement as _, Styled as _, Window, div, px,
@@ -99,11 +100,11 @@ impl MessagesTimeline {
             .child(xs_button(("fork", key), Some(IconName::GitFork), None, colors.theme.text, &colors).on_click({
                 let id = message.id.clone();
                 cx.listener(move |_, _, _, cx| cx.emit(TimelineAction::Fork(id.clone())))
-            }))
+            }).test_support())
             .child(xs_button(("reply", key), Some(IconName::Reply), None, colors.theme.muted_foreground, &colors).on_click({
                 let (id, text) = (message.id.clone(), message.text.clone());
                 cx.listener(move |_, _, _, cx| cx.emit(TimelineAction::Reply { message: id.clone(), text: text.clone() }))
-            }))
+            }).test_support())
             .children((!message.streaming).then(|| {
                 div().text_color(colors.theme.muted_foreground).child(format_clock(message.updated_at.0))
             }))
@@ -173,7 +174,7 @@ impl MessagesTimeline {
             .child(xs_button(("open-diff-turn", key), Some(IconName::FileDiff), Some("Open diff".into()), colors.theme.muted_foreground, &colors).on_click({
                 let turn = turn.clone();
                 cx.listener(move |_, _, _, cx| cx.emit(TimelineAction::OpenDiff { turn: Some(turn.clone()), file: None }))
-            }));
+            }).test_support());
         let weak = cx.weak_entity();
         let rows = folders.into_iter().flat_map(|(folder, files)| {
             let folder_row = (!folder.is_empty()).then(|| {
@@ -229,6 +230,7 @@ impl MessagesTimeline {
                     )
                     .child(diff_stat(file.additions, file.deletions, &colors, TEXT_3XS.size))
                     .on_click(open)
+                    .test_support()
                     .into_any_element()
             }))
         });

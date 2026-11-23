@@ -22,7 +22,8 @@ pub fn project_directory(project_id: &str, changed: &[&str]) -> PathBuf {
     if !root.join("README.md").exists() {
         crate::scenes::files::write_fixture(&root).ok();
     }
-    for path in changed {
+    // The fixture replies cite `src/replay.rs` as a file chip.
+    for path in changed.iter().chain(&["src/replay.rs"]) {
         let full = root.join(path);
         if !full.exists() {
             write_generated(&full, path).ok();

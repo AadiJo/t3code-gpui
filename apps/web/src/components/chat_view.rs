@@ -10,6 +10,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Duration;
 
+use gpui_kit::base::TestSupportExt as _;
 use gpui_kit::{
     AnyView, App, AppContext as _, Context, Entity, EventEmitter, FocusHandle, FontWeight, InteractiveElement as _,
     IntoElement, KeyDownEvent, ParentElement as _, Pixels, Render, SharedString, StatefulInteractiveElement as _,
@@ -268,7 +269,9 @@ impl ChatView {
     }
 
     /// Digit keys pick a question option when focus is not in a text field.
-    fn on_key_down(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+    /// The app root forwards keys from outside the chat here too, as the web
+    /// listens on the whole document.
+    pub fn on_key_down(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         let keystroke = &event.keystroke;
         if self.questions.is_empty() || keystroke.modifiers.modified() || self.find_bar.is_some() {
             return;
@@ -419,6 +422,7 @@ impl Render for ChatView {
                     .child(
                         div()
                             .id("composer-drop")
+                            .test_support()
                             .w_full()
                             .on_drop(cx.listener(|_, drag: &FileReferenceDrag, _, cx| {
                                 cx.emit(ChatViewEvent::InsertReference(drag.mention()))

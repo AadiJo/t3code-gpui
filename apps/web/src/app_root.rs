@@ -912,6 +912,12 @@ impl Render for AppRoot {
             .on_action(cx.listener(|this, _: &JumpToThread9, _, cx| this.step_thread(ThreadStep::Jump(8), cx)))
             .on_action(cx.listener(|this, _: &OpenSettings, _, cx| this.open_settings(cx)))
             .on_action(cx.listener(|this, _: &ToggleThreadPanel, _, cx| this.toggle_details(cx)))
+            .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
+                if this.shown.is_some() && this.main.read(cx).page.is_none() {
+                    let chat = this.thread_view.read(cx).chat().clone();
+                    chat.update(cx, |chat, cx| chat.on_key_down(event, window, cx));
+                }
+            }))
             .on_action(cx.listener(|this, _: &FindInThread, window, cx| {
                 let chat = this.thread_view.read(cx).chat().clone();
                 if this.shown.is_some() {

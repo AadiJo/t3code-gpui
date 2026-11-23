@@ -12,6 +12,7 @@ use std::{
     sync::Arc,
 };
 
+use gpui_kit::base::TestSupportExt as _;
 use gpui_kit::{
     AnyElement, App, ClipboardItem, Context, Entity, EventEmitter, FocusHandle, Focusable, KeyBinding, MouseButton, MouseDownEvent, Pixels, Point, Render, ScrollStrategy, SharedString, Subscription, Task,
     UniformListScrollHandle, Window, actions, anchored, deferred,
@@ -781,7 +782,7 @@ impl FileTree {
                     .when(row.loading, |el| {
                         el.child(Icon::new(IconName::LoaderCircle).size(IconSize::Custom(px(ICON_WIDTH))).color(muted).opacity(0.6))
                     });
-                div().w_full().px(px(ITEM_MARGIN_X)).child(row).into_any_element()
+                div().w_full().px(px(ITEM_MARGIN_X)).child(row.test_support()).into_any_element()
             })
             .collect()
     }

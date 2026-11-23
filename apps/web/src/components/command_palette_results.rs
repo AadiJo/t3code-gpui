@@ -2,6 +2,7 @@
 //! with icon, title, second line, timestamp, shortcut and submenu chevron,
 //! disabled rows, and the empty state.
 
+use gpui_kit::base::TestSupportExt as _;
 use gpui_kit::{
     AnyElement, App, AppContext as _, FontWeight, HighlightStyle, InteractiveElement as _, IntoElement, ParentElement as _, Pixels,
     SharedString, StatefulInteractiveElement as _, Styled as _, StyledText, Window, div, prelude::FluentBuilder as _, px,
@@ -242,9 +243,10 @@ pub fn render_item(
                 on_drag_start(window, cx);
                 cx.new(|_| drag.clone())
             })
+            .test_support()
             .into_any_element()
         }
-        _ => row.into_any_element(),
+        _ => row.test_support().into_any_element(),
     }
 }
 

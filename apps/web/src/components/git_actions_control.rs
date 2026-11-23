@@ -579,6 +579,7 @@ impl GitActionsControl {
                     ),
             )
             .on_click(cx.listener(|_, _, _, cx| cx.emit(GitActionsEvent::OpenChanges)))
+            .test_support()
             .into_any_element()
     }
 

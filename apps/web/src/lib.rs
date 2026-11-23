@@ -103,6 +103,7 @@ pub fn init(cx: &mut App) {
     );
     components::sidebar::init(cx);
     components::chat::composer::init(cx);
+    components::chat::thread_find_bar::init(cx);
     components::branch_picker::bind_keys(cx);
     terminal::surface::init(cx);
     components::thread_terminal_drawer::init(cx);

@@ -17,14 +17,12 @@ use crate::components::ui::button::{Button, ButtonSize, ButtonVariant};
 use crate::components::ui::popover::glass_surface;
 use crate::i18n::t;
 
-actions!(thread_find, [FindPrevious, CloseFind]);
+actions!(thread_find, [CloseFind]);
 
-/// Binds Shift+Enter and Escape inside the bar.
+/// Binds Escape inside the bar. Shift+Enter arrives as the field's own
+/// `PressEnter { shift }`.
 pub fn init(cx: &mut App) {
-    cx.bind_keys([
-        KeyBinding::new("shift-enter", FindPrevious, Some("ThreadFindBar")),
-        KeyBinding::new("escape", CloseFind, Some("ThreadFindBar")),
-    ]);
+    cx.bind_keys([KeyBinding::new("escape", CloseFind, Some("ThreadFindBar"))]);
 }
 
 /// What the bar asks the chat view to do.
@@ -41,6 +39,7 @@ pub struct ThreadFindBar {
     input: Entity<InputState>,
     active: usize,
     total: usize,
+    last_query: SharedString,
     _subscription: Subscription,
 }
 
@@ -49,12 +48,18 @@ impl EventEmitter<ThreadFindBarEvent> for ThreadFindBar {}
 impl ThreadFindBar {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let input = cx.new(|cx| InputState::new(window, cx).placeholder(t!("Find in thread")));
-        let subscription = cx.subscribe_in(&input, window, |_, input, event: &InputEvent, _, cx| match event {
-            InputEvent::Change => cx.emit(ThreadFindBarEvent::QueryChanged(input.read(cx).value().clone())),
-            InputEvent::PressEnter { .. } => cx.emit(ThreadFindBarEvent::Step(1)),
+        let subscription = cx.subscribe_in(&input, window, |this, input, event: &InputEvent, _, cx| match event {
+            InputEvent::Change => {
+                let query = input.read(cx).value().clone();
+                if query != this.last_query {
+                    this.last_query = query.clone();
+                    cx.emit(ThreadFindBarEvent::QueryChanged(query));
+                }
+            }
+            InputEvent::PressEnter { shift, .. } => cx.emit(ThreadFindBarEvent::Step(if *shift { -1 } else { 1 })),
             _ => {}
         });
-        Self { input, active: 0, total: 0, _subscription: subscription }
+        Self { input, active: 0, total: 0, last_query: SharedString::default(), _subscription: subscription }
     }
 
     /// Focuses the field and selects its query, as each Mod+F does.
@@ -107,7 +112,6 @@ impl Render for ThreadFindBar {
         div()
             .id("thread-find-bar")
             .key_context("ThreadFindBar")
-            .on_action(cx.listener(|_, _: &FindPrevious, _, cx| cx.emit(ThreadFindBarEvent::Step(-1))))
             .on_action(cx.listener(|_, _: &CloseFind, _, cx| cx.emit(ThreadFindBarEvent::Close)))
             .occlude()
             .absolute()

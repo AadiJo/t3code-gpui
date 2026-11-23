@@ -43,6 +43,10 @@ use crate::components::ui::tooltip::tooltip;
 use crate::right_panel_store::{RightPanelKind, RightPanelStore, RightPanelSurface, SingletonKind};
 use crate::i18n::t;
 
+/// The diff loads after the frame that shows the thread; this is the
+/// longest it waits when no frame comes.
+const DIFF_LOAD_FALLBACK: std::time::Duration = std::time::Duration::from_millis(50);
+
 /// What the panel asks the app to do beyond editing the store.
 #[derive(Clone, Debug)]
 pub enum RightPanelEvent {
@@ -111,6 +115,7 @@ pub struct RightPanel {
     /// The thread and scope the diff view holds; anything else is stale.
     diff_shown: Option<(SharedString, DiffPanelSelection)>,
     diff_load_scheduled: bool,
+    diff_fallback: Option<Task<()>>,
     /// A file to reveal once the diff loads.
     pending_reveal: Option<SharedString>,
     workspaces: HashMap<SharedString, Workspace>,
@@ -240,6 +245,7 @@ impl RightPanel {
             diff: None,
             diff_shown: None,
             diff_load_scheduled: false,
+            diff_fallback: None,
             pending_reveal: None,
             workspaces: HashMap::new(),
             files: HashMap::new(),
@@ -351,11 +357,6 @@ impl RightPanel {
                 FilesRequest::Search => panel.open_content_search(window, cx),
             });
         }
-        let focus = panel.read(cx).file_picker().map(|p| p.focus_handle(cx))
-            .or_else(|| panel.read(cx).content_search().map(|s| s.focus_handle(cx)));
-        if let Some(focus) = focus {
-            window.focus(&focus, cx);
-        }
     }
 
     /// The Files panel for the shown thread's project, built on first use.
@@ -449,7 +450,11 @@ impl RightPanel {
 
     /// Feeds the diff view the shown thread's patch for its scope.
     fn load_diff(&mut self, cx: &mut Context<Self>) {
+        if !self.diff_load_scheduled {
+            return;
+        }
         self.diff_load_scheduled = false;
+        self.diff_fallback = None;
         let (Some((thread, selection)), Some(target), Some((diff, _))) =
             (self.diff_selection(cx), self.target.clone(), self.diff.as_ref())
         else {
@@ -493,6 +498,11 @@ impl RightPanel {
                     if !self.diff_load_scheduled {
                         self.diff_load_scheduled = true;
                         cx.on_next_frame(window, |this, _, cx| this.load_diff(cx));
+                        // A window that draws no next frame (hidden, headless) still loads.
+                        self.diff_fallback = Some(cx.spawn(async move |this, cx| {
+                            cx.background_executor().timer(DIFF_LOAD_FALLBACK).await;
+                            this.update(cx, |this, cx| this.load_diff(cx)).ok();
+                        }));
                     }
                     let label = match self.diff_selection(cx).map(|(_, selection)| selection) {
                         Some(DiffPanelSelection::ToolCall { .. }) => t!("Loading tool call diff..."),

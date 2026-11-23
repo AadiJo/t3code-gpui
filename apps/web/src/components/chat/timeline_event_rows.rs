@@ -6,6 +6,7 @@
 
 use crate::components::icons::{Icon, IconName, IconSize};
 use crate::components::chat::chat_style::chat_icon_stroke;
+use gpui_kit::base::TestSupportExt as _;
 use gpui_kit::{
     AnyElement, Context, FontWeight, Hsla, InteractiveElement as _, IntoElement, ParentElement as _,
     StatefulInteractiveElement as _, Styled as _, Window, div, linear_color_stop, linear_gradient, px,
@@ -267,13 +268,13 @@ impl MessagesTimeline {
                                 cx.listener(move |_, _, _, cx| {
                                     cx.emit(TimelineAction::RespondToApproval { request: request.clone(), approve: false })
                                 })
-                            }))
+                            }).test_support())
                             .child(text_button("approve", "Approve", colors.theme.text).on_click({
                                 let request = request_id.clone();
                                 cx.listener(move |_, _, _, cx| {
                                     cx.emit(TimelineAction::RespondToApproval { request: request.clone(), approve: true })
                                 })
-                            }))
+                            }).test_support())
                             .child(text_button("more", "More", colors.theme.muted_foreground)),
                     ),
             )
@@ -341,18 +342,22 @@ impl MessagesTimeline {
                                     div().child("Editing in the composer").into_any_element(),
                                     xs_button(("queued-cancel", key), None, Some("Cancel".into()), colors.theme.muted_foreground, &colors)
                                         .on_click(emit(TimelineAction::RemoveQueued(queued.id.clone())))
+                                        .test_support()
                                         .into_any_element(),
                                 ]
                             } else {
                                 vec![
                                     xs_button(("queued-send", key), Some(IconName::ArrowUp), Some("Send now".into()), colors.theme.muted_foreground, &colors)
                                         .on_click(emit(TimelineAction::SendQueuedNow(queued.id.clone())))
+                                        .test_support()
                                         .into_any_element(),
                                     xs_button(("queued-edit", key), Some(IconName::Pencil), None, colors.theme.muted_foreground, &colors)
                                         .on_click(emit(TimelineAction::EditQueued(queued.id.clone())))
+                                        .test_support()
                                         .into_any_element(),
                                     xs_button(("queued-remove", key), Some(IconName::X), None, colors.theme.muted_foreground, &colors)
                                         .on_click(emit(TimelineAction::RemoveQueued(queued.id.clone())))
+                                        .test_support()
                                         .into_any_element(),
                                 ]
                             }),
