@@ -161,7 +161,7 @@ impl ThreadRouteView {
     fn on_chat_event(&mut self, _: Entity<ChatView>, event: &ChatViewEvent, cx: &mut Context<Self>) {
         let ChatViewEvent::AnswerQuestion(index) = event;
         if let Some(ThreadTarget::Server(key)) = self.target.clone() {
-            self.store.update(cx, |store, cx| store.answer_question(&key, *index, cx));
+            self.store.update(cx, |store, cx| store.answer_questions(&key, &[*index], cx));
         }
     }
 

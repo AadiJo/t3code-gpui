@@ -5,7 +5,9 @@
 //! approvals resolve when answered.
 
 pub mod palette_source;
+mod thread_actions;
 pub mod timelines;
+pub mod workspace;
 
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
@@ -39,6 +41,12 @@ pub struct ThreadView {
     pub timeline: TimelineInput,
     pub is_draft: bool,
     pub running: bool,
+    /// Every question of the pending request; `timeline.pending_question` is the first.
+    pub questions: Arc<[PendingQuestion]>,
+    /// The branch the thread works on.
+    pub branch: Option<SharedString>,
+    /// The project, for per-project panels (Files) and the git controls.
+    pub project_id: Option<sidebar::ProjectId>,
 }
 
 /// A thread's content. The timeline is built on first open.
@@ -50,6 +58,9 @@ struct ThreadRecord {
     turns: usize,
     pending_approval: bool,
     pending_question: bool,
+    questions: Arc<[PendingQuestion]>,
+    branch: Option<SharedString>,
+    project_id: sidebar::ProjectId,
     next_id: usize,
 }
 
@@ -170,6 +181,9 @@ impl FixtureStore {
                     turns: turns(index),
                     pending_approval: thread.has_pending_approvals,
                     pending_question: thread.has_pending_user_input,
+                    questions: Arc::from([]),
+                    branch: thread.branch.clone(),
+                    project_id: thread.project_id.clone(),
                     next_id: 0,
                 };
                 (thread.key.clone(), record)
@@ -245,6 +259,9 @@ impl FixtureStore {
                     running: self.streams.contains_key(key),
                     timeline,
                     is_draft: false,
+                    questions: record.questions.clone(),
+                    branch: record.branch.clone(),
+                    project_id: Some(record.project_id.clone()),
                 })
             }
             ThreadTarget::Draft(id) => {
@@ -258,6 +275,9 @@ impl FixtureStore {
                     timeline: TimelineInput::default(),
                     is_draft: true,
                     running: false,
+                    questions: Arc::from([]),
+                    branch: None,
+                    project_id: project.map(|p| p.project_ref.project_id.clone()),
                 })
             }
         }
@@ -324,23 +344,29 @@ impl FixtureStore {
         }
     }
 
-    /// Answers the pending question in `key` with option `index`.
-    pub fn answer_question(&mut self, key: &ThreadKey, index: usize, cx: &mut Context<Self>) {
+    /// Answers every question of the pending request in `key`: `answers[i]`
+    /// is the chosen option of question `i`.
+    pub fn answer_questions(&mut self, key: &ThreadKey, answers: &[usize], cx: &mut Context<Self>) {
         let Some(record) = self.threads.get_mut(key) else { return };
         let Some(timeline) = record.timeline.as_mut() else { return };
-        let Some(question) = timeline.pending_question.take() else { return };
-        let answer = question.options.get(index).map(|(label, _)| label.clone()).unwrap_or_default();
+        if timeline.pending_question.take().is_none() {
+            return;
+        }
+        let pairs: Arc<[(SharedString, SharedString)]> = record
+            .questions
+            .iter()
+            .zip(answers)
+            .map(|(question, &index)| {
+                let answer = question.options.get(index).map(|(label, _)| label.clone()).unwrap_or_default();
+                (question.question.clone(), answer)
+            })
+            .collect();
         record.pending_question = false;
+        record.questions = Arc::from([]);
         let entries = std::mem::take(Arc::make_mut(&mut timeline.entries));
         let mut b = TimelineBuilder::resume(key.thread_id.0.clone(), entries, record.next_id);
         let run = timeline.latest_run.as_ref().map(|r| r.run_id.clone()).unwrap_or_else(|| b.run_id());
-        b.work(
-            Timestamp(self.clock),
-            &run,
-            ToolStatus::Completed,
-            "Answered",
-            WorkItem::QuestionAnswer { pairs: Arc::from([(question.question.clone(), answer)]) },
-        );
+        b.work(Timestamp(self.clock), &run, ToolStatus::Completed, "Answered", WorkItem::QuestionAnswer { pairs });
         record.next_id = b.next_index();
         timeline.entries = Arc::new(b.entries);
         timeline.latest_run = None;
@@ -382,6 +408,9 @@ impl FixtureStore {
                 turns: 0,
                 pending_approval: false,
                 pending_question: false,
+                questions: Arc::from([]),
+                branch: None,
+                project_id: project_ref.project_id.clone(),
                 next_id: 0,
             },
         );
@@ -536,11 +565,16 @@ fn build_timeline(key: &ThreadKey, record: &mut ThreadRecord) -> TimelineInput {
     } else {
         timelines::finished_thread(&key.thread_id.0, &record.title, record.turns)
     };
+    // Short threads get turn diffs; the 3,000-row benchmark threads stay as they were.
+    if record.turns <= 50 && input.turn_diff_summaries.is_empty() {
+        input = timelines::with_diff_summaries(input);
+    }
     if record.pending_approval {
         input = timelines::with_pending_approval(input, &key.thread_id.0);
     }
     if record.pending_question {
-        input = timelines::with_pending_question(input, &key.thread_id.0);
+        record.questions = timelines::pending_questions(&key.thread_id.0, input.entries.len() + 1).into();
+        input = timelines::with_pending_question(input, &record.questions, &key.thread_id.0);
     }
     record.next_id = input.entries.len() + 8;
     input

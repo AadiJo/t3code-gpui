@@ -199,27 +199,64 @@ pub fn with_pending_approval(input: TimelineInput, prefix: &str) -> TimelineInpu
     }
 }
 
+/// The questions a fixture thread waits on: two, so the drawer pages between them.
+pub fn pending_questions(prefix: &str, first_index: usize) -> Vec<PendingQuestion> {
+    let mut b = TimelineBuilder::resume(SharedString::from(prefix.to_string()), Vec::new(), first_index);
+    let request_id = b.request_id();
+    let question = |index: usize, header: &str, question: &str, options: [(&str, &str); 3]| PendingQuestion {
+        request_id: request_id.clone(),
+        header: header.to_string().into(),
+        question: question.to_string().into(),
+        options: options.iter().map(|(label, description)| (SharedString::from(*label), SharedString::from(*description))).collect(),
+        multi_select: false,
+        index,
+        count: 2,
+    };
+    vec![
+        question(0, "Rollout", "Should the new replay loop ship behind a flag?", [
+            ("Behind a flag", "Off by default; turn on per environment."),
+            ("Ship it", "On for everyone in the next release."),
+            ("Hold", "Wait for another round of review."),
+        ]),
+        question(1, "Tests", "Which tests should run before it merges?", [
+            ("Unit only", "The replay loop's own tests."),
+            ("Unit and end to end", "Also the crash-between-writes scenario."),
+            ("Everything", "The whole suite, including the slow ones."),
+        ]),
+    ]
+}
+
 /// Adds a pending question (the composer's top drawer) to `input`.
-pub fn with_pending_question(input: TimelineInput, prefix: &str) -> TimelineInput {
+pub fn with_pending_question(input: TimelineInput, questions: &[PendingQuestion], prefix: &str) -> TimelineInput {
     let mut b = TimelineBuilder::resume(SharedString::from(prefix.to_string()), Vec::new(), input.entries.len() + 1);
     let run = b.run_id();
     TimelineInput {
-        pending_question: Some(PendingQuestion {
-            request_id: b.request_id(),
-            header: "Rollout".into(),
-            question: "Should the new replay loop ship behind a flag?".into(),
-            options: Arc::from([
-                (SharedString::from("Behind a flag"), SharedString::from("Off by default; turn on per environment.")),
-                (SharedString::from("Ship it"), SharedString::from("On for everyone in the next release.")),
-                (SharedString::from("Hold"), SharedString::from("Wait for another round of review.")),
-            ]),
-            multi_select: false,
-            index: 0,
-            count: 1,
-        }),
+        pending_question: questions.first().cloned(),
         latest_run: Some(LatestRun { run_id: run, status: RunStatus::Waiting, started_at: Some(ts(60_000)), completed_at: None, turn_ended: false }),
         ..input
     }
+}
+
+/// Gives every other reply of a short finished thread a changed-files card,
+/// so its turns have diffs, and allows "Edit from here".
+pub fn with_diff_summaries(input: TimelineInput) -> TimelineInput {
+    let replies = input.entries.iter().filter_map(|entry| match &entry.kind {
+        EntryKind::Message(m) if m.role == MessageRole::Assistant => Some(m.id.clone()),
+        _ => None,
+    });
+    let summaries: Vec<TurnDiffSummary> = replies
+        .enumerate()
+        .filter(|(index, _)| index % 2 == 0)
+        .map(|(index, id)| {
+            let path = |n: usize| SharedString::from(super::workspace::CHANGED_PATHS[n % super::workspace::CHANGED_PATHS.len()]);
+            let file = |n: usize, additions, deletions| FileChange { path: path(n), additions, deletions, operation: "update".into() };
+            TurnDiffSummary {
+                assistant_message_id: id,
+                files: Arc::from([file(index, 12 + index as u32, 3), file(index + 1, 4, 1)]),
+            }
+        })
+        .collect();
+    TimelineInput { turn_diff_summaries: summaries.into(), supports_rollback: true, ..input }
 }
 
 /// The reply a fixture turn streams back, with prose, a list and a code block.
