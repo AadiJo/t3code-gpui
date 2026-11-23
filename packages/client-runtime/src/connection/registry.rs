@@ -6,7 +6,7 @@ use std::sync::{Arc, Weak};
 
 use tokio::sync::watch;
 
-use super::catalog::{CatalogEntry, ConnectionCatalogDocument, ConnectionRoute};
+use super::catalog::{CatalogEntry, ConnectionCatalogDocument, ConnectionProfile, ConnectionRoute};
 use super::driver::ConnectionContext;
 use super::onboarding::PairedRoute;
 use super::profile_store::CatalogStore;
@@ -14,6 +14,7 @@ use super::routes::{insert_route, merge_learned_routes, route_id, routes_after_r
 use super::supervisor::{EnvironmentSupervisor, LearnRoutes, SupervisorHandle, SupervisorSignal};
 use crate::environment::EnvironmentId;
 use crate::platform::SecretStoreError;
+use crate::platform::electron_import::ElectronImport;
 
 #[derive(Debug, thiserror::Error)]
 pub enum RegistryError {
@@ -153,6 +154,56 @@ impl ConnectionRegistry {
             self.inner.context.auth.credentials().delete(&id).await?;
         }
         Ok(())
+    }
+
+    /// Renames an environment on this device. The host keeps its own name.
+    pub async fn rename(&self, environment_id: &EnvironmentId, label: &str) -> Result<(), RegistryError> {
+        let label = label.trim().to_owned();
+        if label.is_empty() {
+            return Ok(());
+        }
+        self.edit(|document| {
+            let mut routes = existing_routes(document, environment_id);
+            for route in &mut routes {
+                route.target.label = label.clone();
+                match &mut route.profile {
+                    Some(ConnectionProfile::Bearer(profile)) => profile.label = label.clone(),
+                    Some(ConnectionProfile::Ssh(profile)) => profile.label = label.clone(),
+                    None => {}
+                }
+            }
+            if !routes.is_empty() {
+                document.put_entry(environment_id, &routes);
+            }
+        })
+        .await
+    }
+
+    /// Adds environments read from the Electron app: credentials first, then
+    /// routes this catalog does not have yet. Returns how many routes it added.
+    pub async fn import(&self, import: &ElectronImport) -> Result<usize, RegistryError> {
+        for (connection_id, credential) in &import.credentials {
+            self.inner.context.auth.credentials().put(connection_id, credential).await?;
+        }
+        let mut added = 0;
+        self.edit(|document| {
+            for environment in &import.environments {
+                let existed = document.entries().iter().any(|entry| entry.environment_id == environment.environment_id);
+                let mut routes = existing_routes(document, &environment.environment_id);
+                for route in &environment.routes {
+                    if !routes.iter().any(|existing| route_id(&existing.target) == route_id(&route.target)) {
+                        routes.push(route.clone());
+                        added += 1;
+                    }
+                }
+                document.put_entry(&environment.environment_id, &routes);
+                if !existed && !environment.enabled {
+                    document.set_enabled(&environment.environment_id, false);
+                }
+            }
+        })
+        .await?;
+        Ok(added)
     }
 
     /// Switches an environment on or off. Off stops its supervisor.
