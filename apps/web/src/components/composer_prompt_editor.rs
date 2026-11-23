@@ -328,6 +328,13 @@ impl ComposerPromptEditor {
         })
     }
 
+    /// The window point at the middle of the caret position for `offset`, from the last frame.
+    pub fn window_point_for(&self, offset: usize) -> Option<Point<Pixels>> {
+        let layout = self.layout.as_ref()?;
+        let bounds = layout.window_bounds_for_offset(&self.doc, offset, self.scroll_y)?;
+        Some(bounds.center())
+    }
+
     /// Whether the caret sits inside a fenced code block's body.
     pub fn caret_in_code(&self) -> bool {
         let line = self.doc.line_at(self.cursor());

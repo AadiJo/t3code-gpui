@@ -18,6 +18,12 @@ name = "shot"
 path = "src/shot.rs"
 required-features = ["headless"]
 
+# Composer typing latency and scripted interaction checks. Usage: composer-bench <out-dir>
+[[bin]]
+name = "composer-bench"
+path = "src/composer_bench.rs"
+required-features = ["headless"]
+
 [dependencies]
 t3code-client-runtime.workspace = true
 t3code-web.workspace = true
