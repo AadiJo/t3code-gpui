@@ -26,3 +26,4 @@ pub mod preview;
 pub mod relay;
 pub mod rpc;
 pub mod state;
+pub mod work_log;

@@ -9,6 +9,7 @@ pub mod git_actions;
 mod i18n;
 mod notifications;
 pub mod pull_requests;
+pub mod live;
 pub mod composer;
 pub mod diffs;
 pub mod files;
@@ -122,6 +123,7 @@ pub fn scenes() -> &'static [(&'static str, SceneBuilder)] {
         ("pull-requests-code-light", pull_requests::build_code),
         ("issues", pull_requests::build_issues),
         ("issues-light", pull_requests::build_issues),
+        ("live", live::build),
     ]
 }
 

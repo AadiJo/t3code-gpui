@@ -13,7 +13,7 @@ use gpui_kit::{
 
 use super::{
     chat_style::{ChatColors, TEXT_2XS, TEXT_3XS, TEXT_SM, TEXT_XS, alpha, mono},
-    messages_timeline::MessagesTimeline,
+    messages_timeline::{MessagesTimeline, TimelineAction},
     messages_timeline_logic::TimelineRow,
     timeline_entries::{
         ApprovalKind, Divider, ProposedPlan, QueuedMessage, Subagent, SubagentStatus, TimelineEvent, ToolStatus, WorkItem,
@@ -212,8 +212,7 @@ impl MessagesTimeline {
     /// An approval the agent waits on, inline in place of its tool row.
     pub(super) fn render_pending_approval(&mut self, entry: &WorkLogEntry, cx: &mut Context<Self>) -> AnyElement {
         let colors = self.colors;
-        let _ = cx;
-        let WorkItem::Approval { kind, detail, reason, .. } = &entry.item else {
+        let WorkItem::Approval { request_id, kind, detail, reason } = &entry.item else {
             return div().into_any_element();
         };
         let glyph = match kind {
@@ -263,8 +262,14 @@ impl MessagesTimeline {
                             .child(Icon::new(IconName::Shield).size(IconSize::Custom(SMALL_ICON)).color(colors.theme.warning))
                             .child(div().text_color(colors.theme.warning).child("Waiting for approval"))
                             .child(div().text_color(colors.theme.muted_foreground).child("·"))
-                            .child(text_button("decline", "Decline", colors.theme.muted_foreground))
-                            .child(text_button("approve", "Approve", colors.theme.text))
+                            .child(text_button("decline", "Decline", colors.theme.muted_foreground).on_click(cx.listener({
+                                let request_id = request_id.clone();
+                                move |_, _, _, cx| cx.emit(TimelineAction::Decline(request_id.clone()))
+                            })))
+                            .child(text_button("approve", "Approve", colors.theme.text).on_click(cx.listener({
+                                let request_id = request_id.clone();
+                                move |_, _, _, cx| cx.emit(TimelineAction::Approve(request_id.clone()))
+                            })))
                             .child(text_button("more", "More", colors.theme.muted_foreground)),
                     ),
             )

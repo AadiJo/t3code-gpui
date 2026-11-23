@@ -68,6 +68,7 @@ tokio.workspace = true
 futures.workspace = true
 jiff.workspace = true
 url.workspace = true
+uuid.workspace = true
 
 # Scripted end-to-end checks of the app shell: screenshots with hover, click,
 # menus and resize, pixel samples, row metrics and frame times.
@@ -127,4 +128,12 @@ required-features = ["headless"]
 [[bin]]
 name = "preview-check"
 path = "src/preview_check.rs"
+required-features = ["headless"]
+
+# Drives the live scene against a real server: sidebar, thread switches, streaming, approve,
+# queue, rename and pin, restart from cache, and measurements.
+# Usage: live-check <seed|drive|restart|bench> <out-dir>  (T3_LIVE_DATA_DIR, T3_PAIRING_URL)
+[[bin]]
+name = "live-check"
+path = "src/live_check.rs"
 required-features = ["headless"]
