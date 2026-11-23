@@ -21,7 +21,7 @@ use super::{
     timeline_row_parts::{
         SMALL_ICON, disclosure, failed_mark, hover_timestamp, tool_icon, work_log_line, work_log_row, xs_button,
     },
-    work_log_presentation::{entry_icon, entry_label, indicates_failure},
+    work_log_presentation::{entry_icon, entry_label, indicates_failure, is_tool_like},
 };
 
 /// `ms-7`: detail indents past the icon slot.
@@ -54,8 +54,10 @@ impl MessagesTimeline {
         let label = display_label.unwrap_or_else(|| entry_label(entry));
         let label_element = if severe {
             div().font_weight(FontWeight::MEDIUM).text_color(colors.destructive()).child(label).into_any_element()
-        } else {
+        } else if is_tool_like(entry) {
             label.into_any_element()
+        } else {
+            div().text_color(alpha(colors.theme.text, 0.8)).child(label).into_any_element()
         };
         let mut trailing = Vec::new();
         if failed && !severe {

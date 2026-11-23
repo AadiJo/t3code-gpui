@@ -19,7 +19,7 @@ pub const CODE_FONT_SIZE: Pixels = px(13.);
 /// Code line height inside composer code blocks.
 pub const CODE_LINE_HEIGHT: Pixels = px(20.);
 /// `calc(2lh + 8px)` minus the editor's 4px inset on each side.
-pub const EDITOR_MIN_HEIGHT: Pixels = px(53.5);
+pub const EDITOR_MIN_HEIGHT: Pixels = px(45.5);
 /// `max-h-52`.
 pub const EDITOR_MAX_HEIGHT: Pixels = px(208.);
 /// Card radius `rounded-2xl`.
