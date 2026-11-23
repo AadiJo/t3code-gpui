@@ -540,7 +540,8 @@ fn write_large_fixture(root: &Path) -> anyhow::Result<usize> {
 
 fn perf(out: &Path) -> anyhow::Result<String> {
     let mut report = String::new();
-    let work = out.join("perf-workspace");
+    // Large generated fixtures live in the temp dir, not beside the artifacts.
+    let work = std::env::temp_dir().join("t3code-files-perf");
     std::fs::create_dir_all(work.join("src"))?;
     std::fs::write(work.join("src/big.rs"), big_rust())?;
     std::fs::write(work.join("src/big.txt"), big_rust())?;
@@ -556,6 +557,7 @@ fn perf(out: &Path) -> anyhow::Result<String> {
     writeln!(report, "build: {}", if cfg!(debug_assertions) { "debug (dev profile: GPUI, text and syntect crates at opt-level 3)" } else { "release" })?;
     let rss_start = rss_kib();
     let mut h = Harness::new(&work, Appearance::Dark, out, 540., 760.)?;
+    let rss_window = rss_kib();
 
     // Typing in a 10,000-line file.
     h.open("src/big.rs", Some(5_000));
@@ -563,7 +565,7 @@ fn perf(out: &Path) -> anyhow::Result<String> {
     h.set_caret(Pos::new(5_001, 10));
     let lines = h.read(|p, cx| p.editor().map(|e| e.read(cx).line_count()));
     let chars: Vec<char> = "let quick = brown.fox(); ".chars().collect();
-    let mut measure = |h: &mut Harness, count: usize| -> Vec<f64> {
+    let measure = |h: &mut Harness, count: usize| -> Vec<f64> {
         let mut samples = Vec::with_capacity(count);
         for i in 0..count {
             let c = chars[i % chars.len()];
@@ -609,13 +611,13 @@ fn perf(out: &Path) -> anyhow::Result<String> {
     h.wait_until("large file", |p, _| p.large_view().is_some());
     h.settle();
     let after = rss_kib();
-    writeln!(report, "resident memory: process start {} MiB; before opening server.log ({} bytes) {} MiB; with it open {} MiB (+{} MiB)",
-        rss_start / 1024, five.len(), before / 1024, after / 1024, (after.saturating_sub(before)) / 1024)?;
+    writeln!(report, "resident memory: process start {} MiB; window with the Files tab and tree {} MiB; after two 10,000-line files (highlighted, then plain) {} MiB; with server.log ({} bytes) open {} MiB (+{} MiB)",
+        rss_start / 1024, rss_window / 1024, before / 1024, five.len(), after / 1024, (after.saturating_sub(before)) / 1024)?;
     h.shot("perf-large-file")?;
     drop(h);
 
     // Tree scrolling and go to file on 50,000 files.
-    let large = out.join("perf-50k");
+    let large = std::env::temp_dir().join("t3code-files-perf-50k");
     let count = write_large_fixture(&large)?;
     let mut h = Harness::new(&large, Appearance::Dark, out, 540., 760.)?;
     let started = Instant::now();
@@ -629,7 +631,7 @@ fn perf(out: &Path) -> anyhow::Result<String> {
         // 600 frames at 48px each, then a jump every 100 frames.
         let y = if i % 100 == 99 { (i as f32) * 2_000. } else { i as f32 * 48. };
         scroll.0.borrow().base_handle.set_offset(point(px(0.), px(-y)));
-        h.cx.update_window(h.window, |_, window, cx| window.refresh());
+        h.cx.update_window(h.window, |_, window, _| window.refresh()).ok();
         let start = Instant::now();
         h.cx.update_window(h.window, |_, window, cx| window.draw(cx).clear(cx)).ok();
         frames.push(start.elapsed().as_secs_f64() * 1000.);
