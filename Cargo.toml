@@ -8,6 +8,7 @@ members = [
     "apps/web",
     "packages/client-runtime",
     "packages/contracts",
+    "packages/i18n-macros",
     "packages/shared",
 ]
 
@@ -20,6 +21,7 @@ publish = false
 [workspace.dependencies]
 t3code-client-runtime = { path = "packages/client-runtime" }
 t3code-contracts = { path = "packages/contracts" }
+t3code-i18n-macros = { path = "packages/i18n-macros" }
 t3code-shared = { path = "packages/shared" }
 t3code-web = { path = "apps/web" }
 
@@ -38,7 +40,13 @@ image = { version = "0.25", default-features = false }
 rust-embed = "8"
 serde = { version = "1", features = ["derive", "rc"] }
 serde_json = { version = "1", features = ["raw_value"] }
+flate2 = "1"
+jiff = "1"
+proc-macro2 = "1"
+quote = "1"
 sha2 = "0.10"
+syn = { version = "2", features = ["full"] }
+sys-locale = "0.3"
 thiserror = "2"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "net", "io-util", "fs"] }
 tracing = "0.1"
@@ -50,6 +58,7 @@ ring = "0.17"
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
 tokio-tungstenite = { version = "0.29", default-features = false, features = ["connect", "handshake", "__rustls-tls"] }
 webpki-roots = "1"
+unicode-properties = "0.1"
 uuid = { version = "1", features = ["v4"] }
 
 [profile.dev]

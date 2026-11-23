@@ -1,14 +1,20 @@
 //! The T3 Code UI, drawn with GPUI. Mirrors `apps/web/src`: a module here has
 //! the same path as the TypeScript file it ports, in snake_case.
 
+// `t!` expands to `::t3code_web::i18n::…`, which must also resolve inside this crate.
+extern crate self as t3code_web;
+
 pub mod app_root;
 pub mod assets;
 pub mod components;
+pub mod i18n;
 pub mod scenes;
 pub mod terminal;
 pub mod terminal_links;
 pub mod terminal_ui_state_store;
+pub mod text_direction;
 pub mod theme_palette;
+pub mod timestamp_format;
 
 pub use app_root::AppRoot;
 pub use assets::Assets;
@@ -24,5 +30,6 @@ pub fn init(cx: &mut App) {
     components::thread_terminal_drawer::init(cx);
     cx.set_global(terminal_ui_state_store::TerminalUiStateStore::default());
     components::sidebar::init(cx);
+    i18n::runtime::init(cx);
     set_app_theme(AppTheme::new(&ThemeDocument::graphite(), Appearance::Dark), cx);
 }

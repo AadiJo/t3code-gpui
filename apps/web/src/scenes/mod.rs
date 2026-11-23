@@ -4,6 +4,7 @@
 mod app;
 mod chat;
 mod composer;
+mod i18n;
 mod sidebar;
 mod terminal;
 mod ui;
@@ -24,6 +25,7 @@ pub fn scenes() -> &'static [(&'static str, SceneBuilder)] {
         ("terminal", terminal::build),
         ("terminal-light", terminal::build_light),
         ("terminal-find", terminal::build_find),
+        ("i18n", i18n::build),
     ]
 }
 
