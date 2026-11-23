@@ -301,7 +301,8 @@
       700,
       290,
       312
-     ]
+     ],
+     "blur": true
     },
     {
      "name": "composer right edge",
@@ -310,7 +311,8 @@
       700,
       1040,
       1070
-     ]
+     ],
+     "blur": true
     },
     {
      "name": "composer card top/bottom",
@@ -319,7 +321,8 @@
       800,
       630,
       779
-     ]
+     ],
+     "blur": true
     },
     {
      "name": "composer fill",
@@ -770,7 +773,8 @@
       700,
       290,
       312
-     ]
+     ],
+     "blur": true
     },
     {
      "name": "composer right edge",
@@ -779,7 +783,8 @@
       700,
       1040,
       1070
-     ]
+     ],
+     "blur": true
     },
     {
      "name": "composer card top/bottom",
@@ -788,7 +793,8 @@
       800,
       630,
       779
-     ]
+     ],
+     "blur": true
     },
     {
      "name": "composer fill",
@@ -1259,7 +1265,8 @@
       300,
       120,
       145
-     ]
+     ],
+     "blur": true
     },
     {
      "name": "menu top edge",
@@ -1268,7 +1275,8 @@
       200,
       215,
       245
-     ]
+     ],
+     "blur": true
     },
     {
      "name": "menu fill",
@@ -1825,7 +1833,8 @@
       700,
       290,
       312
-     ]
+     ],
+     "blur": true
     },
     {
      "name": "composer right edge",
@@ -1834,7 +1843,8 @@
       700,
       1040,
       1070
-     ]
+     ],
+     "blur": true
     },
     {
      "name": "composer card top/bottom",
@@ -1843,7 +1853,8 @@
       800,
       630,
       779
-     ]
+     ],
+     "blur": true
     },
     {
      "name": "composer fill",
@@ -2215,7 +2226,8 @@
       700,
       290,
       312
-     ]
+     ],
+     "blur": true
     },
     {
      "name": "composer right edge",
@@ -2224,7 +2236,8 @@
       700,
       1040,
       1070
-     ]
+     ],
+     "blur": true
     },
     {
      "name": "composer card top/bottom",
@@ -2233,7 +2246,8 @@
       800,
       630,
       779
-     ]
+     ],
+     "blur": true
     },
     {
      "name": "composer fill",
@@ -2449,7 +2463,8 @@
       700,
       290,
       312
-     ]
+     ],
+     "blur": true
     },
     {
      "name": "composer right edge",
@@ -2458,7 +2473,8 @@
       700,
       1040,
       1070
-     ]
+     ],
+     "blur": true
     },
     {
      "name": "composer card top/bottom",
@@ -2467,7 +2483,8 @@
       800,
       630,
       779
-     ]
+     ],
+     "blur": true
     },
     {
      "name": "composer fill",
@@ -2629,7 +2646,8 @@
       700,
       290,
       312
-     ]
+     ],
+     "blur": true
     },
     {
      "name": "composer right edge",
@@ -2638,7 +2656,8 @@
       700,
       1040,
       1070
-     ]
+     ],
+     "blur": true
     },
     {
      "name": "composer card top/bottom",
@@ -2647,7 +2666,8 @@
       800,
       630,
       779
-     ]
+     ],
+     "blur": true
     },
     {
      "name": "composer fill",
@@ -2809,7 +2829,8 @@
       700,
       290,
       312
-     ]
+     ],
+     "blur": true
     },
     {
      "name": "composer right edge",
@@ -2818,7 +2839,8 @@
       700,
       1040,
       1070
-     ]
+     ],
+     "blur": true
     },
     {
      "name": "composer card top/bottom",
@@ -2827,7 +2849,8 @@
       800,
       630,
       779
-     ]
+     ],
+     "blur": true
     },
     {
      "name": "composer fill",
@@ -2989,7 +3012,8 @@
       700,
       290,
       312
-     ]
+     ],
+     "blur": true
     },
     {
      "name": "composer right edge",
@@ -2998,7 +3022,8 @@
       700,
       1040,
       1070
-     ]
+     ],
+     "blur": true
     },
     {
      "name": "composer card top/bottom",
@@ -3007,7 +3032,8 @@
       800,
       560,
       779
-     ]
+     ],
+     "blur": true
     },
     {
      "name": "composer fill",
@@ -3138,7 +3164,8 @@
       600,
       440,
       480
-     ]
+     ],
+     "blur": true
     },
     {
      "name": "picker right edge",
@@ -3147,7 +3174,8 @@
       600,
       990,
       1035
-     ]
+     ],
+     "blur": true
     },
     {
      "name": "picker top edge",
@@ -3156,7 +3184,8 @@
       700,
       330,
       370
-     ]
+     ],
+     "blur": true
     },
     {
      "name": "picker bottom edge",
@@ -3165,7 +3194,8 @@
       700,
       690,
       735
-     ]
+     ],
+     "blur": true
     },
     {
      "name": "picker rail fill",
@@ -3328,7 +3358,8 @@
       700,
       460,
       500
-     ]
+     ],
+     "blur": true
     },
     {
      "name": "mention rows",
@@ -3359,7 +3390,8 @@
       300,
       240,
       290
-     ]
+     ],
+     "blur": true
     },
     {
      "name": "palette right edge",
@@ -3368,7 +3400,8 @@
       300,
       815,
       860
-     ]
+     ],
+     "blur": true
     },
     {
      "name": "palette top edge",
@@ -3377,7 +3410,8 @@
       550,
       60,
       100
-     ]
+     ],
+     "blur": true
     },
     {
      "name": "palette bottom edge",
@@ -3455,7 +3489,8 @@
       400,
       20,
       60
-     ]
+     ],
+     "blur": true
     },
     {
      "name": "modal right edge",
@@ -3464,7 +3499,8 @@
       400,
       1040,
       1080
-     ]
+     ],
+     "blur": true
     },
     {
      "name": "modal top edge",
@@ -3473,7 +3509,8 @@
       600,
       20,
       60
-     ]
+     ],
+     "blur": true
     },
     {
      "name": "modal bottom edge",
@@ -3482,7 +3519,8 @@
       600,
       720,
       760
-     ]
+     ],
+     "blur": true
     },
     {
      "name": "nav divider",
@@ -3866,7 +3904,8 @@
       1046,
       630,
       779
-     ]
+     ],
+     "blur": true
     },
     {
      "name": "composer fill",

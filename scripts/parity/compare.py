@@ -7,7 +7,8 @@
                                           the reference PNGs are available
 
 spec.json lists, per scene, the elements to measure (see measure.py) with a name,
-optionally `anchor: "<element>"` (measure relative to where that element landed,
+optionally `blur: true` on a scan across backdrop-blurred glass (edge
+positions judged, colours shown only), `anchor: "<element>"` (measure relative to where that element landed,
 for content below a documented difference that moves it),
 and optionally `text: true` (glyph shapes differ by rasteriser, so a text run's
 right edge is reported but not judged; `text: "right"` for right-aligned text
@@ -77,8 +78,12 @@ def judge(element, ref, port):
         d = channels(ref["bg"], port["bg"])
         rows.append(("background", ref["bg"], port["bg"], d, d <= CHANNEL))
     else:
+        # Over a backdrop-blurred surface the fork's colours carry the blurred
+        # content behind the glass, which GPUI cannot sample: positions only.
+        blur = element.get("blur", False)
+        colour_ok = lambda d: None if blur else d <= CHANNEL
         d = channels(ref["start"], port["start"])
-        rows.append(("start colour", ref["start"], port["start"], d, d <= CHANNEL))
+        rows.append(("start colour", ref["start"], port["start"], d, colour_ok(d)))
         re, pe = ref["edges"], port["edges"]
         if len(re) != len(pe):
             rows.append(("edges", len(re), len(pe), len(pe) - len(re), False))
@@ -88,7 +93,7 @@ def judge(element, ref, port):
                 d = b["at"] - a["at"]
                 rows.append((f"edge {i + 1} at", a["at"], b["at"], d, abs(d) <= PX))
                 d = channels(a["color"], b["color"])
-                rows.append((f"edge {i + 1} colour", a["color"], b["color"], d, d <= CHANNEL))
+                rows.append((f"edge {i + 1} colour", a["color"], b["color"], d, colour_ok(d)))
     return rows
 
 
