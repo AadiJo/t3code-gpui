@@ -95,6 +95,8 @@ pub struct ChatColors {
     pub selection: Hsla,
     pub scrollbar: Hsla,
     pub scrollbar_hover: Hsla,
+    /// The composer card's glass fill at the user's glass opacity.
+    pub composer_glass: Hsla,
 }
 
 impl ChatColors {
@@ -120,6 +122,7 @@ impl ChatColors {
             selection: alpha(theme.colors.focus, 0.32),
             scrollbar: if dark { alpha(rgb_hsla(0xffffff), 0.36) } else { rgb_hsla(0xd9d9d9) },
             scrollbar_hover: if dark { alpha(rgb_hsla(0xffffff), 0.45) } else { rgb_hsla(0xbfbfbf) },
+            composer_glass: theme.derived.composer_glass_opaque,
         }
     }
 

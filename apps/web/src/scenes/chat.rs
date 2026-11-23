@@ -8,8 +8,7 @@ use crate::{
         chat::timeline_fixtures::{FIXTURE_NOW, fixture_thread},
         chat_view::chat_view,
     },
-    theme_palette::{Appearance, ThemeDocument, set_app_theme},
-    AppTheme,
+    theme_palette::Appearance,
 };
 
 pub fn build(_window: &mut Window, cx: &mut App) -> AnyView {
@@ -22,6 +21,6 @@ pub fn build(_window: &mut Window, cx: &mut App) -> AnyView {
 }
 
 pub fn build_light(window: &mut Window, cx: &mut App) -> AnyView {
-    set_app_theme(AppTheme::new(&ThemeDocument::graphite(), Appearance::Light), cx);
+    crate::theme_palette::ThemeSettings::set_appearance(Appearance::Light, cx);
     build(window, cx)
 }

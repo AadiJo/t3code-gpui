@@ -30,7 +30,7 @@ use crate::model_selection::{
     ModelCatalog, ModelOption, ModelSelection, OptionChoice, ProviderDriverKind, ProviderIcon, ProviderInstanceEntry,
     ProviderInstanceId, SelectDescriptor, provider_model_key,
 };
-use crate::theme_palette::{AppTheme, Appearance, ThemeDocument, set_app_theme};
+use crate::theme_palette::Appearance;
 
 /// Cell size for one composer state.
 const CELL_WIDTH: f32 = 840.;
@@ -376,7 +376,7 @@ const RESTING: [SceneState; 4] = [SceneState::Empty, SceneState::MultiLine, Scen
 const POPOVERS: [SceneState; 2] = [SceneState::PickerOpen, SceneState::MenuOpen];
 
 fn light(cx: &mut App) {
-    set_app_theme(AppTheme::new(&ThemeDocument::graphite(), Appearance::Light), cx);
+    crate::theme_palette::ThemeSettings::set_appearance(Appearance::Light, cx);
 }
 
 pub fn build(window: &mut Window, cx: &mut App) -> AnyView {

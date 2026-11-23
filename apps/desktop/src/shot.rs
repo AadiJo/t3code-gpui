@@ -1,5 +1,6 @@
 // Headless screenshot of one scene, for visual checks without a display.
 // Usage: shot <scene> <out.png> [width height]
+// `T3CODE_GLASS_OPACITY=<40..100>` renders with that Glass opacity setting.
 use std::sync::Arc;
 
 use anyhow::{Context as _, anyhow};
@@ -10,6 +11,7 @@ use gpui_kit::{
 use t3code_web::{
     scenes,
     theme_palette::{ThemeMode, ThemeSettings},
+    theme_tokens::GlassOpacity,
 };
 
 /// Wraps a scene so it can be the window's root view.
@@ -42,6 +44,9 @@ fn main() -> anyhow::Result<()> {
         // so a screenshot does not depend on it.
         let mode = if name.ends_with("-light") { ThemeMode::Light } else { ThemeMode::Dark };
         ThemeSettings::set_mode(mode, cx);
+        if let Some(percent) = std::env::var("T3CODE_GLASS_OPACITY").ok().and_then(|v| v.parse().ok()) {
+            ThemeSettings::set_glass_opacity(GlassOpacity::new(percent), cx);
+        }
     });
     let (handle, _host) = cx.update(|cx| {
         let options = WindowOptions {

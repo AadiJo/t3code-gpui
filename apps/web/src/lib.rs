@@ -89,6 +89,7 @@ pub fn init(cx: &mut App) {
         mode: ThemeMode::System,
         system: Appearance::from(cx.window_appearance()),
         fonts: Default::default(),
+        glass_opacity: Default::default(),
     };
     theme_palette::install(settings, cx);
     components::ui::toast::Toaster::init(cx);

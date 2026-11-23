@@ -56,9 +56,42 @@ impl ThemePalette {
     }
 }
 
+/// The Glass opacity client setting (`glassOpacity`), a percentage from 40
+/// to 100. It is `--glass-opacity` in `index.css`: every glass fill mixes its
+/// base colour with transparent at this amount.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct GlassOpacity(u8);
+
+impl GlassOpacity {
+    pub const MIN: u8 = 40;
+    pub const MAX: u8 = 100;
+
+    /// A setting value, clamped to 40..=100 as the settings schema does.
+    pub fn new(percent: u8) -> Self {
+        Self(percent.clamp(Self::MIN, Self::MAX))
+    }
+
+    pub fn percent(self) -> u8 {
+        self.0
+    }
+
+    /// The setting as an alpha in 0..1.
+    pub fn alpha(self) -> f32 {
+        f32::from(self.0) / 100.
+    }
+}
+
+impl Default for GlassOpacity {
+    /// `DEFAULT_GLASS_OPACITY` in `packages/contracts/src/settings.ts`.
+    fn default() -> Self {
+        Self(80)
+    }
+}
+
 /// The derived colours of spec tables 1.5 and 1.6. Colours with alpha keep
 /// it; `*_opaque` fields are the same colour flattened over the surface it
-/// sits on, for glass that GPUI draws without backdrop blur.
+/// sits on, for glass that GPUI draws without backdrop blur. Glass fills use
+/// the theme's [`GlassOpacity`], so a lower setting gives darker surfaces.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct DerivedColors {
     pub sidebar_icon: Hsla,
@@ -68,6 +101,9 @@ pub struct DerivedColors {
     pub dropdown_glass_border: Hsla,
     pub surface_glass: Hsla,
     pub surface_glass_opaque: Hsla,
+    /// The composer card's glass (`--chat-composer-glass-surface` at the
+    /// glass opacity: `surfaceRaised` for an imported theme), over the canvas.
+    pub composer_glass_opaque: Hsla,
     pub dialog_glass_border: Hsla,
     pub dialog_backdrop: Hsla,
     pub titlebar_toggle_icon: Hsla,
@@ -116,23 +152,26 @@ pub struct DerivedColors {
 
 impl DerivedColors {
     /// Resolves every derived colour for one palette.
-    pub fn new(c: &ThemePalette, appearance: Appearance) -> Self {
+    pub fn new(c: &ThemePalette, appearance: Appearance, glass: GlassOpacity) -> Self {
         let dark = appearance.is_dark();
         let pick = |d: f32, l: f32| if dark { d } else { l };
         let transparent = Hsla::transparent_black();
+        let glass_alpha = glass.alpha();
         let dropdown_glass = mix_srgb(
             c.popover(),
             0.18,
-            mix_srgb(c.popover(), 0.8, transparent),
+            mix_srgb(c.popover(), glass_alpha, transparent),
         );
+        let surface_glass = mix_srgb(c.canvas, glass_alpha, transparent);
         let input_alpha = with_alpha(c.input, 0.32);
         Self {
             sidebar_icon: mix_srgb(c.sidebar_muted_foreground, 0.85, c.sidebar),
             dropdown_glass,
             dropdown_glass_opaque: flatten(dropdown_glass, c.canvas),
             dropdown_glass_border: with_alpha(c.text, 0.10),
-            surface_glass: with_alpha(c.canvas, 0.8),
-            surface_glass_opaque: flatten(with_alpha(c.canvas, 0.8), c.canvas),
+            surface_glass,
+            surface_glass_opaque: flatten(surface_glass, c.canvas),
+            composer_glass_opaque: flatten(mix_srgb(c.surface_raised, glass_alpha, transparent), c.canvas),
             dialog_glass_border: if dark {
                 with_alpha(white(), 0.08)
             } else {

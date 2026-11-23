@@ -121,8 +121,8 @@ impl ComposerColors {
             placeholder: c.placeholder,
             secondary_label: c.secondary_label,
             surface: c.surface,
-            // Graphite: --app-theme-surface-raised, opaque because GPUI has no backdrop blur here.
-            glass_surface: c.surface_raised,
+            // `surfaceRaised` at the glass opacity over the canvas (GPUI has no backdrop blur).
+            glass_surface: theme.derived.composer_glass_opaque,
             // dark: mix(input 30%, background); light: toolbar border.
             outline: if dark { mix(c.input, c.canvas, 0.30) } else { c.toolbar_border },
             highlight: if dark { c.input.opacity(0.12) } else { gpui_kit::transparent_black() },
@@ -136,8 +136,8 @@ impl ComposerColors {
             code_background: c.code_background,
             code_foreground: c.code_foreground,
             selection: c.focus.opacity(if dark { 0.35 } else { 0.25 }),
-            // dropdown-glass flattened over the canvas (graphite-tokens.json `derived`).
-            popup_background: if dark { rgb(0x1b1b1c).into() } else { rgb(0xffffff).into() },
+            // dropdown-glass at the glass opacity, flattened over the canvas.
+            popup_background: theme.derived.dropdown_glass_opaque,
             popup_border: if dark { rgb(0x313131).into() } else { rgb(0xe7e7e7).into() },
             muted: c.muted,
             warning: c.warning,

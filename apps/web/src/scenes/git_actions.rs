@@ -36,7 +36,7 @@ use crate::components::ui::popover::glass_surface;
 use crate::components::ui::toast::Toaster;
 use crate::remote_open::{RemoteOpenHost, RemoteOpenState};
 use crate::source_control_presentation::source_control_presentation;
-use crate::theme_palette::{Appearance, ThemeDocument, set_app_theme};
+use crate::theme_palette::Appearance;
 use crate::{ActiveAppTheme as _, AppTheme};
 
 const PROJECT_CWD: &str = "/home/dev/t3code";
@@ -471,7 +471,7 @@ pub fn build(_: &mut Window, cx: &mut App) -> AnyView {
 }
 
 pub fn build_light(window: &mut Window, cx: &mut App) -> AnyView {
-    set_app_theme(AppTheme::new(&ThemeDocument::graphite(), Appearance::Light), cx);
+    crate::theme_palette::ThemeSettings::set_appearance(Appearance::Light, cx);
     build(window, cx)
 }
 
@@ -483,6 +483,6 @@ pub fn build_panel(window: &mut Window, cx: &mut App) -> AnyView {
 }
 
 pub fn build_panel_light(window: &mut Window, cx: &mut App) -> AnyView {
-    set_app_theme(AppTheme::new(&ThemeDocument::graphite(), Appearance::Light), cx);
+    crate::theme_palette::ThemeSettings::set_appearance(Appearance::Light, cx);
     build_panel(window, cx)
 }

@@ -16,7 +16,7 @@ use crate::{
     ActiveAppTheme as _,
     components::files::file_preview_panel::FilesPanel,
     file_source::DirectoryFiles,
-    theme_palette::{AppTheme, Appearance, ThemeDocument, set_app_theme},
+    theme_palette::Appearance,
 };
 
 /// Writes the fixture workspace (overwriting) and returns its root:
@@ -113,7 +113,7 @@ impl Render for FilesScene {
 }
 
 fn build_variant(variant: Variant, appearance: Appearance, window: &mut Window, cx: &mut App) -> AnyView {
-    set_app_theme(AppTheme::new(&ThemeDocument::graphite(), appearance), cx);
+    crate::theme_palette::ThemeSettings::set_appearance(appearance, cx);
     gpui_kit::component::Theme::change(
         if appearance == Appearance::Light { gpui_kit::component::ThemeMode::Light } else { gpui_kit::component::ThemeMode::Dark },
         Some(window),
