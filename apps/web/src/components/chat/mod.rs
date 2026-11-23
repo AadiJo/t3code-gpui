@@ -19,6 +19,7 @@ pub mod markdown_stream_blocks;
 pub mod messages_timeline;
 pub mod messages_timeline_logic;
 pub mod model_picker;
+pub mod open_in_picker_logic;
 pub mod pending_user_input_panel;
 pub mod rich_text;
 pub mod syntax_highlighting;
