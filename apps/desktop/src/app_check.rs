@@ -248,8 +248,14 @@ fn session(out: PathBuf, state: PathBuf, tag: &str) -> anyhow::Result<String> {
     r.type_text("Walk me through the replay loop");
     r.shot("typed")?;
     r.press("enter");
-    let (text, _) = r.last_message();
-    r.check("send appends the user message", text.is_empty() || text.contains("replay"), format!("{:?}", &text[..text.len().min(40)]));
+    let root = r.root.clone();
+    let sent = r.cx.update(|cx| {
+        let timeline = root.read(cx).thread_view().read(cx).chat().read(cx).timeline().read(cx);
+        timeline.input().entries.iter().any(|e| matches!(&e.kind, EntryKind::Message(m)
+            if m.role == t3code_web::components::chat::timeline_entries::MessageRole::User && m.text.as_ref() == "Walk me through the replay loop"))
+    });
+    let composer_empty = r.cx.update(|cx| root.read(cx).composer(cx).read(cx).editor().read(cx).text().is_empty());
+    r.check("send appends the user message and clears the composer", sent && composer_empty, format!("sent {sent}, composer empty {composer_empty}"));
     let started = Instant::now();
     let mut mid_shot = false;
     loop {
