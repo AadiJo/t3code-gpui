@@ -14,6 +14,7 @@ t3code-client-runtime.workspace = true
 t3code-contracts.workspace = true
 t3code-shared.workspace = true
 anyhow.workspace = true
+thiserror.workspace = true
 gpui-kit.workspace = true
 rust-embed.workspace = true
 serde.workspace = true

@@ -7000,6 +7000,7 @@ dependencies = [
  "t3code-client-runtime",
  "t3code-contracts",
  "t3code-shared",
+ "thiserror 2.0.21",
 ]
 
 [[package]]
