@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use gpui_kit::{
     App, Hsla, ImageSource, IntoElement, Pixels, RenderOnce, SharedString, Styled, TimedTransformation,
-    Transformation, Window, img, px, svg,
+    Transformation, Window, img, prelude::*, px, svg,
 };
 
 use crate::theme_palette::Appearance;
@@ -419,6 +419,7 @@ pub struct Icon {
     stroke: Option<f32>,
     spin: Option<(Duration, f32)>,
     rotate_degrees: f32,
+    group_color: Option<(SharedString, Hsla)>,
 }
 
 impl Icon {
@@ -431,6 +432,7 @@ impl Icon {
             stroke: None,
             spin: None,
             rotate_degrees: 0.,
+            group_color: None,
         }
     }
 
@@ -459,6 +461,13 @@ impl Icon {
     /// A static rotation, as `-rotate-90` on a collapsed chevron.
     pub fn rotate(mut self, degrees: f32) -> Self {
         self.rotate_degrees = degrees;
+        self
+    }
+
+    /// The colour while the named group is hovered, as `currentColor`
+    /// follows a parent's `:hover` text colour.
+    pub fn group_color(mut self, group: impl Into<SharedString>, color: Hsla) -> Self {
+        self.group_color = Some((group.into(), color));
         self
     }
 
@@ -510,12 +519,16 @@ impl RenderOnce for Icon {
             Some((period, steps)) => TimedTransformation::rotation(period, pose).with_max_fps(steps),
             None => pose.into(),
         };
-        svg()
+        let mut icon = svg()
             .path(path)
             .size(self.size)
             .flex_none()
             .text_color(tint(color))
-            .with_timed_transformation(transformation)
-            .into_any_element()
+            .with_timed_transformation(transformation);
+        if let Some((group, hover)) = self.group_color {
+            let hover = tint(hover);
+            icon = icon.group_hover(group, move |s| s.text_color(hover));
+        }
+        icon.into_any_element()
     }
 }

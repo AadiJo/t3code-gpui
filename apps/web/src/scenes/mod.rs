@@ -5,7 +5,7 @@ mod app;
 mod chat;
 mod composer;
 mod sidebar;
-mod ui;
+pub mod ui;
 
 use gpui_kit::{AnyView, App, Window};
 
@@ -16,6 +16,7 @@ pub fn scenes() -> &'static [(&'static str, SceneBuilder)] {
     &[
         ("app", app::build),
         ("ui", ui::build),
+        ("ui-light", ui::build_light),
         ("sidebar", sidebar::build),
         ("chat", chat::build),
         ("composer", composer::build),

@@ -3,6 +3,7 @@
 
 use gpui_kit::{
     App,
+    base::{ScrollbarStyles, ScrollbarTheme, ScrollbarThumbStyle, Theme as BaseTheme},
     component::theme::{Theme, ThemeMode},
     px,
 };
@@ -36,7 +37,8 @@ pub fn apply_component_theme(theme: &AppTheme, cx: &mut App) {
         kit.caret = c.foreground();
         kit.selection = d.input_focus_ring;
         kit.muted = c.muted;
-        kit.muted_foreground = c.muted_foreground;
+        // Stock text inputs draw their placeholder in `muted_foreground`.
+        kit.muted_foreground = c.placeholder;
         kit.accent = c.highlight();
         kit.accent_foreground = c.highlight_foreground();
         kit.popover = d.dropdown_glass_opaque;
@@ -113,4 +115,26 @@ pub fn apply_component_theme(theme: &AppTheme, cx: &mut App) {
         kit.table_head_foreground = c.muted_foreground;
         kit.table_row_border = c.border;
     });
+    apply_scrollbar_style(theme, cx);
+}
+
+/// The app's overlay scrollbar (`scroll-area.tsx:79-99`): a 6px rounded
+/// thumb 1px from the edge on a transparent track, the same width on hover.
+fn apply_scrollbar_style(theme: &AppTheme, cx: &mut App) {
+    let d = theme.derived;
+    let clear = gpui_kit::Hsla::transparent_black();
+    let base = cx.global_mut::<BaseTheme>();
+    let (mode, motion) = (base.scrollbar.mode(), base.scrollbar.motion());
+    let thumb = |color: gpui_kit::Hsla| {
+        move |style: ScrollbarThumbStyle| style.bg(color).width(px(6.)).inset(px(1.)).radius(px(3.))
+    };
+    base.scrollbar = ScrollbarTheme::new().with_mode(mode).with_motion(motion).with_styles(
+        ScrollbarStyles::default()
+            .track(|s| s.bg(clear))
+            .track_hover(|s| s.bg(clear))
+            .track_active(|s| s.bg(clear))
+            .thumb(thumb(d.scrollbar_thumb))
+            .thumb_hover(thumb(d.scrollbar_thumb_hover))
+            .thumb_active(thumb(d.scrollbar_thumb_hover)),
+    );
 }
