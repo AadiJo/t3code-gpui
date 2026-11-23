@@ -5,6 +5,7 @@ mod app;
 mod chat;
 mod command_palette;
 pub mod connections;
+pub mod git_actions;
 mod i18n;
 mod notifications;
 pub mod composer;
@@ -46,6 +47,10 @@ pub fn scenes() -> &'static [(&'static str, SceneBuilder)] {
         ("connections-empty", connections::build_empty),
         ("notifications", notifications::build),
         ("notifications-empty", notifications::build_empty),
+        ("git-actions", git_actions::build),
+        ("git-actions-light", git_actions::build_light),
+        ("git-actions-panel", git_actions::build_panel),
+        ("git-actions-panel-light", git_actions::build_panel_light),
     ]
 }
 
