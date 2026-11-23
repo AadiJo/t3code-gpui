@@ -618,8 +618,13 @@ impl Run {
 
     /// Scrolls row `index` near the top so its controls can be clicked.
     fn scroll_to_row(&mut self, index: usize) {
+        self.scroll_row_to(index, 80.);
+    }
+
+    /// Scrolls so row `index` starts `offset` pixels below the timeline's top.
+    fn scroll_row_to(&mut self, index: usize, offset: f32) {
         let timeline = self.timeline();
-        self.cx.update(|cx| timeline.read(cx).list_state().scroll_to_row(index, px(80.)));
+        self.cx.update(|cx| timeline.read(cx).list_state().scroll_to_row(index, px(offset)));
         self.frame();
         self.frame();
     }
@@ -751,6 +756,14 @@ fn mount(r: &mut Run) -> anyhow::Result<()> {
     focus_composer(r)?;
     r.press("mod-alt-b");
     r.scroll_to_row(index);
+    // Folders in the card start collapsed, as in the web app.
+    if file.contains('/') {
+        r.click_id(("expand-all", row.key));
+    }
+    // The card ends a tall row: bring its file rows above the composer.
+    if index + 1 < rows.len() {
+        r.scroll_row_to(index + 1, 520.);
+    }
     r.click_id(SharedString::from(format!("changed-{file}")));
     let loaded = r.diff_loaded();
     let selection = r.diff_selection();

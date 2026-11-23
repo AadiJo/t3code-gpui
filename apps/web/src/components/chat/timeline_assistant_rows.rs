@@ -190,7 +190,8 @@ impl MessagesTimeline {
                         let glyph = if expanded { IconName::ChevronsDownUp } else { IconName::ChevronsUpDown };
                         d.child(
                             xs_button(("expand-all", key), Some(glyph), None, colors.theme.muted_foreground, &colors)
-                                .on_click(cx.listener(move |this, _, _, cx| this.toggle_entry(toggle.clone(), cx))),
+                                .on_click(cx.listener(move |this, _, _, cx| this.toggle_entry(toggle.clone(), cx)))
+                                .test_support(),
                         )
                     })
                     .child(
