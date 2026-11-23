@@ -8,3 +8,5 @@ pub mod settings_layout;
 pub mod settings_search;
 pub mod provider_driver_meta;
 pub mod provider_status;
+pub mod scheduled_tasks_settings_logic;
+pub mod scheduled_tasks_settings_zone_names;
