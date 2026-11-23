@@ -7295,6 +7295,7 @@ dependencies = [
  "jiff",
  "libc",
  "markdown",
+ "regex",
  "rust-embed",
  "serde",
  "serde_json",
@@ -7309,6 +7310,7 @@ dependencies = [
  "two-face",
  "unicode-properties",
  "unicode-segmentation",
+ "unicode-width",
 ]
 
 [[package]]

@@ -31,6 +31,12 @@ pub mod terminal_ui_state_store;
 pub mod text_direction;
 pub mod theme_color;
 pub mod theme_component;
+pub mod diff_count;
+pub mod diff_file_kind;
+pub mod diff_file_order;
+pub mod diff_panel_store;
+pub mod diff_patch;
+pub mod syntax;
 pub mod theme_palette;
 pub mod theme_tokens;
 pub mod timestamp_format;
@@ -68,4 +74,5 @@ pub fn init(cx: &mut App) {
     terminal::surface::init(cx);
     components::thread_terminal_drawer::init(cx);
     cx.set_global(terminal_ui_state_store::TerminalUiStateStore::default());
+    components::diffs::init(cx);
 }

@@ -33,6 +33,8 @@ syntect.workspace = true
 unicode-segmentation.workspace = true
 markdown.workspace = true
 two-face.workspace = true
+regex.workspace = true
+unicode-width.workspace = true
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
@@ -40,4 +42,9 @@ libc = "0.2"
 # Clicks through the languages in the `i18n` scene headlessly and screenshots each.
 [[example]]
 name = "i18n_switch"
+required-features = ["test-support"]
+
+# Headless end-to-end checks and measurements for the diff panel.
+[[example]]
+name = "diffs_harness"
 required-features = ["test-support"]
