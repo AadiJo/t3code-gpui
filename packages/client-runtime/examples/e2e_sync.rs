@@ -2,9 +2,10 @@
 //!
 //! Usage: `e2e_sync <phase> <out_dir>`; phases run in order as separate processes:
 //! - `live` (needs an unused pairing URL in `T3_PAIRING_URL`): pairs, syncs the shell, creates a
-//!   project and threads, sends turns and follows them, approves, answers a question,
-//!   interrupts, renames, pins, snoozes, archives and deletes, measures memory-cached reopen,
-//!   and drops the socket mid-stream and checks the resume.
+//!   project and threads, sends turns and follows them, approves, answers a question, loads a
+//!   withheld command output, checks keep-alive of an unwatched running thread, interrupts,
+//!   drops the socket mid-stream and checks the resume, then renames, pins, snoozes, settles,
+//!   archives and deletes. Measures the memory-cached reopen.
 //! - `reopen`: a new process on the same data directory opens the shell and a thread from the
 //!   disk cache before the network answers, then catches up.
 //! - `cold`: clears the state cache, opens the long thread cold (bounded snapshot), and pages
@@ -52,6 +53,34 @@ use t3code_contracts::{
 use t3code_shared::thread_projection::ThreadProjection;
 
 const STATE_FILE: &str = "e2e-state.json";
+
+/// Counts live heap bytes, so memory figures do not depend on allocator reuse.
+struct CountingAlloc;
+
+static LIVE_HEAP: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+unsafe impl std::alloc::GlobalAlloc for CountingAlloc {
+    unsafe fn alloc(&self, layout: std::alloc::Layout) -> *mut u8 {
+        LIVE_HEAP.fetch_add(layout.size(), std::sync::atomic::Ordering::Relaxed);
+        unsafe { std::alloc::System.alloc(layout) }
+    }
+    unsafe fn dealloc(&self, ptr: *mut u8, layout: std::alloc::Layout) {
+        LIVE_HEAP.fetch_sub(layout.size(), std::sync::atomic::Ordering::Relaxed);
+        unsafe { std::alloc::System.dealloc(ptr, layout) }
+    }
+    unsafe fn realloc(&self, ptr: *mut u8, layout: std::alloc::Layout, new_size: usize) -> *mut u8 {
+        LIVE_HEAP.fetch_add(new_size, std::sync::atomic::Ordering::Relaxed);
+        LIVE_HEAP.fetch_sub(layout.size(), std::sync::atomic::Ordering::Relaxed);
+        unsafe { std::alloc::System.realloc(ptr, layout, new_size) }
+    }
+}
+
+#[global_allocator]
+static ALLOCATOR: CountingAlloc = CountingAlloc;
+
+fn heap_mib() -> f64 {
+    LIVE_HEAP.load(std::sync::atomic::Ordering::Relaxed) as f64 / 1_048_576.0
+}
 
 /// Notes and per-command records.
 struct Recorder {
@@ -540,6 +569,50 @@ async fn live(out_dir: &Path, data_dir: &Path, recorder: &Recorder, frames: &Arc
     }
     drop(output_thread);
 
+    // Keep-alive: a running thread with no open view keeps its detail stream, and is released
+    // once its own stream shows the run ended.
+    let create = new_thread("Keep-alive", "multi-turn", RuntimeMode::FullAccess);
+    let kept_id = create.thread_id.clone();
+    commands.create_thread(create).await?;
+    let kept = store.open_thread(&kept_id);
+    wait_thread(&kept, "kept thread live", 20, |state| state.status == ThreadStatus::Live).await?;
+    drop(kept);
+    commands.send_message(SendMessage::text(kept_id.clone(), "Run while nobody watches.")).await?;
+    let started = Instant::now();
+    let mut mounted_while_running = false;
+    let mut released = false;
+    while started.elapsed() < Duration::from_secs(30) {
+        let (live_ids, resume_ids) = store.held_threads();
+        let running = store.shell().current().thread(&kept_id).is_some_and(|row| {
+            matches!(row.status, t3code_contracts::OrchestrationV2ShellThreadStatus::Running | t3code_contracts::OrchestrationV2ShellThreadStatus::Starting | t3code_contracts::OrchestrationV2ShellThreadStatus::Preparing)
+        });
+        if running && live_ids.contains(&kept_id) {
+            mounted_while_running = true;
+        }
+        if mounted_while_running && !running && !live_ids.contains(&kept_id) && resume_ids.contains(&kept_id) {
+            released = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    let reopened = Instant::now();
+    let kept = store.open_thread(&kept_id);
+    let kept_state = kept.state();
+    recorder.command(json!({
+        "command": "keep-alive (no command; observed)",
+        "threadId": kept_id,
+        "mountedWhileRunning": mounted_while_running,
+        "releasedAfterRunEnded": released,
+        "reopenMicros": reopened.elapsed().as_secs_f64() * 1e6,
+        "reopened": kept_state.data.as_deref().map(projection_summary),
+    }));
+    recorder.note(format!(
+        "keep-alive: mounted while running {mounted_while_running}, released to the resume cache after the run {released}, reopen gave {} runs",
+        run_count(&kept_state)
+    ));
+    anyhow::ensure!(mounted_while_running && released && run_count(&kept_state) == 1, "keep-alive did not hold the running thread");
+    drop(kept);
+
     // Interrupt a running turn.
     let create = new_thread("Interrupt", "showcase", RuntimeMode::FullAccess);
     let interrupt_id = create.thread_id.clone();
@@ -807,30 +880,39 @@ fn bench(out_dir: &Path, recorder: &Recorder) -> anyhow::Result<()> {
     let file = bench_dir.join("state-cache/v1");
     let bytes: u64 = walk_size(&file);
     drop(snapshot);
-    let rss_before = rss_kib();
+    drop(shell);
     let mut timings = Vec::new();
-    let mut held = None;
     for _ in 0..7 {
         let started = Instant::now();
         let loaded = bench_cache.load_shell(&environment_id).expect("bench shell loads");
         timings.push(started.elapsed().as_secs_f64() * 1000.0);
-        held = Some(loaded);
+        drop(loaded);
     }
-    let rss_with_shell = rss_kib();
     timings.sort_by(f64::total_cmp);
-    let rows = held.as_ref().map_or(0, |shell| shell.snapshot.threads.len());
+    let heap_before = heap_mib();
+    let rss_before = rss_kib();
+    let held = bench_cache.load_shell(&environment_id).expect("bench shell loads");
+    let heap_with_shell = heap_mib();
+    let rss_with_shell = rss_kib();
     recorder.note(format!(
-        "shell cache: {rows} rows, {:.1} MiB on disk, load median {:.1} ms (min {:.1}, max {:.1}) over 7 runs",
+        "shell cache: {} rows, {:.1} MiB on disk, load median {:.1} ms (min {:.1}, max {:.1}) over 7 runs",
+        held.snapshot.threads.len(),
         bytes as f64 / 1_048_576.0,
         timings[3],
         timings[0],
         timings[6]
     ));
-    recorder.note(format!("resident memory with the 5,000-row shell loaded: {:.1} MiB (+{:.1} MiB over the {:.1} MiB baseline)", rss_with_shell as f64 / 1024.0, (rss_with_shell as f64 - rss_before as f64) / 1024.0, rss_before as f64 / 1024.0));
+    recorder.note(format!(
+        "5,000-row shell in memory: +{:.1} MiB live heap ({:.1} KiB per row); process resident {:.1} MiB (+{:.1} MiB)",
+        heap_with_shell - heap_before,
+        (heap_with_shell - heap_before) * 1024.0 / 5000.0,
+        rss_with_shell as f64 / 1024.0,
+        (rss_with_shell as f64 - rss_before as f64) / 1024.0
+    ));
 
     // 2. 20 threads in the resume cache: distinct deep copies of a real projection.
     let json = serde_json::to_string(&*thread.projection)?;
-    let rss_before_threads = rss_kib();
+    let heap_before_threads = heap_mib();
     let projections: Vec<Arc<ThreadProjection>> = (0..20)
         .map(|_| {
             let mut projection: ThreadProjection = serde_json::from_str(&json).expect("projection decodes");
@@ -838,13 +920,15 @@ fn bench(out_dir: &Path, recorder: &Recorder) -> anyhow::Result<()> {
             Arc::new(projection)
         })
         .collect();
-    let rss_with_threads = rss_kib();
+    let heap_with_threads = heap_mib();
     recorder.note(format!(
-        "20 threads in the resume cache ({} timeline rows, {:.0} KiB of JSON each): +{:.1} MiB, total resident {:.1} MiB with the shell",
+        "20 threads in the resume cache ({} timeline rows, {:.0} KiB of JSON each): +{:.1} MiB live heap ({:.0} KiB per thread); total with the shell {:.1} MiB heap, {:.1} MiB resident",
         thread.projection.visible_turn_items.len(),
         json.len() as f64 / 1024.0,
-        (rss_with_threads as f64 - rss_before_threads as f64) / 1024.0,
-        rss_with_threads as f64 / 1024.0
+        heap_with_threads - heap_before_threads,
+        (heap_with_threads - heap_before_threads) * 1024.0 / 20.0,
+        heap_with_threads,
+        rss_kib() as f64 / 1024.0
     ));
 
     // 3. Applying 10,000 stream events: streamed assistant text over new and updated items.
