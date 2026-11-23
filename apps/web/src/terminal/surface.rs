@@ -431,9 +431,6 @@ impl TerminalSurface {
             self.palette = TerminalPalette::new(theme);
             self.palette_generation += 1;
         }
-        if std::env::var_os("T3_TERMINAL_DEBUG").is_some() {
-            eprintln!("resize_grid {size:?} pending={}", self.pending_sink.is_some());
-        }
         self.core.resize(size);
         if let Some(sink) = self.pending_sink.take() {
             // The first measured size opens the session at the right width.
