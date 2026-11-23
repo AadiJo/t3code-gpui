@@ -3,6 +3,7 @@
 
 use serde::{Deserialize, Serialize};
 use t3code_contracts::rpc::{RpcMethod, RpcStream};
+use t3code_contracts::{AuthEnvironmentScope, rpc::methods};
 
 /// `EnvironmentAuthorizationError`, which every RPC may fail with.
 #[derive(Deserialize, Debug, Clone)]
@@ -21,6 +22,8 @@ pub struct ServerProbe;
 
 impl RpcMethod for ServerProbe {
     const TAG: &'static str = "server.probe";
+    const SCOPE: AuthEnvironmentScope = <methods::ServerProbe as RpcMethod>::SCOPE;
+    const CLIENT_GUARDED: bool = <methods::ServerProbe as RpcMethod>::CLIENT_GUARDED;
     type Payload = Empty;
     type Success = Empty;
     type Error = EnvironmentAuthorizationError;
@@ -46,6 +49,8 @@ pub struct SubscribeShell;
 
 impl RpcMethod for SubscribeShell {
     const TAG: &'static str = "orchestration.subscribeShell";
+    const SCOPE: AuthEnvironmentScope = <methods::OrchestrationSubscribeShell as RpcMethod>::SCOPE;
+    const CLIENT_GUARDED: bool = <methods::OrchestrationSubscribeShell as RpcMethod>::CLIENT_GUARDED;
     type Payload = SubscribeShellInput;
     type Success = ShellStreamItemHead;
     type Error = EnvironmentAuthorizationError;

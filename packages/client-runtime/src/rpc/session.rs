@@ -8,6 +8,7 @@ use futures::StreamExt;
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 use t3code_contracts::rpc::{RpcMethod, RpcStream};
+use t3code_contracts::{AuthEnvironmentScope, rpc::methods};
 use tokio::sync::{broadcast, watch};
 
 use super::client::{CloseReason, FrameTap, RpcClient, RpcError};
@@ -48,6 +49,8 @@ struct SubscribeServerConfigRaw;
 
 impl RpcMethod for SubscribeServerConfigRaw {
     const TAG: &'static str = "subscribeServerConfig";
+    const SCOPE: AuthEnvironmentScope = <methods::SubscribeServerConfig as RpcMethod>::SCOPE;
+    const CLIENT_GUARDED: bool = <methods::SubscribeServerConfig as RpcMethod>::CLIENT_GUARDED;
     type Payload = Box<RawValue>;
     type Success = Box<RawValue>;
     type Error = Box<RawValue>;
