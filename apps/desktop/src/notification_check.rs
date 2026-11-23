@@ -3,8 +3,9 @@
 //! store and model, and writes one JSON line per step with what was decided,
 //! the inbox, the badge and the Done threads.
 //!
-//! Usage: notification-check <fixture.json> <out.jsonl> <darwin|linux> [--notify]
-//! `--notify` also sends one real notification through the Linux backend.
+//! Usage: notification-check <fixture.json> <out.jsonl> <darwin|linux> [--notify|--badge]
+//! `--notify` instead sends one notification through the Linux backend and waits
+//! for a click; `--badge` also writes the taskbar overlay images next to `out`.
 
 #[allow(dead_code)]
 mod notifications;
@@ -298,6 +299,15 @@ fn main() -> anyhow::Result<()> {
     };
     if rest.iter().any(|arg| arg == "--notify") {
         return send_real_notification();
+    }
+    if rest.iter().any(|arg| arg == "--badge") {
+        // The taskbar overlay images, next to the step log.
+        for count in [1, 7, 12] {
+            let pixels = t3code_web::thread_notifications::render_badge_image(count)
+                .ok_or_else(|| anyhow::anyhow!("no badge image"))?;
+            let image = image::RgbaImage::from_raw(64, 64, pixels).ok_or_else(|| anyhow::anyhow!("bad badge size"))?;
+            image.save(std::path::Path::new(out).with_file_name(format!("badge-{count}.png")))?;
+        }
     }
     let inbox_platform = platform == "darwin";
     let fixture: Fixture = serde_json::from_slice(&std::fs::read(fixture)?)?;

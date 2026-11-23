@@ -73,7 +73,7 @@ pub fn render_badge_image(count: usize) -> Option<Vec<u8>> {
     let svg = format!(
         r##"<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64">
 <circle cx="32" cy="32" r="28" fill="#e5484d"/>
-<text x="32" y="34" font-family="Inter" font-weight="600" font-size="{size}" fill="white"
+<text x="32" y="34" font-family="Inter Variable" font-weight="600" font-size="{size}" fill="white"
  text-anchor="middle" dominant-baseline="central">{label}</text></svg>"##
     );
     let mut options = usvg::Options::default();
