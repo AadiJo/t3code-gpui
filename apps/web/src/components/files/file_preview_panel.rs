@@ -15,7 +15,7 @@ use std::{sync::Arc, time::Duration};
 
 use gpui_kit::{
     AnyElement, App, AppContext as _, ClipboardItem, Context, Entity, EventEmitter, FocusHandle, Focusable,
-    IntoElement, MouseButton, MouseMoveEvent, ParentElement as _, Render, SharedString, Styled as _,
+    IntoElement, KeyBinding, MouseButton, MouseMoveEvent, ParentElement as _, Render, actions, SharedString, Styled as _,
     Subscription, Task, Window, div, prelude::*, px,
 };
 use t3code_contracts::{EditorId, ProjectFileFailure};
@@ -25,7 +25,9 @@ use super::{
     file_editor::{FileEditor, FileEditorEvent},
     file_tree::{FileTree, FileTreeEvent},
     preview_image::{ExpandImage, PreviewImage},
+    project_file_picker::{FilePickerEvent, ProjectFilePicker},
 };
+use crate::components::search::project_content_search::{ContentSearchEvent, ProjectContentSearch};
 use crate::{
     ActiveAppTheme as _,
     components::{
@@ -57,6 +59,22 @@ use crate::{
     i18n::t,
     markdown_pipeline::{MarkdownFlavor, ParsedBlocks},
 };
+
+actions!(files_panel, [GoToFile, SearchContents]);
+
+/// Registers Mod+P and Mod+Shift+F inside the Files tab. The app binds the
+/// same actions globally and forwards them with [`FilesPanel::open_file_picker`]
+/// and [`FilesPanel::open_content_search`].
+pub fn init(cx: &mut App) {
+    let (p, f) = if cfg!(target_os = "macos") { ("cmd-p", "cmd-shift-f") } else { ("ctrl-p", "ctrl-shift-f") };
+    cx.bind_keys([KeyBinding::new(p, GoToFile, Some("FilesPanel")), KeyBinding::new(f, SearchContents, Some("FilesPanel"))]);
+}
+
+/// The open palette dialog.
+enum Palette {
+    Files(Entity<ProjectFilePicker>, Subscription),
+    Contents(Entity<ProjectContentSearch>, Subscription),
+}
 
 /// `FileSaveCoordinator`'s debounce.
 const SAVE_DEBOUNCE: Duration = Duration::from_millis(500);
@@ -133,6 +151,7 @@ pub struct FilesPanel {
     prompt: Option<(SharedString, Option<u32>)>,
     expanded: Option<(Entity<ExpandedImageDialog>, Subscription)>,
     pending_gallery: Option<(Vec<ExpandedImageItem>, usize)>,
+    palette: Option<Palette>,
     markdown_state: MarkdownUiState,
     render_markdown_preferred: bool,
     render_table_preferred: bool,
@@ -167,6 +186,7 @@ impl FilesPanel {
             prompt: None,
             expanded: None,
             pending_gallery: None,
+            palette: None,
             markdown_state: MarkdownUiState::default(),
             render_markdown_preferred: false,
             render_table_preferred: true,
@@ -636,6 +656,48 @@ impl FilesPanel {
         if items.is_empty() { (vec![current], 0) } else { (items, index) }
     }
 
+    /// Opens go to file (Mod+P).
+    pub fn open_file_picker(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let picker = cx.new(|cx| ProjectFilePicker::new(self.files.clone(), self.project_name.clone(), window, cx));
+        let subscription = cx.subscribe_in(&picker, window, |this, _, event: &FilePickerEvent, window, cx| {
+            this.palette = None;
+            if let FilePickerEvent::Open(path) = event {
+                this.open_file(path.clone(), None, window, cx);
+            }
+            cx.notify();
+        });
+        self.palette = Some(Palette::Files(picker, subscription));
+        cx.notify();
+    }
+
+    /// Opens content search (Mod+Shift+F).
+    pub fn open_content_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let search = cx.new(|cx| ProjectContentSearch::new(self.files.clone(), self.project_name.clone(), window, cx));
+        let subscription = cx.subscribe_in(&search, window, |this, _, event: &ContentSearchEvent, window, cx| {
+            this.palette = None;
+            if let ContentSearchEvent::Open { path, line } = event {
+                this.open_file(path.clone(), Some(*line), window, cx);
+            }
+            cx.notify();
+        });
+        self.palette = Some(Palette::Contents(search, subscription));
+        cx.notify();
+    }
+
+    pub fn file_picker(&self) -> Option<&Entity<ProjectFilePicker>> {
+        match &self.palette {
+            Some(Palette::Files(picker, _)) => Some(picker),
+            _ => None,
+        }
+    }
+
+    pub fn content_search(&self) -> Option<&Entity<ProjectContentSearch>> {
+        match &self.palette {
+            Some(Palette::Contents(search, _)) => Some(search),
+            _ => None,
+        }
+    }
+
     /// Opens the expanded media viewer over everything on the next render.
     pub fn open_gallery(&mut self, items: Vec<ExpandedImageItem>, index: usize, cx: &mut Context<Self>) {
         self.pending_gallery = Some((items, index));
@@ -1044,9 +1106,27 @@ impl Render for FilesPanel {
         let body = self.open.is_some().then(|| self.render_body(window, cx));
         let prompt = self.render_prompt(cx);
         let expanded = self.expanded.as_ref().map(|(dialog, _)| dialog.clone());
+        let close_palette = cx.entity().downgrade();
+        let palette = self.palette.as_ref().map(|palette| {
+            let content = match palette {
+                Palette::Files(picker, _) => picker.clone().into_any_element(),
+                Palette::Contents(search, _) => search.clone().into_any_element(),
+            };
+            Modal::dialog("files-palette", content, move |_, cx| {
+                close_palette
+                    .update(cx, |panel, cx| {
+                        panel.palette = None;
+                        cx.notify();
+                    })
+                    .ok();
+            })
+        });
         div()
             .id("files-panel")
+            .key_context("FilesPanel")
             .track_focus(&self.focus_handle)
+            .on_action(cx.listener(|panel, _: &GoToFile, window, cx| panel.open_file_picker(window, cx)))
+            .on_action(cx.listener(|panel, _: &SearchContents, window, cx| panel.open_content_search(window, cx)))
             .size_full()
             .flex()
             .flex_col()
@@ -1099,6 +1179,7 @@ impl Render for FilesPanel {
                     }),
             )
             .children(prompt)
+            .children(palette)
             .children(expanded)
     }
 }

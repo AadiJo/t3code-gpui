@@ -176,3 +176,9 @@ fn parse_line(
     push(text.len(), &state.scopes, &mut spans);
     spans.into_boxed_slice()
 }
+
+/// Highlights one line on its own, as search results do (no context from the lines above).
+pub fn highlight_line(language: LanguageId, text: &str) -> Box<[TokenSpan]> {
+    let mut state = State { parser: ParseState::new(language.syntax()), scopes: ScopeStack::new() };
+    parse_line(text, &mut state, &mut String::new(), &mut HashMap::new())
+}

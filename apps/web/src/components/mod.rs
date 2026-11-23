@@ -2,6 +2,7 @@ pub mod app_sidebar_layout;
 pub mod chat;
 pub mod persistent_thread_terminals;
 pub mod relative_time;
+pub mod search;
 pub mod icons;
 pub mod media;
 pub mod composer_prompt_editor;

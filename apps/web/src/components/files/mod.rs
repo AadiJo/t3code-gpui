@@ -8,9 +8,11 @@ pub mod file_editor;
 pub mod file_preview_panel;
 pub mod file_tree;
 pub mod preview_image;
+pub mod project_file_picker;
 
 /// Registers key bindings for the Files tab views.
 pub fn init(cx: &mut gpui_kit::App) {
     file_editor::init(cx);
     file_tree::init(cx);
+    file_preview_panel::init(cx);
 }
