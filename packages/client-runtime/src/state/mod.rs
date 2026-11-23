@@ -15,6 +15,7 @@ pub mod environment_http;
 pub mod models;
 pub mod notifications;
 pub mod optimistic_messages;
+pub mod orchestration;
 pub mod orchestration_v2_projection;
 pub mod project_grouping;
 pub mod raw_stream;
