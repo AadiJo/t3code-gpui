@@ -312,7 +312,11 @@ impl MessagesTimeline {
         self.find_count()
     }
 
+    /// Closes find and drops its index, so a closed find holds no memory.
     pub fn clear_find(&mut self, cx: &mut Context<Self>) {
+        self.find_index.clear();
+        self.find_preparing = None;
+        self.find_ready = false;
         if self.find.take().is_some() {
             cx.notify();
         }
