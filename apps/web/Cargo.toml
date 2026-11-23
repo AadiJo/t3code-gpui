@@ -12,25 +12,25 @@ test-support = ["gpui-kit/test-support"]
 [dependencies]
 t3code-client-runtime.workspace = true
 t3code-contracts.workspace = true
+t3code-i18n-macros.workspace = true
 t3code-shared.workspace = true
 alacritty_terminal.workspace = true
 anyhow.workspace = true
-futures.workspace = true
-thiserror.workspace = true
-gpui-kit.workspace = true
 fancy-regex.workspace = true
+flate2.workspace = true
+futures.workspace = true
+gpui-kit.workspace = true
 image.workspace = true
+jiff.workspace = true
 rust-embed.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+sys-locale.workspace = true
+thiserror.workspace = true
+unicode-properties.workspace = true
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
-t3code-i18n-macros.workspace = true
-flate2.workspace = true
-jiff.workspace = true
-sys-locale.workspace = true
-unicode-properties.workspace = true
 
 # Clicks through the languages in the `i18n` scene headlessly and screenshots each.
 [[example]]
