@@ -1,0 +1,186 @@
+"""Visual parity between the GPUI port and the fork's web app.
+
+  record  <ref-dir>                       measure the reference PNGs once and write
+                                          expected.json (committed; the PNGs are not)
+  compare <port-dir> <out-dir> [ref-dir]  measure the port PNGs, write report.md and
+                                          results.json, and side-by-side images when
+                                          the reference PNGs are available
+
+spec.json lists, per scene, the elements to measure (see measure.py) with a name,
+and optionally `text: true` (glyph shapes differ by rasteriser, so a text run's
+right edge is reported but not judged) or `exclude: "<reason>"` (a fixture or a
+documented GPUI limit; measured and shown, never judged).
+"""
+import json
+import sys
+from pathlib import Path
+
+from PIL import Image, ImageDraw
+
+import measure as m
+
+HERE = Path(__file__).resolve().parent
+SPEC = json.loads((HERE / "spec.json").read_text())
+EXPECTED = HERE / "expected.json"
+PX = SPEC["tolerance"]["px"]
+CHANNEL = SPEC["tolerance"]["channel"]
+
+
+def channels(a, b):
+    a, b = a.lstrip("#"), b.lstrip("#")
+    return max(abs(int(a[i : i + 2], 16) - int(b[i : i + 2], 16)) for i in (0, 2, 4))
+
+
+def record(ref_dir):
+    ref_dir = Path(ref_dir)
+    expected = {}
+    for scene, body in SPEC["scenes"].items():
+        im = m.load(ref_dir / f"{body.get('reference', scene)}.png")
+        expected[scene] = {e["name"]: m.measure(im, e) for e in body["elements"]}
+    EXPECTED.write_text(json.dumps(expected, indent=1) + "\n")
+    print(f"wrote {EXPECTED.name}")
+
+
+def judge(element, ref, port):
+    """Rows of (property, ref, port, delta, ok) for one element; ok None is informational."""
+    rows = []
+    kind = element["kind"]
+    if kind == "fill":
+        d = channels(ref["color"], port["color"])
+        rows.append(("colour", ref["color"], port["color"], d, d <= CHANNEL))
+    elif kind == "ink":
+        if ref.get("empty") or port.get("empty"):
+            ok = bool(ref.get("empty")) == bool(port.get("empty"))
+            rows.append(("ink", "none" if ref.get("empty") else "present", "none" if port.get("empty") else "present", "", ok))
+            return rows
+        for side in ("top", "left", "bottom", "right"):
+            d = port[side] - ref[side]
+            judged = not (element.get("text") and side == "right")
+            rows.append((side, ref[side], port[side], d, abs(d) <= PX if judged else None))
+        rh, ph = ref["bottom"] - ref["top"], port["bottom"] - port["top"]
+        rows.append(("height", rh, ph, ph - rh, None))
+        d = channels(ref["color"], port["color"])
+        rows.append(("ink colour", ref["color"], port["color"], d, d <= CHANNEL))
+        d = channels(ref["bg"], port["bg"])
+        rows.append(("background", ref["bg"], port["bg"], d, d <= CHANNEL))
+    else:
+        d = channels(ref["start"], port["start"])
+        rows.append(("start colour", ref["start"], port["start"], d, d <= CHANNEL))
+        re, pe = ref["edges"], port["edges"]
+        if len(re) != len(pe):
+            rows.append(("edges", len(re), len(pe), len(pe) - len(re), False))
+            rows.append(("edge list", " ".join(f"{e['at']:g}{e['color']}" for e in re), " ".join(f"{e['at']:g}{e['color']}" for e in pe), "", None))
+        else:
+            for i, (a, b) in enumerate(zip(re, pe)):
+                d = b["at"] - a["at"]
+                rows.append((f"edge {i + 1} at", a["at"], b["at"], d, abs(d) <= PX))
+                d = channels(a["color"], b["color"])
+                rows.append((f"edge {i + 1} colour", a["color"], b["color"], d, d <= CHANNEL))
+    return rows
+
+
+def fmt(v):
+    return f"{v:g}" if isinstance(v, float) else str(v)
+
+
+def draw_mark(draw, element, colour):
+    at = [v * m.SCALE for v in element["at"]]
+    kind = element["kind"]
+    if kind == "fill":
+        x, y = at
+        draw.ellipse([x - 6, y - 6, x + 6, y + 6], outline=colour, width=3)
+    elif kind == "ink":
+        draw.rectangle(at, outline=colour, width=2)
+    elif kind == "hscan":
+        y, x0, x1 = at
+        draw.line([x0, y, x1, y], fill=colour, width=2)
+    else:
+        x, y0, y1 = at
+        draw.line([x, y0, x, y1], fill=colour, width=2)
+
+
+def side_by_side(ref_png, port_png, marks, out):
+    if not ref_png.exists():
+        return
+    a, b = Image.open(ref_png).convert("RGB"), Image.open(port_png).convert("RGB")
+    for im in (a, b):
+        draw = ImageDraw.Draw(im)
+        for element, state in marks:
+            colour = {"pass": (0, 200, 120), "FAIL": (255, 40, 40), "excluded": (120, 120, 255)}[state]
+            draw_mark(draw, element, colour)
+    canvas = Image.new("RGB", (a.width + b.width + 20, max(a.height, b.height) + 44), (255, 0, 255))
+    canvas.paste(a, (0, 44))
+    canvas.paste(b, (a.width + 20, 44))
+    draw = ImageDraw.Draw(canvas)
+    draw.rectangle([0, 0, canvas.width, 42], fill=(0, 0, 0))
+    draw.text((10, 14), "REFERENCE (web fork)", fill=(255, 255, 255))
+    draw.text((a.width + 30, 14), "PORT (gpui)   green pass, red fail, blue excluded", fill=(255, 255, 255))
+    canvas.save(out)
+
+
+def compare(port_dir, out_dir, ref_dir=None):
+    port_dir, out_dir = Path(port_dir), Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    expected = json.loads(EXPECTED.read_text())
+    body_lines = []
+    summary = []
+    results = {}
+    failing = []
+    for scene, body in SPEC["scenes"].items():
+        port_png = port_dir / f"{scene}.png"
+        if not port_png.exists():
+            summary.append((scene, 0, 0, 0, "(no port image)"))
+            continue
+        im = m.load(port_png)
+        counts = {"pass": 0, "FAIL": 0, "excluded": 0}
+        rows_md = []
+        marks = []
+        for element in body["elements"]:
+            ref = expected[scene][element["name"]]
+            port = m.measure(im, element)
+            rows = judge(element, ref, port)
+            verdicts = [ok for *_, ok in rows if ok is not None]
+            state = "excluded" if element.get("exclude") else ("pass" if all(verdicts) else "FAIL")
+            counts[state] += 1
+            if state == "FAIL":
+                failing.append(f"{scene}/{element['name']}")
+            marks.append((element, state))
+            results.setdefault(scene, []).append({"element": element["name"], "state": state, "ref": ref, "port": port})
+            for i, (prop, r, p, d, ok) in enumerate(rows):
+                verdict = "excluded" if state == "excluded" else ("" if ok is None else ("ok" if ok else "**fail**"))
+                note = element.get("exclude", element.get("note", "")) if i == 0 else ""
+                name = element["name"] if i == 0 else ""
+                rows_md.append(f"| {name} | {prop} | {fmt(r)} | {fmt(p)} | {fmt(d)} | {verdict} | {note} |")
+        summary.append((scene, counts["pass"], counts["FAIL"], counts["excluded"], ""))
+        body_lines += [f"## {scene}", "", "| element | property | reference | port | delta | result | note |", "| --- | --- | --- | --- | --- | --- | --- |"]
+        body_lines += rows_md + [""]
+        if ref_dir:
+            side_by_side(Path(ref_dir) / f"{body.get('reference', scene)}.png", port_png, marks, out_dir / f"{scene}.png")
+    total = sum(f for _, _, f, _, _ in summary)
+    head = [
+        "# Visual parity report",
+        "",
+        f"Tolerance: {PX}px per edge, {CHANNEL}/255 per channel. Text runs judge top, left and bottom; their right edge is shown only.",
+        "",
+        "| scene | pass | fail | excluded |",
+        "| --- | --- | --- | --- |",
+    ]
+    head += [f"| {s} {note} | {p} | {f} | {e} |" for s, p, f, e, note in summary]
+    head += ["", f"**{total} failing elements.**", ""]
+    if failing:
+        head += ["Failing: " + ", ".join(failing), ""]
+    (out_dir / "report.md").write_text("\n".join(head + body_lines) + "\n")
+    (out_dir / "results.json").write_text(json.dumps(results, indent=1) + "\n")
+    print("\n".join(head))
+    print(f"report: {out_dir / 'report.md'}")
+    return total
+
+
+if __name__ == "__main__":
+    command, *args = sys.argv[1:] or ["help"]
+    if command == "record":
+        record(*args)
+    elif command == "compare":
+        sys.exit(1 if compare(*args) else 0)
+    else:
+        print(__doc__)

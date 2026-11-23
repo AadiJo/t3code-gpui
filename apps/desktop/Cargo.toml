@@ -77,6 +77,11 @@ required-features = ["headless"]
 # relaunch restore, and the 5,000-thread navigation bench.
 # Usage: app-check <session|restore> <out> <state-dir> <dark|light> | app-check bench <out>
 [[bin]]
+name = "parity-shot"
+path = "src/parity_shot.rs"
+required-features = ["headless"]
+
+[[bin]]
 name = "app-check"
 path = "src/app_check.rs"
 required-features = ["headless"]

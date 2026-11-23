@@ -99,6 +99,12 @@ impl FixtureStore {
         Self::from_snapshot(sidebar_fixtures::showcase_snapshot(), |_| 6)
     }
 
+    /// The world the visual-parity reference was captured in
+    /// (`sidebar_fixtures::reference_snapshot`, `timelines::reference_thread`).
+    pub fn reference() -> Self {
+        Self::from_snapshot(sidebar_fixtures::reference_snapshot(), |_| 2)
+    }
+
     /// `threads` threads where every `long_every`th one has a 1,000-turn
     /// (3,000-row) timeline, for the navigation benchmark.
     pub fn large(threads: usize, long_every: usize) -> Self {
@@ -533,6 +539,8 @@ fn build_timeline(key: &ThreadKey, record: &mut ThreadRecord) -> TimelineInput {
     // The showcase's working thread carries every row kind.
     let mut input = if key.thread_id.0 == "a1" {
         fixture_thread()
+    } else if key.thread_id.0 == "r-sync" {
+        timelines::reference_thread("r-sync")
     } else {
         timelines::finished_thread(&key.thread_id.0, &record.title, record.turns)
     };

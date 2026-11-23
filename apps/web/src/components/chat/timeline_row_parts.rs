@@ -187,7 +187,7 @@ pub fn xs_button(id: impl Into<ElementId>, glyph: Option<IconName>, label: Optio
         .children(label)
 }
 
-/// Diff counts `+A −D` in mono.
+/// Diff counts `+A -D` in mono (`DiffStatLabel` inline).
 pub fn diff_stat(additions: u32, deletions: u32, colors: &ChatColors, size: Pixels) -> Div {
     div()
         .flex()
@@ -195,5 +195,5 @@ pub fn diff_stat(additions: u32, deletions: u32, colors: &ChatColors, size: Pixe
         .font_family(super::chat_style::mono_family())
         .text_size(size)
         .child(div().text_color(colors.diff_addition).child(format!("+{additions}")))
-        .child(div().text_color(colors.diff_deletion).child(format!("−{deletions}")))
+        .child(div().text_color(colors.diff_deletion).child(format!("-{deletions}")))
 }

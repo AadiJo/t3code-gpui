@@ -6,14 +6,14 @@
 use crate::components::icons::{Icon, IconName, IconSize};
 use gpui_kit::{
     AnyElement, Context, FontWeight, InteractiveElement as _, IntoElement, ParentElement as _,
-    StatefulInteractiveElement as _, Styled as _, Window, div, px,
+    StatefulInteractiveElement as _, Styled as _, Window, div, prelude::FluentBuilder as _, px,
 };
 
 use super::{
     chat_style::{TEXT_2XS, TEXT_3XS, TEXT_XS, alpha, mono},
     messages_timeline::MessagesTimeline,
     messages_timeline_logic::{MessageRow, TimelineRow},
-    timeline_entries::{ChatMessage, TurnDiffSummary},
+    timeline_entries::{ChatMessage, EntryId, TurnDiffSummary},
     timeline_row_parts::{diff_stat, xs_button},
     work_log_presentation::format_clock,
 };
@@ -128,12 +128,15 @@ impl MessagesTimeline {
         div().px_1().py(px(2.)).child(render_markdown(&view, window, cx)).into_any_element()
     }
 
-    /// "N changed files" with diff stats, folder rows and file rows.
+    /// `ChangedFilesCard`: "N changed files" with diff stats, then the tree.
+    /// Folders start collapsed (`allDirectoriesExpanded` defaults to false);
+    /// the header's chevrons button expands or collapses them all.
     fn render_changed_files(&mut self, key: u64, summary: &TurnDiffSummary, cx: &mut Context<Self>) -> AnyElement {
         let colors = self.colors;
-        let _ = cx;
         let (additions, deletions) = summary.files.iter().fold((0, 0), |(a, d), f| (a + f.additions, d + f.deletions));
         let fill = if colors.is_dark() { alpha(colors.theme.input, 0.2) } else { colors.theme.secondary };
+        let toggle = EntryId(format!("changed-files:{}", summary.assistant_message_id.0).into());
+        let expanded = self.expanded_entries.contains(&toggle);
         // Group files under their folder, as the tree's first level does.
         let mut folders: Vec<(String, Vec<&super::timeline_entries::FileChange>)> = Vec::new();
         for file in summary.files.iter() {
@@ -143,81 +146,128 @@ impl MessagesTimeline {
                 None => folders.push((folder, vec![file])),
             }
         }
+        let has_folders = folders.iter().any(|(name, _)| !name.is_empty());
         let header = div()
             .flex()
             .items_center()
+            .justify_between()
             .gap_2()
             .px_3()
             .py_2()
             .child(
                 div()
+                    .flex()
+                    .items_center()
+                    .gap_3()
                     .text_size(TEXT_XS.size)
+                    .line_height(TEXT_XS.line_height)
                     .font_weight(FontWeight::MEDIUM)
                     .text_color(colors.theme.text)
                     .child(match summary.files.len() {
                         1 => "1 changed file".to_owned(),
                         n => format!("{n} changed files"),
-                    }),
+                    })
+                    .child(diff_stat(additions, deletions, &colors, TEXT_XS.size)),
             )
-            .child(diff_stat(additions, deletions, &colors, TEXT_XS.size))
-            .child(div().flex_1())
-            .child(xs_button(("expand-all", key), Some(IconName::ChevronsDownUp), None, colors.theme.muted_foreground, &colors))
-            .child(xs_button(("open-diff-turn", key), Some(IconName::FileDiff), Some("Open diff".into()), colors.theme.muted_foreground, &colors));
-        let rows = folders.into_iter().flat_map(|(folder, files)| {
-            let folder_row = (!folder.is_empty()).then(|| {
+            .child(
                 div()
-                    .h(TREE_ROW_HEIGHT)
                     .flex()
+                    .flex_none()
                     .items_center()
-                    .gap_2()
-                    .rounded(px(6.))
-                    .pr_2()
-                    .pl_2()
-                    .child(Icon::new(IconName::Folder).size(IconSize::Custom(px(14.))).color(alpha(colors.theme.muted_foreground, 0.75)))
-                    .child(
-                        div()
-                            .font_family(mono().family)
-                            .text_size(TEXT_2XS.size)
-                            .text_color(colors.theme.muted_foreground)
-                            .child(folder.clone()),
-                    )
-                    .into_any_element()
-            });
-            let indent = if folder.is_empty() { px(8.) } else { px(30.) };
-            folder_row.into_iter().chain(files.into_iter().map(move |file| {
+                    .gap_1()
+                    .when(has_folders, |d| {
+                        let toggle = toggle.clone();
+                        let glyph = if expanded { IconName::ChevronsDownUp } else { IconName::ChevronsUpDown };
+                        d.child(
+                            xs_button(("expand-all", key), Some(glyph), None, colors.theme.muted_foreground, &colors)
+                                .on_click(cx.listener(move |this, _, _, cx| this.toggle_entry(toggle.clone(), cx))),
+                        )
+                    })
+                    .child(xs_button(("open-diff-turn", key), Some(IconName::FileDiff), Some("Open diff".into()), colors.theme.muted_foreground, &colors)),
+            );
+        let row = || div().h(TREE_ROW_HEIGHT).w_full().flex().items_center().gap_2().rounded(px(6.)).py(px(6.)).pr_2();
+        // `DiffStatLabel` aligned: two right-aligned 4ch columns, 8px apart.
+        let stat = move |a: u32, d: u32| {
+            let column = |text: String, color| div().w(px(24.)).flex().justify_end().text_color(color).child(text);
+            div()
+                .ml_auto()
+                .flex()
+                .flex_none()
+                .gap_2()
+                .font_family(mono().family)
+                .text_size(TEXT_3XS.size)
+                .line_height(TEXT_3XS.line_height)
+                .child(column(format!("+{a}"), colors.diff_addition))
+                .child(column(format!("-{d}"), colors.diff_deletion))
+        };
+        let mut rows = Vec::new();
+        for (folder, files) in folders {
+            let depth = if folder.is_empty() { 0. } else { 1. };
+            if !folder.is_empty() {
+                let (a, d) = files.iter().fold((0, 0), |(a, d), f| (a + f.additions, d + f.deletions));
+                let toggle = toggle.clone();
+                rows.push(
+                    row()
+                        .id(gpui_kit::SharedString::from(format!("changed-dir-{key}-{folder}")))
+                        .pl(px(8.))
+                        .cursor_pointer()
+                        .hover(|s| s.bg(alpha(colors.theme.accent_surface, 0.6)))
+                        .on_click(cx.listener(move |this, _, _, cx| this.toggle_entry(toggle.clone(), cx)))
+                        .child(
+                            Icon::new(if expanded { IconName::ChevronDown } else { IconName::ChevronRight })
+                                .size(IconSize::Custom(px(14.)))
+                                .color(alpha(colors.theme.muted_foreground, 0.7)),
+                        )
+                        .child(
+                            Icon::new(if expanded { IconName::Folder } else { IconName::FolderClosed })
+                                .size(IconSize::Custom(px(14.)))
+                                .color(alpha(colors.theme.muted_foreground, 0.75)),
+                        )
+                        .child(
+                            div()
+                                .truncate()
+                                .font_family(mono().family)
+                                .text_size(TEXT_2XS.size)
+                                .text_color(alpha(colors.theme.muted_foreground, 0.9))
+                                .child(folder.clone()),
+                        )
+                        .child(stat(a, d))
+                        .into_any_element(),
+                );
+                if !expanded {
+                    continue;
+                }
+            }
+            for file in files {
                 let name = file.path.rsplit('/').next().unwrap_or(&file.path).to_owned();
-                div()
-                    .id(gpui_kit::SharedString::from(format!("changed-{}", file.path)))
-                    .h(TREE_ROW_HEIGHT)
-                    .flex()
-                    .items_center()
-                    .gap_2()
-                    .rounded(px(6.))
-                    .pl(indent)
-                    .pr_2()
-                    .cursor_pointer()
-                    .hover(|s| s.bg(alpha(colors.theme.accent_surface, 0.6)))
-                    .child(Icon::new(IconName::File).size(IconSize::Custom(px(14.))).color(colors.theme.muted_foreground))
-                    .child(
-                        div()
-                            .flex_1()
-                            .truncate()
-                            .font_family(mono().family)
-                            .text_size(TEXT_XS.size)
-                            .text_color(alpha(colors.theme.text, 0.85))
-                            .child(name),
-                    )
-                    .child(diff_stat(file.additions, file.deletions, &colors, TEXT_3XS.size))
-                    .into_any_element()
-            }))
-        });
+                rows.push(
+                    row()
+                        .id(gpui_kit::SharedString::from(format!("changed-{}", file.path)))
+                        .pl(px(8. + depth * 14.))
+                        .cursor_pointer()
+                        .hover(|s| s.bg(alpha(colors.theme.accent_surface, 0.6)))
+                        .when(has_folders, |d| d.child(div().size(px(14.)).flex_none()))
+                        .child(Icon::new(IconName::File).size(IconSize::Custom(px(14.))).color(alpha(colors.theme.muted_foreground, 0.7)))
+                        .child(
+                            div()
+                                .flex_1()
+                                .truncate()
+                                .font_family(mono().family)
+                                .text_size(TEXT_XS.size)
+                                .text_color(alpha(colors.theme.text, 0.85))
+                                .child(name),
+                        )
+                        .child(stat(file.additions, file.deletions))
+                        .into_any_element(),
+                );
+            }
+        }
         div()
             .mt(CARD_MARGIN_TOP)
             .rounded(px(8.))
             .bg(fill)
-            .pb_1()
             .child(header)
-            .child(div().px_1().flex().flex_col().children(rows))
+            .child(div().p_2().flex().flex_col().children(rows))
             .into_any_element()
     }
 }
