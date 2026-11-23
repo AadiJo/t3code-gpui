@@ -10,3 +10,4 @@ pub mod platform;
 pub mod relay;
 pub mod rpc;
 pub mod state;
+pub mod work_log;
