@@ -5,6 +5,7 @@ mod app;
 mod chat;
 mod composer;
 mod sidebar;
+mod terminal;
 mod ui;
 
 use gpui_kit::{AnyView, App, Window};
@@ -19,6 +20,9 @@ pub fn scenes() -> &'static [(&'static str, SceneBuilder)] {
         ("sidebar", sidebar::build),
         ("chat", chat::build),
         ("composer", composer::build),
+        ("terminal", terminal::build),
+        ("terminal-light", terminal::build_light),
+        ("terminal-find", terminal::build_find),
     ]
 }
 

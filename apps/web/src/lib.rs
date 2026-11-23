@@ -7,6 +7,7 @@ pub mod components;
 pub mod scenes;
 pub mod terminal;
 pub mod terminal_links;
+pub mod terminal_ui_state_store;
 pub mod theme_palette;
 
 pub use app_root::AppRoot;
@@ -20,5 +21,7 @@ use theme_palette::{Appearance, ThemeDocument, set_app_theme};
 pub fn init(cx: &mut App) {
     gpui_kit::init(cx);
     terminal::surface::init(cx);
+    components::thread_terminal_drawer::init(cx);
+    cx.set_global(terminal_ui_state_store::TerminalUiStateStore::default());
     set_app_theme(AppTheme::new(&ThemeDocument::graphite(), Appearance::Dark), cx);
 }

@@ -88,34 +88,50 @@ pub fn inbound_channel() -> (TerminalSink, TerminalSource) {
     mpsc::channel(INBOUND_CAPACITY)
 }
 
-/// A backend that replays fixed bytes once and drops everything sent to it.
+/// Produces a recording for the grid size the terminal opened at.
+pub type Recording = Box<dyn FnOnce(GridSize) -> Vec<Vec<u8>>>;
+
+/// A backend that replays recorded output once and keeps what is sent to it.
 /// Used by scenes and benchmarks.
 pub struct RecordedBackend {
-    chunks: Vec<Vec<u8>>,
+    recording: Option<Recording>,
     /// Everything the terminal sent out, for inspection.
     pub sent: Vec<TerminalOutbound>,
 }
 
 impl RecordedBackend {
+    /// Replays fixed chunks.
     pub fn new(chunks: Vec<Vec<u8>>) -> Self {
-        Self { chunks, sent: Vec::new() }
+        Self::sized(move |_| chunks)
+    }
+
+    /// Replays chunks drawn for the opening size, like a full-screen program would.
+    pub fn sized(recording: impl FnOnce(GridSize) -> Vec<Vec<u8>> + 'static) -> Self {
+        Self { recording: Some(Box::new(recording)), sent: Vec::new() }
     }
 }
 
 impl TerminalBackend for RecordedBackend {
-    fn connect(&mut self, mut sink: TerminalSink, _size: GridSize) {
-        let chunks = std::mem::take(&mut self.chunks);
-        // The channel is bounded, so a long recording is sent as the view drains it.
-        std::thread::spawn(move || {
-            futures::executor::block_on(async move {
-                use futures::SinkExt as _;
-                for chunk in chunks {
-                    if sink.send(TerminalInbound::Output(chunk)).await.is_err() {
-                        break;
-                    }
-                }
-            });
-        });
+    fn connect(&mut self, mut sink: TerminalSink, size: GridSize) {
+        let Some(recording) = self.recording.take() else { return };
+        let mut chunks = recording(size).into_iter();
+        // Whatever fits is queued now, so the first drained batch shows it.
+        for chunk in chunks.by_ref() {
+            if let Err(error) = sink.try_send(TerminalInbound::Output(chunk)) {
+                let rest: Vec<_> = std::iter::once(error.into_inner()).chain(chunks.map(TerminalInbound::Output)).collect();
+                std::thread::spawn(move || {
+                    futures::executor::block_on(async move {
+                        use futures::SinkExt as _;
+                        for event in rest {
+                            if sink.send(event).await.is_err() {
+                                break;
+                            }
+                        }
+                    });
+                });
+                return;
+            }
+        }
     }
 
     fn send(&mut self, message: TerminalOutbound) {

@@ -59,22 +59,42 @@ impl CellMetrics {
     }
 }
 
-/// The default terminal font for this platform, matching the web mono stack's resolved face.
-pub fn terminal_font() -> Font {
-    let family = if cfg!(target_os = "macos") {
-        "Menlo"
-    } else if cfg!(target_os = "windows") {
-        "Consolas"
-    } else {
-        "Liberation Mono"
-    };
+/// Monospace families tried in order, matching the web mono stack's resolved face per platform.
+const FONT_CANDIDATES: &[&str] = if cfg!(target_os = "macos") {
+    &["SF Mono", "Menlo", "Monaco"]
+} else if cfg!(target_os = "windows") {
+    &["Consolas", "Cascadia Mono", "Courier New"]
+} else {
+    &["Liberation Mono", "DejaVu Sans Mono", "Noto Sans Mono", "Ubuntu Mono"]
+};
+
+static FONT_FAMILY: std::sync::OnceLock<SharedString> = std::sync::OnceLock::new();
+
+/// The default terminal font: the first installed candidate, with symbol, CJK and emoji fallbacks.
+pub fn terminal_font(window: &Window) -> Font {
+    let family = FONT_FAMILY
+        .get_or_init(|| {
+            let installed = window.text_system().all_font_names();
+            FONT_CANDIDATES
+                .iter()
+                .find(|candidate| installed.iter().any(|name| name == *candidate))
+                .copied()
+                .unwrap_or(FONT_CANDIDATES[0])
+                .into()
+        })
+        .clone();
     Font {
-        family: family.into(),
+        family,
         features: FontFeatures::disable_ligatures(),
         fallbacks: Some(gpui_kit::FontFallbacks::from_fonts(vec![
             "DejaVu Sans Mono".into(),
-            "Noto Sans Mono".into(),
             "Symbols Nerd Font Mono".into(),
+            "Noto Sans CJK JP".into(),
+            "Noto Sans CJK SC".into(),
+            "PingFang SC".into(),
+            "Hiragino Sans".into(),
+            "Microsoft YaHei".into(),
+            "Malgun Gothic".into(),
             "Apple Color Emoji".into(),
             "Segoe UI Emoji".into(),
             "Noto Color Emoji".into(),
@@ -273,9 +293,14 @@ fn build_row(layout: &mut RowLayout, row: usize, core: &TerminalCore, metrics: &
             if segment_start.is_some() {
                 // A plain space joins whatever run is open, so it does not split runs.
                 text.push(' ');
+                let plain = CellStyle { underline: None, strike: false, ..style };
                 match runs.last_mut() {
-                    Some(run) => run.len += 1,
-                    None => runs.push(text_run(metrics, style, 1)),
+                    // Decorations stop at the styled text; the space gets a plain run.
+                    Some(run) if run.underline.is_none() && run.strikethrough.is_none() => run.len += 1,
+                    _ => {
+                        runs.push(text_run(metrics, plain, 1));
+                        last_style = Some(plain);
+                    }
                 }
             }
             continue;

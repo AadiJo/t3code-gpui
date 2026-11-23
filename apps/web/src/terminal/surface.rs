@@ -239,7 +239,7 @@ impl TerminalSurface {
             theme_key: (theme.id.clone(), theme.appearance),
             layout: Some(GridLayout::default()),
             geometry: None,
-            font: terminal_font(),
+            font: terminal_font(window),
             font_size: DEFAULT_TERMINAL_FONT_SIZE,
             cell_size: (7., 16.),
             focused: false,
@@ -274,8 +274,8 @@ impl TerminalSurface {
     }
 
     /// Applies the terminal font settings (family empty = platform default, size 8-20).
-    pub fn set_font(&mut self, family: Option<SharedString>, size: Pixels, cx: &mut Context<Self>) {
-        self.font = terminal_font();
+    pub fn set_font(&mut self, family: Option<SharedString>, size: Pixels, window: &Window, cx: &mut Context<Self>) {
+        self.font = terminal_font(window);
         if let Some(family) = family.filter(|family| !family.trim().is_empty()) {
             self.font.family = family;
         }
@@ -370,6 +370,10 @@ impl TerminalSurface {
                 _ => {}
             }
         }
+        // A query typed before its text arrived finds it once it does.
+        if self.find.as_ref().is_some_and(|find| find.current.is_none() && !find.query.is_empty()) {
+            self.find_step(false, cx);
+        }
         if let Some(deadline) = self.core.sync_deadline() {
             if self.sync_task.is_none() {
                 self.sync_task = Some(cx.spawn(async move |this, cx| {
@@ -426,6 +430,9 @@ impl TerminalSurface {
             self.theme_key = (theme.id.clone(), theme.appearance);
             self.palette = TerminalPalette::new(theme);
             self.palette_generation += 1;
+        }
+        if std::env::var_os("T3_TERMINAL_DEBUG").is_some() {
+            eprintln!("resize_grid {size:?} pending={}", self.pending_sink.is_some());
         }
         self.core.resize(size);
         if let Some(sink) = self.pending_sink.take() {
