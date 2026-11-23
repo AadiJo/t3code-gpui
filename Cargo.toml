@@ -28,9 +28,11 @@ t3code-web = { path = "apps/web" }
 # changes API weekly.
 gpui-kit = { version = "=0.11.0", features = ["syntect"] }
 
+alacritty_terminal = { version = "0.26", default-features = false }
 anyhow = "1"
 base64 = "0.22"
 futures = "0.3"
+fancy-regex = "0.16"
 rust-embed = "8"
 serde = { version = "1", features = ["derive", "rc"] }
 serde_json = { version = "1", features = ["raw_value"] }
@@ -69,6 +71,8 @@ ttf-parser = { opt-level = 3 }
 smol = { opt-level = 3 }
 ropey = { opt-level = 3 }
 markdown = { opt-level = 3 }
+alacritty_terminal = { opt-level = 3 }
+vte = { opt-level = 3 }
 
 [profile.release]
 debug = false
