@@ -194,7 +194,8 @@ pub fn thread_menu_items(state: &ThreadMenuState<'_>) -> Vec<MenuItem> {
     items
 }
 
-fn snooze_items() -> Vec<MenuItem> {
+/// Snooze presets (`DEFAULT_SNOOZE_PRESETS`), for the row's snooze button.
+pub fn snooze_items() -> Vec<MenuItem> {
     use MenuCommand as C;
     use SnoozePreset as P;
     vec![

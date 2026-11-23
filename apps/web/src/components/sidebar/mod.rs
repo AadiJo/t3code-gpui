@@ -553,6 +553,22 @@ impl Sidebar {
         cx.notify();
     }
 
+    /// Opens the snooze presets for a thread row (its Snooze button).
+    pub(crate) fn open_snooze_menu(&mut self, entry: usize, position: Point<Pixels>, cx: &mut Context<Self>) {
+        let Some(SidebarListEntry::Thread { thread, .. }) = self.list.entries.get(entry) else {
+            return;
+        };
+        self.notifications_open = false;
+        self.context_menu = Some(ContextMenu {
+            target: MenuTarget::Thread(thread.key.clone()),
+            position,
+            items: context_menu::snooze_items(),
+            highlighted: None,
+            submenu: None,
+        });
+        cx.notify();
+    }
+
     /// Moves the menu highlight; false when no menu is open.
     fn menu_move(&mut self, forward: bool, cx: &mut Context<Self>) -> bool {
         let Some(menu) = self.context_menu.as_mut() else {

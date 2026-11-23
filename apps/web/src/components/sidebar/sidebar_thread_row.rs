@@ -278,16 +278,13 @@ impl Sidebar {
             );
         }
         if settings.snooze_supported {
-            let key = key.clone();
             cluster = cluster.child(
                 row_action(("snooze", ix), colors)
                     .child(icon(ShellIcon::AlarmClock, px(14.), colors.muted_foreground))
                     .tooltip(super::tooltip::tooltip("Snooze"))
                     .on_click(cx.listener(move |this, event: &ClickEvent, _, cx| {
                         cx.stop_propagation();
-                        let _ = &key;
-                        let position = event.position();
-                        this.open_entry_menu(ix, position, cx);
+                        this.open_snooze_menu(ix, event.position(), cx);
                     })),
             );
         }
