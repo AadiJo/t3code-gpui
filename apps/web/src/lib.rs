@@ -7,9 +7,14 @@ extern crate self as t3code_web;
 pub mod app_root;
 pub mod appearance_fonts;
 pub mod assets;
+pub mod command_palette_store;
 pub mod components;
 pub mod i18n;
+pub mod keybindings;
+pub mod navigation_history;
 pub mod scenes;
+pub mod shortcut_modifier_state;
+pub mod shortcuts;
 pub mod terminal;
 pub mod terminal_links;
 pub mod terminal_ui_state_store;
@@ -52,4 +57,6 @@ pub fn init(cx: &mut App) {
     terminal::surface::init(cx);
     components::thread_terminal_drawer::init(cx);
     cx.set_global(terminal_ui_state_store::TerminalUiStateStore::default());
+    // Last: app keybindings must follow every widget's bindings.
+    shortcuts::init(cx);
 }
