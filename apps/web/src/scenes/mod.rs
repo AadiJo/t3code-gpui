@@ -8,6 +8,7 @@ pub mod connections;
 pub mod git_actions;
 mod i18n;
 mod notifications;
+pub mod pull_requests;
 pub mod composer;
 pub mod diffs;
 pub mod files;
@@ -109,6 +110,18 @@ pub fn scenes() -> &'static [(&'static str, SceneBuilder)] {
         ("usage-day-breakdown", usage::build_time_breakdown),
         ("usage-model", usage::build_model),
         ("usage-loading", usage::build_loading),
+        ("pull-requests", pull_requests::build),
+        ("pull-requests-light", pull_requests::build),
+        ("pull-requests-summary", pull_requests::build_summary),
+        ("pull-requests-summary-light", pull_requests::build_summary),
+        ("pull-requests-guide", pull_requests::build_guide),
+        ("pull-requests-guide-light", pull_requests::build_guide),
+        ("pull-requests-timeline", pull_requests::build_timeline),
+        ("pull-requests-timeline-light", pull_requests::build_timeline),
+        ("pull-requests-code", pull_requests::build_code),
+        ("pull-requests-code-light", pull_requests::build_code),
+        ("issues", pull_requests::build_issues),
+        ("issues-light", pull_requests::build_issues),
     ]
 }
 

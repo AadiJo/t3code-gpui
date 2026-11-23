@@ -1,0 +1,1709 @@
+{
+ "listStudio": {
+  "viewers": {
+   "github.com": "aadi"
+  },
+  "providers": [
+   {
+    "host": "github.com",
+    "kind": "github",
+    "searchesOnHost": true,
+    "actions": [
+     "merge",
+     "ready",
+     "close",
+     "reopen",
+     "draft"
+    ],
+    "projectCount": 2,
+    "projectIds": [
+     "proj-t3code",
+     "proj-site"
+    ],
+    "configured": true
+   }
+  ],
+  "entries": [
+   {
+    "provider": "github",
+    "host": "github.com",
+    "projectId": "proj-t3code",
+    "projectTitle": "t3code",
+    "repository": "t3tools/t3code",
+    "number": 482,
+    "title": "Virtualize the pull request list and cache row search text",
+    "url": "https://github.com/t3tools/t3code/pull/482",
+    "author": {
+     "login": "aadi",
+     "name": null,
+     "avatarUrl": null
+    },
+    "headBranch": "aadi/pr-list-virtual",
+    "baseBranch": "main",
+    "state": "open",
+    "isDraft": false,
+    "mergeability": "mergeable",
+    "additions": 412,
+    "deletions": 96,
+    "createdAt": "2026-11-10T10:00:00Z",
+    "updatedAt": "2026-11-23T09:12:00Z",
+    "viewerReviewRequested": false,
+    "labels": [
+     {
+      "name": "performance",
+      "color": "fbca04",
+      "description": null
+     },
+     {
+      "name": "area: web",
+      "color": "1d76db",
+      "description": null
+     }
+    ],
+    "stack": {
+     "number": 7,
+     "position": 2,
+     "size": 3,
+     "base": "main"
+    },
+    "reviewDecision": "approved",
+    "checksState": "passing"
+   },
+   {
+    "provider": "github",
+    "host": "github.com",
+    "projectId": "proj-t3code",
+    "projectTitle": "t3code",
+    "repository": "t3tools/t3code",
+    "number": 481,
+    "title": "Composer: keep IME composition across rerenders",
+    "url": "https://github.com/t3tools/t3code/pull/481",
+    "author": {
+     "login": "julius",
+     "name": null,
+     "avatarUrl": null
+    },
+    "headBranch": "julius/ime-composer",
+    "baseBranch": "main",
+    "state": "open",
+    "isDraft": false,
+    "mergeability": "mergeable",
+    "additions": 88,
+    "deletions": 12,
+    "createdAt": "2026-11-10T10:00:00Z",
+    "updatedAt": "2026-11-23T07:40:00Z",
+    "viewerReviewRequested": true,
+    "labels": [
+     {
+      "name": "bug",
+      "color": "d73a4a",
+      "description": null
+     }
+    ],
+    "reviewDecision": "review-required",
+    "checksState": "pending"
+   },
+   {
+    "provider": "github",
+    "host": "github.com",
+    "projectId": "proj-t3code",
+    "projectTitle": "t3code",
+    "repository": "t3tools/t3code",
+    "number": 479,
+    "title": "Settings search ranks exact matches first",
+    "url": "https://github.com/t3tools/t3code/pull/479",
+    "author": {
+     "login": "theo",
+     "name": null,
+     "avatarUrl": null
+    },
+    "headBranch": "theo/settings-search",
+    "baseBranch": "main",
+    "state": "open",
+    "isDraft": true,
+    "mergeability": "unknown",
+    "additions": 0,
+    "deletions": 0,
+    "createdAt": "2026-11-10T10:00:00Z",
+    "updatedAt": "2026-11-22T18:02:00Z",
+    "viewerReviewRequested": false,
+    "labels": [
+     {
+      "name": "ui",
+      "color": "c5def5",
+      "description": null
+     }
+    ]
+   },
+   {
+    "provider": "github",
+    "host": "github.com",
+    "projectId": "proj-t3code",
+    "projectTitle": "t3code",
+    "repository": "t3tools/t3code",
+    "number": 478,
+    "title": "Terminal drawer remembers its height per thread",
+    "url": "https://github.com/t3tools/t3code/pull/478",
+    "author": {
+     "login": "mira",
+     "name": null,
+     "avatarUrl": null
+    },
+    "headBranch": "mira/terminal-height",
+    "baseBranch": "main",
+    "state": "open",
+    "isDraft": false,
+    "mergeability": "conflicting",
+    "additions": 140,
+    "deletions": 61,
+    "createdAt": "2026-11-10T10:00:00Z",
+    "updatedAt": "2026-11-22T15:30:00Z",
+    "viewerReviewRequested": true,
+    "labels": [],
+    "reviewDecision": "changes-requested",
+    "checksState": "failing"
+   },
+   {
+    "provider": "github",
+    "host": "github.com",
+    "projectId": "proj-t3code",
+    "projectTitle": "t3code",
+    "repository": "t3tools/t3code",
+    "number": 477,
+    "title": "Bump effect to 4.0.3",
+    "url": "https://github.com/t3tools/t3code/pull/477",
+    "author": {
+     "login": "dependabot[bot]",
+     "name": null,
+     "avatarUrl": null,
+     "isBot": true
+    },
+    "headBranch": "dependabot/npm/effect-4.0.3",
+    "baseBranch": "main",
+    "state": "open",
+    "isDraft": false,
+    "mergeability": "mergeable",
+    "additions": 22,
+    "deletions": 22,
+    "createdAt": "2026-11-10T10:00:00Z",
+    "updatedAt": "2026-11-22T11:00:00Z",
+    "viewerReviewRequested": false,
+    "labels": [
+     {
+      "name": "dependencies",
+      "color": "0366d6",
+      "description": null
+     }
+    ],
+    "checksState": "passing"
+   },
+   {
+    "provider": "github",
+    "host": "github.com",
+    "projectId": "proj-t3code",
+    "projectTitle": "t3code",
+    "repository": "t3tools/t3code",
+    "number": 475,
+    "title": "Right panel tabs keep scroll position on switch",
+    "url": "https://github.com/t3tools/t3code/pull/475",
+    "author": {
+     "login": "aadi",
+     "name": null,
+     "avatarUrl": null
+    },
+    "headBranch": "aadi/panel-scroll",
+    "baseBranch": "main",
+    "state": "open",
+    "isDraft": false,
+    "mergeability": "mergeable",
+    "additions": 64,
+    "deletions": 30,
+    "createdAt": "2026-11-10T10:00:00Z",
+    "updatedAt": "2026-11-21T20:10:00Z",
+    "viewerReviewRequested": false,
+    "labels": [
+     {
+      "name": "ui",
+      "color": "c5def5",
+      "description": null
+     },
+     {
+      "name": "area: web",
+      "color": "1d76db",
+      "description": null
+     }
+    ],
+    "stack": {
+     "number": 7,
+     "position": 1,
+     "size": 3,
+     "base": "main"
+    },
+    "reviewDecision": "review-required",
+    "checksState": "passing"
+   },
+   {
+    "provider": "github",
+    "host": "github.com",
+    "projectId": "proj-t3code",
+    "projectTitle": "t3code",
+    "repository": "t3tools/t3code",
+    "number": 474,
+    "title": "Review guide: letter notes by excerpt",
+    "url": "https://github.com/t3tools/t3code/pull/474",
+    "author": {
+     "login": "julius",
+     "name": null,
+     "avatarUrl": null
+    },
+    "headBranch": "julius/guide-notes",
+    "baseBranch": "main",
+    "state": "merged",
+    "isDraft": false,
+    "mergeability": "mergeable",
+    "additions": 203,
+    "deletions": 77,
+    "createdAt": "2026-11-10T10:00:00Z",
+    "updatedAt": "2026-11-21T09:00:00Z",
+    "viewerReviewRequested": false,
+    "labels": [
+     {
+      "name": "area: web",
+      "color": "1d76db",
+      "description": null
+     }
+    ],
+    "reviewDecision": "approved",
+    "checksState": "passing"
+   },
+   {
+    "provider": "github",
+    "host": "github.com",
+    "projectId": "proj-t3code",
+    "projectTitle": "t3code",
+    "repository": "t3tools/t3code",
+    "number": 470,
+    "title": "Fix crash when a thread has no turns",
+    "url": "https://github.com/t3tools/t3code/pull/470",
+    "author": {
+     "login": "theo",
+     "name": null,
+     "avatarUrl": null
+    },
+    "headBranch": "theo/empty-thread",
+    "baseBranch": "main",
+    "state": "merged",
+    "isDraft": false,
+    "mergeability": "mergeable",
+    "additions": 9,
+    "deletions": 3,
+    "createdAt": "2026-11-10T10:00:00Z",
+    "updatedAt": "2026-11-20T16:44:00Z",
+    "viewerReviewRequested": false,
+    "labels": [
+     {
+      "name": "bug",
+      "color": "d73a4a",
+      "description": null
+     }
+    ],
+    "reviewDecision": "approved",
+    "checksState": "passing"
+   },
+   {
+    "provider": "github",
+    "host": "github.com",
+    "projectId": "proj-t3code",
+    "projectTitle": "t3code",
+    "repository": "t3tools/t3code",
+    "number": 468,
+    "title": "Docs: issue trackers and Linear binding",
+    "url": "https://github.com/t3tools/t3code/pull/468",
+    "author": {
+     "login": "mira",
+     "name": null,
+     "avatarUrl": null
+    },
+    "headBranch": "mira/docs-linear",
+    "baseBranch": "main",
+    "state": "closed",
+    "isDraft": false,
+    "mergeability": "mergeable",
+    "additions": 120,
+    "deletions": 4,
+    "createdAt": "2026-11-10T10:00:00Z",
+    "updatedAt": "2026-11-19T12:00:00Z",
+    "viewerReviewRequested": false,
+    "labels": [
+     {
+      "name": "docs",
+      "color": "0075ca",
+      "description": null
+     }
+    ]
+   },
+   {
+    "provider": "github",
+    "host": "github.com",
+    "projectId": "proj-t3code",
+    "projectTitle": "t3code",
+    "repository": "t3tools/t3code",
+    "number": 466,
+    "title": "Mobile: pull to refresh on the PR list",
+    "url": "https://github.com/t3tools/t3code/pull/466",
+    "author": {
+     "login": "aadi",
+     "name": null,
+     "avatarUrl": null
+    },
+    "headBranch": "aadi/mobile-refresh",
+    "baseBranch": "main",
+    "state": "open",
+    "isDraft": false,
+    "mergeability": "mergeable",
+    "additions": 51,
+    "deletions": 18,
+    "createdAt": "2026-11-10T10:00:00Z",
+    "updatedAt": "2026-11-18T08:30:00Z",
+    "viewerReviewRequested": true,
+    "labels": [],
+    "stack": {
+     "number": 7,
+     "position": 3,
+     "size": 3,
+     "base": "main"
+    },
+    "checksState": "pending"
+   },
+   {
+    "provider": "github",
+    "host": "github.com",
+    "projectId": "proj-t3code",
+    "projectTitle": "t3code",
+    "repository": "t3tools/t3code",
+    "number": 463,
+    "title": "Server: dedupe linked-thread refreshes",
+    "url": "https://github.com/t3tools/t3code/pull/463",
+    "author": {
+     "login": "julius",
+     "name": null,
+     "avatarUrl": null
+    },
+    "headBranch": "julius/linked-refresh",
+    "baseBranch": "main",
+    "state": "open",
+    "isDraft": false,
+    "mergeability": "mergeable",
+    "additions": 33,
+    "deletions": 40,
+    "createdAt": "2026-11-10T10:00:00Z",
+    "updatedAt": "2026-11-17T22:15:00Z",
+    "viewerReviewRequested": true,
+    "labels": [
+     {
+      "name": "performance",
+      "color": "fbca04",
+      "description": null
+     }
+    ],
+    "reviewDecision": "approved",
+    "checksState": "passing"
+   },
+   {
+    "provider": "github",
+    "host": "github.com",
+    "projectId": "proj-t3code",
+    "projectTitle": "t3code",
+    "repository": "t3tools/t3code",
+    "number": 460,
+    "title": "Sidebar shows unread counts per project",
+    "url": "https://github.com/t3tools/t3code/pull/460",
+    "author": {
+     "login": "theo",
+     "name": null,
+     "avatarUrl": null
+    },
+    "headBranch": "theo/sidebar-unread",
+    "baseBranch": "main",
+    "state": "open",
+    "isDraft": false,
+    "mergeability": "mergeable",
+    "additions": 177,
+    "deletions": 52,
+    "createdAt": "2026-11-10T10:00:00Z",
+    "updatedAt": "2026-11-16T10:05:00Z",
+    "viewerReviewRequested": false,
+    "labels": [
+     {
+      "name": "ui",
+      "color": "c5def5",
+      "description": null
+     }
+    ],
+    "reviewDecision": "review-required",
+    "checksState": "failing"
+   }
+  ],
+  "errors": [],
+  "truncated": false,
+  "nextCursors": {}
+ },
+ "listDevbox": {
+  "viewers": {
+   "github.com": "aadi"
+  },
+  "providers": [
+   {
+    "host": "github.com",
+    "kind": "github",
+    "searchesOnHost": true,
+    "actions": [
+     "merge",
+     "ready",
+     "close",
+     "reopen",
+     "draft"
+    ],
+    "projectCount": 2,
+    "projectIds": [
+     "proj-t3code",
+     "proj-site"
+    ],
+    "configured": true
+   }
+  ],
+  "entries": [
+   {
+    "provider": "github",
+    "host": "github.com",
+    "projectId": "proj-site",
+    "projectTitle": "site",
+    "repository": "t3tools/site",
+    "number": 91,
+    "title": "Marketing: pricing page copy",
+    "url": "https://github.com/t3tools/site/pull/91",
+    "author": {
+     "login": "theo",
+     "name": null,
+     "avatarUrl": null
+    },
+    "headBranch": "theo/pricing",
+    "baseBranch": "main",
+    "state": "open",
+    "isDraft": false,
+    "mergeability": "mergeable",
+    "additions": 40,
+    "deletions": 12,
+    "createdAt": "2026-11-10T10:00:00Z",
+    "updatedAt": "2026-11-22T13:00:00Z",
+    "viewerReviewRequested": true,
+    "labels": [
+     {
+      "name": "docs",
+      "color": "0075ca",
+      "description": null
+     }
+    ],
+    "reviewDecision": "review-required",
+    "checksState": "passing"
+   }
+  ],
+  "errors": [
+   {
+    "projectId": "proj-legacy",
+    "projectTitle": "legacy-app",
+    "message": "gh: authentication required for github.example.com"
+   }
+  ],
+  "truncated": false,
+  "nextCursors": {}
+ },
+ "detail": {
+  "provider": "github",
+  "capabilities": {
+   "diff": true,
+   "comment": true,
+   "actions": [
+    "merge",
+    "ready",
+    "draft",
+    "close",
+    "reopen",
+    "update-branch",
+    "enable-auto-merge",
+    "disable-auto-merge",
+    "delete-branch"
+   ],
+   "mergeMethods": [
+    "squash",
+    "merge",
+    "rebase"
+   ],
+   "deleteBranch": true,
+   "updateMethods": [
+    "merge",
+    "rebase"
+   ],
+   "search": true,
+   "reactions": true,
+   "viewedFiles": "host",
+   "review": {
+    "inlineComment": true,
+    "rangeComment": true,
+    "reply": true,
+    "resolve": true,
+    "verdicts": [
+     "comment",
+     "approve",
+     "request-changes"
+    ]
+   },
+   "reviewers": {
+    "request": true,
+    "listCandidates": true,
+    "searchCandidates": true
+   },
+   "edit": {
+    "changeRequest": true,
+    "comment": true,
+    "maintainerEdits": true
+   },
+   "stacks": true,
+   "stackActions": false,
+   "labels": true,
+   "mentions": true,
+   "referenceSigils": [
+    "#"
+   ]
+  },
+  "viewerPermissions": {
+   "stackRebase": false,
+   "actions": [
+    "merge",
+    "ready",
+    "draft",
+    "close",
+    "reopen",
+    "update-branch",
+    "enable-auto-merge",
+    "disable-auto-merge",
+    "delete-branch"
+   ],
+   "comment": true,
+   "resolve": true,
+   "verdicts": [
+    "comment",
+    "approve",
+    "request-changes"
+   ],
+   "requestReviewers": true,
+   "updateMethods": [
+    "merge",
+    "rebase"
+   ],
+   "labels": true,
+   "editChangeRequest": true,
+   "maintainerEdits": true
+  },
+  "projectId": "proj-t3code",
+  "projectTitle": "t3code",
+  "workspaceRoot": "/home/dev/t3code",
+  "repository": "t3tools/t3code",
+  "number": 482,
+  "title": "Virtualize the pull request list and cache row search text",
+  "url": "https://github.com/t3tools/t3code/pull/482",
+  "body": "## What\n\nThe pull requests page filtered every row on each keystroke by lower-casing five fields. This builds the search text once per row when an answer arrives and virtualizes the list.\n\n- Rows keep a cached `haystack` and parsed timestamps\n- Grouping reuses `Arc` rows instead of cloning entries\n- The stack column reads membership from the row\n\n## Measured\n\n| rows | before | after |\n| --- | --- | --- |\n| 2,000 | 9.8 ms | 0.6 ms |\n\nCloses #455 :tada:",
+  "author": {
+   "login": "aadi",
+   "name": "Aadi",
+   "avatarUrl": null
+  },
+  "state": "open",
+  "isDraft": false,
+  "mergeability": "mergeable",
+  "rebaseRequired": false,
+  "additions": 412,
+  "deletions": 96,
+  "changedFiles": 9,
+  "headBranch": "aadi/pr-list-virtual",
+  "headRepositoryNameWithOwner": "t3tools/t3code",
+  "headSha": "9c1f2ab7e4d35f0aa1b2c3d4e5f60718293a4b5c",
+  "baseBranch": "main",
+  "createdAt": "2026-11-20T10:00:00Z",
+  "updatedAt": "2026-11-23T09:12:00Z",
+  "observedAt": 1795000000000,
+  "mergedAt": null,
+  "mergeCommitSha": null,
+  "mergedBy": null,
+  "closedAt": null,
+  "reviewers": [
+   {
+    "login": "julius",
+    "name": "Julius",
+    "avatarUrl": null
+   },
+   {
+    "login": "theo",
+    "name": "Theo",
+    "avatarUrl": null
+   }
+  ],
+  "labels": [
+   {
+    "name": "performance",
+    "color": "fbca04",
+    "description": null
+   },
+   {
+    "name": "area: web",
+    "color": "1d76db",
+    "description": null
+   }
+  ],
+  "checks": [
+   {
+    "name": "ci / typecheck",
+    "status": "success",
+    "description": "Successful in 2m",
+    "url": "https://github.com/t3tools/t3code/actions/runs/101/job/1",
+    "required": true
+   },
+   {
+    "name": "ci / unit",
+    "status": "success",
+    "description": "Successful in 4m",
+    "url": "https://github.com/t3tools/t3code/actions/runs/101/job/2",
+    "required": true
+   },
+   {
+    "name": "ci / e2e (chromium)",
+    "status": "pending",
+    "description": "In progress",
+    "url": "https://github.com/t3tools/t3code/actions/runs/101/job/3"
+   },
+   {
+    "name": "Macroscope review",
+    "status": "success",
+    "description": "No issues",
+    "url": null
+   },
+   {
+    "name": "Vercel preview",
+    "status": "skipped",
+    "description": "Skipped",
+    "url": null
+   }
+  ],
+  "mergeCapabilities": {
+   "merge": true,
+   "squash": true,
+   "rebase": true
+  },
+  "viewer": "aadi",
+  "baseComparison": "behind",
+  "behindBy": 3,
+  "autoMergeEnabled": false,
+  "maintainerCanModify": true
+ },
+ "activity": {
+  "author": {
+   "login": "aadi",
+   "name": "Aadi",
+   "avatarUrl": null
+  },
+  "reviewers": [
+   {
+    "login": "julius",
+    "name": null,
+    "avatarUrl": null
+   },
+   {
+    "login": "theo",
+    "name": null,
+    "avatarUrl": null
+   }
+  ],
+  "comments": [
+   {
+    "id": "c1",
+    "kind": "issue-comment",
+    "author": {
+     "login": "julius",
+     "name": null,
+     "avatarUrl": null
+    },
+    "body": "Nice. Does the cached haystack survive a list refresh, or is it rebuilt per answer?",
+    "createdAt": "2026-11-21T10:05:00Z",
+    "url": "https://github.com/t3tools/t3code/pull/482#issuecomment-c1",
+    "path": null,
+    "reviewState": null,
+    "reactions": [
+     {
+      "content": "thumbs-up",
+      "count": 2,
+      "actors": [
+       "theo",
+       "mira"
+      ],
+      "viewerHasReacted": false
+     },
+     {
+      "content": "eyes",
+      "count": 1,
+      "actors": [],
+      "viewerHasReacted": true
+     }
+    ]
+   },
+   {
+    "id": "c2",
+    "kind": "issue-comment",
+    "author": {
+     "login": "aadi",
+     "name": null,
+     "avatarUrl": null
+    },
+    "body": "Rebuilt per answer, once. Rows that did not change keep their `Arc`.",
+    "createdAt": "2026-11-21T10:30:00Z",
+    "url": "https://github.com/t3tools/t3code/pull/482#issuecomment-c2",
+    "path": null,
+    "reviewState": null
+   },
+   {
+    "id": "r1",
+    "kind": "review",
+    "author": {
+     "login": "macroscope[bot]",
+     "name": null,
+     "avatarUrl": null,
+     "isBot": true
+    },
+    "body": "Reviewed 9 files. One finding below.",
+    "createdAt": "2026-11-21T11:00:00Z",
+    "url": "https://github.com/t3tools/t3code/pull/482#issuecomment-r1",
+    "path": null,
+    "reviewState": "COMMENTED"
+   },
+   {
+    "id": "rc1",
+    "kind": "review-comment",
+    "author": {
+     "login": "macroscope[bot]",
+     "name": null,
+     "avatarUrl": null,
+     "isBot": true
+    },
+    "body": "`score_pull_request_match` lower-cases the needle for every row. Hoist it out of the loop.",
+    "createdAt": "2026-11-21T11:00:05Z",
+    "url": "https://github.com/t3tools/t3code/pull/482#issuecomment-rc1",
+    "path": "apps/web/src/components/pull_request/pull_request_list_logic.rs",
+    "reviewState": null
+   },
+   {
+    "id": "rc2",
+    "kind": "review-comment",
+    "author": {
+     "login": "aadi",
+     "name": null,
+     "avatarUrl": null
+    },
+    "body": "Good catch, hoisted.",
+    "createdAt": "2026-11-21T12:00:00Z",
+    "url": "https://github.com/t3tools/t3code/pull/482#issuecomment-rc2",
+    "path": "apps/web/src/components/pull_request/pull_request_list_logic.rs",
+    "reviewState": null
+   },
+   {
+    "id": "r2",
+    "kind": "review",
+    "author": {
+     "login": "julius",
+     "name": null,
+     "avatarUrl": null
+    },
+    "body": "Looks good once CI is green.",
+    "createdAt": "2026-11-22T09:00:00Z",
+    "url": "https://github.com/t3tools/t3code/pull/482#issuecomment-r2",
+    "path": null,
+    "reviewState": "APPROVED"
+   },
+   {
+    "id": "rc3",
+    "kind": "review-comment",
+    "author": {
+     "login": "theo",
+     "name": null,
+     "avatarUrl": null
+    },
+    "body": "Can the stack column show the position without opening the popover?",
+    "createdAt": "2026-11-22T14:00:00Z",
+    "url": "https://github.com/t3tools/t3code/pull/482#issuecomment-rc3",
+    "path": "apps/web/src/components/pull_request/pull_requests_page.rs",
+    "reviewState": null
+   }
+  ],
+  "commentCount": 7,
+  "commentsTruncated": false,
+  "reviewThreadsTruncated": false,
+  "reviewThreads": [
+   {
+    "id": "th1",
+    "path": "apps/web/src/components/pull_request/pull_request_list_logic.rs",
+    "line": 6,
+    "side": "right",
+    "isResolved": true,
+    "isOutdated": false,
+    "comments": [
+     {
+      "id": "rc1",
+      "author": {
+       "login": "macroscope[bot]",
+       "name": null,
+       "avatarUrl": null,
+       "isBot": true
+      },
+      "body": "`score_pull_request_match` lower-cases the needle for every row. Hoist it out of the loop.",
+      "createdAt": "2026-11-21T11:00:05Z",
+      "url": "https://github.com/t3tools/t3code/pull/482#issuecomment-rc1"
+     },
+     {
+      "id": "rc2",
+      "author": {
+       "login": "aadi",
+       "name": null,
+       "avatarUrl": null
+      },
+      "body": "Good catch, hoisted.",
+      "createdAt": "2026-11-21T12:00:00Z",
+      "url": "https://github.com/t3tools/t3code/pull/482#issuecomment-rc2"
+     }
+    ],
+    "canResolve": true
+   },
+   {
+    "id": "th2",
+    "path": "apps/web/src/components/pull_request/pull_requests_page.rs",
+    "line": 4,
+    "side": "right",
+    "isResolved": false,
+    "isOutdated": false,
+    "comments": [
+     {
+      "id": "rc3",
+      "author": {
+       "login": "theo",
+       "name": null,
+       "avatarUrl": null
+      },
+      "body": "Can the stack column show the position without opening the popover?",
+      "createdAt": "2026-11-22T14:00:00Z",
+      "url": "https://github.com/t3tools/t3code/pull/482#issuecomment-rc3"
+     }
+    ],
+    "canResolve": true
+   }
+  ],
+  "overviewThreads": [],
+  "commits": [
+   {
+    "oid": "1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d",
+    "messageHeadline": "Cache row search text",
+    "committedDate": "2026-11-20T10:00:00Z",
+    "additions": 120,
+    "deletions": 40,
+    "authors": [
+     {
+      "login": "aadi",
+      "name": null,
+      "avatarUrl": null
+     }
+    ]
+   },
+   {
+    "oid": "2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e",
+    "messageHeadline": "Virtualize list rows",
+    "committedDate": "2026-11-21T15:00:00Z",
+    "additions": 250,
+    "deletions": 50,
+    "authors": [
+     {
+      "login": "aadi",
+      "name": null,
+      "avatarUrl": null
+     }
+    ]
+   },
+   {
+    "oid": "9c1f2ab7e4d35f0aa1b2c3d4e5f60718293a4b5c",
+    "messageHeadline": "Hoist needle out of the score loop",
+    "committedDate": "2026-11-22T12:10:00Z",
+    "additions": 42,
+    "deletions": 6,
+    "authors": [
+     {
+      "login": "aadi",
+      "name": null,
+      "avatarUrl": null
+     }
+    ]
+   }
+  ],
+  "reactions": [
+   {
+    "content": "rocket",
+    "count": 3,
+    "actors": [
+     "julius",
+     "theo",
+     "mira"
+    ],
+    "viewerHasReacted": false
+   }
+  ]
+ },
+ "guide": {
+  "guide": {
+   "headSha": "9c1f2ab7e4d35f0aa1b2c3d4e5f60718293a4b5c",
+   "generatedAt": "2026-11-22T12:30:00Z",
+   "modelSelection": {
+    "instanceId": "claude",
+    "model": "claude-sonnet-5-5"
+   },
+   "stops": [
+    {
+     "title": "Rows carry their search text",
+     "summary": "Each list row builds its lower-cased search text and timestamps once, when the answer arrives.",
+     "attention": null,
+     "excerpts": [
+      {
+       "path": "apps/web/src/components/pull_request/pull_request_list_logic.rs",
+       "side": "new",
+       "start": 3,
+       "end": 12,
+       "caption": "The row and its cached fields"
+      }
+     ],
+     "files": [
+      {
+       "path": "apps/web/src/components/pull_request/pull_request_list_logic.rs"
+      }
+     ],
+     "notes": [
+      {
+       "path": "apps/web/src/components/pull_request/pull_request_list_logic.rs",
+       "line": 6,
+       "title": "Built once",
+       "body": "No per-keystroke allocation."
+      },
+      {
+       "path": "apps/web/src/components/pull_request/pull_request_list_logic.rs",
+       "line": 9,
+       "title": "Timestamps parsed once",
+       "body": "Sorting compares numbers."
+      }
+     ],
+     "questions": [
+      "Does a refresh rebuild rows that did not change?"
+     ]
+    },
+    {
+     "title": "The page virtualizes rows",
+     "summary": "Only rows on screen are built; group headers are rows too.",
+     "attention": {
+      "kind": "risk",
+      "note": "Keyboard selection must scroll the list."
+     },
+     "excerpts": [
+      {
+       "path": "apps/web/src/components/pull_request/pull_requests_page.rs",
+       "side": "new",
+       "start": 1,
+       "end": 8,
+       "caption": "uniform list"
+      }
+     ],
+     "files": [
+      {
+       "path": "apps/web/src/components/pull_request/pull_requests_page.rs",
+       "note": "Rows and headers"
+      }
+     ],
+     "notes": [],
+     "questions": []
+    },
+    {
+     "title": "Context: why not paginate",
+     "summary": "The host already pages; the client holds at most a few thousand rows.",
+     "attention": null,
+     "excerpts": [],
+     "files": [],
+     "notes": [],
+     "questions": []
+    }
+   ]
+  },
+  "run": null,
+  "currentHeadSha": "9c1f2ab7e4d35f0aa1b2c3d4e5f60718293a4b5c"
+ },
+ "filesViewed": {
+  "files": [
+   {
+    "path": "apps/web/src/components/pull_request/mod.rs",
+    "state": "viewed"
+   },
+   {
+    "path": "docs/user/pull-requests.md",
+    "state": "dismissed"
+   }
+  ],
+  "truncated": false
+ },
+ "stack": {
+  "id": "stack-7",
+  "number": 7,
+  "url": "https://github.com/t3tools/t3code/pull/475",
+  "base": "main",
+  "layers": [
+   {
+    "number": 475,
+    "title": "Right panel tabs keep scroll position on switch",
+    "isDraft": false,
+    "headBranch": "aadi/panel-scroll",
+    "state": "open"
+   },
+   {
+    "number": 482,
+    "title": "Virtualize the pull request list and cache row search text",
+    "isDraft": false,
+    "headBranch": "aadi/pr-list-virtual",
+    "state": "open"
+   },
+   {
+    "number": 466,
+    "title": "Mobile: pull to refresh on the PR list",
+    "isDraft": false,
+    "headBranch": "aadi/mobile-refresh",
+    "state": "open"
+   }
+  ]
+ },
+ "reviewerCandidates": {
+  "candidates": [
+   {
+    "login": "julius",
+    "name": "Julius",
+    "avatarUrl": null,
+    "id": "u1",
+    "kind": "user",
+    "isRequested": true
+   },
+   {
+    "login": "theo",
+    "name": "Theo",
+    "avatarUrl": null,
+    "id": "u2",
+    "kind": "user",
+    "isRequested": true
+   },
+   {
+    "login": "mira",
+    "name": "Mira",
+    "avatarUrl": null,
+    "id": "u3",
+    "kind": "user",
+    "isRequested": false
+   },
+   {
+    "login": "core",
+    "name": "Core team",
+    "avatarUrl": null,
+    "id": "t1",
+    "kind": "team",
+    "isRequested": false
+   }
+  ],
+  "truncated": false
+ },
+ "labelCandidates": {
+  "candidates": [
+   {
+    "name": "performance",
+    "color": "fbca04",
+    "description": null,
+    "isApplied": true
+   },
+   {
+    "name": "area: web",
+    "color": "1d76db",
+    "description": null,
+    "isApplied": true
+   },
+   {
+    "name": "bug",
+    "color": "d73a4a",
+    "description": null,
+    "isApplied": false
+   },
+   {
+    "name": "ui",
+    "color": "c5def5",
+    "description": null,
+    "isApplied": false
+   }
+  ],
+  "truncated": false
+ },
+ "issueList": {
+  "viewers": {
+   "github.com": "aadi",
+   "linear.app": "aadi"
+  },
+  "trackers": [
+   {
+    "tracker": "github",
+    "host": "github.com",
+    "projectCount": 2,
+    "capabilities": {
+     "create": true,
+     "edit": true,
+     "comment": true,
+     "labels": true,
+     "assignees": true,
+     "reactions": true,
+     "templates": true,
+     "linkedPullRequests": true,
+     "events": true,
+     "search": true
+    },
+    "configured": true
+   },
+   {
+    "tracker": "linear",
+    "host": "linear.app",
+    "projectCount": 1,
+    "capabilities": {
+     "create": true,
+     "edit": true,
+     "comment": true,
+     "labels": true,
+     "assignees": true,
+     "reactions": true,
+     "templates": false,
+     "linkedPullRequests": true,
+     "events": true,
+     "search": true
+    },
+    "configured": true
+   }
+  ],
+  "entries": [
+   {
+    "tracker": "github",
+    "host": "github.com",
+    "scope": "t3tools/t3code",
+    "key": "455",
+    "displayKey": "#455",
+    "title": "PR list stutters while typing in search",
+    "url": "https://github.com/t3tools/t3code/issues/455",
+    "author": {
+     "login": "mira",
+     "name": null,
+     "avatarUrl": null
+    },
+    "state": {
+     "category": "open",
+     "name": "Open"
+    },
+    "createdAt": "2026-11-01T10:00:00Z",
+    "updatedAt": "2026-11-23T08:00:00Z",
+    "closedAt": null,
+    "assignees": [
+     {
+      "login": "aadi",
+      "name": null,
+      "avatarUrl": null
+     }
+    ],
+    "labels": [
+     {
+      "name": "performance",
+      "color": "fbca04"
+     },
+     {
+      "name": "area: web",
+      "color": "1d76db"
+     }
+    ],
+    "commentCount": 4,
+    "projectId": "proj-t3code",
+    "projectTitle": "t3code"
+   },
+   {
+    "tracker": "github",
+    "host": "github.com",
+    "scope": "t3tools/t3code",
+    "key": "452",
+    "displayKey": "#452",
+    "title": "Issue panel loses scroll position after commenting",
+    "url": "https://github.com/t3tools/t3code/issues/452",
+    "author": {
+     "login": "theo",
+     "name": null,
+     "avatarUrl": null
+    },
+    "state": {
+     "category": "open",
+     "name": "Open"
+    },
+    "createdAt": "2026-11-01T10:00:00Z",
+    "updatedAt": "2026-11-22T17:00:00Z",
+    "closedAt": null,
+    "assignees": [],
+    "labels": [
+     {
+      "name": "bug",
+      "color": "d73a4a"
+     }
+    ],
+    "commentCount": 2,
+    "projectId": "proj-t3code",
+    "projectTitle": "t3code"
+   },
+   {
+    "tracker": "github",
+    "host": "github.com",
+    "scope": "t3tools/t3code",
+    "key": "449",
+    "displayKey": "#449",
+    "title": "Saved views should sync across devices",
+    "url": "https://github.com/t3tools/t3code/issues/449",
+    "author": {
+     "login": "julius",
+     "name": null,
+     "avatarUrl": null
+    },
+    "state": {
+     "category": "open",
+     "name": "Open"
+    },
+    "createdAt": "2026-11-01T10:00:00Z",
+    "updatedAt": "2026-11-21T09:00:00Z",
+    "closedAt": null,
+    "assignees": [
+     {
+      "login": "julius",
+      "name": null,
+      "avatarUrl": null
+     }
+    ],
+    "labels": [
+     {
+      "name": "ui",
+      "color": "c5def5"
+     }
+    ],
+    "commentCount": 7,
+    "projectId": "proj-t3code",
+    "projectTitle": "t3code"
+   },
+   {
+    "tracker": "github",
+    "host": "github.com",
+    "scope": "t3tools/t3code",
+    "key": "440",
+    "displayKey": "#440",
+    "title": "Crash opening a PR with 0 changed files",
+    "url": "https://github.com/t3tools/t3code/issues/440",
+    "author": {
+     "login": "aadi",
+     "name": null,
+     "avatarUrl": null
+    },
+    "state": {
+     "category": "closed",
+     "name": "Closed",
+     "closeReason": "completed"
+    },
+    "createdAt": "2026-11-01T10:00:00Z",
+    "updatedAt": "2026-11-19T12:00:00Z",
+    "closedAt": null,
+    "assignees": [
+     {
+      "login": "theo",
+      "name": null,
+      "avatarUrl": null
+     }
+    ],
+    "labels": [
+     {
+      "name": "bug",
+      "color": "d73a4a"
+     }
+    ],
+    "commentCount": 3,
+    "projectId": "proj-t3code",
+    "projectTitle": "t3code"
+   },
+   {
+    "tracker": "linear",
+    "host": "linear.app",
+    "scope": "eng",
+    "key": "ENG-212",
+    "displayKey": "ENG-212",
+    "title": "Linear: bind teams per project",
+    "url": "https://linear.app/t3/issue/ENG-212",
+    "author": {
+     "login": "mira",
+     "name": null,
+     "avatarUrl": null
+    },
+    "state": {
+     "category": "open",
+     "name": "In Progress"
+    },
+    "createdAt": "2026-11-01T10:00:00Z",
+    "updatedAt": "2026-11-22T20:00:00Z",
+    "closedAt": null,
+    "assignees": [
+     {
+      "login": "mira",
+      "name": null,
+      "avatarUrl": null
+     }
+    ],
+    "labels": [],
+    "commentCount": 1,
+    "projectId": "proj-t3code",
+    "projectTitle": "t3code"
+   },
+   {
+    "tracker": "linear",
+    "host": "linear.app",
+    "scope": "eng",
+    "key": "ENG-208",
+    "displayKey": "ENG-208",
+    "title": "Linear: show cycle in the issue panel",
+    "url": "https://linear.app/t3/issue/ENG-208",
+    "author": {
+     "login": "theo",
+     "name": null,
+     "avatarUrl": null
+    },
+    "state": {
+     "category": "open",
+     "name": "Todo"
+    },
+    "createdAt": "2026-11-01T10:00:00Z",
+    "updatedAt": "2026-11-20T08:00:00Z",
+    "closedAt": null,
+    "assignees": [],
+    "labels": [],
+    "commentCount": 0,
+    "projectId": "proj-t3code",
+    "projectTitle": "t3code"
+   }
+  ],
+  "errors": [],
+  "nextCursors": {
+   "github.com t3tools/t3code": "cursor-2"
+  },
+  "scopes": [
+   {
+    "projectId": "proj-t3code",
+    "tracker": "github",
+    "host": "github.com",
+    "scope": "t3tools/t3code"
+   }
+  ]
+ },
+ "issueDetail": {
+  "tracker": "github",
+  "host": "github.com",
+  "scope": "t3tools/t3code",
+  "key": "455",
+  "displayKey": "#455",
+  "title": "PR list stutters while typing in search",
+  "url": "https://github.com/t3tools/t3code/issues/455",
+  "author": {
+   "login": "mira",
+   "name": null,
+   "avatarUrl": null
+  },
+  "state": {
+   "category": "open",
+   "name": "Open"
+  },
+  "createdAt": "2026-11-01T10:00:00Z",
+  "updatedAt": "2026-11-23T08:00:00Z",
+  "closedAt": null,
+  "assignees": [
+   {
+    "login": "aadi",
+    "name": null,
+    "avatarUrl": null
+   }
+  ],
+  "labels": [
+   {
+    "name": "performance",
+    "color": "fbca04"
+   },
+   {
+    "name": "area: web",
+    "color": "1d76db"
+   }
+  ],
+  "commentCount": 4,
+  "projectId": "proj-t3code",
+  "projectTitle": "t3code",
+  "writable": true,
+  "capabilities": {
+   "create": true,
+   "edit": true,
+   "comment": true,
+   "labels": true,
+   "assignees": true,
+   "reactions": true,
+   "templates": true,
+   "linkedPullRequests": true,
+   "events": true,
+   "search": true
+  },
+  "viewerPermissions": {
+   "setState": true,
+   "comment": true,
+   "edit": true,
+   "labels": true,
+   "assignees": true
+  },
+  "states": [
+   {
+    "category": "open",
+    "name": "Open"
+   },
+   {
+    "category": "closed",
+    "name": "Closed",
+    "closeReason": "completed"
+   },
+   {
+    "category": "closed",
+    "name": "Closed as not planned",
+    "closeReason": "not_planned"
+   }
+  ],
+  "viewer": "aadi",
+  "body": "Typing in the pull request search drops frames on a list of ~2,000 rows.\n\n**Steps**\n1. Open Pull requests with every project\n2. Type `label:perf sidebar`\n\nExpected: each keystroke filters within a frame.",
+  "reactions": [
+   {
+    "content": "thumbs-up",
+    "count": 5,
+    "actors": [
+     "theo",
+     "julius",
+     "mira"
+    ],
+    "viewerHasReacted": true
+   }
+  ],
+  "comments": [
+   {
+    "id": "ic1",
+    "author": {
+     "login": "theo",
+     "name": null,
+     "avatarUrl": null
+    },
+    "body": "Reproduced on the desktop app with 1,800 rows.",
+    "createdAt": "2026-11-21T10:00:00Z",
+    "url": null
+   },
+   {
+    "id": "ic2",
+    "author": {
+     "login": "aadi",
+     "name": null,
+     "avatarUrl": null
+    },
+    "body": "Fix in #482: rows cache their search text.",
+    "createdAt": "2026-11-23T08:00:00Z",
+    "url": null,
+    "reactions": [
+     {
+      "content": "hooray",
+      "count": 2,
+      "actors": [
+       "mira",
+       "theo"
+      ],
+      "viewerHasReacted": false
+     }
+    ]
+   }
+  ],
+  "commentsCursor": null,
+  "events": [
+   {
+    "id": "e1",
+    "kind": "labeled",
+    "actor": {
+     "login": "mira",
+     "name": null,
+     "avatarUrl": null
+    },
+    "createdAt": "2026-11-20T09:00:00Z",
+    "detail": "performance"
+   },
+   {
+    "id": "e2",
+    "kind": "assigned",
+    "actor": {
+     "login": "mira",
+     "name": null,
+     "avatarUrl": null
+    },
+    "createdAt": "2026-11-20T09:01:00Z",
+    "detail": "aadi"
+   },
+   {
+    "id": "e3",
+    "kind": "referenced",
+    "actor": {
+     "login": "aadi",
+     "name": null,
+     "avatarUrl": null
+    },
+    "createdAt": "2026-11-23T07:59:00Z",
+    "detail": "#482"
+   }
+  ],
+  "linkedPullRequests": [
+   {
+    "repository": "t3tools/t3code",
+    "number": 482,
+    "title": "Virtualize the pull request list and cache row search text",
+    "url": "https://github.com/t3tools/t3code/pull/482",
+    "state": "open",
+    "isDraft": false,
+    "closesIssue": true
+   }
+  ]
+ },
+ "templates": {
+  "templates": [
+   {
+    "key": "bug",
+    "name": "Bug report",
+    "about": "Something is broken",
+    "title": "[Bug]: ",
+    "body": "### What happened\n\n### Steps to reproduce\n\n### Expected\n",
+    "labels": [
+     "bug"
+    ],
+    "assignees": []
+   },
+   {
+    "key": "feature",
+    "name": "Feature request",
+    "about": "Suggest an idea",
+    "title": "",
+    "body": "### Problem\n\n### Proposal\n",
+    "labels": [],
+    "assignees": []
+   }
+  ],
+  "externalTemplates": [
+   {
+    "name": "Security report",
+    "about": "Report privately",
+    "url": "https://github.com/t3tools/t3code/security/advisories/new"
+   }
+  ],
+  "blankIssuesEnabled": true
+ },
+ "candidates": {
+  "labels": [
+   {
+    "name": "bug",
+    "color": "d73a4a",
+    "description": null
+   },
+   {
+    "name": "performance",
+    "color": "fbca04",
+    "description": null
+   },
+   {
+    "name": "ui",
+    "color": "c5def5",
+    "description": null
+   }
+  ],
+  "assignees": [
+   {
+    "id": "u1",
+    "login": "julius",
+    "name": "Julius",
+    "avatarUrl": null
+   },
+   {
+    "id": "u2",
+    "login": "theo",
+    "name": "Theo",
+    "avatarUrl": null
+   },
+   {
+    "id": "u4",
+    "login": "aadi",
+    "name": "Aadi",
+    "avatarUrl": null
+   }
+  ],
+  "truncated": false
+ },
+ "trackers": {
+  "trackers": [
+   {
+    "tracker": "github",
+    "displayName": "GitHub",
+    "host": "github.com",
+    "scopeNoun": "repository",
+    "credential": {
+     "label": "GitHub CLI",
+     "helpUrl": null
+    },
+    "connected": true,
+    "account": "aadi",
+    "detail": null,
+    "workspace": null,
+    "scopes": []
+   },
+   {
+    "tracker": "linear",
+    "displayName": "Linear",
+    "host": "linear.app",
+    "scopeNoun": "team",
+    "credential": {
+     "label": "API key",
+     "helpUrl": "https://linear.app/settings/api"
+    },
+    "connected": true,
+    "account": "aadi",
+    "detail": null,
+    "workspace": "T3",
+    "scopes": [
+     {
+      "key": "eng",
+      "name": "Engineering"
+     }
+    ]
+   }
+  ],
+  "bindings": {
+   "proj-t3code": {
+    "tracker": "linear",
+    "scope": "eng"
+   }
+  }
+ }
+}

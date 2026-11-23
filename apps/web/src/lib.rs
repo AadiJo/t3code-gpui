@@ -122,6 +122,7 @@ pub fn init(cx: &mut App) {
     app_root::init(cx);
     components::diffs::init(cx);
     components::files::init(cx);
+    components::pull_request::init(cx);
     // Last: app keybindings must follow every widget's bindings.
     shortcuts::init(cx);
 }
