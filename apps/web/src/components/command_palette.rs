@@ -196,11 +196,12 @@ impl CommandPalette {
         let thread_items = build_thread_items(&threads, &projects, active.as_ref(), now_ms);
         let recent = recent_thread_items(&thread_items, active.as_ref());
         let mut actions = self.root_actions(window, cx);
-        for item in &mut actions {
-            if let (PaletteItemKind::Action { run: PaletteRun::Command(command), .. }, Some(focus)) = (&item.kind, &return_focus) {
-                item.unavailable = !commands::is_command_available(command, focus, window);
-            } else if let (PaletteItemKind::Action { run: PaletteRun::Command(command), .. }, None) = (&item.kind, &return_focus) {
-                item.unavailable = !window.is_action_available(command_action(command).as_ref(), cx);
+        // Availability is judged from the opener; before any frame there is nothing to judge.
+        if let Some(focus) = return_focus.as_ref().filter(|f| f.is_rendered(window)) {
+            for item in &mut actions {
+                if let PaletteItemKind::Action { run: PaletteRun::Command(command), .. } = &item.kind {
+                    item.unavailable = !commands::is_command_available(command, focus, window);
+                }
             }
         }
         let actions: Vec<Rc<PaletteItem>> = actions.into_iter().map(Rc::new).collect();

@@ -3,6 +3,7 @@
 
 mod app;
 mod chat;
+mod command_palette;
 mod composer;
 mod i18n;
 mod sidebar;
@@ -26,6 +27,10 @@ pub fn scenes() -> &'static [(&'static str, SceneBuilder)] {
         ("terminal-light", terminal::build_light),
         ("terminal-find", terminal::build_find),
         ("i18n", i18n::build),
+        ("command-palette", command_palette::build),
+        ("command-palette-root", command_palette::build_root),
+        ("command-palette-nested", command_palette::build_nested),
+        ("command-palette-empty", command_palette::build_empty),
     ]
 }
 

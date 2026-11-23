@@ -45,6 +45,7 @@ pub struct RowCallbacks {
 /// A group label (`CommandListHeading`): `px-2 py-1.5 text-xs font-medium`, `pt-1.5` after the first.
 pub fn render_label(label: SharedString, first: bool, theme: &AppTheme) -> AnyElement {
     div()
+        .w_full()
         .when(!first, |d| d.pt(theme.sp(1.5)))
         .child(
             div()
@@ -174,6 +175,7 @@ pub fn render_item(
     let enabled = item.is_enabled();
     let row = div()
         .id(("command-palette-row", ix))
+        .w_full()
         .flex()
         .items_center()
         .gap(theme.sp(2.))
@@ -181,7 +183,7 @@ pub fn render_item(
         .px(theme.sp(2.))
         .py(theme.sp(1.5))
         .rounded(theme.radii.sm)
-        .when(active, |d| d.bg(c.accent).text_color(c.accent_foreground))
+        .when(active, |d| d.bg(c.highlight()).text_color(c.highlight_foreground()))
         .when(!enabled, |d| d.opacity(DISABLED_OPACITY))
         // `CommandPaletteTitleIcon`: a 20px slot, the icon 2px down from the top.
         .child(
