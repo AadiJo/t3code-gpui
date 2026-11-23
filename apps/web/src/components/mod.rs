@@ -3,6 +3,8 @@ pub mod chat;
 pub mod persistent_thread_terminals;
 pub mod relative_time;
 pub mod icons;
+pub mod composer_prompt_editor;
+pub mod composer_prompt_editor_element;
 pub mod sidebar;
 pub mod thread_terminal_drawer;
 pub mod sidebar_logic;

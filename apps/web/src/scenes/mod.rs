@@ -3,8 +3,8 @@
 
 mod app;
 mod chat;
-mod composer;
 mod i18n;
+pub mod composer;
 mod sidebar;
 mod terminal;
 pub mod ui;
@@ -26,6 +26,9 @@ pub fn scenes() -> &'static [(&'static str, SceneBuilder)] {
         ("terminal-light", terminal::build_light),
         ("terminal-find", terminal::build_find),
         ("i18n", i18n::build),
+        ("composer-light", composer::build_light),
+        ("composer-popovers", composer::build_popovers),
+        ("composer-popovers-light", composer::build_popovers_light),
     ]
 }
 

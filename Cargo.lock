@@ -7297,6 +7297,8 @@ dependencies = [
  "rust-embed",
  "serde",
  "serde_json",
+ "smallvec",
+ "syntect",
  "sys-locale",
  "t3code-client-runtime",
  "t3code-contracts",
@@ -7304,6 +7306,7 @@ dependencies = [
  "t3code-shared",
  "thiserror 2.0.21",
  "unicode-properties",
+ "unicode-segmentation",
 ]
 
 [[package]]

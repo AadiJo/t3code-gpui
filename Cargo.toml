@@ -60,6 +60,9 @@ tokio-tungstenite = { version = "0.29", default-features = false, features = ["c
 webpki-roots = "1"
 unicode-properties = "0.1"
 uuid = { version = "1", features = ["v4"] }
+smallvec = "1"
+syntect = { version = "5.3", default-features = false, features = ["parsing", "default-syntaxes", "regex-fancy"] }
+unicode-segmentation = "1"
 
 [profile.dev]
 debug = "line-tables-only"
@@ -83,6 +86,27 @@ ropey = { opt-level = 3 }
 markdown = { opt-level = 3 }
 alacritty_terminal = { opt-level = 3 }
 vte = { opt-level = 3 }
+cosmic-text = { opt-level = 3 }
+harfrust = { opt-level = 3 }
+skrifa = { opt-level = 3 }
+read-fonts = { opt-level = 3 }
+font-types = { opt-level = 3 }
+swash = { opt-level = 3 }
+yazi = { opt-level = 3 }
+zeno = { opt-level = 3 }
+fontdb = { opt-level = 3 }
+unicode-linebreak = { opt-level = 3 }
+unicode-bidi = { opt-level = 3 }
+gpui-pre-wgpu = { opt-level = 3 }
+gpui-pre-linux = { opt-level = 3 }
+syntect = { opt-level = 3 }
+fancy-regex = { opt-level = 3 }
+regex-automata = { opt-level = 3 }
+regex-syntax = { opt-level = 3 }
+unicode-segmentation = { opt-level = 3 }
+flate2 = { opt-level = 3 }
+miniz_oxide = { opt-level = 3 }
+bincode = { opt-level = 3 }
 
 [profile.release]
 debug = false
