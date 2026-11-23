@@ -87,7 +87,8 @@ impl Parse for Call {
                     };
                     context = Some(lit);
                 } else {
-                    args.push((name, value));
+                    // `r#type = …` names the ICU argument `type`.
+                    args.push((syn::ext::IdentExt::unraw(&name), value));
                 }
             }
         }
