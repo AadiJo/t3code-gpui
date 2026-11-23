@@ -40,3 +40,90 @@ pub fn build(window: &mut Window, cx: &mut App) -> AnyView {
     })
     .into()
 }
+
+use gpui_kit::{Context, Entity, IntoElement, ParentElement as _, Render, Styled as _, Subscription, div, px};
+
+use crate::components::pull_request::pull_request_detail_panel::{DetailTab, PullRequestDetailPanel};
+use crate::components::pull_request::pull_request_source::{PullRequestDetailSource, pull_request_ref};
+use crate::components::pull_request::pull_requests_page::PullRequestsPageEvent;
+use crate::ActiveAppTheme as _;
+
+/// The page with a pull request open beside it, as the page's right panel lays it out.
+pub struct PullRequestsWorkspace {
+    pub page: Entity<PullRequestsPage>,
+    pub detail: Option<Entity<PullRequestDetailPanel>>,
+    pub fixture: FixtureSource,
+    _events: Subscription,
+}
+
+impl PullRequestsWorkspace {
+    /// The page over the fixture environments, with `#482` open on `tab` when given.
+    pub fn new(tab: Option<DetailTab>, window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let fixture = FixtureSource::standard();
+        let sources = fixture_sources(&fixture);
+        let page = cx.new(|cx| {
+            let mut page = PullRequestsPage::new(sources, window, cx);
+            page.now_ms = Some(SCENE_NOW_MS);
+            page
+        });
+        let events = cx.subscribe_in(&page, window, |this, _, event: &PullRequestsPageEvent, window, cx| {
+            let PullRequestsPageEvent::Open { reference, .. } = event;
+            this.open(reference.clone(), DetailTab::Summary, window, cx);
+        });
+        let mut workspace = Self { page, detail: None, fixture, _events: events };
+        if let Some(tab) = tab {
+            let entry = workspace.fixture.state.lock().unwrap().data.list_studio.entries[0].clone();
+            workspace.open(pull_request_ref(&entry), tab, window, cx);
+        }
+        workspace
+    }
+
+    /// Opens a pull request's detail on `tab`.
+    pub fn open(&mut self, reference: t3code_contracts::PullRequestRef, tab: DetailTab, window: &mut Window, cx: &mut Context<Self>) {
+        let source: Rc<dyn PullRequestDetailSource> = Rc::new(self.fixture.clone());
+        let detail = cx.new(|cx| {
+            let mut panel = PullRequestDetailPanel::new(source, reference, cx);
+            panel.now_ms = Some(SCENE_NOW_MS);
+            panel
+        });
+        detail.update(cx, |p, cx| {
+            if tab == DetailTab::Guide {
+                p.set_tab(DetailTab::Code, window, cx);
+            }
+            p.set_tab(tab, window, cx);
+        });
+        self.detail = Some(detail);
+        cx.notify();
+    }
+}
+
+impl Render for PullRequestsWorkspace {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let border = cx.app_theme().colors.border;
+        div()
+            .size_full()
+            .flex()
+            .child(div().flex_1().min_w_0().h_full().child(self.page.clone()))
+            .children(self.detail.clone().map(|d| div().w(px(620.)).h_full().border_l_1().border_color(border).child(d)))
+    }
+}
+
+fn workspace(tab: DetailTab, window: &mut Window, cx: &mut App) -> AnyView {
+    cx.new(|cx| PullRequestsWorkspace::new(Some(tab), window, cx)).into()
+}
+
+pub fn build_summary(window: &mut Window, cx: &mut App) -> AnyView {
+    workspace(DetailTab::Summary, window, cx)
+}
+
+pub fn build_guide(window: &mut Window, cx: &mut App) -> AnyView {
+    workspace(DetailTab::Guide, window, cx)
+}
+
+pub fn build_timeline(window: &mut Window, cx: &mut App) -> AnyView {
+    workspace(DetailTab::Timeline, window, cx)
+}
+
+pub fn build_code(window: &mut Window, cx: &mut App) -> AnyView {
+    workspace(DetailTab::Code, window, cx)
+}
