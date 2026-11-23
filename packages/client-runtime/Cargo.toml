@@ -1,0 +1,21 @@
+[package]
+name = "t3code-client-runtime"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+t3code-contracts.workspace = true
+t3code-shared.workspace = true
+anyhow.workspace = true
+base64.workspace = true
+futures.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+url.workspace = true
+uuid.workspace = true

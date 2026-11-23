@@ -1,0 +1,20 @@
+[package]
+name = "t3code-web"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[features]
+# GPUI headless renderer and input helpers, for scripted screenshots.
+test-support = ["gpui-kit/test-support"]
+
+[dependencies]
+t3code-client-runtime.workspace = true
+t3code-contracts.workspace = true
+t3code-shared.workspace = true
+anyhow.workspace = true
+gpui-kit.workspace = true
+rust-embed.workspace = true
+serde.workspace = true
+serde_json.workspace = true

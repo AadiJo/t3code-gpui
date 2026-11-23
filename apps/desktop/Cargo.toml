@@ -1,0 +1,25 @@
+[package]
+name = "t3code-desktop"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[features]
+headless = ["t3code-web/test-support", "gpui-kit/test-support"]
+
+[[bin]]
+name = "t3code"
+path = "src/main.rs"
+
+# Renders the app with no display server and writes a PNG. Usage: shot <out.png>
+[[bin]]
+name = "shot"
+path = "src/shot.rs"
+required-features = ["headless"]
+
+[dependencies]
+t3code-client-runtime.workspace = true
+t3code-web.workspace = true
+anyhow.workspace = true
+gpui-kit.workspace = true
