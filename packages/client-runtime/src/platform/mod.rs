@@ -2,6 +2,7 @@
 //! how it stores secrets, and how it describes itself to servers.
 
 pub mod capabilities;
+pub mod electron_import;
 pub mod secret_store;
 
 pub use capabilities::{ClientPresentation, default_data_dir};

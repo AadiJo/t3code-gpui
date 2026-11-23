@@ -7218,8 +7218,10 @@ dependencies = [
 name = "t3code-client-runtime"
 version = "0.1.11"
 dependencies = [
+ "aes 0.8.4",
  "anyhow",
  "base64 0.22.1",
+ "cbc 0.1.2",
  "dirs 6.0.0",
  "futures",
  "keyring",
@@ -7239,6 +7241,7 @@ dependencies = [
  "url",
  "uuid",
  "webpki-roots",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -7254,13 +7257,16 @@ name = "t3code-desktop"
 version = "0.1.11"
 dependencies = [
  "anyhow",
+ "base64 0.22.1",
  "dirs 6.0.0",
  "gpui-kit",
  "image",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "t3code-client-runtime",
  "t3code-web",
+ "tokio",
 ]
 
 [[package]]
@@ -7312,10 +7318,13 @@ dependencies = [
  "t3code-i18n-macros",
  "t3code-shared",
  "thiserror 2.0.21",
+ "tokio",
+ "tracing",
  "two-face",
  "unicode-properties",
  "unicode-segmentation",
  "unicode-width",
+ "url",
 ]
 
 [[package]]

@@ -37,7 +37,7 @@ pub fn below(content: impl IntoElement) -> impl IntoElement {
             .snap_to_window_with_margin(px(8.))
             .child(content),
     )
-    .with_priority(1)
+    .with_priority(5)
 }
 
 /// `PopoverPopup` width.

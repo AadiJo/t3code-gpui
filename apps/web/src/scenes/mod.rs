@@ -4,6 +4,7 @@
 mod app;
 mod chat;
 mod command_palette;
+pub mod connections;
 mod i18n;
 pub mod composer;
 pub mod diffs;
@@ -37,6 +38,11 @@ pub fn scenes() -> &'static [(&'static str, SceneBuilder)] {
         ("command-palette-root", command_palette::build_root),
         ("command-palette-nested", command_palette::build_nested),
         ("command-palette-empty", command_palette::build_empty),
+        ("connections", connections::build),
+        ("connections-add", connections::build_add),
+        ("connections-signed-out", connections::build_signed_out),
+        ("connections-sign-in", connections::build_sign_in),
+        ("connections-empty", connections::build_empty),
     ]
 }
 
