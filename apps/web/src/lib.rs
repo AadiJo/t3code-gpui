@@ -23,5 +23,6 @@ use theme_palette::{Appearance, ThemeDocument, set_app_theme};
 /// Registers components, fonts, and the theme. Call once before opening a window.
 pub fn init(cx: &mut App) {
     gpui_kit::init(cx);
+    i18n::runtime::init(cx);
     set_app_theme(AppTheme::new(&ThemeDocument::graphite(), Appearance::Dark), cx);
 }

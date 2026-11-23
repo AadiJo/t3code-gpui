@@ -24,3 +24,8 @@ serde.workspace = true
 serde_json.workspace = true
 sys-locale.workspace = true
 unicode-properties.workspace = true
+
+# Clicks through the languages in the `i18n` scene headlessly and screenshots each.
+[[example]]
+name = "i18n_switch"
+required-features = ["test-support"]

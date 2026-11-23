@@ -19,8 +19,12 @@ const at = (h, m = 5, s = 9) => new Date(Date.UTC(2026, 2, 7, h, m, s));
 const rust = (s) =>
   JSON.stringify(s).replace(/[\u007f-￿]/g, (c) => `\\u{${c.charCodeAt(0).toString(16)}}`);
 
+// V8's DateTimeFormat#format (and so toLocaleString) prints U+202F as a plain space;
+// formatToParts keeps it. The app calls format, so the patterns follow format.
 function parts(tag, options, date) {
-  return new Intl.DateTimeFormat(tag, { ...options, timeZone: "UTC" }).formatToParts(date);
+  return new Intl.DateTimeFormat(tag, { ...options, timeZone: "UTC" })
+    .formatToParts(date)
+    .map((p) => ({ ...p, value: p.value.replaceAll("\u202f", " ") }));
 }
 
 function hourStyle(tag, options) {

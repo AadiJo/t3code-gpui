@@ -4,7 +4,7 @@
 
 use std::sync::{Arc, OnceLock};
 
-use gpui_kit::SharedString;
+use gpui_kit::{HighlightStyle, SharedString, StyledText};
 use serde_json::Value;
 
 use super::{
@@ -118,6 +118,23 @@ impl RichText {
     /// The text with styling dropped.
     pub fn plain(&self) -> String {
         self.segments.iter().map(|s| s.text.as_str()).collect()
+    }
+
+    /// One inline run for `StyledText::new(text).with_highlights(ranges)`, styling
+    /// each tagged segment with `style(tag)`. Childless elements are dropped.
+    pub fn styled(&self, style: impl Fn(&str) -> Option<HighlightStyle>) -> StyledText {
+        let mut text = String::new();
+        let mut highlights = Vec::new();
+        for segment in &self.segments {
+            let start = text.len();
+            text.push_str(&segment.text);
+            if let Some(highlight) = segment.tag.as_deref().and_then(&style)
+                && start < text.len()
+            {
+                highlights.push((start..text.len(), highlight));
+            }
+        }
+        StyledText::new(text).with_highlights(highlights)
     }
 }
 
