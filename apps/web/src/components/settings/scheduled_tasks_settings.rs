@@ -234,7 +234,7 @@ impl ScheduledTaskEditor {
                             .items_center()
                             .gap(theme.sp(2.))
                             .child(div().w(theme.sp(36.)).child(field_input(&path, true, false, false)))
-                            .child(div().w(theme.sp(32.)).child(Select::new(SharedString::from(format!("filter-op-{id}")), FilterOp::ALL.iter().map(|o| o.label()).collect::<Vec<_>>(), op_ix, move |ix, _, cx| {
+                            .child(div().flex_none().w(theme.sp(40.)).child(Select::new(SharedString::from(format!("filter-op-{id}")), FilterOp::ALL.iter().map(|o| o.label()).collect::<Vec<_>>(), op_ix, move |ix, _, cx| {
                                 this.update(cx, |this, cx| {
                                     if let Some(f) = this.draft.filters.iter_mut().find(|f| f.id == id) { f.op = FilterOp::ALL[ix]; }
                                     cx.notify();
@@ -270,20 +270,20 @@ impl ScheduledTaskEditor {
                                 .flex()
                                 .gap(theme.sp(2.))
                                 .child(div().flex_1().child(field_input(&header, true, false, false)))
-                                .child(div().w(theme.sp(24.)).child(Select::new("sig-encoding", vec!["hex".into(), "base64".into()], enc_ix, move |ix, _, cx| {
+                                .child(div().flex_none().w(theme.sp(32.)).child(Select::new("sig-encoding", vec!["hex".into(), "base64".into()], enc_ix, move |ix, _, cx| {
                                     this.update(cx, |this, cx| {
                                         this.draft.signature_encoding = encodings[ix];
                                         cx.notify();
                                     }).ok();
                                 }).size(SelectSize::Sm)))
-                                .child(div().w(theme.sp(24.)).child(field_input(&prefix, true, false, false))),
+                                .child(div().flex_none().w(theme.sp(28.)).child(field_input(&prefix, true, false, false))),
                         )
                         .child(field_input(&secret, true, false, false))
                     })
                     .child(self.labeled(t!("Skip requests older than (minutes)"), div().w(theme.sp(28.)).child(field_input(&max_age, true, false, false)), cx))
                     .child(div().flex().gap(theme.sp(2.)).child(div().flex_1().child(self.labeled(t!("Duplicate request key"), field_input(&replay, true, false, false), cx))).child(div().flex_1().child(self.labeled(t!("Coalesce key"), field_input(&coalesce, true, false, false), cx))).child(div().w(theme.sp(24.)).child(self.labeled(t!("Window (s)"), field_input(&window_secs, true, false, false), cx))))
                     .child(self.labeled(t!("Filters"), filters, cx))
-                    .child(div().child(Button::new("filter-add").variant(ButtonVariant::Outline).size(ButtonSize::Xs).icon(IconName::Plus).label(t!("Add filter")).on_click(cx.listener(|this, _, _, cx| {
+                    .child(div().flex().child(Button::new("filter-add").variant(ButtonVariant::Outline).size(ButtonSize::Xs).icon(IconName::Plus).label(t!("Add filter")).on_click(cx.listener(|this, _, _, cx| {
                         this.sync(cx);
                         this.draft.filters.push(empty_webhook_filter_draft());
                         cx.notify();

@@ -171,6 +171,11 @@ impl Fields {
         field
     }
 
+    /// A field, if it exists.
+    pub fn field(&self, key: &str) -> Option<Entity<InputState>> {
+        self.fields.get(key).cloned()
+    }
+
     /// The current text of a field, if it exists.
     pub fn value(&self, key: &str, cx: &App) -> Option<SharedString> {
         self.fields.get(key).map(|f| f.read(cx).value())

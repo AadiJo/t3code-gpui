@@ -5,7 +5,7 @@
 //! environments and copying ignored files are not built.
 
 use gpui_kit::component::input::{InputEvent, InputState};
-use gpui_kit::{AppContext as _, Context, Entity, EventEmitter, IntoElement, Render, SharedString, Subscription, Window, div, prelude::*, px};
+use gpui_kit::{TestSupportExt as _, AppContext as _, Context, Entity, EventEmitter, IntoElement, Render, SharedString, Subscription, Window, div, prelude::*, px};
 use t3code_contracts::{FilesystemBrowseInput, FilesystemBrowseResult};
 
 use crate::ActiveAppTheme as _;
@@ -139,6 +139,7 @@ impl Render for AddProjectToMachineDialog {
                     .cursor_pointer()
                     .hover(|d| d.bg(with_alpha(c.muted, 0.4)))
                     .on_click(cx.listener(move |this, _, window, cx| this.pick(path.clone(), window, cx)))
+                    .test_support()
                     .child(Icon::new(IconName::Folder).size(IconSize::Sm).color(c.muted_foreground))
                     .child(div().ui_text(theme, TextSize::Sm, weight::NORMAL).child(entry.name.clone()))
             }));

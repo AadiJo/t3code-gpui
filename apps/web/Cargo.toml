@@ -62,3 +62,8 @@ required-features = ["test-support"]
 [[example]]
 name = "palette_check"
 required-features = ["test-support"]
+
+# Drives the server settings panels against the fixture: dialogs, sign-in flows, screenshots, RPC transcript.
+[[example]]
+name = "server_settings_check"
+required-features = ["test-support"]

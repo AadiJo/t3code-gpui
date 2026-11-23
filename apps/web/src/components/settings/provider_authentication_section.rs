@@ -456,7 +456,7 @@ impl ProviderSettingsPanel {
                 let flow = flow_id.clone().unwrap_or_default();
                 let interaction_id = form.id.clone();
                 body = body.child(
-                    div().child(
+                    div().flex().child(
                         Button::new(SharedString::from(format!("auth-credentials-{instance}")))
                             .variant(ButtonVariant::Outline)
                             .size(ButtonSize::Sm)
@@ -502,7 +502,7 @@ impl ProviderSettingsPanel {
                     .child(t!("If the final localhost page does not load, paste its full URL here."))
                     .child(div().w_full().child(field_input(&field, true, false, disabled)))
                     .child(
-                        div().child(
+                        div().flex().child(
                             Button::new(SharedString::from(format!("auth-callback-{instance}")))
                                 .variant(ButtonVariant::Outline)
                                 .size(ButtonSize::Sm)

@@ -10,7 +10,7 @@
 use std::collections::{BTreeMap, HashSet};
 
 use gpui_kit::component::input::{InputEvent, InputState};
-use gpui_kit::{App, Context, Entity, EventEmitter, IntoElement, Render, SharedString, Subscription, Window, div, prelude::*, px};
+use gpui_kit::{TestSupportExt as _, App, Context, Entity, EventEmitter, IntoElement, Render, SharedString, Subscription, Window, div, prelude::*, px};
 use t3code_contracts::{
     ClientServerSettingsPatch, ProviderInstanceConfig, ProviderInstanceId, ProviderInstanceMutation,
     ProviderInstanceMutationCreate, ServerUpdateSettingsPayload,
@@ -273,6 +273,7 @@ impl AddProviderInstanceDialog {
                 .child(provider_instance_icon(driver, label, None, cx))
                 .child(div().flex_1().ui_text(theme, TextSize::Sm, weight::MEDIUM).child(label))
                 .children(meta.and_then(|m| m.badge_label).map(|b| Badge::new(b).variant(BadgeVariant::Warning).size(BadgeSize::Sm)))
+                .test_support()
         };
         let featured: Vec<&'static str> =
             DRIVERS.iter().copied().filter(|d| *d != "acpRegistry" && driver_meta(d).is_some_and(|m| m.featured)).collect();

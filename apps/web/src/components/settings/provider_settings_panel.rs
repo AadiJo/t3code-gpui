@@ -9,7 +9,7 @@
 use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
 
-use gpui_kit::{
+use gpui_kit::{TestSupportExt as _, 
     AnyElement, App, ClickEvent, ClipboardItem, Context, Entity, EventEmitter, IntoElement, Render, SharedString,
     Subscription, Window, div, prelude::*, px,
 };
@@ -279,6 +279,11 @@ impl ProviderSettingsPanel {
         cx.notify();
     }
 
+    /// A text field the panel created, for scripted checks.
+    pub fn field(&self, key: &str) -> Option<Entity<gpui_kit::component::input::InputState>> {
+        self.fields.field(key)
+    }
+
     pub fn add_dialog(&self) -> Option<&Entity<AddProviderInstanceDialog>> {
         self.add_dialog.as_ref()
     }
@@ -536,6 +541,7 @@ impl ProviderSettingsPanel {
             .when(selected, |d| d.bg(with_alpha(c.foreground(), 0.06)))
             .when(!selected, |d| d.hover(|d| d.bg(with_alpha(c.muted, 0.25))))
             .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.select(&id, cx)))
+            .test_support()
             .child(
                 div()
                     .flex()

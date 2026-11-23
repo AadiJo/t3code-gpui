@@ -1,6 +1,6 @@
 //! Toggle button with an on state. Ports `toggle.tsx` at desktop width.
 
-use gpui_kit::{
+use gpui_kit::{TestSupportExt as _, 
     App, ClickEvent, ElementId, Hsla, IntoElement, Pixels, RenderOnce, SharedString, StyleRefinement,
     Window, div, prelude::*, px,
 };
@@ -255,5 +255,6 @@ impl RenderOnce for Toggle {
             .when_some(self.on_toggle.filter(|_| live), |t, handler| {
                 t.on_click(move |_: &ClickEvent, window, cx| handler(!pressed, window, cx))
             })
+            .test_support()
     }
 }
