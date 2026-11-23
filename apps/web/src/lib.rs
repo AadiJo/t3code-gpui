@@ -28,6 +28,8 @@ pub mod model_selection;
 pub mod markdown_pipeline;
 pub mod keybindings;
 pub mod navigation_history;
+pub mod provider_instances;
+pub mod provider_models;
 pub mod routes;
 pub mod scenes;
 pub mod shortcut_modifier_state;
