@@ -352,3 +352,25 @@ pub fn setting_title(id: &str) -> SharedString {
         .map(item_title)
         .unwrap_or_else(|| SharedString::from(id.to_owned()))
 }
+
+/// Every available catalog item as the command palette lists it
+/// (`CommandPalette.tsx` settings results), for a `CommandPaletteSource`.
+pub fn palette_settings(availability: SearchAvailability) -> std::sync::Arc<[crate::components::command_palette_lookups::PaletteSetting]> {
+    SETTINGS_SEARCH_ITEMS
+        .iter()
+        .enumerate()
+        .filter(|(_, item)| is_available(item, availability))
+        .map(|(index, item)| crate::components::command_palette_lookups::PaletteSetting {
+            id: SharedString::new_static(item.id),
+            title: item_title(index),
+            section: item.path.section_label(),
+            terms: item_terms(index),
+            secondary: item.has(flag::SECONDARY),
+        })
+        .collect()
+}
+
+/// The page a catalog item lives on, for opening a palette result.
+pub fn setting_path(id: &str) -> Option<SettingsPath> {
+    SETTINGS_SEARCH_ITEMS.iter().find(|item| item.id == id).map(|item| item.path)
+}
