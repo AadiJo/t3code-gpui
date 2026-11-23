@@ -11,6 +11,7 @@ pub mod js_sort;
 pub mod pull_request_checks;
 pub mod pull_request_diff_fold;
 pub mod pull_request_editing;
+pub mod pull_request_markdown;
 pub mod pull_request_query;
 pub mod pull_request_reactions;
 pub mod pull_request_reviewers;

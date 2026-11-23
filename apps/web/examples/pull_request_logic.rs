@@ -449,5 +449,22 @@ fn main() {
         })
     });
 
+    run("markdown", &|c| {
+        use t3code_client_runtime::pull_request_markdown as md;
+        fn seg(s: &md::PullRequestBodySegment) -> Value {
+            match s {
+                md::PullRequestBodySegment::Markdown { id, text, source_offset } => json!(["markdown", id, text, source_offset]),
+                md::PullRequestBodySegment::Attachment { id, url, media } => json!(["attachment", id, url, media.as_str()]),
+                md::PullRequestBodySegment::Table { id, rows } => json!(["table", id, rows.iter().map(|r| r.iter().map(|c| json!([c.header, c.segments.iter().map(seg).collect::<Vec<_>>()])).collect::<Vec<_>>()).collect::<Vec<_>>()]),
+            }
+        }
+        let body = c["body"].as_str().unwrap();
+        json!({
+            "segments": md::split_pull_request_body(body).iter().map(seg).collect::<Vec<_>>(),
+            "emoji": md::expand_github_emoji_aliases(body),
+            "media": md::resolve_change_request_media_url(c["media"].as_str().unwrap(), "https://git.cafe/o/r/pull/5"),
+        })
+    });
+
     std::fs::write(&args[2], serde_json::to_string(&out).unwrap()).unwrap();
 }
