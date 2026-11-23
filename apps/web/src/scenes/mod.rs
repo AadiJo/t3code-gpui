@@ -10,6 +10,7 @@ mod i18n;
 mod notifications;
 pub mod composer;
 pub mod diffs;
+pub mod files;
 mod sidebar;
 mod terminal;
 pub mod ui;
@@ -51,6 +52,18 @@ pub fn scenes() -> &'static [(&'static str, SceneBuilder)] {
         ("git-actions-light", git_actions::build_light),
         ("git-actions-panel", git_actions::build_panel),
         ("git-actions-panel-light", git_actions::build_panel_light),
+        ("files", files::build),
+        ("files-light", files::build_light),
+        ("files-markdown", files::build_markdown),
+        ("files-markdown-light", files::build_markdown_light),
+        ("files-image", files::build_image),
+        ("files-image-light", files::build_image_light),
+        ("files-csv", files::build_csv),
+        ("files-csv-light", files::build_csv_light),
+        ("files-search", files::build_search),
+        ("files-search-light", files::build_search_light),
+        ("files-goto", files::build_goto),
+        ("files-goto-light", files::build_goto_light),
     ]
 }
 

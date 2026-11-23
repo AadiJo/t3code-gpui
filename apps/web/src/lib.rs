@@ -48,6 +48,11 @@ pub mod diff_file_kind;
 pub mod diff_file_order;
 pub mod diff_panel_store;
 pub mod diff_patch;
+pub mod file_context_menu;
+pub mod file_path_display;
+pub mod file_preview;
+pub mod file_source;
+pub mod pierre_icons;
 pub mod syntax;
 pub mod theme_palette;
 pub mod theme_tokens;
@@ -99,4 +104,5 @@ pub fn init(cx: &mut App) {
     components::diffs::init(cx);
     // Last: app keybindings must follow every widget's bindings.
     shortcuts::init(cx);
+    components::files::init(cx);
 }
