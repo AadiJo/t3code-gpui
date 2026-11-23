@@ -281,6 +281,20 @@ impl EnvironmentStore {
             .or_else(|| table.resume.get(thread_id).map(|entry| Arc::clone(&entry.state)))
     }
 
+    /// Asks a mounted or kept-alive thread to settle background items the server says ended.
+    pub async fn reconcile_pending_work(&self, thread_id: &ThreadId) {
+        let commands = {
+            let table = self.inner.threads.lock().expect("threads lock");
+            table.live.get(thread_id).map(|live| live.commands.clone())
+        };
+        if let Some(commands) = commands {
+            let (reply, done) = oneshot::channel();
+            if commands.send(ThreadCommand::ReconcilePendingWork { reply }).is_ok() {
+                _ = done.await;
+            }
+        }
+    }
+
     /// The current session, if connected.
     pub fn session(&self) -> Option<Arc<RpcSession>> {
         self.inner.context.supervisor.session.borrow().clone()
