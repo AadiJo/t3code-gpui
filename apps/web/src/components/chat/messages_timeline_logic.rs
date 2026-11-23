@@ -562,7 +562,30 @@ pub fn derive_timeline_rows(input: &TimelineInput, expansion: &TimelineExpansion
                 }
                 let visible: Vec<WorkLogEntry> = grouped.into_iter().filter(is_visible_in_group).collect();
                 let group = group_id(entry.id.as_str());
-                if visible.len() == 1 && is_tool_like(&visible[0]) {
+                let live: Vec<&WorkLogEntry> = visible.iter().filter(|e| work_in_active_run(e)).collect();
+                if let Some(latest) = live.last() {
+                    let expanded = expansion.work_groups.contains(&group);
+                    rows.push(row(
+                        format!("work-live:{}", entry.id.as_str()),
+                        Some(entry.created_at),
+                        RowKind::WorkLive {
+                            entry: (*latest).clone(),
+                            entries: visible.clone().into(),
+                            group_id: group.clone(),
+                            expanded,
+                            active: true,
+                            thought: None,
+                        },
+                    ));
+                    has_activity_row = true;
+                    if expanded {
+                        rows.push(row(
+                            format!("{group}:details"),
+                            Some(entry.created_at),
+                            RowKind::WorkGroupDetails { group_id: group.clone(), entries: visible.clone().into() },
+                        ));
+                    }
+                } else if visible.len() == 1 && is_tool_like(&visible[0]) {
                     let only = visible[0].clone();
                     let display_label = (tool_action(&only) == ToolAction::Edit).then(|| summarize_tool_group(&visible));
                     rows.push(row(entry.id.0.clone(), Some(entry.created_at), RowKind::Work { entry: only, display_label }));

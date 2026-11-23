@@ -18,6 +18,12 @@ name = "shot"
 path = "src/shot.rs"
 required-features = ["headless"]
 
+# Scripted chat screenshots and timeline measurements. Usage: chat-bench <shots|perf> <out-dir>
+[[bin]]
+name = "chat-bench"
+path = "src/chat_bench.rs"
+required-features = ["headless"]
+
 [dependencies]
 t3code-client-runtime.workspace = true
 t3code-web.workspace = true

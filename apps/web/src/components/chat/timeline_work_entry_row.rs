@@ -123,7 +123,7 @@ impl MessagesTimeline {
                     .child(message.clone()),
             )
             .children(retryable.then(|| {
-                div().ml(DETAIL_INDENT).child(
+                div().ml(DETAIL_INDENT).flex().child(
                     xs_button(("retry", MessagesTimeline::key_of(entry.id.as_str())), Some(ChatIcon::RotateCcw), Some("Retry".into()), colors.theme.text, &colors)
                         .border_1()
                         .border_color(colors.theme.border),

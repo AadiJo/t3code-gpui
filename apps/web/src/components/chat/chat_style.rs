@@ -5,7 +5,9 @@
 //!
 //! The shared UI primitives will own most of this once they exist.
 
-use gpui_kit::{App, Font, FontFallbacks, FontFeatures, FontStyle, FontWeight, Hsla, Pixels, Rgba, px};
+use std::sync::OnceLock;
+
+use gpui_kit::{App, Font, FontFeatures, FontStyle, FontWeight, Hsla, Pixels, Rgba, SharedString, px};
 
 use crate::{
     ActiveAppTheme as _,
@@ -14,9 +16,15 @@ use crate::{
 
 /// The interface font (`Inter Variable`, bundled on Linux and Windows).
 pub const SANS_FAMILY: &str = "Inter";
-/// The first mono family of the web stack that exists here, then fallbacks.
-pub const MONO_FAMILY: &str = "Liberation Mono";
-const MONO_FALLBACKS: [&str; 4] = ["SF Mono", "Menlo", "Consolas", "DejaVu Sans Mono"];
+/// The web client's mono stack after a custom code font (`appearanceFonts.ts:17-18`),
+/// plus the Linux default; the first one installed wins.
+const MONO_STACK: [&str; 6] = ["SF Mono", "SFMono-Regular", "Menlo", "Consolas", "Liberation Mono", "DejaVu Sans Mono"];
+static MONO_FAMILY: OnceLock<SharedString> = OnceLock::new();
+
+/// The code font family resolved against installed fonts.
+pub fn mono_family() -> SharedString {
+    MONO_FAMILY.get().cloned().unwrap_or_else(|| SharedString::new_static(MONO_STACK[4]))
+}
 
 /// A Tailwind type step: font size and line height, in pixels at a 16px root.
 #[derive(Clone, Copy, Debug)]
@@ -48,9 +56,9 @@ pub fn sans(weight: FontWeight) -> Font {
 /// The code font.
 pub fn mono() -> Font {
     Font {
-        family: MONO_FAMILY.into(),
+        family: mono_family(),
         features: FontFeatures::default(),
-        fallbacks: Some(FontFallbacks::from_fonts(MONO_FALLBACKS.iter().map(|f| f.to_string()).collect())),
+        fallbacks: None,
         weight: FontWeight::NORMAL,
         style: FontStyle::Normal,
     }
@@ -91,6 +99,11 @@ pub struct ChatColors {
 
 impl ChatColors {
     pub fn get(cx: &App) -> Self {
+        MONO_FAMILY.get_or_init(|| {
+            let installed = cx.text_system().all_font_names();
+            let family = MONO_STACK.iter().find(|f| installed.iter().any(|i| i == *f)).unwrap_or(&MONO_STACK[5]);
+            SharedString::new_static(family)
+        });
         let theme = cx.app_theme();
         let dark = theme.appearance == Appearance::Dark;
         let pick = |dark_rgb: u32, light_rgb: u32| rgb_hsla(if dark { dark_rgb } else { light_rgb });

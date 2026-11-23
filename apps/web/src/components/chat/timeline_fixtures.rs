@@ -133,11 +133,11 @@ fn edit(changes: &[(&str, u32, u32)]) -> WorkItem {
     }
 }
 
-fn subagent(id: &str, run: &str, title: &str, status: SubagentStatus, model: &str, elapsed: i64) -> EntryKind {
+fn subagent(id: &str, run: &str, turn: &str, title: &str, status: SubagentStatus, model: &str, elapsed: i64) -> EntryKind {
     EntryKind::Event(TimelineEvent::Subagent(Subagent {
         id: s(id),
         run_id: Some(RunId::new(run)),
-        provider_turn_id: Some(s("turn-7")),
+        provider_turn_id: Some(s(turn)),
         title: s(title),
         detail: None,
         status,
@@ -231,7 +231,7 @@ plain output keeps the code colour
 
 ###### Notes
 
-![Architecture sketch](icons/chat/git-fork.svg)
+![Architecture sketch](icons/chat/fixture-photo.svg)
 
 <details>
 <summary>Why not a vector clock?</summary>
@@ -269,7 +269,7 @@ fn long_rust_code(lines: usize, seed: usize) -> String {
 /// The scene thread: every row kind and markdown element.
 pub fn fixture_thread() -> TimelineInput {
     let mut b = Builder::new();
-    let image = Attachment { name: s("sketch.svg"), kind: AttachmentKind::Image, source: s("icons/chat/folder.svg") };
+    let image = Attachment { name: s("sketch.svg"), kind: AttachmentKind::Image, source: s("icons/chat/fixture-photo.svg") };
     let file = Attachment { name: s("trace.log"), kind: AttachmentKind::File, source: s("trace.log") };
 
     // Turn A: finished, folded behind "Worked for …", with the markdown showcase and a diff card.
@@ -296,7 +296,7 @@ pub fn fixture_thread() -> TimelineInput {
         pattern: s("fn persist"),
         matches: Arc::from([SearchMatch { path: s("apps/server/src/sync/cursor.rs"), line: 88, column: 5, preview: s("pub fn persist(&self) -> Result<()>") }]),
     });
-    b.work(2_974, "run-b", ToolStatus::Completed, "Viewed image", WorkItem::ViewedImage { path: s("icons/chat/folder-closed.svg") });
+    b.work(2_974, "run-b", ToolStatus::Completed, "Viewed image", WorkItem::ViewedImage { path: s("icons/chat/fixture-photo.svg") });
     b.work(2_960, "run-b", ToolStatus::Completed, "Command", command("pnpm --filter @t3tools/server test sync", "✓ 42 tests passed (1.8s)", 0));
     b.work(2_950, "run-b", ToolStatus::Completed, "Todo", WorkItem::TodoList {
         steps: Arc::from([
@@ -312,9 +312,9 @@ pub fn fixture_thread() -> TimelineInput {
     b.work(2_930, "run-b", ToolStatus::Completed, "Question", WorkItem::QuestionAnswer {
         pairs: Arc::from([(s("Which regions should the soak test cover?"), s("iad and fra"))]),
     });
-    b.entry(2_920, subagent("sub-1", "run-b", "Profile reconnect latency", SubagentStatus::Completed, "Claude", 84_000));
-    b.entry(2_919, subagent("sub-2", "run-b", "Write the migration", SubagentStatus::Running, "GPT", 41_000));
-    b.entry(2_918, subagent("sub-3", "run-b", "Check older servers", SubagentStatus::Failed, "Gemini", 12_000));
+    b.entry(2_920, subagent("sub-1", "run-b", "turn-7", "Profile reconnect latency", SubagentStatus::Completed, "Claude", 84_000));
+    b.entry(2_919, subagent("sub-2", "run-b", "turn-7", "Write the migration", SubagentStatus::Running, "GPT", 41_000));
+    b.entry(2_918, subagent("sub-3", "run-b", "turn-7", "Check older servers", SubagentStatus::Failed, "Gemini", 12_000));
     b.work(2_910, "run-b", ToolStatus::Completed, "Context compacted", WorkItem::Compaction {
         status: CompactionStatus::Completed,
         tokens_before: Some(182_340),
@@ -329,7 +329,7 @@ pub fn fixture_thread() -> TimelineInput {
     b.entry(2_890, EntryKind::SentMessage { run_id: Some(RunId::new("run-b")), text: s("Heads up: the soak test needs **30 minutes**.") });
     b.entry(2_885, EntryKind::HtmlRender { run_id: Some(RunId::new("run-b")), title: s("Reconnect latency chart") });
     b.entry(2_880, EntryKind::McpApp { run_id: Some(RunId::new("run-b")), title: s("Grafana · sync dashboard") });
-    b.entry(2_875, subagent("sub-4", "run-b2", "Summarize findings", SubagentStatus::Idle, "Claude", 9_000));
+    b.entry(2_875, subagent("sub-4", "run-b", "turn-8", "Summarize findings", SubagentStatus::Idle, "Claude", 9_000));
     let reply_b = b.assistant(2_860, "run-b", "The server persists the cursor in `session.rs` now. Tests pass; the soak test is next.", false);
     b.work(2_850, "run-b", ToolStatus::Completed, "Command", command("git diff --stat", " 2 files changed, 36 insertions(+), 9 deletions(-)", 0));
     b.work(2_848, "run-b", ToolStatus::Failed, "Command", command("pnpm lint", "error: unused import `Cursor`", 1));

@@ -308,7 +308,13 @@ impl Renderer<'_> {
         let colors = self.view.colors;
         let gutter = match list.start {
             Some(start) => {
-                let largest = start as usize + list.items.len().saturating_sub(1);
+                let largest = list
+                    .items
+                    .iter()
+                    .filter_map(|item| item.number)
+                    .max()
+                    .unwrap_or(start)
+                    .max(start + list.items.len().saturating_sub(1) as u32) as usize;
                 let digits = largest.to_string().len();
                 if digits > 1 { LIST_GUTTER.max(DIGIT_WIDTH * (digits as f32 + 2.)) } else { LIST_GUTTER }
             }
@@ -323,7 +329,11 @@ impl Renderer<'_> {
                     Some(checked) => checkbox(checked, colors).into_any_element(),
                     None => {
                         let label = match list.start {
-                            Some(start) => ordered_marker(start as usize + index, depth, self.view.user),
+                            Some(start) => ordered_marker(
+                                item.number.unwrap_or(start + index as u32) as usize,
+                                depth,
+                                self.view.user,
+                            ),
                             None => bullet_marker(depth).to_string(),
                         };
                         div().child(label).into_any_element()
@@ -525,8 +535,8 @@ impl Renderer<'_> {
                         .children(content);
                     cell = if column == 0 { cell.pr(CELL_PAD_X) } else if column + 1 == columns { cell.pl(CELL_PAD_X) } else { cell.px(CELL_PAD_X) };
                     match align {
-                        TableAlign::Center => cell.justify_center(),
-                        TableAlign::Right => cell.justify_end(),
+                        TableAlign::Center => cell.text_center(),
+                        TableAlign::Right => cell.text_right(),
                         _ => cell,
                     }
                 }))

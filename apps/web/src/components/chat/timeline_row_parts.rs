@@ -191,7 +191,7 @@ pub fn diff_stat(additions: u32, deletions: u32, colors: &ChatColors, size: Pixe
     div()
         .flex()
         .gap_1()
-        .font_family(super::chat_style::MONO_FAMILY)
+        .font_family(super::chat_style::mono_family())
         .text_size(size)
         .child(div().text_color(colors.diff_addition).child(format!("+{additions}")))
         .child(div().text_color(colors.diff_deletion).child(format!("−{deletions}")))

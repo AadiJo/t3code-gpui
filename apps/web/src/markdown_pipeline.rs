@@ -64,6 +64,8 @@ pub struct List {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct ListItem {
+    /// The number the source wrote, for ordered lists (`remark` keeps it).
+    pub number: Option<u32>,
     /// `Some` for a task list item.
     pub checked: Option<bool>,
     pub blocks: Vec<Block>,
@@ -175,7 +177,7 @@ pub fn parse_markdown(source: &str, flavor: MarkdownFlavor) -> Vec<Block> {
     let Ok(Node::Root(root)) = markdown::to_mdast(source, &options) else {
         return vec![Block::Paragraph(Inlines { text: source.to_owned().into(), spans: vec![] })];
     };
-    let mut converter = Converter { flavor, footnotes: Vec::new() };
+    let mut converter = Converter { source, flavor, footnotes: Vec::new() };
     let mut blocks = converter.blocks(&root.children, 0);
     if !converter.footnotes.is_empty() {
         blocks.push(Block::Footnotes(std::mem::take(&mut converter.footnotes)));
@@ -192,12 +194,20 @@ fn parse_options(flavor: MarkdownFlavor) -> ParseOptions {
     }
 }
 
-struct Converter {
+struct Converter<'a> {
+    source: &'a str,
     flavor: MarkdownFlavor,
     footnotes: Vec<(SharedString, Vec<Block>)>,
 }
 
-impl Converter {
+impl Converter<'_> {
+    /// The digits an ordered item starts with in the source.
+    fn item_number(&self, item: &mdast::ListItem) -> Option<u32> {
+        let start = item.position.as_ref()?.start.offset;
+        let digits: String = self.source.get(start..)?.trim_start().chars().take_while(char::is_ascii_digit).collect();
+        digits.parse().ok()
+    }
+
     fn blocks(&mut self, nodes: &[Node], depth: usize) -> Vec<Block> {
         let mut out = Vec::with_capacity(nodes.len());
         let mut index = 0;
@@ -256,6 +266,7 @@ impl Converter {
                     .iter()
                     .filter_map(|item| match item {
                         Node::ListItem(item) => Some(ListItem {
+                            number: list.ordered.then(|| self.item_number(item)).flatten(),
                             checked: item.checked,
                             blocks: self.blocks(&item.children, depth + 1),
                         }),

@@ -154,7 +154,10 @@ impl MessagesTimeline {
                     .text_size(TEXT_XS.size)
                     .font_weight(FontWeight::MEDIUM)
                     .text_color(colors.theme.text)
-                    .child(format!("{} changed files", summary.files.len())),
+                    .child(match summary.files.len() {
+                        1 => "1 changed file".to_owned(),
+                        n => format!("{n} changed files"),
+                    }),
             )
             .child(diff_stat(additions, deletions, &colors, TEXT_XS.size))
             .child(div().flex_1())

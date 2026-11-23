@@ -427,7 +427,7 @@ impl MessagesTimeline {
     }
 
     /// A stable key for buttons and block state of a message.
-    pub(super) fn key_of(id: &str) -> u64 {
+    pub fn key_of(id: &str) -> u64 {
         let mut hasher = DefaultHasher::new();
         id.hash(&mut hasher);
         hasher.finish()
