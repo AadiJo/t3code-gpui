@@ -68,3 +68,7 @@ required-features = ["test-support"]
 [[example]]
 name = "git_actions_check"
 required-features = ["test-support"]
+
+# Runs the ported pull request and issue logic over the TypeScript runner's cases.
+[[example]]
+name = "pull_request_logic"

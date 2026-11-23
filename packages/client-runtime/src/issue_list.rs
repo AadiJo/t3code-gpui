@@ -6,6 +6,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use t3code_contracts::{EnvironmentId, IssueListEntry, IssueListProjectError, IssueListResult, IssueListSort, IssueTrackerSummary};
 
+use crate::js_sort::{js_sort_by, js_sub_order};
 use crate::pull_request_editing::parse_instant_ms;
 
 /// Cursors to continue a listing, by `"<host> <scope>"`.
@@ -22,17 +23,12 @@ pub fn issue_entry_key(entry: &IssueListEntry) -> String {
     )
 }
 
-fn by_updated_desc(a: &IssueListEntry, b: &IssueListEntry) -> std::cmp::Ordering {
-    let at = |e: &IssueListEntry| parse_instant_ms(&e.updated_at);
-    js_number_order(at(b), at(a))
+fn instant(iso: &str) -> f64 {
+    parse_instant_ms(iso).unwrap_or(f64::NAN)
 }
 
-/// Orders like a JavaScript comparator returning `left - right`, where `NaN` compares equal.
-fn js_number_order(left: Option<f64>, right: Option<f64>) -> std::cmp::Ordering {
-    match (left, right) {
-        (Some(l), Some(r)) => l.partial_cmp(&r).unwrap_or(std::cmp::Ordering::Equal),
-        _ => std::cmp::Ordering::Equal,
-    }
+fn by_updated_desc(a: &IssueListEntry, b: &IssueListEntry) -> std::cmp::Ordering {
+    js_sub_order(instant(&b.updated_at), instant(&a.updated_at))
 }
 
 /// Lays a continuation page over the rows already held. A row the page repeats replaces the
@@ -53,7 +49,7 @@ pub fn merge_issue_list_page(held: &[IssueListEntry], page: &[IssueListEntry]) -
         }
     }
     let mut merged: Vec<IssueListEntry> = order.into_iter().filter_map(|k| by_key.remove(&k)).collect();
-    merged.sort_by(by_updated_desc);
+    js_sort_by(&mut merged, by_updated_desc);
     merged
 }
 
@@ -140,8 +136,8 @@ pub fn continue_issue_page(page: &HeldIssuePage, next: Result<&IssueListResult, 
 /// Newest first by the date the trackers were asked to sort on, so merged rows keep that order.
 pub fn issue_order(sort: IssueListSort) -> impl Fn(&IssueListEntry, &IssueListEntry) -> std::cmp::Ordering {
     move |left, right| {
-        let date = |e: &IssueListEntry| parse_instant_ms(if sort == IssueListSort::Created { &e.created_at } else { &e.updated_at });
-        js_number_order(date(right), date(left))
+        let date = |e: &IssueListEntry| instant(if sort == IssueListSort::Created { &e.created_at } else { &e.updated_at });
+        js_sub_order(date(right), date(left))
     }
 }
 
@@ -227,7 +223,7 @@ pub fn group_issues(
     let compare = issue_order(sort);
     let mut out: Vec<IssueTrackerGroup> = order.into_iter().filter_map(|k| groups.remove(&k)).collect();
     for group in &mut out {
-        group.rows.sort_by(|a, b| compare(&a.entry, &b.entry));
+        js_sort_by(&mut group.rows, |a, b| compare(&a.entry, &b.entry));
     }
     out.sort_by(|a, b| {
         locale_compare(

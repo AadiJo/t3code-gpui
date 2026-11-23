@@ -7,6 +7,7 @@ pub mod change_request_links;
 pub mod issue_list;
 pub mod issue_presentation;
 pub mod issue_selection;
+pub mod js_sort;
 pub mod pull_request_checks;
 pub mod pull_request_diff_fold;
 pub mod pull_request_editing;
