@@ -11,3 +11,7 @@ pub mod provider_status;
 pub mod scheduled_tasks_settings_logic;
 pub mod scheduled_tasks_settings_zone_names;
 pub mod server_settings_data;
+pub mod server_settings_controls;
+pub mod add_provider_instance_dialog;
+pub mod provider_authentication_section;
+pub mod provider_settings_panel;

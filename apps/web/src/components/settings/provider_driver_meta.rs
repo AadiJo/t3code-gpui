@@ -63,6 +63,8 @@ pub struct DriverMeta {
     pub label: &'static str,
     pub badge_label: Option<SharedString>,
     pub has_default_instance: bool,
+    /// Shown in the add dialog's first grid; the rest sit under "Show more".
+    pub featured: bool,
     pub model_families: &'static [&'static str],
     pub environment_fields: Vec<EnvironmentField>,
     pub fields: Vec<FormField>,
@@ -79,6 +81,7 @@ pub fn driver_meta(driver: &str) -> Option<DriverMeta> {
             label: "Codex",
             badge_label: None,
             has_default_instance: true,
+            featured: true,
             model_families: &["GPT-", "GPT "],
             environment_fields: vec![],
             fields: vec![
@@ -93,6 +96,7 @@ pub fn driver_meta(driver: &str) -> Option<DriverMeta> {
             label: "Claude",
             badge_label: None,
             has_default_instance: true,
+            featured: true,
             model_families: &["Claude "],
             environment_fields: vec![],
             fields: vec![
@@ -108,6 +112,7 @@ pub fn driver_meta(driver: &str) -> Option<DriverMeta> {
             label: "Cursor",
             badge_label: None,
             has_default_instance: true,
+            featured: true,
             model_families: &["Grok "],
             environment_fields: vec![            EnvironmentField { name: "CURSOR_API_KEY", label: SharedString::new_static("Cursor API key"), description: Some(SharedString::new_static("Optional. Overrides browser sign-in for this provider.")), placeholder: Some(SharedString::new_static("Paste API key")), sensitive: true }],
             fields: vec![
@@ -119,6 +124,7 @@ pub fn driver_meta(driver: &str) -> Option<DriverMeta> {
             label: "Grok",
             badge_label: None,
             has_default_instance: true,
+            featured: true,
             model_families: &["Grok "],
             environment_fields: vec![],
             fields: vec![
@@ -130,6 +136,7 @@ pub fn driver_meta(driver: &str) -> Option<DriverMeta> {
             label: "fx",
             badge_label: None,
             has_default_instance: true,
+            featured: false,
             model_families: &[],
             environment_fields: vec![],
             fields: vec![
@@ -141,6 +148,7 @@ pub fn driver_meta(driver: &str) -> Option<DriverMeta> {
             label: "OpenCode",
             badge_label: None,
             has_default_instance: true,
+            featured: true,
             model_families: &[],
             environment_fields: vec![],
             fields: vec![
@@ -154,6 +162,7 @@ pub fn driver_meta(driver: &str) -> Option<DriverMeta> {
             label: "Antigravity",
             badge_label: None,
             has_default_instance: true,
+            featured: true,
             model_families: &["Gemini "],
             environment_fields: vec![],
             fields: vec![
@@ -169,6 +178,7 @@ pub fn driver_meta(driver: &str) -> Option<DriverMeta> {
             label: "Kiro",
             badge_label: Some(SharedString::new_static("Early Access")),
             has_default_instance: true,
+            featured: false,
             model_families: &[],
             environment_fields: vec![            EnvironmentField { name: "KIRO_API_KEY", label: SharedString::new_static("Kiro API key"), description: Some(SharedString::new_static("Optional. Signs in without `kiro-cli login` (Kiro Pro and above).")), placeholder: Some(SharedString::new_static("Paste API key")), sensitive: true }],
             fields: vec![
@@ -180,6 +190,7 @@ pub fn driver_meta(driver: &str) -> Option<DriverMeta> {
             label: "Muse Code",
             badge_label: None,
             has_default_instance: true,
+            featured: true,
             model_families: &["Muse "],
             environment_fields: vec![],
             fields: vec![
@@ -191,6 +202,7 @@ pub fn driver_meta(driver: &str) -> Option<DriverMeta> {
             label: "Pi",
             badge_label: None,
             has_default_instance: true,
+            featured: true,
             model_families: &[],
             environment_fields: vec![],
             fields: vec![
@@ -203,6 +215,7 @@ pub fn driver_meta(driver: &str) -> Option<DriverMeta> {
             label: "ACP Registry",
             badge_label: None,
             has_default_instance: false,
+            featured: true,
             model_families: &[],
             environment_fields: vec![],
             fields: vec![

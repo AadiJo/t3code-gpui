@@ -18,6 +18,7 @@ pub mod cloud;
 pub mod connection_status_dot;
 pub mod hosted_empty_state;
 pub mod persistent_thread_terminals;
+pub mod provider_updates_action;
 pub mod relative_time;
 pub mod settings;
 pub mod icons;
