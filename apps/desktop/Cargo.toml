@@ -37,8 +37,19 @@ required-features = ["headless"]
 name = "import-check"
 path = "src/import/import_check.rs"
 
+# Drives the live scene against a real server: sidebar, thread switches, streaming, approve,
+# queue, rename and pin, restart from cache, and measurements.
+# Usage: live-check <seed|drive|restart|bench> <out-dir>  (T3_LIVE_DATA_DIR, T3_PAIRING_URL)
+[[bin]]
+name = "live-check"
+path = "src/live_check.rs"
+required-features = ["headless"]
+
 [dependencies]
 t3code-client-runtime.workspace = true
+t3code-contracts.workspace = true
+t3code-shared.workspace = true
+uuid.workspace = true
 t3code-web.workspace = true
 anyhow.workspace = true
 dirs.workspace = true
