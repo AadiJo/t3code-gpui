@@ -1,0 +1,21 @@
+[package]
+name = "t3code-i18n-macros"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+# `t!` and `t_rich!` hash their source text at compile time and check it against
+# the English catalogs; the build script deflates the other locales for embedding.
+[lib]
+proc-macro = true
+
+[dependencies]
+proc-macro2.workspace = true
+quote.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+syn.workspace = true
+
+[build-dependencies]
+flate2.workspace = true

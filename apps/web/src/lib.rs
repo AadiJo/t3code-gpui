@@ -1,11 +1,17 @@
 //! The T3 Code UI, drawn with GPUI. Mirrors `apps/web/src`: a module here has
 //! the same path as the TypeScript file it ports, in snake_case.
 
+// `t!` expands to `::t3code_web::i18n::…`, which must also resolve inside this crate.
+extern crate self as t3code_web;
+
 pub mod app_root;
 pub mod assets;
 pub mod components;
+pub mod i18n;
 pub mod scenes;
+pub mod text_direction;
 pub mod theme_palette;
+pub mod timestamp_format;
 
 pub use app_root::AppRoot;
 pub use assets::Assets;

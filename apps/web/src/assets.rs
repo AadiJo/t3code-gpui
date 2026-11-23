@@ -6,6 +6,8 @@ use rust_embed::RustEmbed;
 
 #[derive(RustEmbed)]
 #[folder = "assets"]
+// Translations embed deflated through `i18n::catalog`.
+#[exclude = "i18n/*"]
 struct Embedded;
 
 /// Serves this crate's embedded assets first, then gpui-kit's bundled icons.

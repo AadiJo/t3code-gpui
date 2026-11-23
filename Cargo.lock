@@ -6980,6 +6980,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "t3code-i18n-macros"
+version = "0.1.11"
+dependencies = [
+ "flate2",
+ "proc-macro2",
+ "quote",
+ "serde_json",
+ "sha2 0.10.9",
+ "syn 2.0.119",
+]
+
+[[package]]
 name = "t3code-shared"
 version = "0.1.11"
 dependencies = [
@@ -6993,13 +7005,19 @@ name = "t3code-web"
 version = "0.1.11"
 dependencies = [
  "anyhow",
+ "fancy-regex",
+ "flate2",
  "gpui-kit",
+ "jiff",
  "rust-embed",
  "serde",
  "serde_json",
+ "sys-locale",
  "t3code-client-runtime",
  "t3code-contracts",
+ "t3code-i18n-macros",
  "t3code-shared",
+ "unicode-properties",
 ]
 
 [[package]]
