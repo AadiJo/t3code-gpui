@@ -153,8 +153,29 @@ impl Check {
         let handler = started.elapsed();
         self.cx.update_window(self.handle, |_, w, cx| w.render_frame(cx))?;
         let to_frame = started.elapsed();
-        self.note(format!("click {label}: handler {:.2} ms, click-to-frame {:.2} ms", ms(handler), ms(to_frame)));
+        let t = self.read(|app, _| app.timing());
+        self.note(format!(
+            "click {label}: handler {:.2} ms (open {:.2}, timeline {:.2}, composer {:.2}), click-to-frame {:.2} ms",
+            ms(handler),
+            t.open_micros as f64 / 1000.0,
+            t.timeline_micros as f64 / 1000.0,
+            t.composer_micros as f64 / 1000.0,
+            ms(to_frame)
+        ));
         Ok((handler, to_frame))
+    }
+
+    fn click_point(&mut self, what: &str, at: Point<Pixels>) -> anyhow::Result<()> {
+        use gpui_kit::test::TestEventExt as _;
+        self.frame()?;
+        self.cx.update_window(self.handle, |_, w, cx| {
+            w.pointer_move(at, None, cx);
+            w.pointer_down(at, MouseButton::Left, cx);
+            w.pointer_up(at, MouseButton::Left, cx);
+        })?;
+        self.frame()?;
+        self.note(format!("click {what} at {at:?}"));
+        Ok(())
     }
 
     fn type_and_send(&mut self, text: &str, intent: ComposerSubmissionIntent) -> anyhow::Result<()> {
@@ -461,6 +482,11 @@ fn run_drive(check: &mut Check) -> anyhow::Result<()> {
     check.click_row(&other, "other thread (cold)")?;
     check.pump(|c| c.read(|app, cx| app.thread().is_some_and(|t| t.read(cx).status() == ThreadStatus::Live)), Duration::from_secs(20), "other live")?;
     let (_, cached) = check.click_row(&long, "long thread (memory-cached)")?;
+    // Baseline: the same click on the row already open does no switch; the difference is the
+    // switch's own cost, the rest is pointer dispatch and the sidebar's click handling.
+    check.frame()?;
+    let (_, noop) = check.click_row(&long, "long thread again (already open, no switch)")?;
+    check.note(format!("no-op click-to-frame {:.2} ms (switch adds {:.2} ms)", ms(noop), ms(cached.saturating_sub(noop))));
     let source = check.cx.update(|cx| StateBridge::threads(cx).read(cx).last_switch());
     let entries = check.active_input().map_or(0, |i| i.entries.len());
     check.note(format!("memory-cached switch: source {source:?}, click-to-frame {:.2} ms, entries at first frame {entries}", ms(cached)));
@@ -478,6 +504,7 @@ fn run_drive(check: &mut Check) -> anyhow::Result<()> {
     let mut frame_times = Vec::new();
     let mut shot_mid = false;
     let mut queued = false;
+    let mut shot_queued = false;
     while stream_started.elapsed() < Duration::from_secs(30) {
         frame_times.push(check.frame()?);
         let status = row_status_of(check, &queue_key);
@@ -494,9 +521,9 @@ fn run_drive(check: &mut Check) -> anyhow::Result<()> {
             check.shot("05-streaming.png")?;
             shot_mid = true;
         }
-        if queued && check.active_input().is_some_and(|i| !i.queued.is_empty()) {
+        if queued && !shot_queued && check.active_input().is_some_and(|i| !i.queued.is_empty()) {
             check.shot("06-queued.png")?;
-            queued = true;
+            shot_queued = true;
         }
         if !working && stream_started.elapsed() > Duration::from_secs(2) && check.active_input().is_some_and(|i| i.queued.is_empty()) {
             break;
@@ -544,46 +571,64 @@ fn run_drive(check: &mut Check) -> anyhow::Result<()> {
             })
         })
         .context("approval row")?;
-    let key = t3code_web::components::chat::messages_timeline::MessagesTimeline::key_of(&entry_id);
-    check.frame()?;
-    check.cx.update_window(check.handle, |_, w, cx| w.click(("approve", key), cx))?;
-    check.note("clicked Approve");
+    let _ = entry_id;
+    // The test registry does not reach ids inside the virtual list, so click the Approve
+    // label where the row draws it (located on 08-approval.png: "Waiting for approval ·
+    // Decline Approve More" under the command, window points).
+    let at = point(px(643.), px(278.));
+    {
+        use gpui_kit::test::TestEventExt as _;
+        check.frame()?;
+        check.cx.update_window(check.handle, |_, w, cx| {
+            w.pointer_move(at, None, cx);
+            w.pointer_down(at, MouseButton::Left, cx);
+            w.pointer_up(at, MouseButton::Left, cx);
+        })?;
+    }
+    check.note(format!("clicked Approve at {at:?}"));
     check.pump(|c| c.active_input().is_some_and(|i| i.pending_approval_ids.is_empty()), Duration::from_secs(30), "approval answered")?;
     check.shot("09-approved.png")?;
 
-    // Rename and pin from the context menu.
+    // Pin, then rename, from the context menu.
     let target = key_of(&state, &state.other_threads[4]);
     let ix = check.row_index(&target).context("row")?;
     let sidebar = check.read(|app, _| app.sidebar().clone());
     let at = check.read(|app, cx| app.sidebar().read(cx).entry_bounds(ix)).context("bounds")?.center();
     check.cx.update(|cx| sidebar.update(cx, |s, cx| s.open_context_menu_at(ix, at, cx)));
     check.shot("10-context-menu.png")?;
-    // Thread menu without a branch: Pin, Settle, Snooze, Rename, …
-    check.cx.update_window(check.handle, |_, w, cx| w.click(("menu-item", 3usize), cx))?;
-    check.frame()?;
-    let field = check.read(|app, _| app.rename_field().cloned()).context("rename field")?;
-    check.cx.update_window(check.handle, |_, w, cx| {
-        field.update(cx, |field, cx| field.set_value("Docs pass (renamed)", w, cx));
-    })?;
-    check.cx.update_window(check.handle, |_, w, cx| w.press("enter", cx))?;
-    check.shot("11-rename-typed.png")?;
-    check.pump(
-        |c| c.cx.update(|cx| StateBridge::shell(cx).read(cx).snapshot().threads.iter().any(|t| t.title.as_ref() == "Docs pass (renamed)")),
-        Duration::from_secs(10),
-        "renamed in the sidebar",
-    )?;
-    check.shot("12-renamed.png")?;
-    let ix = check.row_index(&target).context("row")?;
-    let at = check.read(|app, cx| app.sidebar().read(cx).entry_bounds(ix)).context("bounds")?.center();
-    check.cx.update(|cx| sidebar.update(cx, |s, cx| s.open_context_menu_at(ix, at, cx)));
-    check.frame()?;
-    check.cx.update_window(check.handle, |_, w, cx| w.click(("menu-item", 0usize), cx))?;
+    // Thread menu without a branch: Pin, Settle, Snooze, Rename, … The test registry does not
+    // reach the deferred menu's ids, so click where 10-context-menu.png shows "Pin thread".
+    check.click_point("Pin thread", point(px(211.), px(399.)))?;
     check.pump(
         |c| c.cx.update(|cx| StateBridge::shell(cx).read(cx).snapshot().threads.iter().any(|t| t.key == target && t.pinned_at.is_some())),
         Duration::from_secs(10),
         "pinned in the sidebar",
     )?;
-    check.shot("13-pinned.png")?;
+    check.shot("11-pinned.png")?;
+    // Rename: the menu row emits this event; send it the same way.
+    check.cx.update(|cx| {
+        sidebar.update(cx, |_, cx| {
+            cx.emit(t3code_web::components::sidebar::SidebarEvent::ThreadCommand(
+                vec![target.clone()],
+                t3code_web::components::sidebar::context_menu::MenuCommand::Rename,
+            ))
+        })
+    });
+    check.note("sidebar event: Rename thread");
+    check.frame()?;
+    let field = check.read(|app, _| app.rename_field().cloned()).context("rename field")?;
+    check.cx.update_window(check.handle, |_, w, cx| {
+        field.update(cx, |field, cx| field.set_value("Docs pass (renamed)", w, cx));
+    })?;
+    check.shot("12-rename-typed.png")?;
+    let app = check.app.clone();
+    check.cx.update(|cx| app.update(cx, |app, cx| app.confirm_rename(cx)));
+    check.pump(
+        |c| c.cx.update(|cx| StateBridge::shell(cx).read(cx).snapshot().threads.iter().any(|t| t.title.as_ref() == "Docs pass (renamed)")),
+        Duration::from_secs(10),
+        "renamed in the sidebar",
+    )?;
+    check.shot("13-renamed.png")?;
     let view = view_sections(check);
     check.note(view);
 

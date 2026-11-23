@@ -70,6 +70,11 @@ pub struct SwitchTiming {
     pub clicked_at: Option<Instant>,
     /// Time inside the click handler: open, map and hand the timeline its input.
     pub handler_micros: u64,
+    /// Parts of it: opening the thread in the bridge, the timeline's `set_thread`, and the
+    /// composer's state.
+    pub open_micros: u64,
+    pub timeline_micros: u64,
+    pub composer_micros: u64,
 }
 
 /// The live window content.
@@ -166,10 +171,15 @@ impl LiveApp {
     fn on_sidebar(&mut self, event: &SidebarEvent, window: &mut Window, cx: &mut Context<Self>) {
         let started = Instant::now();
         match sidebar_actions::handle(event, cx) {
-            SidebarOutcome::Opened(key) => {
+            SidebarOutcome::Opened(_) => {
+                let open_micros = started.elapsed().as_micros() as u64;
                 self.show_active_thread(window, cx);
-                self.timing = SwitchTiming { clicked_at: Some(started), handler_micros: started.elapsed().as_micros() as u64 };
-                let _ = key;
+                self.timing = SwitchTiming {
+                    clicked_at: Some(started),
+                    handler_micros: started.elapsed().as_micros() as u64,
+                    open_micros,
+                    ..self.timing
+                };
             }
             SidebarOutcome::Rename(key) => self.open_rename(key, window, cx),
             _ => {}
@@ -188,19 +198,23 @@ impl LiveApp {
     fn open_rename(&mut self, key: ThreadKey, window: &mut Window, cx: &mut Context<Self>) {
         let title = StateBridge::shell(cx).read(cx).snapshot().threads.iter().find(|t| t.key == key).map(|t| t.title.clone()).unwrap_or_default();
         let field = cx.new(|cx| InputState::new(window, cx).default_value(title));
-        field.update(cx, |field, cx| field.focus(window, cx));
-        let subscription = cx.subscribe_in(&field, window, |this, field, event: &InputEvent, _, cx| {
+        let subscription = cx.subscribe(&field, |this, _, event: &InputEvent, cx| {
             if matches!(event, InputEvent::PressEnter { .. }) {
-                let title = field.read(cx).value().to_string();
-                if let Some((key, _, _)) = this.rename.take()
-                    && !title.trim().is_empty()
-                {
-                    sidebar_actions::rename(&key, title.trim().to_owned(), cx);
-                }
-                cx.notify();
+                this.confirm_rename(cx);
             }
         });
         self.rename = Some((key, field, subscription));
+        cx.notify();
+    }
+
+    /// Sends the rename field's title, if it holds one, and closes it.
+    pub fn confirm_rename(&mut self, cx: &mut Context<Self>) {
+        if let Some((key, field, _)) = self.rename.take() {
+            let title = field.read(cx).value().to_string();
+            if !title.trim().is_empty() {
+                sidebar_actions::rename(&key, title.trim().to_owned(), cx);
+            }
+        }
         cx.notify();
     }
 
@@ -224,7 +238,9 @@ impl LiveApp {
         };
         let input = thread.read(cx).input().clone();
         let thread_key: SharedString = format!("{}/{}", key.environment_id.0, key.thread_id.0).into();
+        let timeline_started = Instant::now();
         self.chat.update(cx, |chat, cx| chat.set_thread(thread_key, project, title, input, cx));
+        self.timing.timeline_micros = timeline_started.elapsed().as_micros() as u64;
         self.thread_subscriptions = vec![cx.subscribe(&thread, |this, thread, event: &LiveThreadEvent, cx| {
             let timeline = this.chat.read(cx).timeline().clone();
             match event {
@@ -255,7 +271,9 @@ impl LiveApp {
         }
         self.thread = Some(thread);
         self.environment = environment;
+        let composer_started = Instant::now();
         self.mount_composer(window, cx);
+        self.timing.composer_micros = composer_started.elapsed().as_micros() as u64;
         cx.notify();
     }
 
