@@ -228,6 +228,8 @@ impl AppRoot {
             }),
             cx.subscribe_in(&sidebar, window, Self::on_sidebar_event),
             cx.subscribe_in(&layout, window, Self::on_layout_event),
+            // Drags end wherever the pointer is released, so widths are saved as they change.
+            cx.observe(&layout, |_, layout, cx| Self::persist_layout(&layout, cx)),
             cx.subscribe(&store, Self::on_store_event),
             cx.subscribe(&thread_view, |this, _, event: &ThreadRouteEvent, cx| {
                 let ThreadRouteEvent::Promoted(target) = event;
@@ -488,18 +490,21 @@ impl AppRoot {
             LayoutEvent::Toggle(PanelToggle::Details) => {
                 layout.update(cx, |layout, cx| layout.toggle_details(cx));
             }
-            LayoutEvent::Changed => {
-                let (open, width, right) = {
-                    let layout = layout.read(cx);
-                    (layout.is_sidebar_open(), layout.sidebar_width(), layout.right_panel_width())
-                };
-                UiStateStore::update_layout(cx, |state| {
-                    state.sidebar_open = open;
-                    state.sidebar_width = f32::from(width);
-                    state.right_panel_width = f32::from(right);
-                });
-            }
+            LayoutEvent::Changed => Self::persist_layout(layout, cx),
         }
+    }
+
+    /// Saves widths and the sidebar's open state; unchanged values write nothing.
+    fn persist_layout(layout: &Entity<AppSidebarLayout>, cx: &mut App) {
+        let (open, width, right) = {
+            let layout = layout.read(cx);
+            (layout.is_sidebar_open(), layout.sidebar_width(), layout.right_panel_width())
+        };
+        UiStateStore::update_layout(cx, |state| {
+            state.sidebar_open = open;
+            state.sidebar_width = f32::from(width);
+            state.right_panel_width = f32::from(right);
+        });
     }
 
     fn on_store_event(&mut self, store: Entity<FixtureStore>, event: &FixtureEvent, cx: &mut Context<Self>) {
