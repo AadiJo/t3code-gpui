@@ -109,6 +109,7 @@ impl RenderOnce for Empty {
                     .flex()
                     .flex_col()
                     .items_center()
+                    .text_center()
                     .max_w(sp(96.))
                     .children(media)
                     .child(title.child(self.title))
