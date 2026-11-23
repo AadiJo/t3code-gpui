@@ -3,7 +3,7 @@
 
 mod app;
 mod chat;
-mod composer;
+pub mod composer;
 mod sidebar;
 mod ui;
 
@@ -19,6 +19,9 @@ pub fn scenes() -> &'static [(&'static str, SceneBuilder)] {
         ("sidebar", sidebar::build),
         ("chat", chat::build),
         ("composer", composer::build),
+        ("composer-light", composer::build_light),
+        ("composer-popovers", composer::build_popovers),
+        ("composer-popovers-light", composer::build_popovers_light),
     ]
 }
 

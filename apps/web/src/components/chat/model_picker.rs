@@ -346,7 +346,7 @@ impl ModelPicker {
                 .when(!disabled, |el| el.hover(move |s| s.bg(c.row_hover)))
                 .child(content)
                 .when(selected, |el| {
-                    el.child(div().absolute().right(px(-4.)).top(px(8.)).w(px(3.)).h(px(20.)).rounded_full().bg(c.primary))
+                    el.child(div().absolute().right(px(0.)).top(px(8.)).w(px(3.)).h(px(20.)).rounded_full().bg(c.primary))
                 })
                 .on_click(cx.listener(move |this, _, _, cx| {
                     if !disabled {

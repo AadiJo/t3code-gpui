@@ -1169,10 +1169,8 @@ impl Render for ChatComposer {
             );
 
         let editor_element = ComposerPromptEditor::element(&self.editor, cx);
-        let editor_entity = self.editor.clone();
-        let editor_box = self.editor.update(cx, |_, ecx| {
-            ComposerPromptEditor::actions(div().track_focus(&editor_entity.focus_handle(ecx)), ecx)
-        });
+        let editor_focus = self.editor.focus_handle(cx);
+        let editor_box = self.editor.update(cx, |_, ecx| ComposerPromptEditor::actions(div().track_focus(&editor_focus), ecx));
         let body = div()
             .relative()
             .px(BODY_PADDING_X)
