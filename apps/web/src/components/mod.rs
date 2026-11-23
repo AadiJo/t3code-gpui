@@ -17,6 +17,7 @@ pub mod clerk;
 pub mod cloud;
 pub mod connection_status_dot;
 pub mod hosted_empty_state;
+pub mod issue;
 pub mod persistent_thread_terminals;
 pub mod relative_time;
 pub mod settings;

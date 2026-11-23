@@ -62,6 +62,8 @@ pub fn scenes() -> &'static [(&'static str, SceneBuilder)] {
         ("pull-requests-timeline-light", pull_requests::build_timeline),
         ("pull-requests-code", pull_requests::build_code),
         ("pull-requests-code-light", pull_requests::build_code),
+        ("issues", pull_requests::build_issues),
+        ("issues-light", pull_requests::build_issues),
     ]
 }
 

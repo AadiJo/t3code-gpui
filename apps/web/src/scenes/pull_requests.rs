@@ -127,3 +127,65 @@ pub fn build_timeline(window: &mut Window, cx: &mut App) -> AnyView {
 pub fn build_code(window: &mut Window, cx: &mut App) -> AnyView {
     workspace(DetailTab::Code, window, cx)
 }
+
+use crate::components::issue::issue_detail_panel::IssueDetailPanel;
+use crate::components::issue::issues_page::{EnvironmentIssueSource, IssuesPage, IssuesPageEvent};
+use crate::components::pull_request::pull_request_source::IssueSource;
+
+/// The issues page with the issue panel beside it.
+pub struct IssuesWorkspace {
+    pub page: Entity<IssuesPage>,
+    pub panel: Option<Entity<IssueDetailPanel>>,
+    pub fixture: FixtureSource,
+    _events: Subscription,
+}
+
+impl IssuesWorkspace {
+    /// The issues page over the fixture, with `#455` open.
+    pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let fixture = FixtureSource::standard();
+        let source: Rc<dyn IssueSource> = Rc::new(fixture.clone());
+        let sources = vec![EnvironmentIssueSource { environment_id: EnvironmentId::new("env-studio"), label: "Studio".into(), source: source.clone() }];
+        let page = cx.new(|cx| {
+            let mut page = IssuesPage::new(sources, window, cx);
+            page.now_ms = Some(SCENE_NOW_MS);
+            page
+        });
+        let events = cx.subscribe_in(&page, window, |this, _, event: &IssuesPageEvent, window, cx| {
+            if let IssuesPageEvent::Open { reference, .. } = event {
+                this.open(reference.clone(), window, cx);
+            }
+        });
+        let entry = fixture.state.lock().unwrap().data.issue_list.entries[0].clone();
+        let mut workspace = Self { page, panel: None, fixture, _events: events };
+        let reference = t3code_contracts::IssueRef { project_id: entry.project_id, tracker: entry.tracker, host: Some(entry.host), scope: entry.scope, key: entry.key };
+        workspace.open(reference, window, cx);
+        workspace
+    }
+
+    /// Opens an issue in the panel.
+    pub fn open(&mut self, reference: t3code_contracts::IssueRef, window: &mut Window, cx: &mut Context<Self>) {
+        let source: Rc<dyn IssueSource> = Rc::new(self.fixture.clone());
+        self.panel = Some(cx.new(|cx| {
+            let mut panel = IssueDetailPanel::new(source, reference, window, cx);
+            panel.now_ms = Some(SCENE_NOW_MS);
+            panel
+        }));
+        cx.notify();
+    }
+}
+
+impl Render for IssuesWorkspace {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let border = cx.app_theme().colors.border;
+        div()
+            .size_full()
+            .flex()
+            .child(div().flex_1().min_w_0().h_full().child(self.page.clone()))
+            .children(self.panel.clone().map(|p| div().w(px(560.)).h_full().border_l_1().border_color(border).child(p)))
+    }
+}
+
+pub fn build_issues(window: &mut Window, cx: &mut App) -> AnyView {
+    cx.new(|cx| IssuesWorkspace::new(window, cx)).into()
+}
