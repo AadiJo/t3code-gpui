@@ -24,6 +24,7 @@ pub mod pending_user_input_panel;
 pub mod rich_text;
 pub mod syntax_highlighting;
 pub mod syntax_theme;
+pub mod thread_details_panel_styles;
 pub mod timeline_entries;
 pub mod timeline_fixtures;
 pub mod timeline_row_parts;

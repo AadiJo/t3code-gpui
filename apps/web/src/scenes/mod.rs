@@ -3,6 +3,7 @@
 
 mod app;
 mod chat;
+pub mod git_actions;
 mod i18n;
 pub mod composer;
 mod sidebar;
@@ -30,6 +31,8 @@ pub fn scenes() -> &'static [(&'static str, SceneBuilder)] {
         ("composer-light", composer::build_light),
         ("composer-popovers", composer::build_popovers),
         ("composer-popovers-light", composer::build_popovers_light),
+        ("git-actions", git_actions::build),
+        ("git-actions-light", git_actions::build_light),
     ]
 }
 

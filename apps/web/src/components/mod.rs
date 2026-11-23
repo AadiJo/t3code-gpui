@@ -15,3 +15,8 @@ pub mod ui;
 pub mod branch_toolbar_logic;
 pub mod git_actions_control_logic;
 pub mod git_actions_control_source;
+pub mod git_actions_control;
+pub mod branch_picker;
+pub mod branch_toolbar;
+pub mod previous_worktree_item_content;
+pub mod git_actions_control_fixture;

@@ -70,6 +70,7 @@ pub fn init(cx: &mut App) {
     i18n::runtime::init(cx);
     components::sidebar::init(cx);
     components::chat::composer::init(cx);
+    components::branch_picker::bind_keys(cx);
     terminal::surface::init(cx);
     components::thread_terminal_drawer::init(cx);
     cx.set_global(terminal_ui_state_store::TerminalUiStateStore::default());
