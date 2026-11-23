@@ -23,3 +23,8 @@ smallvec.workspace = true
 syntect.workspace = true
 two-face.workspace = true
 unicode-width.workspace = true
+
+# Headless end-to-end checks and measurements for the diff panel.
+[[example]]
+name = "diffs_harness"
+required-features = ["test-support"]

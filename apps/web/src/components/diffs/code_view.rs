@@ -18,6 +18,7 @@ use gpui_kit::{
         Sizable as _,
         input::{Input, InputEvent, InputState, Textarea, TextareaState},
     },
+    base::TestSupportExt as _,
     prelude::FluentBuilder as _,
     *,
 };
@@ -1447,11 +1448,11 @@ impl CodeView {
         for (doc, lines, through) in requests {
             self.syntax.update(cx, |store, cx| store.request(doc, &lines, through, cx));
         }
-        if self.shape_cache.len() > 4_000 {
+        if self.shape_cache.len() > 1_024 {
             let keep_after = self.frame.saturating_sub(4);
             self.shape_cache.retain(|_, (_, used)| *used >= keep_after);
         }
-        if self.number_cache.len() > 4_000 {
+        if self.number_cache.len() > 2_048 {
             self.number_cache.clear();
         }
         if self.total_height > view_height {
@@ -1712,6 +1713,7 @@ impl CodeView {
         let mono = self.font.family.clone();
         div()
             .id(("diff-header", index))
+            .test_support()
             .absolute()
             .top(px(y))
             .left_0()
@@ -1738,6 +1740,7 @@ impl CodeView {
             .child(
                 div()
                     .id(("diff-collapse", index))
+                    .test_support()
                     .size(px(20.))
                     .ml(px(-2.))
                     .flex()
@@ -1760,6 +1763,7 @@ impl CodeView {
             .child(
                 div()
                     .id(("diff-title", index))
+                    .test_support()
                     .flex()
                     .items_center()
                     .gap(px(4.))
@@ -1789,6 +1793,7 @@ impl CodeView {
             .child(
                 div()
                     .id(("diff-copy", index))
+                    .test_support()
                     .size(px(20.))
                     .flex()
                     .flex_none()
@@ -1847,6 +1852,7 @@ impl CodeView {
         let button = |id: &'static str, path: &'static str, up: bool, flip: bool| {
             div()
                 .id((id, index * 10_000 + gap))
+                .test_support()
                 .w(px(32.))
                 .h_full()
                 .flex()
@@ -1879,6 +1885,7 @@ impl CodeView {
             .child(
                 div()
                     .id(("sep-label", index * 10_000 + gap))
+                    .test_support()
                     .flex_1()
                     .h_full()
                     .flex()
@@ -1949,6 +1956,7 @@ impl CodeView {
             column = column.child(
                 div()
                     .id(SharedString::from(format!("comment-{id}")))
+                    .test_support()
                     .group("comment")
                     .flex()
                     .items_start()
@@ -1966,6 +1974,7 @@ impl CodeView {
                     .child(
                         div()
                             .id(SharedString::from(format!("comment-delete-{id}")))
+                            .test_support()
                             .invisible()
                             .group_hover("comment", |s| s.visible())
                             .size(px(24.))
@@ -2001,6 +2010,7 @@ impl CodeView {
                             .child(
                                 div()
                                     .id("draft-cancel")
+                                    .test_support()
                                     .h(px(24.))
                                     .px(px(7.))
                                     .flex()
@@ -2015,6 +2025,7 @@ impl CodeView {
                             .child(
                                 div()
                                     .id("draft-submit")
+                                    .test_support()
                                     .h(px(24.))
                                     .px(px(7.))
                                     .flex()
@@ -2032,6 +2043,7 @@ impl CodeView {
         }
         div()
             .id(("annotation", index * 1_000_000 + number as usize))
+            .test_support()
             .absolute()
             .top(px(y))
             .left_0()
@@ -2057,6 +2069,7 @@ impl CodeView {
         let nav = |id: &'static str, path: &'static str, forward: bool| {
             div()
                 .id(id)
+                .test_support()
                 .size(px(24.))
                 .flex()
                 .items_center()
@@ -2101,6 +2114,7 @@ impl CodeView {
                 .child(
                     div()
                         .id("find-close")
+                        .test_support()
                         .size(px(24.))
                         .flex()
                         .items_center()
@@ -2177,6 +2191,7 @@ impl Render for CodeView {
             overlays.push(
                 div()
                     .id("gutter-comment")
+                    .test_support()
                     .absolute()
                     .top(px(y))
                     .left(px(cell_x + gutter - 2. - LINE_HEIGHT))
@@ -2205,6 +2220,7 @@ impl Render for CodeView {
         let paint_view = view.clone();
         div()
             .id("code-view")
+            .test_support()
             .key_context(CONTEXT)
             .track_focus(&self.focus_handle)
             .on_action(cx.listener(Self::copy_selection))

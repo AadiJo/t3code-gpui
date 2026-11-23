@@ -5,7 +5,7 @@
 
 use std::{collections::HashSet, ops::Range, sync::Arc};
 
-use gpui_kit::{prelude::FluentBuilder as _, *};
+use gpui_kit::{base::TestSupportExt as _, prelude::FluentBuilder as _, *};
 
 use crate::{
     ActiveAppTheme as _, diff_file_order::diff_file_tree_positions, diff_panel_store::DiffColorScheme,
@@ -300,6 +300,7 @@ impl DiffFileTree {
                 let focused = self.cursor == Some(index) && self.focus_handle.is_focused(window);
                 div()
                     .id(("tree-row", index))
+                    .test_support()
                     .h(px(ROW_HEIGHT))
                     .mx(px(4.))
                     .pl(px(4. + INDENT * row.depth as f32))
@@ -398,6 +399,7 @@ impl Render for DiffFileTree {
         let all_expanded = self.all_expanded();
         div()
             .id("diff-file-tree")
+            .test_support()
             .key_context(CONTEXT)
             .track_focus(&self.focus_handle)
             .on_action(cx.listener(Self::select_next))
@@ -427,6 +429,7 @@ impl Render for DiffFileTree {
                         el.child(
                             div()
                                 .id("tree-toggle-all")
+                                .test_support()
                                 .size(px(24.))
                                 .flex()
                                 .items_center()

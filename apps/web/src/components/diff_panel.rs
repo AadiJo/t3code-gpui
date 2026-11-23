@@ -9,7 +9,7 @@ use std::{
     sync::Arc,
 };
 
-use gpui_kit::{prelude::FluentBuilder as _, *};
+use gpui_kit::{base::TestSupportExt as _, prelude::FluentBuilder as _, *};
 
 use super::{
     diff_panel_shell::{DiffPanelLoadingState, DiffPanelShell},
@@ -430,6 +430,7 @@ impl DiffPanel {
         let toggle = |id: &'static str, path: &'static str, pressed: bool| {
             div()
                 .id(id)
+                .test_support()
                 .size(px(28.))
                 .flex()
                 .flex_none()
@@ -443,6 +444,7 @@ impl DiffPanel {
         let segment = |id: &'static str, path: &'static str, pressed: bool| {
             div()
                 .id(id)
+                .test_support()
                 .h(px(24.))
                 .px(px(10.))
                 .flex()
@@ -465,6 +467,7 @@ impl DiffPanel {
             .child(
                 div()
                     .id("diff-scope")
+                    .test_support()
                     .relative()
                     .h(px(24.))
                     .px(px(7.))
@@ -589,6 +592,7 @@ impl DiffPanel {
         let item = |id: SharedString, label: SharedString, trailing: Option<SharedString>, checked: bool| {
             div()
                 .id(id)
+                .test_support()
                 .min_h(px(28.))
                 .px(px(8.))
                 .py(px(4.))
@@ -608,6 +612,7 @@ impl DiffPanel {
         let latest = self.input.turns.first().map(|t| t.turn_id.clone());
         let mut menu = div()
             .id("diff-scope-menu")
+            .test_support()
             .occlude()
             .absolute()
             .top(px(36.))
@@ -717,6 +722,7 @@ impl DiffPanel {
                 let content = match &*patch {
                     RenderablePatch::Raw { text, reason } => div()
                         .id("diff-raw")
+                        .test_support()
                         .flex_1()
                         .overflow_y_scroll()
                         .p(px(8.))
