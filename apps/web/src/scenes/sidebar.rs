@@ -74,6 +74,7 @@ pub fn build(window: &mut Window, cx: &mut App) -> AnyView {
     shelves.update(cx, |sidebar, cx| {
         let row = entry_for(sidebar, "Release checklist");
         sidebar.cursor = row;
+        sidebar.keyboard_nav = true;
         window.focus(&sidebar.focus_handle, cx);
     });
     cx.new(|_| SidebarScene {

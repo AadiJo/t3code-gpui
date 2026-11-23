@@ -20,9 +20,9 @@ static GRAIN_TILE: LazyLock<Arc<RenderImage>> = LazyLock::new(|| {
         let h = hash(x, y);
         let value = 0.25 + 0.5 * ((h & 0xff) as f32 / 255.);
         let alpha = (0.25 + 0.5 * (((h >> 8) & 0xff) as f32 / 255.)) * GRAIN_OPACITY;
-        // Grey, so BGRA and RGBA order agree; premultiplied for the sprite shader.
-        let premul = (value * alpha * 255.).round() as u8;
-        *pixel = image::Rgba([premul, premul, premul, (alpha * 255.).round() as u8]);
+        // Grey, so BGRA and RGBA order agree; the sprite shader takes straight alpha.
+        let grey = (value * 255.).round() as u8;
+        *pixel = image::Rgba([grey, grey, grey, (alpha * 255.).round() as u8]);
     }
     Arc::new(RenderImage::new([Frame::new(image)]))
 });

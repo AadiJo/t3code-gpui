@@ -27,7 +27,7 @@ fn chevron(expanded: bool, color: Hsla) -> Svg {
 
 impl Sidebar {
     fn entry_focused(&self, ix: usize, window: &Window) -> bool {
-        self.cursor == Some(ix) && self.focus_handle.is_focused(window)
+        self.keyboard_nav && self.cursor == Some(ix) && self.focus_handle.is_focused(window)
     }
 
     /// Working / Snoozed / Settled shelf header.
@@ -80,6 +80,7 @@ impl Sidebar {
                     .on_click(cx.listener(move |this, _, window, cx| {
                         window.focus(&this.focus_handle, cx);
                         this.cursor = Some(ix);
+                        this.keyboard_nav = false;
                         this.toggle_shelf(shelf, cx);
                     })),
             )
@@ -150,6 +151,7 @@ impl Sidebar {
                     .on_click(cx.listener(move |this, _, window, cx| {
                         window.focus(&this.focus_handle, cx);
                         this.cursor = Some(ix);
+                        this.keyboard_nav = false;
                         this.toggle_folder(group, cx);
                     }))
                     .on_mouse_down(

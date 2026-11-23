@@ -372,14 +372,8 @@ impl super::Sidebar {
                 }
                 // Opens inline-end, aligned 5px above the trigger row.
                 row = row.child(
-                    deferred(
-                        anchored()
-                            .anchor(Anchor::TopLeft)
-                            .offset(point(px(4.), px(-5.)))
-                            .snap_to_window_with_margin(px(4.))
-                            .child(div().absolute().left_full().child(sub)),
-                    )
-                    .with_priority(3),
+                    deferred(div().absolute().left_full().top(px(-5.)).pl(px(8.)).child(sub))
+                        .with_priority(3),
                 );
             }
             surface = surface.child(row);

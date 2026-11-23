@@ -49,7 +49,7 @@ impl Sidebar {
             active,
             selected,
             hovered: self.hovered == Some(ix),
-            focused: self.cursor == Some(ix) && self.focus_handle.is_focused(window),
+            focused: self.keyboard_nav && self.cursor == Some(ix) && self.focus_handle.is_focused(window),
             recede: should_recede(status, is_unread, is_woke, active, selected),
             top: resolve_top_status(thread, status, is_unread, is_woke),
         }

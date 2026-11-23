@@ -73,6 +73,9 @@ pub struct AppSidebarLayout {
     platform: TitlebarPlatform,
     sidebar_open: bool,
     sidebar_width: Pixels,
+    /// Below 768px the sidebar is a sheet over the main pane, closed by default.
+    sheet_mode: bool,
+    sheet_open: bool,
     right_open: bool,
     right_maximized: bool,
     right_width: Pixels,
@@ -82,6 +85,11 @@ pub struct AppSidebarLayout {
     resizing: Option<Resize>,
     /// Pressed on the drag strip; the next move starts a window move.
     drag_pending: bool,
+    /// Window moves started from the drag strip (checked by scripted tests).
+    window_moves: usize,
+    /// Count window moves without asking the platform (headless platforms
+    /// do not implement window moves).
+    count_moves_only: bool,
     /// Draw caption buttons even when the platform would not (scenes).
     force_caption_buttons: bool,
     main: Option<AnyView>,
@@ -97,6 +105,8 @@ impl AppSidebarLayout {
             sidebar,
             platform,
             sidebar_open: true,
+            sheet_mode: false,
+            sheet_open: false,
             sidebar_width: SIDEBAR_DEFAULT_WIDTH,
             right_open: false,
             right_maximized: false,
@@ -106,6 +116,8 @@ impl AppSidebarLayout {
             details_open: false,
             resizing: None,
             drag_pending: false,
+            window_moves: 0,
+            count_moves_only: false,
             force_caption_buttons: false,
             main: None,
             right_panel: None,
@@ -153,6 +165,24 @@ impl AppSidebarLayout {
         self.force_caption_buttons = force;
     }
 
+    /// Records window moves instead of starting them (headless checks).
+    pub fn count_window_moves_only(&mut self, only: bool) {
+        self.count_moves_only = only;
+    }
+
+    /// How many window moves the drag strip has started.
+    pub fn window_move_count(&self) -> usize {
+        self.window_moves
+    }
+
+    pub fn is_terminal_open(&self) -> bool {
+        self.terminal_open
+    }
+
+    pub fn is_right_panel_open(&self) -> bool {
+        self.right_open
+    }
+
     pub fn is_sidebar_open(&self) -> bool {
         self.sidebar_open
     }
@@ -163,7 +193,7 @@ impl AppSidebarLayout {
 
     /// Left padding the main pane's header needs to clear the floating toggle.
     pub fn header_content_left(&self) -> Pixels {
-        if self.sidebar_open {
+        if self.sidebar_open && !self.sheet_mode {
             px(0.)
         } else {
             self.platform.titlebar_content_left()
@@ -171,7 +201,11 @@ impl AppSidebarLayout {
     }
 
     pub fn toggle_sidebar(&mut self, cx: &mut Context<Self>) {
-        self.sidebar_open = !self.sidebar_open;
+        if self.sheet_mode {
+            self.sheet_open = !self.sheet_open;
+        } else {
+            self.sidebar_open = !self.sidebar_open;
+        }
         cx.notify();
     }
 
@@ -203,7 +237,10 @@ impl AppSidebarLayout {
         if self.drag_pending {
             self.drag_pending = false;
             if event.pressed_button == Some(MouseButton::Left) {
-                window.start_window_move();
+                self.window_moves += 1;
+                if !self.count_moves_only {
+                    window.start_window_move();
+                }
             }
             return;
         }
@@ -237,7 +274,7 @@ impl AppSidebarLayout {
     }
 
     fn sidebar_gap(&self) -> Pixels {
-        if self.sidebar_open {
+        if self.sidebar_open && !self.sheet_mode {
             self.sidebar_width
         } else {
             px(0.)
@@ -367,6 +404,13 @@ impl Render for AppSidebarLayout {
         let colors = ShellColors::from_theme(cx.app_theme());
         let viewport = window.viewport_size();
         let topbar = self.platform.topbar_height();
+        // `md` breakpoint (`sidebar.tsx:110`): the sheet starts closed each time.
+        let sheet_mode = viewport.width < px(768.);
+        if sheet_mode != self.sheet_mode {
+            self.sheet_mode = sheet_mode;
+            self.sheet_open = false;
+        }
+        let sidebar_visible = if sheet_mode { self.sheet_open } else { self.sidebar_open };
         self.sidebar_width = clamp_sidebar_width(self.sidebar_width, viewport.width);
         let row_width = viewport.width - self.sidebar_gap();
         self.right_width = clamp_right_width(self.right_width, viewport.width, row_width);
@@ -404,7 +448,7 @@ impl Render for AppSidebarLayout {
             .h_full()
             .flex_none()
             .w(self.sidebar_gap())
-            .when(self.sidebar_open, |gap| {
+            .when(sidebar_visible && !sheet_mode, |gap| {
                 gap.child(
                     div()
                         .absolute()
@@ -600,7 +644,7 @@ impl Render for AppSidebarLayout {
             .child(
                 self.titlebar_toggle(
                     "toggle-sidebar",
-                    if self.sidebar_open {
+                    if sidebar_visible {
                         ShellIcon::PanelLeftClose
                     } else {
                         ShellIcon::PanelLeft
@@ -697,6 +741,37 @@ impl Render for AppSidebarLayout {
             // and their controls occlude it.
             .child(drag_strip)
             .child(div().absolute().top_0().left_0().size_full().flex().child(sidebar).child(main))
+            .when(sheet_mode && self.sheet_open, |d| {
+                d.child(
+                    div()
+                        .id("sidebar-sheet-backdrop")
+                        .absolute()
+                        .top_0()
+                        .left_0()
+                        .size_full()
+                        .occlude()
+                        .bg(colors.canvas.opacity(0.6))
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.sheet_open = false;
+                            cx.notify();
+                        })),
+                )
+                .child(
+                    div()
+                        .id("sidebar-sheet")
+                        .occlude()
+                        .absolute()
+                        .top_0()
+                        .left_0()
+                        .h_full()
+                        .w(viewport.width - px(12.))
+                        .bg(colors.sidebar)
+                        .border_r_1()
+                        .border_color(colors.sidebar_edge)
+                        .child(surface_grain())
+                        .child(self.sidebar.clone()),
+                )
+            })
             .child(sidebar_toggle)
             .child(right_controls)
             .children(self.render_caption_buttons(window, &colors))

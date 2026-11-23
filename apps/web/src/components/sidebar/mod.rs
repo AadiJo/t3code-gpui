@@ -109,6 +109,8 @@ pub struct Sidebar {
     pub(crate) hovered_pin: Option<usize>,
     /// Keyboard cursor, as an entry index.
     pub(crate) cursor: Option<usize>,
+    /// The cursor moved by keyboard, so it draws a focus ring (`focus-visible`).
+    pub(crate) keyboard_nav: bool,
     pub(crate) selected: HashSet<ThreadKey>,
     selection_anchor: Option<usize>,
     pub(crate) focus_handle: FocusHandle,
@@ -156,6 +158,7 @@ impl Sidebar {
             hovered: None,
             hovered_pin: None,
             cursor: None,
+            keyboard_nav: false,
             selected: HashSet::new(),
             selection_anchor: None,
             focus_handle: cx.focus_handle(),
@@ -186,6 +189,26 @@ impl Sidebar {
         self.topbar_height = topbar_height;
         self.header_inset = header_inset;
         cx.notify();
+    }
+
+    /// The thread the main pane shows.
+    pub fn active_thread(&self) -> Option<&ThreadKey> {
+        self.snapshot.active_thread.as_ref()
+    }
+
+    /// Whether a context menu is open.
+    pub fn is_context_menu_open(&self) -> bool {
+        self.context_menu.is_some()
+    }
+
+    /// Whether the notifications inbox is open.
+    pub fn is_notifications_open(&self) -> bool {
+        self.notifications_open
+    }
+
+    /// Bounds of list entry `ix` from the last frame, if laid out.
+    pub fn entry_bounds(&self, ix: usize) -> Option<Bounds<Pixels>> {
+        self.list_state.bounds_for_item(ix)
     }
 
     /// The flattened list the sidebar draws.
@@ -315,6 +338,7 @@ impl Sidebar {
         };
         let key = thread.key.clone();
         self.cursor = Some(entry);
+        self.keyboard_nav = false;
         if modifiers.secondary(cx) {
             if !self.selected.remove(&key) {
                 self.selected.insert(key);
@@ -417,6 +441,7 @@ impl Sidebar {
 
     fn set_cursor(&mut self, ix: usize, cx: &mut Context<Self>) {
         self.cursor = Some(ix);
+        self.keyboard_nav = true;
         self.list_state.scroll_to_reveal_item(ix);
         cx.notify();
     }
