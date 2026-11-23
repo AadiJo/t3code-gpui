@@ -37,6 +37,8 @@ dirs = "6"
 futures = "0.3"
 fancy-regex = "0.16"
 image = { version = "0.25", default-features = false }
+zune-jpeg = "0.5"
+zune-core = "0.5"
 rust-embed = "8"
 serde = { version = "1", features = ["derive", "rc"] }
 serde_json = { version = "1", features = ["raw_value"] }
@@ -119,6 +121,10 @@ unicode-segmentation = { opt-level = 3 }
 flate2 = { opt-level = 3 }
 miniz_oxide = { opt-level = 3 }
 bincode = { opt-level = 3 }
+# The streamed preview decodes a JPEG per frame.
+zune-jpeg = { opt-level = 3 }
+zune-core = { opt-level = 3 }
+image = { opt-level = 3 }
 
 [profile.release]
 debug = false

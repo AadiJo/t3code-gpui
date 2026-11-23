@@ -7,6 +7,7 @@ pub mod connection;
 pub mod environment;
 pub mod operations;
 pub mod platform;
+pub mod preview;
 pub mod relay;
 pub mod rpc;
 pub mod state;

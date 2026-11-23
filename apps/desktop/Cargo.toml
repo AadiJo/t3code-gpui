@@ -67,6 +67,7 @@ sha2.workspace = true
 tokio.workspace = true
 futures.workspace = true
 jiff.workspace = true
+url.workspace = true
 
 # Scripted end-to-end checks of the app shell: screenshots with hover, click,
 # menus and resize, pixel samples, row metrics and frame times.
@@ -120,4 +121,10 @@ windows = { version = "0.62", features = ["Data_Xml_Dom", "Foundation", "UI_Noti
 [[bin]]
 name = "files-check"
 path = "src/files_check.rs"
+required-features = ["headless"]
+
+# Drives the terminal against a local PTY and benchmarks it. Usage: terminal-check <pty|bench> <out-dir>
+[[bin]]
+name = "preview-check"
+path = "src/preview_check.rs"
 required-features = ["headless"]

@@ -16,6 +16,8 @@ pub mod settings;
 mod sidebar;
 mod terminal;
 pub mod ui;
+mod preview;
+mod usage;
 
 use gpui_kit::{AnyView, App, Window};
 
@@ -95,6 +97,18 @@ pub fn scenes() -> &'static [(&'static str, SceneBuilder)] {
         ("settings-labs", settings::build_labs),
         ("settings-archived", settings::build_archived),
         ("settings-about", settings::build_about),
+        ("preview", preview::build),
+        ("preview-light", preview::build_light),
+        ("preview-empty", preview::build_empty),
+        ("usage", usage::build),
+        ("usage-light", usage::build_light),
+        ("usage-cost", usage::build_cost),
+        ("usage-cost-light", usage::build_cost_light),
+        ("usage-tokens", usage::build_tokens),
+        ("usage-day", usage::build_day),
+        ("usage-day-breakdown", usage::build_time_breakdown),
+        ("usage-model", usage::build_model),
+        ("usage-loading", usage::build_loading),
     ]
 }
 

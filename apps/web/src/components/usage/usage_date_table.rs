@@ -1,0 +1,86 @@
+// @generated from node Intl (`month: "short"`, `hour` styles) for each UI locale. Do not edit.
+use super::usage_format::{DatePatterns, HourStyle};
+use crate::i18n::locales::Locale;
+
+pub(super) const TABLE: &[(Locale, DatePatterns)] = &[
+    (Locale::En, DatePatterns {
+        hour_style: HourStyle::Twelve,
+        day: ["Jan {d}", "Feb {d}", "Mar {d}", "Apr {d}", "May {d}", "Jun {d}", "Jul {d}", "Aug {d}", "Sep {d}", "Oct {d}", "Nov {d}", "Dec {d}"],
+        hour_am: "{h} AM", hour_pm: "{h} PM", hour_h23: "{h}:00",
+        date_hour_am: ["Jan {d}, {h} AM", "Feb {d}, {h} AM", "Mar {d}, {h} AM", "Apr {d}, {h} AM", "May {d}, {h} AM", "Jun {d}, {h} AM", "Jul {d}, {h} AM", "Aug {d}, {h} AM", "Sep {d}, {h} AM", "Oct {d}, {h} AM", "Nov {d}, {h} AM", "Dec {d}, {h} AM"],
+        date_hour_pm: ["Jan {d}, {h} PM", "Feb {d}, {h} PM", "Mar {d}, {h} PM", "Apr {d}, {h} PM", "May {d}, {h} PM", "Jun {d}, {h} PM", "Jul {d}, {h} PM", "Aug {d}, {h} PM", "Sep {d}, {h} PM", "Oct {d}, {h} PM", "Nov {d}, {h} PM", "Dec {d}, {h} PM"],
+        date_hour_h23: ["Jan {d}, {h}:00", "Feb {d}, {h}:00", "Mar {d}, {h}:00", "Apr {d}, {h}:00", "May {d}, {h}:00", "Jun {d}, {h}:00", "Jul {d}, {h}:00", "Aug {d}, {h}:00", "Sep {d}, {h}:00", "Oct {d}, {h}:00", "Nov {d}, {h}:00", "Dec {d}, {h}:00"],
+    }),
+    (Locale::De, DatePatterns {
+        hour_style: HourStyle::TwentyFour2,
+        day: ["{d}. Jan.", "{d}. Feb.", "{d}. März", "{d}. Apr.", "{d}. Mai", "{d}. Juni", "{d}. Juli", "{d}. Aug.", "{d}. Sept.", "{d}. Okt.", "{d}. Nov.", "{d}. Dez."],
+        hour_am: "{h} Uhr", hour_pm: "{h} Uhr", hour_h23: "{h}:00 Uhr",
+        date_hour_am: ["{d}. Jan., {h} Uhr", "{d}. Feb., {h} Uhr", "{d}. März, {h} Uhr", "{d}. Apr., {h} Uhr", "{d}. Mai, {h} Uhr", "{d}. Juni, {h} Uhr", "{d}. Juli, {h} Uhr", "{d}. Aug., {h} Uhr", "{d}. Sept., {h} Uhr", "{d}. Okt., {h} Uhr", "{d}. Nov., {h} Uhr", "{d}. Dez., {h} Uhr"],
+        date_hour_pm: ["{d}. Jan., {h} Uhr", "{d}. Feb., {h} Uhr", "{d}. März, {h} Uhr", "{d}. Apr., {h} Uhr", "{d}. Mai, {h} Uhr", "{d}. Juni, {h} Uhr", "{d}. Juli, {h} Uhr", "{d}. Aug., {h} Uhr", "{d}. Sept., {h} Uhr", "{d}. Okt., {h} Uhr", "{d}. Nov., {h} Uhr", "{d}. Dez., {h} Uhr"],
+        date_hour_h23: ["{d}. Jan., {h}:00 Uhr", "{d}. Feb., {h}:00 Uhr", "{d}. März, {h}:00 Uhr", "{d}. Apr., {h}:00 Uhr", "{d}. Mai, {h}:00 Uhr", "{d}. Juni, {h}:00 Uhr", "{d}. Juli, {h}:00 Uhr", "{d}. Aug., {h}:00 Uhr", "{d}. Sept., {h}:00 Uhr", "{d}. Okt., {h}:00 Uhr", "{d}. Nov., {h}:00 Uhr", "{d}. Dez., {h}:00 Uhr"],
+    }),
+    (Locale::Es, DatePatterns {
+        hour_style: HourStyle::TwentyFour,
+        day: ["{d} ene", "{d} feb", "{d} mar", "{d} abr", "{d} may", "{d} jun", "{d} jul", "{d} ago", "{d} sept", "{d} oct", "{d} nov", "{d} dic"],
+        hour_am: "{h}", hour_pm: "{h}", hour_h23: "{h}:00",
+        date_hour_am: ["{d} ene, {h}", "{d} feb, {h}", "{d} mar, {h}", "{d} abr, {h}", "{d} may, {h}", "{d} jun, {h}", "{d} jul, {h}", "{d} ago, {h}", "{d} sept, {h}", "{d} oct, {h}", "{d} nov, {h}", "{d} dic, {h}"],
+        date_hour_pm: ["{d} ene, {h}", "{d} feb, {h}", "{d} mar, {h}", "{d} abr, {h}", "{d} may, {h}", "{d} jun, {h}", "{d} jul, {h}", "{d} ago, {h}", "{d} sept, {h}", "{d} oct, {h}", "{d} nov, {h}", "{d} dic, {h}"],
+        date_hour_h23: ["{d} ene, {h}:00", "{d} feb, {h}:00", "{d} mar, {h}:00", "{d} abr, {h}:00", "{d} may, {h}:00", "{d} jun, {h}:00", "{d} jul, {h}:00", "{d} ago, {h}:00", "{d} sept, {h}:00", "{d} oct, {h}:00", "{d} nov, {h}:00", "{d} dic, {h}:00"],
+    }),
+    (Locale::Fr, DatePatterns {
+        hour_style: HourStyle::TwentyFour2,
+        day: ["{d} janv.", "{d} févr.", "{d} mars", "{d} avr.", "{d} mai", "{d} juin", "{d} juil.", "{d} août", "{d} sept.", "{d} oct.", "{d} nov.", "{d} déc."],
+        hour_am: "{h} h", hour_pm: "{h} h", hour_h23: "{h}:00 h",
+        date_hour_am: ["{d} janv., {h} h", "{d} févr., {h} h", "{d} mars, {h} h", "{d} avr., {h} h", "{d} mai, {h} h", "{d} juin, {h} h", "{d} juil., {h} h", "{d} août, {h} h", "{d} sept., {h} h", "{d} oct., {h} h", "{d} nov., {h} h", "{d} déc., {h} h"],
+        date_hour_pm: ["{d} janv., {h} h", "{d} févr., {h} h", "{d} mars, {h} h", "{d} avr., {h} h", "{d} mai, {h} h", "{d} juin, {h} h", "{d} juil., {h} h", "{d} août, {h} h", "{d} sept., {h} h", "{d} oct., {h} h", "{d} nov., {h} h", "{d} déc., {h} h"],
+        date_hour_h23: ["{d} janv., {h}:00 h", "{d} févr., {h}:00 h", "{d} mars, {h}:00 h", "{d} avr., {h}:00 h", "{d} mai, {h}:00 h", "{d} juin, {h}:00 h", "{d} juil., {h}:00 h", "{d} août, {h}:00 h", "{d} sept., {h}:00 h", "{d} oct., {h}:00 h", "{d} nov., {h}:00 h", "{d} déc., {h}:00 h"],
+    }),
+    (Locale::Ja, DatePatterns {
+        hour_style: HourStyle::TwentyFour,
+        day: ["1月{d}日", "2月{d}日", "3月{d}日", "4月{d}日", "5月{d}日", "6月{d}日", "7月{d}日", "8月{d}日", "9月{d}日", "10月{d}日", "11月{d}日", "12月{d}日"],
+        hour_am: "{h}時", hour_pm: "{h}時", hour_h23: "{h}:00時",
+        date_hour_am: ["1月{d}日 {h}時", "2月{d}日 {h}時", "3月{d}日 {h}時", "4月{d}日 {h}時", "5月{d}日 {h}時", "6月{d}日 {h}時", "7月{d}日 {h}時", "8月{d}日 {h}時", "9月{d}日 {h}時", "10月{d}日 {h}時", "11月{d}日 {h}時", "12月{d}日 {h}時"],
+        date_hour_pm: ["1月{d}日 {h}時", "2月{d}日 {h}時", "3月{d}日 {h}時", "4月{d}日 {h}時", "5月{d}日 {h}時", "6月{d}日 {h}時", "7月{d}日 {h}時", "8月{d}日 {h}時", "9月{d}日 {h}時", "10月{d}日 {h}時", "11月{d}日 {h}時", "12月{d}日 {h}時"],
+        date_hour_h23: ["1月{d}日 {h}:00時", "2月{d}日 {h}:00時", "3月{d}日 {h}:00時", "4月{d}日 {h}:00時", "5月{d}日 {h}:00時", "6月{d}日 {h}:00時", "7月{d}日 {h}:00時", "8月{d}日 {h}:00時", "9月{d}日 {h}:00時", "10月{d}日 {h}:00時", "11月{d}日 {h}:00時", "12月{d}日 {h}:00時"],
+    }),
+    (Locale::Ko, DatePatterns {
+        hour_style: HourStyle::Twelve,
+        day: ["1월 {d}일", "2월 {d}일", "3월 {d}일", "4월 {d}일", "5월 {d}일", "6월 {d}일", "7월 {d}일", "8월 {d}일", "9월 {d}일", "10월 {d}일", "11월 {d}일", "12월 {d}일"],
+        hour_am: "오전 {h}시", hour_pm: "오후 {h}시", hour_h23: "{h}:00시",
+        date_hour_am: ["1월 {d}일 오전 {h}시", "2월 {d}일 오전 {h}시", "3월 {d}일 오전 {h}시", "4월 {d}일 오전 {h}시", "5월 {d}일 오전 {h}시", "6월 {d}일 오전 {h}시", "7월 {d}일 오전 {h}시", "8월 {d}일 오전 {h}시", "9월 {d}일 오전 {h}시", "10월 {d}일 오전 {h}시", "11월 {d}일 오전 {h}시", "12월 {d}일 오전 {h}시"],
+        date_hour_pm: ["1월 {d}일 오후 {h}시", "2월 {d}일 오후 {h}시", "3월 {d}일 오후 {h}시", "4월 {d}일 오후 {h}시", "5월 {d}일 오후 {h}시", "6월 {d}일 오후 {h}시", "7월 {d}일 오후 {h}시", "8월 {d}일 오후 {h}시", "9월 {d}일 오후 {h}시", "10월 {d}일 오후 {h}시", "11월 {d}일 오후 {h}시", "12월 {d}일 오후 {h}시"],
+        date_hour_h23: ["1월 {d}일 {h}:00시", "2월 {d}일 {h}:00시", "3월 {d}일 {h}:00시", "4월 {d}일 {h}:00시", "5월 {d}일 {h}:00시", "6월 {d}일 {h}:00시", "7월 {d}일 {h}:00시", "8월 {d}일 {h}:00시", "9월 {d}일 {h}:00시", "10월 {d}일 {h}:00시", "11월 {d}일 {h}:00시", "12월 {d}일 {h}:00시"],
+    }),
+    (Locale::PtBr, DatePatterns {
+        hour_style: HourStyle::TwentyFour2,
+        day: ["{d} de jan.", "{d} de fev.", "{d} de mar.", "{d} de abr.", "{d} de mai.", "{d} de jun.", "{d} de jul.", "{d} de ago.", "{d} de set.", "{d} de out.", "{d} de nov.", "{d} de dez."],
+        hour_am: "{h}", hour_pm: "{h}", hour_h23: "{h}:00",
+        date_hour_am: ["{d} de jan., {h}", "{d} de fev., {h}", "{d} de mar., {h}", "{d} de abr., {h}", "{d} de mai., {h}", "{d} de jun., {h}", "{d} de jul., {h}", "{d} de ago., {h}", "{d} de set., {h}", "{d} de out., {h}", "{d} de nov., {h}", "{d} de dez., {h}"],
+        date_hour_pm: ["{d} de jan., {h}", "{d} de fev., {h}", "{d} de mar., {h}", "{d} de abr., {h}", "{d} de mai., {h}", "{d} de jun., {h}", "{d} de jul., {h}", "{d} de ago., {h}", "{d} de set., {h}", "{d} de out., {h}", "{d} de nov., {h}", "{d} de dez., {h}"],
+        date_hour_h23: ["{d} de jan., {h}:00", "{d} de fev., {h}:00", "{d} de mar., {h}:00", "{d} de abr., {h}:00", "{d} de mai., {h}:00", "{d} de jun., {h}:00", "{d} de jul., {h}:00", "{d} de ago., {h}:00", "{d} de set., {h}:00", "{d} de out., {h}:00", "{d} de nov., {h}:00", "{d} de dez., {h}:00"],
+    }),
+    (Locale::Ru, DatePatterns {
+        hour_style: HourStyle::TwentyFour,
+        day: ["{d} янв.", "{d} февр.", "{d} мар.", "{d} апр.", "{d} мая", "{d} июн.", "{d} июл.", "{d} авг.", "{d} сент.", "{d} окт.", "{d} нояб.", "{d} дек."],
+        hour_am: "{h}", hour_pm: "{h}", hour_h23: "{h}:00",
+        date_hour_am: ["{d} янв., {h}", "{d} февр., {h}", "{d} мар., {h}", "{d} апр., {h}", "{d} мая, {h}", "{d} июн., {h}", "{d} июл., {h}", "{d} авг., {h}", "{d} сент., {h}", "{d} окт., {h}", "{d} нояб., {h}", "{d} дек., {h}"],
+        date_hour_pm: ["{d} янв., {h}", "{d} февр., {h}", "{d} мар., {h}", "{d} апр., {h}", "{d} мая, {h}", "{d} июн., {h}", "{d} июл., {h}", "{d} авг., {h}", "{d} сент., {h}", "{d} окт., {h}", "{d} нояб., {h}", "{d} дек., {h}"],
+        date_hour_h23: ["{d} янв., {h}:00", "{d} февр., {h}:00", "{d} мар., {h}:00", "{d} апр., {h}:00", "{d} мая, {h}:00", "{d} июн., {h}:00", "{d} июл., {h}:00", "{d} авг., {h}:00", "{d} сент., {h}:00", "{d} окт., {h}:00", "{d} нояб., {h}:00", "{d} дек., {h}:00"],
+    }),
+    (Locale::Sv, DatePatterns {
+        hour_style: HourStyle::TwentyFour2,
+        day: ["{d} jan.", "{d} feb.", "{d} mars", "{d} apr.", "{d} maj", "{d} juni", "{d} juli", "{d} aug.", "{d} sep.", "{d} okt.", "{d} nov.", "{d} dec."],
+        hour_am: "{h}", hour_pm: "{h}", hour_h23: "{h}:00",
+        date_hour_am: ["{d} jan. {h}", "{d} feb. {h}", "{d} mars {h}", "{d} apr. {h}", "{d} maj {h}", "{d} juni {h}", "{d} juli {h}", "{d} aug. {h}", "{d} sep. {h}", "{d} okt. {h}", "{d} nov. {h}", "{d} dec. {h}"],
+        date_hour_pm: ["{d} jan. {h}", "{d} feb. {h}", "{d} mars {h}", "{d} apr. {h}", "{d} maj {h}", "{d} juni {h}", "{d} juli {h}", "{d} aug. {h}", "{d} sep. {h}", "{d} okt. {h}", "{d} nov. {h}", "{d} dec. {h}"],
+        date_hour_h23: ["{d} jan. {h}:00", "{d} feb. {h}:00", "{d} mars {h}:00", "{d} apr. {h}:00", "{d} maj {h}:00", "{d} juni {h}:00", "{d} juli {h}:00", "{d} aug. {h}:00", "{d} sep. {h}:00", "{d} okt. {h}:00", "{d} nov. {h}:00", "{d} dec. {h}:00"],
+    }),
+    (Locale::Zh, DatePatterns {
+        hour_style: HourStyle::TwentyFour,
+        day: ["1月{d}日", "2月{d}日", "3月{d}日", "4月{d}日", "5月{d}日", "6月{d}日", "7月{d}日", "8月{d}日", "9月{d}日", "10月{d}日", "11月{d}日", "12月{d}日"],
+        hour_am: "{h}时", hour_pm: "{h}时", hour_h23: "{h}:00时",
+        date_hour_am: ["1月{d}日 {h}时", "2月{d}日 {h}时", "3月{d}日 {h}时", "4月{d}日 {h}时", "5月{d}日 {h}时", "6月{d}日 {h}时", "7月{d}日 {h}时", "8月{d}日 {h}时", "9月{d}日 {h}时", "10月{d}日 {h}时", "11月{d}日 {h}时", "12月{d}日 {h}时"],
+        date_hour_pm: ["1月{d}日 {h}时", "2月{d}日 {h}时", "3月{d}日 {h}时", "4月{d}日 {h}时", "5月{d}日 {h}时", "6月{d}日 {h}时", "7月{d}日 {h}时", "8月{d}日 {h}时", "9月{d}日 {h}时", "10月{d}日 {h}时", "11月{d}日 {h}时", "12月{d}日 {h}时"],
+        date_hour_h23: ["1月{d}日 {h}:00时", "2月{d}日 {h}:00时", "3月{d}日 {h}:00时", "4月{d}日 {h}:00时", "5月{d}日 {h}:00时", "6月{d}日 {h}:00时", "7月{d}日 {h}:00时", "8月{d}日 {h}:00时", "9月{d}日 {h}:00时", "10月{d}日 {h}:00时", "11月{d}日 {h}:00时", "12月{d}日 {h}:00时"],
+    }),
+];

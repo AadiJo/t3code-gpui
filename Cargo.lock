@@ -7537,6 +7537,7 @@ dependencies = [
  "t3code-shared",
  "t3code-web",
  "tokio",
+ "url",
  "windows 0.62.2",
  "zbus 5.19.0",
 ]
@@ -7558,6 +7559,7 @@ name = "t3code-shared"
 version = "0.1.11"
 dependencies = [
  "icu_normalizer",
+ "jiff",
  "serde",
  "serde_json",
  "t3code-contracts",
@@ -7606,6 +7608,8 @@ dependencies = [
  "url",
  "uuid",
  "zip",
+ "zune-core 0.5.3",
+ "zune-jpeg 0.5.15",
 ]
 
 [[package]]

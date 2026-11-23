@@ -311,6 +311,21 @@ impl ConnectionRuntime {
         })
     }
 
+    /// The tokio runtime connection work runs on.
+    pub fn handle(&self) -> &tokio::runtime::Handle {
+        &self.handle
+    }
+
+    /// One environment's live session and signing key, for requests outside
+    /// the RPC socket (preview stream, tunnel, usage). `None` while switched off.
+    pub fn environment_link(&self, id: &EnvironmentId) -> Option<t3code_client_runtime::preview::environment_link::EnvironmentLink> {
+        Some(t3code_client_runtime::preview::environment_link::EnvironmentLink {
+            environment_id: id.clone(),
+            supervisor: self.registry.supervisor(id)?,
+            auth: self.auth.clone(),
+        })
+    }
+
     /// Wakes every supervisor: retry now, check better routes.
     pub fn wake(cx: &App) {
         if let Some(this) = cx.try_global::<Self>() {
