@@ -12,6 +12,7 @@ use std::sync::Arc;
 
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
+use gpui_kit::TestSupportExt as _;
 
 use super::sidebar_thread_header::sidebar_icon_button;
 use super::style::ShellColors;
@@ -328,7 +329,8 @@ impl SidebarNotifications {
                                     .child(format!("{} · {}", item.project_title, item.environment_title)),
                             ),
                     )
-                    .on_click(cx.listener(move |this, _, _, cx| this.open_item(&open, cx))),
+                    .on_click(cx.listener(move |this, _, _, cx| this.open_item(&open, cx)))
+                    .test_support(),
             )
             .when(!item.read, |d| {
                 d.child(
@@ -368,7 +370,8 @@ impl Render for SidebarNotifications {
             .on_click(cx.listener(|this, _, window, cx| this.set_open(!this.open, window, cx)))
             .when(unread > 0, |d| {
                 d.child(div().absolute().top_1().right_1().size(px(6.)).rounded_full().bg(colors.destructive))
-            });
+            })
+            .test_support();
         let popover = self.open.then(|| {
             deferred(
                 anchored()

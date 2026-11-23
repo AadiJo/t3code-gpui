@@ -5,6 +5,12 @@
 //       resizes the sidebar, goes back and forward, then writes state.
 //   app-check restore <out> <state-dir> <dark|light>
 //       a fresh process opens the same state dir and checks route and layout.
+//   app-check flow <out> <state-dir> <dark|light>
+//       the merged window root end to end: palette jump, settings from the
+//       sidebar gear and the palette, the notification inbox, panels by
+//       shortcut and by the menu's actions, back and forward.
+//   app-check first-run <out> <data-dir> <dark|light>
+//       no fixtures and an empty data directory: the first-run empty state.
 //   app-check bench <out>
 //       5,000 threads (200 with 3,000-row timelines): thread switch time,
 //       typing frame time on a long thread, memory after 50 visits.
@@ -16,7 +22,16 @@ use std::time::{Duration, Instant};
 use anyhow::{Context as _, bail, ensure};
 use gpui_kit::test::TestWindowExt as _;
 use gpui_kit::*;
-use t3code_web::app_root::{AppRootOptions, local_shell_backend};
+use t3code_client_runtime::platform::{ClientPresentation, FileSecretStore};
+use t3code_web::app_root::{AppRootOptions, WindowRoot, local_shell_backend};
+use t3code_web::connection::shell::EnvironmentShell;
+use t3code_web::connection::{ConnectionRuntime, RuntimeConfig};
+use t3code_web::components::command_palette::CommandPalette;
+use t3code_web::components::settings::settings_search::SettingsPath;
+use t3code_web::components::sidebar::sidebar_notifications::SidebarNotifications;
+use t3code_web::desktop_notifications::NotificationInbox;
+use t3code_web::shortcuts::ShortcutRoot;
+use t3code_web::shortcuts::commands::{NavigateBack, NavigateForward, ToggleRightPanel, ToggleSidebar, ToggleTerminal};
 use t3code_web::components::app_sidebar_layout::TitlebarPlatform;
 use t3code_web::components::sidebar::model::ThreadKey;
 use t3code_web::components::sidebar_logic::SidebarListEntry;
@@ -31,6 +46,8 @@ struct Run {
     cx: HeadlessAppContext,
     window: AnyWindowHandle,
     root: Entity<AppRoot>,
+    shell: Entity<EnvironmentShell>,
+    shortcuts: Entity<ShortcutRoot>,
     out: PathBuf,
     tag: String,
     log: String,
@@ -47,38 +64,58 @@ fn headless() -> HeadlessAppContext {
 }
 
 impl Run {
-    fn open(out: PathBuf, tag: &str, store: FixtureStore, state: StateDir) -> anyhow::Result<Self> {
+    /// Opens the real window root (shortcut root, environment shell, app)
+    /// over `store`, with the connection runtime on `data` (no T3 Connect).
+    fn open(out: PathBuf, tag: &str, store: FixtureStore, state: StateDir, data: PathBuf) -> anyhow::Result<Self> {
         let mut cx = headless();
         let mode = if tag == "light" { ThemeMode::Light } else { ThemeMode::Dark };
+        let config = RuntimeConfig {
+            secrets: Some(Arc::new(FileSecretStore::new(data.join("secrets.json")))),
+            data_dir: data,
+            cloud: None,
+            presentation: ClientPresentation { label: "t3code-gpui app check".into(), ..Default::default() },
+            electron: None,
+        };
         cx.update(|cx| {
             t3code_web::init(cx);
             ThemeSettings::set_mode(mode, cx);
-        });
+            ConnectionRuntime::init(config, cx)
+        })?;
         let options = AppRootOptions {
             store,
             platform: TitlebarPlatform::Overlay,
             state_dir: state,
             terminal_backend: local_shell_backend(),
         };
-        let (window, root) = cx.update(|cx| {
+        let (window, parts) = cx.update(|cx| {
             let window_options = WindowOptions {
                 window_bounds: Some(WindowBounds::centered(None, size(px(1100.), px(780.)), cx)),
                 show: false,
                 focus: true,
                 ..component::TitleBar::window_options()
             };
-            gpui_kit::open_window(window_options, cx, |window, cx| {
-                cx.new(|cx| {
-                    let root = AppRoot::with_options(options, window, cx);
-                    root.layout().update(cx, |l, _| {
-                        l.force_caption_buttons(true);
-                        l.count_window_moves_only(true);
-                    });
-                    root
-                })
-            })
+            WindowRoot::open_window(window_options, options, cx)
         })?;
-        let mut run = Self { cx, window, root, out, tag: tag.into(), log: String::new(), failures: 0, step: 0 };
+        let WindowRoot { shortcuts, shell, app: root } = parts;
+        cx.update(|cx| {
+            let layout = root.read(cx).layout().clone();
+            layout.update(cx, |l, _| {
+                l.force_caption_buttons(true);
+                l.count_window_moves_only(true);
+            })
+        });
+        let mut run = Self {
+            cx,
+            window,
+            root,
+            shell,
+            shortcuts,
+            out,
+            tag: tag.into(),
+            log: String::new(),
+            failures: 0,
+            step: 0,
+        };
         run.frame();
         Ok(run)
     }
@@ -203,6 +240,41 @@ impl Run {
         })
     }
 
+    fn click_id(&mut self, id: impl Into<ElementId>) {
+        let id = id.into();
+        self.frame();
+        self.cx.update_window(self.window, |_, w, cx| w.click(id, cx)).ok();
+        self.frame();
+    }
+
+    /// Dispatches `action` to the focused element, as a menu item does.
+    fn menu(&mut self, action: impl Action) {
+        self.cx.update_window(self.window, |_, w, cx| w.dispatch_action(action.boxed_clone(), cx)).ok();
+        self.frame();
+    }
+
+    fn palette(&mut self) -> Entity<CommandPalette> {
+        let shortcuts = self.shortcuts.clone();
+        self.cx.update(|cx| shortcuts.read(cx).palette().clone())
+    }
+
+    fn settings_path(&mut self) -> Option<SettingsPath> {
+        let shell = self.shell.clone();
+        self.cx.update(|cx| shell.read(cx).settings().map(|s| s.read(cx).path()))
+    }
+
+    fn thread_title(&mut self, key: &ThreadKey) -> String {
+        let root = self.root.clone();
+        let key = key.clone();
+        self.cx.update(|cx| {
+            root.read(cx).sidebar().read(cx).list().entries.iter().find_map(|entry| match entry {
+                SidebarListEntry::Thread { thread, .. } if thread.key == key => Some(thread.title.to_string()),
+                _ => None,
+            })
+        })
+        .unwrap_or_default()
+    }
+
     fn flush(&mut self) {
         let root = self.root.clone();
         self.cx.update(|cx| root.update(cx, |root, cx| root.flush_state(cx)));
@@ -216,7 +288,7 @@ impl Run {
 
 fn session(out: PathBuf, state: PathBuf, tag: &str) -> anyhow::Result<String> {
     let _ = std::fs::remove_dir_all(&state);
-    let mut r = Run::open(out, tag, FixtureStore::showcase(), StateDir(Some(state)))?;
+    let mut r = Run::open(out, tag, FixtureStore::showcase(), StateDir(Some(state.clone())), state.join("connections"))?;
     writeln!(r.log, "## session ({tag})")?;
     let route = r.route();
     r.check("launch with no saved route starts a draft", matches!(route, Route::Draft(_)), route.path());
@@ -350,7 +422,7 @@ fn session(out: PathBuf, state: PathBuf, tag: &str) -> anyhow::Result<String> {
 
 fn restore(out: PathBuf, state: PathBuf, tag: &str) -> anyhow::Result<String> {
     let layout: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(state.join("layout.json"))?)?;
-    let mut r = Run::open(out, tag, FixtureStore::showcase(), StateDir(Some(state)))?;
+    let mut r = Run::open(out, tag, FixtureStore::showcase(), StateDir(Some(state.clone())), state.join("connections"))?;
     writeln!(r.log, "## restore ({tag})")?;
     let saved = layout["lastRoute"].as_str().unwrap_or_default().to_string();
     let route = r.route();
@@ -360,6 +432,228 @@ fn restore(out: PathBuf, state: PathBuf, tag: &str) -> anyhow::Result<String> {
     let (right, _) = r.panels();
     r.check("relaunch restores the open right panel", right, "");
     r.shot("relaunched")?;
+    ensure!(r.failures == 0, "{} checks failed\n{}", r.failures, r.log);
+    Ok(r.log)
+}
+
+
+/// The merged root end to end, in one session.
+fn flow(out: PathBuf, state: PathBuf, tag: &str) -> anyhow::Result<String> {
+    let _ = std::fs::remove_dir_all(&state);
+    let mut r = Run::open(out, tag, FixtureStore::showcase(), StateDir(Some(state.clone())), state.join("connections"))?;
+    writeln!(r.log, "## flow ({tag})")?;
+    let empty = r.cx.update(|cx| ConnectionRuntime::state(cx).read(cx).environments.is_empty());
+    let (ok, detail) = (empty && matches!(r.route(), Route::Draft(_)), r.route().path());
+    r.check("fixtures show with no saved environment", ok, detail);
+    r.shot("launch-fixtures")?;
+
+    // A thread by its sidebar row.
+    let rows = r.visible_threads();
+    ensure!(rows.len() >= 3, "only {} thread rows on screen", rows.len());
+    let (first, at) = rows[0].clone();
+    r.click_point(at);
+    let (ok, detail) = (r.route() == Route::Thread(first.clone()), r.route().path());
+    r.check("sidebar click shows the thread", ok, detail);
+    r.shot("thread-clicked")?;
+
+    // The palette from its shortcut, then a jump to another thread.
+    r.press("mod-k");
+    let palette = r.palette();
+    let open = r.cx.update(|cx| palette.read(cx).is_open());
+    r.check("mod+k opens the palette", open, "");
+    let unavailable = r.cx.update(|cx| palette.read(cx).unavailable_titles());
+    let shown = r.cx.update(|cx| palette.read(cx).shown_titles());
+    let wanted = ["Sidebar: Toggle", "Terminal: Toggle", "Right Panel: Toggle", "Navigation: Back", "Chat: New"];
+    let missing: Vec<_> = wanted.iter().filter(|w| unavailable.iter().any(|u| u.as_ref() == **w)).collect();
+    r.check("app commands are available in the palette", missing.is_empty(), format!("unavailable: {unavailable:?}; shown {}", shown.len()));
+    r.shot("palette-open")?;
+    let target = rows[2].0.clone();
+    let title = r.thread_title(&target);
+    r.type_text(&title);
+    r.shot("palette-typed")?;
+    r.press("enter");
+    let open = r.cx.update(|cx| palette.read(cx).is_open());
+    let (ok, detail) = (!open && r.route() == Route::Thread(target.clone()), format!("{} via {title:?}", r.route().path()));
+    r.check("palette jump opens the thread", ok, detail);
+    r.shot("palette-jumped")?;
+    let thread = r.route();
+
+    // Settings from the sidebar gear, then the Environments panel.
+    r.click_id("sidebar-settings");
+    let path = r.settings_path();
+    let (ok, detail) = (path == Some(SettingsPath::General) && r.route().is_modal(), r.route().path());
+    r.check("the gear opens settings on General", ok, detail);
+    r.shot("settings-from-gear")?;
+    open_environments(&mut r);
+    let path = r.settings_path();
+    let (ok, detail) = (path == Some(SettingsPath::Connections), format!("{path:?} at {}", r.route().path()));
+    r.check("the nav lands on Environments", ok, detail);
+    r.shot("settings-environments-from-gear")?;
+    r.click_id("settings-close");
+    let (ok, detail) = (r.route() == thread && r.settings_path().is_none(), r.route().path());
+    r.check("closing settings returns to the thread", ok, detail);
+    r.shot("settings-closed")?;
+
+    // Settings from the palette.
+    r.press("mod-k");
+    r.type_text("Open settings");
+    r.press("enter");
+    let path = r.settings_path();
+    let (ok, detail) = (path == Some(SettingsPath::General), r.route().path());
+    r.check("the palette opens settings", ok, detail);
+    open_environments(&mut r);
+    r.shot("settings-environments-from-palette")?;
+    r.press("escape");
+    let (ok, detail) = (r.route() == thread && r.settings_path().is_none(), r.route().path());
+    r.check("escape closes settings back to the thread", ok, detail);
+
+    // The notification inbox, and a thread opened from it.
+    let items = r.cx.update(|cx| {
+        let store = FixtureStore::showcase();
+        let items = store.inbox_items();
+        NotificationInbox::set_items(items.clone(), cx);
+        items
+    });
+    let unread: Vec<_> = items.iter().filter(|item| !item.read).cloned().collect();
+    ensure!(!unread.is_empty(), "no unread fixture notifications");
+    r.click_id("sidebar-notifications");
+    let root = r.root.clone();
+    let open = r.cx.update(|cx| SidebarNotifications::view(root.read(cx).sidebar().downgrade(), cx).read(cx).is_open());
+    r.check("the bell opens the inbox", open, format!("{} unread", unread.len()));
+    r.shot("inbox-open")?;
+    let pick = unread.iter().position(|item| Route::Thread(item.thread_key()) != thread).unwrap_or(0);
+    r.click_id(("notification", pick));
+    let want = Route::Thread(unread[pick].thread_key());
+    let (ok, detail) = (r.route() == want, r.route().path());
+    r.check("an inbox row opens its thread", ok, detail);
+    r.shot("inbox-opened-thread")?;
+    // A native notification click arrives as `InboxEvent::OpenThread`.
+    r.cx.update(|cx| NotificationInbox::open_thread(thread_key(&thread), cx));
+    r.frame();
+    let (ok, detail) = (r.route() == thread, r.route().path());
+    r.check("InboxEvent::OpenThread navigates", ok, detail);
+
+    // Terminal and right panel by shortcut, then by the menu's actions.
+    focus_composer(&mut r)?;
+    r.press("mod-j");
+    let (ok, detail) = (r.panels().1, "");
+    r.check("mod+j opens the terminal", ok, detail);
+    r.shot("terminal-shortcut")?;
+    r.press("mod-j");
+    let (ok, detail) = (!r.panels().1, "");
+    r.check("mod+j closes the terminal", ok, detail);
+    r.menu(ToggleTerminal);
+    let (ok, detail) = (r.panels().1, "");
+    r.check("View > Toggle terminal drawer opens it", ok, detail);
+    r.shot("terminal-menu")?;
+    r.menu(ToggleTerminal);
+    let (ok, detail) = (!r.panels().1, "");
+    r.check("and closes it", ok, detail);
+    r.press("mod-alt-b");
+    let (ok, detail) = (r.panels().0, "");
+    r.check("mod+alt+b opens the right panel", ok, detail);
+    r.shot("right-panel-shortcut")?;
+    r.press("mod-alt-b");
+    let (ok, detail) = (!r.panels().0, "");
+    r.check("mod+alt+b closes it", ok, detail);
+    r.menu(ToggleRightPanel);
+    let (ok, detail) = (r.panels().0, "");
+    r.check("View > Toggle right panel opens it", ok, detail);
+    r.shot("right-panel-menu")?;
+    r.menu(ToggleRightPanel);
+    let (ok, detail) = (!r.panels().0, "");
+    r.check("and closes it", ok, detail);
+    r.menu(ToggleSidebar);
+    let open = r.cx.update(|cx| root.read(cx).layout().read(cx).is_sidebar_open());
+    r.check("View > Toggle Sidebar hides the sidebar", !open, "");
+    r.shot("sidebar-hidden-menu")?;
+    r.press("mod-b");
+    let open = r.cx.update(|cx| root.read(cx).layout().read(cx).is_sidebar_open());
+    r.check("mod+b shows it again", open, "");
+
+    // Back and forward, by shortcut and by the menu.
+    let here = r.route();
+    r.press("mod-[");
+    let back = r.route();
+    r.check("mod+[ goes back", back == want, back.path());
+    r.shot("back")?;
+    r.press("mod-]");
+    let (ok, detail) = (r.route() == here, r.route().path());
+    r.check("mod+] goes forward", ok, detail);
+    r.menu(NavigateBack);
+    let (ok, detail) = (r.route() == want, r.route().path());
+    r.check("View > Back goes back", ok, detail);
+    r.menu(NavigateForward);
+    let (ok, detail) = (r.route() == here, r.route().path());
+    r.check("View > Forward goes forward", ok, detail);
+    r.shot("forward")?;
+
+    ensure!(r.failures == 0, "{} checks failed\n{}", r.failures, r.log);
+    Ok(r.log)
+}
+
+/// Scrolls the settings nav to its Connections group, then opens Environments.
+fn open_environments(r: &mut Run) {
+    // Over the nav list, left side of the modal.
+    let at = point(px(150.), px(400.));
+    r.cx.update_window(r.window, |_, w, cx| {
+        w.dispatch_event(MouseMoveEvent { position: at, pressed_button: None, modifiers: Modifiers::default() }.to_platform_input(), cx);
+        w.dispatch_event(
+            ScrollEvent {
+                position: at,
+                delta: ScrollDelta::Pixels(point(px(0.), px(-400.))),
+                modifiers: Modifiers::default(),
+                touch_phase: TouchPhase::Moved,
+                source: ScrollSource::Pointer,
+            }
+            .to_platform_input(),
+            cx,
+        );
+    })
+    .ok();
+    r.frame();
+    r.click_id("settings-nav-connections");
+}
+
+fn thread_key(route: &Route) -> ThreadKey {
+    match route {
+        Route::Thread(key) => key.clone(),
+        _ => panic!("not a thread route: {}", route.path()),
+    }
+}
+
+fn focus_composer(r: &mut Run) -> anyhow::Result<()> {
+    let root = r.root.clone();
+    r.cx.update_window(r.window, |_, w, cx| {
+        let focus = root.read(cx).composer(cx).read(cx).editor().focus_handle(cx);
+        w.focus(&focus, cx);
+    })?;
+    r.frame();
+    Ok(())
+}
+
+/// No fixtures, an empty data directory: the first-run empty state.
+fn first_run(out: PathBuf, data: PathBuf, tag: &str) -> anyhow::Result<String> {
+    let _ = std::fs::remove_dir_all(&data);
+    let options_store = FixtureStore::empty();
+    let mut r = Run::open(out, tag, options_store, StateDir(Some(data.join("ui"))), data.join("connections"))?;
+    writeln!(r.log, "## first run ({tag})")?;
+    let root = r.root.clone();
+    let (environments, has_data) = r.cx.update(|cx| {
+        (ConnectionRuntime::state(cx).read(cx).environments.len(), root.read(cx).has_fixture_data(cx))
+    });
+    let empty_drawn = r.cx.update_window(r.window, |_, w, _| w.try_find("empty-add-pairing").is_some()).unwrap_or(false);
+    r.check("no environments and no fixtures", environments == 0 && !has_data, format!("{environments} environments"));
+    r.check("the first-run empty state is drawn", empty_drawn, "");
+    r.shot("first-run-empty")?;
+    r.click_id("empty-add-pairing");
+    let path = r.settings_path();
+    let (ok, detail) = (path == Some(SettingsPath::Connections), r.route().path());
+    r.check("its button opens settings on Environments", ok, detail);
+    r.shot("first-run-environments")?;
+    r.click_id("settings-close");
+    let (ok, detail) = (r.settings_path().is_none(), r.route().path());
+    r.check("closing settings shows the empty state again", ok, detail);
     ensure!(r.failures == 0, "{} checks failed\n{}", r.failures, r.log);
     Ok(r.log)
 }
@@ -398,7 +692,8 @@ fn switch(r: &mut Run, key: &ThreadKey) -> f64 {
 fn bench(out: PathBuf) -> anyhow::Result<String> {
     let rss_start = rss_mb();
     let store = FixtureStore::large(5000, 25);
-    let mut r = Run::open(out, "dark", store, StateDir(None))?;
+    let data = std::env::temp_dir().join(format!("t3code-app-check-bench-{}", std::process::id()));
+    let mut r = Run::open(out, "dark", store, StateDir(None), data)?;
     let mut log = format!("## bench: 5,000 threads, 200 with 1,000 turns (3,000 rows)\n\nRSS at start {rss_start:.0} MB, after open {:.0} MB\n\n", rss_mb());
     let keys: Vec<ThreadKey> = {
         let root = r.root.clone();
@@ -540,15 +835,20 @@ fn bench(out: PathBuf) -> anyhow::Result<String> {
 
 fn main() -> anyhow::Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let usage = "usage: app-check <session|restore> <out> <state-dir> <dark|light> | app-check bench <out>";
+    let usage = "usage: app-check <session|restore|flow|first-run> <out> <state-dir> <dark|light> | app-check bench <out>";
     let mode = args.first().context(usage)?.as_str();
     let out = PathBuf::from(args.get(1).context(usage)?);
     std::fs::create_dir_all(&out)?;
     let log = match mode {
-        "session" | "restore" => {
+        "session" | "restore" | "flow" | "first-run" => {
             let state = PathBuf::from(args.get(2).context(usage)?);
             let tag = args.get(3).map(String::as_str).unwrap_or("dark");
-            if mode == "session" { session(out.clone(), state, tag)? } else { restore(out.clone(), state, tag)? }
+            match mode {
+                "session" => session(out.clone(), state, tag)?,
+                "restore" => restore(out.clone(), state, tag)?,
+                "flow" => flow(out.clone(), state, tag)?,
+                _ => first_run(out.clone(), state, tag)?,
+            }
         }
         "bench" => bench(out.clone())?,
         _ => bail!(usage),

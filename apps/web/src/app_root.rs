@@ -32,7 +32,7 @@ use crate::router::SettingsPanel;
 use crate::shortcuts::ShortcutRoot;
 use crate::shortcuts::commands::{
     CloseRightPanelTab, JumpToThread1, JumpToThread2, JumpToThread3, JumpToThread4, JumpToThread5, JumpToThread6,
-    JumpToThread7, JumpToThread8, JumpToThread9, NavigateBack, NavigateForward, NewChat, NewLocalChat,
+    JumpToThread7, JumpToThread8, JumpToThread9, NavigateBack, NavigateForward, NewChat, NewChatWithoutProject, NewLocalChat,
     NewRightPanelTab, NextThread, OpenUsage, PreviousThread, ReopenClosedView, ToggleDiff, TogglePreview,
     ToggleRightPanel, ToggleRightPanelMaximized, ToggleSidebar, ToggleTerminal,
 };
@@ -709,6 +709,7 @@ impl Render for AppRoot {
             .on_action(cx.listener(|this, _: &NavigateForward, _, cx| this.router.update(cx, |r, cx| r.forward(cx))))
             .on_action(cx.listener(|this, _: &NewChat, window, cx| this.new_thread(None, window, cx)))
             .on_action(cx.listener(|this, _: &NewLocalChat, window, cx| this.new_thread(None, window, cx)))
+            .on_action(cx.listener(|this, _: &NewChatWithoutProject, window, cx| this.new_thread(None, window, cx)))
             .on_action(cx.listener(|this, _: &OpenUsage, _, cx| this.navigate(Route::Usage, cx)))
             .on_action(cx.listener(|this, _: &PreviousThread, _, cx| this.step_thread(ThreadStep::Previous, cx)))
             .on_action(cx.listener(|this, _: &NextThread, _, cx| this.step_thread(ThreadStep::Next, cx)))

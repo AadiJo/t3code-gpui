@@ -151,6 +151,17 @@ impl CommandPalette {
             .collect()
     }
 
+    /// The visible rows' titles that show as unavailable, for checks.
+    pub fn unavailable_titles(&self) -> Vec<SharedString> {
+        self.session
+            .iter()
+            .flat_map(|s| s.shown.iter())
+            .flat_map(|g| g.items.iter())
+            .filter(|shown| shown.item.unavailable)
+            .map(|shown| shown.item.search_name())
+            .collect()
+    }
+
     /// The `commandPalette.toggle` shortcut: opens on the root page, or closes.
     pub fn toggle(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.dispatch(CommandPaletteUiAction::ToggleMode(SearchOverlayMode::Command), window, cx);

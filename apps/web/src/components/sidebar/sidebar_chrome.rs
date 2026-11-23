@@ -4,6 +4,7 @@
 //! fork's notification bell.
 
 use crate::components::icons::IconName;
+use gpui_kit::TestSupportExt as _;
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
@@ -63,6 +64,7 @@ impl Sidebar {
                 .tooltip(crate::components::ui::tooltip::tooltip(label))
                 .on_hover(this.control_hover_listener(control, cx))
                 .on_click(cx.listener(move |_, _, _, cx| cx.emit(event())))
+                .test_support()
         };
         let settings = self.snapshot.settings;
         let row = div()
