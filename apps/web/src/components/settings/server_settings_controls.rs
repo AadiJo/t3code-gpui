@@ -200,3 +200,34 @@ pub fn field_input(field: &Entity<InputState>, mono: bool, invalid: bool, disabl
     let input = TextInput::new(field).size(InputSize::Sm).invalid(invalid).disabled(disabled);
     if mono { input.mono() } else { input }
 }
+
+/// Sends a settings patch (`server.updateSettings`) and toasts a failure.
+pub fn save_patch(
+    model: &Entity<super::server_settings_data::ServerPanelsModel>,
+    key: impl Into<SharedString>,
+    patch: t3code_contracts::ClientServerSettingsPatch,
+    cx: &mut App,
+) {
+    let input = t3code_contracts::ServerUpdateSettingsPayload { patch, provider_instance_mutation: None };
+    model.update(cx, |model, cx| {
+        model.run(key, move |s| s.update_settings(input), |result, cx| {
+            if let Err(error) = result {
+                super::provider_settings_panel::toast_error(t!("Could not save settings"), error, cx);
+            }
+        }, cx)
+    });
+}
+
+/// A switch row bound to one boolean server setting.
+pub fn bool_setting(
+    model: &Entity<super::server_settings_data::ServerPanelsModel>,
+    id: &'static str,
+    title: SharedString,
+    description: Option<SharedString>,
+    value: bool,
+    lock: Option<SharedString>,
+    patch: fn(bool) -> t3code_contracts::ClientServerSettingsPatch,
+) -> SettingsRow {
+    let model = model.clone();
+    switch_row(id, title, description, value, lock, move |checked, _, cx| save_patch(&model, id, patch(checked), cx))
+}

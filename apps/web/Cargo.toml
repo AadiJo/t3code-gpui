@@ -20,6 +20,7 @@ fancy-regex.workspace = true
 flate2.workspace = true
 futures.workspace = true
 gpui-kit.workspace = true
+icu_normalizer.workspace = true
 image.workspace = true
 jiff.workspace = true
 rust-embed.workspace = true

@@ -7302,6 +7302,7 @@ dependencies = [
  "flate2",
  "futures",
  "gpui-kit",
+ "icu_normalizer",
  "image",
  "jiff",
  "libc",

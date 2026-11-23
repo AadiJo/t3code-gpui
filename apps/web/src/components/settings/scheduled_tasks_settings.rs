@@ -1,0 +1,502 @@
+//! Settings → Scheduled tasks. Ports `ScheduledTasksSettings.tsx`: the task
+//! list (schedule, next run, enable switch, run now, delete) and the editor
+//! with its four schedule kinds (fixed time with weekdays, once, interval,
+//! webhook with signature, age limit, dedupe keys and filters), the
+//! workspace, model and permissions. Validation and the saved schedule come
+//! from `scheduled_tasks_settings_logic`.
+
+use gpui_kit::component::input::InputState;
+use gpui_kit::{AnyElement, AppContext as _, Context, Entity, EventEmitter, IntoElement, Render, SharedString, Subscription, Window, div, prelude::*, px};
+use t3code_contracts::{
+    ModelSelection, OrchestrationV2ThreadLaunchWorkspaceStrategy as Strategy, OrchestrationV2ThreadLaunchWorkspaceStrategyRoot,
+    OrchestrationV2ThreadLaunchWorkspaceStrategyWorktree, ProjectId, RuntimeMode, ScheduledTaskDeleteInput, ScheduledTaskId,
+    ScheduledTaskRunNowInput, ScheduledTaskSetEnabledInput, ScheduledTaskUpsertInput,
+    ScheduledTaskUpsertScheduleWebhookSignatureEncoding as Encoding,
+};
+
+use super::provider_settings_panel::toast_error;
+use super::scheduled_tasks_settings_logic::{
+    DraftState, FilterOp, ScheduleMode, WorkspaceMode, empty_webhook_filter_draft, remove_webhook_filter_draft,
+    schedule_draft_errors, schedule_from_draft, schedule_label, task_to_draft, weekday_short_label,
+};
+use super::server_settings_controls::{Fields, field_input, hint, tinted};
+use super::server_settings_data::ServerPanelsModel;
+use super::settings_layout::{SettingsRow, SettingsSection, page_container};
+use super::threads_settings::model_options;
+use crate::ActiveAppTheme as _;
+use crate::appearance_fonts::{TextSize, weight};
+use crate::components::icons::IconName;
+use crate::components::managed_policy::{ManagedCapability, managed_capability_denial};
+use crate::components::ui::TextStyleExt as _;
+use crate::components::ui::button::{Button, ButtonSize, ButtonVariant};
+use crate::components::ui::dialog::{Modal, dialog_glass};
+use crate::components::ui::select::{Select, SelectSize};
+use crate::components::ui::switch::Switch;
+use crate::components::ui::toggle::{Toggle, ToggleSize, ToggleVariant};
+use crate::i18n::t;
+use crate::timestamp_format::{format_relative_time_label, now_ms};
+
+/// The editor closes.
+#[derive(Clone, Debug)]
+pub enum ScheduledTaskEditorEvent {
+    Close,
+}
+
+/// The task editor dialog.
+pub struct ScheduledTaskEditor {
+    model: Entity<ServerPanelsModel>,
+    pub draft: DraftState,
+    fields: Fields,
+    errors: Vec<SharedString>,
+    saving: bool,
+}
+
+impl EventEmitter<ScheduledTaskEditorEvent> for ScheduledTaskEditor {}
+
+impl ScheduledTaskEditor {
+    pub fn new(model: Entity<ServerPanelsModel>, draft: DraftState) -> Self {
+        Self { model, draft, fields: Fields::default(), errors: Vec::new(), saving: false }
+    }
+
+    /// Switches the schedule kind.
+    pub fn set_mode(&mut self, mode: ScheduleMode, cx: &mut Context<Self>) {
+        self.draft.schedule_mode = mode;
+        self.errors.clear();
+        cx.notify();
+    }
+
+    /// Reads the text fields back into the draft.
+    fn sync(&mut self, cx: &mut Context<Self>) {
+        let text = |key: &str, cx: &Context<Self>, f: &Fields| f.value(key, cx).map(|v| v.to_string());
+        let d = &mut self.draft;
+        let f = &self.fields;
+        if let Some(v) = text("title", cx, f) { d.title = v; }
+        if let Some(v) = text("prompt", cx, f) { d.prompt = v; }
+        if let Some(v) = text("time", cx, f) { d.time_of_day = v; }
+        if let Some(v) = text("runAt", cx, f) { d.run_at = v; }
+        if let Some(v) = text("interval", cx, f) { d.interval_minutes = v; }
+        if let Some(v) = text("sigHeader", cx, f) { d.signature_header = v; }
+        if let Some(v) = text("sigPrefix", cx, f) { d.signature_prefix = v; }
+        if let Some(v) = text("sigSecret", cx, f) { d.signature_secret = v; }
+        if let Some(v) = text("maxAge", cx, f) { d.max_delivery_age_minutes = v; }
+        if let Some(v) = text("replayKey", cx, f) { d.replay_key = v; }
+        if let Some(v) = text("coalesceKey", cx, f) { d.coalesce_key = v; }
+        if let Some(v) = text("coalesceWindow", cx, f) { d.coalesce_window_seconds = v; }
+        if let Some(v) = text("baseRef", cx, f) { d.base_ref = v; }
+        for filter in &mut d.filters {
+            if let Some(v) = f.value(&format!("filter:{}:path", filter.id), cx) { filter.path = v.to_string(); }
+            if let Some(v) = f.value(&format!("filter:{}:value", filter.id), cx) { filter.value = v.to_string(); }
+        }
+    }
+
+    /// Validates and saves (`scheduledTasks.upsert`).
+    pub fn save(&mut self, cx: &mut Context<Self>) {
+        self.sync(cx);
+        let errors = schedule_draft_errors(&self.draft);
+        let mut messages: Vec<SharedString> = errors.iter().map(|e| SharedString::from(format!("{} {}", e.title, e.description))).collect();
+        if self.draft.title.trim().is_empty() {
+            messages.push(t!("Add a title."));
+        }
+        if self.draft.prompt.trim().is_empty() {
+            messages.push(t!("Add a prompt."));
+        }
+        if let Err(e) = super::scheduled_tasks_settings_logic::parse_webhook_filter_drafts(&self.draft.filters)
+            && self.draft.schedule_mode == ScheduleMode::Webhook
+        {
+            messages.push(e);
+        }
+        let model_selection = self.draft.base_model_selection.clone().or_else(|| {
+            let (instance, model) = self.draft.model_key.split_once(':')?;
+            Some(ModelSelection { instance_id: instance.into(), model: model.into(), options: None })
+        });
+        if model_selection.is_none() {
+            messages.push(t!("Pick a model."));
+        }
+        self.errors = messages;
+        let schedule = schedule_from_draft(&self.draft);
+        let (Some(schedule), Some(model_selection), true) = (schedule, model_selection, self.errors.is_empty()) else {
+            cx.notify();
+            return;
+        };
+        let strategy = match self.draft.workspace_mode {
+            WorkspaceMode::Root => Strategy::Root(OrchestrationV2ThreadLaunchWorkspaceStrategyRoot { branch: None }),
+            _ => Strategy::Worktree(OrchestrationV2ThreadLaunchWorkspaceStrategyWorktree {
+                base_ref: self.draft.base_ref.trim().to_owned(),
+                branch: None,
+                start_from_origin: Some(self.draft.start_from_origin),
+            }),
+        };
+        let input = ScheduledTaskUpsertInput {
+            id: self.draft.editing_id.clone().map(ScheduledTaskId::new),
+            require_existing: self.draft.editing_id.as_ref().map(|_| true),
+            command_id: None,
+            title: self.draft.title.trim().to_owned(),
+            prompt: self.draft.prompt.trim().to_owned(),
+            enabled: self.draft.enabled,
+            schedule,
+            project_id: ProjectId::new(self.draft.project_id.as_str()),
+            thread_id: None,
+            thread_mode: Some(self.draft.thread_mode),
+            workspace_strategy: strategy,
+            model_selection,
+            runtime_mode: self.draft.runtime_mode,
+            interaction_mode: self.draft.interaction_mode,
+            created_by: None,
+            creation_source: Some(t3code_contracts::OrchestrationV2CreationSource::Web),
+        };
+        self.saving = true;
+        let this = cx.entity().downgrade();
+        self.model.update(cx, |m, cx| {
+            m.run("scheduled-task-save", move |s| s.upsert_scheduled_task(input), move |result, cx| {
+                this.update(cx, |this, cx| {
+                    this.saving = false;
+                    match result {
+                        Ok(_) => cx.emit(ScheduledTaskEditorEvent::Close),
+                        Err(e) => {
+                            toast_error(t!("Could not save scheduled task"), e.clone(), cx);
+                            this.errors = vec![e.message];
+                        }
+                    }
+                    cx.notify();
+                })
+                .ok();
+            }, cx)
+        });
+        cx.notify();
+    }
+
+    fn labeled(&self, label: SharedString, control: impl IntoElement, cx: &Context<Self>) -> AnyElement {
+        let theme = cx.app_theme();
+        div().flex().flex_col().gap(theme.sp(1.5)).child(div().ui_text(theme, TextSize::Xs, weight::MEDIUM).child(label)).child(control).into_any_element()
+    }
+
+    fn input(&mut self, key: &str, value: String, placeholder: impl Into<SharedString>, window: &mut Window, cx: &mut Context<Self>) -> Entity<InputState> {
+        self.fields.get(key.to_owned(), value, placeholder, key == "sigSecret", window, cx)
+    }
+
+    fn render_schedule(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+        let theme = &cx.app_theme().clone();
+        let d = self.draft.clone();
+        match d.schedule_mode {
+            ScheduleMode::Fixed => {
+                let time = self.input("time", d.time_of_day.clone(), "09:00", window, cx);
+                let days = div().flex().gap(theme.sp(1.)).children((0..7u64).map(|day| {
+                    let on = d.weekdays.contains(&day);
+                    Toggle::new(SharedString::from(format!("weekday-{day}")))
+                        .label(weekday_short_label(day))
+                        .variant(ToggleVariant::Outline)
+                        .size(ToggleSize::Sm)
+                        .pressed(on)
+                        .on_toggle({
+                            let this = cx.entity().downgrade();
+                            move |pressed, _, cx| {
+                                this.update(cx, |this, cx| {
+                                    if pressed { this.draft.weekdays.insert(day); } else { this.draft.weekdays.remove(&day); }
+                                    cx.notify();
+                                }).ok();
+                            }
+                        })
+                }));
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(theme.sp(3.))
+                    .child(self.labeled(t!("Time"), div().w(theme.sp(28.)).child(field_input(&time, true, false, false)), cx))
+                    .child(self.labeled(t!("Days"), days, cx))
+                    .into_any_element()
+            }
+            ScheduleMode::Once => {
+                let run_at = self.input("runAt", d.run_at.clone(), "2026-11-24T09:00", window, cx);
+                self.labeled(t!("Run at"), div().w(theme.sp(56.)).child(field_input(&run_at, true, false, false)), cx)
+            }
+            ScheduleMode::Interval => {
+                let interval = self.input("interval", d.interval_minutes.clone(), "15", window, cx);
+                self.labeled(t!("Every (minutes)"), div().w(theme.sp(28.)).child(field_input(&interval, true, false, false)), cx)
+            }
+            ScheduleMode::Webhook => {
+                let header = self.input("sigHeader", d.signature_header.clone(), "x-hub-signature-256", window, cx);
+                let prefix = self.input("sigPrefix", d.signature_prefix.clone(), "sha256=", window, cx);
+                let secret = self.input("sigSecret", String::new(), t!("Leave empty to keep the saved secret"), window, cx);
+                let max_age = self.input("maxAge", d.max_delivery_age_minutes.clone(), t!("No limit"), window, cx);
+                let replay = self.input("replayKey", d.replay_key.clone(), "{{headers.x-github-delivery}}", window, cx);
+                let coalesce = self.input("coalesceKey", d.coalesce_key.clone(), "{{body.pull_request.number}}", window, cx);
+                let window_secs = self.input("coalesceWindow", d.coalesce_window_seconds.clone(), "120", window, cx);
+                let mut filters = div().flex().flex_col().gap(theme.sp(2.));
+                for filter in d.filters.clone() {
+                    let path = self.input(&format!("filter:{}:path", filter.id), filter.path.clone(), "body.action", window, cx);
+                    let value = self.input(&format!("filter:{}:value", filter.id), filter.value.clone(), t!("value"), window, cx);
+                    let id = filter.id;
+                    let op_ix = FilterOp::ALL.iter().position(|o| *o == filter.op).unwrap_or(0);
+                    let this = cx.entity().downgrade();
+                    filters = filters.child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(theme.sp(2.))
+                            .child(div().w(theme.sp(36.)).child(field_input(&path, true, false, false)))
+                            .child(div().w(theme.sp(32.)).child(Select::new(SharedString::from(format!("filter-op-{id}")), FilterOp::ALL.iter().map(|o| o.label()).collect::<Vec<_>>(), op_ix, move |ix, _, cx| {
+                                this.update(cx, |this, cx| {
+                                    if let Some(f) = this.draft.filters.iter_mut().find(|f| f.id == id) { f.op = FilterOp::ALL[ix]; }
+                                    cx.notify();
+                                }).ok();
+                            }).size(SelectSize::Sm)))
+                            .when(filter.op != FilterOp::Exists, |r| r.child(div().flex_1().child(field_input(&value, true, false, false))))
+                            .child(Button::new(SharedString::from(format!("filter-remove-{id}"))).variant(ButtonVariant::GhostMuted).size(ButtonSize::IconXs).icon(IconName::X).on_click(cx.listener(move |this, _, _, cx| {
+                                this.draft.filters = remove_webhook_filter_draft(&this.draft.filters, id);
+                                cx.notify();
+                            }))),
+                    );
+                }
+                let encodings = [Encoding::Hex, Encoding::Base64];
+                let enc_ix = encodings.iter().position(|e| *e == d.signature_encoding).unwrap_or(0);
+                let this = cx.entity().downgrade();
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(theme.sp(3.))
+                    .child(hint(t!("Runs once per request to the task's webhook URL."), cx))
+                    .child(div().flex().items_center().gap(theme.sp(2.)).child(Switch::new("webhook-signature", d.signature_enabled).on_change({
+                        let this = cx.entity().downgrade();
+                        move |v, _, cx| {
+                            this.update(cx, |this, cx| {
+                                this.draft.signature_enabled = v;
+                                cx.notify();
+                            }).ok();
+                        }
+                    })).child(div().ui_text(theme, TextSize::Sm, weight::NORMAL).child(t!("Verify a signature header"))))
+                    .when(d.signature_enabled, |b| {
+                        b.child(
+                            div()
+                                .flex()
+                                .gap(theme.sp(2.))
+                                .child(div().flex_1().child(field_input(&header, true, false, false)))
+                                .child(div().w(theme.sp(24.)).child(Select::new("sig-encoding", vec!["hex".into(), "base64".into()], enc_ix, move |ix, _, cx| {
+                                    this.update(cx, |this, cx| {
+                                        this.draft.signature_encoding = encodings[ix];
+                                        cx.notify();
+                                    }).ok();
+                                }).size(SelectSize::Sm)))
+                                .child(div().w(theme.sp(24.)).child(field_input(&prefix, true, false, false))),
+                        )
+                        .child(field_input(&secret, true, false, false))
+                    })
+                    .child(self.labeled(t!("Skip requests older than (minutes)"), div().w(theme.sp(28.)).child(field_input(&max_age, true, false, false)), cx))
+                    .child(div().flex().gap(theme.sp(2.)).child(div().flex_1().child(self.labeled(t!("Duplicate request key"), field_input(&replay, true, false, false), cx))).child(div().flex_1().child(self.labeled(t!("Coalesce key"), field_input(&coalesce, true, false, false), cx))).child(div().w(theme.sp(24.)).child(self.labeled(t!("Window (s)"), field_input(&window_secs, true, false, false), cx))))
+                    .child(self.labeled(t!("Filters"), filters, cx))
+                    .child(div().child(Button::new("filter-add").variant(ButtonVariant::Outline).size(ButtonSize::Xs).icon(IconName::Plus).label(t!("Add filter")).on_click(cx.listener(|this, _, _, cx| {
+                        this.sync(cx);
+                        this.draft.filters.push(empty_webhook_filter_draft());
+                        cx.notify();
+                    }))))
+                    .into_any_element()
+            }
+        }
+    }
+}
+
+impl Render for ScheduledTaskEditor {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = &cx.app_theme().clone();
+        let c = &theme.colors;
+        let d = self.draft.clone();
+        let title = self.input("title", d.title.clone(), t!("Nightly dependency check"), window, cx);
+        let prompt = self.input("prompt", d.prompt.clone(), t!("What should the agent do?"), window, cx);
+        let webhook_denied = managed_capability_denial(self.model.read(cx).snapshot().managed_policy.as_deref(), ManagedCapability::WebhookTasks);
+        let modes = [(ScheduleMode::Fixed, t!("Daily or weekly")), (ScheduleMode::Once, t!("Once")), (ScheduleMode::Interval, t!("Interval")), (ScheduleMode::Webhook, t!("Webhook"))];
+        let kinds = div().flex().gap(theme.sp(1.)).children(modes.iter().map(|(mode, label)| {
+            let mode = *mode;
+            Toggle::new(SharedString::from(format!("schedule-kind-{mode:?}")))
+                .label(label.clone())
+                .variant(ToggleVariant::Segmented)
+                .size(ToggleSize::Segmented)
+                .pressed(d.schedule_mode == mode)
+                .disabled(mode == ScheduleMode::Webhook && webhook_denied.is_some())
+                .on_toggle({
+                    let this = cx.entity().downgrade();
+                    move |_, _, cx| {
+                        this.update(cx, |this, cx| this.set_mode(mode, cx)).ok();
+                    }
+                })
+        }));
+        let snapshot = self.model.read(cx).snapshot().clone();
+        let projects: Vec<_> = snapshot.projects.iter().filter(|p| p.archived_at.is_none()).cloned().collect();
+        let project_ix = projects.iter().position(|p| p.id.to_string() == d.project_id).unwrap_or(0);
+        let project_ids: Vec<String> = projects.iter().map(|p| p.id.to_string()).collect();
+        let this = cx.entity().downgrade();
+        let project_select = Select::new("task-project", projects.iter().map(|p| SharedString::from(p.title.clone())).collect::<Vec<_>>(), project_ix, move |ix, _, cx| {
+            let id = project_ids[ix].clone();
+            this.update(cx, |this, cx| {
+                this.draft = super::scheduled_tasks_settings_logic::change_draft_project(&this.draft, &id);
+                cx.notify();
+            }).ok();
+        }).size(SelectSize::Sm);
+        let options = model_options(self.model.read(cx));
+        let model_ix = options.iter().position(|(s, _)| format!("{}:{}", s.instance_id, s.model) == d.model_key).unwrap_or(0);
+        let this = cx.entity().downgrade();
+        let opts = options.clone();
+        let model_select = Select::new("task-model", options.iter().map(|(_, l)| l.clone()).collect::<Vec<_>>(), model_ix, move |ix, _, cx| {
+            let selection = opts[ix].0.clone();
+            this.update(cx, |this, cx| {
+                this.draft.model_key = format!("{}:{}", selection.instance_id, selection.model);
+                this.draft.base_model_selection = Some(selection);
+                cx.notify();
+            }).ok();
+        }).size(SelectSize::Sm);
+        let workspace_ix = match d.workspace_mode { WorkspaceMode::Root => 0, _ => 1 };
+        let this = cx.entity().downgrade();
+        let workspace = Select::new("task-workspace", vec![t!("Project folder"), t!("New worktree")], workspace_ix, move |ix, _, cx| {
+            this.update(cx, |this, cx| {
+                this.draft.workspace_mode = if ix == 0 { WorkspaceMode::Root } else { WorkspaceMode::Worktree };
+                cx.notify();
+            }).ok();
+        }).size(SelectSize::Sm);
+        let runtime_ix = RuntimeMode::ALL.iter().position(|m| *m == d.runtime_mode).unwrap_or(3);
+        let this = cx.entity().downgrade();
+        let runtime = Select::new("task-runtime", vec![t!("Supervised"), t!("Auto-accept edits"), t!("Auto"), t!("Full access")], runtime_ix, move |ix, _, cx| {
+            this.update(cx, |this, cx| {
+                this.draft.runtime_mode = RuntimeMode::ALL[ix];
+                cx.notify();
+            }).ok();
+        }).size(SelectSize::Sm);
+        let schedule = self.render_schedule(window, cx);
+        dialog_glass(theme)
+            .id("scheduled-task-editor")
+            .w(theme.rem(40.))
+            .child(div().p(theme.sp(6.)).pb(theme.sp(3.)).ui_text(theme, TextSize::Xl, weight::SEMIBOLD).child(if d.editing_id.is_some() { t!("Edit scheduled task") } else { t!("New scheduled task") }))
+            .child(
+                div()
+                    .id("scheduled-task-editor-body")
+                    .max_h(px(560.))
+                    .overflow_y_scroll()
+                    .flex()
+                    .flex_col()
+                    .gap(theme.sp(4.))
+                    .px(theme.sp(6.))
+                    .pb(theme.sp(6.))
+                    .child(self.labeled(t!("Title"), field_input(&title, false, false, false), cx))
+                    .child(self.labeled(t!("Prompt"), field_input(&prompt, false, false, false), cx))
+                    .child(self.labeled(t!("Schedule"), kinds, cx))
+                    .children(webhook_denied.map(|r| hint(r, cx)))
+                    .child(schedule)
+                    .child(div().flex().gap(theme.sp(3.)).child(div().flex_1().child(self.labeled(t!("Project"), project_select, cx))).child(div().flex_1().child(self.labeled(t!("Workspace"), workspace, cx))))
+                    .child(div().flex().gap(theme.sp(3.)).child(div().flex_1().child(self.labeled(t!("Model"), model_select, cx))).child(div().flex_1().child(self.labeled(t!("Permissions"), runtime, cx))))
+                    .children(self.errors.iter().map(|e| tinted(e.clone(), c.destructive(), cx))),
+            )
+            .child(
+                div()
+                    .flex()
+                    .justify_end()
+                    .gap(theme.sp(2.))
+                    .px(theme.sp(6.))
+                    .py(theme.sp(4.))
+                    .border_t_1()
+                    .border_color(c.border)
+                    .bg(theme.derived.dialog_footer)
+                    .rounded_b(theme.radii.xxl - px(1.))
+                    .child(Button::new("task-cancel").variant(ButtonVariant::Ghost).size(ButtonSize::Sm).label(t!("Cancel")).on_click(cx.listener(|_, _, _, cx| cx.emit(ScheduledTaskEditorEvent::Close))))
+                    .child(Button::new("task-save").size(ButtonSize::Sm).label(if self.saving { t!("Saving…") } else { t!("Save") }).disabled(self.saving).on_click(cx.listener(|this, _, _, cx| this.save(cx)))),
+            )
+    }
+}
+
+/// The Scheduled tasks page.
+pub struct ScheduledTasksSettingsPanel {
+    model: Entity<ServerPanelsModel>,
+    editor: Option<Entity<ScheduledTaskEditor>>,
+    _subscriptions: Vec<Subscription>,
+}
+
+impl ScheduledTasksSettingsPanel {
+    pub fn new(model: Entity<ServerPanelsModel>, cx: &mut Context<Self>) -> Self {
+        let observe = cx.observe(&model, |_, _, cx| cx.notify());
+        Self { model, editor: None, _subscriptions: vec![observe] }
+    }
+
+    /// Opens the editor for a new task, or for the task with `id`.
+    pub fn open_editor(&mut self, id: Option<&str>, cx: &mut Context<Self>) {
+        let snapshot = self.model.read(cx).snapshot().clone();
+        let draft = match id.and_then(|id| snapshot.scheduled_tasks.iter().find(|t| t.id.as_str() == id)) {
+            Some(task) => task_to_draft(task),
+            None => {
+                let project = snapshot.projects.iter().find(|p| p.archived_at.is_none() && p.pinned_at.is_some()).or_else(|| snapshot.projects.iter().find(|p| p.archived_at.is_none()));
+                let mut draft = DraftState::new_task(project.map(|p| p.id.to_string()).unwrap_or_default());
+                if let Some((selection, _)) = model_options(self.model.read(cx)).into_iter().next() {
+                    draft.model_key = format!("{}:{}", selection.instance_id, selection.model);
+                    draft.base_model_selection = Some(selection);
+                }
+                draft
+            }
+        };
+        let model = self.model.clone();
+        let editor = cx.new(|_| ScheduledTaskEditor::new(model, draft));
+        let sub = cx.subscribe(&editor, |this, _, _: &ScheduledTaskEditorEvent, cx| {
+            this.editor = None;
+            cx.notify();
+        });
+        self._subscriptions.push(sub);
+        self.editor = Some(editor);
+        cx.notify();
+    }
+
+    pub fn editor(&self) -> Option<&Entity<ScheduledTaskEditor>> {
+        self.editor.as_ref()
+    }
+}
+
+impl Render for ScheduledTasksSettingsPanel {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = &cx.app_theme().clone();
+        let snapshot = self.model.read(cx).snapshot().clone();
+        let ro = snapshot.read_only;
+        let zone = snapshot.scheduled_task_time_zone.as_ref().map(|z| z.to_string());
+        let mut list = SettingsSection::new(t!("Scheduled tasks")).header_action(
+            Button::new("task-new").variant(ButtonVariant::GhostMuted).size(ButtonSize::Xs).icon(IconName::Plus).label(t!("New task")).disabled(ro).on_click(cx.listener(|this, _, _, cx| this.open_editor(None, cx))),
+        );
+        if snapshot.scheduled_tasks.is_empty() {
+            list.extend([SettingsRow::new(t!("No scheduled tasks")).description(t!("No tasks match this environment and project selection.")).into_any_element()]);
+        }
+        for task in snapshot.scheduled_tasks.iter() {
+            let id = task.id.to_string();
+            let label = schedule_label(&task.schedule, zone.as_deref(), task.next_run_at.as_deref());
+            let next: SharedString = match (&task.blocked_by_policy, &task.next_run_at) {
+                (Some(reason), _) => reason.clone().into(),
+                (None, Some(next)) => format!("{label} · {}", t!("Next {when}", when = format_relative_time_label(next, now_ms()))).into(),
+                (None, None) => label,
+            };
+            let (toggle_model, run_model, delete_model) = (self.model.clone(), self.model.clone(), self.model.clone());
+            let (toggle_id, run_id, delete_id, edit_id) = (id.clone(), id.clone(), id.clone(), id.clone());
+            list.extend([SettingsRow::new(SharedString::from(task.title.clone()))
+                .description(next)
+                .control(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap(theme.sp(1.))
+                        .child(Button::new(SharedString::from(format!("task-run-{id}"))).variant(ButtonVariant::GhostMuted).size(ButtonSize::IconXs).icon(IconName::Play).disabled(ro).on_click(move |_, _, cx| {
+                            let input = ScheduledTaskRunNowInput { id: ScheduledTaskId::new(run_id.as_str()) };
+                            run_model.update(cx, |m, cx| m.run("task-run", move |s| s.run_scheduled_task_now(input), |r, cx| if let Err(e) = r { toast_error(t!("Could not run scheduled task"), e, cx) }, cx));
+                        }))
+                        .child(Button::new(SharedString::from(format!("task-edit-{id}"))).variant(ButtonVariant::GhostMuted).size(ButtonSize::IconXs).icon(IconName::Pencil).disabled(ro).on_click(cx.listener(move |this, _, _, cx| this.open_editor(Some(&edit_id), cx))))
+                        .child(Button::new(SharedString::from(format!("task-delete-{id}"))).variant(ButtonVariant::GhostDestructive).size(ButtonSize::IconXs).icon(IconName::Trash2).disabled(ro).on_click(move |_, _, cx| {
+                            let input = ScheduledTaskDeleteInput { id: ScheduledTaskId::new(delete_id.as_str()) };
+                            delete_model.update(cx, |m, cx| m.run("task-delete", move |s| s.delete_scheduled_task(input), |r, cx| if let Err(e) = r { toast_error(t!("Could not delete scheduled task"), e, cx) }, cx));
+                        }))
+                        .child(Switch::new(SharedString::from(format!("task-enabled-{id}")), task.enabled).disabled(ro).on_change(move |enabled, _, cx| {
+                            let input = ScheduledTaskSetEnabledInput { id: ScheduledTaskId::new(toggle_id.as_str()), enabled };
+                            toggle_model.update(cx, |m, cx| m.run("task-enabled", move |s| s.set_scheduled_task_enabled(input), |r, cx| if let Err(e) = r { toast_error(t!("Could not update scheduled task"), e, cx) }, cx));
+                        })),
+                )
+                .into_any_element()]);
+        }
+        let editor = self.editor.clone().map(|editor| {
+            let this = cx.entity().downgrade();
+            Modal::dialog("scheduled-task-editor-modal", editor, move |_, cx| {
+                this.update(cx, |this, cx| {
+                    this.editor = None;
+                    cx.notify();
+                }).ok();
+            })
+        });
+        div().relative().size_full().child(page_container(cx).child(list)).children(editor)
+    }
+}

@@ -28,6 +28,7 @@ pub mod model_selection;
 pub mod markdown_pipeline;
 pub mod keybindings;
 pub mod navigation_history;
+pub mod project_identity;
 pub mod provider_auth_delivery;
 pub mod provider_instances;
 pub mod provider_models;

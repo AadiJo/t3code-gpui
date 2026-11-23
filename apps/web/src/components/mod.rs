@@ -1,3 +1,4 @@
+pub mod add_project_to_machine_dialog;
 pub mod app_sidebar_layout;
 pub mod chat;
 pub mod command_palette;
