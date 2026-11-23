@@ -221,8 +221,12 @@ fn decode_known(document: Map<String, Value>) -> (ClientSettingsSchema, Map<Stri
     let mut known = Map::new();
     let mut rest = Map::new();
     for (key, value) in document {
-        if !DEFAULTS_DOCUMENT.contains_key(&key) || value.is_null() {
+        if !DEFAULTS_DOCUMENT.contains_key(&key) {
             rest.insert(key, value);
+            continue;
+        }
+        // A known key set to null (`onboardingCompletedAt`) is the same as absent.
+        if value.is_null() {
             continue;
         }
         let single = Map::from_iter([(key.clone(), value.clone())]);

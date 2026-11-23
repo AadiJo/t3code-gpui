@@ -8,6 +8,7 @@ pub mod connections;
 mod i18n;
 pub mod composer;
 pub mod diffs;
+pub mod settings;
 mod sidebar;
 mod terminal;
 pub mod ui;
@@ -43,6 +44,17 @@ pub fn scenes() -> &'static [(&'static str, SceneBuilder)] {
         ("connections-signed-out", connections::build_signed_out),
         ("connections-sign-in", connections::build_sign_in),
         ("connections-empty", connections::build_empty),
+        ("settings", settings::build),
+        ("settings-appearance", settings::build_appearance),
+        ("settings-chat", settings::build_chat),
+        ("settings-diffs", settings::build_diffs),
+        ("settings-keybindings", settings::build_keybindings),
+        ("settings-keybindings-recording", settings::build_keybindings_recording),
+        ("settings-voice", settings::build_voice),
+        ("settings-snap-shot", settings::build_snap_shot),
+        ("settings-labs", settings::build_labs),
+        ("settings-archived", settings::build_archived),
+        ("settings-about", settings::build_about),
     ]
 }
 
