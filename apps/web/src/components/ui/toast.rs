@@ -7,8 +7,8 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use gpui_kit::{
-    App, AppContext as _, Context, Entity, Global, Hsla, IntoElement, Render, RenderOnce, SharedString, Window, div,
-    prelude::*, px, relative,
+    App, AppContext as _, Context, Entity, Global, Hsla, IntoElement, Render, RenderOnce, SharedString, Window, anchored,
+    deferred, div, point, prelude::*, px, relative,
 };
 
 use super::TextStyleExt as _;
@@ -283,7 +283,7 @@ impl Render for Toaster {
             // Paint the cards further back first.
             cards.reverse();
         }
-        div()
+        let stack = div()
             .id("toaster")
             .absolute()
             .top(top)
@@ -296,6 +296,13 @@ impl Render for Toaster {
                 toaster.expanded = *hovered;
                 cx.notify();
             }))
-            .children(cards)
+            .children(cards);
+        // Toasts (z-100) sit above dialogs and sheets (z-50).
+        deferred(
+            anchored()
+                .position(point(px(0.), px(0.)))
+                .child(div().relative().w(viewport.width).h(viewport.height).child(stack)),
+        )
+        .with_priority(4)
     }
 }

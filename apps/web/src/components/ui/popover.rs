@@ -10,7 +10,7 @@ use gpui_kit::{
     Window, anchored, deferred, div, point, prelude::*, px,
 };
 
-use super::{TextStyleExt as _, control_highlight};
+use super::{TextStyleExt as _, ControlHighlightExt as _};
 use crate::appearance_fonts::{TextSize, weight};
 use crate::{ActiveAppTheme as _, AppTheme};
 
@@ -126,7 +126,7 @@ impl RenderOnce for PopoverSurface {
             .px(px_)
             .py(py_)
             .ui_text(theme, TextSize::Sm, weight::NORMAL)
-            .child(control_highlight(theme, theme.radii.lg))
+            .control_highlight(theme)
             .children(self.title.map(|title| {
                 div().ui_text(theme, TextSize::Sm, weight::SEMIBOLD).line_height(px(TextSize::Sm.size(theme.fonts.interface))).child(title)
             }))

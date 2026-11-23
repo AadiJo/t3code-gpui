@@ -24,7 +24,7 @@ pub mod toggle;
 pub mod tooltip;
 
 use gpui_kit::{
-    AbsoluteLength, BoxShadow, FontWeight, Hsla, Pixels, Styled, div, prelude::*, px,
+    AbsoluteLength, BoxShadow, FontWeight, Hsla, Pixels, Styled, px,
 };
 
 use crate::AppTheme;
@@ -78,29 +78,44 @@ pub trait TextStyleExt: Styled + Sized {
 
 impl<T: Styled> TextStyleExt for T {}
 
+/// GPUI draws inset shadows from the border box and paints the 1px border
+/// over them; CSS draws them inside the border. Inset shadows on bordered
+/// controls are pushed in by this much to land where the browser draws them.
+pub const BORDER: Pixels = px(1.);
+
 /// The focus-visible ring of buttons, badges and switches:
 /// `ring-2 ring-inset ring-ring ring-offset-1 ring-offset-background`.
-/// Inside the border: 1px of background, then 2px of ring.
-pub fn focus_ring_inset(theme: &AppTheme) -> Vec<BoxShadow> {
-    let ring = BoxShadow::new(px(0.), px(0.), theme.colors.ring()).spread_radius(px(3.)).inset();
+/// Inside the border: 1px of background, then 2px of ring. Pass the
+/// element's border width ([`BORDER`] or zero).
+pub fn focus_ring_inset(theme: &AppTheme, border: Pixels) -> Vec<BoxShadow> {
+    let ring = BoxShadow::new(px(0.), px(0.), theme.colors.ring()).spread_radius(border + px(3.)).inset();
     let offset = BoxShadow::new(px(0.), px(0.), theme.colors.background())
-        .spread_radius(px(1.))
+        .spread_radius(border + px(1.))
         .inset();
     vec![ring, offset]
 }
 
 /// The 3px inset ring an input draws while focused (`ring-[3px] ring-inset ring-ring/24`).
 pub fn input_focus_ring(color: Hsla) -> BoxShadow {
-    BoxShadow::new(px(0.), px(0.), color).spread_radius(px(3.)).inset()
+    BoxShadow::new(px(0.), px(0.), color).spread_radius(BORDER + px(3.)).inset()
 }
 
-/// The 1px `before:` highlight a control draws over its top border in dark
-/// mode (bottom in light): an overlay the size of the padding box whose
-/// 1px offset shadow lands on the border, as the CSS pseudo-element does.
-pub fn control_highlight(theme: &AppTheme, radius: Pixels) -> impl IntoElement {
-    div()
-        .absolute()
-        .inset_0()
-        .rounded(radius - px(1.))
-        .shadow(vec![theme.shadows.control_highlight.clone()])
+/// The 1px `before:` highlight a control draws at its top edge in dark mode
+/// (bottom in light). CSS paints it over the border; GPUI paints borders
+/// over everything inside, so here it is a 1px inset line just inside the border.
+pub fn control_highlight(theme: &AppTheme) -> BoxShadow {
+    let line = theme.shadows.control_highlight;
+    let offset = if line.top { BORDER + px(1.) } else { -(BORDER + px(1.)) };
+    BoxShadow::new(px(0.), offset, line.color).inset()
 }
+
+/// Adds [`control_highlight`] to an element's shadows. Call after `.shadow(..)`.
+pub trait ControlHighlightExt: Styled + Sized {
+    fn control_highlight(mut self, theme: &AppTheme) -> Self {
+        let highlight = control_highlight(theme);
+        self.style().box_shadow.get_or_insert_with(Vec::new).push(highlight);
+        self
+    }
+}
+
+impl<T: Styled> ControlHighlightExt for T {}

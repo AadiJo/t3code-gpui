@@ -11,7 +11,7 @@ use gpui_kit::{
 };
 
 use super::popover::{Popover, PopupHandle, PopupOpen, glass_surface};
-use super::{DISABLED_OPACITY, TextStyleExt as _, control_highlight};
+use super::{DISABLED_OPACITY, TextStyleExt as _, ControlHighlightExt as _};
 use crate::appearance_fonts::{TextSize, weight};
 use crate::components::icons::{Icon, IconName, IconSize};
 use crate::{ActiveAppTheme as _, AppTheme};
@@ -272,7 +272,7 @@ impl RenderOnce for MenuPopup {
         glass_surface(theme)
             .min_w(self.min_width.unwrap_or(theme.rem(10.)))
             .p(theme.sp(1.))
-            .child(control_highlight(theme, theme.radii.lg))
+            .control_highlight(theme)
             .children(rows)
     }
 }

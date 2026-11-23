@@ -266,7 +266,15 @@ pub struct Shadows {
     pub dialog: Vec<BoxShadow>,
     /// The 1px `before:` highlight a control draws across its top border in
     /// dark mode (white 6%) or bottom border in light mode (black 4%).
-    pub control_highlight: BoxShadow,
+    pub control_highlight: ControlHighlight,
+}
+
+/// A 1px line a control draws over one edge of its border.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ControlHighlight {
+    pub color: Hsla,
+    /// The top edge in dark mode, the bottom edge in light mode.
+    pub top: bool,
 }
 
 fn shadow(x: f32, y: f32, blur: f32, spread: f32, color: Hsla) -> BoxShadow {
@@ -299,16 +307,16 @@ impl Shadows {
             }],
             dialog: if dark {
                 vec![
-                    BoxShadow { inset: true, ..shadow(0., 1., 0., 0., with_alpha(white(), 0.04)) },
+                    // 2px: GPUI's inset shadows start under the 1px border.
+                    BoxShadow { inset: true, ..shadow(0., 2., 0., 0., with_alpha(white(), 0.04)) },
                     shadow(0., 24., 72., -20., shade(0.90)),
                 ]
             } else {
                 vec![shadow(0., 24., 64., -24., shade(0.65))]
             },
-            control_highlight: if dark {
-                shadow(0., -1., 0., 0., with_alpha(white(), 0.06))
-            } else {
-                shadow(0., 1., 0., 0., shade(0.04))
+            control_highlight: ControlHighlight {
+                color: if dark { with_alpha(white(), 0.06) } else { shade(0.04) },
+                top: dark,
             },
         }
     }
@@ -318,10 +326,11 @@ impl Shadows {
         vec![shadow(0., 1., 2., 0., with_alpha(color, 0.24))]
     }
 
-    /// The 1px inset top line of a filled button: white 16%, or black 8% while pressed.
+    /// The 1px inset top line of a filled button: white 16%, or black 8% while
+    /// pressed. Offset 2px because GPUI's inset shadows start under the 1px border.
     pub fn button_inset(pressed: bool) -> BoxShadow {
         let color = if pressed { shade(0.08) } else { with_alpha(white(), 0.16) };
-        BoxShadow { inset: true, ..shadow(0., 1., 0., 0., color) }
+        BoxShadow { inset: true, ..shadow(0., 2., 0., 0., color) }
     }
 }
 

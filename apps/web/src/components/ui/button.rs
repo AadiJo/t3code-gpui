@@ -5,7 +5,7 @@ use gpui_kit::{
     SharedString, StyleRefinement, Window, black, div, prelude::*, px, white,
 };
 
-use super::{ControlState, DISABLED_OPACITY, TextStyleExt as _, control_highlight, focus_ring_inset};
+use super::{ControlState, DISABLED_OPACITY, TextStyleExt as _, control_highlight, focus_ring_inset, BORDER};
 use crate::appearance_fonts::{TextSize, weight};
 use crate::components::icons::{Icon, IconName, IconSize};
 use crate::theme_color::with_alpha;
@@ -236,6 +236,14 @@ struct Paint {
 }
 
 fn paint(variant: ButtonVariant, state: ControlState, theme: &AppTheme) -> Paint {
+    let mut paint = variant_paint(variant, state, theme);
+    if paint.highlight {
+        paint.shadows.push(control_highlight(theme));
+    }
+    paint
+}
+
+fn variant_paint(variant: ButtonVariant, state: ControlState, theme: &AppTheme) -> Paint {
     let c = &theme.colors;
     let d = &theme.derived;
     let dark = theme.is_dark();
@@ -457,9 +465,9 @@ impl RenderOnce for Button {
         let active = paint(self.variant, ControlState::Active, theme);
         let mut shadows = rest.shadows.clone();
         if state == ControlState::FocusVisible {
-            shadows.extend(focus_ring_inset(theme));
+            shadows.extend(focus_ring_inset(theme, BORDER));
         }
-        let ring = focus_ring_inset(theme);
+        let ring = focus_ring_inset(theme, BORDER);
         let text_weight = weight::MEDIUM;
         let icon_margin = if self.size.is_icon() { px(0.) } else { px(-2.) };
         let icon = |name: IconName| {
@@ -494,9 +502,6 @@ impl RenderOnce for Button {
             ButtonText::Scale(size) => button.ui_text(theme, size, text_weight),
             ButtonText::Px(size) => button.ui_text(theme, TextSize::Xs, text_weight).text_size(px(size)),
         };
-        if rest.highlight {
-            button = button.child(control_highlight(theme, spec.radius));
-        }
         button
             .children(self.icon.map(icon))
             .children(self.label)

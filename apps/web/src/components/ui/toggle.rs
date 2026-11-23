@@ -5,7 +5,7 @@ use gpui_kit::{
     Window, div, prelude::*, px,
 };
 
-use super::{ControlState, DISABLED_OPACITY, TextStyleExt as _, control_highlight, focus_ring_inset};
+use super::{ControlState, DISABLED_OPACITY, TextStyleExt as _, ControlHighlightExt as _, focus_ring_inset, BORDER};
 use crate::appearance_fonts::{TextSize, weight};
 use crate::components::icons::{Icon, IconName, IconSize};
 use crate::theme_color::with_alpha;
@@ -218,7 +218,7 @@ impl RenderOnce for Toggle {
         let hover = paint(self.variant, self.pressed, ControlState::Hover, theme);
         let mut shadows = rest.shadows.clone();
         if state == ControlState::FocusVisible {
-            shadows.extend(focus_ring_inset(theme));
+            shadows.extend(focus_ring_inset(theme, BORDER));
         }
         let outline = self.variant == ToggleVariant::Outline;
         let icon_opacity = if self.variant == ToggleVariant::Ghost && disabled { 1. } else { 0.8 };
@@ -243,7 +243,7 @@ impl RenderOnce for Toggle {
             .shadow(shadows)
             .ui_text(theme, text, font_weight)
             .whitespace_nowrap()
-            .when(outline && !pressed && !disabled, |t| t.child(control_highlight(theme, radius)))
+            .when(outline && !pressed && !disabled, |t| t.control_highlight(theme))
             .children(self.icon.map(|name| {
                 div().mx(px(-2.)).child(
                     Icon::new(name).size(icon).color(rest.text).opacity(icon_opacity).group_color(GROUP, hover.text),

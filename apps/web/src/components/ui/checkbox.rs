@@ -2,7 +2,7 @@
 
 use gpui_kit::{App, BoxShadow, ClickEvent, ElementId, IntoElement, RenderOnce, Window, div, prelude::*, px, svg};
 
-use super::{ControlState, DISABLED_OPACITY, control_highlight};
+use super::{ControlState, DISABLED_OPACITY, ControlHighlightExt as _};
 use crate::ActiveAppTheme as _;
 use crate::theme_color::with_alpha;
 
@@ -99,9 +99,10 @@ impl RenderOnce for Checkbox {
             .border_color(border)
             .bg(if is_checked && theme.is_dark() { c.background() } else { theme.derived.input_fill })
             .when(!is_checked && !disabled, |b| {
-                b.shadow(theme.shadows.xs5.clone()).child(control_highlight(theme, radius))
+                b.shadow(theme.shadows.xs5.clone()).control_highlight(theme)
             })
-            .when(focused && !is_checked, |b| b.shadow(vec![ring]))
+            // `outline-2 -outline-offset-2` covers the border, which GPUI paints last.
+            .when(focused && !is_checked, |b| b.border_color(c.ring()).shadow(vec![ring]))
             .children(indicator)
             .when(disabled, |b| b.opacity(DISABLED_OPACITY))
             .when_some(self.on_change.filter(|_| live), |b, handler| {

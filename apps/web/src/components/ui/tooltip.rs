@@ -4,7 +4,7 @@
 
 use gpui_kit::{AnyView, App, AppContext as _, Context, IntoElement, Render, RenderOnce, SharedString, Window, div, prelude::*, px};
 
-use super::{TextStyleExt as _, control_highlight, kbd::Kbd};
+use super::{TextStyleExt as _, ControlHighlightExt as _, kbd::Kbd};
 use crate::ActiveAppTheme as _;
 use crate::appearance_fonts::{TextSize, weight};
 
@@ -73,7 +73,7 @@ impl RenderOnce for TooltipSurface {
             TooltipVariant::Code => card.max_w(theme.rem(30.)).mono_text(px(11.), weight::NORMAL).line_height(px(11. * 1.625)),
             _ => card.max_w(theme.rem(20.)),
         };
-        card.child(control_highlight(theme, radius))
+        card.control_highlight(theme)
             .child(div().child(self.text))
             .children(self.shortcut.map(Kbd::new))
     }

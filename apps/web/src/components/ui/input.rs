@@ -8,7 +8,7 @@ use gpui_kit::{
     div, prelude::*, px,
 };
 
-use super::{ControlState, DISABLED_OPACITY, TextStyleExt as _, control_highlight, input_focus_ring};
+use super::{ControlState, DISABLED_OPACITY, TextStyleExt as _, ControlHighlightExt as _, input_focus_ring};
 use crate::appearance_fonts::{TextSize, weight};
 use crate::theme_color::with_alpha;
 use crate::{ActiveAppTheme as _, AppTheme};
@@ -78,7 +78,7 @@ fn frame(theme: &AppTheme, radius: Pixels, paint: FramePaint, disabled: bool, ch
         .bg(theme.derived.input_fill)
         .shadow(paint.shadows)
         .text_color(theme.colors.foreground())
-        .when(paint.highlight, |f| f.child(control_highlight(theme, radius)))
+        .when(paint.highlight, |f| f.control_highlight(theme))
         .child(child)
         .when(disabled, |f| f.opacity(DISABLED_OPACITY))
 }

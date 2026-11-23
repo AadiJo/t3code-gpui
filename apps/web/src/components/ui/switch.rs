@@ -78,7 +78,7 @@ impl RenderOnce for Switch {
             .p(px(2.))
             .rounded(theme.radii.full)
             .bg(if checked { c.primary() } else { c.input })
-            .when(state == ControlState::FocusVisible, |s| s.shadow(focus_ring_inset(theme)))
+            .when(state == ControlState::FocusVisible, |s| s.shadow(focus_ring_inset(theme, px(0.))))
             .child(
                 div()
                     .ml(offset)

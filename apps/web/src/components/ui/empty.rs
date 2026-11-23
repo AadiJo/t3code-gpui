@@ -3,7 +3,7 @@
 
 use gpui_kit::{AnyElement, App, IntoElement, ParentElement, RenderOnce, SharedString, Window, div, prelude::*, px};
 
-use super::{TextStyleExt as _, control_highlight};
+use super::{TextStyleExt as _, ControlHighlightExt as _};
 use crate::ActiveAppTheme as _;
 use crate::appearance_fonts::{TextSize, weight};
 use crate::components::icons::{Icon, IconName, IconSize};
@@ -91,7 +91,7 @@ impl RenderOnce for Empty {
                 .border_color(c.border)
                 .bg(c.card())
                 .shadow(theme.shadows.sm5.clone())
-                .child(control_highlight(theme, theme.radii.md))
+                .control_highlight(theme)
                 .child(Icon::new(icon).size(IconSize::Lg).color(c.foreground()))
         });
         div()

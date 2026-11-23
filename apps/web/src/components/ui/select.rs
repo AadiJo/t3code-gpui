@@ -7,7 +7,7 @@ use gpui_kit::{App, ElementId, IntoElement, RenderOnce, SharedString, Window, di
 
 use super::menu::{MenuItem, MenuItemKind, MenuPopup};
 use super::popover::{Popover, PopupHandle};
-use super::{ControlState, DISABLED_OPACITY, TextStyleExt as _, control_highlight, input_focus_ring};
+use super::{ControlState, DISABLED_OPACITY, TextStyleExt as _, ControlHighlightExt as _, input_focus_ring};
 use crate::appearance_fonts::{TextSize, weight};
 use crate::components::icons::{Icon, IconName, IconSize};
 use crate::{ActiveAppTheme as _, AppTheme};
@@ -129,12 +129,12 @@ impl RenderOnce for SelectTrigger {
                 } else {
                     theme.shadows.xs5.clone()
                 })
-                .when(!focused && !disabled && !self.open, |t| t.child(control_highlight(theme, radius))),
+                .when(!focused && !disabled && !self.open, |t| t.control_highlight(theme)),
             SelectVariant::Ghost => trigger
                 .border_color(gpui_kit::Hsla::transparent_black())
                 .when(hovered, |t| t.bg(c.highlight()))
                 .text_color(if hovered { c.foreground() } else { c.secondary_label })
-                .when(focused, |t| t.shadow(super::focus_ring_inset(theme))),
+                .when(focused, |t| t.shadow(super::focus_ring_inset(theme, super::BORDER))),
         };
         trigger
             .child(
