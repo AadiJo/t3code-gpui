@@ -7,10 +7,10 @@
 //! over it occludes, and so does every overlay, so presses on them never
 //! move the window (`05-ui-shell.md` 4).
 
+use crate::components::icons::{Icon, IconName, IconSize};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
-use super::sidebar::icons::{ShellIcon, icon};
 use super::sidebar::style::*;
 use super::sidebar::surface_grain::surface_grain;
 use super::sidebar::tooltip::tooltip;
@@ -374,7 +374,7 @@ impl AppSidebarLayout {
     fn titlebar_toggle(
         &self,
         id: &'static str,
-        glyph: ShellIcon,
+        glyph: IconName,
         label: &'static str,
         pressed: bool,
         colors: &ShellColors,
@@ -392,7 +392,7 @@ impl AppSidebarLayout {
             .cursor_pointer()
             .when(pressed, |d| d.bg(colors.accent))
             .hover(move |s| s.bg(hover))
-            .child(icon(glyph, px(16.), colors.titlebar_icon))
+            .child(Icon::new(glyph).size(IconSize::Custom(px(16.))).color(colors.titlebar_icon))
             .tooltip(tooltip(label))
     }
 
@@ -735,9 +735,9 @@ impl Render for AppSidebarLayout {
                 self.titlebar_toggle(
                     "toggle-sidebar",
                     if sidebar_visible {
-                        ShellIcon::PanelLeftClose
+                        IconName::PanelLeftClose
                     } else {
-                        ShellIcon::PanelLeft
+                        IconName::PanelLeft
                     },
                     "Toggle sidebar",
                     false,
@@ -759,9 +759,9 @@ impl Render for AppSidebarLayout {
                     self.titlebar_toggle(
                         "toggle-maximize-panel",
                         if self.right_maximized {
-                            ShellIcon::Minimize2
+                            IconName::Minimize2
                         } else {
-                            ShellIcon::Maximize2
+                            IconName::Maximize2
                         },
                         "Maximize panel",
                         self.right_maximized,
@@ -771,16 +771,16 @@ impl Render for AppSidebarLayout {
                 )
             })
             .child(
-                self.titlebar_toggle("toggle-details", ShellIcon::SquareMenu, "Thread details", self.details_open, &colors)
+                self.titlebar_toggle("toggle-details", IconName::SquareMenu, "Thread details", self.details_open, &colors)
                     .on_click(cx.listener(|this, _, _, cx| this.press(PanelToggle::Details, cx))),
             )
             .child(
                 self.titlebar_toggle(
                     "toggle-terminal",
                     if self.terminal_open {
-                        ShellIcon::PanelBottomClose
+                        IconName::PanelBottomClose
                     } else {
-                        ShellIcon::PanelBottom
+                        IconName::PanelBottom
                     },
                     "Toggle terminal",
                     false,
@@ -792,9 +792,9 @@ impl Render for AppSidebarLayout {
                 self.titlebar_toggle(
                     "toggle-right-panel",
                     if self.right_open {
-                        ShellIcon::PanelRightClose
+                        IconName::PanelRightClose
                     } else {
-                        ShellIcon::PanelRight
+                        IconName::PanelRight
                     },
                     "Toggle right panel",
                     false,

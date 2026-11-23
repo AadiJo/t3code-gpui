@@ -4,13 +4,13 @@
 //! bodies render only while the entry is open, matching the web client's
 //! fetch-on-expand.
 
+use crate::components::icons::{Icon, IconName, IconSize};
 use gpui_kit::{
     AnyElement, Context, FontWeight, Hsla, InteractiveElement as _, IntoElement, ParentElement as _, SharedString,
     StatefulInteractiveElement as _, Styled as _, TextRun, div, px,
 };
 
 use super::{
-    chat_icons::{ChatIcon, icon},
     chat_style::{ChatColors, TEXT_CODE, TEXT_SM_RELAXED, TEXT_XS, alpha, mono},
     messages_timeline::MessagesTimeline,
     messages_timeline_logic::TimelineRow,
@@ -101,7 +101,7 @@ impl MessagesTimeline {
         div()
             .w_full()
             .child(work_log_line(
-                Some(icon(ChatIcon::CircleAlert, px(16.), tone).into_any_element()),
+                Some(Icon::new(IconName::CircleAlert).size(IconSize::Custom(px(16.))).color(tone).into_any_element()),
                 div().font_weight(FontWeight::MEDIUM).text_color(colors.theme.text).child(title).into_any_element(),
                 vec![
                     div()
@@ -124,7 +124,7 @@ impl MessagesTimeline {
             )
             .children(retryable.then(|| {
                 div().ml(DETAIL_INDENT).flex().child(
-                    xs_button(("retry", MessagesTimeline::key_of(entry.id.as_str())), Some(ChatIcon::RotateCcw), Some("Retry".into()), colors.theme.text, &colors)
+                    xs_button(("retry", MessagesTimeline::key_of(entry.id.as_str())), Some(IconName::RotateCcw), Some("Retry".into()), colors.theme.text, &colors)
                         .border_1()
                         .border_color(colors.theme.border),
                 )
@@ -239,7 +239,7 @@ impl MessagesTimeline {
                                         .font_weight(FontWeight::MEDIUM)
                                         .text_color(colors.theme.text)
                                         .child(r.title.clone())
-                                        .child(icon(ChatIcon::ExternalLink, SMALL_ICON, colors.theme.muted_foreground)),
+                                        .child(Icon::new(IconName::ExternalLink).size(IconSize::Custom(SMALL_ICON)).color(colors.theme.muted_foreground)),
                                 )
                                 .child(div().text_color(colors.theme.muted_foreground).child(r.snippet.clone()))
                         }))

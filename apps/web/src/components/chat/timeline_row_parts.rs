@@ -2,13 +2,14 @@
 //! hover timestamp and the stepped shimmer (`TimelineRowParts.tsx`), tool
 //! icons, and the small ghost buttons rows use.
 
+use crate::components::icons::{Icon, IconName, IconSize};
+use crate::components::chat::chat_style::chat_icon_stroke;
 use gpui_kit::{
     AnyElement, Div, ElementId, FontWeight, Hsla, InteractiveElement as _, IntoElement, ParentElement as _, Pixels,
     SharedString, Stateful, Styled as _, StyledText, div, px,
 };
 
 use super::{
-    chat_icons::{ChatIcon, icon},
     chat_style::{ChatColors, TEXT_SM_RELAXED, TEXT_XS, alpha, sans},
     messages_timeline::SHIMMER_STEPS,
     work_log_presentation::format_clock,
@@ -73,15 +74,15 @@ pub fn work_log_line(
 }
 
 /// A 16px tool icon in `iconMuted` at 70%, tinted when the call failed.
-pub fn tool_icon(glyph: ChatIcon, colors: &ChatColors, failed: bool) -> AnyElement {
+pub fn tool_icon(glyph: IconName, colors: &ChatColors, failed: bool) -> AnyElement {
     let color = if failed { alpha(colors.theme.error_foreground, 0.4) } else { colors.theme.icon_muted };
-    let svg = icon(glyph, TOOL_ICON_SIZE, color);
+    let svg = Icon::new(glyph).size(IconSize::Custom(TOOL_ICON_SIZE)).color(color).stroke(chat_icon_stroke(glyph));
     if failed { svg.into_any_element() } else { div().opacity(0.7).child(svg).into_any_element() }
 }
 
 /// The trailing `X` of a failed call.
 pub fn failed_mark(colors: &ChatColors) -> AnyElement {
-    icon(ChatIcon::X, SMALL_ICON, alpha(colors.theme.error_foreground, 0.4)).into_any_element()
+    Icon::new(IconName::X).size(IconSize::Custom(SMALL_ICON)).color(alpha(colors.theme.error_foreground, 0.4)).into_any_element()
 }
 
 /// A disclosure chevron: right when collapsed, down when open, in a 16px box.
@@ -92,7 +93,7 @@ pub fn disclosure(open: bool, size: Pixels, color: Hsla) -> AnyElement {
         .flex()
         .items_center()
         .justify_center()
-        .child(icon(if open { ChatIcon::ChevronDown } else { ChatIcon::ChevronRight }, size, color))
+        .child(Icon::new(if open { IconName::ChevronDown } else { IconName::ChevronRight }).size(IconSize::Custom(size)).color(color).stroke(chat_icon_stroke(if open { IconName::ChevronDown } else { IconName::ChevronRight })))
         .into_any_element()
 }
 
@@ -168,7 +169,7 @@ pub fn mix(a: Hsla, b: Hsla, t: f32) -> Hsla {
 
 /// `Button size=xs variant=ghost(-muted)` holding an icon and an optional label:
 /// 24px tall, 7px side padding, radius 8px.
-pub fn xs_button(id: impl Into<ElementId>, glyph: Option<ChatIcon>, label: Option<SharedString>, color: Hsla, colors: &ChatColors) -> Stateful<Div> {
+pub fn xs_button(id: impl Into<ElementId>, glyph: Option<IconName>, label: Option<SharedString>, color: Hsla, colors: &ChatColors) -> Stateful<Div> {
     div()
         .id(id)
         .h(px(24.))
@@ -182,7 +183,7 @@ pub fn xs_button(id: impl Into<ElementId>, glyph: Option<ChatIcon>, label: Optio
         .text_size(TEXT_XS.size)
         .text_color(color)
         .hover(|s| s.bg(colors.theme.accent_surface).text_color(colors.theme.text))
-        .children(glyph.map(|g| icon(g, SMALL_ICON, color)))
+        .children(glyph.map(|g| Icon::new(g).size(IconSize::Custom(SMALL_ICON)).color(color).stroke(chat_icon_stroke(g))))
         .children(label)
 }
 

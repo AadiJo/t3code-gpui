@@ -2,13 +2,13 @@
 //! attachments and markdown, the long-message fold, and the hover actions row
 //! (timestamp, Edit from here, Copy). Ports `TimelineUserMessageRow.tsx`.
 
+use crate::components::icons::{Icon, IconName, IconSize};
 use gpui_kit::{
     AnyElement, Context, InteractiveElement as _, IntoElement, ParentElement as _, StatefulInteractiveElement as _,
     Styled as _, Window, div, img, linear_color_stop, linear_gradient, px, relative,
 };
 
 use super::{
-    chat_icons::ChatIcon,
     chat_style::{TEXT_2XS, TEXT_XS, alpha},
     messages_timeline::MessagesTimeline,
     messages_timeline_logic::{MessageRow, TimelineRow},
@@ -72,7 +72,7 @@ impl MessagesTimeline {
                     .text_size(TEXT_XS.size)
                     .line_height(px(12.))
                     .text_color(colors.theme.muted_foreground)
-                    .child(super::chat_icons::icon(ChatIcon::Redo2, SMALL_ICON, colors.theme.muted_foreground))
+                    .child(Icon::new(IconName::Redo2).size(IconSize::Custom(SMALL_ICON)).color(colors.theme.muted_foreground))
                     .child("Steer"),
             );
         }
@@ -123,9 +123,9 @@ impl MessagesTimeline {
                         .gap_2()
                         .py_1()
                         .text_size(px(14.))
-                        .child(super::chat_icons::icon(ChatIcon::FileText, px(16.), colors.theme.muted_foreground))
+                        .child(Icon::new(IconName::FileText).size(IconSize::Custom(px(16.))).color(colors.theme.muted_foreground))
                         .child(div().flex_1().truncate().child(file.name.clone()))
-                        .child(super::chat_icons::icon(ChatIcon::Eye, px(16.), colors.theme.muted_foreground))
+                        .child(Icon::new(IconName::Eye).size(IconSize::Custom(px(16.))).color(colors.theme.muted_foreground).stroke(2.))
                 })));
             }
             if has_text {
@@ -204,12 +204,12 @@ impl MessagesTimeline {
             .group_hover(group, |s| s.opacity(1.))
             .child(div().mr_1().text_color(colors.theme.muted_foreground).child(format_clock(message.created_at.0)))
             .children(message_row.revert_turn_count.map(|_| {
-                xs_button(("revert", key), Some(ChatIcon::Pencil), None, colors.theme.text, &colors)
+                xs_button(("revert", key), Some(IconName::Pencil), None, colors.theme.text, &colors)
             }))
             .child(
                 xs_button(
                     ("copy-user", key),
-                    Some(if copied { ChatIcon::Check } else { ChatIcon::Copy }),
+                    Some(if copied { IconName::Check } else { IconName::Copy }),
                     None,
                     if copied { colors.theme.message_action } else { colors.theme.muted_foreground },
                     &colors,

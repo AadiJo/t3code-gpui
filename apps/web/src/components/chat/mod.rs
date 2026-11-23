@@ -7,7 +7,6 @@ mod timeline_user_message_row;
 mod timeline_work_entry_row;
 mod timeline_work_group_rows;
 pub mod chat_header;
-pub mod chat_icons;
 pub mod chat_style;
 pub mod composer;
 pub mod composer_command_menu;

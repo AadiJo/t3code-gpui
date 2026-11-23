@@ -5,7 +5,6 @@
 
 pub mod context_menu;
 pub mod fixtures;
-pub mod icons;
 pub mod model;
 pub mod sidebar_chrome;
 pub mod sidebar_list_markers;

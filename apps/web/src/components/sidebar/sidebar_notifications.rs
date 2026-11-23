@@ -1,21 +1,21 @@
 //! The fork's notification bell and inbox popover. Ports
 //! `SidebarNotifications.tsx` (`05-ui-shell.md` 6.11).
 
+use crate::components::icons::{Icon, IconName, IconSize};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
-use super::icons::{ShellIcon, icon};
 use super::model::NotificationKind;
 use super::sidebar_thread_header::{HeaderControl, sidebar_icon_button};
 use super::style::*;
 use super::{InboxFilter, Sidebar, SidebarEvent};
 
-fn kind_look(kind: NotificationKind, colors: &ShellColors) -> (ShellIcon, Hsla, &'static str) {
+fn kind_look(kind: NotificationKind, colors: &ShellColors) -> (IconName, Hsla, &'static str) {
     match kind {
-        NotificationKind::Approval => (ShellIcon::ShieldAlert, colors.warning_foreground, "Approval required"),
-        NotificationKind::Input => (ShellIcon::CircleHelp, colors.info_foreground, "Input required"),
-        NotificationKind::Failed => (ShellIcon::CircleAlert, colors.destructive_foreground, "Turn failed"),
-        NotificationKind::Completed => (ShellIcon::Check, colors.success_foreground, "Turn completed"),
+        NotificationKind::Approval => (IconName::ShieldAlert, colors.warning_foreground, "Approval required"),
+        NotificationKind::Input => (IconName::CircleQuestionMark, colors.info_foreground, "Input required"),
+        NotificationKind::Failed => (IconName::CircleAlert, colors.destructive_foreground, "Turn failed"),
+        NotificationKind::Completed => (IconName::Check, colors.success_foreground, "Turn completed"),
     }
 }
 
@@ -29,7 +29,7 @@ impl Sidebar {
     ) -> impl IntoElement {
         let unread = self.snapshot.notifications.iter().filter(|n| n.unread).count();
         let hovered = self.hovered_control == Some(HeaderControl::Notifications);
-        let bell = sidebar_icon_button("sidebar-notifications", ShellIcon::Bell, px(32.), hovered || self.notifications_open, colors)
+        let bell = sidebar_icon_button("sidebar-notifications", IconName::Bell, px(32.), hovered || self.notifications_open, colors)
             .tooltip(super::tooltip::tooltip("Notifications"))
             .on_hover(self.control_hover_listener(HeaderControl::Notifications, cx))
             .on_click(cx.listener(|this, _, _, cx| {
@@ -109,7 +109,7 @@ impl Sidebar {
                         .py_3()
                         .cursor_pointer()
                         .hover(|s| s.bg(colors.accent).text_color(colors.accent_foreground))
-                        .child(div().mt(px(2.)).child(icon(glyph, px(16.), color)))
+                        .child(div().mt(px(2.)).child(Icon::new(glyph).size(IconSize::Custom(px(16.))).color(color)))
                         .child(
                             div()
                                 .flex()
@@ -148,7 +148,7 @@ impl Sidebar {
                             .id(("notification-read", ix))
                             .p_1()
                             .cursor_pointer()
-                            .child(icon(ShellIcon::Check, px(14.), colors.muted_foreground))
+                            .child(Icon::new(IconName::Check).size(IconSize::Custom(px(14.))).color(colors.muted_foreground))
                             .tooltip(super::tooltip::tooltip("Mark as read"))
                             .on_click(cx.listener(move |_, _, _, cx| {
                                 cx.emit(SidebarEvent::MarkNotificationRead(read_id.clone()));

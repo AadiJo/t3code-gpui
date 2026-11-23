@@ -4,13 +4,14 @@
 //! (`QueuedRunsControl.tsx`), proposed plans (`ProposedPlanCard.tsx`), the
 //! worktree setup card, and stand-ins for HTML renders and MCP app frames.
 
+use crate::components::icons::{Icon, IconName, IconSize};
+use crate::components::chat::chat_style::chat_icon_stroke;
 use gpui_kit::{
     AnyElement, Context, FontWeight, Hsla, InteractiveElement as _, IntoElement, ParentElement as _,
     StatefulInteractiveElement as _, Styled as _, Window, div, linear_color_stop, linear_gradient, px,
 };
 
 use super::{
-    chat_icons::{ChatIcon, icon},
     chat_style::{ChatColors, TEXT_2XS, TEXT_3XS, TEXT_SM, TEXT_XS, alpha, mono},
     messages_timeline::MessagesTimeline,
     messages_timeline_logic::TimelineRow,
@@ -53,11 +54,11 @@ impl MessagesTimeline {
         let colors = self.colors;
         let rule = || div().h(px(1.)).flex_1().bg(alpha(colors.theme.border, 0.7));
         let glyph = match divider.kind {
-            super::timeline_entries::DividerKind::RunInterrupted => ChatIcon::CircleAlert,
-            super::timeline_entries::DividerKind::Forked => ChatIcon::GitFork,
-            super::timeline_entries::DividerKind::ParentLink => ChatIcon::Link,
-            super::timeline_entries::DividerKind::NewSession => ChatIcon::RotateCcw,
-            super::timeline_entries::DividerKind::Handoff => ChatIcon::ArrowUp,
+            super::timeline_entries::DividerKind::RunInterrupted => IconName::CircleAlert,
+            super::timeline_entries::DividerKind::Forked => IconName::GitFork,
+            super::timeline_entries::DividerKind::ParentLink => IconName::Link,
+            super::timeline_entries::DividerKind::NewSession => IconName::RotateCcw,
+            super::timeline_entries::DividerKind::Handoff => IconName::ArrowUp,
         };
         let mut pill = div()
             .flex()
@@ -67,7 +68,7 @@ impl MessagesTimeline {
             .rounded_full()
             .px_2()
             .py_1()
-            .child(icon(glyph, SMALL_ICON, colors.theme.muted_foreground))
+            .child(Icon::new(glyph).size(IconSize::Custom(SMALL_ICON)).color(colors.theme.muted_foreground).stroke(chat_icon_stroke(glyph)))
             .child(div().font_weight(FontWeight::MEDIUM).child(divider.label.clone()))
             .children(divider.detail.as_ref().map(|detail| div().opacity(0.7).truncate().child(format!("· {detail}"))));
         if divider.action {
@@ -130,7 +131,7 @@ impl MessagesTimeline {
             .children(subagent.elapsed_ms.map(|ms| {
                 div().text_size(TEXT_XS.size).text_color(colors.theme.muted_foreground).child(format_duration(ms))
             }))
-            .child(icon(ChatIcon::ChevronRight, px(14.), alpha(colors.theme.muted_foreground, 0.6)))
+            .child(Icon::new(IconName::ChevronRight).size(IconSize::Custom(px(14.))).color(alpha(colors.theme.muted_foreground, 0.6)))
             .into_any_element()
     }
 
@@ -185,7 +186,7 @@ impl MessagesTimeline {
                     )
                     .child(div().text_size(TEXT_3XS.size).text_color(summary_color).child(summary)),
             )
-            .child(icon(if expanded { ChatIcon::ChevronDown } else { ChatIcon::ChevronRight }, px(14.), colors.theme.muted_foreground));
+            .child(Icon::new(if expanded { IconName::ChevronDown } else { IconName::ChevronRight }).size(IconSize::Custom(px(14.))).color(colors.theme.muted_foreground).stroke(chat_icon_stroke(if expanded { IconName::ChevronDown } else { IconName::ChevronRight })));
         let id = row.id.clone();
         let mut column = div()
             .id(("subagent-group", row.key))
@@ -216,11 +217,11 @@ impl MessagesTimeline {
             return div().into_any_element();
         };
         let glyph = match kind {
-            ApprovalKind::Command => ChatIcon::Terminal,
-            ApprovalKind::FileChange => ChatIcon::SquarePen,
-            ApprovalKind::FileRead => ChatIcon::Eye,
-            ApprovalKind::Permission => ChatIcon::Wrench,
-            ApprovalKind::AppAccess => ChatIcon::Hammer,
+            ApprovalKind::Command => IconName::Terminal,
+            ApprovalKind::FileChange => IconName::SquarePen,
+            ApprovalKind::FileRead => IconName::Eye,
+            ApprovalKind::Permission => IconName::Wrench,
+            ApprovalKind::AppAccess => IconName::Hammer,
         };
         let key = MessagesTimeline::key_of(entry.id.as_str());
         let text_button = |id: &'static str, label: &'static str, color: Hsla| {
@@ -259,7 +260,7 @@ impl MessagesTimeline {
                             .flex()
                             .items_center()
                             .gap_1()
-                            .child(icon(ChatIcon::Shield, SMALL_ICON, colors.theme.warning))
+                            .child(Icon::new(IconName::Shield).size(IconSize::Custom(SMALL_ICON)).color(colors.theme.warning))
                             .child(div().text_color(colors.theme.warning).child("Waiting for approval"))
                             .child(div().text_color(colors.theme.muted_foreground).child("·"))
                             .child(text_button("decline", "Decline", colors.theme.muted_foreground))
@@ -327,9 +328,9 @@ impl MessagesTimeline {
                                 ]
                             } else {
                                 vec![
-                                    xs_button(("queued-send", key), Some(ChatIcon::ArrowUp), Some("Send now".into()), colors.theme.muted_foreground, &colors).into_any_element(),
-                                    xs_button(("queued-edit", key), Some(ChatIcon::Pencil), None, colors.theme.muted_foreground, &colors).into_any_element(),
-                                    xs_button(("queued-remove", key), Some(ChatIcon::X), None, colors.theme.muted_foreground, &colors).into_any_element(),
+                                    xs_button(("queued-send", key), Some(IconName::ArrowUp), Some("Send now".into()), colors.theme.muted_foreground, &colors).into_any_element(),
+                                    xs_button(("queued-edit", key), Some(IconName::Pencil), None, colors.theme.muted_foreground, &colors).into_any_element(),
+                                    xs_button(("queued-remove", key), Some(IconName::X), None, colors.theme.muted_foreground, &colors).into_any_element(),
                                 ]
                             }),
                     )
@@ -438,10 +439,10 @@ impl MessagesTimeline {
             .px_3()
             .py(px(10.))
             .text_size(TEXT_SM.size)
-            .child(icon(ChatIcon::CodeXml, px(16.), colors.theme.muted_foreground))
+            .child(Icon::new(IconName::CodeXml).size(IconSize::Custom(px(16.))).color(colors.theme.muted_foreground).stroke(2.))
             .child(div().text_color(colors.theme.muted_foreground).child(kind))
             .child(div().flex_1().truncate().font_weight(FontWeight::MEDIUM).text_color(colors.theme.text).child(title.clone()))
-            .child(icon(ChatIcon::ExternalLink, px(14.), colors.theme.muted_foreground))
+            .child(Icon::new(IconName::ExternalLink).size(IconSize::Custom(px(14.))).color(colors.theme.muted_foreground))
             .into_any_element()
     }
 }

@@ -3,6 +3,7 @@
 //! banner, the model picker open, and the `@` menu open. `composer-light`
 //! renders the same in the light appearance.
 
+use crate::components::icons::IconName;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
@@ -20,7 +21,6 @@ use crate::components::chat::composer::{
 use crate::components::chat::composer_command_menu::{
     ComposerCommandAction, ComposerCommandIcon, ComposerCommandItem, ComposerMenuSource,
 };
-use crate::components::chat::composer_icons::Icon;
 use crate::components::chat::composer_permissions::RuntimeMode;
 use crate::components::chat::composer_prompt_history::PromptHistoryEntry;
 use crate::composer_draft_store::{ComposerDraftKey, ComposerDraftStore, InMemoryDraftStore};
@@ -133,11 +133,11 @@ impl ComposerMenuSource for FixtureMenuSource {
         let items = match trigger.kind {
             ComposerTriggerKind::Path => {
                 let files = [
-                    ("apps/web/src/components/chat/composer.rs", Icon::File),
-                    ("apps/web/src/components/composer_prompt_editor.rs", Icon::File),
-                    ("apps/web/src/composer_logic.rs", Icon::File),
-                    ("apps/web/src/components/chat/", Icon::Folder),
-                    ("packages/contracts/src/rpc.rs", Icon::File),
+                    ("apps/web/src/components/chat/composer.rs", IconName::File),
+                    ("apps/web/src/components/composer_prompt_editor.rs", IconName::File),
+                    ("apps/web/src/composer_logic.rs", IconName::File),
+                    ("apps/web/src/components/chat/", IconName::Folder),
+                    ("packages/contracts/src/rpc.rs", IconName::File),
                 ];
                 let mut items: Vec<_> = files
                     .iter()
@@ -178,7 +178,7 @@ impl ComposerMenuSource for FixtureMenuSource {
                 .filter(|s| s.contains(&q))
                 .map(|s| ComposerCommandItem {
                     id: format!("skill:{s}").into(),
-                    icon: ComposerCommandIcon::Icon(Icon::Sparkles),
+                    icon: ComposerCommandIcon::Icon(IconName::Sparkles),
                     label: (*s).into(),
                     label_prefix: None,
                     description: "Project skill".into(),
@@ -188,7 +188,7 @@ impl ComposerMenuSource for FixtureMenuSource {
                 .collect(),
             ComposerTriggerKind::PullRequest => vec![ComposerCommandItem {
                 id: "pr:41596".into(),
-                icon: ComposerCommandIcon::Icon(Icon::GitPullRequest),
+                icon: ComposerCommandIcon::Icon(IconName::GitPullRequest),
                 label: "#41596".into(),
                 label_prefix: None,
                 description: "Markdown previews keep a long table in one piece".into(),
@@ -296,7 +296,7 @@ pub fn build_composer(state: SceneState, store: Rc<RefCell<dyn ComposerDraftStor
             composer_state.banners = vec![ComposerBanner {
                 id: "disconnected".into(),
                 tone: BannerTone::Error,
-                icon: Icon::CircleAlert,
+                icon: IconName::CircleAlert,
                 title: "Environment disconnected. Messages send when it reconnects.".into(),
                 action: Some("Retry".into()),
             }];

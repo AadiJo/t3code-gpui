@@ -4,6 +4,7 @@
 //! are cached by content, so a keystroke rebuilds only the line it touched;
 //! GPUI's text system caches the shaped lines across frames the same way.
 
+use crate::components::icons::IconName;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
@@ -200,18 +201,18 @@ impl Builder {
 
 fn chip_icon(kind: &ChipKind) -> &'static str {
     match kind {
-        ChipKind::Mention { path } if path.ends_with('/') => "icons/composer/folder.svg",
-        ChipKind::Mention { .. } => "icons/composer/file.svg",
-        ChipKind::Skill { .. } => "icons/composer/sparkles.svg",
-        ChipKind::Model { .. } => "icons/composer/cpu.svg",
-        ChipKind::Citation => "icons/composer/messages-square.svg",
+        ChipKind::Mention { path } if path.ends_with('/') => IconName::Folder.path(),
+        ChipKind::Mention { .. } => IconName::File.path(),
+        ChipKind::Skill { .. } => IconName::Sparkles.path(),
+        ChipKind::Model { .. } => IconName::Cpu.path(),
+        ChipKind::Citation => IconName::MessagesSquare.path(),
         ChipKind::Context { kind, .. } => match kind {
-            ContextKind::Image => "icons/composer/image.svg",
-            ContextKind::Text => "icons/composer/file-text.svg",
-            ContextKind::Terminal => "icons/composer/terminal.svg",
-            ContextKind::Thread => "icons/composer/messages-square.svg",
-            ContextKind::PullRequest => "icons/composer/git-pull-request.svg",
-            _ => "icons/composer/file.svg",
+            ContextKind::Image => IconName::Image.path(),
+            ContextKind::Text => IconName::FileText.path(),
+            ContextKind::Terminal => IconName::Terminal.path(),
+            ContextKind::Thread => IconName::MessagesSquare.path(),
+            ContextKind::PullRequest => IconName::GitPullRequest.path(),
+            _ => IconName::File.path(),
         },
     }
 }
@@ -301,7 +302,7 @@ fn build_display_line(line: &DocLine, ctx: &BuildCtx<'_>) -> DisplayLine {
                         b.atom(indent_len..marker, &format!("{digits}\u{2002}"), muted, None);
                     }
                     ListKind::Task { checked } => {
-                        let icon = if checked { "icons/composer/square-check.svg" } else { "icons/composer/checkbox.svg" };
+                        let icon = if checked { IconName::SquareCheck.path() } else { IconName::Square.path() };
                         b.atom(indent_len..marker, "", muted, Some((icon, c.muted_foreground)));
                     }
                 }

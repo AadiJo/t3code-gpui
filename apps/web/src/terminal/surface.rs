@@ -2,6 +2,7 @@
 //! IME, mouse and wheel input into bytes, and keeps the cursor blink,
 //! selection, find and link hover state. Ports `terminal/ghostty/surface.ts`.
 
+use crate::components::icons::IconName;
 use std::future::Future;
 use std::ops::Range;
 use std::pin::Pin;
@@ -991,9 +992,9 @@ impl TerminalSurface {
                         .child(label),
                 )
                 .child(div().text_color(colors.text_muted).child(status))
-                .child(icon("icons/terminal/chevron-up.svg", "terminal-find-prev", Some(false)))
-                .child(icon("icons/terminal/chevron-down.svg", "terminal-find-next", Some(true)))
-                .child(icon("icons/terminal/x.svg", "terminal-find-close", None)),
+                .child(icon(IconName::ChevronUp.path(), "terminal-find-prev", Some(false)))
+                .child(icon(IconName::ChevronDown.path(), "terminal-find-next", Some(true)))
+                .child(icon(IconName::X.path(), "terminal-find-close", None)),
         )
     }
 }

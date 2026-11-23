@@ -3,10 +3,10 @@
 //! optional environment pill; the footer holds the utility buttons and the
 //! fork's notification bell.
 
+use crate::components::icons::IconName;
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
-use super::icons::ShellIcon;
 use super::sidebar_thread_header::{HeaderControl, sidebar_icon_button};
 use super::style::*;
 use super::{Sidebar, SidebarEvent};
@@ -73,7 +73,7 @@ impl Sidebar {
                 self,
                 cx,
                 "sidebar-settings",
-                ShellIcon::Settings,
+                IconName::Settings,
                 HeaderControl::Settings,
                 "Settings",
                 || SidebarEvent::OpenSettings,
@@ -82,7 +82,7 @@ impl Sidebar {
                 self,
                 cx,
                 "sidebar-pull-requests",
-                ShellIcon::GitPullRequest,
+                IconName::GitPullRequest,
                 HeaderControl::PullRequests,
                 "Pull requests",
                 || SidebarEvent::OpenPullRequests,
@@ -91,7 +91,7 @@ impl Sidebar {
                 self,
                 cx,
                 "sidebar-issues",
-                ShellIcon::CircleDot,
+                IconName::CircleDot,
                 HeaderControl::Issues,
                 "Issues",
                 || SidebarEvent::OpenIssues,
@@ -100,7 +100,7 @@ impl Sidebar {
                 self,
                 cx,
                 "sidebar-usage",
-                ShellIcon::ChartNoAxesColumn,
+                IconName::ChartNoAxesColumn,
                 HeaderControl::Usage,
                 "Usage",
                 || SidebarEvent::OpenUsage,

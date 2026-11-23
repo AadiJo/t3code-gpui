@@ -1,11 +1,11 @@
 //! Search field and the filter / add project / new thread buttons. Ports
 //! `SidebarThreadHeader.tsx` (`05-ui-shell.md` 6.3).
 
+use crate::components::icons::{Icon, IconName, IconSize};
 use gpui_kit::component::input::Input;
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
-use super::icons::{ShellIcon, icon};
 use super::style::*;
 use super::{Sidebar, SidebarEvent};
 
@@ -15,7 +15,7 @@ use super::{Sidebar, SidebarEvent};
 /// Button once it lands.
 pub fn sidebar_icon_button(
     id: impl Into<ElementId>,
-    glyph: ShellIcon,
+    glyph: IconName,
     size: Pixels,
     hovered: bool,
     colors: &ShellColors,
@@ -34,15 +34,11 @@ pub fn sidebar_icon_button(
         .cursor_pointer()
         .when(hovered, |d| d.bg(colors.sidebar_row_hover))
         .active(move |s| s.bg(active))
-        .child(icon(
-            glyph,
-            px(16.),
-            if hovered {
+        .child(Icon::new(glyph).size(IconSize::Custom(px(16.))).color(if hovered {
                 colors.sidebar_foreground
             } else {
                 colors.sidebar_icon
-            },
-        ))
+            }))
 }
 
 /// Header controls that track hover in sidebar state (icons swap colour).
@@ -110,7 +106,7 @@ impl Sidebar {
             })
             .when(search_hot, |d| d.bg(colors.sidebar_row_hover))
             .when(search_focused, |d| d.border_1().border_color(colors.ring.opacity(0.7)))
-            .child(icon(ShellIcon::Search, px(16.), colors.sidebar_icon))
+            .child(Icon::new(IconName::Search).size(IconSize::Custom(px(16.))).color(colors.sidebar_icon))
             .child(
                 div().flex_1().min_w_0().child(
                     Input::new(&self.search)
@@ -134,7 +130,7 @@ impl Sidebar {
                         .rounded(px(4.))
                         .cursor_pointer()
                         .hover(|s| s.bg(colors.accent))
-                        .child(icon(ShellIcon::X, px(12.), colors.muted_foreground))
+                        .child(Icon::new(IconName::X).size(IconSize::Custom(px(12.))).color(colors.muted_foreground))
                         .on_click(cx.listener(|this, _, window, cx| {
                             this.search.update(cx, |state, cx| state.set_value("", window, cx));
                             this.options.search = SharedString::default();
@@ -161,7 +157,7 @@ impl Sidebar {
                             .child(
                                 sidebar_icon_button(
                                     "sidebar-filter",
-                                    ShellIcon::ListFilter,
+                                    IconName::ListFilter,
                                     px(28.),
                                     hovered(HeaderControl::Filter),
                                     colors,
@@ -175,7 +171,7 @@ impl Sidebar {
                             .child(
                                 sidebar_icon_button(
                                     "sidebar-add-project",
-                                    ShellIcon::FolderPlus,
+                                    IconName::FolderPlus,
                                     px(28.),
                                     hovered(HeaderControl::AddProject),
                                     colors,
@@ -187,7 +183,7 @@ impl Sidebar {
                             .child(
                                 sidebar_icon_button(
                                     "sidebar-new-thread",
-                                    ShellIcon::SquarePen,
+                                    IconName::SquarePen,
                                     px(28.),
                                     hovered(HeaderControl::NewThread),
                                     colors,

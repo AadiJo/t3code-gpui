@@ -1,9 +1,9 @@
 //! Permission (runtime) modes as the composer shows them. Ports
 //! `runtimeModeConfig.ts` and the chip of `ComposerFooterControls.tsx`.
 
+use crate::components::icons::IconName;
 use gpui_kit::SharedString;
 
-use crate::components::chat::composer_icons::Icon;
 
 /// How much a thread's agent may do without asking.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
@@ -50,12 +50,12 @@ impl RuntimeMode {
 }
 
 /// The mode's icon.
-pub fn runtime_mode_icon(mode: RuntimeMode) -> Icon {
+pub fn runtime_mode_icon(mode: RuntimeMode) -> IconName {
     match mode {
-        RuntimeMode::ApprovalRequired => Icon::Lock,
-        RuntimeMode::AutoAcceptEdits => Icon::PenLine,
-        RuntimeMode::Auto => Icon::ShieldCheck,
+        RuntimeMode::ApprovalRequired => IconName::Lock,
+        RuntimeMode::AutoAcceptEdits => IconName::PenLine,
+        RuntimeMode::Auto => IconName::ShieldCheck,
         // An open lock reads like a closed one at small sizes; a crossed shield does not.
-        RuntimeMode::FullAccess => Icon::ShieldOff,
+        RuntimeMode::FullAccess => IconName::ShieldOff,
     }
 }

@@ -157,3 +157,14 @@ impl ChatColors {
         (alpha(rgb_hsla(border), 0.7), rgb_hsla(if dark { title_dark } else { title_light }))
     }
 }
+
+/// The stroke width the chat draws `icon` at: work-log tool glyphs use 2
+/// (`TimelineToolActivityIcon.tsx`), everything else the app's 1.75.
+pub fn chat_icon_stroke(icon: crate::components::icons::IconName) -> f32 {
+    use crate::components::icons::IconName::*;
+    match icon {
+        Bot | Brain | CodeXml | Eye | GitPullRequest | Globe | Hammer | ListTodo | MessageCircle | Search | Smartphone
+        | SquarePen | Terminal | Wrench | Zap => 2.,
+        _ => 1.75,
+    }
+}

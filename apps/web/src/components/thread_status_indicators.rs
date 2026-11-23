@@ -2,16 +2,16 @@
 //! folder dots and the terminal activity icon. Ports the indicator parts of
 //! `ThreadStatusIndicators.tsx` and `SidebarThreadRow.tsx:560-574`.
 
+use crate::components::icons::{Icon, IconName, IconSize};
 use gpui_kit::*;
 
-use super::sidebar::icons::{ShellIcon, icon};
 use super::sidebar::style::ShellColors;
 use super::sidebar_logic::{FolderDot, TopStatus};
 
 /// Icon, label and colour of a status.
 #[derive(Clone, Copy, Debug)]
 pub struct StatusLook {
-    pub icon: ShellIcon,
+    pub icon: IconName,
     pub label: &'static str,
     pub color: Hsla,
 }
@@ -21,20 +21,20 @@ pub fn status_look(status: TopStatus, colors: &ShellColors) -> StatusLook {
     let look = |icon, label, color| StatusLook { icon, label, color };
     match status {
         TopStatus::Working { preparing: true, .. } => {
-            look(ShellIcon::CircleDashed, "Setting up", colors.info_foreground)
+            look(IconName::CircleDashed, "Setting up", colors.info_foreground)
         }
         TopStatus::Working { goal: true, .. } => {
-            look(ShellIcon::CircleDashed, "Goal", colors.info_foreground)
+            look(IconName::CircleDashed, "Goal", colors.info_foreground)
         }
-        TopStatus::Working { .. } => look(ShellIcon::CircleDashed, "Working", colors.info_foreground),
-        TopStatus::Waiting => look(ShellIcon::CircleDotDashed, "Waiting", colors.muted_foreground),
-        TopStatus::Approval => look(ShellIcon::ShieldQuestion, "Approval", colors.warning_foreground),
-        TopStatus::Input => look(ShellIcon::MessageCircleQuestion, "Input", colors.input_status),
-        TopStatus::Request => look(ShellIcon::UserRound, "Request", colors.guest_foreground),
-        TopStatus::Limited => look(ShellIcon::CircleAlert, "Limited", colors.warning_foreground),
-        TopStatus::Failed => look(ShellIcon::CircleAlert, "Failed", colors.error_foreground),
-        TopStatus::Woke => look(ShellIcon::AlarmClock, "Woke", colors.warning_foreground),
-        TopStatus::Done => look(ShellIcon::CircleCheck, "Done", colors.success_foreground),
+        TopStatus::Working { .. } => look(IconName::CircleDashed, "Working", colors.info_foreground),
+        TopStatus::Waiting => look(IconName::CircleDotDashed, "Waiting", colors.muted_foreground),
+        TopStatus::Approval => look(IconName::ShieldQuestionMark, "Approval", colors.warning_foreground),
+        TopStatus::Input => look(IconName::MessageCircleQuestionMark, "Input", colors.input_status),
+        TopStatus::Request => look(IconName::UserRound, "Request", colors.guest_foreground),
+        TopStatus::Limited => look(IconName::CircleAlert, "Limited", colors.warning_foreground),
+        TopStatus::Failed => look(IconName::CircleAlert, "Failed", colors.error_foreground),
+        TopStatus::Woke => look(IconName::AlarmClock, "Woke", colors.warning_foreground),
+        TopStatus::Done => look(IconName::CircleCheck, "Done", colors.success_foreground),
     }
 }
 
@@ -54,7 +54,7 @@ pub fn status_indicator(
         .text_xs()
         .font_weight(FontWeight::MEDIUM)
         .text_color(look.color)
-        .child(icon(look.icon, icon_size, look.color))
+        .child(Icon::new(look.icon).size(IconSize::Custom(icon_size)).color(look.color))
         .child(look.label)
         .children(duration)
 }
@@ -73,14 +73,10 @@ pub fn folder_dot(dot: FolderDot, colors: &ShellColors) -> Div {
 /// 12px terminal icon for threads with running terminal processes. It pulses
 /// (`animate-status-pulse`, 2s, opacity 1 to 0.5 in six steps) when `phase` is
 /// driven by the caller's stepped clock; pass `None` to draw it still.
-pub fn terminal_status_icon(phase: Option<u8>, colors: &ShellColors) -> Svg {
+pub fn terminal_status_icon(phase: Option<u8>, colors: &ShellColors) -> Icon {
     let opacity = phase.map_or(1., |step| {
         let t = f32::from(step % 6) / 5.;
         1. - 0.5 * (1. - (2. * t - 1.).abs())
     });
-    icon(
-        ShellIcon::Terminal,
-        px(12.),
-        colors.terminal_running.opacity(opacity),
-    )
+    Icon::new(IconName::Terminal).size(IconSize::Custom(px(12.))).color(colors.terminal_running.opacity(opacity))
 }

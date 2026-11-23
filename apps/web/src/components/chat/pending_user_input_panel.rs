@@ -2,6 +2,7 @@
 //! composer's top edge (`ComposerPendingUserInputPanel.tsx`). The composer
 //! owns where it mounts; this draws the drawer from the timeline's data.
 
+use crate::components::icons::{Icon, IconName, IconSize};
 use std::rc::Rc;
 
 use gpui_kit::{
@@ -10,7 +11,6 @@ use gpui_kit::{
 };
 
 use super::{
-    chat_icons::{ChatIcon, icon},
     chat_style::{ChatColors, TEXT_2XS, TEXT_SM, TEXT_XS, alpha},
     timeline_entries::PendingQuestion,
 };
@@ -40,7 +40,7 @@ pub fn pending_user_input_panel(
         .text_color(colors.theme.muted_foreground)
         .child(div().flex_1().child(question.header.clone()))
         .child(format!("{}/{}", question.index + 1, question.count))
-        .child(icon(ChatIcon::ChevronDown, px(14.), colors.theme.muted_foreground));
+        .child(Icon::new(IconName::ChevronDown).size(IconSize::Custom(px(14.))).color(colors.theme.muted_foreground));
     let options = question.options.iter().enumerate().map(|(index, (label, description))| {
         let chosen = selected == Some(index);
         let radio = div()

@@ -4,6 +4,7 @@
 //! with the fork's changes: a fixed 320px body, Claude before OpenAI, no "New"
 //! badge, and model icon overrides.
 
+use crate::components::icons::{Icon, IconName, IconSize};
 use std::collections::HashSet;
 use std::ops::Range;
 use std::sync::Arc;
@@ -15,7 +16,7 @@ use gpui_kit::{
     hsla, point, prelude::FluentBuilder as _, px, uniform_list,
 };
 
-use crate::components::chat::composer_icons::{Icon, icon, provider_icon};
+use crate::components::chat::composer_icons::{composer_icon_stroke, provider_icon};
 use crate::components::chat::composer_permissions::{RuntimeMode, runtime_mode_icon};
 use crate::components::chat::composer_theme::{
     ComposerColors, MODEL_PICKER_EFFORT_WIDTH, MODEL_PICKER_HEIGHT, MODEL_PICKER_LIST_WIDTH, MODEL_PICKER_RAIL_WIDTH,
@@ -368,7 +369,7 @@ impl ModelPicker {
                 "picker-rail-favorites".into(),
                 self.tab == PickerTab::Favorites,
                 false,
-                icon(Icon::StarFilled, px(20.), c.foreground).into_any_element(),
+                Icon::new(IconName::StarFilled).size(IconSize::Custom(px(20.))).color(c.foreground).into_any_element(),
                 PickerTab::Favorites,
                 cx,
             )
@@ -482,7 +483,7 @@ impl ModelPicker {
                             .text_color(c.foreground)
                             .child(display_model_name(&item.model, false)),
                     )
-                    .when(selected, |el| el.child(icon(Icon::Check, px(14.), c.foreground)))
+                    .when(selected, |el| el.child(Icon::new(IconName::Check).size(IconSize::Custom(px(14.))).color(c.foreground).stroke(1.8)))
                     .when_some(item.model.sub_provider.clone(), |el, sub| {
                         el.child(div().min_w_0().overflow_hidden().whitespace_nowrap().text_size(px(12.)).text_color(c.muted_foreground.opacity(0.7)).child(sub))
                     })
@@ -519,9 +520,9 @@ impl ModelPicker {
                             .hover(move |s| s.bg(c.row_hover))
                             .when(show_star, |el| {
                                 el.child(if favorite {
-                                    icon(Icon::StarFilled, px(12.), c.warning).into_any_element()
+                                    Icon::new(IconName::StarFilled).size(IconSize::Custom(px(12.))).color(c.warning).into_any_element()
                                 } else {
-                                    icon(Icon::Star, px(12.), c.muted_foreground).into_any_element()
+                                    Icon::new(IconName::Star).size(IconSize::Custom(px(12.))).color(c.muted_foreground).into_any_element()
                                 })
                             })
                             .on_click(cx.listener(move |_, _, _, cx| {
@@ -566,7 +567,7 @@ impl ModelPicker {
                         .child(div().flex_1().min_w_0().overflow_hidden().whitespace_nowrap().text_ellipsis().child(option.label.clone()))
                         .map(|el| {
                             if selected {
-                                el.child(icon(Icon::Check, px(14.), c.foreground))
+                                el.child(Icon::new(IconName::Check).size(IconSize::Custom(px(14.))).color(c.foreground).stroke(1.8))
                             } else if option.is_default {
                                 el.child(div().text_size(px(12.)).text_color(c.muted_foreground.opacity(0.7)).child("Default"))
                             } else {
@@ -640,7 +641,7 @@ impl ModelPicker {
                         .flex()
                         .items_center()
                         .gap(px(4.))
-                        .when(bolt, |el| el.child(icon(Icon::ZapFilled, px(12.), if checked { c.foreground } else { c.muted_foreground })))
+                        .when(bolt, |el| el.child(Icon::new(IconName::ZapFilled).size(IconSize::Custom(px(12.))).color(if checked { c.foreground } else { c.muted_foreground })))
                         .child(option.label.clone())
                         .into_any_element(),
                 )
@@ -657,7 +658,7 @@ impl ModelPicker {
                 segment(
                     "ultracode".into(),
                     on,
-                    div().flex().items_center().gap(px(4.)).child(icon(Icon::Workflow, px(12.), if on { c.foreground } else { c.muted_foreground })).child("Ultracode").into_any_element(),
+                    div().flex().items_center().gap(px(4.)).child(Icon::new(IconName::Workflow).size(IconSize::Custom(px(12.))).color(if on { c.foreground } else { c.muted_foreground })).child("Ultracode").into_any_element(),
                 )
                 .on_click(cx.listener(move |this, _, _, cx| {
                     this.selection.ultracode = !this.selection.ultracode;
@@ -694,9 +695,9 @@ impl ModelPicker {
                     .text_size(px(12.))
                     .text_color(c.muted_foreground)
                     .hover(move |s| s.bg(c.row_hover).text_color(c.foreground))
-                    .child(icon(runtime_mode_icon(mode), px(14.), c.muted_foreground))
+                    .child(Icon::new(runtime_mode_icon(mode)).size(IconSize::Custom(px(14.))).color(c.muted_foreground).stroke(composer_icon_stroke(runtime_mode_icon(mode))))
                     .child(mode.label())
-                    .child(icon(Icon::ChevronUp, px(12.), c.muted_foreground))
+                    .child(Icon::new(IconName::ChevronUp).size(IconSize::Custom(px(12.))).color(c.muted_foreground))
                     .on_click(cx.listener(move |this, _, _, cx| {
                         let next = this.runtime_mode.next();
                         this.runtime_mode = next;
@@ -764,7 +765,7 @@ impl Render for ModelPicker {
                 .h(px(26.) + px(7.))
                 .flex()
                 .items_center()
-                .child(div().absolute().left(px(0.)).child(icon(Icon::Search, px(16.), c.muted_foreground.opacity(0.55))))
+                .child(div().absolute().left(px(0.)).child(Icon::new(IconName::Search).size(IconSize::Custom(px(16.))).color(c.muted_foreground.opacity(0.55))))
                 .child(
                     div()
                         .pl(px(20.))
