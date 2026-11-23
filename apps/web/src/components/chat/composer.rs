@@ -355,7 +355,8 @@ impl ChatComposer {
 
     // ---- Menu ----
 
-    fn refresh_menu(&mut self, cx: &mut Context<Self>) {
+    /// Re-reads the menu source for the trigger at the cursor (async results landed).
+    pub fn refresh_menu(&mut self, cx: &mut Context<Self>) {
         let editor = self.editor.read(cx);
         let trigger = editor.selection().is_empty().then(|| detect_composer_trigger(editor.text(), editor.cursor())).flatten();
         let trigger = trigger.filter(|t| self.dismissed_trigger.as_ref().is_none_or(|d| d.start != t.range.start));

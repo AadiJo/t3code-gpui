@@ -171,6 +171,7 @@ pub struct ConnectionRuntime {
     electron: Option<ElectronImportSource>,
     state: Entity<ConnectionsState>,
     events: mpsc::UnboundedSender<BridgeEvent>,
+    data_dir: PathBuf,
 }
 
 impl Global for ConnectionRuntime {}
@@ -204,6 +205,7 @@ impl ConnectionRuntime {
             .build()?;
         let handle = runtime.handle().clone();
         let RuntimeConfig { data_dir, secrets, cloud, presentation, electron } = config;
+        let stored_data_dir = data_dir.clone();
         let (registry, auth, cloud) = runtime.block_on(async {
             std::fs::create_dir_all(&data_dir)?;
             let secrets = secrets.unwrap_or_else(|| open_secret_store(&data_dir));
@@ -262,6 +264,7 @@ impl ConnectionRuntime {
             electron,
             state,
             events,
+            data_dir: stored_data_dir,
         });
         cx.on_app_quit(|cx| {
             ConnectionRuntime::shutdown(cx);
@@ -309,6 +312,26 @@ impl ConnectionRuntime {
         cx.background_executor().spawn(async move {
             receiver.await.unwrap_or_else(|_| Err(CommandError("The app is shutting down.".into())))
         })
+    }
+
+    /// The tokio runtime network and sync tasks run on.
+    pub fn tokio(&self) -> &tokio::runtime::Handle {
+        &self.handle
+    }
+
+    /// The registry of saved environments and their supervisors.
+    pub fn registry(&self) -> &ConnectionRegistry {
+        &self.registry
+    }
+
+    /// Holds the DPoP key and credentials every environment request uses.
+    pub fn auth(&self) -> &Arc<RemoteAuthorization> {
+        &self.auth
+    }
+
+    /// The app's data directory (catalog, secrets, caches).
+    pub fn data_dir(&self) -> &std::path::Path {
+        &self.data_dir
     }
 
     /// Wakes every supervisor: retry now, check better routes.
