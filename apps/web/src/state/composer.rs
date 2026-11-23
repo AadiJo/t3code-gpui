@@ -306,12 +306,13 @@ pub struct LiveMenuSource {
     results: RefCell<HashMap<SearchKey, Arc<Vec<ComposerCommandItem>>>>,
     pending: RefCell<Option<SearchKey>>,
     landed: futures::channel::mpsc::UnboundedSender<(SearchKey, Vec<ComposerCommandItem>)>,
+    composer: RefCell<Option<WeakEntity<ChatComposer>>>,
     _receive: Task<()>,
 }
 
 impl LiveMenuSource {
     /// A source for a thread whose workspace is `cwd`; refreshes `composer` when results land.
-    pub fn new(environment: &Entity<LiveEnvironment>, cwd: Option<String>, composer: WeakEntity<ChatComposer>, cx: &mut App) -> Rc<Self> {
+    pub fn new(environment: &Entity<LiveEnvironment>, cwd: Option<String>, cx: &mut App) -> Rc<Self> {
         let (landed, mut receiver) = futures::channel::mpsc::unbounded::<(SearchKey, Vec<ComposerCommandItem>)>();
         let env = environment.read(cx);
         let store = env.store.clone();
@@ -327,6 +328,7 @@ impl LiveMenuSource {
                         *this.pending.borrow_mut() = None;
                     }
                     this.results.borrow_mut().insert(key, Arc::new(items));
+                    let Some(composer) = this.composer.borrow().clone() else { continue };
                     cx.update(|cx| {
                         _ = composer.update(cx, |composer, cx| composer.refresh_menu(cx));
                     });
@@ -340,9 +342,15 @@ impl LiveMenuSource {
                 results: RefCell::default(),
                 pending: RefCell::default(),
                 landed,
+                composer: RefCell::default(),
                 _receive: receive,
             }
         })
+    }
+
+    /// The composer to refresh when results land.
+    pub fn attach(&self, composer: &Entity<ChatComposer>) {
+        *self.composer.borrow_mut() = Some(composer.downgrade());
     }
 
     /// Takes the skills of a new server config.

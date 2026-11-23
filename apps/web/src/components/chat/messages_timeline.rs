@@ -65,6 +65,15 @@ pub(super) struct MessageMarkdown {
 }
 
 /// The chat timeline for one thread at a time.
+/// What a click in the timeline asks the chat view to do.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum TimelineAction {
+    Approve(super::timeline_entries::RequestId),
+    Decline(super::timeline_entries::RequestId),
+}
+
+impl gpui_kit::EventEmitter<TimelineAction> for MessagesTimeline {}
+
 pub struct MessagesTimeline {
     pub(super) input: TimelineInput,
     pub(super) rows: Arc<Vec<TimelineRow>>,
