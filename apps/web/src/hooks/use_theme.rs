@@ -213,6 +213,8 @@ impl ThemeStore {
     pub fn catalog(cx: &App) -> Vec<CatalogTheme> {
         let mut themes = BUILT_IN.clone();
         if let Some(this) = cx.try_global::<Self>() {
+            // A custom theme with a bundled theme's id (an imported Graphite) replaces it.
+            themes.retain(|theme| this.custom.iter().all(|custom| custom.document.id != theme.document.id));
             themes.extend(
                 this.custom
                     .iter()
@@ -278,7 +280,7 @@ impl ThemeStore {
     /// Adds or replaces a custom theme from a T3 theme file. Returns its id.
     pub fn add_custom(json: &[u8], cx: &mut App) -> Result<String, ThemeImportError> {
         let document = ThemeDocument::parse(json)?;
-        if BUILT_IN.iter().any(|theme| theme.document.id == document.id) {
+        if crate::vscode_theme_import::RESERVED_THEME_IDS.contains(&document.id.as_str()) {
             return Err(ThemeImportError::ReservedId(document.id));
         }
         let mut source: Value = serde_json::from_slice(json).map_err(ThemeError::from)?;
