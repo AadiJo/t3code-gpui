@@ -158,13 +158,3 @@ crate::wire::string_enum! {
         Mdns = "mdns",
     }
 }
-
-/// `RemoteOpenTarget` from `editor.ts`.
-#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RemoteOpenTarget {
-    pub kind: RemoteOpenTargetKind,
-    pub host: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub username: Option<String>,
-}

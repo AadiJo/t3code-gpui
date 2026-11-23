@@ -166,8 +166,8 @@ pub struct ProviderAuthState {
     pub authorization_url: Option<String>,
     pub expires_at: Option<String>,
     pub message: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub methods: Option<Vec<Option<ProviderAuthStateMethodsItem>>>,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "crate::wire::lenient_items_opt")]
+    pub methods: Option<Vec<ProviderAuthStateMethodsItem>>,
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "crate::wire::lenient")]
     pub interaction: Option<ProviderAuthInteraction>,
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "crate::wire::lenient")]

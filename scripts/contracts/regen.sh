@@ -17,7 +17,7 @@ mkdir -p "$schema"
 if [ -n "${T3CODE_CHECKOUT:-}" ]; then
   cd "$T3CODE_CHECKOUT/packages/contracts"
   node "$here/dump.mts" "$schema/rpc-schema.json"
-  node "$here/fixtures.mts" "$schema/rpc-schema.json" "$schema/wire-fixtures.json" "${FIXTURE_SAMPLES:-8}"
+  node "$here/fixtures.mts" "$schema/rpc-schema.json" "$schema/wire-fixtures.json" "${FIXTURE_SAMPLES:-10}"
 else
   echo "T3CODE_CHECKOUT not set: generating Rust from the committed schema only" >&2
 fi

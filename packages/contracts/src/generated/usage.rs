@@ -12,6 +12,16 @@ pub struct UsageModelSelector {
     pub model: String,
 }
 
+/// `UsageModelFilter` from `usage.ts`.
+#[derive(Debug, Clone, Default, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UsageModelFilter {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub include: Option<Vec<UsageModelSelector>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exclude: Option<Vec<UsageModelSelector>>,
+}
+
 crate::wire::string_enum! {
     /// Inline enum at `UsageReadErrorReason`.
     UsageReadErrorReason {
@@ -53,16 +63,6 @@ crate::wire::string_enum! {
 crate::wire::id_newtype! {
 /// `UsageDay` from `usage.ts`.
     UsageDay
-}
-
-/// `UsageModelFilter` from `usage.ts`.
-#[derive(Debug, Clone, Default, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct UsageModelFilter {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub include: Option<Vec<UsageModelSelector>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub exclude: Option<Vec<UsageModelSelector>>,
 }
 
 crate::wire::string_enum! {
@@ -128,21 +128,6 @@ crate::wire::string_enum! {
     }
 }
 
-/// `UsageSource` from `usage.ts`.
-#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct UsageSource {
-    pub fingerprint: UsageSourceFingerprint,
-    pub status: UsageSourceStatus,
-    pub scanned_files: NonNegativeInt,
-    pub skipped_files: NonNegativeInt,
-    pub malformed_records: NonNegativeInt,
-    pub distinct_sessions: NonNegativeInt,
-    pub message: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub refreshing: Option<crate::wire::True>,
-}
-
 /// `UsageTokenTotals` from `usage.ts`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -184,6 +169,21 @@ pub struct UsageSummaryBucketsItem {
     pub sessions: NonNegativeInt,
 }
 
+/// Inline object at `UsageSummarySourcesItem`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UsageSummarySourcesItem {
+    pub fingerprint: UsageSourceFingerprint,
+    pub status: UsageSourceStatus,
+    pub scanned_files: NonNegativeInt,
+    pub skipped_files: NonNegativeInt,
+    pub malformed_records: NonNegativeInt,
+    pub distinct_sessions: NonNegativeInt,
+    pub message: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub refreshing: Option<crate::wire::True>,
+}
+
 /// `UsageSummary` from `usage.ts`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -193,8 +193,10 @@ pub struct UsageSummary {
     pub time_zone: String,
     pub since_day: UsageDay,
     pub until_day: UsageDay,
-    pub buckets: Vec<Option<UsageSummaryBucketsItem>>,
-    pub sources: Vec<Option<UsageSource>>,
+    #[serde(deserialize_with = "crate::wire::lenient_items")]
+    pub buckets: Vec<UsageSummaryBucketsItem>,
+    #[serde(deserialize_with = "crate::wire::lenient_items")]
+    pub sources: Vec<UsageSummarySourcesItem>,
     pub pricing: UsagePricing,
     pub scan_duration_ms: NonNegativeInt,
     #[serde(default, skip_serializing_if = "Option::is_none")]

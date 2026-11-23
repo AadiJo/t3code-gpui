@@ -212,6 +212,27 @@ where
     Ok(raw.and_then(|r| serde_json::from_str(r.get()).ok()))
 }
 
+/// Decodes a forward-compatible array: elements this client cannot parse are dropped, as the
+/// TypeScript `ForwardCompatibleArray` does.
+pub fn lenient_items<'de, D, T>(d: D) -> Result<Vec<T>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: DeserializeOwned,
+{
+    let raw = Vec::<Box<RawValue>>::deserialize(d)?;
+    Ok(raw.iter().filter_map(|r| serde_json::from_str(r.get()).ok()).collect())
+}
+
+/// [`lenient_items`] for an optional or nullable array.
+pub fn lenient_items_opt<'de, D, T>(d: D) -> Result<Option<Vec<T>>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: DeserializeOwned,
+{
+    let raw = Option::<Vec<Box<RawValue>>>::deserialize(d)?;
+    Ok(raw.map(|items| items.iter().filter_map(|r| serde_json::from_str(r.get()).ok()).collect()))
+}
+
 /// An object with no declared fields (`Schema.Struct({})`). Writes `{}`; accepts any value.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
 pub struct Empty;

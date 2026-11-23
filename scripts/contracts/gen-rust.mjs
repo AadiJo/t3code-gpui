@@ -392,7 +392,8 @@ const fresh = (base) => {
   if (!used.has(n)) { used.add(n); return n; }
   for (let i = 2; ; i++) if (!used.has(`${n}${i}`)) { used.add(`${n}${i}`); return `${n}${i}`; }
 };
-const canon = (s) => JSON.stringify(s, (k, v) => (k === "description" ? undefined : v));
+// Shape identity ignores docs and x- annotations (leniency is decided on the property, not the type).
+const canon = (s) => JSON.stringify(s, (k, v) => (k === "description" || k.startsWith("x-") ? undefined : v));
 for (const n of Object.keys(defs)) used.add(typeIdent(n));
 const shapeToDef = new Map();
 for (const [n, s] of Object.entries(defs).sort(([a], [b]) => a.localeCompare(b))) if (!shapeToDef.has(canon(s))) shapeToDef.set(canon(s), n);
@@ -420,7 +421,11 @@ function rustType(s, ctx0) {
   if (alts) {
     const nn = nonNull(alts);
     if (nn.length === 0) return "()";
-    if (nn.length < alts.length) return `Option<${rustType(nn.length === 1 ? nn[0] : { anyOf: nn }, ctx)}>`;
+    if (nn.length < alts.length) {
+      // A nullable inside a nullable is one Option: null and absent decode the same.
+      const inner = rustType(nn.length === 1 ? nn[0] : { anyOf: nn }, ctx);
+      return inner.startsWith("Option<") ? inner : `Option<${inner}>`;
+    }
     if (nn.length === 1) return rustType(nn[0], ctx);
     const collapsed = collapseUnion(nn);
     if (collapsed) return rustType(collapsed, ctx);
@@ -556,6 +561,13 @@ function isForwardCompatible(prop) {
   return Array.isArray(alts) && alts.some((a) => a?.["x-forward-compatible"] && !a.$ref && !(a.type === "object" && a.properties));
 }
 
+/** A property that is an array (maybe nullable) whose element type is marked forward-compatible. */
+function hasForwardCompatibleItems(prop) {
+  const alts = prop && altsOf(prop);
+  const arr = alts ? nonNull(alts).length === 1 ? nonNull(alts)[0] : undefined : prop;
+  return arr?.type === "array" && arr.items?.["x-forward-compatible"] === true;
+}
+
 function emitStruct(name, s, ctx, tagKeyOverride) {
   stats.structs++;
   const required = new Set(s.required ?? []);
@@ -574,6 +586,7 @@ function emitStruct(name, s, ctx, tagKeyOverride) {
     const attrs = [];
     if (camelOfSnake(field) !== key) attrs.push(`rename = ${JSON.stringify(key)}`);
     const forwardCompat = isForwardCompatible(prop);
+    const lenientItems = !forwardCompat && hasForwardCompatibleItems(prop);
     if (!required.has(key)) {
       if (!ty.startsWith("Option<")) ty = `Option<${ty}>`;
       attrs.push("default", `skip_serializing_if = "Option::is_none"`);
@@ -583,6 +596,12 @@ function emitStruct(name, s, ctx, tagKeyOverride) {
       if (!ty.startsWith("Option<")) ty = `Option<${ty}>`;
       if (!attrs.includes("default")) attrs.push("default");
       attrs.push(`deserialize_with = "crate::wire::lenient"`);
+      stats.forwardCompatFields++;
+    }
+    if (lenientItems) {
+      // Elements this client cannot parse are dropped, as ForwardCompatibleArray does.
+      attrs.push(`deserialize_with = "crate::wire::${ty.startsWith("Option<") ? "lenient_items_opt" : "lenient_items"}"`);
+      if (ty.startsWith("Option<") && !attrs.includes("default")) attrs.push("default");
       stats.forwardCompatFields++;
     }
     if (!ty.startsWith("Option<")) allOptional = false;

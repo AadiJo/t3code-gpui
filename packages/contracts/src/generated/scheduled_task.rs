@@ -369,7 +369,8 @@ pub struct ScheduledTaskListResultTasksItem {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ScheduledTaskListResult {
-    pub tasks: Vec<Option<ScheduledTaskListResultTasksItem>>,
+    #[serde(deserialize_with = "crate::wire::lenient_items")]
+    pub tasks: Vec<ScheduledTaskListResultTasksItem>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub time_zone: Option<String>,
 }

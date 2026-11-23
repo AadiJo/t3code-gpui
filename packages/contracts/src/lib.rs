@@ -8,7 +8,13 @@
 mod generated;
 pub use generated::*;
 
+pub mod auth;
+pub mod environment;
 pub mod http;
+pub mod orchestration_v2;
 pub mod orchestration_v2_id_table;
+pub mod provider_instance;
 pub mod rpc;
+pub mod server;
+pub mod terminal;
 pub mod wire;

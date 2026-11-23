@@ -33,6 +33,13 @@ const patches: Patch[] = [
     replace: `  return Schema.NullOr(Schema.toEncoded(value)).annotate({ "${FORWARD_COMPAT_KEY}": true }).pipe(\n    Schema.decodeTo(\n      Schema.NullOr(value),`,
   },
   {
+    // ForwardCompatibleArray: UndefinedOr(element) items -> the element itself, marked; an element
+    // that does not decode is dropped. The server never encodes the undefined holes.
+    file: /\/packages\/contracts\/src\/baseSchemas\.ts$/,
+    find: "export const ForwardCompatibleArray = <Element extends Schema.Top>(element: Element) =>\n  Schema.Array(\n    Schema.UndefinedOr(element).pipe(",
+    replace: `export const ForwardCompatibleArray = <Element extends Schema.Top>(element: Element) =>\n  Schema.Array(\n    Schema.toEncoded(element).annotate({ "${FORWARD_COMPAT_KEY}": true }).pipe(`,
+  },
+  {
     // OmittedWhenNull: optionalKey(Unknown) -> optionalKey(value); a value that does not decode becomes null.
     file: /\/packages\/contracts\/src\/baseSchemas\.ts$/,
     find: "  return Schema.optionalKey(Schema.Unknown).pipe(\n    Schema.decodeTo(\n      Schema.NullOr(value),",

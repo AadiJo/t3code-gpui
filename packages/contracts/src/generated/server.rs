@@ -597,8 +597,8 @@ pub struct ServerConfigProvidersItemUsageLimitsResetCredits {
     pub next_expires_at: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub next_credit_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub options: Option<Vec<Option<ServerConfigProvidersItemUsageLimitsResetCreditsOptionsItem>>>,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "crate::wire::lenient_items_opt")]
+    pub options: Option<Vec<ServerConfigProvidersItemUsageLimitsResetCreditsOptionsItem>>,
 }
 
 /// Inline object at `ServerConfigProvidersItemUsageLimitsExternalUsage`.
@@ -631,7 +631,8 @@ pub struct ServerConfigProvidersItemUsageLimitsUnavailable {
 #[serde(rename_all = "camelCase")]
 pub struct ServerConfigProvidersItemUsageLimits {
     pub checked_at: String,
-    pub windows: Vec<Option<ServerConfigProvidersItemUsageLimitsWindowsItem>>,
+    #[serde(deserialize_with = "crate::wire::lenient_items")]
+    pub windows: Vec<ServerConfigProvidersItemUsageLimitsWindowsItem>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub zero_spend_cap: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -735,8 +736,8 @@ pub struct ServerConfigProvidersItem {
     pub show_interaction_mode_toggle: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reports_context_window: Option<bool>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub supported_runtime_modes: Option<Vec<Option<RuntimeMode>>>,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "crate::wire::lenient_items_opt")]
+    pub supported_runtime_modes: Option<Vec<RuntimeMode>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub supports_conversation_rollback: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -792,6 +793,16 @@ pub struct ServerConfigProvidersItem {
     pub loaded_catalog_digest: Option<String>,
 }
 
+/// Inline object at `ServerConfigRemoteOpenTargetsItem`.
+#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ServerConfigRemoteOpenTargetsItem {
+    pub kind: RemoteOpenTargetKind,
+    pub host: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub username: Option<String>,
+}
+
 crate::wire::string_enum! {
     /// `ServerDirectEndpointKind` from `server.ts`.
     ServerDirectEndpointKind {
@@ -800,10 +811,10 @@ crate::wire::string_enum! {
     }
 }
 
-/// `ServerDirectEndpoint` from `server.ts`.
+/// Inline object at `ServerConfigDirectEndpointsItem`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ServerDirectEndpoint {
+pub struct ServerConfigDirectEndpointsItem {
     pub kind: ServerDirectEndpointKind,
     pub http_base_url: String,
 }
@@ -883,7 +894,8 @@ pub struct ServerConfigUsageLimitSourcesItem {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub endpoint: Option<String>,
     pub checked_at: String,
-    pub accounts: Vec<Option<ServerConfigUsageLimitSourcesItemAccountsItem>>,
+    #[serde(deserialize_with = "crate::wire::lenient_items")]
+    pub accounts: Vec<ServerConfigUsageLimitSourcesItemAccountsItem>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
 }
@@ -898,14 +910,18 @@ pub struct ServerConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hostname: Option<String>,
     pub keybindings_config_path: String,
-    pub keybindings: Vec<Option<ServerConfigKeybindingsItem>>,
-    pub issues: Vec<Option<ServerConfigIssuesItem>>,
-    pub providers: Vec<Option<ServerConfigProvidersItem>>,
-    pub available_editors: Vec<Option<EditorId>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub remote_open_targets: Option<Vec<Option<RemoteOpenTarget>>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub direct_endpoints: Option<Vec<Option<ServerDirectEndpoint>>>,
+    #[serde(deserialize_with = "crate::wire::lenient_items")]
+    pub keybindings: Vec<ServerConfigKeybindingsItem>,
+    #[serde(deserialize_with = "crate::wire::lenient_items")]
+    pub issues: Vec<ServerConfigIssuesItem>,
+    #[serde(deserialize_with = "crate::wire::lenient_items")]
+    pub providers: Vec<ServerConfigProvidersItem>,
+    #[serde(deserialize_with = "crate::wire::lenient_items")]
+    pub available_editors: Vec<EditorId>,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "crate::wire::lenient_items_opt")]
+    pub remote_open_targets: Option<Vec<ServerConfigRemoteOpenTargetsItem>>,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "crate::wire::lenient_items_opt")]
+    pub direct_endpoints: Option<Vec<ServerConfigDirectEndpointsItem>>,
     pub observability: ServerObservability,
     pub settings: ServerSettings,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -946,8 +962,8 @@ pub struct ServerConfig {
     pub server_time: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub environment_themes: Option<Vec<EnvironmentTheme>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub usage_limit_sources: Option<Vec<Option<ServerConfigUsageLimitSourcesItem>>>,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "crate::wire::lenient_items_opt")]
+    pub usage_limit_sources: Option<Vec<ServerConfigUsageLimitSourcesItem>>,
 }
 
 /// `ServerConfigEnvironmentThemesUpdatedPayload` from `server.ts`.
@@ -971,8 +987,10 @@ pub struct ServerConfigKeybindingsUpdatedPayloadKeybindingsItem {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ServerConfigKeybindingsUpdatedPayload {
-    pub keybindings: Vec<Option<ServerConfigKeybindingsUpdatedPayloadKeybindingsItem>>,
-    pub issues: Vec<Option<ServerConfigIssuesItem>>,
+    #[serde(deserialize_with = "crate::wire::lenient_items")]
+    pub keybindings: Vec<ServerConfigKeybindingsUpdatedPayloadKeybindingsItem>,
+    #[serde(deserialize_with = "crate::wire::lenient_items")]
+    pub issues: Vec<ServerConfigIssuesItem>,
 }
 
 /// Inline object at `ServerConfigProviderStatusDeltasPayloadProvidersItemSetup`.
@@ -1062,8 +1080,8 @@ pub struct ServerConfigProviderStatusDeltasPayloadProvidersItem {
     pub show_interaction_mode_toggle: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reports_context_window: Option<bool>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub supported_runtime_modes: Option<Vec<Option<RuntimeMode>>>,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "crate::wire::lenient_items_opt")]
+    pub supported_runtime_modes: Option<Vec<RuntimeMode>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub supports_conversation_rollback: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1124,14 +1142,16 @@ pub struct ServerConfigProviderStatusDeltasPayloadProvidersItem {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ServerConfigProviderStatusDeltasPayload {
-    pub providers: Vec<Option<ServerConfigProviderStatusDeltasPayloadProvidersItem>>,
+    #[serde(deserialize_with = "crate::wire::lenient_items")]
+    pub providers: Vec<ServerConfigProviderStatusDeltasPayloadProvidersItem>,
 }
 
 /// `ServerConfigProviderStatusesPayload` from `server.ts`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ServerConfigProviderStatusesPayload {
-    pub providers: Vec<Option<ServerConfigProvidersItem>>,
+    #[serde(deserialize_with = "crate::wire::lenient_items")]
+    pub providers: Vec<ServerConfigProvidersItem>,
 }
 
 /// `ServerConfigSettingsUpdatedPayload` from `server.ts`.
@@ -1199,7 +1219,8 @@ pub struct ServerConfigStreamSettingsUpdatedEvent {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ServerConfigUsageLimitSourcesUpdatedPayload {
-    pub sources: Vec<Option<ServerConfigUsageLimitSourcesItem>>,
+    #[serde(deserialize_with = "crate::wire::lenient_items")]
+    pub sources: Vec<ServerConfigUsageLimitSourcesItem>,
 }
 
 /// `ServerConfigStreamUsageLimitSourcesUpdatedEvent` from `server.ts`.
@@ -1663,7 +1684,8 @@ crate::wire::string_enum! {
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ServerProviderUpdatedPayload {
-    pub providers: Vec<Option<ServerConfigProvidersItem>>,
+    #[serde(deserialize_with = "crate::wire::lenient_items")]
+    pub providers: Vec<ServerConfigProvidersItem>,
 }
 
 /// `ServerProviderUpdateError` from `server.ts`.

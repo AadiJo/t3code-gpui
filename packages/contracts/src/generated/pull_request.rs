@@ -330,7 +330,8 @@ pub struct PullRequestReviewCapabilities {
     pub range_comment: Option<bool>,
     pub reply: bool,
     pub resolve: bool,
-    pub verdicts: Vec<Option<PullRequestReviewVerdict>>,
+    #[serde(deserialize_with = "crate::wire::lenient_items")]
+    pub verdicts: Vec<PullRequestReviewVerdict>,
 }
 
 /// `PullRequestReviewerCapabilities` from `pullRequest.ts`.
@@ -367,12 +368,14 @@ crate::wire::string_enum! {
 pub struct PullRequestCapabilities {
     pub diff: bool,
     pub comment: bool,
-    pub actions: Vec<Option<PullRequestAction>>,
-    pub merge_methods: Vec<Option<PullRequestMergeMethod>>,
+    #[serde(deserialize_with = "crate::wire::lenient_items")]
+    pub actions: Vec<PullRequestAction>,
+    #[serde(deserialize_with = "crate::wire::lenient_items")]
+    pub merge_methods: Vec<PullRequestMergeMethod>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub delete_branch: Option<bool>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub update_methods: Option<Vec<Option<PullRequestUpdateMethod>>>,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "crate::wire::lenient_items_opt")]
+    pub update_methods: Option<Vec<PullRequestUpdateMethod>>,
     pub search: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reactions: Option<bool>,
@@ -390,8 +393,8 @@ pub struct PullRequestCapabilities {
     pub labels: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mentions: Option<bool>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub reference_sigils: Option<Vec<Option<PullRequestReferenceSigil>>>,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "crate::wire::lenient_items_opt")]
+    pub reference_sigils: Option<Vec<PullRequestReferenceSigil>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub checks_always_report: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -538,13 +541,15 @@ pub struct PullRequestCommentUpdateInput {
 pub struct PullRequestViewerPermissions {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stack_rebase: Option<bool>,
-    pub actions: Vec<Option<PullRequestAction>>,
+    #[serde(deserialize_with = "crate::wire::lenient_items")]
+    pub actions: Vec<PullRequestAction>,
     pub comment: bool,
     pub resolve: bool,
-    pub verdicts: Vec<Option<PullRequestReviewVerdict>>,
+    #[serde(deserialize_with = "crate::wire::lenient_items")]
+    pub verdicts: Vec<PullRequestReviewVerdict>,
     pub request_reviewers: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub update_methods: Option<Vec<Option<PullRequestUpdateMethod>>>,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "crate::wire::lenient_items_opt")]
+    pub update_methods: Option<Vec<PullRequestUpdateMethod>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub labels: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1113,8 +1118,8 @@ pub struct PullRequestProviderSummary {
     pub host: String,
     pub kind: SourceControlProviderKind,
     pub searches_on_host: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub actions: Option<Vec<Option<PullRequestAction>>>,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "crate::wire::lenient_items_opt")]
+    pub actions: Option<Vec<PullRequestAction>>,
     pub project_count: PositiveInt,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub project_ids: Option<Vec<ProjectId>>,

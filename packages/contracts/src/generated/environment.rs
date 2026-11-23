@@ -12,6 +12,15 @@ crate::wire::string_enum! {
 }
 
 crate::wire::string_enum! {
+    /// `WorktreeSubmodules` from `environment.ts`.
+    WorktreeSubmodules {
+        Recursive = "recursive",
+        TopLevel = "top-level",
+        NoneType = "none",
+    }
+}
+
+crate::wire::string_enum! {
     /// `EnvironmentMachineKind` from `environment.ts`.
     EnvironmentMachineKind {
         Server = "server",
@@ -21,15 +30,6 @@ crate::wire::string_enum! {
         Laptop = "laptop",
         MacMini = "mac-mini",
         MacStudio = "mac-studio",
-    }
-}
-
-crate::wire::string_enum! {
-    /// `WorktreeSubmodules` from `environment.ts`.
-    WorktreeSubmodules {
-        Recursive = "recursive",
-        TopLevel = "top-level",
-        NoneType = "none",
     }
 }
 
@@ -299,19 +299,6 @@ crate::wire::string_enum! {
     }
 }
 
-crate::wire::string_enum! {
-    /// Inline enum at `ExecutionEnvironmentPlatformMachine`.
-    ExecutionEnvironmentPlatformMachine {
-        Server = "server",
-        Cloud = "cloud",
-        Linux = "linux",
-        Desktop = "desktop",
-        Laptop = "laptop",
-        MacMini = "mac-mini",
-        MacStudio = "mac-studio",
-    }
-}
-
 /// `ExecutionEnvironmentPlatform` from `environment.ts`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -319,7 +306,7 @@ pub struct ExecutionEnvironmentPlatform {
     pub os: ExecutionEnvironmentPlatformOs,
     pub arch: ExecutionEnvironmentPlatformArch,
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "crate::wire::lenient")]
-    pub machine: Option<ExecutionEnvironmentPlatformMachine>,
+    pub machine: Option<EnvironmentMachineKind>,
 }
 
 /// `ExecutionEnvironmentDescriptor` from `environment.ts`.

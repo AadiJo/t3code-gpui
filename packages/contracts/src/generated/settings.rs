@@ -397,15 +397,6 @@ impl<'de> ::serde::Deserialize<'de> for WorktreeCleanupValue {
 pub type WorktreeCleanup = Option<WorktreeCleanupValue>;
 
 crate::wire::string_enum! {
-    /// Inline enum at `ClientServerSettingsPatchProjectSettingsOverridesValueWorktreeSubmodules`.
-    ClientServerSettingsPatchProjectSettingsOverridesValueWorktreeSubmodules {
-        Recursive = "recursive",
-        TopLevel = "top-level",
-        NoneType = "none",
-    }
-}
-
-crate::wire::string_enum! {
     /// `SourceControlWritingStyleMode` from `settings.ts`.
     SourceControlWritingStyleMode {
         RepoConventions = "repo_conventions",
@@ -449,7 +440,7 @@ pub struct ClientServerSettingsPatchProjectSettingsOverridesValue {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub new_worktrees_start_from_origin: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "crate::wire::lenient")]
-    pub worktree_submodules: Option<ClientServerSettingsPatchProjectSettingsOverridesValueWorktreeSubmodules>,
+    pub worktree_submodules: Option<WorktreeSubmodules>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_auto_pull: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1586,15 +1577,6 @@ pub struct ServerSettingsCloudSpeechCredentials {
     pub openrouter: Option<ServerSettingsCloudSpeechCredentialsOpenrouter>,
 }
 
-crate::wire::string_enum! {
-    /// Inline enum at `ServerSettingsProjectSettingsOverridesValueWorktreeSubmodules`.
-    ServerSettingsProjectSettingsOverridesValueWorktreeSubmodules {
-        Recursive = "recursive",
-        TopLevel = "top-level",
-        NoneType = "none",
-    }
-}
-
 /// Inline union at `ServerSettingsProjectSettingsOverridesValueSourceControlWritingStyle`.
 #[derive(Debug, Clone, PartialEq, ::serde::Serialize)]
 #[serde(untagged)]
@@ -1628,7 +1610,7 @@ pub struct ServerSettingsProjectSettingsOverridesValue {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub new_worktrees_start_from_origin: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "crate::wire::lenient")]
-    pub worktree_submodules: Option<ServerSettingsProjectSettingsOverridesValueWorktreeSubmodules>,
+    pub worktree_submodules: Option<WorktreeSubmodules>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_auto_pull: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1705,14 +1687,6 @@ pub struct ServerSettingsBackgroundActivity {
     pub base_profile: Option<BackgroundActivityProfile>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub overrides: Option<BackgroundActivityOverrides>,
-}
-
-crate::wire::string_enum! {
-    /// Inline enum at `ServerSettingsDefaultThreadEnvMode`.
-    ServerSettingsDefaultThreadEnvMode {
-        Local = "local",
-        Worktree = "worktree",
-    }
 }
 
 /// Inline union at `ServerSettingsSourceControlWritingStyle`.
@@ -1795,16 +1769,6 @@ impl<'de> ::serde::Deserialize<'de> for ServerSettingsUsageHistoryRetentionDays 
             other => return Err(raw.unexpected(other, "ServerSettingsUsageHistoryRetentionDays")),
         })
     }
-}
-
-/// Inline object at `ServerSettingsUsageModelFilter`.
-#[derive(Debug, Clone, Default, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ServerSettingsUsageModelFilter {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub include: Option<Vec<UsageModelSelector>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub exclude: Option<Vec<UsageModelSelector>>,
 }
 
 /// `ServerSettings` from `settings.ts`.
@@ -1928,13 +1892,13 @@ pub struct ServerSettings {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_appearance_set_at: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "crate::wire::lenient")]
-    pub environment_icon: Option<Option<EnvironmentMachineKind>>,
+    pub environment_icon: Option<EnvironmentMachineKind>,
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "crate::wire::lenient")]
-    pub default_thread_env_mode: Option<ServerSettingsDefaultThreadEnvMode>,
+    pub default_thread_env_mode: Option<ThreadEnvMode>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub new_worktrees_start_from_origin: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "crate::wire::lenient")]
-    pub worktree_submodules: Option<Option<WorktreeSubmodules>>,
+    pub worktree_submodules: Option<WorktreeSubmodules>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub add_project_base_directory: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1984,7 +1948,7 @@ pub struct ServerSettings {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub usage_model_aliases: Option<::std::collections::BTreeMap<String, String>>,
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "crate::wire::lenient")]
-    pub usage_model_filter: Option<ServerSettingsUsageModelFilter>,
+    pub usage_model_filter: Option<UsageModelFilter>,
 }
 
 crate::wire::string_enum! {

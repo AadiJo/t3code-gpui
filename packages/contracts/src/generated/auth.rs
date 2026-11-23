@@ -84,8 +84,8 @@ pub struct AuthConnectDeviceRequest {
 pub struct AuthPairingLink {
     pub id: String,
     pub scopes: AuthEnvironmentScopes,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub permissions: Option<Vec<Option<AuthEnvironmentScope>>>,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "crate::wire::lenient_items_opt")]
+    pub permissions: Option<Vec<AuthEnvironmentScope>>,
     pub subject: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
@@ -111,8 +111,8 @@ pub struct AuthClientSession {
     pub session_id: AuthSessionId,
     pub subject: String,
     pub scopes: AuthEnvironmentScopes,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub permissions: Option<Vec<Option<AuthEnvironmentScope>>>,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "crate::wire::lenient_items_opt")]
+    pub permissions: Option<Vec<AuthEnvironmentScope>>,
     pub method: ServerAuthSessionMethod,
     pub client: AuthClientMetadata,
     pub issued_at: String,
@@ -302,8 +302,8 @@ pub struct AuthBrowserSessionRequest {
 pub struct AuthBrowserSessionResult {
     pub authenticated: crate::wire::True,
     pub scopes: AuthEnvironmentScopes,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub permissions: Option<Vec<Option<AuthEnvironmentScope>>>,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "crate::wire::lenient_items_opt")]
+    pub permissions: Option<Vec<AuthEnvironmentScope>>,
     pub session_method: ServerAuthSessionMethod,
     pub expires_at: String,
 }
@@ -780,8 +780,8 @@ pub struct AuthSessionState {
     pub auth: ServerAuthDescriptor,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scopes: Option<AuthEnvironmentScopes>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub permissions: Option<Vec<Option<AuthEnvironmentScope>>>,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "crate::wire::lenient_items_opt")]
+    pub permissions: Option<Vec<AuthEnvironmentScope>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session_method: Option<ServerAuthSessionMethod>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

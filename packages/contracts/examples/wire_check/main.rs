@@ -2,12 +2,14 @@
 //!
 //!   cargo run -p t3code-contracts --example wire_check -- fixtures [report dir]
 //!   cargo run -p t3code-contracts --example wire_check -- id-table [report dir]
+//!   cargo run -p t3code-contracts --example wire_check -- helpers [report dir]
 //!   cargo run -p t3code-contracts --example wire_check -- frames <transcript> [report dir]
 //!
 //! `fixtures` checks every value in `schema/wire-fixtures.json` (sampled by effect's Arbitrary and
 //! encoded with the TypeScript codec). `id-table` expands each sample in
 //! `schema/id-table-fixtures.json` and compares it with the same value encoded without the table.
-//! `frames` checks every RPC payload, chunk value, exit value
+//! `helpers` runs the ported helpers on the inputs in `schema/helper-fixtures.json` and compares
+//! with what the TypeScript helpers returned. `frames` checks every RPC payload, chunk value, exit value
 //! and typed error in a WebSocket transcript: one frame per line, JSON starting at the first `{`.
 //! Each mode prints a summary and, with a report dir, writes `<mode>-report.json` and `.md`.
 //!
@@ -180,6 +182,52 @@ fn check_id_tables() -> BTreeMap<String, TypeResult> {
     results
 }
 
+/// Runs the ported helpers on the inputs in `schema/helper-fixtures.json` and compares each result
+/// with what the TypeScript helper returned for the same input.
+fn check_helpers() -> BTreeMap<String, TypeResult> {
+    use t3code_contracts::{AuthEnvironmentScope, AuthSessionState, OrchestrationV2AppThreadLineage, RepositoryIdentity};
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("schema/helper-fixtures.json");
+    let text = std::fs::read_to_string(&path).expect("read helper-fixtures.json");
+    let cases: BTreeMap<String, Vec<Value>> = serde_json::from_str(&text).expect("parse helper fixtures");
+    let mut results: BTreeMap<String, TypeResult> = BTreeMap::new();
+    let mut record = |name: &str, expected: Value, actual: Result<Value, String>| {
+        let r = results.entry(name.to_owned()).or_default();
+        r.values += 1;
+        match actual {
+            Ok(actual) if actual == expected => r.passed += 1,
+            Ok(actual) => r.failures.push(format!("expected {} got {}", trunc(&expected), trunc(&actual))),
+            Err(e) => r.failures.push(e),
+        }
+    };
+    let decode = |v: &Value| serde_json::to_string(v).map_err(|e| e.to_string());
+    for case in &cases["sessionGrantsScope"] {
+        let session = decode(&case["session"]).and_then(|s| serde_json::from_str::<AuthSessionState>(&s).map_err(|e| e.to_string()));
+        let grants = session.as_ref().map_err(Clone::clone).map(|s| {
+            let granted: Vec<_> = AuthEnvironmentScope::ALL.iter().filter(|scope| s.grants_scope(**scope)).map(|scope| scope.as_str()).collect();
+            serde_json::json!(granted)
+        });
+        record("sessionGrantsScope", case["grants"].clone(), grants);
+        let legacy = session.map(|s| Value::Bool(s.has_legacy_permissions()));
+        record("sessionHasLegacyPermissions", case["legacyPermissions"].clone(), legacy);
+    }
+    for case in &cases["repositoryGrouping"] {
+        let identity = decode(&case["identity"]).and_then(|s| serde_json::from_str::<RepositoryIdentity>(&s).map_err(|e| e.to_string()));
+        record("repositoryGroupingKeyOf", case["key"].clone(), identity.as_ref().map(|i| Value::from(i.grouping_key())).map_err(Clone::clone));
+        record("repositoryGroupingDisplayNameOf", case["displayName"].clone(), identity.map(|i| serde_json::json!(i.grouping_display_name())));
+    }
+    for case in &cases["isListedThreadLineage"] {
+        let lineage = decode(&case["lineage"]).and_then(|s| serde_json::from_str::<OrchestrationV2AppThreadLineage>(&s).map_err(|e| e.to_string()));
+        record("isListedThreadLineage", case["listed"].clone(), lineage.map(|l| Value::Bool(l.is_listed())));
+    }
+    for case in &cases["chunkTerminalWrite"] {
+        let recipe: Vec<(String, usize)> = serde_json::from_value(case["recipe"].clone()).expect("recipe");
+        let data: String = recipe.iter().map(|(s, n)| s.repeat(*n)).collect();
+        let lengths: Vec<usize> = t3code_contracts::terminal::chunk_terminal_write(&data).iter().map(|c| c.encode_utf16().count()).collect();
+        record("chunkTerminalWrite", case["chunkLengths"].clone(), Ok(serde_json::json!(lengths)));
+    }
+    results
+}
+
 /// Checks every RPC value in a transcript, matching responses to requests by id.
 fn check_frames(transcript: &Path) -> BTreeMap<String, TypeResult> {
     let text = std::fs::read_to_string(transcript).expect("read transcript");
@@ -292,13 +340,17 @@ fn main() {
             let out = args.get(1).map(PathBuf::from);
             write_report("id-table", &check_id_tables(), out.as_deref());
         }
+        Some("helpers") => {
+            let out = args.get(1).map(PathBuf::from);
+            write_report("helpers", &check_helpers(), out.as_deref());
+        }
         Some("frames") => {
             let transcript = PathBuf::from(args.get(1).expect("frames <transcript> [report dir]"));
             let out = args.get(2).map(PathBuf::from);
             write_report("frames", &check_frames(&transcript), out.as_deref());
         }
         _ => {
-            eprintln!("usage: wire_check fixtures|id-table [report dir] | frames <transcript> [report dir]");
+            eprintln!("usage: wire_check fixtures|id-table|helpers [report dir] | frames <transcript> [report dir]");
             std::process::exit(2);
         }
     }
