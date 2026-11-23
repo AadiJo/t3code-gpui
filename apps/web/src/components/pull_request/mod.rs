@@ -4,3 +4,5 @@
 
 pub mod pull_request_detail_logic;
 pub mod pull_request_list_logic;
+pub mod pull_request_fixture;
+pub mod pull_request_source;

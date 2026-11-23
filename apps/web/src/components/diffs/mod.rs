@@ -7,7 +7,7 @@ pub mod diff_file_tree;
 pub mod layout;
 pub mod review_comment;
 
-pub use code_view::{CodeView, CodeViewEvent, CodeViewFile, CodeViewOptions, ViewMode};
+pub use code_view::{CodeView, CodeViewDecorations, CodeViewEvent, CodeViewFile, CodeViewOptions, ViewMode};
 
 /// Registers key bindings for the code view and file tree.
 pub fn init(cx: &mut gpui_kit::App) {

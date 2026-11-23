@@ -85,6 +85,18 @@ impl Default for CodeViewOptions {
     }
 }
 
+/// Rows and header controls an owner draws into the view, such as the pull request Code tab's
+/// review threads and Viewed toggles. Heights are reserved in the layout; the elements are built
+/// only for rows on screen.
+pub trait CodeViewDecorations {
+    /// Annotation rows for a file, as `(anchor, height)`.
+    fn annotations(&self, file_key: &SharedString) -> Vec<((Side, u32), f32)>;
+    /// The element for one annotation row reported by [`Self::annotations`].
+    fn render_annotation(&self, file_key: &SharedString, anchor: (Side, u32), window: &mut Window, cx: &mut App) -> Option<AnyElement>;
+    /// A control drawn at the right of a file's header, before its counts.
+    fn render_header_accessory(&self, file_key: &SharedString, window: &mut Window, cx: &mut App) -> Option<AnyElement>;
+}
+
 /// A file handed to the view.
 #[derive(Clone)]
 pub struct CodeViewFile {
@@ -284,6 +296,7 @@ pub struct CodeView {
     hovered_header: Option<u32>,
     draft: Option<Draft>,
     comments: Vec<SavedComment>,
+    decorations: Option<std::rc::Rc<dyn CodeViewDecorations>>,
     find: Option<Find>,
     copied_path: Option<SharedString>,
     section: (SharedString, SharedString),
@@ -358,6 +371,7 @@ impl CodeView {
             hovered_header: None,
             draft: None,
             comments: Vec::new(),
+            decorations: None,
             find: None,
             copied_path: None,
             section: (SharedString::default(), SharedString::default()),
@@ -502,9 +516,16 @@ impl CodeView {
         number_digits(&file.diff, file.contents.as_deref())
     }
 
+    /// Sets the owner's annotation rows and header controls; call again when they change.
+    pub fn set_decorations(&mut self, decorations: Option<std::rc::Rc<dyn CodeViewDecorations>>, cx: &mut Context<Self>) {
+        self.decorations = decorations;
+        self.layout_dirty = true;
+        cx.notify();
+    }
+
     fn annotation_inputs(&self, index: usize) -> Vec<((Side, u32), f32)> {
         let file = &self.files[index];
-        let mut out: Vec<((Side, u32), f32)> = Vec::new();
+        let mut out: Vec<((Side, u32), f32)> = self.decorations.as_ref().map(|d| d.annotations(&file.key)).unwrap_or_default();
         let width = self.viewport_width();
         for saved in self.comments.iter().filter(|c| c.file_key == file.key) {
             let chars_per_line = ((width - 60.) / 7.).max(20.) as usize;
@@ -1696,8 +1717,9 @@ fn icon(path: &'static str, size: f32, color: Hsla) -> Svg {
 }
 
 impl CodeView {
-    fn render_header(&self, index: usize, y: f32, colors: &DiffColors, cx: &mut Context<Self>) -> AnyElement {
+    fn render_header(&self, index: usize, y: f32, colors: &DiffColors, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let file = &self.files[index];
+        let accessory = self.decorations.clone().and_then(|d| d.render_header_accessory(&file.key, window, cx));
         let diff = &file.diff;
         let (additions, deletions) = file.stat.unwrap_or((diff.additions, diff.deletions));
         let (change_icon, change_color) = match diff.change {
@@ -1827,6 +1849,7 @@ impl CodeView {
                     }),
             )
             .child(div().flex_1())
+            .children(accessory)
             .child(
                 div()
                     .flex()
@@ -1947,10 +1970,15 @@ impl CodeView {
             .into_any_element()
     }
 
-    fn render_annotation(&self, index: usize, side: Side, number: u32, y: f32, height: f32, colors: &DiffColors, cx: &mut Context<Self>) -> AnyElement {
+    fn render_annotation(&self, index: usize, side: Side, number: u32, y: f32, height: f32, colors: &DiffColors, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let key = self.files[index].key.clone();
         let theme = cx.app_theme().colors;
         let mut column = div().flex().flex_col();
+        if let Some(decorations) = self.decorations.clone()
+            && let Some(element) = decorations.render_annotation(&key, (side, number), window, cx)
+        {
+            column = column.child(element);
+        }
         for saved in self.comments.iter().filter(|c| c.file_key == key && c.anchor == (side, number)) {
             let id = saved.comment.id.clone();
             column = column.child(
@@ -2156,7 +2184,7 @@ impl Render for CodeView {
                     break;
                 }
                 if self.mode == ViewMode::Diff && file_top + HEADER_HEIGHT > top && sticky.is_none_or(|(s, _)| s != index) {
-                    overlays.push(self.render_header(index, file_top - top, &colors, cx));
+                    overlays.push(self.render_header(index, file_top - top, &colors, window, cx));
                 }
                 if self.files[index].collapsed {
                     continue;
@@ -2171,7 +2199,7 @@ impl Render for CodeView {
                         RowKind::Notice(notice) => overlays.push(self.render_notice(notice, index, y, &colors)),
                         RowKind::NoNewline { old, new } => overlays.push(self.render_no_newline(old, new, y, &colors)),
                         RowKind::Annotation { side, number } => {
-                            overlays.push(self.render_annotation(index, side, number, y, row.height, &colors, cx))
+                            overlays.push(self.render_annotation(index, side, number, y, row.height, &colors, window, cx))
                         }
                         _ => {}
                     }
@@ -2210,7 +2238,7 @@ impl Render for CodeView {
             );
         }
         if let Some((index, offset)) = sticky {
-            overlays.push(self.render_header(index, offset, &colors, cx));
+            overlays.push(self.render_header(index, offset, &colors, window, cx));
         }
         if let Some(bar) = self.render_find_bar(&colors, cx) {
             overlays.push(bar);
