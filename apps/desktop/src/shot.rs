@@ -1,23 +1,50 @@
-// Headless screenshot of the main window, for visual checks without a display.
-mod window;
-
+// Headless screenshot of one scene, for visual checks without a display.
+// Usage: shot <scene> <out.png> [width height]
 use std::sync::Arc;
 
-use gpui_kit::{HeadlessAppContext, test::TestWindowExt as _};
+use anyhow::{Context as _, anyhow};
+use gpui_kit::{
+    AnyView, AppContext as _, HeadlessAppContext, IntoElement, Render, WindowBounds, WindowOptions,
+    component::TitleBar, px, size, test::TestWindowExt as _,
+};
+use t3code_web::scenes;
+
+/// Wraps a scene so it can be the window's root view.
+struct SceneHost(AnyView);
+
+impl Render for SceneHost {
+    fn render(&mut self, _: &mut gpui_kit::Window, _: &mut gpui_kit::Context<Self>) -> impl IntoElement {
+        self.0.clone()
+    }
+}
 
 fn main() -> anyhow::Result<()> {
-    let out = std::env::args().nth(1).unwrap_or_else(|| "shot.png".into());
+    let mut args = std::env::args().skip(1);
+    let names: Vec<_> = scenes::scenes().iter().map(|(name, _)| *name).collect();
+    let usage = || anyhow!("usage: shot <{}> <out.png> [width height]", names.join("|"));
+    let name = args.next().ok_or_else(usage)?;
+    let out = args.next().ok_or_else(usage)?;
+    let width: f32 = args.next().map(|v| v.parse()).transpose()?.unwrap_or(1100.);
+    let height: f32 = args.next().map(|v| v.parse()).transpose()?.unwrap_or(780.);
+    let build = scenes::scene(&name).with_context(|| format!("unknown scene {name}"))?;
+
     let mut cx = HeadlessAppContext::with_platform(
         gpui_kit::platform::current_platform(true).text_system(),
         Arc::new(t3code_web::Assets),
         gpui_kit::platform::current_headless_renderer,
     );
     cx.update(t3code_web::init);
-    let (handle, _root) = cx.update(|cx| {
-        let mut options = window::main_window_options(cx);
-        options.show = false;
-        options.focus = false;
-        window::open_main_window(options, cx)
+    let (handle, _host) = cx.update(|cx| {
+        let options = WindowOptions {
+            window_bounds: Some(WindowBounds::centered(None, size(px(width), px(height)), cx)),
+            show: false,
+            focus: false,
+            ..TitleBar::window_options()
+        };
+        gpui_kit::open_window(options, cx, |window, cx| {
+            let view = build(window, cx);
+            cx.new(|_| SceneHost(view))
+        })
     })?;
     cx.update_window(handle, |_, window, cx| window.render_frame(cx))?;
     cx.run_until_parked();

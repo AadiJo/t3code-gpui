@@ -1,4 +1,6 @@
-use gpui_kit::{component::ActiveTheme as _, *};
+use gpui_kit::*;
+
+use crate::ActiveAppTheme as _;
 
 /// Root view of the main window. Ports `AppRoot.tsx`.
 pub struct AppRoot;
@@ -11,9 +13,7 @@ impl AppRoot {
 
 impl Render for AppRoot {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        div()
-            .size_full()
-            .bg(cx.theme().background)
-            .text_color(cx.theme().foreground)
+        let colors = cx.app_theme().colors;
+        div().size_full().bg(colors.canvas).text_color(colors.text)
     }
 }
