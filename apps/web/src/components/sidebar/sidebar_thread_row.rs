@@ -3,6 +3,7 @@
 //! Rows derive everything from the thread and the sidebar's hover, cursor and
 //! selection, so hovering re-renders only the visible rows.
 
+use crate::components::project_favicon::ProjectFavicon;
 use crate::components::icons::{Icon, IconName, IconSize};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
@@ -173,7 +174,7 @@ impl Sidebar {
             .when(thread.has_unsent_draft, |d| {
                 d.child(Icon::new(IconName::SquarePen).size(IconSize::Custom(px(12.))).color(colors.warning_foreground))
             })
-            .child(project_favicon(colors))
+            .child(project_favicon(project_label.clone()))
             .when(thread.pinned_at.is_some(), |d| d.child(self.pin_indicator(ix, thread, colors, cx)))
             .child(
                 div()
@@ -440,7 +441,8 @@ impl Sidebar {
             .px(px(10.))
             .when(in_folder, |d| d.pl(px(36.)))
             .when(!in_folder, |d| {
-                d.child(div().flex_none().opacity(if favicon_full { 1. } else { 0.4 }).child(project_favicon(colors)))
+                let label = self.list.project_labels.get(&thread.project_ref()).cloned().unwrap_or_default();
+                d.child(div().flex_none().opacity(if favicon_full { 1. } else { 0.4 }).child(project_favicon(label)))
             })
             .when(thread.has_unsent_draft, |d| {
                 d.child(Icon::new(IconName::SquarePen).size(IconSize::Custom(px(12.))).color(colors.warning_foreground))
@@ -559,10 +561,9 @@ fn row_action(id: impl Into<ElementId>, colors: &ShellColors) -> Stateful<Div> {
         .hover(|s| s.text_color(colors.foreground))
 }
 
-/// The 16px project favicon. Fetched favicons are not wired yet, so every
-/// project shows the `FolderCodeIcon` fallback.
-pub(crate) fn project_favicon(colors: &ShellColors) -> Icon {
-    Icon::new(IconName::FolderCode).size(IconSize::Custom(px(16.))).color(colors.sidebar_icon)
+/// The 16px project favicon: the monogram derived from the project's name.
+pub(crate) fn project_favicon(name: SharedString) -> ProjectFavicon {
+    ProjectFavicon::new(name)
 }
 
 fn remote_icon(colors: &ShellColors) -> Icon {

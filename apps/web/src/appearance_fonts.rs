@@ -31,15 +31,25 @@ pub fn ui_font_family() -> SharedString {
     }
 }
 
-/// The default mono family: `ui-monospace, "SF Mono", ..., Consolas, "Liberation Mono"`.
+/// The mono stack, in the order the browser tries it.
+const MONO_STACK: [&str; 6] = ["SF Mono", "SFMono-Regular", "Menlo", "Consolas", "Liberation Mono", "DejaVu Sans Mono"];
+
+/// The first family of [`MONO_STACK`] that is installed, set by [`load_fonts`].
+static MONO_FAMILY: std::sync::OnceLock<SharedString> = std::sync::OnceLock::new();
+
+/// The default mono family: the first installed family of
+/// `ui-monospace, "SF Mono", ..., Consolas, "Liberation Mono"`, as the browser
+/// resolves it. A missing family would lose its bold face to the fallback.
 pub fn mono_font_family() -> SharedString {
-    if cfg!(target_os = "macos") {
-        "SF Mono".into()
-    } else if cfg!(target_os = "windows") {
-        "Consolas".into()
-    } else {
-        "Liberation Mono".into()
-    }
+    MONO_FAMILY.get().cloned().unwrap_or_else(|| {
+        if cfg!(target_os = "macos") {
+            "SF Mono".into()
+        } else if cfg!(target_os = "windows") {
+            "Consolas".into()
+        } else {
+            "Liberation Mono".into()
+        }
+    })
 }
 
 static UI_FALLBACKS: LazyLock<FontFallbacks> = LazyLock::new(|| {
@@ -90,7 +100,12 @@ pub fn load_fonts(cx: &mut App) -> anyhow::Result<()> {
                 .ok_or_else(|| anyhow::anyhow!("missing Inter subset {subset}"))
         })
         .collect::<anyhow::Result<Vec<_>>>()?;
-    cx.text_system().add_fonts(fonts)
+    cx.text_system().add_fonts(fonts)?;
+    let installed = cx.text_system().all_font_names();
+    if let Some(family) = MONO_STACK.iter().find(|f| installed.iter().any(|i| i == *f)) {
+        MONO_FAMILY.get_or_init(|| SharedString::new_static(family));
+    }
+    Ok(())
 }
 
 /// The client's font size settings in pixels (`packages/contracts/src/settings.ts:168-198`).

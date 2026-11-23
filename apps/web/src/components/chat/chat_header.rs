@@ -2,6 +2,7 @@
 //! project crumb and thread title in the titlebar row. The panel toggles at
 //! its right edge belong to the window layout.
 
+use crate::components::project_favicon::ProjectFavicon;
 use crate::components::icons::{Icon, IconName, IconSize};
 use gpui_kit::{
     AnyElement, FontWeight, InteractiveElement as _, IntoElement, ParentElement as _, SharedString,
@@ -61,7 +62,7 @@ pub fn chat_header(
                         .cursor_pointer()
                         .text_color(colors.theme.muted_foreground)
                         .hover(|s| s.text_color(colors.theme.text))
-                        .child(Icon::new(IconName::Folder).size(IconSize::Custom(px(14.))).color(colors.theme.muted_foreground))
+                        .child(ProjectFavicon::new(project.clone()).size(px(14.)))
                         .child(project.clone()),
                 )
                 .child(div().text_color(colors.theme.icon_muted).child("/"))

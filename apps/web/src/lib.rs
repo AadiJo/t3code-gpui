@@ -26,6 +26,7 @@ pub mod composer_text_direction;
 pub mod composer_undo_grouping;
 pub mod desktop_notifications;
 pub mod model_ordering;
+pub mod project_icon_colors;
 pub mod project_scripts;
 pub mod remote_open;
 pub mod model_search;
