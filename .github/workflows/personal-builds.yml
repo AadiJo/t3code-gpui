@@ -1,0 +1,72 @@
+name: Personal desktop builds
+
+# Builds unsigned desktop apps for personal machines.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: personal-builds-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  mac:
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build app
+        run: cargo build --release --locked -p t3code-desktop --bin t3code
+
+      - name: Bundle and ad hoc sign
+        shell: bash
+        run: |
+          set -euo pipefail
+          app="T3 Code GPUI.app"
+          mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
+          cp target/release/t3code "$app/Contents/MacOS/t3code"
+          version="$(cargo pkgid -p t3code-desktop | sed 's/.*[#@]//')"
+          sed "s/__VERSION__/$version/g" apps/desktop/resources/Info.plist > "$app/Contents/Info.plist"
+          iconset="$RUNNER_TEMP/AppIcon.iconset"
+          mkdir -p "$iconset"
+          for size in 16 32 128 256 512; do
+            sips -z "$size" "$size" assets/prod/black-macos-1024.png --out "$iconset/icon_${size}x${size}.png" >/dev/null
+            double=$((size * 2))
+            sips -z "$double" "$double" assets/prod/black-macos-1024.png --out "$iconset/icon_${size}x${size}@2x.png" >/dev/null
+          done
+          iconutil -c icns "$iconset" -o "$app/Contents/Resources/AppIcon.icns"
+          codesign --force --deep --sign - "$app"
+          codesign --verify --deep --strict --verbose=2 "$app"
+          ditto -c -k --keepParent "$app" T3-Code-GPUI-mac-arm64.zip
+
+      - name: Upload app
+        uses: actions/upload-artifact@v7
+        with:
+          name: t3code-gpui-mac-arm64
+          path: T3-Code-GPUI-mac-arm64.zip
+          retention-days: 14
+
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build app
+        run: cargo build --release --locked -p t3code-desktop --bin t3code
+
+      - name: Upload app
+        uses: actions/upload-artifact@v7
+        with:
+          name: t3code-gpui-windows-x64
+          path: target/release/t3code.exe
+          retention-days: 14
