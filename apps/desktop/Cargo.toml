@@ -26,13 +26,31 @@ required-features = ["headless"]
 
 [dependencies]
 t3code-client-runtime.workspace = true
+t3code-contracts.workspace = true
 t3code-web.workspace = true
 anyhow.workspace = true
 dirs.workspace = true
+futures.workspace = true
+jiff.workspace = true
 gpui-kit.workspace = true
 image.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+
+# Native notifications and the app icon badge (`src/notifications`).
+[target.'cfg(target_os = "linux")'.dependencies]
+zbus = "5"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+block2 = "0.6"
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", features = ["NSString", "NSArray", "NSSet", "NSError", "NSThread"] }
+objc2-app-kit = { version = "0.3", features = ["NSApplication", "NSDockTile", "NSResponder"] }
+objc2-user-notifications = { version = "0.3", features = ["UNUserNotificationCenter", "UNNotification", "UNNotificationRequest", "UNNotificationContent", "UNNotificationResponse", "UNNotificationSettings", "UNNotificationTrigger", "block2"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { version = "0.62", features = ["Data_Xml_Dom", "Foundation", "UI_Notifications", "Win32_Foundation", "Win32_Graphics_Gdi", "Win32_System_Com", "Win32_System_Registry", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
+raw-window-handle = "0.6"
 
 # Scripted end-to-end checks of the app shell: screenshots with hover, click,
 # menus and resize, pixel samples, row metrics and frame times.
