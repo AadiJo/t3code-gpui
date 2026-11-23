@@ -567,7 +567,109 @@ impl ServerSettingsStore {
                 _ => return,
             },
         }
+        Self::install_keymap(cx);
         cx.refresh_windows();
+    }
+
+    /// The environment whose keymap the app uses: the scope picker's
+    /// choice when it has a config, else the first environment by id.
+    pub fn keymap_environment(cx: &App) -> Option<EnvironmentId> {
+        let mut ids = Self::environment_ids(cx);
+        ids.sort_by(|a, b| a.as_str().cmp(b.as_str()));
+        let chosen = cx
+            .try_global::<crate::components::settings::settings_controls::SettingsScope>()
+            .and_then(|scope| scope.environment.clone())
+            .filter(|id| ids.contains(id));
+        chosen.or_else(|| ids.into_iter().next())
+    }
+
+    /// Installs the keymap environment's keybindings as the app's keymap.
+    pub fn install_keymap(cx: &mut App) {
+        let Some(config) = Self::keymap_environment(cx).and_then(|id| Self::config(cx, &id)) else { return };
+        let rules: t3code_shared::keybindings::ResolvedKeybindingsConfig =
+            serde_json::to_value(&config.keybindings).ok().and_then(|v| serde_json::from_value(v).ok()).unwrap_or_default();
+        let issues: t3code_shared::keybindings::ServerConfigIssues =
+            serde_json::to_value(&config.issues).ok().and_then(|v| serde_json::from_value(v).ok()).unwrap_or_default();
+        let current = cx.try_global::<crate::shortcuts::keymap::ShortcutState>().map(|state| state.config.clone());
+        if current.as_deref() == Some(&rules) {
+            return;
+        }
+        crate::shortcuts::keymap::install(rules, issues.0, cx);
+    }
+
+    /// `server.upsertKeybinding` on every target, applying it to the local
+    /// copy first: the rule `replace` names goes, the new rule is added last.
+    pub fn upsert_keybinding(
+        targets: Vec<EnvironmentId>,
+        input: ServerUpsertKeybindingInput,
+        cx: &mut App,
+    ) -> Task<Result<(), CommandError>> {
+        let rule = (|| {
+            let shortcut = t3code_shared::keybindings::parse_keybinding_shortcut(&input.key)?;
+            let when_ast = match input.when.as_deref().map(str::trim).filter(|w| !w.is_empty()) {
+                Some(when) => Some(t3code_shared::keybindings::parse_keybinding_when_expression(when)?),
+                None => None,
+            };
+            let command: t3code_shared::keybindings::KeybindingCommand =
+                serde_json::from_value(serde_json::to_value(&input.command).ok()?).ok()?;
+            let rule = t3code_shared::keybindings::ResolvedKeybindingRule { command, shortcut, when_ast };
+            serde_json::from_value::<ServerConfigKeybindingsItem>(serde_json::to_value(rule).ok()?).ok()
+        })();
+        let Some(rule) = rule else {
+            return Task::ready(Err(CommandError("That shortcut or condition is not valid.".into())));
+        };
+        let replace = input.replace.clone();
+        Self::edit_keybindings(&targets, cx, |items| {
+            if let Some(replace) = &replace {
+                remove_rule(items, replace);
+            }
+            remove_rule(items, &ServerRemoveKeybindingInput { key: input.key.clone(), command: input.command.clone(), when: input.when.clone() });
+            items.push(rule.clone());
+        });
+        Self::call_all::<t3code_contracts::rpc::methods::ServerUpsertKeybinding>(targets, input, cx)
+    }
+
+    /// `server.removeKeybinding` on every target, applied locally first.
+    pub fn remove_keybinding(
+        targets: Vec<EnvironmentId>,
+        input: ServerRemoveKeybindingInput,
+        cx: &mut App,
+    ) -> Task<Result<(), CommandError>> {
+        Self::edit_keybindings(&targets, cx, |items| remove_rule(items, &input));
+        Self::call_all::<t3code_contracts::rpc::methods::ServerRemoveKeybinding>(targets, input, cx)
+    }
+
+    fn edit_keybindings(targets: &[EnvironmentId], cx: &mut App, edit: impl Fn(&mut Vec<ServerConfigKeybindingsItem>)) {
+        let this = cx.global_mut::<Self>();
+        for id in targets {
+            if let Some(env) = this.environments.get_mut(id) {
+                edit(&mut Arc::make_mut(&mut env.config).keybindings);
+            }
+        }
+        Self::install_keymap(cx);
+        cx.refresh_windows();
+    }
+
+    /// Calls a keybinding method on every target that is not a fixture; the
+    /// server's `keybindingsUpdated` event then replaces the local copy.
+    fn call_all<M>(targets: Vec<EnvironmentId>, payload: M::Payload, cx: &mut App) -> Task<Result<(), CommandError>>
+    where
+        M: RpcMethod + 'static,
+        M::Payload: Clone + Send + 'static,
+        M::Success: Send + 'static,
+        M::Error: std::fmt::Debug + Send,
+    {
+        let calls: Vec<_> = targets
+            .iter()
+            .filter(|id| cx.global::<Self>().environments.get(*id).is_some_and(|env| !env.fixture))
+            .map(|id| Self::call::<M>(id, payload.clone(), cx))
+            .collect();
+        cx.background_executor().spawn(async move {
+            for call in calls {
+                call.await?;
+            }
+            Ok(())
+        })
     }
 
     /// Seeds an environment's config with no server behind it, for scenes
@@ -579,6 +681,7 @@ impl ServerSettingsStore {
         cx.global_mut::<Self>()
             .environments
             .insert(id, EnvironmentConfig { config: Arc::new(config), fixture: true, revision: 0 });
+        Self::install_keymap(cx);
         cx.refresh_windows();
     }
 
@@ -660,6 +763,19 @@ impl ServerSettingsStore {
         };
         runtime.spawn(async move { session.client.call::<M>(payload).await.map_err(CommandError::from) }, cx)
     }
+}
+
+/// Drops the rule a remove input names: same command, key and condition.
+fn remove_rule(items: &mut Vec<ServerConfigKeybindingsItem>, target: &ServerRemoveKeybindingInput) {
+    let key = t3code_shared::keybindings::parse_keybinding_shortcut(&target.key);
+    let when = target.when.as_deref().map(str::trim).filter(|w| !w.is_empty()).and_then(t3code_shared::keybindings::parse_keybinding_when_expression);
+    items.retain(|item| {
+        let Ok(rule) = serde_json::to_value(item).and_then(serde_json::from_value::<t3code_shared::keybindings::ResolvedKeybindingRule>) else {
+            return true;
+        };
+        let command = serde_json::to_value(&rule.command).ok() == serde_json::to_value(&target.command).ok();
+        !(command && Some(&rule.shortcut) == key.as_ref() && rule.when_ast == when)
+    });
 }
 
 fn keybinding_item(item: ServerConfigKeybindingsUpdatedPayloadKeybindingsItem) -> ServerConfigKeybindingsItem {
