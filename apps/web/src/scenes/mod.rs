@@ -8,6 +8,7 @@ pub mod connections;
 pub mod git_actions;
 mod i18n;
 mod notifications;
+pub mod pull_requests;
 pub mod composer;
 pub mod diffs;
 mod sidebar;
@@ -51,6 +52,8 @@ pub fn scenes() -> &'static [(&'static str, SceneBuilder)] {
         ("git-actions-light", git_actions::build_light),
         ("git-actions-panel", git_actions::build_panel),
         ("git-actions-panel-light", git_actions::build_panel_light),
+        ("pull-requests", pull_requests::build),
+        ("pull-requests-light", pull_requests::build),
     ]
 }
 
