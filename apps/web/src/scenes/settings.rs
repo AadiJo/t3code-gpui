@@ -69,9 +69,21 @@ impl Render for SettingsScene {
     }
 }
 
+/// Loads a client settings document (`T3CODE_CLIENT_SETTINGS=<path to a
+/// T3 Code client settings JSON>`) over the defaults, so a scene can render
+/// with someone's real settings without them living in the repo.
+pub fn apply_client_settings_override(cx: &mut App) {
+    let Some(path) = std::env::var_os("T3CODE_CLIENT_SETTINGS") else { return };
+    let Ok(bytes) = std::fs::read(&path) else { return };
+    let Ok(serde_json::Value::Object(document)) = serde_json::from_slice(&bytes) else { return };
+    let (settings, _) = crate::hooks::use_settings::ClientSettings::from_document(document);
+    crate::hooks::use_settings::ClientSettingsStore::update(cx, |current| *current = settings);
+}
+
 /// Opens Settings on `path` over the app shell, with the fixture environment.
 pub fn open(path: SettingsPath, window: &mut Window, cx: &mut App) -> (AnyView, Entity<SettingsRoute>) {
     seed_fixture(cx);
+    apply_client_settings_override(cx);
     let state = cx.new(|_| ConnectionsState {
         environments: Vec::new(),
         cloud: None,
