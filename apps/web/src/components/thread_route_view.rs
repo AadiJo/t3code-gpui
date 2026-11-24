@@ -72,6 +72,8 @@ pub enum ThreadRouteEvent {
     OpenLinkedItems,
     /// Show this browser tab (a thread server opened in the preview).
     OpenBrowser(SharedString),
+    /// Open this terminal (the worktree setup script's).
+    OpenTerminal(SharedString),
 }
 
 /// The menu of the shown thread's workspace; the composer keeps one source.
@@ -585,6 +587,7 @@ impl ThreadRouteView {
                 return cx.emit(ThreadRouteEvent::OpenImage { attachments: attachments.clone(), index: *index });
             }
             (TimelineAction::OpenLink(target), _) => return cx.emit(ThreadRouteEvent::OpenLink(target.clone())),
+            (TimelineAction::OpenTerminal(id), _) => return cx.emit(ThreadRouteEvent::OpenTerminal(id.clone())),
             (TimelineAction::Reply { message, text }, _) => {
                 // `responseContextRecord`: a chip naming the reply by its opening words.
                 let opening: String = text.lines().find(|l| !l.trim().is_empty()).unwrap_or_default().chars().take(48).collect();

@@ -355,32 +355,72 @@ fn visible_worktree_setup(snapshot: Option<&WorktreeSetupSnapshot>, data: &Threa
     if !shown {
         return None;
     }
-    let steps = snapshot
+    let ms = |iso: Option<&str>| iso.and_then(t3code_client_runtime::state::models::parse_ms).map(Timestamp);
+    let text = |value: &Option<String>| value.clone().map(SharedString::from);
+    let script_name = snapshot.setup_script.as_ref().map(|script| SharedString::from(script.name.clone()));
+    let stages = snapshot
         .stages
         .iter()
         .map(|stage| {
-            // `worktreeSetupStageLabel`: the contracts' English label, translated.
-            let label = match stage.id {
-                StageId::Fetch => t!("Fetch base branch"),
-                StageId::Checkout => t!("Check out files"),
-                StageId::Submodules => t!("Init submodules"),
-                StageId::SetupScript => t!("Run setup script"),
-                _ => t!("Start agent"),
+            use crate::components::chat::timeline_entries::{SetupStage, SetupStageId as Id, SetupStageStatus as Status};
+            let id = match stage.id {
+                StageId::Fetch => Id::Fetch,
+                StageId::Checkout => Id::Checkout,
+                StageId::Submodules => Id::Submodules,
+                StageId::SetupScript => Id::SetupScript,
+                _ => Id::Agent,
+            };
+            // `worktreeSetupStageLabel`, or the script's own name for its stage.
+            let label = match (id, &script_name) {
+                (Id::SetupScript, Some(name)) => name.clone(),
+                (Id::Fetch, _) => t!("Fetch base branch"),
+                (Id::Checkout, _) => t!("Check out files"),
+                (Id::Submodules, _) => t!("Init submodules"),
+                (Id::SetupScript, _) => t!("Run setup script"),
+                (Id::Agent, _) => t!("Start agent"),
             };
             let status = match stage.status {
-                StageStatus::Done | StageStatus::Skipped => ToolStatus::Completed,
-                StageStatus::Running => ToolStatus::InProgress,
-                StageStatus::Failed => ToolStatus::Failed,
-                StageStatus::Warning => ToolStatus::Declined,
-                _ => ToolStatus::Stopped,
+                StageStatus::Pending => Status::Pending,
+                StageStatus::Running => Status::Running,
+                StageStatus::Done => Status::Done,
+                StageStatus::Skipped => Status::Skipped,
+                StageStatus::Warning => Status::Warning,
+                StageStatus::Failed => Status::Failed,
+                // A status from a newer server reads as not started.
+                _ => Status::Pending,
             };
-            (label, status)
+            SetupStage {
+                id,
+                label,
+                status,
+                started_at: ms(stage.started_at.as_deref()),
+                ended_at: ms(stage.ended_at.as_deref()),
+                percent: stage.percent,
+                detail: text(&stage.detail),
+                tail: stage.tail.iter().cloned().map(SharedString::from).collect(),
+            }
         })
         .collect();
+    use crate::components::chat::timeline_entries::{SetupPhase, SetupScript};
     Some(WorktreeSetup {
+        phase: match snapshot.phase {
+            Phase::Running => SetupPhase::Running,
+            Phase::Done => SetupPhase::Done,
+            Phase::Failed => SetupPhase::Failed,
+            _ => SetupPhase::Cancelled,
+        },
         started_at: Timestamp(t3code_client_runtime::state::models::parse_ms(&snapshot.started_at).unwrap_or_default()),
-        running: snapshot.phase == Phase::Running,
-        branch: snapshot.branch.clone().map(SharedString::from).unwrap_or_default(),
-        steps,
+        ended_at: ms(snapshot.ended_at.as_deref()),
+        branch: text(&snapshot.branch),
+        base_ref: text(&snapshot.base_ref),
+        worktree_path: text(&snapshot.worktree_path),
+        setup_script: snapshot.setup_script.as_ref().map(|script| SetupScript {
+            name: script.name.clone().into(),
+            command: script.command.clone().into(),
+            terminal_id: script.terminal_id.clone().into(),
+        }),
+        stages,
+        error: text(&snapshot.error),
+        embedded: false,
     })
 }

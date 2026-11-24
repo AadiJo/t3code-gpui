@@ -921,19 +921,42 @@ pub fn derive_timeline_rows(input: &TimelineInput, expansion: &TimelineExpansion
         index += 1;
     }
 
+    // The setup card: after the working row it owns while setup runs or just finished, else
+    // after the first user message. Once the agent started and the run is under way it folds
+    // into one line, and a still-running setup leaves the timeline for the header popover.
+    let mut setup_owns_working = false;
     if let Some(setup) = &input.worktree_setup {
-        let first_user = rows
-            .iter()
-            .position(|r| matches!(&r.kind, RowKind::Message(m) if m.message.role == MessageRole::User));
-        let at = first_user.map_or(rows.len(), |i| i + 1);
-        rows.insert(at, row("worktree-setup-row", Some(setup.started_at), RowKind::WorktreeSetup(setup.clone())));
+        use super::timeline_entries::SetupPhase;
+        let handed_off = setup.agent_started() && input.latest_run.as_ref().is_some_and(|run| run.started_at.is_some());
+        setup_owns_working = !handed_off && matches!(setup.phase, SetupPhase::Running | SetupPhase::Done);
+        if !handed_off || setup.phase != SetupPhase::Running {
+            let setup_row = row(
+                "worktree-setup-row",
+                Some(setup.started_at),
+                RowKind::WorktreeSetup(WorktreeSetup { embedded: handed_off, ..setup.clone() }),
+            );
+            let working = rows.iter().position(|r| matches!(r.kind, RowKind::Working { .. })).filter(|_| setup_owns_working);
+            match working {
+                Some(index) => rows.insert(index + 1, setup_row),
+                None => {
+                    let first_user = rows.iter().position(|r| matches!(&r.kind, RowKind::Message(m) if m.message.role == MessageRole::User));
+                    let at = first_user.map_or(rows.len(), |i| i + 1);
+                    if setup_owns_working {
+                        let working = row("working-indicator-row", Some(setup.started_at), RowKind::Working { started_at: Some(setup.started_at), compacting: false });
+                        rows.splice(at..at, [working, setup_row]);
+                    } else {
+                        rows.insert(at, setup_row);
+                    }
+                }
+            }
+        }
     }
     let has_working = rows.iter().any(|r| matches!(r.kind, RowKind::Working { .. }));
     if input.is_working && !has_working && active_header_index >= entries.len() {
         push_working(&mut rows);
     }
     let turn_ended = input.latest_run.as_ref().is_some_and(|l| l.turn_ended);
-    if input.is_working && !turn_ended && (latest_failed || (!has_activity_row && pending.is_empty())) {
+    if input.is_working && !turn_ended && !setup_owns_working && (latest_failed || (!has_activity_row && pending.is_empty())) {
         rows.push(row("live-activity-row", input.active_turn_started_at, RowKind::Thinking { label: None }));
     }
     if !input.queued.is_empty() {

@@ -18,7 +18,7 @@ use super::{
     messages_timeline_logic::TimelineRow,
     timeline_entries::{
         ApprovalKind, Divider, ProposedPlan, QueuedMessage, Subagent, SubagentStatus, TimelineEvent, ToolStatus, WorkItem,
-        WorkLogEntry, WorktreeSetup,
+        WorkLogEntry,
     },
     timeline_row_parts::{SMALL_ICON, tool_icon, work_log_line, xs_button},
     work_log_presentation::{format_clock, format_duration},
@@ -416,40 +416,6 @@ impl MessagesTimeline {
                         linear_color_stop(alpha(colors.theme.surface, 0.95), 1.),
                     ))),
             )
-            .into_any_element()
-    }
-
-    /// Worktree setup steps before the agent starts.
-    pub(super) fn render_worktree_setup(&mut self, setup: &WorktreeSetup) -> AnyElement {
-        let colors = self.colors;
-        div()
-            .rounded(px(8.))
-            .border_1()
-            .border_color(alpha(colors.theme.border, 0.6))
-            .px_3()
-            .py_2()
-            .text_size(TEXT_XS.size)
-            .line_height(px(20.))
-            .child(
-                div()
-                    .font_weight(FontWeight::MEDIUM)
-                    .text_color(colors.theme.text)
-                    .child(format!("Setting up worktree on {}", setup.branch)),
-            )
-            .children(setup.steps.iter().map(|(label, status)| {
-                let (mark, color) = match status {
-                    ToolStatus::Completed => ("✓", colors.success_foreground),
-                    ToolStatus::InProgress => ("◉", colors.info_foreground),
-                    ToolStatus::Failed => ("✕", colors.destructive()),
-                    _ => ("○", colors.theme.muted_foreground),
-                };
-                div()
-                    .flex()
-                    .gap_2()
-                    .text_color(colors.theme.muted_foreground)
-                    .child(div().text_color(color).child(mark))
-                    .child(label.clone())
-            }))
             .into_any_element()
     }
 

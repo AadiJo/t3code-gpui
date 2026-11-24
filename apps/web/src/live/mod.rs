@@ -578,7 +578,24 @@ impl AppData for LiveData {
             }
             TimelineAction::Fork(message) => self.fork_from(key, message, cx),
             TimelineAction::EditFrom(message) => return self.confirm_revert(key, message, cx),
-            TimelineAction::OpenDiff { .. } | TimelineAction::OpenImage { .. } | TimelineAction::OpenLink(_) | TimelineAction::Reply { .. } => {}
+            TimelineAction::CancelWorktreeSetup => {
+                // `worktreeSetup.cancel`; the setup stream shows the result.
+                let (environment_id, thread_id) = runtime_ids(key);
+                let Some(link) = rpc::RpcLink::new(&environment_id, cx) else { return ActionOutcome::Done };
+                let call = link.call::<t3code_contracts::rpc::methods::WorktreeSetupCancel>(t3code_contracts::WorktreeSetupCancelInput { thread_id });
+                cx.background_executor()
+                    .spawn(async move {
+                        if let Err(error) = call.await {
+                            tracing::warn!(%error, "cancelling worktree setup failed");
+                        }
+                    })
+                    .detach();
+            }
+            TimelineAction::OpenDiff { .. }
+            | TimelineAction::OpenImage { .. }
+            | TimelineAction::OpenLink(_)
+            | TimelineAction::Reply { .. }
+            | TimelineAction::OpenTerminal(_) => {}
         }
         ActionOutcome::Done
     }

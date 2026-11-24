@@ -727,6 +727,7 @@ impl AppRoot {
                 self.right_panel.update(cx, |panel, cx| panel.run_script(script, cx));
             }
             ThreadRouteEvent::DetailsClosed => self.details_open = false,
+            ThreadRouteEvent::OpenTerminal(id) => self.right_panel.update(cx, |panel, cx| panel.add_terminal_tab(id.to_string(), cx)),
             ThreadRouteEvent::Navigate(path) => self.navigate(Route::parse(path), cx),
             ThreadRouteEvent::OpenLinkedItems => self.right_panel.update(cx, |panel, cx| panel.open_linked_items(cx)),
             ThreadRouteEvent::OpenBrowser(tab) => {
