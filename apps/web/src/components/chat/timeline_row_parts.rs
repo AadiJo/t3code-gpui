@@ -76,13 +76,13 @@ pub fn work_log_line(
 /// A 16px tool icon in `iconMuted` at 70%, tinted when the call failed.
 pub fn tool_icon(glyph: IconName, colors: &ChatColors, failed: bool) -> AnyElement {
     let color = if failed { alpha(colors.theme.error_foreground, 0.4) } else { colors.theme.icon_muted };
-    let svg = Icon::new(glyph).size(IconSize::Custom(TOOL_ICON_SIZE)).color(color).stroke(chat_icon_stroke(glyph));
+    let svg = Icon::new(glyph).size(IconSize::Custom(colors.r(TOOL_ICON_SIZE))).color(color).stroke(chat_icon_stroke(glyph));
     if failed { svg.into_any_element() } else { div().opacity(0.7).child(svg).into_any_element() }
 }
 
 /// The trailing `X` of a failed call.
 pub fn failed_mark(colors: &ChatColors) -> AnyElement {
-    Icon::new(IconName::X).size(IconSize::Custom(SMALL_ICON)).color(alpha(colors.theme.error_foreground, 0.4)).into_any_element()
+    Icon::new(IconName::X).size(IconSize::Custom(colors.r(SMALL_ICON))).color(alpha(colors.theme.error_foreground, 0.4)).into_any_element()
 }
 
 /// A disclosure chevron: right when collapsed, down when open, in a 16px box.
@@ -183,7 +183,7 @@ pub fn xs_button(id: impl Into<ElementId>, glyph: Option<IconName>, label: Optio
         .text_size(TEXT_XS.size)
         .text_color(color)
         .hover(|s| s.bg(colors.theme.accent_surface).text_color(colors.theme.text))
-        .children(glyph.map(|g| Icon::new(g).size(IconSize::Custom(SMALL_ICON)).color(color).stroke(chat_icon_stroke(g))))
+        .children(glyph.map(|g| Icon::new(g).size(IconSize::Custom(colors.r(SMALL_ICON))).color(color).stroke(chat_icon_stroke(g))))
         .children(label)
 }
 

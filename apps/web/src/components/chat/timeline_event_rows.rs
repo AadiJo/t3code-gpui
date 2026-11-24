@@ -69,7 +69,7 @@ impl MessagesTimeline {
             .rounded_full()
             .px_2()
             .py_1()
-            .child(Icon::new(glyph).size(IconSize::Custom(SMALL_ICON)).color(colors.theme.muted_foreground).stroke(chat_icon_stroke(glyph)))
+            .child(Icon::new(glyph).size(IconSize::Custom(colors.r(SMALL_ICON))).color(colors.theme.muted_foreground).stroke(chat_icon_stroke(glyph)))
             .child(div().font_weight(FontWeight::MEDIUM).child(divider.label.clone()))
             .children(divider.detail.as_ref().map(|detail| div().opacity(0.7).truncate().child(format!("· {detail}"))));
         if divider.action {
@@ -187,7 +187,7 @@ impl MessagesTimeline {
                     )
                     .child(div().text_size(TEXT_3XS.size).text_color(summary_color).child(summary)),
             )
-            .child(Icon::new(if expanded { IconName::ChevronDown } else { IconName::ChevronRight }).size(IconSize::Custom(px(14.))).color(colors.theme.muted_foreground).stroke(chat_icon_stroke(if expanded { IconName::ChevronDown } else { IconName::ChevronRight })));
+            .child(Icon::new(if expanded { IconName::ChevronDown } else { IconName::ChevronRight }).size(IconSize::Custom(colors.r(px(14.)))).color(colors.theme.muted_foreground).stroke(chat_icon_stroke(if expanded { IconName::ChevronDown } else { IconName::ChevronRight })));
         let id = row.id.clone();
         let mut column = div()
             .id(("subagent-group", row.key))
@@ -260,7 +260,7 @@ impl MessagesTimeline {
                             .flex()
                             .items_center()
                             .gap_1()
-                            .child(Icon::new(IconName::Shield).size(IconSize::Custom(SMALL_ICON)).color(colors.theme.warning))
+                            .child(Icon::new(IconName::Shield).size(IconSize::Custom(colors.r(SMALL_ICON))).color(colors.theme.warning))
                             .child(div().text_color(colors.theme.warning).child("Waiting for approval"))
                             .child(div().text_color(colors.theme.muted_foreground).child("·"))
                             .child(text_button("decline", "Decline", colors.theme.muted_foreground).on_click({
@@ -468,7 +468,7 @@ impl MessagesTimeline {
             .px_3()
             .py(rems(0.625))
             .text_size(TEXT_SM.size)
-            .child(Icon::new(IconName::CodeXml).size(IconSize::Custom(px(16.))).color(colors.theme.muted_foreground).stroke(2.))
+            .child(Icon::new(IconName::CodeXml).size(IconSize::Custom(colors.r(px(16.)))).color(colors.theme.muted_foreground).stroke(2.))
             .child(div().text_color(colors.theme.muted_foreground).child(kind))
             .child(div().flex_1().truncate().font_weight(FontWeight::MEDIUM).text_color(colors.theme.text).child(title.clone()))
             .child(Icon::new(IconName::ExternalLink).size(IconSize::Sm).color(colors.theme.muted_foreground))

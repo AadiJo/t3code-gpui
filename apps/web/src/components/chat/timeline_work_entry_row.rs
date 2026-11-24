@@ -251,7 +251,7 @@ impl MessagesTimeline {
                                         .font_weight(FontWeight::MEDIUM)
                                         .text_color(colors.theme.text)
                                         .child(r.title.clone())
-                                        .child(Icon::new(IconName::ExternalLink).size(IconSize::Custom(SMALL_ICON)).color(colors.theme.muted_foreground)),
+                                        .child(Icon::new(IconName::ExternalLink).size(IconSize::Custom(colors.r(SMALL_ICON))).color(colors.theme.muted_foreground)),
                                 )
                                 .child(div().text_color(colors.theme.muted_foreground).child(r.snippet.clone()))
                         }))

@@ -44,7 +44,7 @@ pub fn palette_input(theme: &AppTheme, input: &Entity<InputState>, accessory: Op
             .pl(rems(0.75))
             .pr(rems(0.625))
             .child(Icon::new(IconName::Search).size(IconSize::Md).color(theme.colors.icon_muted))
-            .child(div().flex_1().min_w_0().child(Input::new(input).appearance(false).bordered(false).focus_bordered(false).p_0().h(px(20.)).text_size(px(14.)).w_full()))
+            .child(div().flex_1().min_w_0().child(Input::new(input).appearance(false).bordered(false).focus_bordered(false).p_0().h(theme.rem(1.25)).text_size(theme.rem(0.875)).w_full()))
             .children(accessory),
     )
 }
@@ -66,7 +66,8 @@ pub fn palette_footer(theme: &AppTheme, action: SharedString, escape: SharedStri
         .border_color(c.foreground().opacity(0.07))
         .bg(c.foreground().opacity(0.025))
         .rounded_b(theme.radii.xxl - px(1.))
-        .text_size(px(13.))
+        // `text-sm font-medium`.
+        .text_size(theme.rem(0.875))
         .font_weight(gpui_kit::FontWeight::MEDIUM)
         .text_color(c.muted_foreground)
         .child(group(vec![Kbd::new("↑").into_any_element(), Kbd::new("↓").into_any_element()], t!("Navigate")))

@@ -63,7 +63,7 @@ impl MessagesTimeline {
         } else {
             label.into_any_element()
         };
-        let glyph = Icon::new(entry_icon(entry)).size(IconSize::Custom(px(16.))).color(if *active { colors.theme.text } else { colors.theme.icon_muted }).stroke(chat_icon_stroke(entry_icon(entry)));
+        let glyph = Icon::new(entry_icon(entry)).size(IconSize::Custom(colors.r(px(16.)))).color(if *active { colors.theme.text } else { colors.theme.icon_muted }).stroke(chat_icon_stroke(entry_icon(entry)));
         let preview = thought.as_ref().and_then(|t| match &t.item {
             WorkItem::Reasoning { text } => Some(
                 div()
@@ -166,7 +166,7 @@ impl MessagesTimeline {
                     .text_color(colors.theme.muted_foreground)
                     .hover(|s| s.text_color(colors.theme.text))
                     .child(label.clone())
-                    .child(Icon::new(if expanded { IconName::ChevronDown } else { IconName::ChevronRight }).size(IconSize::Custom(px(14.))).color(colors.theme.muted_foreground).stroke(chat_icon_stroke(if expanded { IconName::ChevronDown } else { IconName::ChevronRight })))
+                    .child(Icon::new(if expanded { IconName::ChevronDown } else { IconName::ChevronRight }).size(IconSize::Custom(colors.r(px(14.)))).color(colors.theme.muted_foreground).stroke(chat_icon_stroke(if expanded { IconName::ChevronDown } else { IconName::ChevronRight })))
                     .child(
                         div()
                             .ml_auto()
@@ -255,7 +255,7 @@ impl MessagesTimeline {
                     .flex()
                     .items_center()
                     .gap_1()
-                    .child(Icon::new(if failed { IconName::CircleAlert } else { IconName::Minimize2 }).size(IconSize::Custom(px(12.))).color(tone).stroke(chat_icon_stroke(if failed { IconName::CircleAlert } else { IconName::Minimize2 })))
+                    .child(Icon::new(if failed { IconName::CircleAlert } else { IconName::Minimize2 }).size(IconSize::Custom(colors.r(px(12.)))).color(tone).stroke(chat_icon_stroke(if failed { IconName::CircleAlert } else { IconName::Minimize2 })))
                     .child(text),
             )
             .child(div().h(px(1.)).flex_1().bg(rule))

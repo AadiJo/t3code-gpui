@@ -4,6 +4,7 @@
 //! answers with [`DiffPanelEvent`]s that name the RPC to make
 //! (`orchestration.getTurnDiff`, `review.getDiffPreview`, `review.getDiffFileContents`).
 
+use gpui_kit::rems;
 use std::{
     collections::{HashMap, HashSet},
     rc::Rc,
@@ -506,18 +507,18 @@ impl DiffPanel {
         let addition_fg = cx.app_theme().fixed.diff_addition_foreground;
         let deletion_fg = cx.app_theme().fixed.diff_deletion_foreground;
         let pressed_bg = colors.input.opacity(0.64);
-        let icon = |path: &'static str| svg().path(path).size(px(14.)).text_color(colors.muted_foreground);
+        let icon = |path: &'static str| svg().path(path).size(rems(0.875)).text_color(colors.muted_foreground);
 
         let toggle = |id: &'static str, path: &'static str, pressed: bool| {
             div()
                 .id(id)
                 .test_support()
-                .size(px(28.))
+                .size(rems(1.75))
                 .flex()
                 .flex_none()
                 .items_center()
                 .justify_center()
-                .rounded(px(8.))
+                .rounded(rems(0.5))
                 .when(pressed, |el| el.bg(pressed_bg))
                 .hover(|el| el.bg(colors.toolbar_control_hover))
                 .child(icon(path).when(pressed, |s| s.text_color(colors.text)))
@@ -526,14 +527,14 @@ impl DiffPanel {
             div()
                 .id(id)
                 .test_support()
-                .h(px(24.))
-                .px(px(10.))
+                .h(rems(1.5))
+                .px(rems(0.625))
                 .flex()
                 .items_center()
-                .rounded(px(6.))
+                .rounded(rems(0.375))
                 .when(pressed, |el| el.bg(colors.input.opacity(if dark { 0.72 } else { 1. })))
                 .hover(|el| el.bg(colors.input.opacity(0.32)))
-                .child(svg().path(path).size(px(14.)).text_color(if pressed { colors.text } else { colors.muted_foreground }))
+                .child(svg().path(path).size(rems(0.875)).text_color(if pressed { colors.text } else { colors.muted_foreground }))
         };
         let git_scope = matches!(selection, DiffPanelSelection::Branch { .. });
         // The refs line is a 20rem container query on the web; the toolbar is about 380px.
@@ -544,22 +545,22 @@ impl DiffPanel {
             .flex_1()
             .min_w_0()
             .items_center()
-            .gap(px(12.))
+            .gap(rems(0.75))
             .child(
                 div()
                     .id("diff-scope")
                     .test_support()
                     .relative()
-                    .h(px(24.))
-                    .px(px(7.))
+                    .h(rems(1.5))
+                    .px(rems(0.4375))
                     .flex()
                     .when(matches!(selection, DiffPanelSelection::Commit { .. }), |el| el.flex_shrink(1.).min_w_0())
                     .when(!matches!(selection, DiffPanelSelection::Commit { .. }), |el| el.flex_none())
                     .items_center()
-                    .gap(px(4.))
-                    .rounded(px(8.))
+                    .gap(rems(0.25))
+                    .rounded(rems(0.5))
                     .bg(colors.secondary)
-                    .text_size(px(12.))
+                    .text_size(rems(0.75))
                     .font_weight(FontWeight::MEDIUM)
                     .text_color(colors.secondary_foreground)
                     .hover(|el| el.bg(colors.secondary.opacity(0.9)))
@@ -589,7 +590,7 @@ impl DiffPanel {
                         .size_full()
                     })
                     .child(div().min_w_0().overflow_hidden().whitespace_nowrap().text_ellipsis().child(label))
-                    .child(svg().path("icons/diffs/chevron-down.svg").size(px(14.)).flex_none().text_color(colors.secondary_foreground.opacity(0.7))),
+                    .child(svg().path("icons/diffs/chevron-down.svg").size(rems(0.875)).flex_none().text_color(colors.secondary_foreground.opacity(0.7))),
             )
             .when(git_scope && self.input.head_ref.is_some(), |el| {
                 let head = self.input.head_ref.clone().unwrap_or_default();
@@ -599,13 +600,13 @@ impl DiffPanel {
                         .flex()
                         .min_w_0()
                         .items_center()
-                        .gap(px(8.))
+                        .gap(rems(0.5))
                         .overflow_hidden()
-                        .text_size(px(12.))
+                        .text_size(rems(0.75))
                         .text_color(colors.muted_foreground)
                         .when(!narrow_refs, |el| {
-                            el.child(div().min_w_0().max_w(px(192.)).overflow_hidden().whitespace_nowrap().text_ellipsis().child(head))
-                                .child(svg().path("icons/diffs/arrow-right.svg").size(px(14.)).flex_none().text_color(colors.muted_foreground.opacity(0.7)))
+                            el.child(div().min_w_0().max_w(rems(12.)).overflow_hidden().whitespace_nowrap().text_ellipsis().child(head))
+                                .child(svg().path("icons/diffs/arrow-right.svg").size(rems(0.875)).flex_none().text_color(colors.muted_foreground.opacity(0.7)))
                         })
                         .when(narrow_refs, |el| el.child(t!("vs")))
                         .child(self.render_base_ref_trigger(base, cx)),
@@ -616,16 +617,16 @@ impl DiffPanel {
             .flex()
             .flex_none()
             .items_center()
-            .gap(px(4.))
+            .gap(rems(0.25))
             .when(has_files, |el| {
                 el.child(
                     div()
-                        .mr(px(4.))
+                        .mr(rems(0.25))
                         .flex()
                         .items_center()
-                        .gap(px(4.))
+                        .gap(rems(0.25))
                         .font_family(self.code_view.read(cx).mono_family())
-                        .text_size(px(11.))
+                        .text_size(rems(0.6875))
                         .child(div().text_color(addition_fg).child(format!("+{}", format_compact_diff_count(additions))))
                         .child(div().text_color(deletion_fg).child(format!("-{}", format_compact_diff_count(deletions)))),
                 )
@@ -648,9 +649,9 @@ impl DiffPanel {
                 div()
                     .flex()
                     .flex_none()
-                    .gap(px(2.))
-                    .p(px(2.))
-                    .rounded(px(8.))
+                    .gap(rems(0.125))
+                    .p(rems(0.125))
+                    .rounded(rems(0.5))
                     .bg(colors.input.opacity(0.4))
                     .child(segment("diff-stacked", "icons/diffs/rows-3.svg", settings.diff_layout == DiffLayout::Stacked).on_click(cx.listener(|this, _, _, cx| {
                         crate::hooks::settings_bridge::set_diff_layout(DiffLayout::Stacked, cx);
@@ -684,7 +685,7 @@ impl DiffPanel {
                     cx.notify();
                 })))
             });
-        div().flex().flex_1().min_w_0().items_center().justify_between().gap(px(8.)).child(left).child(right).into_any_element()
+        div().flex().flex_1().min_w_0().items_center().justify_between().gap(rems(0.5)).child(left).child(right).into_any_element()
     }
 
     /// Opens the scope menu, with the Turn (`turns`) or Commits submenu open. Used by scenes.
@@ -814,8 +815,8 @@ impl DiffPanel {
             // Base UI's sub popup: inline-end, aligned to its trigger row 5px up.
             div()
                 .mt(px(1.) + theme.sp(1.) + theme.sp(7.) * index - px(5.))
-                .max_h(px(320.))
-                .max_w(px(384.))
+                .max_h(rems(20.))
+                .max_w(rems(24.))
                 .child(match commits {
                     // The commit rows sit above the status line, in the same surface.
                     Some(rows) => glass_surface(theme)
@@ -1242,8 +1243,8 @@ impl DiffPanel {
                 .flex()
                 .items_center()
                 .justify_center()
-                .px(px(20.))
-                .text_size(px(12.))
+                .px(rems(1.25))
+                .text_size(rems(0.75))
                 .text_color(colors.muted_foreground.opacity(0.7))
                 .child(text)
                 .into_any_element()
@@ -1254,9 +1255,9 @@ impl DiffPanel {
             DiffPanelContent::NoTurns => message(t!("No completed turns yet.")),
             DiffPanelContent::Loading(label) => DiffPanelLoadingState::new(label).into_any_element(),
             DiffPanelContent::Error(error) => div()
-                .px(px(12.))
-                .pt(px(8.))
-                .text_size(px(11.))
+                .px(rems(0.75))
+                .pt(rems(0.5))
+                .text_size(rems(0.6875))
                 .text_color(colors.error.opacity(0.8))
                 .child(error)
                 .into_any_element(),
@@ -1267,12 +1268,12 @@ impl DiffPanel {
                 let banners = notices.into_iter().map(|notice| {
                     div()
                         .flex_none()
-                        .px(px(12.))
-                        .py(px(6.))
+                        .px(rems(0.75))
+                        .py(rems(0.375))
                         .border_b_1()
                         .border_color(colors.border.opacity(0.7))
                         .bg(colors.muted.opacity(0.4))
-                        .text_size(px(11.))
+                        .text_size(rems(0.6875))
                         .text_color(colors.muted_foreground)
                         .child(notice)
                 });
@@ -1282,17 +1283,17 @@ impl DiffPanel {
                         .test_support()
                         .flex_1()
                         .overflow_y_scroll()
-                        .p(px(8.))
-                        .child(div().text_size(px(11.)).text_color(colors.muted_foreground.opacity(0.75)).child(reason.clone()))
+                        .p(rems(0.5))
+                        .child(div().text_size(rems(0.6875)).text_color(colors.muted_foreground.opacity(0.75)).child(reason.clone()))
                         .child(
                             div()
-                                .mt(px(8.))
-                                .p(px(12.))
-                                .rounded(px(6.))
+                                .mt(rems(0.5))
+                                .p(rems(0.75))
+                                .rounded(rems(0.375))
                                 .border_1()
                                 .border_color(colors.border.opacity(0.7))
                                 .font_family(self.code_view.read(cx).mono_family())
-                                .text_size(px(11.))
+                                .text_size(rems(0.6875))
                                 .text_color(colors.muted_foreground.opacity(0.9))
                                 .child(text.clone()),
                         )

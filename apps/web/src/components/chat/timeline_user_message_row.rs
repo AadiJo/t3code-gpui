@@ -71,7 +71,7 @@ impl MessagesTimeline {
             .cursor_pointer()
             .text_size(rems(0.875))
             .line_height(rems(1.25))
-            .child(Icon::new(IconName::MessagesSquare).size(IconSize::Custom(px(16.))).color(muted).stroke(2.))
+            .child(Icon::new(IconName::MessagesSquare).size(IconSize::Custom(colors.r(px(16.)))).color(muted).stroke(2.))
             .child({
                 let label = div().flex_none().text_color(muted).child(label);
                 // A thread title truncates at half the row; the generic label never does.
@@ -160,7 +160,7 @@ impl MessagesTimeline {
                     .text_size(TEXT_XS.size)
                     .line_height(rems(0.75))
                     .text_color(colors.theme.muted_foreground)
-                    .child(Icon::new(IconName::Redo2).size(IconSize::Custom(SMALL_ICON)).color(colors.theme.muted_foreground))
+                    .child(Icon::new(IconName::Redo2).size(IconSize::Custom(colors.r(SMALL_ICON))).color(colors.theme.muted_foreground))
                     .child("Steer"),
             );
         }
@@ -217,7 +217,7 @@ impl MessagesTimeline {
                         .text_size(rems(0.875))
                         .child(Icon::new(IconName::FileText).size(IconSize::Md).color(colors.theme.muted_foreground))
                         .child(div().flex_1().truncate().child(file.name.clone()))
-                        .child(Icon::new(IconName::Eye).size(IconSize::Custom(px(16.))).color(colors.theme.muted_foreground).stroke(2.))
+                        .child(Icon::new(IconName::Eye).size(IconSize::Custom(colors.r(px(16.)))).color(colors.theme.muted_foreground).stroke(2.))
                 })));
             }
             if has_text {

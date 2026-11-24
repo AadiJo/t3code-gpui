@@ -471,8 +471,8 @@ impl ChatView {
             .pb_4()
             .w_full()
             .text_center()
-            .text_size(HERO_HEADLINE_SIZE)
-            .line_height(HERO_HEADLINE_LINE)
+            .text_size(colors.r(HERO_HEADLINE_SIZE))
+            .line_height(colors.r(HERO_HEADLINE_LINE))
             .font_weight(FontWeight::NORMAL)
             .text_color(colors.theme.text)
             .child(t!("What should we work on?"))
@@ -483,7 +483,7 @@ impl ChatView {
         let outline = super::chat::timeline_row_parts::mix(colors.theme.canvas, colors.theme.input, 0.3);
         div()
             .w_full()
-            .h(COMPOSER_PLACEHOLDER_HEIGHT)
+            .h(colors.r(COMPOSER_PLACEHOLDER_HEIGHT))
             .rounded(rems(1.))
             .border_1()
             .border_color(outline)
@@ -543,7 +543,7 @@ impl Render for ChatView {
                         .on_click(cx.listener(|this, _, _, cx| this.advance_question(cx))),
                 )
         });
-        let hero = self.hero && window.viewport_size().height >= HERO_MIN_HEIGHT;
+        let hero = self.hero && window.viewport_size().height >= colors.r(HERO_MIN_HEIGHT);
 
         let composer_overlay = div()
             .absolute()
@@ -551,7 +551,7 @@ impl Render for ChatView {
             .right_0()
             .bottom_0()
             .when(hero, |d| d.top_0().flex().items_center())
-            .pt(COMPOSER_TOP_PAD)
+            .pt(colors.r(COMPOSER_TOP_PAD))
             .px(gutter)
             .child(
                 div()
@@ -595,7 +595,7 @@ impl Render for ChatView {
                                 d.children(self.toolbar.clone())
                             }),
                     )
-                    .child(div().h(COMPOSER_BOTTOM_SPACER)),
+                    .child(div().h(colors.r(COMPOSER_BOTTOM_SPACER))),
             )
             .child(
                 canvas(
@@ -613,8 +613,8 @@ impl Render for ChatView {
                 div()
                     .id("scroll-to-end")
                     .mb(self.timeline.read(cx).composer_bottom() + SCROLL_BUTTON_GAP)
-                    .h(SCROLL_BUTTON_HEIGHT)
-                    .px(rems(0.4375))
+                    .h(colors.r(SCROLL_BUTTON_HEIGHT))
+                    .px(px(7.))
                     .flex()
                     .items_center()
                     .gap_1()

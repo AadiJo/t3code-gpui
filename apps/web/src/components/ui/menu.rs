@@ -259,7 +259,7 @@ fn render_item(theme: &AppTheme, index: usize, item: MenuItem, height: Pixels, d
         .when(item.disabled, |r| r.opacity(DISABLED_OPACITY));
     let row = if leading_check {
         row.child(div().w(theme.sp(4.)).flex_none().when(item.kind == MenuItemKind::Checkbox(true), |slot| {
-            slot.child(svg().path("icons/ui/menu-check.svg").size(px(16.)).text_color(text))
+            slot.child(svg().path("icons/ui/menu-check.svg").size(theme.sp(4.)).text_color(text))
         }))
     } else {
         // `MenuRadioItem` leaves its icons in the text colour at full opacity.

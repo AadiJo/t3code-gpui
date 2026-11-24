@@ -3,6 +3,7 @@
 //! one, split/new/close controls, and the drag handle. Ports
 //! `ThreadTerminalDrawer.tsx`. Drawer state lives in [`TerminalUiStateStore`].
 
+use gpui_kit::rems;
 use crate::components::icons::IconName;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -333,8 +334,8 @@ impl ThreadTerminalDrawer {
             .items_center()
             .justify_center()
             .text_color(colors.text.opacity(0.9))
-            .child(svg().path(icon).size(px(13.)).text_color(colors.text.opacity(0.9)));
-        button = if compact { button.h_full().px(px(4.)) } else { button.p(px(4.)) };
+            .child(svg().path(icon).size(rems(0.8125)).text_color(colors.text.opacity(0.9)));
+        button = if compact { button.h_full().px(rems(0.25)) } else { button.p(rems(0.25)) };
         if enabled {
             let hover = if compact { colors.accent_surface.opacity(0.7) } else { colors.accent_surface };
             button
@@ -423,7 +424,7 @@ impl ThreadTerminalDrawer {
         for (index, button) in self.action_buttons(split_enabled, true, cx).into_iter().enumerate() {
             header = header.child(if index > 0 { button.border_l_1().border_color(colors.border.opacity(0.7)) } else { button });
         }
-        let mut list = div().id("terminal-list").flex().flex_col().flex_1().min_h_0().overflow_y_scroll().p(px(4.));
+        let mut list = div().id("terminal-list").flex().flex_col().flex_1().min_h_0().overflow_y_scroll().p(rems(0.25));
         for group in &state.terminal_groups {
             list = list.child(self.render_group(group, &state.active_terminal_id, show_headers, cx));
         }
@@ -456,7 +457,7 @@ impl ThreadTerminalDrawer {
             (true, SplitDirection::Vertical) => (t!("Stacked", context = "terminals split vertically"), IconName::SquareSplitVertical.path()),
             (true, SplitDirection::Horizontal) => (t!("Side by side", context = "terminals split horizontally"), IconName::SquareSplitHorizontal.path()),
         };
-        let mut column = div().pb(px(2.)).flex().flex_col();
+        let mut column = div().pb(rems(0.125)).flex().flex_col();
         if show_header {
             let target = if group_active { active.to_string() } else { group.terminal_ids[0].clone() };
             let text = if group_active { colors.text } else { colors.muted_foreground };
@@ -465,23 +466,23 @@ impl ThreadTerminalDrawer {
                     .id(SharedString::from(format!("terminal-group-{}", group.id)))
                     .flex()
                     .items_center()
-                    .gap(px(4.))
+                    .gap(rems(0.25))
                     .h(px(22.))
                     .w_full()
-                    .px(px(6.))
-                    .rounded(px(4.))
-                    .text_size(px(11.))
+                    .px(rems(0.375))
+                    .rounded(rems(0.25))
+                    .text_size(rems(0.6875))
                     .text_color(text)
                     .cursor_pointer()
                     .when(group_active, |row| row.bg(colors.accent_surface.opacity(0.5)))
                     .when(!group_active, |row| row.hover(|style| style.bg(colors.accent_surface.opacity(0.4)).text_color(colors.text)))
                     .on_click(cx.listener(move |this, _, window, cx| this.activate(&target, window, cx)))
-                    .child(svg().path(icon).size(px(12.)).flex_none().text_color(text))
+                    .child(svg().path(icon).size(rems(0.75)).flex_none().text_color(text))
                     .child(div().flex_1().min_w_0().truncate().child(label))
-                    .child(div().text_size(px(10.)).text_color(colors.muted_foreground.opacity(0.7)).child(count.to_string())),
+                    .child(div().text_size(rems(0.625)).text_color(colors.muted_foreground.opacity(0.7)).child(count.to_string())),
             );
         }
-        let mut rows = div().flex().flex_col().gap(px(2.));
+        let mut rows = div().flex().flex_col().gap(rems(0.125));
         let close_shortcut = Self::shortcut_label(StaticCommand::TerminalClose, cx);
         for terminal_id in &group.terminal_ids {
             let is_active = terminal_id == active;
@@ -496,10 +497,10 @@ impl ThreadTerminalDrawer {
             let activate_id = terminal_id.clone();
             let icon = div()
                 .id(SharedString::from(format!("terminal-row-close-{terminal_id}")))
-                .size(px(12.))
+                .size(rems(0.75))
                 .flex_none()
                 .relative()
-                .child(svg().path(IconName::SquareTerminal.path()).size(px(12.)).text_color(text).group_hover(row_id.clone(), |style| style.invisible()))
+                .child(svg().path(IconName::SquareTerminal.path()).size(rems(0.75)).text_color(text).group_hover(row_id.clone(), |style| style.invisible()))
                 .when(self.can_operate, |icon| {
                     icon.child(
                         svg()
@@ -507,7 +508,7 @@ impl ThreadTerminalDrawer {
                             .absolute()
                             .top_0()
                             .left_0()
-                            .size(px(12.))
+                            .size(rems(0.75))
                             .text_color(text)
                             .invisible()
                             .group_hover(row_id.clone(), |style| style.visible()),
@@ -525,13 +526,13 @@ impl ThreadTerminalDrawer {
                     .group(row_id)
                     .flex()
                     .items_center()
-                    .gap(px(2.))
-                    .h(px(24.))
+                    .gap(rems(0.125))
+                    .h(rems(1.5))
                     .w_full()
-                    .pl(px(6.))
-                    .pr(px(8.))
-                    .rounded(px(6.))
-                    .text_size(px(12.))
+                    .pl(rems(0.375))
+                    .pr(rems(0.5))
+                    .rounded(rems(0.375))
+                    .text_size(rems(0.75))
                     .text_color(text)
                     .cursor_pointer()
                     .when(is_active, |row| row.bg(colors.accent_surface))
@@ -639,23 +640,23 @@ impl Render for ThreadTerminalDrawer {
                     .flex_col()
                     .items_center()
                     .justify_center()
-                    .gap(px(12.))
-                    .px(px(16.))
-                    .py(px(24.))
-                    .text_size(px(14.))
+                    .gap(rems(0.75))
+                    .px(rems(1.))
+                    .py(rems(1.5))
+                    .text_size(rems(0.875))
                     .text_color(colors.muted_foreground)
                     .child(t!("No terminal sessions for this thread yet."))
                     .child(
                         div()
                             .id("terminal-empty-new")
-                            .h(px(24.))
-                            .px(px(8.))
+                            .h(rems(1.5))
+                            .px(rems(0.5))
                             .flex()
                             .items_center()
-                            .rounded(px(6.))
+                            .rounded(rems(0.375))
                             .border_1()
                             .border_color(colors.input)
-                            .text_size(px(12.))
+                            .text_size(rems(0.75))
                             .text_color(colors.text)
                             .when(operate, |button| {
                                 button
@@ -678,7 +679,7 @@ impl Render for ThreadTerminalDrawer {
         let panes = self.render_panes(&group, &state.active_terminal_id, window, cx);
         let mut content = div().flex().size_full().min_h_0().bg(colors.terminal_background);
         if has_sidebar {
-            content = content.gap(px(6.));
+            content = content.gap(rems(0.375));
         }
         content = content.child(div().flex_1().min_w_0().child(panes));
         if has_sidebar {
@@ -691,14 +692,14 @@ impl Render for ThreadTerminalDrawer {
                 .flex()
                 .items_center()
                 .overflow_hidden()
-                .rounded(px(6.))
+                .rounded(rems(0.375))
                 .border_1()
                 .border_color(colors.border.opacity(0.8))
                 .bg(colors.canvas)
                 .shadow_xs();
             for (index, button) in self.action_buttons(split_enabled, false, cx).into_iter().enumerate() {
                 if index > 0 {
-                    group_buttons = group_buttons.child(div().h(px(16.)).w(px(1.)).bg(colors.border.opacity(0.8)));
+                    group_buttons = group_buttons.child(div().h(rems(1.)).w(px(1.)).bg(colors.border.opacity(0.8)));
                 }
                 group_buttons = group_buttons.child(button);
             }

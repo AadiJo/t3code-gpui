@@ -490,7 +490,7 @@ impl ModelPicker {
                             .text_color(c.foreground)
                             .child(display_model_name(&item.model, false)),
                     )
-                    .when(selected, |el| el.child(Icon::new(IconName::Check).size(IconSize::Custom(px(14.))).color(c.foreground).stroke(1.8)))
+                    .when(selected, |el| el.child(Icon::new(IconName::Check).size(IconSize::Custom(c.r(px(14.)))).color(c.foreground).stroke(1.8)))
                     .when_some(item.model.sub_provider.clone(), |el, sub| {
                         el.child(div().min_w_0().overflow_hidden().whitespace_nowrap().text_size(c.r(px(12.))).text_color(c.muted_foreground.opacity(0.7)).child(sub))
                     })
@@ -574,7 +574,7 @@ impl ModelPicker {
                         .child(div().flex_1().min_w_0().overflow_hidden().whitespace_nowrap().text_ellipsis().child(option.label.clone()))
                         .map(|el| {
                             if selected {
-                                el.child(Icon::new(IconName::Check).size(IconSize::Custom(px(14.))).color(c.foreground).stroke(1.8))
+                                el.child(Icon::new(IconName::Check).size(IconSize::Custom(c.r(px(14.)))).color(c.foreground).stroke(1.8))
                             } else if option.is_default {
                                 el.child(div().text_size(c.r(px(12.))).text_color(c.muted_foreground.opacity(0.7)).child("Default"))
                             } else {
@@ -703,7 +703,7 @@ impl ModelPicker {
                     .text_size(c.r(px(12.)))
                     .text_color(c.muted_foreground)
                     .hover(move |s| s.bg(c.row_hover).text_color(c.foreground))
-                    .child(Icon::new(runtime_mode_icon(mode)).size(IconSize::Custom(px(14.))).color(c.muted_foreground).stroke(composer_icon_stroke(runtime_mode_icon(mode))))
+                    .child(Icon::new(runtime_mode_icon(mode)).size(IconSize::Custom(c.r(px(14.)))).color(c.muted_foreground).stroke(composer_icon_stroke(runtime_mode_icon(mode))))
                     .child(mode.label())
                     .child(Icon::new(IconName::ChevronUp).size(IconSize::Custom(c.r(px(12.)))).color(c.muted_foreground))
                     .when(self.permissions_open, |d| d.bg(c.row_hover).text_color(c.foreground))

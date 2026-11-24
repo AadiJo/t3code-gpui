@@ -891,7 +891,7 @@ impl ChatComposer {
         let mode = self.state.runtime_mode;
         control("composer-permissions-chip", false, c)
             .pl(c.r(px(6.)))
-            .child(Icon::new(runtime_mode_icon(mode)).size(IconSize::Custom(px(16.))).color(c.foreground.opacity(0.8)).stroke(composer_icon_stroke(runtime_mode_icon(mode))))
+            .child(Icon::new(runtime_mode_icon(mode)).size(IconSize::Custom(c.r(px(16.)))).color(c.foreground.opacity(0.8)).stroke(composer_icon_stroke(runtime_mode_icon(mode))))
             .when(!icon_only, |el| el.child(mode.label()))
             .on_click(cx.listener(|this, _, _, cx| {
                 let next = this.state.runtime_mode.next();
@@ -927,7 +927,7 @@ impl ChatComposer {
                         .rounded(c.r(ICON_ACTION_RADIUS))
                         .when(disabled, |el| el.opacity(0.64))
                         .when(!disabled, |el| el.cursor_pointer().hover(move |s| s.bg(hover).text_color(fg)))
-                        .child(Icon::new(IconName::Square).size(IconSize::Custom(px(14.))).color(c.muted_foreground.opacity(0.7)).stroke(2.2))
+                        .child(Icon::new(IconName::Square).size(IconSize::Custom(c.r(px(14.)))).color(c.muted_foreground.opacity(0.7)).stroke(2.2))
                         .on_click(cx.listener(|this, _, _, cx| this.stop(cx))),
                 )
                 .into_any_element();
@@ -1007,7 +1007,7 @@ impl ChatComposer {
                 .py(c.r(px(4.)))
                 .text_size(c.r(px(14.)))
                 .text_color(c.foreground)
-                .child(Icon::new(glyph).size(IconSize::Custom(px(16.))).color(c.muted_foreground).stroke(composer_icon_stroke(glyph)))
+                .child(Icon::new(glyph).size(IconSize::Custom(c.r(px(16.)))).color(c.muted_foreground).stroke(composer_icon_stroke(glyph)))
                 .child(a.name.clone())
                 .child(div().text_size(c.r(px(12.))).text_color(c.secondary_label).child(format_size(a.size_bytes)))
         });
@@ -1041,7 +1041,7 @@ impl ChatComposer {
                 .gap(c.r(px(4.)))
                 .rounded(c.r(px(12.)))
                 .when_some(tint, |el, t| el.bg(t.opacity(0.08)))
-                .child(div().w(px(24.)).flex().justify_center().child(Icon::new(banner.icon).size(IconSize::Custom(px(14.))).color(ink).stroke(composer_icon_stroke(banner.icon))))
+                .child(div().w(c.r(px(24.))).flex().justify_center().child(Icon::new(banner.icon).size(IconSize::Custom(c.r(px(14.)))).color(ink).stroke(composer_icon_stroke(banner.icon))))
                 .child(
                     div()
                         .flex_1()
@@ -1100,7 +1100,7 @@ impl ChatComposer {
                 .text_size(c.r(px(12.)))
                 .text_color(if c.is_dark() { c.muted_foreground } else { c.foreground.opacity(0.7) })
                 .hover(move |s| s.bg(hover).text_color(fg))
-                .child(Icon::new(glyph).size(IconSize::Custom(px(14.))).color(c.muted_foreground).stroke(composer_icon_stroke(glyph)))
+                .child(Icon::new(glyph).size(IconSize::Custom(c.r(px(14.)))).color(c.muted_foreground).stroke(composer_icon_stroke(glyph)))
                 .child(label)
                 .on_click(cx.listener(move |_, _, _, cx| cx.emit(ComposerEvent::ContextStripClicked(control))))
         };
