@@ -21,7 +21,8 @@ use gpui_kit::{
 
 use super::chat::{
     chat_style::{ChatColors, TEXT_2XS, TEXT_SM_RELAXED, TEXT_XS, alpha, mono, sans, text_code},
-    rich_text::{InlineFontBox, LinkHandler, RichText, TextBox, TextIcon},
+    rich_text::{IconPaint, InlineFontBox, LinkHandler, RichText, TextBox, TextIcon},
+    timeline_link_favicons::{LINK_FAVICON_PLACEHOLDER, LinkFavicon, external_link_host, link_favicon},
     syntax_highlighting::{highlight, highlight_or_schedule, is_plain_language},
     syntax_theme::SyntaxTheme,
 };
@@ -144,6 +145,8 @@ struct Renderer<'a> {
     find_seen: usize,
     /// Measures table cells for the auto table layout.
     text_system: Rc<gpui_kit::WindowTextSystem>,
+    /// Link hosts whose favicon nobody asked for yet, requested once the render is done.
+    wanted_favicons: Vec<String>,
 }
 
 /// Renders a message's markdown as one column.
@@ -159,6 +162,7 @@ pub fn render_markdown(view: &MarkdownView<'_>, window: &mut Window, cx: &mut Ap
         link_handler: Rc::new(move |target, window, cx| actions(MarkdownAction::OpenLink(target.clone()), window, cx)),
         find_seen: 0,
         text_system: window.text_system().clone(),
+        wanted_favicons: Vec::new(),
     };
     let mut rendered = Vec::new();
     let last_piece = view.pieces.len().saturating_sub(1);
@@ -173,6 +177,10 @@ pub fn render_markdown(view: &MarkdownView<'_>, window: &mut Window, cx: &mut Ap
             rendered.push(block);
         }
     }
+    let wanted = std::mem::take(&mut renderer.wanted_favicons);
+    let text_color = renderer.text_color;
+    drop(renderer);
+    super::chat::timeline_link_favicons::request(wanted, cx);
     let stacked = stack(rendered);
     div()
         .w_full()
@@ -181,7 +189,7 @@ pub fn render_markdown(view: &MarkdownView<'_>, window: &mut Window, cx: &mut Ap
         .flex_col()
         .text_size(TEXT_SM_RELAXED.size)
         .line_height(TEXT_SM_RELAXED.line_height)
-        .text_color(renderer.text_color)
+        .text_color(text_color)
         .children(stacked.0)
 }
 
@@ -356,6 +364,61 @@ impl Renderer<'_> {
         (longest, line.width)
     }
 
+    /// `MarkdownExternalLinkContent`: the inlines with a favicon slot opening each external web
+    /// link that has text, and the icons painted over the slots; `None` without such a link.
+    fn link_favicons(&mut self, inlines: &Inlines) -> Option<(Inlines, Vec<TextIcon>)> {
+        let colors = self.view.colors;
+        let mut slots: Vec<(usize, LinkFavicon)> = inlines
+            .spans
+            .iter()
+            .filter_map(|span| match &span.style {
+                InlineStyle::Link(target) if !span.range.is_empty() => {
+                    let host = external_link_host(target)?;
+                    Some((span.range.start, link_favicon(&host, &mut self.wanted_favicons, self.app)))
+                }
+                _ => None,
+            })
+            .collect();
+        if slots.is_empty() {
+            return None;
+        }
+        slots.sort_by_key(|(at, _)| *at);
+        slots.dedup_by_key(|(at, _)| *at);
+        let width = LINK_FAVICON_PLACEHOLDER.len();
+        let positions: Vec<usize> = slots.iter().map(|(at, _)| *at).collect();
+        let shift = |at: usize| at + width * positions.iter().take_while(|slot| **slot < at).count();
+        let mut text = String::with_capacity(inlines.text.len() + width * slots.len());
+        let mut cursor = 0;
+        for (at, _) in &slots {
+            text.push_str(&inlines.text[cursor..*at]);
+            text.push_str(LINK_FAVICON_PLACEHOLDER);
+            cursor = *at;
+        }
+        text.push_str(&inlines.text[cursor..]);
+        let spans = inlines
+            .spans
+            .iter()
+            .map(|span| crate::markdown_pipeline::InlineSpan { range: shift(span.range.start)..shift(span.range.end), ..span.clone() })
+            .collect();
+        let em = colors.r(px(14.));
+        let icons = slots
+            .into_iter()
+            .map(|(at, favicon)| TextIcon {
+                index: shift(at),
+                // `size-[14px]`, a pixel literal, after `ms-[0.25em]`.
+                size: px(14.),
+                inset: em * 0.25,
+                below_baseline: Some(em * 0.125),
+                paint: match favicon {
+                    LinkFavicon::Mark(path) => IconPaint::Svg { path: path.into(), color: colors.info_foreground },
+                    LinkFavicon::Image(image) => IconPaint::Image { image, radius: colors.r(px(4.)) },
+                    LinkFavicon::Loading => IconPaint::Empty,
+                },
+            })
+            .collect();
+        Some((Inlines { text: text.into(), spans }, icons))
+    }
+
     /// A paragraph of inline content as one selectable text run.
     fn paragraph(&mut self, inlines: &Inlines, weight: Option<FontWeight>, color: Option<Hsla>) -> AnyElement {
         let (_, id) = self.element_id("p");
@@ -363,7 +426,10 @@ impl Renderer<'_> {
             weight: weight.unwrap_or(FontWeight::NORMAL),
             color: color.unwrap_or(self.text_color),
         };
-        let styled = style_inlines(inlines, base, self.view.colors, self.view.user);
+        let favicons = self.link_favicons(inlines);
+        let inlines = favicons.as_ref().map_or(inlines, |(inlines, _)| inlines);
+        let mut styled = style_inlines(inlines, base, self.view.colors, self.view.user);
+        styled.icons.extend(favicons.as_ref().into_iter().flat_map(|(_, icons)| icons.iter().cloned()));
         let runs = self.find_runs(&inlines.text, styled.runs);
         let mut text = RichText::new(id, inlines.text.clone(), runs)
             .boxes(styled.boxes)
@@ -783,7 +849,13 @@ fn style_inlines(inlines: &Inlines, base: InlineBase, colors: &ChatColors, user:
                         [layer] => (layer.asset.into(), layer.tint.color(colors.appearance, colors.theme.muted_foreground)),
                         _ => (IconName::File.path().into(), file_ink),
                     };
-                    styled.icons.push(TextIcon { index: span.range.start, path, size: colors.r(px(14.)), color });
+                    styled.icons.push(TextIcon {
+                        index: span.range.start,
+                        size: colors.r(px(14.)),
+                        inset: px(0.),
+                        below_baseline: None,
+                        paint: IconPaint::Svg { path, color },
+                    });
                 }
                 styled.links.push((span.range.clone(), target.clone()));
             }
