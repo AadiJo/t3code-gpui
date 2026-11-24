@@ -45,6 +45,15 @@ where
     F: Fn(EnvironmentCommands, ThreadId) -> Fut + Send + Sync + 'static,
     Fut: std::future::Future<Output = Result<t3code_client_runtime::operations::Accepted, CommandError>> + Send,
 {
+    run_each_titled(keys, t!("Something went wrong."), cx, command)
+}
+
+/// [`run_each`] with the failure toast's title.
+fn run_each_titled<F, Fut>(keys: &[ThreadKey], failure: SharedString, cx: &mut App, command: F)
+where
+    F: Fn(EnvironmentCommands, ThreadId) -> Fut + Send + Sync + 'static,
+    Fut: std::future::Future<Output = Result<t3code_client_runtime::operations::Accepted, CommandError>> + Send,
+{
     let targets: Vec<_> = keys.iter().filter_map(|key| commands_for(key, cx)).collect();
     let task = StateBridge::spawn(
         async move {
@@ -61,7 +70,7 @@ where
     cx.spawn(async move |cx| {
         if let Some(Some(error)) = task.await {
             cx.update(|cx| {
-                Toaster::push(ToastData::new(ToastKind::Error, t!("Something went wrong.")).description(SharedString::from(error.to_string())), cx);
+                Toaster::push(ToastData::new(ToastKind::Error, failure).description(SharedString::from(error.to_string())), cx);
             });
         }
     })
@@ -132,7 +141,68 @@ pub fn snooze(keys: &[ThreadKey], until: &Zoned, cx: &mut App) {
     });
 }
 
+/// Offers the undo notice for an action about to run on `keys`, planned from each thread's row
+/// before it changes (`planThreadUndo`, `runUndoPlan`).
+fn offer_undo(keys: &[ThreadKey], command: MenuCommand, cx: &mut App) {
+    use crate::thread_undo::{ThreadUndo, UndoAction};
+    let action = match command {
+        MenuCommand::Settle => UndoAction::Settled,
+        MenuCommand::Snooze(_) => UndoAction::Snoozed,
+        MenuCommand::Unpin => UndoAction::Unpinned,
+        MenuCommand::Archive => UndoAction::Archived,
+        _ => return,
+    };
+    let shell = StateBridge::shell(cx);
+    let rows: Vec<_> = keys.iter().filter_map(|key| shell.read(cx).snapshot().threads.iter().find(|t| &t.key == key).cloned()).collect();
+    for row in rows {
+        let key = row.key.clone();
+        let iso = |ms: Option<crate::components::sidebar::model::TimestampMs>| ms.map(|ms| format_ms(ms.0));
+        let pin_order = row.pin_order_key.as_ref().map(|k| k.to_string());
+        let pinned = row.pinned_at.is_some();
+        let active_order = row.active_order_key.as_ref().map(|k| k.to_string());
+        let unsettled_at = iso(row.unsettled_at);
+        let snoozed_until = row.snoozed_until;
+        let undo: crate::thread_undo::UndoFn = std::rc::Rc::new(move |cx| {
+            let (pin_order, active_order, unsettled_at) = (pin_order.clone(), active_order.clone(), unsettled_at.clone());
+            // A snooze can expire before Undo runs, and the server rejects an expired restore.
+            let snooze = snoozed_until.filter(|until| until.0 > now_ms()).map(|until| format_ms(until.0));
+            let failure = match action {
+                UndoAction::Settled => t!("Failed to undo settle"),
+                UndoAction::Snoozed => t!("Failed to undo snooze"),
+                UndoAction::Unpinned => t!("Failed to undo unpin"),
+                UndoAction::Archived => t!("Failed to undo archive"),
+            };
+            run_each_titled(std::slice::from_ref(&key), failure, cx, move |c, id| {
+                let (pin_order, active_order, unsettled_at, snooze) = (pin_order.clone(), active_order.clone(), unsettled_at.clone(), snooze.clone());
+                async move {
+                    let mut result = match action {
+                        UndoAction::Snoozed => return c.unsnooze(&id).await,
+                        UndoAction::Archived => return c.unarchive(&id).await,
+                        UndoAction::Unpinned => c.pin(&id, pin_order).await?,
+                        UndoAction::Settled => {
+                            let accepted = c.unsettle(&id, Some(unsettled_at)).await?;
+                            if pinned {
+                                c.pin(&id, pin_order).await?
+                            } else if let Some(order) = active_order {
+                                c.reorder_active(&id, order).await?
+                            } else {
+                                accepted
+                            }
+                        }
+                    };
+                    if let Some(until) = snooze {
+                        result = c.snooze(&id, until).await?;
+                    }
+                    Ok(result)
+                }
+            });
+        });
+        ThreadUndo::show(action, row.key.clone(), undo, cx);
+    }
+}
+
 fn thread_command(keys: Vec<ThreadKey>, command: MenuCommand, cx: &mut App) -> SidebarOutcome {
+    offer_undo(&keys, command, cx);
     match command {
         MenuCommand::Pin => run_each(&keys, cx, |c, id| async move { c.pin(&id, None).await }),
         MenuCommand::Unpin => run_each(&keys, cx, |c, id| async move { c.unpin(&id).await }),

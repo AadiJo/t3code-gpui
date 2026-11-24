@@ -132,6 +132,7 @@ impl Sidebar {
             .when(settings.notification_inbox, |row| {
                 row.child(self.render_notification_bell(colors, window, cx))
             })
+            .children(crate::components::thread_undo_notice::thread_undo_notice(colors, cx))
             .child(self.render_update_button(colors, cx));
         div()
             .flex()

@@ -50,7 +50,7 @@ use crate::desktop_notifications::{InboxEvent, NotificationInbox};
 use crate::router::SettingsPanel;
 use crate::shortcuts::ShortcutRoot;
 use t3code_shared::keybindings::StaticCommand;
-use crate::shortcuts::commands::{RunProjectScript, on_commands};
+use crate::shortcuts::commands::{CopyPullRequestNumber, RunProjectScript, UndoThreadAction, on_commands};
 use crate::shortcuts::commands::{
     CloseRightPanelTab, CopyThreadReference, FindInThread, FocusNextWorkspaceArea, FocusPreviousWorkspaceArea,
     OpenFavoriteEditor, ToggleFilePicker, ToggleProjectSearch, ToggleThreadPanel, JumpToThread1, JumpToThread2, JumpToThread3, JumpToThread4, JumpToThread5, JumpToThread6,
@@ -246,14 +246,22 @@ struct MainPane {
 struct ListPage {
     list: AnyView,
     detail: Option<AnyView>,
+    /// The open pull request's number, for `pullRequest.copyNumber`.
+    pull_request_number: Option<u64>,
     width: Pixels,
     _subscription: Subscription,
 }
 
 impl Render for ListPage {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         div()
             .size_full()
+            // `PullRequestDetailPanel`'s copy-number shortcut: `#<number>` while a pull request is open.
+            .on_action(cx.listener(|this, _: &CopyPullRequestNumber, _, cx| {
+                if let Some(number) = this.pull_request_number {
+                    cx.write_to_clipboard(ClipboardItem::new_string(format!("#{number}")));
+                }
+            }))
             .flex()
             .child(div().flex_1().min_w_0().h_full().child(self.list.clone()))
             .children(self.detail.clone().map(|detail| div().flex_none().w(self.width).h_full().child(detail)))
@@ -645,10 +653,11 @@ impl AppRoot {
                         let PullRequestsPageEvent::Open { environment_id, reference } = event;
                         let Some(source) = data.upgrade().and_then(|data| data.pull_request_detail(environment_id, cx)) else { return };
                         let reference = reference.clone();
+                        this.pull_request_number = Some(reference.number as u64);
                         this.detail = Some(cx.new(|cx| PullRequestDetailPanel::new(source, reference, cx)).into());
                         cx.notify();
                     });
-                    ListPage { list: page.into(), detail: None, width, _subscription: subscription }
+                    ListPage { list: page.into(), detail: None, pull_request_number: None, width, _subscription: subscription }
                 })
             }
             Route::Issues { .. } => {
@@ -663,7 +672,7 @@ impl AppRoot {
                         this.detail = Some(cx.new(|cx| IssueDetailPanel::new(source, reference, window, cx)).into());
                         cx.notify();
                     });
-                    ListPage { list: page.into(), detail: None, width, _subscription: subscription }
+                    ListPage { list: page.into(), detail: None, pull_request_number: None, width, _subscription: subscription }
                 })
             }
             _ => return None,
@@ -1079,8 +1088,11 @@ impl AppRoot {
             }
             return Wiring::Ran;
         }
+        // `requestCustomSnooze` opens a dialog this app does not have yet.
+        if command == MenuCommand::SnoozeCustom {
+            return self.not_built_yet(t!("Custom snooze"), "custom snooze dialog", cx);
+        }
         match self.data.thread_command(keys, command, cx) {
-            CommandOutcome::Done if command == MenuCommand::SnoozeCustom => return Wiring::Dropped,
             CommandOutcome::Done => {}
             CommandOutcome::Rename(key) => {
                 // The header has no title field of its own; the sidebar row takes the rename.
@@ -1542,6 +1554,9 @@ impl Render for AppRoot {
             .on_action(cx.listener(|this, _: &JumpToThread8, _, cx| this.step_thread(ThreadStep::Jump(7), cx)))
             .on_action(cx.listener(|this, _: &JumpToThread9, _, cx| this.step_thread(ThreadStep::Jump(8), cx)))
             .on_action(cx.listener(|this, _: &OpenSettings, _, cx| this.open_settings(cx)))
+            .on_action(|_: &UndoThreadAction, _, cx| {
+                crate::thread_undo::ThreadUndo::undo_latest(cx);
+            })
             .on_action(cx.listener(|this, action: &RunProjectScript, _, cx| {
                 this.thread_view.update(cx, |view, cx| view.run_project_script(&action.id, cx));
             }))

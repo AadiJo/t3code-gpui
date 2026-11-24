@@ -44,6 +44,7 @@ enum Place {
     ModelPicker,
     Usage,
     Preview,
+    PullRequests,
 }
 
 fn place(command: StaticCommand) -> Place {
@@ -65,6 +66,7 @@ fn place(command: StaticCommand) -> Place {
             Place::Usage
         }
         C::PreviewRefresh | C::PreviewFocusUrl | C::PreviewZoomIn | C::PreviewZoomOut | C::PreviewResetZoom | C::PreviewFind => Place::Preview,
+        C::PullRequestCopyNumber => Place::PullRequests,
         _ => Place::Composer,
     }
 }
@@ -198,6 +200,12 @@ fn main() -> anyhow::Result<()> {
                 focus
             }
             Place::Preview => None,
+            Place::PullRequests => {
+                c.cx.update(|cx| { let router = app.read(cx).router().clone(); router.update(cx, |r, cx| r.navigate(Route::parse("/pull-requests"), cx)) });
+                c.frame();
+                let focus = c.cx.update_window(c.window, |_, w, cx| w.focused(cx)).ok().flatten();
+                focus
+            }
         };
         let action = command_action(command);
         let title = format!("{command} ({})", command_title(command));
