@@ -5,7 +5,7 @@
 use crate::components::project_favicon::ProjectFavicon;
 use crate::components::icons::{Icon, IconName, IconSize};
 use gpui_kit::prelude::FluentBuilder as _;
-use gpui_kit::{
+use gpui_kit::{rems, 
     AnyElement, App, ClickEvent, FontWeight, InteractiveElement as _, IntoElement, ParentElement as _, SharedString,
     StatefulInteractiveElement as _, Styled as _, Window, div, px,
 };
@@ -68,11 +68,11 @@ pub fn chat_header(
                         .flex_none()
                         .items_center()
                         .gap(PROJECT_CRUMB_GAP)
-                        .rounded(px(4.))
+                        .rounded(rems(0.25))
                         .cursor_pointer()
                         .text_color(colors.theme.muted_foreground)
                         .hover(|s| s.text_color(colors.theme.text))
-                        .child(ProjectFavicon::new(project.clone()).size(px(14.)))
+                        .child(ProjectFavicon::new(project.clone()).size(colors.r(px(14.))))
                         .child(project.clone()),
                 )
                 .child(div().font_weight(FontWeight::NORMAL).text_color(colors.theme.icon_muted).child("/"))
@@ -86,7 +86,7 @@ pub fn chat_header(
                         .flex()
                         .min_w_0()
                         // The trigger button is 22px tall; the menu opens 4px below it.
-                        .h(px(22.))
+                        .h(rems(1.375))
                         .items_center()
                         .gap_1()
                         .cursor_pointer()
@@ -96,7 +96,7 @@ pub fn chat_header(
                             div()
                                 .opacity(if open { 1. } else { 0. })
                                 .group_hover("thread-title", |s| s.opacity(1.))
-                                .child(Icon::new(IconName::ChevronDown).size(IconSize::Custom(px(14.))).color(colors.theme.muted_foreground)),
+                                .child(Icon::new(IconName::ChevronDown).size(IconSize::Sm).color(colors.theme.muted_foreground)),
                         )
                         .when_some(on_click, |d, on_click| d.on_click(move |e, w, cx| on_click(e, w, cx)))
                         .children(menu.flatten())

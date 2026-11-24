@@ -40,8 +40,8 @@ use crate::scenes::composer::fixture_state;
 use crate::state::app_data::{ActionOutcome, DataEvent, DetailsOutcome, GitControlsSetup, SharedAppData, ThreadView};
 
 /// The card's facts that do not come from the server.
-fn details_base(is_git_repo: bool) -> ThreadDetailsInput {
-    ThreadDetailsInput { offers_git: true, is_git_repo, show_open_in: true, ..Default::default() }
+fn details_base(is_git_repo: bool, mode: crate::components::chat::thread_details_panel::ThreadDetailsMode) -> ThreadDetailsInput {
+    ThreadDetailsInput { offers_git: true, is_git_repo, show_open_in: true, mode, ..Default::default() }
 }
 
 /// Threads whose source control controls stay built.
@@ -64,6 +64,8 @@ pub enum ThreadRouteEvent {
     RunScript(ProjectScript),
     /// A click outside the details popover closed it.
     DetailsClosed,
+    /// The canvas's width moved the details card between docked and popover.
+    DetailsModeChanged(crate::components::chat::thread_details_panel::ThreadDetailsMode),
     /// Open an app route (a settings page the controls link to).
     Navigate(&'static str),
     /// Open the Linked items tab (the strip's badge with several pull requests).
@@ -271,8 +273,9 @@ impl ThreadRouteView {
         let scripts = cx.new(|_| ProjectScriptsControl::new(arc.clone(), project_id, scripts, true));
         let cwd = Some(props.project_cwd.clone());
         let open_in = cx.new(|_| OpenInPicker::new(arc, editors, open_state, cwd));
+        let mode = self.chat.read(cx).details_mode();
         let panel = cx.new(|cx| {
-            ThreadDetailsPanel::new(details_base(is_git_repo), workspace.clone(), branch.clone(), git.clone(), Some(scripts.clone()), Some(open_in.clone()), cx)
+            ThreadDetailsPanel::new(details_base(is_git_repo, mode), workspace.clone(), branch.clone(), git.clone(), Some(scripts.clone()), Some(open_in.clone()), cx)
         });
         let mut subscriptions = Vec::new();
         for toolbar in [&workspace, &branch] {
@@ -307,7 +310,8 @@ impl ThreadRouteView {
     fn sync_details(&mut self, view: &ThreadView, cx: &mut Context<Self>) {
         let Some(front) = self.git.front().filter(|g| g.key == view.key) else { return };
         let Some(panel) = front.panel.clone() else { return };
-        let input = self.data.thread_details(view, details_base(front.setup.is_git_repo), cx);
+        let mode = self.chat.read(cx).details_mode();
+        let input = self.data.thread_details(view, details_base(front.setup.is_git_repo, mode), cx);
         if panel.read(cx).input() != &input {
             panel.update(cx, |panel, cx| panel.set_input(input, cx));
         }
@@ -475,6 +479,12 @@ impl ThreadRouteView {
             ChatViewEvent::CloseDetails => {
                 self.set_details_open(false, cx);
                 cx.emit(ThreadRouteEvent::DetailsClosed);
+            }
+            ChatViewEvent::DetailsModeChanged(mode) => {
+                if let Some(view) = self.target.clone().and_then(|target| self.data.thread_view(&target, cx)) {
+                    self.sync_details(&view, cx);
+                }
+                cx.emit(ThreadRouteEvent::DetailsModeChanged(*mode));
             }
             ChatViewEvent::Timeline(action) => self.on_timeline_action(action.clone(), window, cx),
             // The header menu runs the sidebar's thread commands; they are wired with the live store.

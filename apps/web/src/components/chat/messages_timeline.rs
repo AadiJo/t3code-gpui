@@ -32,7 +32,7 @@ use crate::{
 };
 
 /// `--chat-content-max-width` for the "comfortable" chat width (46rem).
-pub const CHAT_CONTENT_MAX_WIDTH: Pixels = px(736.);
+pub const CHAT_CONTENT_MAX_WIDTH: gpui_kit::Rems = gpui_kit::rems(46.0);
 /// Timeline gutter at ≥640px (`padding-inline: 3rem`); 12px below that.
 pub const TIMELINE_GUTTER: Pixels = px(48.);
 pub const TIMELINE_GUTTER_NARROW: Pixels = px(12.);
@@ -425,7 +425,6 @@ impl MessagesTimeline {
             return;
         }
         self.composer_inset = height;
-        self.list.set_insets(TIMELINE_TOP_INSET, height + TIMELINE_BOTTOM_PAD);
         cx.notify();
     }
 
@@ -641,7 +640,7 @@ impl MessagesTimeline {
         let Some(last) = last.filter(|i| matches!(self.rows[*i].kind, RowKind::AssistantMeta { .. })) else {
             return false;
         };
-        let composer_top = viewport.bounds.bottom() - self.composer_inset - TIMELINE_BOTTOM_PAD;
+        let composer_top = viewport.bounds.bottom() - self.composer_inset - self.colors.r(TIMELINE_BOTTOM_PAD);
         viewport
             .row_bounds
             .iter()
@@ -761,7 +760,7 @@ impl MessagesTimeline {
         let bottom = if row.continues_work_log { px(0.) } else { Self::row_bottom_padding(row) };
         let standalone_work = matches!(row.kind, RowKind::Work { .. } | RowKind::WorkToggle { .. } | RowKind::WorkLive { .. } | RowKind::Thinking { .. })
             && !row.continues_work_log;
-        let bottom = if standalone_work { px(8.) } else { bottom };
+        let bottom = self.colors.r(if standalone_work { px(8.) } else { bottom });
         let gutter = self.gutter(window);
         div()
             .w_full()
@@ -778,14 +777,17 @@ impl MessagesTimeline {
             .into_any_element()
     }
 
+    /// The lane's side padding (`px-3 sm:px-12`): rem lengths at a breakpoint in CSS px.
     pub(super) fn gutter(&self, window: &Window) -> Pixels {
-        if window.viewport_size().width >= SM_BREAKPOINT { TIMELINE_GUTTER } else { TIMELINE_GUTTER_NARROW }
+        self.colors.r(if window.viewport_size().width >= SM_BREAKPOINT { TIMELINE_GUTTER } else { TIMELINE_GUTTER_NARROW })
     }
 }
 
 impl Render for MessagesTimeline {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.colors = ChatColors::get(cx);
+        // The insets are rem lengths; re-read them in case the Interface size changed.
+        self.list.set_insets(self.colors.r(TIMELINE_TOP_INSET), self.composer_inset + self.colors.r(TIMELINE_BOTTOM_PAD));
         self.now = Instant::now().max(self.now);
         let weak = self.weak.clone();
         let colors = self.colors;
@@ -796,7 +798,7 @@ impl Render for MessagesTimeline {
                 .items_center()
                 .justify_center()
                 .pb(self.composer_inset)
-                .text_size(px(14.))
+                .text_size(colors.r(px(14.)))
                 .text_color(colors.theme.muted_foreground)
                 .child("Send a message to start the conversation.")
                 .into_any_element();

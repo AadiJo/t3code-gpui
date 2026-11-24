@@ -3,7 +3,7 @@
 
 use std::rc::Rc;
 
-use gpui_kit::{AnyElement, App, ElementId, IntoElement, RenderOnce, SharedString, Window, div, prelude::*, px};
+use gpui_kit::{rems, AnyElement, App, ElementId, IntoElement, RenderOnce, SharedString, Window, div, prelude::*, px};
 
 use super::menu::{MenuItem, MenuItemKind, MenuPopup};
 use super::popover::{Popover, PopupHandle};
@@ -169,7 +169,7 @@ impl RenderOnce for SelectTrigger {
                     .child(div().truncate().child(self.label)),
             )
             .child(
-                div().mr(px(-4.)).child(Icon::new(IconName::ChevronDown).size(IconSize::Sm).opacity(0.7).color(
+                div().mr(rems(-0.25)).child(Icon::new(IconName::ChevronDown).size(IconSize::Sm).opacity(0.7).color(
                     match self.variant {
                         SelectVariant::Default => c.foreground(),
                         SelectVariant::Ghost if hovered => c.foreground(),
@@ -182,7 +182,7 @@ impl RenderOnce for SelectTrigger {
 
 /// The option list: menu rows with the chosen one tinted (`foreground/8%`).
 pub fn select_list(options: &[SharedString], selected: usize, on_pick: Rc<dyn Fn(usize, &mut Window, &mut App)>) -> MenuPopup {
-    options.iter().enumerate().fold(MenuPopup::new().min_width(px(144.)), |menu, (index, option)| {
+    options.iter().enumerate().fold(MenuPopup::new().min_width(rems(9.)), |menu, (index, option)| {
         let on_pick = on_pick.clone();
         menu.item(
             MenuItem::new(option.clone())

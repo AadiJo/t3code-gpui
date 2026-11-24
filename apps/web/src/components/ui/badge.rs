@@ -1,6 +1,6 @@
 //! Badge. Ports `badge.tsx` at desktop width.
 
-use gpui_kit::{App, Hsla, IntoElement, RenderOnce, SharedString, Window, div, prelude::*, px, white};
+use gpui_kit::{rems, App, Hsla, IntoElement, RenderOnce, SharedString, Window, div, prelude::*, px, white};
 
 use super::TextStyleExt as _;
 use crate::appearance_fonts::{TextSize, weight};
@@ -126,7 +126,7 @@ impl RenderOnce for Badge {
         let sp = |n: f32| theme.sp(n);
         let (height, padding, radius) = match self.size {
             BadgeSize::Default => (sp(4.5), sp(1.) - px(1.), theme.radii.sm),
-            BadgeSize::Sm => (sp(4.), sp(1.) - px(1.), px(4.)),
+            BadgeSize::Sm => (sp(4.), sp(1.) - px(1.), theme.rem(0.25)),
             BadgeSize::Lg => (sp(5.5), sp(1.5) - px(1.), theme.radii.sm),
             BadgeSize::Control => (sp(6.), sp(2.) - px(1.), theme.radii.control),
         };

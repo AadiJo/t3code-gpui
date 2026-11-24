@@ -5,7 +5,7 @@
 //! spec's opaque fallback: the translucent popover colour flattened over the
 //! canvas.
 
-use gpui_kit::{
+use gpui_kit::{rems, 
     AnyElement, App, ClickEvent, Div, ElementId, Entity, IntoElement, ParentElement, Pixels, Point, RenderOnce, SharedString,
     Window, anchored, deferred, div, point, prelude::*, px,
 };

@@ -20,7 +20,7 @@ use gpui_kit::{
 };
 
 use super::chat::{
-    chat_style::{ChatColors, TEXT_2XS, TEXT_CODE, TEXT_SM_RELAXED, TEXT_XS, alpha, mono, sans},
+    chat_style::{ChatColors, TEXT_2XS, TEXT_SM_RELAXED, TEXT_XS, alpha, mono, sans, text_code},
     rich_text::{LinkHandler, RichText, TextBox, TextIcon},
     syntax_highlighting::{highlight, highlight_or_schedule, is_plain_language},
     syntax_theme::SyntaxTheme,
@@ -135,10 +135,12 @@ struct Renderer<'a> {
     link_handler: LinkHandler,
     /// Find matches drawn so far in this message.
     find_seen: usize,
+    /// Device pixels per pixel, for the stacks' grids (`pixel_grid`).
+    scale: f32,
 }
 
 /// Renders a message's markdown as one column.
-pub fn render_markdown(view: &MarkdownView<'_>, _window: &mut Window, cx: &mut App) -> Div {
+pub fn render_markdown(view: &MarkdownView<'_>, window: &mut Window, cx: &mut App) -> Div {
     let actions = view.actions.clone();
     let mut renderer = Renderer {
         view,
@@ -149,6 +151,7 @@ pub fn render_markdown(view: &MarkdownView<'_>, _window: &mut Window, cx: &mut A
         text_color: if view.user { view.colors.theme.message_foreground } else { view.colors.prose() },
         link_handler: Rc::new(move |target, window, cx| actions(MarkdownAction::OpenLink(target.clone()), window, cx)),
         find_seen: 0,
+        scale: window.scale_factor(),
     };
     let mut rendered = Vec::new();
     let last_piece = view.pieces.len().saturating_sub(1);
@@ -163,7 +166,7 @@ pub fn render_markdown(view: &MarkdownView<'_>, _window: &mut Window, cx: &mut A
             rendered.push(block);
         }
     }
-    let stacked = stack(rendered);
+    let stacked = stack(rendered, renderer.scale);
     div()
         .w_full()
         .min_w_0()
@@ -177,14 +180,16 @@ pub fn render_markdown(view: &MarkdownView<'_>, _window: &mut Window, cx: &mut A
 
 /// Lays out siblings with collapsed margins. Returns the children (each
 /// carrying its top gap) and the outer margins of the first and last child.
-fn stack(blocks: Vec<Rendered>) -> (Vec<AnyElement>, Pixels, Pixels) {
+/// The gaps walk one grid (`pixel_grid`); the blocks between them are measured, whole device pixels.
+fn stack(blocks: Vec<Rendered>, scale: f32) -> (Vec<AnyElement>, Pixels, Pixels) {
     let first_top = blocks.first().map_or(px(0.), |b| b.top);
     let last_bottom = blocks.last().map_or(px(0.), |b| b.bottom);
     let mut previous_bottom: Option<Pixels> = None;
+    let mut grid = crate::pixel_grid::PixelGrid::at_scale(scale);
     let children = blocks
         .into_iter()
         .map(|block| {
-            let gap = previous_bottom.map_or(px(0.), |bottom| bottom.max(block.top));
+            let gap = grid.next(previous_bottom.map_or(px(0.), |bottom| bottom.max(block.top)));
             previous_bottom = Some(block.bottom);
             if gap > px(0.) {
                 div().pt(gap).child(block.element).into_any_element()
@@ -221,39 +226,39 @@ impl Renderer<'_> {
         let colors = self.view.colors;
         match block {
             Block::Paragraph(inlines) => {
-                let margin = if loose { BLOCK_MARGIN } else { px(0.) };
+                let margin = if loose { self.view.colors.r(BLOCK_MARGIN) } else { px(0.) };
                 Rendered { element: self.paragraph(inlines, None, None), top: margin, bottom: margin }
             }
             Block::Heading { level, content } => {
                 let size = match level {
-                    1 => px(20.),
-                    2 => px(18.),
-                    3 => px(16.),
-                    _ => px(14.),
+                    1 => self.view.colors.r(px(20.)),
+                    2 => self.view.colors.r(px(18.)),
+                    3 => self.view.colors.r(px(16.)),
+                    _ => self.view.colors.r(px(14.)),
                 };
                 let color = if *level == 6 { colors.theme.muted_foreground } else { colors.theme.text };
                 let text = self.paragraph(content, Some(FontWeight::SEMIBOLD), Some(color));
                 Rendered {
                     element: div().text_size(size).line_height(size * 1.3).child(text).into_any_element(),
-                    top: HEADING_MARGIN_TOP,
-                    bottom: HEADING_MARGIN_BOTTOM,
+                    top: self.view.colors.r(HEADING_MARGIN_TOP),
+                    bottom: self.view.colors.r(HEADING_MARGIN_BOTTOM),
                 }
             }
             Block::List(list) => self.list(list, depth),
             Block::Blockquote(blocks) => {
-                let (children, top, bottom) = stack(blocks.iter().map(|b| self.block(b, depth, true)).collect());
+                let (children, top, bottom) = stack(blocks.iter().map(|b| self.block(b, depth, true)).collect(), self.scale);
                 let element = div()
                     .border_l_2()
                     .border_color(alpha(self.text_color, 0.35))
-                    .pl(BLOCKQUOTE_PADDING)
+                    .pl(self.view.colors.r(BLOCKQUOTE_PADDING))
                     .flex()
                     .flex_col()
                     .children(children);
-                Rendered { element: element.into_any_element(), top: BLOCK_MARGIN.max(top), bottom: BLOCK_MARGIN.max(bottom) }
+                Rendered { element: element.into_any_element(), top: self.view.colors.r(BLOCK_MARGIN).max(top), bottom: self.view.colors.r(BLOCK_MARGIN).max(bottom) }
             }
             Block::Alert { kind, blocks } => self.alert(*kind, blocks, depth),
-            Block::Code(code) => Rendered { element: self.code_block(code), top: BLOCK_MARGIN, bottom: BLOCK_MARGIN },
-            Block::Table(table) => Rendered { element: self.table(table), top: BLOCK_MARGIN, bottom: BLOCK_MARGIN },
+            Block::Code(code) => Rendered { element: self.code_block(code), top: self.view.colors.r(BLOCK_MARGIN), bottom: self.view.colors.r(BLOCK_MARGIN) },
+            Block::Table(table) => Rendered { element: self.table(table), top: self.view.colors.r(BLOCK_MARGIN), bottom: self.view.colors.r(BLOCK_MARGIN) },
             Block::Rule => {
                 let color = if colors.is_dark() { colors.theme.muted_foreground } else { colors.theme.border };
                 Rendered { element: div().h(px(1.)).w_full().bg(color).into_any_element(), top: px(0.), bottom: px(0.) }
@@ -263,15 +268,15 @@ impl Renderer<'_> {
                     let alt = image.alt.clone();
                     let placeholder_color = colors.theme.muted_foreground;
                     img(image.url.clone())
-                        .max_h(IMAGE_MAX_HEIGHT)
+                        .max_h(self.view.colors.r(IMAGE_MAX_HEIGHT))
                         .max_w_full()
-                        .rounded(px(8.))
+                        .rounded(self.view.colors.r(px(8.)))
                         .object_fit(ObjectFit::Contain)
                         .with_fallback(move || {
                             div().text_color(placeholder_color).child(alt.clone()).into_any_element()
                         })
                 }));
-                Rendered { element: element.into_any_element(), top: BLOCK_MARGIN, bottom: BLOCK_MARGIN }
+                Rendered { element: element.into_any_element(), top: self.view.colors.r(BLOCK_MARGIN), bottom: self.view.colors.r(BLOCK_MARGIN) }
             }
             Block::Details { summary, blocks } => self.details(summary, blocks, depth),
             Block::Math(tex) => {
@@ -279,14 +284,14 @@ impl Renderer<'_> {
                 let runs = self.find_runs(tex, vec![run(tex.len(), sans(FontWeight::NORMAL), self.text_color)]);
                 let text = RichText::new(id, tex.clone(), runs)
                     .selection_color(colors.selection);
-                let element = div().px(px(2.)).py(px(3.)).italic().child(text);
-                Rendered { element: element.into_any_element(), top: BLOCK_MARGIN, bottom: BLOCK_MARGIN }
+                let element = div().px(self.view.colors.r(px(2.))).py(self.view.colors.r(px(3.))).italic().child(text);
+                Rendered { element: element.into_any_element(), top: self.view.colors.r(BLOCK_MARGIN), bottom: self.view.colors.r(BLOCK_MARGIN) }
             }
             Block::Footnotes(notes) => {
                 let items = notes
                     .iter()
                     .map(|(label, blocks)| {
-                        let (children, ..) = stack(blocks.iter().map(|b| self.block(b, depth, false)).collect());
+                        let (children, ..) = stack(blocks.iter().map(|b| self.block(b, depth, false)).collect(), self.scale);
                         div()
                             .flex()
                             .gap_1()
@@ -299,7 +304,7 @@ impl Renderer<'_> {
                     .mt(px(0.))
                     .border_t_1()
                     .border_color(colors.theme.border)
-                    .pt(px(12.))
+                    .pt(self.view.colors.r(px(12.)))
                     .text_color(colors.theme.muted_foreground)
                     .text_size(TEXT_XS.size)
                     .line_height(TEXT_XS.line_height)
@@ -307,14 +312,14 @@ impl Renderer<'_> {
                     .flex_col()
                     .gap_1()
                     .children(items);
-                Rendered { element: element.into_any_element(), top: FOOTNOTES_MARGIN, bottom: px(0.) }
+                Rendered { element: element.into_any_element(), top: self.view.colors.r(FOOTNOTES_MARGIN), bottom: px(0.) }
             }
             Block::Html(html) => {
                 let (_, id) = self.element_id("html");
                 let runs = self.find_runs(html, vec![run(html.len(), sans(FontWeight::NORMAL), colors.theme.muted_foreground)]);
                 let text = RichText::new(id, html.clone(), runs)
                     .selection_color(colors.selection);
-                Rendered { element: text.into_any_element(), top: BLOCK_MARGIN, bottom: BLOCK_MARGIN }
+                Rendered { element: text.into_any_element(), top: self.view.colors.r(BLOCK_MARGIN), bottom: self.view.colors.r(BLOCK_MARGIN) }
             }
         }
     }
@@ -350,9 +355,9 @@ impl Renderer<'_> {
                     .unwrap_or(start)
                     .max(start + list.items.len().saturating_sub(1) as u32) as usize;
                 let digits = largest.to_string().len();
-                if digits > 1 { LIST_GUTTER.max(DIGIT_WIDTH * (digits as f32 + 2.)) } else { LIST_GUTTER }
+                if digits > 1 { self.view.colors.r(LIST_GUTTER).max(self.view.colors.r(DIGIT_WIDTH) * (digits as f32 + 2.)) } else { self.view.colors.r(LIST_GUTTER) }
             }
-            None => LIST_GUTTER,
+            None => self.view.colors.r(LIST_GUTTER),
         };
         let items = list
             .items
@@ -373,14 +378,14 @@ impl Renderer<'_> {
                         // Chromium's outside markers: a disc sits 12px before the text, a
                         // number 6px (`1. ` with tabular figures).
                         div()
-                            .when(list.start.is_none(), |d| d.pr(px(5.5)))
+                            .when(list.start.is_none(), |d| d.pr(self.view.colors.r(px(5.5))))
                             .when(list.start.is_some(), |d| d.font_features(TABULAR_FIGURES.clone()))
                             .child(label)
                             .into_any_element()
                     }
                 };
                 let (children, top, bottom) =
-                    stack(item.blocks.iter().map(|b| self.block(b, depth + 1, list.spread)).collect());
+                    stack(item.blocks.iter().map(|b| self.block(b, depth + 1, list.spread)).collect(), self.scale);
                 let row = div()
                     .flex()
                     .w_full()
@@ -388,21 +393,21 @@ impl Renderer<'_> {
                         div()
                             .flex_none()
                             .w(gutter)
-                            .pr(LIST_MARKER_GAP)
+                            .pr(self.view.colors.r(LIST_MARKER_GAP))
                             .flex()
                             .justify_end()
                             .child(marker),
                     )
                     .child(div().flex_1().min_w_0().flex().flex_col().children(children));
-                let item_top = if index == 0 { top } else { LIST_ITEM_GAP.max(top) };
+                let item_top = if index == 0 { top } else { self.view.colors.r(LIST_ITEM_GAP).max(top) };
                 Rendered { element: row.into_any_element(), top: item_top, bottom }
             })
             .collect::<Vec<_>>();
-        let (children, top, bottom) = stack(items);
+        let (children, top, bottom) = stack(items, self.scale);
         Rendered {
             element: div().flex().flex_col().children(children).into_any_element(),
-            top: BLOCK_MARGIN.max(top),
-            bottom: BLOCK_MARGIN.max(bottom),
+            top: self.view.colors.r(BLOCK_MARGIN).max(top),
+            bottom: self.view.colors.r(BLOCK_MARGIN).max(bottom),
         }
     }
 
@@ -419,16 +424,16 @@ impl Renderer<'_> {
         let title = div()
             .flex()
             .items_center()
-            .gap(px(6.))
+            .gap(self.view.colors.r(px(6.)))
             .font_weight(FontWeight::MEDIUM)
             .text_color(title_color)
-            .child(Icon::new(glyph).size(IconSize::Custom(px(14.))).color(title_color).stroke(chat_icon_stroke(glyph)))
+            .child(Icon::new(glyph).size(IconSize::Custom(self.view.colors.r(px(14.)))).color(title_color).stroke(chat_icon_stroke(glyph)))
             .child(kind.label());
-        let mut children = vec![Rendered { element: title.into_any_element(), top: BLOCK_MARGIN, bottom: BLOCK_MARGIN }];
+        let mut children = vec![Rendered { element: title.into_any_element(), top: self.view.colors.r(BLOCK_MARGIN), bottom: self.view.colors.r(BLOCK_MARGIN) }];
         children.extend(blocks.iter().map(|b| self.block(b, depth, true)));
-        let (children, top, bottom) = stack(children);
-        let element = div().border_l_2().border_color(border).pl(px(12.)).flex().flex_col().children(children);
-        Rendered { element: element.into_any_element(), top: px(4.).max(top), bottom: px(4.).max(bottom) }
+        let (children, top, bottom) = stack(children, self.scale);
+        let element = div().border_l_2().border_color(border).pl(self.view.colors.r(px(12.))).flex().flex_col().children(children);
+        Rendered { element: element.into_any_element(), top: self.view.colors.r(px(4.)).max(top), bottom: self.view.colors.r(px(4.)).max(bottom) }
     }
 
     fn details(&mut self, summary: &Inlines, blocks: &[Block], depth: usize) -> Rendered {
@@ -445,12 +450,12 @@ impl Renderer<'_> {
             .cursor_pointer()
             .font_weight(FontWeight::MEDIUM)
             .text_color(colors.theme.text)
-            .child(rotated_chevron(open, px(16.), colors.theme.muted_foreground))
+            .child(rotated_chevron(open, self.view.colors.r(px(16.)), colors.theme.muted_foreground))
             .child(summary.text.clone())
             .on_click(move |_, window, cx| actions(MarkdownAction::ToggleDetails(key), window, cx));
         let mut element = div().border_y_1().border_color(alpha(colors.theme.border, 0.6)).child(trigger);
         if open {
-            let (children, ..) = stack(blocks.iter().map(|b| self.block(b, depth, true)).collect());
+            let (children, ..) = stack(blocks.iter().map(|b| self.block(b, depth, true)).collect(), self.scale);
             element = element.child(
                 div().pb_3().pl_6().text_color(alpha(colors.theme.text, 0.9)).flex().flex_col().children(children),
             );
@@ -459,7 +464,7 @@ impl Renderer<'_> {
             let seen = &mut self.find_seen;
             crate::components::chat::thread_find::visit_block_texts(blocks, &mut |text| find.skip(text, seen));
         }
-        Rendered { element: element.into_any_element(), top: DETAILS_MARGIN, bottom: DETAILS_MARGIN }
+        Rendered { element: element.into_any_element(), top: self.view.colors.r(DETAILS_MARGIN), bottom: self.view.colors.r(DETAILS_MARGIN) }
     }
 
     fn code_block(&mut self, code: &CodeBlock) -> AnyElement {
@@ -482,16 +487,16 @@ impl Renderer<'_> {
             .justify_between()
             .items_center()
             .gap_2()
-            .pt(CODE_HEADER_PAD_TOP)
-            .pr(CODE_HEADER_PAD_RIGHT)
-            .pl(CODE_HEADER_PAD_LEFT)
+            .pt(self.view.colors.r(CODE_HEADER_PAD_TOP))
+            .pr(self.view.colors.r(CODE_HEADER_PAD_RIGHT))
+            .pl(self.view.colors.r(CODE_HEADER_PAD_LEFT))
             .text_color(header_color)
             .child(
                 div()
                     .flex()
                     .min_w_0()
                     .items_center()
-                    .gap(px(6.))
+                    .gap(self.view.colors.r(px(6.)))
                     .font_family(mono().family)
                     .text_size(TEXT_2XS.size)
                     .line_height(TEXT_2XS.line_height)
@@ -500,7 +505,7 @@ impl Renderer<'_> {
             .child(
                 div()
                     .flex()
-                    .gap(px(2.))
+                    .gap(self.view.colors.r(px(2.)))
                     .child(
                         icon_button(("wrap", key), IconName::TextWrap, header_color, colors)
                             .when_active(wrapped, colors)
@@ -534,11 +539,11 @@ impl Renderer<'_> {
         let runs = self.find_runs(&source, runs);
         let text = RichText::new(id, source, runs).selection_color(colors.selection);
         let body = div()
-            .px(CODE_PAD_X)
-            .py(CODE_PAD_Y)
+            .px(self.view.colors.r(CODE_PAD_X))
+            .py(self.view.colors.r(CODE_PAD_Y))
             .font_family(mono().family)
-            .text_size(TEXT_CODE.size)
-            .line_height(TEXT_CODE.line_height);
+            .text_size(text_code(self.app).size)
+            .line_height(text_code(self.app).line_height);
         let body = if wrapped {
             body.child(text).into_any_element()
         } else {
@@ -550,7 +555,7 @@ impl Renderer<'_> {
         };
         div()
             .w_full()
-            .rounded(CODE_RADIUS)
+            .rounded(self.view.colors.r(CODE_RADIUS))
             .overflow_hidden()
             .bg(colors.code_background())
             .border_1()
@@ -572,11 +577,25 @@ impl Renderer<'_> {
                     .map(|cell| cell.text.chars().count())
                     .max()
                     .unwrap_or(1);
-                (longest as f32 * 7.5 + 24.).min(f32::from(CELL_MAX_WIDTH))
+                ((longest as f32 * 7.5 + 24.) * self.view.colors.rem).min(f32::from(self.view.colors.r(CELL_MAX_WIDTH)))
             })
             .collect();
         let rule = alpha(colors.theme.border, 0.6);
-        let render_row = |cells: &[Inlines], header: bool, this: &mut Self| {
+        // Rows walk one grid (`pixel_grid`): paddings and a one-line cell's line, with the
+        // bottom padding taking up the difference GPUI's rounded-up line height leaves.
+        let mut grid = crate::pixel_grid::PixelGrid::at_scale(self.scale);
+        let line = colors.r(px(22.75));
+        let measured_line = px((f32::from(line) * self.scale).ceil() / self.scale);
+        let mut padding = |header: bool| {
+            let pad = colors.r(if header { HEADER_CELL_PAD_Y } else { CELL_PAD_Y });
+            let top = grid.next(pad);
+            let line_slot = grid.next(line);
+            let bottom = grid.next(pad) + line_slot - measured_line;
+            (top, bottom.max(px(0.)))
+        };
+        let header_padding = padding(true);
+        let row_padding: Vec<_> = table.rows.iter().map(|_| padding(false)).collect();
+        let render_row = |cells: &[Inlines], header: bool, (pad_top, pad_bottom): (Pixels, Pixels), this: &mut Self| {
             div()
                 .flex()
                 .w_full()
@@ -587,16 +606,16 @@ impl Renderer<'_> {
                         .get(column)
                         .map(|cell| this.paragraph(cell, header.then_some(FontWeight::SEMIBOLD), None));
                     let align = table.align.get(column).copied().unwrap_or(TableAlign::None);
-                    let pad_y = if header { HEADER_CELL_PAD_Y } else { CELL_PAD_Y };
                     let mut cell = div()
                         .flex_grow(1.)
                         .flex_basis(px(weights[column]))
                         .min_w(px(weights[column] * 0.5))
-                        .max_w(CELL_MAX_WIDTH)
-                        .py(pad_y)
+                        .max_w(self.view.colors.r(CELL_MAX_WIDTH))
+                        .pt(pad_top)
+                        .pb(pad_bottom)
                         .flex()
                         .children(content);
-                    cell = if column == 0 { cell.pr(CELL_PAD_X) } else if column + 1 == columns { cell.pl(CELL_PAD_X) } else { cell.px(CELL_PAD_X) };
+                    cell = if column == 0 { cell.pr(self.view.colors.r(CELL_PAD_X)) } else if column + 1 == columns { cell.pl(self.view.colors.r(CELL_PAD_X)) } else { cell.px(self.view.colors.r(CELL_PAD_X)) };
                     match align {
                         TableAlign::Center => cell.text_center(),
                         TableAlign::Right => cell.text_right(),
@@ -604,8 +623,9 @@ impl Renderer<'_> {
                     }
                 }))
         };
-        let header = render_row(&table.header, true, self);
-        let rows: Vec<_> = table.rows.iter().map(|row| render_row(row, false, self).into_any_element()).collect();
+        let header = render_row(&table.header, true, header_padding, self);
+        let rows: Vec<_> =
+            table.rows.iter().zip(row_padding).map(|(row, padding)| render_row(row, false, padding, self).into_any_element()).collect();
         let (key, _) = self.element_id("table");
         let copied = self.view.state.copied == Some(key);
         let markdown = table_markdown(table);
@@ -620,7 +640,7 @@ impl Renderer<'_> {
                     .child(div().min_w_full().flex().flex_col().child(header).children(rows)),
             )
             .child(
-                div().mt(px(2.)).mx(px(-4.)).flex().justify_end().child(
+                div().mt(self.view.colors.r(px(2.))).mx(self.view.colors.r(px(-4.))).flex().justify_end().child(
                     icon_button(
                         ("table-copy", key),
                         if copied { IconName::Check } else { IconName::Copy },
@@ -705,8 +725,8 @@ fn style_inlines(inlines: &Inlines, base: InlineBase, colors: &ChatColors, user:
             InlineStyle::Code => styled.boxes.push(TextBox {
                 range: span.range.clone(),
                 color: alpha(code_ink, 0.1),
-                pad_x: INLINE_CODE_PAD_X,
-                radius: INLINE_CODE_RADIUS,
+                pad_x: colors.r(INLINE_CODE_PAD_X),
+                radius: colors.r(INLINE_CODE_RADIUS),
                 height_em: Some(INLINE_CODE_HEIGHT_EM),
             }),
             InlineStyle::Link(target) => styled.links.push((span.range.clone(), target.clone())),
@@ -717,7 +737,7 @@ fn style_inlines(inlines: &Inlines, base: InlineBase, colors: &ChatColors, user:
                         [layer] => (layer.asset.into(), layer.tint.color(colors.appearance, colors.theme.muted_foreground)),
                         _ => (IconName::File.path().into(), file_ink),
                     };
-                    styled.icons.push(TextIcon { index: span.range.start, path, size: px(14.), color });
+                    styled.icons.push(TextIcon { index: span.range.start, path, size: colors.r(px(14.)), color });
                 }
                 styled.links.push((span.range.clone(), target.clone()));
             }
@@ -792,7 +812,7 @@ fn runnable_command(language: &str, code: &str) -> Option<SharedString> {
 /// Pierre has no specific icon for it.
 fn code_title(title: Option<&SharedString>, language: Option<&SharedString>, colors: &ChatColors) -> Vec<AnyElement> {
     let icon = |path: &str| {
-        pierre_icon(resolve_file_icon(path), px(14.), colors.appearance, colors.theme.muted_foreground).into_any_element()
+        pierre_icon(resolve_file_icon(path), colors.r(px(14.)), colors.appearance, colors.theme.muted_foreground).into_any_element()
     };
     match (title, language) {
         (Some(title), _) => vec![icon(title), div().truncate().child(title.clone()).into_any_element()],
@@ -881,10 +901,10 @@ fn roman_marker(mut number: usize) -> String {
 }
 
 fn checkbox(checked: bool, colors: &ChatColors) -> Div {
-    let side = px(13.);
-    let base = div().mt(px(5.)).size(side).rounded(px(3.)).flex().items_center().justify_center();
+    let side = colors.r(px(13.));
+    let base = div().mt(colors.r(px(5.))).size(side).rounded(colors.r(px(3.))).flex().items_center().justify_center();
     if checked {
-        base.bg(colors.info).child(Icon::new(IconName::Check).size(IconSize::Custom(px(10.))).color(gpui_kit::white()))
+        base.bg(colors.info).child(Icon::new(IconName::Check).size(IconSize::Custom(colors.r(px(10.)))).color(gpui_kit::white()))
     } else {
         base.border_1().border_color(colors.theme.muted_foreground)
     }
@@ -908,15 +928,15 @@ pub fn icon_button(
 ) -> gpui_kit::Stateful<Div> {
     div()
         .id(id)
-        .size(ICON_XS)
+        .size(colors.r(ICON_XS))
         .flex_none()
         .flex()
         .items_center()
         .justify_center()
-        .rounded(px(8.))
+        .rounded(colors.r(px(8.)))
         .cursor_pointer()
         .hover(|style| style.bg(colors.theme.accent_surface))
-        .child(Icon::new(glyph).size(IconSize::Custom(ICON_XS_GLYPH)).color(color).stroke(chat_icon_stroke(glyph)))
+        .child(Icon::new(glyph).size(IconSize::Custom(colors.r(ICON_XS_GLYPH))).color(color).stroke(chat_icon_stroke(glyph)))
 }
 
 trait CodeButtonExt {

@@ -5,7 +5,9 @@
 // Usage: parity-shot <out-dir> [scene-filter]
 // The owner scenes read the owner's client settings from the JSON file named
 // by PARITY_CLIENT_SETTINGS (an Electron `client-settings.json`) and render at
-// the size in their table; without that variable they are skipped.
+// the size in their table; without that variable they are skipped. With it and
+// PARITY_AT_OWNER=1, every shared scene also renders at 1710x1074 with those
+// settings as `<scene>-mac` (and at 1100x780 as `<scene>-mac1100`).
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -64,6 +66,8 @@ enum Step {
     DragOn(f32, f32, f32, f32),
     /// Changes app state directly (a setting the capture turned on).
     Run(fn(&mut App)),
+    /// Opens the thread details card unless it already shows (a wide canvas docks it open).
+    OpenDetails,
 }
 
 /// A reference view and how to reach it.
@@ -180,10 +184,10 @@ const SHARED: Profile = Profile { size: (1100., 780.), owner: None, owner_sideba
 /// (`-wide`); the wide one's steps are the same, so they find their targets by id.
 const OWNER_SCENES: &[Scene] = &[
     Scene { name: "details", reference: "details", light: false, steps: DETAILS },
-    Scene { name: "details-open-in-menu", reference: "open-in-editor-menu", light: false, steps: &[Step::Action(|| Box::new(ToggleThreadPanel)), Step::Wait(300), Step::ClickId("open-in-menu-trigger")] },
-    Scene { name: "details-git-menu", reference: "git-menu", light: false, steps: &[Step::Action(|| Box::new(ToggleThreadPanel)), Step::Wait(300), Step::ClickId("git-menu-trigger")] },
-    Scene { name: "details-branch-picker", reference: "branch-picker", light: false, steps: &[Step::Action(|| Box::new(ToggleThreadPanel)), Step::Wait(300), Step::ClickId("branch-select")] },
-    Scene { name: "details-items-menu", reference: "details-items-menu", light: false, steps: &[Step::Action(|| Box::new(ToggleThreadPanel)), Step::Wait(300), Step::RightClickId("thread-details-card")] },
+    Scene { name: "details-open-in-menu", reference: "open-in-editor-menu", light: false, steps: &[Step::OpenDetails, Step::Wait(300), Step::ClickId("open-in-menu-trigger")] },
+    Scene { name: "details-git-menu", reference: "git-menu", light: false, steps: &[Step::OpenDetails, Step::Wait(300), Step::ClickId("git-menu-trigger")] },
+    Scene { name: "details-branch-picker", reference: "branch-picker", light: false, steps: &[Step::OpenDetails, Step::Wait(300), Step::ClickId("branch-select")] },
+    Scene { name: "details-items-menu", reference: "details-items-menu", light: false, steps: &[Step::OpenDetails, Step::Wait(300), Step::RightClickId("thread-details-card")] },
     Scene { name: "palette-root", reference: "palette-root", light: false, steps: &[Step::Action(|| Box::new(ToggleCommandPalette)), Step::Wait(200)] },
     Scene { name: "palette-query-sync", reference: "palette-query-sync", light: false, steps: &[Step::Action(|| Box::new(ToggleCommandPalette)), Step::Type("sync"), Step::Wait(400)] },
     Scene { name: "palette-messages", reference: "palette-messages", light: false, steps: &[Step::Action(|| Box::new(ToggleCommandPalette)), Step::Type("reconnect"), Step::Wait(600)] },
@@ -193,7 +197,7 @@ const OWNER_SCENES: &[Scene] = &[
     Scene { name: "palette-empty", reference: "palette-empty", light: false, steps: &[Step::Action(|| Box::new(ToggleCommandPalette)), Step::Type("zzqpv"), Step::Wait(300)] },
 ];
 
-const DETAILS: &[Step] = &[Step::Action(|| Box::new(ToggleThreadPanel)), Step::Wait(300)];
+const DETAILS: &[Step] = &[Step::OpenDetails, Step::Wait(300)];
 
 /// Views the app window cannot reach yet (their routes are not mounted in
 /// `AppRoot`), captured from their registered scenes instead: (image name, scene).
@@ -464,6 +468,12 @@ fn render(scene: &Scene, profile: Profile, file_name: &str, out: &std::path::Pat
             }
             Step::Navigate(route) => cx.update(|cx| root.update(cx, |root, cx| root.navigate(Route::parse(route), cx))),
             Step::Run(run) => cx.update(|cx| run(cx)),
+            Step::OpenDetails => {
+                let open = cx.update(|cx| root.read(cx).thread_view().read(cx).details_open());
+                if !open {
+                    cx.update_window(window, |_, w, cx| w.dispatch_action(Box::new(ToggleThreadPanel), cx)).ok();
+                }
+            }
             Step::ServerPages => cx.update(|cx| {
                 if let Some(settings) = shell.read(cx).settings().cloned() {
                     let (model, _) = t3code_web::scenes::settings_server::fixture_model(cx);
@@ -515,6 +525,20 @@ fn main() -> anyhow::Result<()> {
             OWNER_SCENES.len() * 2 + OWNER_SIDEBAR_SCENES.len()
         ),
         Some(path) => {
+            // PARITY_AT_OWNER=1: every shared scene again at the owner's 1710x1074 with their
+            // settings (`<scene>-mac`), to measure against the Mac captures.
+            if std::env::var_os("PARITY_AT_OWNER").is_some() {
+                // The owner keeps the inbox off, so its bell is not there to click.
+                // `-mac1100` keeps the scenes' 1100x780 click targets, for views a 1710 window moves.
+                for (suffix, size) in [("-mac", (1710., 1074.)), ("-mac1100", (1100., 780.))] {
+                    for scene in SCENES.iter().filter(|s| wanted(&format!("{}{suffix}", s.name)) && s.name != "sidebar-inbox") {
+                        let profile = Profile { size, owner: Some(path), owner_sidebar: false };
+                        if let Err(error) = render(scene, profile, &format!("{}{suffix}", scene.name), &out, &data) {
+                            eprintln!("FAILED {}{suffix}: {error:#}", scene.name);
+                        }
+                    }
+                }
+            }
             for scene in OWNER_SIDEBAR_SCENES.iter().filter(|s| wanted(s.name)) {
                 let profile = Profile { size: (1100., 780.), owner: Some(path), owner_sidebar: true };
                 if let Err(error) = render(scene, profile, scene.name, &out, &data) {

@@ -12,6 +12,7 @@
 //! empty state. Only the active tab's body renders,
 //! and a closed panel renders nothing.
 
+use gpui_kit::rems;
 use std::collections::HashMap;
 use std::rc::Rc;
 
@@ -92,11 +93,11 @@ impl Render for DraggedTab {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.app_theme();
         div()
-            .h(px(24.))
-            .px(px(8.))
+            .h(rems(1.5))
+            .px(rems(0.5))
             .flex()
             .items_center()
-            .rounded(px(6.))
+            .rounded(rems(0.375))
             .bg(theme.colors.accent_surface)
             .ui_text(theme, TextSize::Xs, weight::NORMAL)
             .text_color(theme.colors.text)
@@ -681,7 +682,7 @@ impl RightPanel {
             .flex()
             .items_center()
             .justify_center()
-            .rounded(px(4.))
+            .rounded(rems(0.25))
             .hover(|s| s.bg(c.muted))
             .child(
                 div()
@@ -704,15 +705,15 @@ impl RightPanel {
             .id(("tab", index))
             .group(group)
             .occlude()
-            .h(px(24.))
-            .max_w(px(144.))
+            .h(rems(1.5))
+            .max_w(rems(9.))
             .flex_none()
             .flex()
             .items_center()
-            .gap(px(2.))
-            .pl(px(6.))
-            .pr(px(8.))
-            .rounded(px(6.))
+            .gap(rems(0.125))
+            .pl(rems(0.375))
+            .pr(rems(0.5))
+            .rounded(rems(0.375))
             .cursor_pointer()
             .ui_text(theme, TextSize::Xs, weight::NORMAL)
             .text_color(fg)
@@ -770,12 +771,12 @@ impl RightPanel {
         let rows = Launch::ALL.into_iter().enumerate().map(|(index, launch)| {
             div()
                 .id(("launch", index))
-                .h(px(32.))
+                .h(rems(2.))
                 .w_full()
                 .flex()
                 .items_center()
-                .gap(px(10.))
-                .px(px(10.))
+                .gap(rems(0.625))
+                .px(rems(0.625))
                 .rounded(theme.radii.control)
                 .cursor_pointer()
                 .hover(move |s| s.bg(hover))
@@ -792,22 +793,22 @@ impl RightPanel {
             .flex()
             .items_center()
             .justify_center()
-            .px(px(24.))
+            .px(rems(1.5))
             .pb(self.topbar_height)
             .child(
                 div()
                     .w_full()
-                    .max_w(px(320.))
-                    .py(px(24.))
+                    .max_w(rems(20.))
+                    .py(rems(1.5))
                     .child(
                         div()
-                            .mb(px(12.))
+                            .mb(rems(0.75))
                             .text_center()
                             .ui_text(theme, TextSize::Sm, weight::MEDIUM)
                             .text_color(c.text)
                             .child(t!("Open a surface")),
                     )
-                    .child(div().flex().flex_col().gap(px(2.)).children(rows)),
+                    .child(div().flex().flex_col().gap(rems(0.125)).children(rows)),
             )
     }
 }
@@ -845,7 +846,7 @@ impl Render for RightPanel {
             .flex()
             .items_center()
             .gap_1()
-            .pl(px(8.) + leading)
+            .pl(cx.app_theme().rem(0.5) + leading)
             .pr(trailing)
             .child(
                 div()

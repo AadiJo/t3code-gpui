@@ -275,31 +275,45 @@ impl SettingsRoute {
                 .flex()
                 .flex_col()
                 .gap(sp(4.))
-                .children(nav_groups().into_iter().enumerate().map(|(_, group)| {
-                    div()
-                        .flex()
-                        .flex_col()
-                        .gap(sp(1.))
-                        .children(group.heading.map(|heading| {
-                            div()
-                                .px(sp(2.))
-                                .ui_text(theme, TextSize::Xs, weight::MEDIUM)
-                                .text_color(with_alpha(c.sidebar_muted_foreground, 0.8))
-                                .child(heading)
-                        }))
-                        .children(group.paths.iter().map(|path| {
-                            let path = *path;
-                            row(
-                                SharedString::from(format!("settings-nav-{}", path.slug())),
-                                path.icon(),
-                                path.nav_label(),
-                                path == self.path,
-                            )
-                            .on_click(cx.listener(move |this, _, _, cx| this.navigate(path, cx)))
-                            .test_support()
-                        }))
-                        .into_any_element()
-                }))
+                .children({
+                    // Rows and their gaps walk one grid (`pixel_grid`) so the list keeps the web's pitch.
+                    let mut grid = crate::pixel_grid::PixelGrid::new(window);
+                    nav_groups()
+                        .into_iter()
+                        .map(|group| {
+                            let mut column = div().flex().flex_col();
+                            let mut first = true;
+                            if let Some(heading) = group.heading {
+                                column = column.child(
+                                    div()
+                                        .px(sp(2.))
+                                        .ui_text(theme, TextSize::Xs, weight::MEDIUM)
+                                        .text_color(with_alpha(c.sidebar_muted_foreground, 0.8))
+                                        .child(heading),
+                                );
+                                first = false;
+                            }
+                            for path in group.paths.iter().copied() {
+                                let gap = if first { px(0.) } else { grid.next(sp(1.)) };
+                                first = false;
+                                let height = grid.next(sp(8.));
+                                column = column.child(
+                                    row(
+                                        SharedString::from(format!("settings-nav-{}", path.slug())),
+                                        path.icon(),
+                                        path.nav_label(),
+                                        path == self.path,
+                                    )
+                                    .mt(gap)
+                                    .h(height)
+                                    .on_click(cx.listener(move |this, _, _, cx| this.navigate(path, cx)))
+                                    .test_support(),
+                                );
+                            }
+                            column.into_any_element()
+                        })
+                        .collect::<Vec<_>>()
+                })
                 .into_any_element()
         };
         div()

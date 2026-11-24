@@ -5,7 +5,7 @@
 use crate::components::icons::{Icon, IconName, IconSize};
 use std::rc::Rc;
 
-use gpui_kit::{
+use gpui_kit::{rems, 
     AnyElement, App, FontWeight, InteractiveElement as _, IntoElement, ParentElement as _,
     StatefulInteractiveElement as _, Styled as _, Window, div, px,
 };
@@ -16,8 +16,8 @@ use super::{
 };
 
 /// Option radio: 16px circle with a 6px dot when chosen.
-const RADIO: gpui_kit::Pixels = px(16.);
-const RADIO_DOT: gpui_kit::Pixels = px(6.);
+const RADIO: gpui_kit::Rems = gpui_kit::rems(1.0);
+const RADIO_DOT: gpui_kit::Rems = gpui_kit::rems(0.375);
 
 /// Called with an option's index when it is clicked.
 pub type OnPick = Rc<dyn Fn(usize, &mut Window, &mut App)>;
@@ -35,16 +35,16 @@ pub fn pending_user_input_panel(
         .items_center()
         .gap_2()
         .px_4()
-        .py(px(6.))
+        .py(rems(0.375))
         .text_size(TEXT_XS.size)
         .text_color(colors.theme.muted_foreground)
         .child(div().flex_1().child(question.header.clone()))
         .child(format!("{}/{}", question.index + 1, question.count))
-        .child(Icon::new(IconName::ChevronDown).size(IconSize::Custom(px(14.))).color(colors.theme.muted_foreground));
+        .child(Icon::new(IconName::ChevronDown).size(IconSize::Sm).color(colors.theme.muted_foreground));
     let options = question.options.iter().enumerate().map(|(index, (label, description))| {
         let chosen = selected == Some(index);
         let radio = div()
-            .mt(px(2.))
+            .mt(rems(0.125))
             .size(RADIO)
             .flex_none()
             .rounded_full()
@@ -68,13 +68,13 @@ pub fn pending_user_input_panel(
             .flex()
             .w_full()
             .items_start()
-            .gap(px(10.))
+            .gap(rems(0.625))
             .cursor_pointer()
             .hover(move |s| s.bg(hover))
             .on_click(move |_, window, cx| on_pick(index, window, cx))
-            .rounded(px(6.))
-            .py(px(6.))
-            .pl(px(6.))
+            .rounded(rems(0.375))
+            .py(rems(0.375))
+            .pl(rems(0.375))
             .text_color(if chosen { colors.theme.text } else { alpha(colors.theme.text, 0.7) })
             .child(radio)
             .child(
@@ -85,12 +85,12 @@ pub fn pending_user_input_panel(
             )
             .child(
                 div()
-                    .w(px(24.))
-                    .h(px(20.))
+                    .w(rems(1.5))
+                    .h(rems(1.25))
                     .flex()
                     .items_center()
                     .justify_center()
-                    .rounded(px(4.))
+                    .rounded(rems(0.25))
                     .bg(alpha(colors.theme.text, 0.07))
                     .text_size(TEXT_XS.size)
                     .text_color(colors.theme.muted_foreground)
@@ -102,11 +102,11 @@ pub fn pending_user_input_panel(
         .child(header)
         .child(
             div()
-                .pl(px(22.))
+                .pl(rems(1.375))
                 .pr_4()
                 .pb_1()
-                .child(div().pt(px(2.)).text_size(TEXT_SM.size).text_color(alpha(colors.theme.text, 0.85)).child(question.question.clone()))
-                .child(div().mt(px(6.)).ml(px(-6.)).flex().flex_col().children(options)),
+                .child(div().pt(rems(0.125)).text_size(TEXT_SM.size).text_color(alpha(colors.theme.text, 0.85)).child(question.question.clone()))
+                .child(div().mt(rems(0.375)).ml(rems(-0.375)).flex().flex_col().children(options)),
         )
         .into_any_element()
 }

@@ -754,12 +754,12 @@ fn icon_action(id: &'static str, glyph: IconName, size: Pixels, color: Hsla, dis
     let active = c.accent;
     div()
         .id(id)
-        .size(CONTROL_HEIGHT)
+        .size(c.r(CONTROL_HEIGHT))
         .flex_none()
         .flex()
         .items_center()
         .justify_center()
-        .rounded(ICON_ACTION_RADIUS)
+        .rounded(c.r(ICON_ACTION_RADIUS))
         .when(disabled, |el| el.opacity(0.35))
         .when(!disabled, |el| el.cursor_pointer().hover(move |s| s.bg(hover).text_color(fg)).active(move |s| s.bg(active)))
         .text_color(color)
@@ -772,15 +772,15 @@ fn control(id: impl Into<gpui_kit::ElementId>, open: bool, c: &ComposerColors) -
     let fg = c.foreground;
     div()
         .id(id)
-        .h(CONTROL_HEIGHT)
-        .px(px(8.))
+        .h(c.r(CONTROL_HEIGHT))
+        .px(c.r(px(8.)))
         .flex()
         .flex_none()
         .items_center()
-        .gap(px(6.))
-        .rounded(CONTROL_RADIUS)
+        .gap(c.r(px(6.)))
+        .rounded(c.r(CONTROL_RADIUS))
         .cursor_pointer()
-        .text_size(px(14.))
+        .text_size(c.r(px(14.)))
         .font_weight(FontWeight::MEDIUM)
         .text_color(if open { c.foreground } else { c.foreground.opacity(0.8) })
         .when(open, |el| el.bg(hover))
@@ -841,26 +841,26 @@ impl ChatComposer {
         let suffix_color = if open { c.foreground } else { c.muted_foreground };
         let mark = entry.as_ref().map_or(ProviderIcon::Initials, |e| ProviderIcon::for_model(&e.driver_kind, Some(&selection.model)));
         let initials = entry.as_ref().map_or(SharedString::default(), |e| e.display_name.clone());
-        let label_width = text_width(&label, px(14.), FontWeight::MEDIUM, window).min(px(224.));
+        let label_width = text_width(&label, c.r(px(14.)), FontWeight::MEDIUM, window).min(c.r(px(224.)));
         let suffix_width = match &glyph {
             Some(g) if g.special.is_none() => px(4. * g.count as f32 - 2.),
-            Some(g) => text_width(g.special.as_deref().unwrap_or(""), px(14.), FontWeight::MEDIUM, window).min(px(96.)),
+            Some(g) => text_width(g.special.as_deref().unwrap_or(""), c.r(px(14.)), FontWeight::MEDIUM, window).min(c.r(px(96.))),
             None => px(0.),
         };
-        let natural = px(8.) + px(16.) + px(6.) + label_width + if glyph.is_some() { px(6.) + suffix_width } else { px(0.) } + px(8.);
+        let natural = c.r(px(8.)) + c.r(px(16.)) + c.r(px(6.)) + label_width + if glyph.is_some() { c.r(px(6.)) + suffix_width } else { px(0.) } + c.r(px(8.));
         let speed_fast = selection.speed.as_deref().is_some_and(|s| s.eq_ignore_ascii_case("fast") || s.eq_ignore_ascii_case("ultrafast"));
         let element = control("composer-model-trigger", open, &c)
-            .min_w(px(52.))
+            .min_w(c.r(px(52.)))
             .flex_shrink(1.)
-            .when(compact, |el| el.text_size(px(12.)))
-            .child(provider_icon(mark, px(16.), &initials, &c, cx))
-            .child(div().min_w_0().max_w(px(224.)).overflow_hidden().whitespace_nowrap().text_ellipsis().child(label))
+            .when(compact, |el| el.text_size(c.r(px(12.))))
+            .child(provider_icon(mark, c.r(px(16.)), &initials, &c, cx))
+            .child(div().min_w_0().max_w(c.r(px(224.))).overflow_hidden().whitespace_nowrap().text_ellipsis().child(label))
             .when_some(glyph, |el, glyph| match glyph.special.clone() {
-                Some(name) => el.child(div().max_w(px(96.)).overflow_hidden().whitespace_nowrap().text_ellipsis().text_color(suffix_color).child(name)),
+                Some(name) => el.child(div().max_w(c.r(px(96.))).overflow_hidden().whitespace_nowrap().text_ellipsis().text_color(suffix_color).child(name)),
                 None => el.child(effort_glyph(&glyph, suffix_color)),
             })
-            .when(speed_fast, |el| el.child(Icon::new(IconName::ZapFilled).size(IconSize::Custom(px(12.))).color(suffix_color)))
-            .when(selection.ultracode, |el| el.child(Icon::new(IconName::Workflow).size(IconSize::Custom(px(12.))).color(suffix_color)))
+            .when(speed_fast, |el| el.child(Icon::new(IconName::ZapFilled).size(IconSize::Custom(c.r(px(12.)))).color(suffix_color)))
+            .when(selection.ultracode, |el| el.child(Icon::new(IconName::Workflow).size(IconSize::Custom(c.r(px(12.)))).color(suffix_color)))
             .on_click(cx.listener(|this, _, window, cx| this.toggle_picker(window, cx)))
             .into_any_element();
         (element, natural)
@@ -869,7 +869,7 @@ impl ChatComposer {
     fn render_permissions_chip(&self, icon_only: bool, c: &ComposerColors, cx: &mut Context<Self>) -> AnyElement {
         let mode = self.state.runtime_mode;
         control("composer-permissions-chip", false, c)
-            .pl(px(6.))
+            .pl(c.r(px(6.)))
             .child(Icon::new(runtime_mode_icon(mode)).size(IconSize::Custom(px(16.))).color(c.foreground.opacity(0.8)).stroke(composer_icon_stroke(runtime_mode_icon(mode))))
             .when(!icon_only, |el| el.child(mode.label()))
             .on_click(cx.listener(|this, _, _, cx| {
@@ -884,10 +884,10 @@ impl ChatComposer {
     fn render_primary_actions(&self, c: &ComposerColors, cx: &mut Context<Self>) -> AnyElement {
         let has_content = self.has_sendable_content(cx);
         let stop_visible = (self.state.can_interrupt || matches!(self.stop_phase, StopPhase::Pending | StopPhase::TimedOut)) && !has_content;
-        let mut row = div().flex().flex_none().items_center().gap(px(4.));
+        let mut row = div().flex().flex_none().items_center().gap(c.r(px(4.)));
         if self.state.voice_available {
             row = row.child(
-                icon_action("composer-voice", IconName::Mic, px(16.), c.muted_foreground, false, c)
+                icon_action("composer-voice", IconName::Mic, c.r(px(16.)), c.muted_foreground, false, c)
                     .on_click(cx.listener(|_, _, _, cx| cx.emit(ComposerEvent::VoiceRequested))),
             );
         }
@@ -899,11 +899,11 @@ impl ChatComposer {
                 .child(
                     div()
                         .id("composer-stop")
-                        .size(CONTROL_HEIGHT)
+                        .size(c.r(CONTROL_HEIGHT))
                         .flex()
                         .items_center()
                         .justify_center()
-                        .rounded(ICON_ACTION_RADIUS)
+                        .rounded(c.r(ICON_ACTION_RADIUS))
                         .when(disabled, |el| el.opacity(0.64))
                         .when(!disabled, |el| el.cursor_pointer().hover(move |s| s.bg(hover).text_color(fg)))
                         .child(Icon::new(IconName::Square).size(IconSize::Custom(px(14.))).color(c.muted_foreground.opacity(0.7)).stroke(2.2))
@@ -925,7 +925,7 @@ impl ChatComposer {
             IconName::CornerDownLeft
         };
         row.child(
-            icon_action("composer-send", glyph, px(14.), c.secondary_label, disabled, c)
+            icon_action("composer-send", glyph, c.r(px(14.)), c.secondary_label, disabled, c)
                 .when(!disabled, |el| el.on_click(cx.listener(|this, _, _, cx| this.submit(ComposerSubmissionIntent::Foreground, cx)))),
         )
         .into_any_element()
@@ -943,30 +943,30 @@ impl ChatComposer {
                 div()
                     .id(SharedString::from(format!("tile-{id}")))
                     .relative()
-                    .size(IMAGE_TILE)
-                    .rounded(px(8.))
+                    .size(c.r(IMAGE_TILE))
+                    .rounded(c.r(px(8.)))
                     .border_1()
                     .border_color(c.border.opacity(0.8))
                     .overflow_hidden()
                     .bg(c.muted)
                     .child(img(image).size_full().object_fit(gpui_kit::ObjectFit::Cover))
                     .when(a.upload == UploadState::Uploading, |el| {
-                        el.child(div().absolute().inset_0().bg(hsla(0., 0., 0., 0.35)).flex().items_end().justify_center().pb(px(4.)).text_size(px(10.)).text_color(gpui_kit::white()).child("Uploading"))
+                        el.child(div().absolute().inset_0().bg(hsla(0., 0., 0., 0.35)).flex().items_end().justify_center().pb(c.r(px(4.))).text_size(c.r(px(10.))).text_color(gpui_kit::white()).child("Uploading"))
                     })
                     .child(
                         div()
                             .id(SharedString::from(format!("tile-remove-{id}")))
                             .absolute()
-                            .top(px(4.))
-                            .right(px(4.))
-                            .size(px(18.))
+                            .top(c.r(px(4.)))
+                            .right(c.r(px(4.)))
+                            .size(c.r(px(18.)))
                             .rounded_full()
                             .bg(hsla(0., 0., 0., 0.6))
                             .flex()
                             .items_center()
                             .justify_center()
                             .cursor_pointer()
-                            .child(Icon::new(IconName::X).size(IconSize::Custom(px(12.))).color(gpui_kit::white()))
+                            .child(Icon::new(IconName::X).size(IconSize::Custom(c.r(px(12.)))).color(gpui_kit::white()))
                             .on_click(cx.listener(move |this, _, _, cx| this.remove_attachment(id.clone(), cx))),
                     ),
             )
@@ -976,13 +976,13 @@ impl ChatComposer {
             div()
                 .flex()
                 .items_center()
-                .gap(px(8.))
-                .py(px(4.))
-                .text_size(px(14.))
+                .gap(c.r(px(8.)))
+                .py(c.r(px(4.)))
+                .text_size(c.r(px(14.)))
                 .text_color(c.foreground)
                 .child(Icon::new(glyph).size(IconSize::Custom(px(16.))).color(c.muted_foreground).stroke(composer_icon_stroke(glyph)))
                 .child(a.name.clone())
-                .child(div().text_size(px(12.)).text_color(c.secondary_label).child(format_size(a.size_bytes)))
+                .child(div().text_size(c.r(px(12.))).text_color(c.secondary_label).child(format_size(a.size_bytes)))
         });
         let tiles: Vec<_> = tiles.collect();
         let files: Vec<_> = files.collect();
@@ -990,8 +990,8 @@ impl ChatComposer {
             div()
                 .flex()
                 .flex_col()
-                .when(!tiles.is_empty(), |el| el.child(div().mb(px(12.)).flex().flex_wrap().gap(px(8.)).children(tiles)))
-                .when(!files.is_empty(), |el| el.child(div().mb(px(12.)).flex().flex_col().gap(px(4.)).children(files)))
+                .when(!tiles.is_empty(), |el| el.child(div().mb(c.r(px(12.))).flex().flex_wrap().gap(c.r(px(8.))).children(tiles)))
+                .when(!files.is_empty(), |el| el.child(div().mb(c.r(px(12.))).flex().flex_col().gap(c.r(px(4.))).children(files)))
                 .into_any_element(),
         )
     }
@@ -1008,16 +1008,16 @@ impl ChatComposer {
             };
             div()
                 .id(SharedString::from(format!("banner-{}", banner.id)))
-                .min_h(px(28.))
+                .min_h(c.r(px(28.)))
                 .flex()
                 .items_center()
-                .gap(px(4.))
-                .rounded(px(12.))
+                .gap(c.r(px(4.)))
+                .rounded(c.r(px(12.)))
                 .when_some(tint, |el, t| el.bg(t.opacity(0.08)))
                 .child(div().w(px(24.)).flex().justify_center().child(Icon::new(banner.icon).size(IconSize::Custom(px(14.))).color(ink).stroke(composer_icon_stroke(banner.icon))))
-                .child(div().flex_1().min_w_0().text_size(px(12.)).line_height(px(16.)).text_color(c.foreground).child(banner.title.clone()))
+                .child(div().flex_1().min_w_0().text_size(c.r(px(12.))).line_height(c.r(px(16.))).text_color(c.foreground).child(banner.title.clone()))
                 .when_some(banner.action.clone(), |el, action| {
-                    el.child(div().px(px(8.)).h(px(24.)).flex().items_center().rounded(px(8.)).text_size(px(12.)).text_color(c.foreground).hover({
+                    el.child(div().px(c.r(px(8.))).h(c.r(px(24.))).flex().items_center().rounded(c.r(px(8.))).text_size(c.r(px(12.))).text_color(c.foreground).hover({
                         let h = c.foreground.opacity(0.05);
                         move |s| s.bg(h)
                     }).child(action))
@@ -1025,12 +1025,12 @@ impl ChatComposer {
         });
         Some(
             div()
-                .mx(DRAWER_INSET)
-                .mb(-ATTACHMENT_OVERLAP)
-                .pb(ATTACHMENT_OVERLAP)
-                .px(px(4.))
-                .pt(px(4.))
-                .rounded_t(SURFACE_RADIUS)
+                .mx(c.r(DRAWER_INSET))
+                .mb(-c.r((ATTACHMENT_OVERLAP)))
+                .pb(c.r(ATTACHMENT_OVERLAP))
+                .px(c.r(px(4.)))
+                .pt(c.r(px(4.)))
+                .rounded_t(c.r(SURFACE_RADIUS))
                 .bg(c.glass_surface)
                 .border_1()
                 .border_color(c.outline)
@@ -1048,14 +1048,14 @@ impl ChatComposer {
             let fg = c.foreground;
             div()
                 .id(id)
-                .h(px(24.))
-                .px(px(7.))
+                .h(c.r(px(24.)))
+                .px(c.r(px(7.)))
                 .flex()
                 .items_center()
-                .gap(px(4.))
-                .rounded(CONTROL_RADIUS)
+                .gap(c.r(px(4.)))
+                .rounded(c.r(CONTROL_RADIUS))
                 .cursor_pointer()
-                .text_size(px(12.))
+                .text_size(c.r(px(12.)))
                 .text_color(if c.is_dark() { c.muted_foreground } else { c.foreground.opacity(0.7) })
                 .hover(move |s| s.bg(hover).text_color(fg))
                 .child(Icon::new(glyph).size(IconSize::Custom(px(14.))).color(c.muted_foreground).stroke(composer_icon_stroke(glyph)))
@@ -1066,9 +1066,9 @@ impl ChatComposer {
             div()
                 .flex()
                 .items_center()
-                .gap(px(4.))
-                .px(px(8.))
-                .pt(px(8.))
+                .gap(c.r(px(4.)))
+                .px(c.r(px(8.)))
+                .pt(c.r(px(8.)))
                 .child(item("ctx-environment", IconName::Monitor, strip.environment, ContextStripControl::Environment, cx))
                 .child(item("ctx-workspace", IconName::FolderGit2, strip.workspace, ContextStripControl::Workspace, cx))
                 .child(item("ctx-branch", IconName::GitBranch, strip.branch, ContextStripControl::Branch, cx))
@@ -1088,36 +1088,36 @@ fn format_size(bytes: u64) -> String {
 impl Render for ChatComposer {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let c = ComposerColors::new(cx);
-        let compact = self.footer_width < FOOTER_COMPACT_BREAKPOINT;
+        let compact = self.footer_width < c.r((FOOTER_COMPACT_BREAKPOINT));
         let disabled = self.state.project_required;
         self.editor.update(cx, |e, _| e.disabled = disabled);
 
         let (trigger, trigger_width) = self.render_model_trigger(compact, window, cx);
         let show_chip = self.state.runtime_mode != self.state.default_runtime_mode;
         let chip_widths = show_chip.then(|| {
-            let label = text_width(&self.state.runtime_mode.label(), px(14.), FontWeight::MEDIUM, window);
-            (px(6.) + px(16.) + px(6.) + label + px(8.), px(6.) + px(16.) + px(8.))
+            let label = text_width(&self.state.runtime_mode.label(), c.r(px(14.)), FontWeight::MEDIUM, window);
+            (c.r(px(6.)) + c.r(px(16.)) + c.r(px(6.)) + label + c.r(px(8.)), c.r(px(6.)) + c.r(px(16.)) + c.r(px(8.)))
         });
         // Host: footer minus padding, attach (28 + 8) and primary actions.
-        let actions_width = CONTROL_HEIGHT * if self.state.voice_available { 2. } else { 1. } + px(4.);
-        let host = self.footer_width - FOOTER_PADDING_X * 2. - (CONTROL_HEIGHT + px(8.)) - actions_width + px(7.);
-        let (chip_icon_only, chip_hidden) = resolve_footer_layout(host, trigger_width, chip_widths, CONTROL_HEIGHT, px(2.));
+        let actions_width = c.r((CONTROL_HEIGHT)) * if self.state.voice_available { 2. } else { 1. } + c.r(px(4.));
+        let host = self.footer_width - c.r((FOOTER_PADDING_X)) * 2. - (c.r((CONTROL_HEIGHT)) + c.r(px(8.))) - actions_width + c.r(px(7.));
+        let (chip_icon_only, chip_hidden) = resolve_footer_layout(host, trigger_width, chip_widths, c.r((CONTROL_HEIGHT)), c.r(px(2.)));
         let mut controls = div()
             .relative()
-            .mr(px(-7.))
+            .mr(c.r(px(-7.)))
             .flex()
             .flex_1()
             .min_w_0()
             .items_center()
             .justify_end()
-            .gap(px(2.))
+            .gap(c.r(px(2.)))
             .child(trigger);
         if show_chip && !chip_hidden {
             controls = controls.child(self.render_permissions_chip(chip_icon_only, &c, cx));
         }
         if show_chip && chip_hidden {
             controls = controls.child(
-                icon_action("composer-overflow", IconName::Ellipsis, px(16.), c.muted_foreground, false, &c)
+                icon_action("composer-overflow", IconName::Ellipsis, c.r(px(16.)), c.muted_foreground, false, &c)
                     .on_click(cx.listener(|this, _, window, cx| this.toggle_picker(window, cx))),
             );
         }
@@ -1126,7 +1126,7 @@ impl Render for ChatComposer {
                 deferred(
                     div()
                         .absolute()
-                        .bottom(CONTROL_HEIGHT + px(4.))
+                        .bottom(c.r((CONTROL_HEIGHT)) + c.r(px(4.)))
                         .right(px(0.))
                         // Cached at its fixed size: composer keystrokes reuse the picker's last frame.
                         .child(picker.clone().cached(gpui_kit::StyleRefinement::default().w(MODEL_PICKER_SIZE.width).h(MODEL_PICKER_SIZE.height)))
@@ -1157,17 +1157,17 @@ impl Render for ChatComposer {
             .flex_nowrap()
             .items_center()
             .min_w_0()
-            .px(FOOTER_PADDING_X)
-            .pb(FOOTER_PADDING_BOTTOM)
+            .px(c.r(FOOTER_PADDING_X))
+            .pb(c.r(FOOTER_PADDING_BOTTOM))
             .child(measure)
             .child(
-                div().mr(px(8.)).child(
+                div().mr(c.r(px(8.))).child(
                     div()
                         .relative()
                         .left(px(0.5))
                         .top(px(1.))
                         .child(
-                            icon_action("composer-attach", IconName::Paperclip, px(14.), c.secondary_label, disabled, &c)
+                            icon_action("composer-attach", IconName::Paperclip, c.r(px(14.)), c.secondary_label, disabled, &c)
                                 .on_click(cx.listener(|_, _, _, cx| cx.emit(ComposerEvent::AttachRequested))),
                         ),
                 ),
@@ -1180,7 +1180,7 @@ impl Render for ChatComposer {
                     .flex_nowrap()
                     .items_center()
                     .justify_end()
-                    .gap(px(4.))
+                    .gap(c.r(px(4.)))
                     .child(controls)
                     .child(self.render_primary_actions(&c, cx)),
             );
@@ -1190,20 +1190,20 @@ impl Render for ChatComposer {
         let editor_box = self.editor.update(cx, |_, ecx| ComposerPromptEditor::actions(div().track_focus(&editor_focus), ecx));
         let body = div()
             .relative()
-            .px(BODY_PADDING_X)
-            .pt(BODY_PADDING_TOP)
-            .pb(BODY_PADDING_BOTTOM)
+            .px(c.r(BODY_PADDING_X))
+            .pt(c.r(BODY_PADDING_TOP))
+            .pb(c.r(BODY_PADDING_BOTTOM))
             .children(self.render_attachments(&c, cx))
-            .child(editor_box.m(px(-4.)).p(px(4.)).child(editor_element))
+            .child(editor_box.m(c.r(px(-4.))).p(c.r(px(4.))).child(editor_element))
             .when_some(self.state.validation.clone(), |el, message| {
-                el.child(div().pt(px(6.)).text_size(px(12.)).text_color(c.error_foreground).child(message))
+                el.child(div().pt(c.r(px(6.))).text_size(c.r(px(12.))).text_color(c.error_foreground).child(message))
             });
 
         let card = div()
             .id("composer-card")
             .relative()
             .w_full()
-            .rounded(SURFACE_RADIUS)
+            .rounded(c.r(SURFACE_RADIUS))
             .bg(c.glass_surface)
             .border_1()
             .border_color(c.outline)
@@ -1230,12 +1230,12 @@ impl Render for ChatComposer {
             let hover = cx.entity();
             div()
                 .absolute()
-                .left(DRAWER_INSET)
-                .right(DRAWER_INSET)
+                .left(c.r(DRAWER_INSET))
+                .right(c.r(DRAWER_INSET))
                 .bottom(relative(1.))
-                .mb(-ATTACHMENT_OVERLAP)
-                .pb(ATTACHMENT_OVERLAP)
-                .rounded_t(SURFACE_RADIUS)
+                .mb(-c.r((ATTACHMENT_OVERLAP)))
+                .pb(c.r(ATTACHMENT_OVERLAP))
+                .rounded_t(c.r(SURFACE_RADIUS))
                 .bg(c.glass_surface)
                 .border_1()
                 .border_color(c.outline)
@@ -1254,6 +1254,7 @@ impl Render for ChatComposer {
                             }
                         })
                     },
+                    window,
                     cx,
                 ))
         });
@@ -1264,7 +1265,7 @@ impl Render for ChatComposer {
             .font_family(UI_FONT_FAMILY)
             .relative()
             .w_full()
-            .max_w(COMPOSER_MAX_WIDTH)
+            .max_w(c.r(COMPOSER_MAX_WIDTH))
             .mx_auto()
             .flex()
             .flex_col()

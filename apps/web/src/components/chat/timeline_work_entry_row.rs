@@ -5,13 +5,13 @@
 //! fetch-on-expand.
 
 use crate::components::icons::{Icon, IconName, IconSize};
-use gpui_kit::{
+use gpui_kit::{rems, 
     AnyElement, Context, FontWeight, Hsla, InteractiveElement as _, IntoElement, ParentElement as _, SharedString,
     StatefulInteractiveElement as _, Styled as _, TextRun, div, px,
 };
 
 use super::{
-    chat_style::{ChatColors, TEXT_CODE, TEXT_SM_RELAXED, TEXT_XS, alpha, mono},
+    chat_style::{ChatColors, TEXT_SM_RELAXED, TEXT_XS, alpha, mono, text_code},
     messages_timeline::MessagesTimeline,
     messages_timeline_logic::TimelineRow,
     rich_text::RichText,
@@ -25,12 +25,12 @@ use super::{
 };
 
 /// `ms-7`: detail indents past the icon slot.
-const DETAIL_INDENT: gpui_kit::Pixels = px(28.);
+const DETAIL_INDENT: gpui_kit::Rems = gpui_kit::rems(1.75);
 /// Scroll caps: command output `max-h-80`, read output `max-h-64`, structured `max-h-80`.
-const OUTPUT_MAX_HEIGHT: gpui_kit::Pixels = px(320.);
-const READ_MAX_HEIGHT: gpui_kit::Pixels = px(256.);
+const OUTPUT_MAX_HEIGHT: gpui_kit::Rems = gpui_kit::rems(20.0);
+const READ_MAX_HEIGHT: gpui_kit::Rems = gpui_kit::rems(16.0);
 /// Monospace detail: `--font-size-code` with `leading-relaxed`.
-const CODE_LINE_HEIGHT: gpui_kit::Pixels = px(21.125);
+
 
 impl MessagesTimeline {
     /// A work-log entry, standalone or inside an expanded group.
@@ -65,7 +65,7 @@ impl MessagesTimeline {
             trailing.push(failed_mark(&colors));
         }
         if expandable {
-            trailing.push(disclosure(open, px(12.), alpha(colors.theme.icon_muted, 0.7)));
+            trailing.push(disclosure(open, IconSize::Xs, alpha(colors.theme.icon_muted, 0.7)));
         }
         let line = work_log_line(Some(tool_icon(entry_icon(entry), &colors, failed)), label_element, trailing, &colors);
         let id = entry.id.clone();
@@ -104,7 +104,7 @@ impl MessagesTimeline {
         div()
             .w_full()
             .child(work_log_line(
-                Some(Icon::new(IconName::CircleAlert).size(IconSize::Custom(px(16.))).color(tone).into_any_element()),
+                Some(Icon::new(IconName::CircleAlert).size(IconSize::Md).color(tone).into_any_element()),
                 div().font_weight(FontWeight::MEDIUM).text_color(colors.theme.text).child(title).into_any_element(),
                 vec![
                     div()
@@ -140,8 +140,11 @@ impl MessagesTimeline {
         let colors = self.colors;
         let theme = SyntaxTheme::for_appearance(colors.appearance);
         let key = MessagesTimeline::key_of(entry.id.as_str());
-        let mono_block = |id: &'static str, text: SharedString, color: Hsla| {
-            div().text_size(TEXT_CODE.size).line_height(CODE_LINE_HEIGHT).child(
+        // The code size with the prose's `leading-relaxed` (1.625).
+        let code_size = text_code(cx).size;
+        let code_line = px(crate::ActiveAppTheme::app_theme(&**cx).fonts.code * 1.625);
+        let mono_block = move |id: &'static str, text: SharedString, color: Hsla| {
+            div().text_size(code_size).line_height(code_line).child(
                 RichText::new((id, key), text.clone(), vec![mono_run(text.len(), color)]).selection_color(colors.selection),
             )
         };
@@ -150,8 +153,8 @@ impl MessagesTimeline {
                 let command_runs = highlighted_runs(command, "bash", theme, alpha(colors.theme.text, 0.85));
                 let mut parts = vec![
                     div()
-                        .text_size(TEXT_CODE.size)
-                        .line_height(CODE_LINE_HEIGHT)
+                        .text_size(code_size)
+                        .line_height(code_line)
                         .child(RichText::new(("command", key), command.clone(), command_runs).selection_color(colors.selection))
                         .into_any_element(),
                 ];
@@ -224,7 +227,7 @@ impl MessagesTimeline {
                         .children(matches.iter().map(|m| {
                             div()
                                 .child(div().font_family(mono().family).text_color(alpha(colors.theme.text, 0.8)).child(format!("{}:{}:{}", m.path, m.line, m.column)))
-                                .child(div().mt(px(2.)).text_color(colors.theme.muted_foreground).child(m.preview.clone()))
+                                .child(div().mt(rems(0.125)).text_color(colors.theme.muted_foreground).child(m.preview.clone()))
                         }))
                         .into_any_element(),
                 );
@@ -237,7 +240,7 @@ impl MessagesTimeline {
                     div()
                         .flex()
                         .flex_col()
-                        .gap(px(6.))
+                        .gap(rems(0.375))
                         .children(results.iter().map(|r| {
                             div()
                                 .child(
@@ -276,8 +279,8 @@ impl MessagesTimeline {
                             .id(("tool-output", key))
                             .max_h(OUTPUT_MAX_HEIGHT)
                             .overflow_y_scroll()
-                            .text_size(TEXT_CODE.size)
-                            .line_height(CODE_LINE_HEIGHT)
+                            .text_size(code_size)
+                            .line_height(code_line)
                             .child(RichText::new(("tool-output-text", key), output.clone(), runs).selection_color(colors.selection))
                             .into_any_element(),
                     );
@@ -286,7 +289,7 @@ impl MessagesTimeline {
             }
             WorkItem::Reasoning { text } => vec![
                 div()
-                    .rounded(px(6.))
+                    .rounded(rems(0.375))
                     .border_1()
                     .border_color(alpha(colors.theme.border, 0.45))
                     .bg(alpha(colors.theme.muted, 0.15))
@@ -317,14 +320,14 @@ impl MessagesTimeline {
         };
         div()
             .ml(DETAIL_INDENT)
-            .mt(px(2.))
-            .mb(px(6.))
+            .mt(rems(0.125))
+            .mb(rems(0.375))
             .pb_2()
             .flex()
             .flex_col()
             .gap_2()
             .text_size(TEXT_XS.size)
-            .line_height(px(19.5))
+            .line_height(rems(1.21875))
             .text_color(colors.theme.text)
             .children(body)
             .into_any_element()
@@ -373,8 +376,8 @@ fn question_answers(pairs: &[(SharedString, SharedString)], colors: &ChatColors)
         .flex()
         .flex_col()
         .gap_2()
-        .text_size(px(14.))
-        .line_height(px(20.))
+        .text_size(rems(0.875))
+        .line_height(rems(1.25))
         .text_color(colors.theme.muted_foreground)
         .children(pairs.iter().map(|(question, answer)| {
             div().child(question.clone()).child(div().ml_3().child(answer.clone()))

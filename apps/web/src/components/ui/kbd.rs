@@ -1,6 +1,6 @@
 //! Keyboard shortcut hint. Ports `kbd.tsx`.
 
-use gpui_kit::{App, IntoElement, RenderOnce, SharedString, Window, div, prelude::*, px};
+use gpui_kit::{rems, App, IntoElement, RenderOnce, SharedString, Window, div, prelude::*, px};
 
 use super::TextStyleExt as _;
 use crate::ActiveAppTheme as _;
@@ -43,7 +43,7 @@ impl RenderOnce for Kbd {
             .gap(theme.sp(1.))
             .h(theme.sp(5.))
             .min_w(theme.sp(5.))
-            .rounded(px(4.))
+            .rounded(rems(0.25))
             .ui_text(theme, TextSize::Xs, weight::MEDIUM)
             .text_color(theme.colors.muted_foreground)
             .child(self.keys);

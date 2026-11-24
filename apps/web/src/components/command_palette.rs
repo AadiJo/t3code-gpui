@@ -10,7 +10,7 @@
 use std::rc::Rc;
 
 use gpui_kit::component::input::{InputEvent, InputState};
-use gpui_kit::{
+use gpui_kit::{rems, 
     App, AppContext as _, Context, Entity, EventEmitter, FocusHandle, Focusable, InteractiveElement as _, IntoElement,
     KeyBinding, ListAlignment, ListOffset, ListState, MouseButton, ParentElement as _, Render, SharedString,
     StatefulInteractiveElement as _, Styled as _,
@@ -677,9 +677,13 @@ impl CommandPalette {
         let actions_only = session.search.query.starts_with('>');
         let weak = self.this.clone();
         let theme_for_rows = theme.clone();
+        // Each row sits in its grid slot (`pixel_grid`), so the list keeps the web's pitch.
+        let mut grid = crate::pixel_grid::PixelGrid::new(window);
+        let slots: Rc<Vec<gpui_kit::Pixels>> = Rc::new(rows.rows.iter().map(|row| grid.next(row_height(row, &theme))).collect());
         let list_element = list(session.list.clone(), move |ix, _window, cx| {
             let theme = &theme_for_rows;
-            match &rows.rows[ix] {
+            let slot = slots[ix];
+            let row = match &rows.rows[ix] {
                 PaletteRow::Label { label, first } => render_label(label.clone(), *first, theme),
                 PaletteRow::Item { shown, .. } => {
                     let value = shown.item.value.clone();
@@ -711,7 +715,8 @@ impl CommandPalette {
                     let _ = cx;
                     render_item(ix, shown, active, labels[ix].clone(), theme, Some(callbacks), cx)
                 }
-            }
+            };
+            div().h(slot).flex_none().child(row).into_any_element()
         })
         .px(theme.sp(2.))
         .py(theme.sp(2.))
@@ -863,7 +868,7 @@ fn footer_kbd(theme: &AppTheme, content: impl IntoElement) -> impl IntoElement {
         .h(theme.sp(5.))
         .min_w(theme.sp(5.))
         .px(theme.sp(1.))
-        .rounded(px(4.))
+        .rounded(rems(0.25))
         .bg(with_alpha(theme.colors.foreground(), 0.08))
         .text_color(theme.colors.foreground())
         .ui_text(theme, TextSize::Xs, weight::MEDIUM)

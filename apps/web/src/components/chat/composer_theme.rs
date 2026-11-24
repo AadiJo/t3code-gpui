@@ -10,16 +10,12 @@ use crate::theme_palette::Appearance;
 
 /// `--chat-content-max-width` 46rem plus the fork's 2rem.
 pub const COMPOSER_MAX_WIDTH: Pixels = px(768.);
-/// Prompt font size (`--font-size-prompt`).
-pub const PROMPT_FONT_SIZE: Pixels = px(14.);
-/// `leading-relaxed` at 14px.
+/// `leading-relaxed` at 14px: the scroll step and a fallback row height.
 pub const PROMPT_LINE_HEIGHT: Pixels = px(22.75);
 /// Code font size (`--font-size-code`).
 pub const CODE_FONT_SIZE: Pixels = px(13.);
 /// Code line height inside composer code blocks.
 pub const CODE_LINE_HEIGHT: Pixels = px(20.);
-/// `calc(2lh + 8px)` minus the editor's 4px inset on each side.
-pub const EDITOR_MIN_HEIGHT: Pixels = px(45.5);
 /// `max-h-52`.
 pub const EDITOR_MAX_HEIGHT: Pixels = px(208.);
 /// Card radius `rounded-2xl`.
@@ -58,14 +54,6 @@ pub const POPUP_RADIUS: Pixels = px(8.);
 
 /// UI font family. The shell owns fonts; these match its resolved stack.
 pub const UI_FONT_FAMILY: &str = if cfg!(target_os = "macos") { ".SystemUIFont" } else { "Inter" };
-/// Monospace family for code.
-pub const MONO_FONT_FAMILY: &str = if cfg!(target_os = "macos") {
-    "Menlo"
-} else if cfg!(target_os = "windows") {
-    "Consolas"
-} else {
-    "DejaVu Sans Mono"
-};
 
 /// Mixes `color` over `base` at `amount` (0..1), in sRGB like `color-mix(in srgb, ...)`.
 pub fn mix(color: Hsla, base: Hsla, amount: f32) -> Hsla {
@@ -83,6 +71,9 @@ pub struct ComposerColors {
     pub rem: Pixels,
     /// Code size setting (`--font-size-code`), used by composer code blocks.
     pub code_font_size: Pixels,
+    /// The prompt's font size and `leading-relaxed` line height.
+    pub prompt_font_size: Pixels,
+    pub prompt_line_height: Pixels,
     pub canvas: Hsla,
     pub foreground: Hsla,
     pub muted_foreground: Hsla,
@@ -112,15 +103,29 @@ pub struct ComposerColors {
 }
 
 impl ComposerColors {
+    /// A length the web writes in rem, given at a 16px root.
+    pub fn r(&self, at16: Pixels) -> Pixels {
+        at16 * (self.rem / px(16.))
+    }
+
+    /// `calc(2lh + 8px)` minus the editor's 4px inset on each side.
+    pub fn editor_min_height(&self) -> Pixels {
+        self.prompt_line_height * 2.
+    }
+
     /// Reads the active theme.
     pub fn new(cx: &App) -> Self {
         let theme = cx.app_theme();
         let c = theme.colors;
+        // `--font-size-prompt` with "Separate fonts" on, else `text-sm`.
+        let prompt_size = if theme.fonts.separate_prompt_font { px(theme.fonts.prompt) } else { theme.rem(0.875) };
         let dark = theme.appearance == Appearance::Dark;
         Self {
             appearance: theme.appearance,
             rem: theme.rem(1.),
             code_font_size: px(theme.fonts.code),
+            prompt_font_size: prompt_size,
+            prompt_line_height: prompt_size * 1.625,
             canvas: c.canvas,
             foreground: c.text,
             muted_foreground: c.muted_foreground,

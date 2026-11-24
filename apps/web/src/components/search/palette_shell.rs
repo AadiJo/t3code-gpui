@@ -3,7 +3,7 @@
 //! `dialog-glass` popup up to 36rem wide, a borderless search field with a
 //! leading search icon, the list panel, and the footer of key hints.
 
-use gpui_kit::{
+use gpui_kit::{rems, 
     AnyElement, App, Div, Entity, IntoElement, MouseButton, ParentElement as _, Pixels, SharedString, Styled as _,
     Window, anchored, component::input::{Input, InputState},
     deferred, div, point, prelude::*, px,
@@ -26,22 +26,22 @@ pub fn palette_frame(theme: &AppTheme, width: Pixels, height: Option<Pixels>) ->
     dialog_glass(theme)
         .w_full()
         .max_w(width)
-        .max_h(px(420.).max(height.unwrap_or(px(0.))))
+        .max_h(theme.rem(26.25).max(height.unwrap_or(px(0.))))
         .when_some(height, |el, height| el.h(height))
         .overflow_hidden()
 }
 
 /// `CommandInput`: `size="lg"` field with a muted search icon, no border.
 pub fn palette_input(theme: &AppTheme, input: &Entity<InputState>, accessory: Option<AnyElement>) -> Div {
-    div().px(px(8.)).py(px(6.)).flex_none().child(
+    div().px(rems(0.5)).py(rems(0.375)).flex_none().child(
         div()
             .relative()
-            .h(px(36.))
+            .h(rems(2.25))
             .flex()
             .items_center()
-            .gap(px(8.))
-            .pl(px(12.))
-            .pr(px(10.))
+            .gap(rems(0.5))
+            .pl(rems(0.75))
+            .pr(rems(0.625))
             .child(Icon::new(IconName::Search).size(IconSize::Md).color(theme.colors.icon_muted))
             .child(div().flex_1().min_w_0().child(Input::new(input).appearance(false).bordered(false).focus_bordered(false).p_0().h(px(20.)).text_size(px(14.)).w_full()))
             .children(accessory),
@@ -52,15 +52,15 @@ pub fn palette_input(theme: &AppTheme, input: &Entity<InputState>, accessory: Op
 pub fn palette_footer(theme: &AppTheme, action: SharedString, escape: SharedString) -> Div {
     let c = &theme.colors;
     let group = |keys: Vec<AnyElement>, label: SharedString| {
-        div().flex().items_center().gap(px(6.)).children(keys).child(label)
+        div().flex().items_center().gap(rems(0.375)).children(keys).child(label)
     };
     div()
         .flex_none()
         .flex()
         .items_center()
-        .gap(px(12.))
-        .px(px(16.))
-        .py(px(10.))
+        .gap(rems(0.75))
+        .px(rems(1.))
+        .py(rems(0.625))
         .border_t_1()
         .border_color(c.foreground().opacity(0.07))
         .bg(c.foreground().opacity(0.025))
@@ -103,7 +103,7 @@ pub fn palette_overlay(content: AnyElement, on_close: impl Fn(&mut Window, &mut 
                 .flex()
                 .flex_col()
                 .items_center()
-                .px(px(16.))
+                .px(rems(1.))
                 .pt((viewport.height * 0.1).max(px(16.)))
                 .child(
                     div()

@@ -4,7 +4,7 @@
 
 use std::rc::Rc;
 
-use gpui_kit::{
+use gpui_kit::{rems, 
     AnyElement, App, Div, ElementId, FocusHandle, IntoElement, ParentElement, RenderOnce, SharedString, Window,
     anchored, deferred, div, point, prelude::*, px,
 };
@@ -249,7 +249,7 @@ impl RenderOnce for Modal {
                             .when(side == SheetSide::Right, |d| d.justify_end())
                             .child({
                                 // `data-starting-style:translate-x-8` (left: `-translate-x-8`).
-                                let slide = if side == SheetSide::Right { px(32.) } else { px(-32.) };
+                                let slide = if side == SheetSide::Right { rems(2.) } else { rems(-2.) };
                                 let panel = div()
                                     .relative()
                                     .occlude()

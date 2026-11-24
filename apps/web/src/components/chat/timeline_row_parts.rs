@@ -4,7 +4,7 @@
 
 use crate::components::icons::{Icon, IconName, IconSize};
 use crate::components::chat::chat_style::chat_icon_stroke;
-use gpui_kit::{
+use gpui_kit::{rems, 
     AnyElement, Div, ElementId, FontWeight, Hsla, InteractiveElement as _, IntoElement, ParentElement as _, Pixels,
     SharedString, Stateful, Styled as _, StyledText, div, px,
 };
@@ -18,10 +18,10 @@ use super::{
 /// The group name rows use for hover-revealed parts.
 pub const ROW_GROUP: &str = "timeline-row";
 /// `min-h-6`: a work-log line is at least 24px tall.
-pub const WORK_LINE_MIN_HEIGHT: Pixels = px(24.);
+pub const WORK_LINE_MIN_HEIGHT: gpui_kit::Rems = gpui_kit::rems(1.5);
 /// The 24px icon slot and the 6px gap after it.
-pub const WORK_ICON_SLOT: Pixels = px(24.);
-pub const WORK_LINE_GAP: Pixels = px(6.);
+pub const WORK_ICON_SLOT: gpui_kit::Rems = gpui_kit::rems(1.5);
+pub const WORK_LINE_GAP: gpui_kit::Rems = gpui_kit::rems(0.375);
 /// Tool icons are 16px; chevrons and failure marks 12px.
 pub const TOOL_ICON_SIZE: Pixels = px(16.);
 pub const SMALL_ICON: Pixels = px(12.);
@@ -38,9 +38,9 @@ pub fn work_log_row(id: impl Into<ElementId>, grouped: bool) -> Stateful<Div> {
         .relative()
         .w_full()
         .min_w_0()
-        .rounded(px(6.))
-        .px(px(2.))
-        .py(if grouped { px(0.) } else { px(2.) })
+        .rounded(rems(0.375))
+        .px(rems(0.125))
+        .py(if grouped { rems(0.) } else { rems(0.125) })
 }
 
 /// `WorkLogLine`: icon slot, secondary-label text that truncates, trailing parts.
@@ -66,7 +66,7 @@ pub fn work_log_line(
                 .items_center()
                 .gap(WORK_LINE_GAP)
                 .children(glyph.map(|glyph| {
-                    div().w(WORK_ICON_SLOT).h(px(24.)).flex_none().flex().items_center().justify_center().child(glyph)
+                    div().w(WORK_ICON_SLOT).h(rems(1.5)).flex_none().flex().items_center().justify_center().child(glyph)
                 }))
                 .child(div().flex_1().min_w_0().text_color(colors.theme.secondary_label).truncate().child(label)),
         )
@@ -86,14 +86,14 @@ pub fn failed_mark(colors: &ChatColors) -> AnyElement {
 }
 
 /// A disclosure chevron: right when collapsed, down when open, in a 16px box.
-pub fn disclosure(open: bool, size: Pixels, color: Hsla) -> AnyElement {
+pub fn disclosure(open: bool, size: IconSize, color: Hsla) -> AnyElement {
     div()
-        .size(px(16.))
+        .size(rems(1.))
         .flex_none()
         .flex()
         .items_center()
         .justify_center()
-        .child(Icon::new(if open { IconName::ChevronDown } else { IconName::ChevronRight }).size(IconSize::Custom(size)).color(color).stroke(chat_icon_stroke(if open { IconName::ChevronDown } else { IconName::ChevronRight })))
+        .child(Icon::new(if open { IconName::ChevronDown } else { IconName::ChevronRight }).size(size).color(color).stroke(chat_icon_stroke(if open { IconName::ChevronDown } else { IconName::ChevronRight })))
         .into_any_element()
 }
 
@@ -172,13 +172,13 @@ pub fn mix(a: Hsla, b: Hsla, t: f32) -> Hsla {
 pub fn xs_button(id: impl Into<ElementId>, glyph: Option<IconName>, label: Option<SharedString>, color: Hsla, colors: &ChatColors) -> Stateful<Div> {
     div()
         .id(id)
-        .h(px(24.))
+        .h(rems(1.5))
         .flex_none()
         .flex()
         .items_center()
         .gap_1()
         .px(px(if label.is_some() { 7. } else { 6. }))
-        .rounded(px(8.))
+        .rounded(rems(0.5))
         .cursor_pointer()
         .text_size(TEXT_XS.size)
         .text_color(color)
@@ -188,7 +188,7 @@ pub fn xs_button(id: impl Into<ElementId>, glyph: Option<IconName>, label: Optio
 }
 
 /// Diff counts `+A -D` in mono (`DiffStatLabel` inline).
-pub fn diff_stat(additions: u32, deletions: u32, colors: &ChatColors, size: Pixels) -> Div {
+pub fn diff_stat(additions: u32, deletions: u32, colors: &ChatColors, size: impl Into<gpui_kit::AbsoluteLength>) -> Div {
     div()
         .flex()
         .gap_1()

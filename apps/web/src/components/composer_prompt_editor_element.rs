@@ -21,8 +21,8 @@ use gpui_kit::{
 };
 
 use crate::components::chat::composer_theme::{
-    ComposerColors, EDITOR_MAX_HEIGHT, EDITOR_MIN_HEIGHT, MONO_FONT_FAMILY,
-    PROMPT_FONT_SIZE, PROMPT_LINE_HEIGHT, UI_FONT_FAMILY,
+    ComposerColors, EDITOR_MAX_HEIGHT,
+    PROMPT_LINE_HEIGHT, UI_FONT_FAMILY,
 };
 use crate::components::composer_prompt_editor::{ComposerPromptEditor, Doc, DocLine, LineParse};
 use crate::composer_code_languages::{CodeSpan, HighlightCache};
@@ -160,8 +160,8 @@ impl Builder {
         if len == 0 {
             return;
         }
-        let family = if style.mono { MONO_FONT_FAMILY } else { UI_FONT_FAMILY };
-        let mut f = font(family);
+        // The code font follows the Appearance settings (the owner's custom family included).
+        let mut f = if style.mono { crate::appearance_fonts::mono_font(style.weight) } else { font(UI_FONT_FAMILY) };
         f.weight = style.weight;
         f.style = if style.italic { FontStyle::Italic } else { FontStyle::Normal };
         let strikethrough = style.strike.then_some(StrikethroughStyle { thickness: px(1.), color: Some(style.color) });
@@ -230,8 +230,8 @@ fn build_display_line(line: &DocLine, ctx: &BuildCtx<'_>) -> DisplayLine {
     let text = line.parse.text.as_str();
     let base = RunStyle { color: c.foreground, weight: FontWeight::NORMAL, italic: false, strike: false, mono: false };
     let mut b = Builder { text: String::with_capacity(text.len() + 8), runs: Vec::new(), segs: Vec::new(), icons: Vec::new(), code_boxes: Vec::new(), chips: Vec::new() };
-    let mut font_size = PROMPT_FONT_SIZE;
-    let mut line_height = PROMPT_LINE_HEIGHT;
+    let mut font_size = c.prompt_font_size;
+    let mut line_height = c.prompt_line_height;
     let mut quote = false;
     let mut code_block = None;
     let caret_on_line = ctx.focused && ctx.active.is_some();
@@ -884,15 +884,15 @@ impl Element for PromptEditorElement {
                 let run = TextRun { len: placeholder.len(), font: font(UI_FONT_FAMILY), color: colors.placeholder, background_color: None, underline: None, strikethrough: None };
                 let wrapped = window
                     .text_system()
-                    .shape_text(placeholder.clone(), PROMPT_FONT_SIZE, &[run], Some(width), None)
+                    .shape_text(placeholder.clone(), colors.prompt_font_size, &[run], Some(width), None)
                     .ok()
                     .and_then(|mut v| v.pop())
                     .unwrap_or_default();
-                height = height.max(PROMPT_LINE_HEIGHT * (wrapped.wrap_boundaries().len() + 1) as f32);
+                height = height.max(colors.prompt_line_height * (wrapped.wrap_boundaries().len() + 1) as f32);
                 state.placeholder = Some((width, wrapped));
             }
             state.shaped = Some((width, shaped, height));
-            size(width, height.clamp(EDITOR_MIN_HEIGHT, EDITOR_MAX_HEIGHT))
+            size(width, height.clamp(colors.editor_min_height(), colors.r(EDITOR_MAX_HEIGHT)))
         });
         (layout_id, state)
     }
@@ -1099,12 +1099,12 @@ impl Element for PromptEditorElement {
                 }
             }
             if let Some(placeholder) = prepaint.placeholder.as_ref() {
-                placeholder.paint(origin, PROMPT_LINE_HEIGHT, TextAlign::Left, None, window, cx).ok();
+                placeholder.paint(origin, c.prompt_line_height, TextAlign::Left, None, window, cx).ok();
             }
             if prepaint.focused && selection.is_empty() && !disabled {
                 if let Some(p) = layout.position_for_offset(doc, cursor) {
                     let lh = layout.row_height_at(doc, cursor);
-                    let font_size = layout.lines.get(doc.line_at(cursor)).map_or(PROMPT_FONT_SIZE, |l| l.display.font_size);
+                    let font_size = layout.lines.get(doc.line_at(cursor)).map_or(c.prompt_font_size, |l| l.display.font_size);
                     let h = font_size * 1.25;
                     let caret = Bounds::new(origin + point(p.x, p.y + (lh - h) / 2.), size(px(1.5), h));
                     window.paint_quad(fill(caret, c.foreground));

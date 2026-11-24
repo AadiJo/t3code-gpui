@@ -12,6 +12,7 @@ use gpui_kit::*;
 
 use crate::components::app_sidebar_layout::{AppSidebarLayout, LayoutEvent, PanelToggle, TitlebarPlatform};
 use crate::components::chat::composer::ChatComposer;
+use crate::components::chat::thread_details_panel::ThreadDetailsMode;
 use crate::components::no_active_thread_state::NoActiveThreadState;
 use crate::components::persistent_thread_terminals::PersistentThreadTerminals;
 use crate::components::chat::expanded_image_dialog::{ExpandedImageDialog, ExpandedImageEvent, ExpandedImageItem};
@@ -100,6 +101,14 @@ pub enum DataSource {
     Fixtures(FixtureStore),
     /// The saved environments' stores and sessions. Needs the connection runtime.
     Live,
+}
+
+/// The details card's mode and each mode's open state.
+#[derive(Clone, Copy, Debug)]
+struct DetailsVisibility {
+    mode: ThreadDetailsMode,
+    inline_open: bool,
+    popover_open: bool,
 }
 
 /// How to build the window: which data, which titlebar and where state lives.
@@ -271,8 +280,9 @@ pub struct AppRoot {
     expanded: Option<(Entity<ExpandedImageDialog>, Subscription)>,
     /// The Usage page in the large route modal, while its route shows.
     usage: Option<(Entity<UsageRoute>, Subscription)>,
-    /// The thread details card is open (a popover; the toggle stays unpressed).
-    details_open: bool,
+    /// The thread details card: docked or popover by the canvas width, each with its own
+    /// open state (`rightPanelStore` visibility: docked starts open, the popover closed).
+    details: DetailsVisibility,
     /// The thread under the main pane; it stays shown under modal routes.
     shown: Option<ThreadTarget>,
     focus: FocusHandle,
@@ -388,7 +398,7 @@ impl AppRoot {
             terminals,
             expanded: None,
             usage: None,
-            details_open: false,
+            details: DetailsVisibility { mode: ThreadDetailsMode::Popover, inline_open: true, popover_open: false },
             shown: None,
             focus: cx.focus_handle(),
             _subscriptions: subscriptions,
@@ -727,7 +737,14 @@ impl AppRoot {
                 let script = script.clone();
                 self.right_panel.update(cx, |panel, cx| panel.run_script(script, cx));
             }
-            ThreadRouteEvent::DetailsClosed => self.details_open = false,
+            ThreadRouteEvent::DetailsClosed => {
+                self.details.popover_open = false;
+                self.apply_details(cx);
+            }
+            ThreadRouteEvent::DetailsModeChanged(mode) => {
+                self.details.mode = *mode;
+                self.apply_details(cx);
+            }
             ThreadRouteEvent::Navigate(path) => self.navigate(Route::parse(path), cx),
             ThreadRouteEvent::OpenLinkedItems => self.right_panel.update(cx, |panel, cx| panel.open_linked_items(cx)),
             ThreadRouteEvent::OpenBrowser(tab) => {
@@ -737,19 +754,31 @@ impl AppRoot {
         }
     }
 
-    /// Opens or closes the thread details card. It opens as a popover, so
-    /// the titlebar toggle does not draw pressed (fork `12be669d98`).
+    /// Opens or closes the thread details card in its current mode.
     fn toggle_details(&mut self, cx: &mut Context<Self>) {
         if self.shown.is_none() {
             return;
         }
-        self.details_open = !self.details_open;
-        let open = self.details_open;
-        self.thread_view.update(cx, |view, cx| view.set_details_open(open, cx));
-        let pressed = crate::components::chat::thread_details_panel::thread_details_toggle_pressed(
-            crate::components::chat::thread_details_panel::ThreadDetailsMode::Popover,
-            open,
-        );
+        let open = match self.details.mode {
+            ThreadDetailsMode::Inline => &mut self.details.inline_open,
+            ThreadDetailsMode::Popover => &mut self.details.popover_open,
+        };
+        *open = !*open;
+        self.apply_details(cx);
+    }
+
+    /// Shows the card when its mode's state is open. Only the docked card presses the
+    /// titlebar toggle (fork `12be669d98`).
+    fn apply_details(&mut self, cx: &mut Context<Self>) {
+        let mode = self.details.mode;
+        let open = match mode {
+            ThreadDetailsMode::Inline => self.details.inline_open,
+            ThreadDetailsMode::Popover => self.details.popover_open,
+        };
+        if self.thread_view.read(cx).details_open() != open {
+            self.thread_view.update(cx, |view, cx| view.set_details_open(open, cx));
+        }
+        let pressed = crate::components::chat::thread_details_panel::thread_details_toggle_pressed(mode, open);
         self.layout.update(cx, |layout, cx| layout.set_details_open(pressed, cx));
     }
 
