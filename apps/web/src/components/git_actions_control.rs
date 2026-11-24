@@ -808,13 +808,25 @@ impl GitActionsControl {
                             .flex()
                             .justify_end()
                             .font(mono_font(weight::NORMAL))
+                            // The total reads `+N/-N`; the per-file counts keep their spaces.
                             .child(div().text_color(f.diff_addition_foreground).child(format!("+{}", format_diff_count(selected.iter().map(|f| f.insertions).sum()))))
-                            .child(div().text_color(muted).child(" / "))
+                            .child(div().text_color(muted).child("/"))
                             .child(div().text_color(f.diff_deletion_foreground).child(format!("-{}", format_diff_count(selected.iter().map(|f| f.deletions).sum())))),
                     )
                     .into_any_element()
             });
         let surface = DialogSurface::new(t!("Commit changes"))
+            .bare_footer()
+            .on_close({
+                let this = cx.weak_entity();
+                move |_, cx| {
+                    this.update(cx, |this, cx| {
+                        this.commit_dialog = None;
+                        cx.notify();
+                    })
+                    .ok();
+                }
+            })
             .description(t!("Review and confirm your commit. Leave the message blank to auto-generate one."))
             .child(summary)
             .child(
