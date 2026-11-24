@@ -6,6 +6,7 @@
 
 pub mod app_data;
 pub mod palette_source;
+pub mod reference_server;
 pub mod reference_world;
 mod thread_actions;
 pub mod timelines;
@@ -600,6 +601,14 @@ impl FixtureStore {
             self.append_user(key, &prompt, InputIntent::Prompt);
             self.start_reply(key, &prompt, cx);
             cx.emit(FixtureEvent::ThreadChanged(ThreadTarget::Server(key.clone())));
+        }
+    }
+
+    /// Marks the thread titled `title` read or unread (the reference capture's browser opened
+    /// threads as it went).
+    pub fn set_read(&mut self, title: &str, read: bool) {
+        if let Some(key) = self.thread_by_title(title) {
+            self.set_flags(&key, |t| t.last_visited_at = Some(reference_world::visited_at(t, read)));
         }
     }
 

@@ -18,11 +18,29 @@ pub struct FixturePaletteSource {
     snapshot: RefCell<Option<SidebarSnapshot>>,
     lists: RefCell<Option<Arc<FixtureSource>>>,
     active: RefCell<Option<ThreadKey>>,
+    features: &'static [PaletteFeature],
 }
 
+/// What the showcase and audit worlds offer.
+const FIXTURE_FEATURES: &[PaletteFeature] = &[PaletteFeature::ProjectSettings, PaletteFeature::PullRequests, PaletteFeature::Issues];
+
+/// What the Mac reference's palette offered (its root list in `palette-root`).
+const REFERENCE_FEATURES: &[PaletteFeature] = &[
+    PaletteFeature::Triage,
+    PaletteFeature::LinkPullRequest,
+    PaletteFeature::RestartAgentSession,
+    PaletteFeature::NewProject,
+    PaletteFeature::PullRequests,
+    PaletteFeature::Issues,
+    PaletteFeature::UseInAnotherApp,
+    PaletteFeature::ProjectSettings,
+];
+
 impl FixturePaletteSource {
-    pub fn new(snapshot: SidebarSnapshot) -> Self {
-        Self { snapshot: RefCell::new(Some(snapshot)), lists: RefCell::new(None), active: RefCell::new(None) }
+    /// `reference` offers what the Mac reference's palette offered.
+    pub fn new(snapshot: SidebarSnapshot, reference: bool) -> Self {
+        let features = if reference { REFERENCE_FEATURES } else { FIXTURE_FEATURES };
+        Self { snapshot: RefCell::new(Some(snapshot)), lists: RefCell::new(None), active: RefCell::new(None), features }
     }
 
     /// The store's threads or projects changed.
@@ -86,7 +104,7 @@ impl CommandPaletteSource for FixturePaletteSource {
     }
 
     fn supports(&self, feature: PaletteFeature) -> bool {
-        matches!(feature, PaletteFeature::ProjectSettings | PaletteFeature::PullRequests | PaletteFeature::Issues)
+        self.features.contains(&feature)
     }
 
     fn now_ms(&self) -> i64 {

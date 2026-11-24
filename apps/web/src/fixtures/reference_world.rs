@@ -1,4 +1,4 @@
-//! The world the owner's Mac reference captures were taken in (`artifacts/macparity/ref`): six
+//! The world the owner's Mac reference captures were taken in (recorded in `scripts/parity/expected/mac`): six
 //! projects (three checkouts of `example/t3code`), ten threads, and every thread's real
 //! projection as the reference server held it. `reference_world.json` is extracted from that
 //! server's database by `scripts/parity/mac_world.py`; each timeline goes through the live
@@ -22,13 +22,19 @@ use crate::session_logic::{TimelineMapper, pending_questions, timeline_input};
 
 const WORLD: &str = include_str!("reference_world.json");
 
-/// The environment label the captures' hover cards and details card show. The real one is a
-/// machine name, which stays out of the repo; the Mac comparison excludes the label.
+/// The environment label the captures' hover cards and details card show: the reference server
+/// runs under this invented machine name.
 pub const ENVIRONMENT_LABEL: &str = "Scenario";
 
-/// Threads the capture browser had opened since their last run (titles drawn at weight 400).
-const READ: [&str; 5] =
-    ["Sync engine audit", "Port sidebar virtualization to GPUI", "Rotate relay TLS certificates", "Migrate CI runners to arm64", "Profile the event sink"];
+/// Threads the capture browser had opened since their last run when the capture began (titles
+/// drawn at weight 400); threads it opens later turn read through `FixtureStore::set_read`.
+const READ: [&str; 3] = ["Sync engine audit", "Rotate relay TLS certificates", "Profile the event sink"];
+
+/// When a row was last visited: just after its last update when read, before its run otherwise.
+pub fn visited_at(row: &SidebarThread, read: bool) -> TimestampMs {
+    let requested = row.latest_run.as_ref().and_then(|run| run.requested_at).unwrap_or(row.created_at);
+    if read { row.updated_at.minus(-1) } else { requested.minus(TimestampMs::MINUTE) }
+}
 
 /// The thread every reference view opens on.
 pub const ACTIVE_TITLE: &str = "Sync engine audit";
@@ -257,7 +263,7 @@ pub fn build(env: &EnvironmentId) -> ReferenceWorld {
             let title: SharedString = app.title.to_string().into();
             let read = READ.contains(&title.as_ref());
             let working = completed.is_none();
-            let row = SidebarThread {
+            let mut row = SidebarThread {
                 key: key.clone(),
                 project_id: ProjectId(thread.project_id.clone().into()),
                 title: title.clone(),
@@ -271,10 +277,11 @@ pub fn build(env: &EnvironmentId) -> ReferenceWorld {
                 latest_run: Some(LatestRun { status, requested_at: Some(requested), started_at: Some(requested), completed_at: completed }),
                 has_pending_approvals: approvals,
                 has_pending_user_input: input,
-                last_visited_at: Some(if read { updated.minus(-1) } else { requested.minus(TimestampMs::MINUTE) }),
+                last_visited_at: None,
                 provider: Some(replay.clone()),
                 ..super::blank_thread(&key)
             };
+            row.last_visited_at = Some(visited_at(&row, read));
             let model = projection.runs.iter().max_by_key(|run| run.ordinal).map(|run| run.model_selection.model.to_string());
             let slug: SharedString = model.clone().unwrap_or_default().into();
             let supervised = app.runtime_mode == t3code_contracts::RuntimeMode::ApprovalRequired;
@@ -319,6 +326,22 @@ pub fn build(env: &EnvironmentId) -> ReferenceWorld {
         older_settled: Default::default(),
     };
     ReferenceWorld { snapshot, threads, checkout: Arc::new(world.workspace) }
+}
+
+/// The reference server's projects as its shell snapshot lists them (the Projects settings page).
+pub fn projects() -> Vec<t3code_contracts::Project> {
+    let world: World = serde_json::from_str(WORLD).expect("reference_world.json parses");
+    world
+        .projects
+        .into_iter()
+        .map(|p| {
+            serde_json::from_value(serde_json::json!({
+                "id": p.id, "title": p.title, "workspaceRoot": p.workspace_root, "defaultModelSelection": null,
+                "scripts": [], "createdAt": p.created_at, "updatedAt": p.updated_at, "deletedAt": null
+            }))
+            .expect("reference project decodes")
+        })
+        .collect()
 }
 
 /// The Replay agent's display name for a scenario model id (`rich-replay-agent.ts`).

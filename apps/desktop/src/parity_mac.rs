@@ -1,5 +1,5 @@
 //! The owner profile of `parity-shot`: every reference view of the owner's Mac capture
-//! (`artifacts/macparity/ref`) as a scene, rendered the way the owner's Mac shows the app.
+//! (`expected/mac` under `scripts/parity`) as a scene, rendered the way the owner's Mac shows the app.
 //!
 //! Usage: `parity-shot --mac <out-dir> [scene-filter]`, `parity-shot --list-mac`.
 //! - `PARITY_CLIENT_SETTINGS=<client-settings.json>` (required): the install's client settings,
@@ -7,7 +7,7 @@
 //! - `PARITY_LAYOUT=<file|dir>`: the saved layout the app imports from the install's
 //!   localStorage: a JSON object of localStorage keys, or a Chromium `Local Storage/leveldb`
 //!   directory, read from a copy as the first-launch import reads it. It gives the sidebar width
-//!   and open state and the Working, Snoozed and Settled shelf states.
+//!   and open state, the Working, Snoozed and Settled shelf states, and the theme and its halves.
 //! - `PARITY_SIZE=<w>x<h>` (default 1710x1074, the owner's maximized window), device scale 2,
 //!   the macOS titlebar, dark appearance.
 //!
@@ -36,7 +36,8 @@ use t3code_web::components::sidebar_logic::SidebarListEntry;
 use t3code_web::connection::{ConnectionRuntime, RuntimeConfig};
 use t3code_web::desktop_notifications::NotificationInbox;
 use t3code_web::fixtures::FixtureStore;
-use t3code_web::hooks::use_settings::ClientSettingsStore;
+use t3code_client_runtime::environment::EnvironmentId;
+use t3code_web::hooks::use_settings::{ClientSettingsStore, ServerSettingsStore};
 use t3code_web::hooks::use_theme::ThemeStore;
 use t3code_web::router::Route;
 use t3code_web::shortcuts::commands::{
@@ -90,7 +91,7 @@ enum Step {
     Navigate(&'static str),
     /// Opens the thread with this title, as clicking its row does.
     Thread(&'static str),
-    /// Gives the settings modal the server pages over the fixture environment.
+    /// Gives the settings modal the server pages over the reference server.
     ServerPages,
     /// Changes app state directly (a setting the capture turned on).
     Run(fn(&mut App)),
@@ -238,8 +239,6 @@ const SCENES: &[Scene] = &[
     Scene { name: "diff-stacked", steps: &[Dispatch(|| Box::new(ToggleDiff)), Wait(2500), Root(reveal_math), Wait(1500)] },
     Scene { name: "diff-split", steps: &[Dispatch(|| Box::new(ToggleDiff)), Wait(2500), Root(reveal_math), Wait(800), Click("diff-split", CENTER), Wait(1500)] },
     Scene { name: "diff-scope-menu", steps: &[Dispatch(|| Box::new(ToggleDiff)), Wait(2500), Click("diff-scope", CENTER), Wait(400)] },
-    // The capture's "Diff options" click missed: its image shows the Files tab on src/math.ts.
-    Scene { name: "diff-options-menu", steps: &[Dispatch(|| Box::new(ToggleRightPanel)), Wait(1000), Root(|r, w, cx| open_file(r, "src/math.ts", w, cx)), Wait(1800)] },
     Scene { name: "files-tree", steps: &[Dispatch(|| Box::new(ToggleRightPanel)), Wait(1000), Root(open_files), Wait(2000)] },
     Scene { name: "files-text", steps: &[Dispatch(|| Box::new(ToggleRightPanel)), Wait(1000), Root(|r, w, cx| open_file(r, "src/math.ts", w, cx)), Wait(1800)] },
     Scene { name: "files-markdown", steps: &[Dispatch(|| Box::new(ToggleRightPanel)), Wait(1000), Root(|r, w, cx| open_file(r, "README.md", w, cx)), Wait(1800)] },
@@ -255,7 +254,40 @@ const SCENES: &[Scene] = &[
     Scene { name: "settings-keybindings-recording", steps: &[CARD, Navigate("/settings/keybindings"), Wait(300), Settings(record_command_palette), Wait(1000)] },
     Scene { name: "settings-task-editor", steps: &[CARD, Navigate("/settings/scheduled-tasks"), ServerPages, Wait(300), Click("task-new", CENTER), Wait(1500)] },
     Scene { name: "settings-connections-add", steps: &[CARD, Navigate("/settings/connections"), Wait(300), Click("add-environment", CENTER), Wait(1500)] },
+    Scene { name: "settings-connections-saved", steps: &[CARD, Run(saved_environment), Navigate("/settings/connections"), Wait(300)] },
+    Scene {
+        name: "settings-connections-routes",
+        steps: &[CARD, Run(saved_environment), Navigate("/settings/connections"), Wait(300), Click(SAVED_ROUTES, CENTER), Wait(400)],
+    },
+    Scene {
+        name: "settings-connections-menu",
+        steps: &[
+            CARD,
+            Run(saved_environment),
+            Navigate("/settings/connections"),
+            Wait(300),
+            Click(SAVED_ROUTES, CENTER),
+            Wait(400),
+            Click(SAVED_MENU, CENTER),
+            Wait(400),
+        ],
+    },
 ];
+
+/// The saved environment the Mac reference paired: a second server labelled "Build server" on
+/// this machine, reached over one direct route.
+const SAVED_ENVIRONMENT: &str = "env-build";
+const SAVED_ROUTES: &str = "env-routes-toggle-env-build";
+const SAVED_MENU: &str = "env-more-env-build";
+
+/// Adds the saved environment to the connection catalog the settings page lists.
+fn saved_environment(cx: &mut App) {
+    let saved = t3code_web::scenes::connections::saved_environment(SAVED_ENVIRONMENT, "Build server", "http://127.0.0.1:20284/", "0.1.11");
+    ConnectionRuntime::state(cx).update(cx, |state, cx| {
+        state.environments = vec![saved];
+        cx.notify();
+    });
+}
 
 /// Settings pages the capture also scrolled: (view, pages). Page `i` scrolls the content by
 /// `i * (viewport - 60)`, as the capture did.
@@ -274,41 +306,45 @@ const SCROLLED: &[(&str, usize)] = &[
     ("settings-voice", 1),
 ];
 
-/// Reference views no scene reaches, and why.
-pub const UNREACHABLE: &[(&str, &str)] = &[
-    ("settings-connections-saved", "needs a second paired server; fixture windows have no saved environment in the connection catalog"),
-    ("settings-connections-routes", "needs a saved environment (see settings-connections-saved)"),
-    ("settings-connections-menu", "needs a saved environment (see settings-connections-saved)"),
-];
-
 /// When each reference view was captured (epoch seconds), so relative times read the same.
 const CAPTURED_AT: &[(&str, i64)] = &[
-    ("app-home", 1795492500), ("app-window", 1795492494), ("branch-picker", 1795493199), ("commit-dialog", 1795493213),
-    ("composer-empty", 1795492605), ("composer-markdown", 1795492614), ("composer-mention", 1795492637),
-    ("composer-model-picker", 1795492622), ("composer-slash", 1795492629), ("details-items-menu", 1795493545),
-    ("details", 1795493175), ("diff-collapsed", 1795493157), ("diff-options-menu", 1795492862), ("diff-scope-menu", 1795493165),
-    ("diff-split", 1795493162), ("diff-stacked", 1795493159), ("files-goto", 1795493070), ("files-image", 1795493067),
-    ("files-markdown", 1795493003), ("files-search", 1795493074), ("files-text", 1795492939), ("files-tree", 1795492905),
-    ("git-menu", 1795493188), ("issues", 1795493114), ("open-in-editor-menu", 1795493178), ("palette-empty", 1795492581),
-    ("palette-messages", 1795493436), ("palette-nested-project", 1795492589), ("palette-nested-theme", 1795492599),
-    ("palette-query-sync", 1795493426), ("palette-query", 1795492573), ("palette-root", 1795492564), ("pull-requests", 1795493104),
-    ("right-panel-launcher", 1795492719), ("settings-about", 1795492348), ("settings-access", 1795492440),
-    ("settings-appearance", 1795492266), ("settings-archived", 1795492338), ("settings-beta", 1795492488),
-    ("settings-browser", 1795492413), ("settings-chat", 1795492277), ("settings-connections-add", 1795493261),
-    ("settings-connections", 1795492431), ("settings-devices", 1795492422), ("settings-diffs", 1795492286),
-    ("settings-general", 1795492257), ("settings-integrations", 1795492469), ("settings-keybindings-recording", 1795493245),
-    ("settings-keybindings", 1795492295), ("settings-labs", 1795492329), ("settings-maintenance", 1795492450),
-    ("settings-projects", 1795492395), ("settings-providers-add", 1795493238), ("settings-providers-codex", 1795493221),
-    ("settings-providers-replay", 1795493229), ("settings-providers", 1795492357), ("settings-scheduled-tasks", 1795492404),
-    ("settings-secrets", 1795492459), ("settings-snap-shot", 1795492320), ("settings-source-control", 1795492377),
-    ("settings-storage", 1795492478), ("settings-task-editor", 1795493252), ("settings-threads", 1795492367),
-    ("settings-voice", 1795492310), ("settings-worktrees", 1795492386), ("sidebar-collapsed", 1795493269),
-    ("sidebar-hover", 1795492522), ("sidebar-inbox-inbox-on", 1795493312), ("sidebar-search", 1795492507),
-    ("sidebar-thread-menu", 1795492514), ("terminal-close-confirm", 1795492708), ("terminal-menu", 1795492706),
-    ("terminal-two", 1795492704), ("thread-actions-menu", 1795493084), ("timeline-approval", 1795492663),
-    ("timeline-bottom", 1795492652), ("timeline-code", 1795492691), ("timeline-failed", 1795493289),
-    ("timeline-question", 1795492673), ("timeline-todo", 1795492683), ("timeline-top", 1795492645),
-    ("timeline-working", 1795493279), ("usage", 1795493095),
+    ("app-home", 1795502946), ("app-window", 1795502940), ("branch-picker", 1795503406), ("commit-dialog", 1795503417),
+    ("composer-empty", 1795503051), ("composer-markdown", 1795503059), ("composer-mention", 1795503083),
+    ("composer-model-picker", 1795503067), ("composer-slash", 1795503074), ("details", 1795503383),
+    ("details-items-menu", 1795503489), ("diff-collapsed", 1795503366), ("diff-scope-menu", 1795503373),
+    ("diff-split", 1795503371), ("diff-stacked", 1795503368), ("files-goto", 1795503281), ("files-image", 1795503277),
+    ("files-markdown", 1795503243), ("files-search", 1795503285), ("files-text", 1795503209), ("files-tree", 1795503175),
+    ("git-menu", 1795503395), ("issues", 1795503324), ("open-in-editor-menu", 1795503386), ("palette-empty", 1795503026),
+    ("palette-messages", 1795503481), ("palette-nested-project", 1795503034), ("palette-nested-theme", 1795503044),
+    ("palette-query", 1795503018), ("palette-query-sync", 1795503470), ("palette-root", 1795503009),
+    ("pull-requests", 1795503315), ("right-panel-launcher", 1795503163), ("settings-about", 1795502790),
+    ("settings-access", 1795502884), ("settings-appearance", 1795502708), ("settings-archived", 1795502781),
+    ("settings-beta", 1795502934), ("settings-browser", 1795502857), ("settings-chat", 1795502720),
+    ("settings-connections", 1795502876), ("settings-connections-add", 1795503462), ("settings-connections-menu", 1795503571),
+    ("settings-connections-routes", 1795503569), ("settings-connections-saved", 1795503567), ("settings-devices", 1795502867),
+    ("settings-diffs", 1795502728), ("settings-general", 1795502697), ("settings-integrations", 1795502914),
+    ("settings-keybindings", 1795502738), ("settings-keybindings-recording", 1795503447), ("settings-labs", 1795502773),
+    ("settings-maintenance", 1795502893), ("settings-projects", 1795502839), ("settings-providers", 1795502799),
+    ("settings-providers-add", 1795503439), ("settings-providers-codex", 1795503424), ("settings-providers-replay", 1795503432),
+    ("settings-scheduled-tasks", 1795502848), ("settings-secrets", 1795502904), ("settings-snap-shot", 1795502764),
+    ("settings-source-control", 1795502820), ("settings-storage", 1795502924), ("settings-task-editor", 1795503454),
+    ("settings-threads", 1795502809), ("settings-voice", 1795502754), ("settings-worktrees", 1795502830),
+    ("sidebar-collapsed", 1795503496), ("sidebar-hover", 1795502966), ("sidebar-inbox-inbox-on", 1795503537),
+    ("sidebar-search", 1795502953), ("sidebar-thread-menu", 1795502960), ("terminal-close-confirm", 1795503153),
+    ("terminal-menu", 1795503151), ("terminal-two", 1795503149), ("thread-actions-menu", 1795503296),
+    ("timeline-approval", 1795503108), ("timeline-bottom", 1795503098), ("timeline-code", 1795503135),
+    ("timeline-failed", 1795503516), ("timeline-question", 1795503118), ("timeline-todo", 1795503128),
+    ("timeline-top", 1795503091), ("timeline-working", 1795503505), ("usage", 1795503305),
+];
+
+/// Threads the capture browser had read, and from when (epoch seconds; 0 from the start): a
+/// thread turns read once a view opens it, so later views draw it at weight 400.
+const READ_SINCE: &[(&str, i64)] = &[
+    ("Sync engine audit", 0),
+    ("Rotate relay TLS certificates", 0),
+    ("Profile the event sink", 0),
+    ("Port sidebar virtualization to GPUI", 1795503149),
+    ("Migrate CI runners to arm64", 1795503537),
 ];
 
 /// The shown thread's scoped key (`environmentId:threadId`), as the right panel keys it.
@@ -383,7 +419,12 @@ struct Layout {
     working: Option<bool>,
     snoozed: Option<bool>,
     settled: Option<bool>,
+    /// The web app's own values of the theme keys, as the first-launch import copies them.
+    theme: Vec<(&'static str, Value)>,
 }
+
+/// The localStorage theme keys the app reads (`hooks::use_theme`).
+const THEME_KEYS: [&str; 2] = [t3code_web::hooks::use_theme::THEME_STORAGE_KEY, t3code_web::hooks::use_theme::THEME_HALVES_STORAGE_KEY];
 
 impl Layout {
     /// Reads `PARITY_LAYOUT`: a JSON object of localStorage keys (or `{ origin: { key: value } }`),
@@ -409,6 +450,13 @@ impl Layout {
             working: flag("t3code:sidebar:working-expanded"),
             snoozed: flag("t3code:sidebar:snoozed-expanded"),
             settled: flag("t3code:sidebar:settled-expanded"),
+            theme: THEME_KEYS
+                .into_iter()
+                .filter_map(|key| {
+                    let raw = text(key)?;
+                    Some((key, serde_json::from_str(&raw).unwrap_or(Value::String(raw))))
+                })
+                .collect(),
         })
     }
 }
@@ -498,6 +546,10 @@ fn render(name: &str, steps: &[Step], profile: &Profile, out: &Path, data: &Path
     cx.update(|cx| {
         t3code_web::init(cx);
         ClientSettingsStore::import_electron(&profile.settings, cx)?;
+        for (key, value) in &profile.layout.theme {
+            t3code_web::client_persistence_storage::LocalStorage::set(cx, key, Some(value));
+        }
+        ThemeStore::init(cx);
         // The owner's Mac runs in dark appearance; "system" would follow the headless platform.
         ThemeStore::set_appearance_mode(ThemeMode::Dark, cx);
         anyhow::Ok(())
@@ -514,6 +566,9 @@ fn render(name: &str, steps: &[Step], profile: &Profile, out: &Path, data: &Path
     let mut store = FixtureStore::reference();
     let now = captured_at(name).unwrap_or_else(|| store.snapshot(None).now.0);
     store.set_now(now);
+    for (title, since) in READ_SINCE {
+        store.set_read(title, since * 1000 <= now);
+    }
     let threads: HashMap<String, ThreadKey> =
         store.snapshot(None).threads.iter().map(|t| (t.title.to_string(), t.key.clone())).collect();
     let active = store
@@ -566,13 +621,13 @@ fn render(name: &str, steps: &[Step], profile: &Profile, out: &Path, data: &Path
             })
         });
         NotificationInbox::set_items(inbox.iter().filter(|n| !n.read).cloned().collect(), cx);
-        if name.starts_with("settings-") {
-            t3code_web::scenes::settings::seed_fixture(cx);
-        }
+        // The reference server's config (providers, settings, keybindings) for every page that reads it.
+        let env = t3code_web::fixtures::fixture_environment();
+        ServerSettingsStore::insert_fixture(EnvironmentId::from(env.0.as_ref()), t3code_web::fixtures::reference_server::config(&env), cx);
     });
     frame(&mut cx, window);
-    // The capture leaves the mouse over empty space near the bottom right before each view.
-    let rest = point(px(width - 150.), px(height - 40.));
+    // The capture rests the mouse at 64% across and halfway down before each view (`fresh()`).
+    let rest = point(px(width * 0.64), px(height * 0.5));
     mouse(&mut cx, window, rest, None);
     frame(&mut cx, window);
 
@@ -636,7 +691,7 @@ fn render(name: &str, steps: &[Step], profile: &Profile, out: &Path, data: &Path
             }
             ServerPages => cx.update(|cx| {
                 if let Some(settings) = shell.read(cx).settings().cloned() {
-                    let (model, _) = t3code_web::scenes::settings_server::fixture_model(cx);
+                    let model = t3code_web::fixtures::reference_server::model(&t3code_web::fixtures::fixture_environment(), cx);
                     let pages = cx.new(|_| t3code_web::components::settings::server_settings_pages::ServerSettingsPages::new(model));
                     settings.update(cx, |s, cx| s.set_server_pages(pages, cx));
                 }
@@ -675,8 +730,9 @@ pub fn main(mut args: impl Iterator<Item = String>) -> anyhow::Result<()> {
         Err(_) => (1710., 1074.),
     };
     eprintln!(
-        "owner profile: {}x{}, sidebar width {:?}, open {:?}, shelves working {:?} snoozed {:?} settled {:?}",
-        size.0, size.1, layout.sidebar_width, layout.sidebar_open, layout.working, layout.snoozed, layout.settled
+        "owner profile: {}x{}, sidebar width {:?}, open {:?}, shelves working {:?} snoozed {:?} settled {:?}, theme keys {:?}",
+        size.0, size.1, layout.sidebar_width, layout.sidebar_open, layout.working, layout.snoozed, layout.settled,
+        layout.theme.iter().map(|(k, _)| *k).collect::<Vec<_>>()
     );
     let profile = Profile { size, settings, layout };
     std::fs::create_dir_all(&out)?;

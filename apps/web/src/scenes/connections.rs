@@ -124,6 +124,19 @@ pub fn fixture_environments() -> Vec<EnvironmentState> {
     vec![connected, connecting, pending, failing, disabled]
 }
 
+/// One saved environment reached over a single direct route, connected: what Settings shows
+/// after pairing a server at `url` (the Mac reference's second server).
+pub fn saved_environment(env: &str, label: &str, url: &str, server_version: &str) -> EnvironmentState {
+    let route = bearer(env, label, url, false);
+    let active = t3code_client_runtime::connection::routes::route_id(&route.target).to_owned();
+    EnvironmentState {
+        entry: entry(env, label, vec![route], true),
+        status: Some(ConnectionStatus { generation: 1, active_route_id: Some(active), ..status(ConnectionPhase::Connected) }),
+        latency: None,
+        server_version: Some(server_version.into()),
+    }
+}
+
 fn account() -> CloudAccount {
     CloudAccount {
         user_id: "user_fixture".into(),

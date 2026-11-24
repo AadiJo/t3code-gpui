@@ -12,9 +12,10 @@ fill colour.
 Mac capture and writes `expected/mac/<view>.json`: the elements it judges and the values
 measured from the reference image. Only numbers, boxes, font strings and fixture labels are
 written. Any element whose text could name the machine (absolute paths, the user, host names,
-`PARITY_SCRUB=word,word`) is dropped, and in the terminal views every text element is dropped
-and only geometry kept, since a terminal prompt shows the user and host. Scroll pages
-(`<view>.scroll-<n>.png`) have no element JSON; they get side-by-sides but are not judged.
+`PARITY_SCRUB=word,word`) or a device on it (the entries of a microphone, camera, speaker or
+display list) is dropped, and in the terminal views every text element is dropped and only
+geometry kept, since a terminal prompt shows the user and host. Scroll pages
+(`<view>.scroll-<n>`) are views like any other when the capture saved their element JSON.
 
 `compare` finds each reference text in the port image (best ink match within 24px of where the
 reference has it), measures it there, and writes `report.md` (per scene pass and fail, every
@@ -22,6 +23,7 @@ failing element with both values, grouped by cause and area), `results.json` and
 """
 import getpass
 import json
+import math
 import os
 import re
 import socket
@@ -79,6 +81,12 @@ def ink_mask(im, x0, y0, x1, y1, bg=None):
         return None, None, (x0, y0)
     bg = mode_colour(region) if bg is None else bg
     mask = np.abs(region - bg).max(axis=2) > INK
+    # A column or row inked across the whole region is an edge (a panel border, a divider) that
+    # the region reaches, not text.
+    if mask.shape[0] >= 8:
+        mask[:, mask.mean(axis=0) >= 0.9] = False
+    if mask.shape[1] >= 8:
+        mask[mask.mean(axis=1) >= 0.9, :] = False
     return mask, bg, (x0, y0)
 
 
@@ -119,13 +127,18 @@ def ncc(a, b):
     return (a * b).sum(axis=-1) / den
 
 
+TINY = 64  # device px²: an ink box this small (a middle dot, a period) correlates with any glyph
+TINY_SEARCH = 6  # so it is searched for only this close to its place
+
+
 def find_offset(ref_patch, port_im, x0, y0, bg):
     """The (dx, dy) in device px where the port's ink best matches the reference text's ink
-    (`ref_patch`, ink levels at (x0, y0)), within SEARCH; None when nothing near looks like it.
-    Column profiles find candidates (tolerant of a slightly wider or narrower text); a 2D
-    correlation of the ink picks among them."""
+    (`ref_patch`, ink levels at (x0, y0)), within SEARCH (TINY_SEARCH for a tiny patch); None
+    when nothing near looks like it. Column profiles find candidates (tolerant of a slightly
+    wider or narrower text); a 2D correlation of the ink picks among them."""
     h, w = ref_patch.shape
-    area, (ox, oy) = ink_level(port_im, x0 - SEARCH, y0 - SEARCH, x0 + w + SEARCH, y0 + h + SEARCH, bg)
+    search = TINY_SEARCH if h * w <= TINY else SEARCH
+    area, (ox, oy) = ink_level(port_im, x0 - search, y0 - search, x0 + w + search, y0 + h + search, bg)
     if area.shape[0] < h or area.shape[1] < w:
         return None
     ref_cols = ref_patch.sum(axis=0)
@@ -190,7 +203,11 @@ def scrub_words():
     return {w for w in words if len(w) >= 3}
 
 
-SENSITIVE = re.compile(r"(^|\s)(/|~/)[^\s]+/|[A-Za-z]:\\\\|\.t3/|@[A-Za-z0-9-]+:|WSL", re.I)
+SENSITIVE = re.compile(r"(^|\s)(/|~/)[^\s]+/|[A-Za-z]:\\\\|\.t3/|@[A-Za-z0-9-]+:|WSL|\.ts\.net\b", re.I)
+# Lists that show the machine's devices by name (Voice settings lists the microphones the browser
+# sees). Their entries are dropped except the generic ones.
+DEVICE_LIST = re.compile(r"aria-label=(Microphones|Cameras|Speakers|Displays|Audio (input|output))", re.I)
+GENERIC_DEVICE = re.compile(r"^(\d+|System default|In use|Default)$")
 
 
 def sensitive(text, words):
@@ -210,6 +227,30 @@ def parse_alpha(colour):
 def border_width(border):
     widths = [float(v) for v in re.findall(r"([\d.]+)px", border)[:4]]
     return max(widths) if widths else 0.0
+
+
+def sides(css):
+    """Top, right, bottom, left of a CSS box shorthand in px (1 to 4 values)."""
+    v = [float(x) for x in re.findall(r"(-?[\d.]+)px", css or "")]
+    if not v:
+        return [0.0] * 4
+    v = (v * 4)[:4] if len(v) == 1 else v
+    return {2: lambda: [v[0], v[1], v[0], v[1]], 3: lambda: [v[0], v[1], v[2], v[1]]}.get(len(v), lambda: v[:4])()
+
+
+def text_box(e):
+    """Where an element's own text is measured: its content box when it draws its own fill or
+    border (a button, a filled row), else None (its box, with a small margin). The margin would
+    take in the element's edge, and its border would read as ink."""
+    if parse_alpha(e.get("bg", "")) < 0.5 and border_width(e.get("border", "")) < 1:
+        return None
+    bt, br, bb, bl = sides(" ".join(e.get("border", "").split()[:4]))
+    pt, pr, pb, pl = sides(e.get("padding", ""))
+    x, y = e["x"] + bl + pl, e["y"] + bt + pt
+    w, h = e["w"] - bl - pl - br - pr, e["h"] - bt - pt - bb - pb
+    if w < 4 or h < 4:
+        x, y, w, h = e["x"] + bl, e["y"] + bt, e["w"] - bl - br, e["h"] - bt - bb
+    return [round(v, 2) for v in (x, y, w, h)]
 
 
 OVERLAYS = ("role=dialog", "role=alertdialog", "role=menu", "data-slot=popover-popup", "data-slot=menu-popup", "role=listbox", "data-command-palette")
@@ -286,13 +327,19 @@ def select(view, data, words):
     sidebar = next((e for e in elements if e["el"].startswith("div[data-slot=sidebar]")), None)
     sidebar_right = sidebar["x"] + sidebar["w"] if sidebar and sidebar["w"] > 40 else 0
     terminal = view.startswith("terminal-")
+    devices = [(d["x"], d["y"], d["w"], d["h"]) for d in elements if DEVICE_LIST.search(d["el"])]
+
+    def device(e, text):
+        cx, cy = e["x"] + e["w"] / 2, e["y"] + e["h"] / 2
+        return not GENERIC_DEVICE.match(text) and any(x <= cx <= x + w and y <= cy <= y + h for x, y, w, h in devices)
+
     texts, boxes, dropped = {}, [], 0
     for e in elements:
         text = (e.get("text") or "").strip()
         if text and "\n" not in text and len(text) <= 160:
             if e["x"] < 0 or e["y"] < 0 or e["x"] + e["w"] > vw or e["y"] + e["h"] > vh:
                 continue
-            if sensitive(text, words) or (terminal and (any(m in e["font"] for m in MONO) or "xterm" in e["el"])):
+            if sensitive(text, words) or device(e, text) or (terminal and (any(m in e["font"] for m in MONO) or "xterm" in e["el"])):
                 dropped += 1
                 continue
             key = (text, round(e["x"]), round(e["y"] + e["h"] / 2))
@@ -310,7 +357,11 @@ def select(view, data, words):
         return base if seen[base] == 1 else f"{base} #{seen[base]}"
 
     for e in sorted(texts, key=lambda e: (e["y"], e["x"])):
-        picked.append({"kind": "text", "name": name("text", e, repr(e["text"].strip()[:48])), "area": area_of(e, overlays, sidebar_right), "font": e["font"], "box": [e["x"], e["y"], e["w"], e["h"]]})
+        el = {"kind": "text", "name": name("text", e, repr(e["text"].strip()[:48])), "area": area_of(e, overlays, sidebar_right), "font": e["font"], "box": [e["x"], e["y"], e["w"], e["h"]]}
+        inner = text_box(e)
+        if inner:
+            el["text_box"] = inner
+        picked.append(el)
     for e in sorted(boxes, key=lambda e: (e["y"], e["x"])):
         picked.append({"kind": "box", "name": name("box", e, f"{round(e['w'])}x{round(e['h'])}"), "area": area_of(e, overlays, sidebar_right), "box": [e["x"], e["y"], e["w"], e["h"]]})
     return picked, dropped
@@ -319,16 +370,23 @@ def select(view, data, words):
 # ---------------------------------------------------------------- measuring
 
 
-def text_region(box):
-    x, y, w, h = (v * SCALE for v in box)
+def text_region(el):
+    """The device-px region a text element's ink is measured in: its content box when it has
+    its own fill or border, else its box with a small margin."""
+    if "text_box" in el:
+        # Rounded inward and one device px more: an edge on a half pixel blends into its neighbour.
+        x, y, w, h = (v * SCALE for v in el["text_box"])
+        return math.ceil(x) + 1, math.ceil(y) + 1, math.floor(x + w) - 1, math.floor(y + h) - 1
+    x, y, w, h = (v * SCALE for v in el["box"])
     return x - 2, y - 1, x + w + 2, y + h + 1
 
 
-def measure_text_at(im, x0, y0, x1, y1, bg=None):
-    """`measure_ink` over a text's region; ink that reaches the region's edge is followed
-    outward while the gaps between glyphs stay under 4 device px (a text wider than its box)."""
+def measure_text_at(im, x0, y0, x1, y1, bg=None, follow=True):
+    """`measure_ink` over a text's region; with `follow`, ink that reaches the region's edge is
+    followed outward while the gaps between glyphs stay under 4 device px (a text wider than its
+    box). Text measured in its content box is not followed: past it lies the element's edge."""
     found = measure_ink(im, x0, y0, x1, y1, bg)
-    if found.get("empty"):
+    if found.get("empty") or not follow:
         return found
     bg = np.array(unhex(found["bg"]), dtype=np.int16)
     pad = max(8, int(0.12 * (x1 - x0)))
@@ -348,12 +406,12 @@ def measure_text_at(im, x0, y0, x1, y1, bg=None):
 
 
 def measure_text_ref(im, el):
-    return measure_text_at(im, *text_region(el["box"]))
+    return measure_text_at(im, *text_region(el), follow="text_box" not in el)
 
 
 def measure_text_port(im, el, ref):
     """The reference text found in the port image: its ink measured where it best matches."""
-    x0, y0, x1, y1 = text_region(el["box"])
+    x0, y0, x1, y1 = text_region(el)
     if ref.get("empty"):
         return measure_ink(im, x0, y0, x1, y1)
     bg = np.array(unhex(ref["bg"]), dtype=np.int16)
@@ -370,7 +428,7 @@ def measure_text_port(im, el, ref):
         found["matched"] = False
         return found
     dx, dy = offset
-    found = measure_text_at(im, x0 + dx, y0 + dy, x1 + dx, y1 + dy, bg)
+    found = measure_text_at(im, x0 + dx, y0 + dy, x1 + dx, y1 + dy, bg, follow="text_box" not in el)
     found["matched"] = True
     return found
 
@@ -544,7 +602,7 @@ def compare(port_dir, out_dir, ref_dir=None):
             ref = el["ref"]
             if el["kind"] == "text":
                 if REF_IMAGE["im"] is None:
-                    port = measure_ink(im, *text_region(el["box"]))
+                    port = measure_ink(im, *text_region(el))
                     port["matched"] = True
                 else:
                     port = measure_text_port(im, el, ref)
@@ -565,6 +623,8 @@ def compare(port_dir, out_dir, ref_dir=None):
         summary.append((view, passed, failed, 0, ""))
         side_by_side(ref_png, port_png, marks, out_dir / "side" / f"{view}.png")
     for png in sorted(port_dir.glob("*.scroll-*.png")):
+        if (EXPECTED / f"{png.stem}.json").exists():
+            continue
         ref_png = Path(ref_dir) / png.name if ref_dir else None
         side_by_side(ref_png, png, [], out_dir / "side" / png.name)
     total_pass = sum(s[1] for s in summary)

@@ -55,7 +55,7 @@ pub struct FixtureData {
 
 impl FixtureData {
     pub fn new(store: FixtureStore, cx: &mut App) -> Rc<Self> {
-        let palette = Rc::new(FixturePaletteSource::new(store.snapshot(None)));
+        let palette = Rc::new(FixturePaletteSource::new(store.snapshot(None), store.is_reference_world()));
         let store = cx.new(|_| store);
         let events = cx.new(|_| DataEvents::default());
         let subscription = {
@@ -334,7 +334,10 @@ impl AppData for FixtureData {
         self.palette.set_active_thread(active.cloned());
     }
 
-    fn pull_request_sources(&self, _: &mut App) -> Vec<EnvironmentListSource> {
+    fn pull_request_sources(&self, cx: &mut App) -> Vec<EnvironmentListSource> {
+        if self.store.read(cx).is_reference_world() {
+            return super::reference_server::pull_request_sources(&super::fixture_environment());
+        }
         crate::scenes::pull_requests::fixture_sources(&PrFixture::standard())
     }
 
@@ -342,7 +345,10 @@ impl AppData for FixtureData {
         Some(Rc::new(PrFixture::standard()))
     }
 
-    fn issue_sources(&self, _: &mut App) -> Vec<EnvironmentIssueSource> {
+    fn issue_sources(&self, cx: &mut App) -> Vec<EnvironmentIssueSource> {
+        if self.store.read(cx).is_reference_world() {
+            return super::reference_server::issue_sources(&super::fixture_environment());
+        }
         let source: Rc<dyn IssueSource> = Rc::new(PrFixture::standard());
         vec![EnvironmentIssueSource { environment_id: t3code_contracts::EnvironmentId::new("env-studio"), label: "Studio".into(), source }]
     }
