@@ -37,7 +37,7 @@ use crate::components::ui::toast::{ToastData, ToastKind, Toaster};
 use crate::components::ui::tooltip::tooltip;
 use crate::connection::presentation::{
     Diagnosis, HopResult, Tone, diagnose, diagnosis_text, present_phase, route_address,
-    route_label, row_status, status_text, transport_label,
+    route_label, row_status, status_text, version_mismatch, transport_label,
 };
 use crate::connection::{ConnectionRuntime, ConnectionsState, EnvironmentState};
 use crate::i18n::t;
@@ -304,6 +304,20 @@ impl ConnectionsSettings {
         if diagnosis.is_none() {
             parts.push(status);
         }
+        let client_version = cx.try_global::<ConnectionRuntime>().map(|runtime| runtime.auth().presentation().app_version.clone());
+        let mismatch = client_version.and_then(|client| version_mismatch(env.server_version.as_deref(), &client));
+        if let (true, Some((server, _))) = (enabled, &mismatch) {
+            parts.push(server.clone());
+        }
+        let status_tooltip: SharedString = match &mismatch {
+            Some((server, client)) => format!(
+                "{}\n{}",
+                status_text(env),
+                t!("Update available: {serverVersion} → {clientVersion}", serverVersion = server, clientVersion = client)
+            )
+            .into(),
+            None => status_text(env),
+        };
         let error_tone = enabled && tone == Tone::Error && diagnosis.is_none();
         subtitle.push(
             div()
@@ -311,7 +325,7 @@ impl ConnectionsSettings {
                 .min_w_0()
                 .truncate()
                 .when(error_tone, |d| d.text_color(c.destructive()))
-                .tooltip(tooltip(status_text(env)))
+                .tooltip(tooltip(status_tooltip))
                 .child(SharedString::from(parts.join(" · ")))
                 .into_any_element(),
         );

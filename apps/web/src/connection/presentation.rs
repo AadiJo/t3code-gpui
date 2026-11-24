@@ -151,6 +151,27 @@ pub fn transport_label(environment: &EnvironmentState) -> SharedString {
     }
 }
 
+/// `resolveVersionMismatch`: `(server, client)` when the host runs an older
+/// T3 Code than this app (compared on `major.minor.patch`; versions that do
+/// not parse mismatch when they differ).
+pub fn version_mismatch(server: Option<&str>, client: &str) -> Option<(SharedString, SharedString)> {
+    let server = server.map(str::trim).filter(|v| !v.is_empty())?;
+    let client = client.trim();
+    if client.is_empty() {
+        return None;
+    }
+    let core = |version: &str| -> Option<(u64, u64, u64)> {
+        let core = version.split(['-', '+']).next()?;
+        let mut parts = core.split('.').map(|part| part.parse::<u64>().ok());
+        Some((parts.next()??, parts.next()??, parts.next()??))
+    };
+    let behind = match (core(server), core(client)) {
+        (Some(server), Some(client)) => server < client,
+        _ => server != client,
+    };
+    behind.then(|| (SharedString::from(server.to_owned()), SharedString::from(client.to_owned())))
+}
+
 /// Round trip as the row shows it, e.g. `23 ms`.
 pub fn latency_text(environment: &EnvironmentState) -> Option<SharedString> {
     environment.latency.map(|latency| format!("{} ms", latency.as_millis().max(1)).into())

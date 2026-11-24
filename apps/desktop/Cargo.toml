@@ -38,6 +38,13 @@ name = "relay-check"
 path = "src/relay_check.rs"
 required-features = ["headless"]
 
+# Every connection state for real against an isolated server, and route choice.
+# Usage: states-check <states|routing|offline> <out-dir> <data-dir>
+[[bin]]
+name = "states-check"
+path = "src/states_check.rs"
+required-features = ["headless"]
+
 # Imports made-up Electron catalogs encrypted with the Windows and macOS
 # safeStorage schemes, and runs the first-launch file import over a stand-in
 # install built around copied owner files. Usage: import-check <out-dir> [owner-dir]

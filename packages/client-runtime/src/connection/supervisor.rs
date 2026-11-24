@@ -358,8 +358,9 @@ impl Supervisor {
                 signal = self.signals.recv() => {
                     let Some(signal) = signal else { renewal.abort(); return None };
                     let reset_retry = self.apply(signal);
-                    // A wakeup or retry keeps a working session; only intent changes end it.
-                    if !self.desired || (self.network == NetworkStatus::Offline) {
+                    // A wakeup, retry or offline report keeps a working session (offline
+                    // reports are often wrong, e.g. for a loopback host); only intent ends it.
+                    if !self.desired {
                         break Ended::Interrupted { reset_retry: false };
                     }
                     if reset_retry {

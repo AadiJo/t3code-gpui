@@ -27,6 +27,7 @@ use t3code_client_runtime::connection::{
     CatalogEntry, ConnectionContext, ConnectionError, ConnectionPhase, ConnectionRegistry, ConnectionStatus,
     SupervisorHandle, SupervisorSignal,
 };
+use t3code_client_runtime::connection::model::NetworkStatus;
 use t3code_client_runtime::environment::EnvironmentId;
 use t3code_client_runtime::platform::electron_import::{
     ElectronImport, ElectronPaths, ImportError, SafeStorageKey, load_platform_key, read_electron_catalog,
@@ -770,11 +771,16 @@ async fn watch_account(
     }
 }
 
-/// GPUI exposes no sleep/wake event, so a tick that lands far later on the
-/// wall clock than it should is taken as a wake: supervisors retry at once.
+/// GPUI exposes no sleep/wake or network events, so one tick does both. A
+/// tick that lands far later on the wall clock than it should is taken as a
+/// wake: supervisors retry at once. Each tick also asks the OS for a route to
+/// the internet (a UDP `connect`, which sends nothing): losing it reports
+/// offline, like the browser's `offline` event, and getting it back or a new
+/// local address reports a network change that wakes pending retries.
 async fn detect_wake(registry: ConnectionRegistry) {
     let mut tick = tokio::time::interval(WAKE_CHECK_INTERVAL);
     let mut last = SystemTime::now();
+    let mut network: Option<Option<std::net::IpAddr>> = None;
     loop {
         tick.tick().await;
         let now = SystemTime::now();
@@ -783,5 +789,27 @@ async fn detect_wake(registry: ConnectionRegistry) {
             registry.broadcast(SupervisorSignal::Wakeup);
         }
         last = now;
+        let route = tokio::task::spawn_blocking(local_route_address).await.unwrap_or(None);
+        if network != Some(route) {
+            let first = network.is_none();
+            network = Some(route);
+            let status = if route.is_some() { NetworkStatus::Online } else { NetworkStatus::Offline };
+            if first && route.is_some() {
+                continue;
+            }
+            tracing::info!(?status, "network changed");
+            registry.broadcast(SupervisorSignal::NetworkChanged(status));
+            if route.is_some() {
+                registry.broadcast(SupervisorSignal::Wakeup);
+            }
+        }
     }
+}
+
+/// The local address the OS would use to reach the internet, or `None` with
+/// no route (Wi-Fi off, cable out).
+fn local_route_address() -> Option<std::net::IpAddr> {
+    let socket = std::net::UdpSocket::bind(("0.0.0.0", 0)).ok()?;
+    socket.connect(("1.1.1.1", 53)).ok()?;
+    Some(socket.local_addr().ok()?.ip())
 }
