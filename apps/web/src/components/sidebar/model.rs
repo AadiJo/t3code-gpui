@@ -314,4 +314,7 @@ pub struct SidebarSnapshot {
     /// Threads whose auto-settle is off (`autoSettleDisabledAt` set), for the
     /// "Auto-settle behavior" menu. Empty means every thread follows the settings.
     pub auto_settle_disabled: std::collections::HashSet<ThreadKey>,
+    /// Per-thread facts for the hover card (environment, model, hand-offs).
+    /// A thread without an entry shows only what its row carries.
+    pub hover_details: std::collections::HashMap<ThreadKey, crate::components::thread_hover_card::ThreadHoverDetails>,
 }

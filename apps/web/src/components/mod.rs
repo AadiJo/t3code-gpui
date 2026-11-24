@@ -44,6 +44,7 @@ pub mod thread_notification_coordinator;
 pub mod thread_notification_coordinator_logic;
 pub mod thread_terminal_drawer;
 pub mod sidebar_logic;
+pub mod thread_hover_card;
 pub mod thread_status_indicators;
 pub mod ui;
 pub mod usage;

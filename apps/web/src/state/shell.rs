@@ -334,6 +334,7 @@ impl LiveShell {
             environment_pill: None,
             now: TimestampMs(now),
             auto_settle_disabled: Default::default(),
+            hover_details: Default::default(),
         };
         self.revision += 1;
         self.rebuilds += 1;

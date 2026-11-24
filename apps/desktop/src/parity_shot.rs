@@ -67,7 +67,7 @@ const SCENES: &[Scene] = &[
     Scene { name: "window-thread", reference: "window-thread", light: false, steps: &[] },
     Scene { name: "window-thread-light", reference: "window-thread-light", light: true, steps: &[] },
     Scene { name: "sidebar-selected", reference: "sidebar-selected", light: false, steps: &[] },
-    Scene { name: "sidebar-hover", reference: "sidebar-hover", light: false, steps: &[Step::Move(127.5, 224.)] },
+    Scene { name: "sidebar-hover", reference: "sidebar-hover", light: false, steps: &[Step::Move(127.5, 224.), Step::Wait(300)] },
     Scene { name: "sidebar-context-menu", reference: "sidebar-context-menu", light: false, steps: &[Step::RightClick(127.5, 224.)] },
     Scene { name: "sidebar-inbox", reference: "sidebar-inbox", light: false, steps: &[Step::ClickId("sidebar-notifications")] },
     Scene { name: "timeline-top", reference: "timeline-top", light: false, steps: &[Step::Wheel(700., 400., 20_000.)] },
@@ -249,6 +249,8 @@ fn render(scene: &Scene, out: &std::path::Path, data: &std::path::Path) -> anyho
                 while Instant::now() < until {
                     frame(&mut cx, window);
                     std::thread::sleep(Duration::from_millis(50));
+                    // Timers on the headless dispatcher run on its simulated clock.
+                    cx.advance_clock(Duration::from_millis(50));
                 }
             }
         }

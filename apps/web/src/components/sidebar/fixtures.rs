@@ -261,6 +261,7 @@ pub fn showcase_snapshot() -> SidebarSnapshot {
         }),
         environment_pill: None,
         auto_settle_disabled: Default::default(),
+        hover_details: Default::default(),
         now: FIXTURE_NOW,
     }
 }
@@ -357,6 +358,7 @@ pub fn large_snapshot(thread_count: usize, project_count: usize) -> SidebarSnaps
         environment_pill: None,
         now: FIXTURE_NOW,
         auto_settle_disabled: Default::default(),
+        hover_details: Default::default(),
     }
 }
 
@@ -418,5 +420,29 @@ pub fn reference_snapshot() -> SidebarSnapshot {
         environment_pill: None,
         now: FIXTURE_NOW,
         auto_settle_disabled: Default::default(),
+        hover_details: reference_hover_details(),
     }
+}
+
+/// The reference server's hover card facts: every thread on the "WSL-PC"
+/// Linux environment, on the Replay models the scenario seeded.
+fn reference_hover_details() -> std::collections::HashMap<ThreadKey, crate::components::thread_hover_card::ThreadHoverDetails> {
+    let model = |id: &str| match id {
+        "r-sidebar" => Some("Plan and reads · Replay (rich)"),
+        "r-tls" => Some("Write approval · Replay (rich)"),
+        "r-sync" => Some("Showcase · Replay (rich)"),
+        _ => None,
+    };
+    ["r-ci", "r-handshake", "r-hero", "r-tls", "r-launch", "r-sidebar", "r-sync"]
+        .into_iter()
+        .map(|id| {
+            let details = crate::components::thread_hover_card::ThreadHoverDetails {
+                environment_label: Some("WSL-PC".into()),
+                environment_machine: Some(t3code_contracts::EnvironmentMachineKind::Linux),
+                model_label: model(id).map(SharedString::from),
+                ..Default::default()
+            };
+            (ThreadKey { environment_id: env(), thread_id: ThreadId(id.into()) }, details)
+        })
+        .collect()
 }
