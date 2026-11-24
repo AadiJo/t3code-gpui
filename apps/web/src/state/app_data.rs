@@ -175,6 +175,9 @@ pub trait AppData: 'static {
     /// A sidebar thread command (pin, rename, archive...).
     fn thread_command(&self, keys: &[ThreadKey], command: MenuCommand, cx: &mut App) -> CommandOutcome;
 
+    /// The sidebar search changed; a live source asks the servers for message matches.
+    fn search_threads(&self, _query: SharedString, _cx: &mut App) {}
+
     /// Renames a thread.
     fn rename_thread(&self, key: &ThreadKey, title: String, cx: &mut App);
 

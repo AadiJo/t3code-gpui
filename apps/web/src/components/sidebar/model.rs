@@ -323,4 +323,13 @@ pub struct SidebarSnapshot {
     /// Per-thread facts for the hover card (environment, model, hand-offs).
     /// A thread without an entry shows only what its row carries.
     pub hover_details: std::collections::HashMap<ThreadKey, crate::components::thread_hover_card::ThreadHoverDetails>,
+    /// Threads the server found by their messages for a search (`useThreadSearch`), in its order.
+    pub search_content_matches: Option<SearchContentMatches>,
+}
+
+/// Server message matches for one search query.
+#[derive(Clone, Debug, Default)]
+pub struct SearchContentMatches {
+    pub query: SharedString,
+    pub threads: std::sync::Arc<Vec<ThreadKey>>,
 }

@@ -76,6 +76,8 @@ pub struct LiveData {
     settings: RefCell<Option<(t3code_contracts::EnvironmentId, Entity<ServerPanelsModel>, Subscription)>>,
     /// The environment of the thread the main pane shows.
     shown_environment: RefCell<Option<t3code_contracts::EnvironmentId>>,
+    /// The latest sidebar search; older answers are dropped.
+    search_generation: Rc<std::cell::Cell<u64>>,
 }
 
 impl LiveData {
@@ -112,6 +114,7 @@ impl LiveData {
             usage: RefCell::default(),
             settings: RefCell::default(),
             shown_environment: RefCell::default(),
+            search_generation: Rc::default(),
         })
     }
 
@@ -510,6 +513,48 @@ impl AppData for LiveData {
             SidebarOutcome::NewThread(project) => CommandOutcome::NewThread(project),
             _ => CommandOutcome::Done,
         }
+    }
+
+    fn search_threads(&self, query: SharedString, cx: &mut App) {
+        // `useThreadSearch`: a pasted wall of text searches by its start; messages need a word
+        // of three or more letters; answers land 120 ms after the typing stops.
+        let generation = self.search_generation.get() + 1;
+        self.search_generation.set(generation);
+        let trimmed: String = query.trim().chars().take(200).collect::<String>().trim().to_owned();
+        let shell = StateBridge::shell(cx);
+        if !trimmed.split_whitespace().any(|token| token.chars().count() >= 3) {
+            shell.update(cx, |shell, cx| shell.set_search_matches(None, cx));
+            return;
+        }
+        let links: Vec<_> = self.environment_links(cx).into_iter().map(|(_, link)| link).collect();
+        let weak = Rc::downgrade(&self.search_generation);
+        cx.spawn(async move |cx| {
+            cx.background_executor().timer(std::time::Duration::from_millis(120)).await;
+            if weak.upgrade().is_none_or(|token| token.get() != generation) {
+                return;
+            }
+            let mut keys = Vec::new();
+            for link in links {
+                let environment_id = link.environment_id().clone();
+                let input = t3code_contracts::OrchestrationV2SearchThreadsInput {
+                    query: trimmed.clone(),
+                    limit: None,
+                    older_settled_before: None,
+                    project_ids: None,
+                    environment_label: None,
+                    titles_only: None,
+                };
+                if let Ok(result) = link.call::<t3code_contracts::rpc::methods::OrchestrationSearchThreads>(input).await {
+                    keys.extend(result.matches.iter().map(|m| thread_key(&environment_id, &m.thread_id)));
+                }
+            }
+            if weak.upgrade().is_none_or(|token| token.get() != generation) {
+                return;
+            }
+            let matches = crate::components::sidebar::model::SearchContentMatches { query: query.clone(), threads: Arc::new(keys) };
+            cx.update(|cx| shell.update(cx, |shell, cx| shell.set_search_matches(Some(matches), cx)));
+        })
+        .detach();
     }
 
     fn rename_thread(&self, key: &ThreadKey, title: String, cx: &mut App) {

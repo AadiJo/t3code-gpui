@@ -83,6 +83,8 @@ pub enum SidebarEvent {
     DiscardDraft(ThreadKey),
     /// The inline rename field committed a new, non-empty title.
     RenameThread(ThreadKey, String),
+    /// The search field's text changed; the data source may add server matches.
+    SearchChanged(SharedString),
 }
 
 /// The row whose title is being edited (`ThreadRenameInput`).
@@ -144,6 +146,7 @@ impl Sidebar {
         let subscription = cx.subscribe_in(&search, window, |this, state, event, _, cx| {
             if matches!(event, InputEvent::Change) {
                 this.options.search = state.read(cx).value();
+                cx.emit(SidebarEvent::SearchChanged(this.options.search.clone()));
                 this.rebuild(cx);
             }
         });

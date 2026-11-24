@@ -728,7 +728,18 @@ pub fn build_sidebar_list(snapshot: &SidebarSnapshot, options: &SidebarListOptio
     };
 
     if !options.search.trim().is_empty() {
-        let results = search_threads(&snapshot.threads, &options.search);
+        let mut results = search_threads(&snapshot.threads, &options.search);
+        // Then threads listed only for their messages, in the server's order (`searchSidebarThreads`).
+        if let Some(matches) = snapshot.search_content_matches.as_ref().filter(|m| m.query.trim() == options.search.trim()) {
+            for key in matches.threads.iter() {
+                if results.iter().any(|t| &t.key == key) {
+                    continue;
+                }
+                if let Some(thread) = snapshot.threads.iter().find(|t| &t.key == key && !t.archived) {
+                    results.push(thread.clone());
+                }
+            }
+        }
         if results.is_empty() {
             list.entries.push(SidebarListEntry::SearchEmpty);
         }

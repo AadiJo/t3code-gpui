@@ -55,6 +55,8 @@ pub struct LiveShell {
     revision: u64,
     rebuild_pending: bool,
     rebuilds: u64,
+    /// The server's message matches for the sidebar search.
+    search_matches: Option<model::SearchContentMatches>,
     _environment_subscriptions: Vec<Subscription>,
     _subscriptions: Vec<Subscription>,
 }
@@ -307,6 +309,7 @@ impl LiveShell {
             revision: 0,
             rebuild_pending: false,
             rebuilds: 0,
+            search_matches: None,
             _environment_subscriptions: Vec::new(),
             _subscriptions: vec![subscription, settings],
         };
@@ -476,9 +479,18 @@ impl LiveShell {
             now: TimestampMs(now),
             auto_settle_disabled: Default::default(),
             hover_details: Default::default(),
+            search_content_matches: self.search_matches.clone(),
         };
         self.revision += 1;
         self.rebuilds += 1;
+        cx.notify();
+    }
+
+    /// Takes the server's message matches for a sidebar search.
+    pub fn set_search_matches(&mut self, matches: Option<model::SearchContentMatches>, cx: &mut Context<Self>) {
+        self.search_matches = matches;
+        self.snapshot.search_content_matches = self.search_matches.clone();
+        self.revision += 1;
         cx.notify();
     }
 
