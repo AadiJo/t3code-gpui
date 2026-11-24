@@ -587,7 +587,7 @@ impl AppearanceSettings {
             t!("Adjust the contrast of colors and borders across the interface."),
             |s| &s.appearance_contrast,
             |s, v| s.appearance_contrast = v,
-            slider_row("contrast", settings.appearance_contrast, format!("{}%", settings.appearance_contrast), 3., (50, 150, 5), |s, v| s.appearance_contrast = v),
+            slider_row("contrast", settings.appearance_contrast, format!("{}%", settings.appearance_contrast), 3., (50, 200, 5), |s, v| s.appearance_contrast = v),
             cx,
         );
         let glass = client_row(
@@ -595,7 +595,7 @@ impl AppearanceSettings {
             t!("Higher values make menus, dialogs, and the composer more solid."),
             |s| &s.glass_opacity,
             |s, v| s.glass_opacity = v,
-            slider_row("glass", settings.glass_opacity, format!("{}%", settings.glass_opacity), 3., (0, 100, 5), |s, v| s.glass_opacity = v),
+            slider_row("glass", settings.glass_opacity, format!("{}%", settings.glass_opacity), 3., (40, 100, 5), |s, v| s.glass_opacity = v),
             cx,
         );
         // `grid sm:grid-cols-[7rem_13rem] sm:gap-4`: the preview, then the chip and slider.
