@@ -213,9 +213,16 @@ fn main() -> anyhow::Result<()> {
     check.step(wi, "30-issues", |_, _| {})?;
     let panel = check.cx.update(|cx| iws.read(cx).panel.clone()).unwrap();
     check.step(wi, "31-issue-react", |win, cx| win.click("issue-react-heart", cx))?;
-    check.step(wi, "32-issue-labels-open", |win, cx| win.click("issue-labels-edit", cx))?;
+    check.step(wi, "32-issue-labels-open", |win, cx| win.click("issue-label-picker-trigger", cx))?;
     check.step(wi, "33-issue-label-picked", |win, cx| win.click("issue-label-bug", cx))?;
-    check.step(wi, "34-issue-labels-saved", |win, cx| win.click("issue-labels-edit", cx))?;
+    check.step(wi, "34-issue-labels-saved", |win, cx| win.press("escape", cx))?;
+    check.step(wi, "34a-issue-assignees-open", |win, cx| win.click("issue-assignee-picker-trigger", cx))?;
+    check.step(wi, "34b-issue-assignees-closed", |win, cx| win.press("escape", cx))?;
+    check.step(wi, "34c-issue-filters-menu", |win, cx| win.click("issues-filters-trigger", cx))?;
+    check.step(wi, "34d-issue-assignee-submenu", |win, cx| win.click("issue-filter-sub-assignee", cx))?;
+    check.step(wi, "34e-issue-filters-closed", |win, cx| win.click("issues-filters-trigger", cx))?;
+    check.step(wi, "34f-issue-sort-menu", |win, cx| win.click("issues-sort-trigger", cx))?;
+    check.step(wi, "34g-issue-sort-closed", |win, cx| win.click("issues-sort-trigger", cx))?;
     { let line = format!("labels: {:?}", check.cx.update(|cx| panel.read(cx).detail().map(|d| d.labels.iter().map(|l| l.name.clone()).collect::<Vec<_>>()))); check.note(line); }
     check.step(wi, "35-issue-state-menu", |win, cx| win.click("issue-state-trigger", cx))?;
     check.step(wi, "36-issue-closed", |win, cx| win.click(("menu-item", 0usize), cx))?;

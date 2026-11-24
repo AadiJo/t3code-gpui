@@ -479,7 +479,7 @@ impl CandidatePicker {
 }
 
 /// `PullRequestPeopleGhost`: still placeholder rows while candidates load.
-fn people_ghost(theme: &crate::AppTheme, rows: usize) -> AnyElement {
+pub fn people_ghost(theme: &crate::AppTheme, rows: usize) -> AnyElement {
     let bar = theme.colors.muted_foreground.opacity(0.15);
     div()
         .flex()
@@ -561,4 +561,50 @@ impl Render for CandidatePicker {
             })
             .into_any_element()
     }
+}
+
+/// The picker's popup: the borderless search field over its list (`ComboboxPopup w-72`).
+pub fn picker_surface(theme: &crate::AppTheme, query: &Entity<InputState>, list: AnyElement) -> gpui_kit::Div {
+    let c = &theme.colors;
+    let input = Input::new(query).appearance(false).bordered(false).focus_bordered(false).p_0().h(theme.sp(6.5)).ui_text(theme, TextSize::Sm, weight::NORMAL).w_full();
+    glass_surface(theme)
+        .w(theme.sp(72.))
+        .flex()
+        .flex_col()
+        .overflow_hidden()
+        .child(
+            div().px(theme.sp(3.)).pt(theme.sp(2.5)).child(
+                div()
+                    .relative()
+                    .border_b_1()
+                    .border_color(c.border.opacity(0.7))
+                    .pb(theme.sp(1.5))
+                    .child(div().absolute().top(theme.sp(1.5)).left_0().child(Icon::new(IconName::Search).size(IconSize::Md).color(c.muted_foreground.opacity(0.55))))
+                    .child(div().pl(theme.sp(5.)).child(input)),
+            ),
+        )
+        .child(list)
+}
+
+/// One candidate row: content, then a check while picked (`ComboboxItem`).
+pub fn picker_row(theme: &crate::AppTheme, id: String, selected: bool, content: AnyElement, on_click: impl Fn(&mut App) + 'static) -> AnyElement {
+    let c = &theme.colors;
+    div()
+        .id(SharedString::from(id))
+        .test_support()
+        .flex()
+        .items_center()
+        .gap(theme.sp(2.))
+        .min_h(theme.sp(7.))
+        .px(theme.sp(2.))
+        .py(theme.sp(1.))
+        .rounded(theme.radii.sm)
+        .ui_text(theme, TextSize::Sm, weight::NORMAL)
+        .text_color(c.foreground())
+        .cursor_pointer()
+        .hover(|s| s.bg(c.foreground().opacity(0.09)))
+        .child(content)
+        .when(selected, |el| el.child(Icon::new(IconName::Check).size(IconSize::Sm).color(c.foreground())))
+        .on_click(move |_, _, cx| on_click(cx))
+        .into_any_element()
 }
