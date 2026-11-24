@@ -1008,6 +1008,10 @@ impl AppRoot {
             return self.navigate(Route::Thread(key.clone()), cx);
         }
         if let DataEvent::SnapshotChanged = event {
+            // The sidebar takes every snapshot, including the one that lets a restored route show.
+            let active = self.shown_key();
+            let snapshot = self.data.snapshot(active.as_ref(), cx);
+            self.sidebar.update(cx, |sidebar, cx| sidebar.set_snapshot(snapshot, cx));
             let route = self.router.read(cx).current().clone();
             if self.shown.is_none()
                 && let Some(target) = route.thread_target()
@@ -1017,11 +1021,8 @@ impl AppRoot {
             }
             // `_chat.index.tsx` starts a draft once a project is known.
             if route == Route::Index && self.data.most_recent_project(cx).is_some() {
-                return self.apply_route(route, window, cx);
+                self.apply_route(route, window, cx);
             }
-            let active = self.shown_key();
-            let snapshot = self.data.snapshot(active.as_ref(), cx);
-            self.sidebar.update(cx, |sidebar, cx| sidebar.set_snapshot(snapshot, cx));
         }
     }
 

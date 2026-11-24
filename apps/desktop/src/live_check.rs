@@ -442,6 +442,7 @@ fn main() -> anyhow::Result<()> {
         "details" => run_details(&mut check),
         "mentions" => run_mentions(&mut check),
         "heic" => run_heic(&mut check),
+        "probe" => run_probe(&mut check),
         other => Err(anyhow::anyhow!("unknown phase {other}")),
     };
     check.finish(&phase, result)
@@ -609,6 +610,20 @@ fn run_drive(check: &mut Check) -> anyhow::Result<()> {
     let rows = check.sidebar_threads();
     check.check("sidebar paints rows from cache at launch", rows >= 5, format!("{rows} rows"));
     check.pump(|c| c.connected(), Duration::from_secs(30), "connected")?;
+    // Later phases add threads that sort above these, and the list is virtualized: a row below
+    // the fold has no bounds to click. Pinning keeps the two clicked rows at the top.
+    let environment_id = t3code_contracts::EnvironmentId::new(state.environment_id.as_str());
+    let commands = commands_of(check, &environment_id)?;
+    for key in [&long, &edit] {
+        if check.row_center(key).is_some_and(|at| at.y < px(780.)) {
+            continue;
+        }
+        let (_, thread_id) = t3code_web::state::shell::runtime_ids(key);
+        let c = commands.clone();
+        check.block(async move { c.pin(&thread_id, None).await })?.map_err(|e| anyhow::anyhow!("{e}"))?;
+        let k = key.clone();
+        check.pump(move |c| c.row_center(&k).is_some_and(|at| at.y < px(780.)), Duration::from_secs(10), "pinned row in view")?;
+    }
     check.shot("01-sidebar.png")?;
 
     // Cold open, then cached switches between two threads.
@@ -2326,4 +2341,43 @@ fn run_heic(check: &mut Check) -> anyhow::Result<()> {
     let after = check.cx.update(|cx| composer.read(cx).attachments().len());
     check.check("an unreadable HEIC is refused", before == after, format!("{before} -> {after}"));
     check.shot("91-heic-refused.png")
+}
+
+/// Prints what each layer holds for the sidebar over the first seconds (environments, their shells,
+/// the joined snapshot, the drawn list), for diagnosing restores.
+fn run_probe(check: &mut Check) -> anyhow::Result<()> {
+    for step in 0..12 {
+        let line = check.cx.update(|cx| {
+            let envs = StateBridge::environments(cx).read(cx).list.clone();
+            let per_env: Vec<String> = envs
+                .iter()
+                .map(|env| {
+                    let env = env.read(cx);
+                    format!(
+                        "{} status={:?} threads={} projects={} config={}",
+                        &env.environment_id().as_str()[..8],
+                        env.shell.status,
+                        env.shell.snapshot.as_ref().map_or(0, |s| s.threads.len()),
+                        env.shell.snapshot.as_ref().map_or(0, |s| s.projects.len()),
+                        env.config.is_some()
+                    )
+                })
+                .collect();
+            let shell = StateBridge::shell(cx).read(cx);
+            let snapshot = shell.snapshot();
+            let connections = ConnectionRuntime::state(cx).read(cx).environments.len();
+            format!(
+                "catalog={connections} envs=[{}] presented={} snapshot threads={} projects={} rebuilds={}",
+                per_env.join("; "),
+                shell.presented().len(),
+                snapshot.threads.len(),
+                snapshot.projects.len(),
+                shell.rebuild_count()
+            )
+        });
+        let drawn = check.sidebar_threads();
+        check.note(format!("t{step}: {line} drawn={drawn}"));
+        check.wait(Duration::from_millis(400));
+    }
+    Ok(())
 }
