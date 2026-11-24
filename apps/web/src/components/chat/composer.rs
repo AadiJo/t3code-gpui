@@ -946,7 +946,7 @@ impl ChatComposer {
             .min_w(c.r(px(52.)))
             .flex_shrink(1.)
             .when(compact, |el| el.text_size(c.r(px(12.))))
-            .child(provider_icon(mark, c.r(px(16.)), &initials, &c, cx))
+            .child(super::timeline_row_parts::composer_provider_icon(entry.as_ref(), &self.state.catalog, &selection.model, &c, cx))
             .child(div().min_w_0().max_w(c.r(px(224.))).overflow_hidden().whitespace_nowrap().text_ellipsis().child(label))
             .when_some(glyph, |el, glyph| match glyph.special.clone() {
                 Some(name) => el.child(div().max_w(c.r(px(96.))).overflow_hidden().whitespace_nowrap().text_ellipsis().text_color(suffix_color).child(name)),
