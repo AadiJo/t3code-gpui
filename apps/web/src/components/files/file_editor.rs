@@ -15,7 +15,7 @@ use gpui_kit::{
     EntityInputHandler, EventEmitter, FocusHandle, Focusable, Font, FontStyle, FontWeight, GlobalElementId, Hitbox,
     HitboxBehavior, Hsla, InspectorElementId, IntoElement, KeyBinding, LayoutId, MouseButton, MouseDownEvent,
     MouseMoveEvent, MouseUpEvent, ParentElement as _, Pixels, Point, Render, ScrollEvent, ShapedLine, SharedString,
-    Style, Styled as _, TextAlign, TextRun, UTF16Selection, Window, actions, div, fill, font, point, prelude::*, px,
+    Style, Styled as _, TextAlign, TextRun, UTF16Selection, Window, actions, div, fill, point, prelude::*, px,
     relative, size,
 };
 use gpui_kit::{
@@ -234,7 +234,7 @@ impl Focusable for FileEditor {
 }
 
 impl FileEditor {
-    pub fn new(path: SharedString, contents: &str, read_only: bool, window: &mut Window, cx: &mut Context<Self>) -> Self {
+    pub fn new(path: SharedString, contents: &str, read_only: bool, _window: &mut Window, cx: &mut Context<Self>) -> Self {
         let highlighter = language_for_path(&path).map(EditorHighlighter::new);
         Self {
             focus_handle: cx.focus_handle(),

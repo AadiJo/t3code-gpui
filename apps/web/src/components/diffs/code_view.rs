@@ -321,7 +321,7 @@ impl Focusable for CodeView {
 }
 
 impl CodeView {
-    pub fn new(mode: ViewMode, window: &mut Window, cx: &mut Context<Self>) -> Self {
+    pub fn new(mode: ViewMode, _window: &mut Window, cx: &mut Context<Self>) -> Self {
         let syntax = SyntaxStore::global(cx);
         let observer = cx.observe(&syntax, |_, _, cx| cx.notify());
         let font = mono_font(FontWeight::NORMAL);

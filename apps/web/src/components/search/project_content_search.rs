@@ -312,7 +312,7 @@ impl ProjectContentSearch {
         )
     }
 
-    fn render_row(rows: &Arc<Vec<Row>>, matches: &Arc<Vec<ProjectContentMatch>>, selected: usize, entity: &gpui_kit::WeakEntity<Self>, index: usize, window: &mut Window, cx: &mut App) -> AnyElement {
+    fn render_row(rows: &Arc<Vec<Row>>, matches: &Arc<Vec<ProjectContentMatch>>, selected: usize, entity: &gpui_kit::WeakEntity<Self>, index: usize, _window: &mut Window, cx: &mut App) -> AnyElement {
         let theme = cx.app_theme().clone();
         let colors = theme.colors;
         match &rows[index] {
@@ -360,7 +360,7 @@ impl ProjectContentSearch {
 }
 
 impl Render for ProjectContentSearch {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.app_theme().clone();
         let colors = theme.colors;
         let mono = crate::components::files::file_editor::mono_family();
