@@ -30,6 +30,14 @@ pub fn init(cx: &mut App) {
     command_palette::init(cx);
     keymap::init(cx);
     ShortcutModifierStore::init(cx);
+    // Key bindings run before key listeners, so the quit chord is held back from its Quit
+    // binding here; the shortcut root's key listener then runs the quit confirmation.
+    cx.intercept_keystrokes(|event, _, cx| {
+        if is_quit_chord(&event.keystroke) {
+            cx.stop_propagation();
+        }
+    })
+    .detach();
 }
 
 /// mod+q with no other modifier: `meta` on macOS, `control` elsewhere (`QuitHold.ts`).

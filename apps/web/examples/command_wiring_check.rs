@@ -36,6 +36,12 @@ use t3code_web::shortcuts::commands::{ToggleTerminal, command_action, command_ti
 use t3code_web::theme_palette::{ThemeMode, ThemeSettings};
 use t3code_web::ui_state_store::StateDir;
 
+/// Commands another package builds, with that package. They may reach no handler yet.
+const OWNED_ELSEWHERE: [(StaticCommand, &str); 2] = [
+    (StaticCommand::ThemeEditorToggle, "settings (theme editor)"),
+    (StaticCommand::PreviewFind, "browser preview (find bar)"),
+];
+
 /// Where a command is used, so where its handler must be.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Place {
@@ -71,6 +77,7 @@ fn place(command: StaticCommand) -> Place {
 }
 
 struct Check {
+    out: PathBuf,
     cx: HeadlessAppContext,
     window: AnyWindowHandle,
     parts: WindowRoot,
@@ -153,7 +160,7 @@ fn main() -> anyhow::Result<()> {
         };
         WindowRoot::open_window(window_options, options, cx)
     })?;
-    let mut c = Check { cx, window, parts, log: String::new(), unhandled: Vec::new(), left: Vec::new() };
+    let mut c = Check { out: out.clone(), cx, window, parts, log: String::new(), unhandled: Vec::new(), left: Vec::new() };
     c.frame();
 
     // A server thread on screen, its project and environment.
@@ -209,12 +216,25 @@ fn main() -> anyhow::Result<()> {
         let action = command_action(command);
         let title = format!("{command} ({})", command_title(command));
         let wiring = match (at, focus) {
-            (Place::Preview, _) => preview_has_handler(action.as_ref(), &mut c)?,
+            (Place::Preview, _) => match preview_has_handler(action.as_ref(), &mut c)? {
+                Wiring::Dropped => match command {
+                    KeybindingCommand::Static(command) => {
+                        OWNED_ELSEWHERE.iter().find(|(c, _)| c == command).map_or(Wiring::Dropped, |(_, owner)| Wiring::Unavailable(owner))
+                    }
+                    KeybindingCommand::Script(_) => Wiring::Dropped,
+                },
+                wiring => wiring,
+            },
             (_, Some(focus)) if c.available(action.as_ref(), &focus) => match command {
                 KeybindingCommand::Static(command) => pending_command_owner(*command).map_or(Wiring::Ran, Wiring::Unavailable),
                 KeybindingCommand::Script(_) => Wiring::Ran,
             },
-            (_, Some(_)) => Wiring::Dropped,
+            (_, Some(_)) => match command {
+                KeybindingCommand::Static(command) => {
+                    OWNED_ELSEWHERE.iter().find(|(c, _)| c == command).map_or(Wiring::Dropped, |(_, owner)| Wiring::Unavailable(owner))
+                }
+                KeybindingCommand::Script(_) => Wiring::Dropped,
+            },
             (_, None) => {
                 c.note(format!("NO PLACE   {title}: could not reach {at:?}"));
                 Wiring::Dropped
@@ -314,6 +334,8 @@ fn main() -> anyhow::Result<()> {
         reset(&mut c, &key);
     }
 
+    quit_hold_phase(&mut c)?;
+
     c.note(format!("== unhandled: {}", c.unhandled.len()));
     for line in c.unhandled.clone() {
         c.note(format!("  {line}"));
@@ -332,6 +354,8 @@ fn main() -> anyhow::Result<()> {
 /// Back on the thread with the composer focused, after an event that navigated or opened a dialog.
 fn reset(c: &mut Check, key: &t3code_web::components::sidebar::model::ThreadKey) {
     let app = c.parts.app.clone();
+    let palette = c.cx.update(|cx| c.parts.shortcuts.read(cx).palette().clone());
+    c.cx.update_window(c.window, |_, w, cx| palette.update(cx, |p, cx| if p.is_open() { p.close(w, cx) })).ok();
     c.cx.update(|cx| { let router = app.read(cx).router().clone(); router.update(cx, |r, cx| r.navigate(Route::Thread(key.clone()), cx)) });
     c.frame();
     c.focus_composer();
@@ -359,4 +383,73 @@ fn preview_has_handler(action: &dyn Action, c: &mut Check) -> anyhow::Result<Wir
     c.cx.update_window(handle, |_, w, _| w.remove_window()).ok();
     c.cx.run_until_parked();
     Ok(if available { Wiring::Ran } else { Wiring::Dropped })
+}
+
+/// The quit shortcut at the "hold" setting: one press shows the hint and does not quit, two
+/// presses within 0.5 s quit, a 1.3 s hold quits once the repeats stop. Screenshot of the hint.
+fn quit_hold_phase(c: &mut Check) -> anyhow::Result<()> {
+    use std::time::Duration;
+    use t3code_web::quit_hold::QuitHold;
+    c.note("== quit shortcut (hold)");
+    let quits = Rc::new(std::cell::Cell::new(0));
+    {
+        let quits = quits.clone();
+        c.cx.update(|cx| { cx.on_action(move |_: &t3code_web::app_root::Quit, _| quits.set(quits.get() + 1)); });
+    }
+    let chord = if cfg!(target_os = "macos") { "cmd-q" } else { "ctrl-q" };
+    let key = |c: &mut Check, held: bool| {
+        let keystroke = Keystroke::parse(chord).expect("chord");
+        c.cx.update_window(c.window, |_, w, cx| {
+            w.dispatch_event(PlatformInput::KeyDown(KeyDownEvent { keystroke, is_held: held, prefer_character_input: false }), cx);
+        })
+        .ok();
+    };
+    let up = |c: &mut Check| {
+        let keystroke = Keystroke::parse("q").expect("q");
+        c.cx.update_window(c.window, |_, w, cx| {
+            w.dispatch_event(PlatformInput::KeyUp(KeyUpEvent { keystroke }), cx);
+        })
+        .ok();
+    };
+    // The shortcut's timers run on the executor's clock, which the check moves.
+    c.cx.update(|cx| QuitHold::set_conceal(|_| {}, cx));
+    let wait = |c: &mut Check, ms: u64| {
+        c.cx.advance_clock(Duration::from_millis(ms));
+        c.frame();
+    };
+    // One press and release: the hint, no quit.
+    key(c, false);
+    c.frame();
+    let hint = c.cx.update(|cx| QuitHold::hint(cx));
+    c.cx.capture_screenshot(c.window)?.save(c.out.join("quit-hold-hint.png"))?;
+    up(c);
+    wait(c, 700);
+    let single = quits.get();
+    let lingering = c.cx.update(|cx| QuitHold::hint(cx)).is_some();
+    wait(c, 1300);
+    let gone = c.cx.update(|cx| QuitHold::hint(cx)).is_none();
+    c.record(format!("quit: one press shows {hint:?}, quits {single} times, hint lingers {lingering}, then hides {gone}"), if hint.is_some() && single == 0 && lingering && gone { Wiring::Ran } else { Wiring::Dropped });
+    // Two presses within 0.5 s.
+    key(c, false);
+    up(c);
+    wait(c, 150);
+    key(c, false);
+    c.frame();
+    let double = quits.get();
+    up(c);
+    wait(c, 2000);
+    c.record(format!("quit: double press quits {double} time(s)"), if double == 1 { Wiring::Ran } else { Wiring::Dropped });
+    // A hold: repeats every 50 ms for 1.4 s, then the key comes up.
+    let before = quits.get();
+    key(c, false);
+    for _ in 0..28 {
+        wait(c, 50);
+        key(c, true);
+    }
+    let during = quits.get() - before;
+    up(c);
+    c.frame();
+    let after = quits.get() - before;
+    c.record(format!("quit: a 1.4 s hold quits {during} times while held, {after} after release"), if during == 0 && after == 1 { Wiring::Ran } else { Wiring::Dropped });
+    Ok(())
 }

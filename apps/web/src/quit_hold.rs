@@ -6,6 +6,7 @@
 
 use std::time::{Duration, Instant};
 
+
 use gpui_kit::*;
 use t3code_contracts::{ClientSettingsSchemaConfirmQuit, QuitConfirmationMode};
 
@@ -44,6 +45,9 @@ pub struct QuitHold {
     generation: u64,
     /// The indicator on screen.
     visible: Option<HintMode>,
+    /// Steps the app aside once a hold is accepted (`concealWindow`); `App::hide` unless a
+    /// headless check replaced it.
+    conceal: Option<fn(&mut App)>,
 }
 
 impl Global for QuitHold {}
@@ -67,9 +71,14 @@ impl QuitHold {
         cx.default_global::<Self>()
     }
 
+    /// Replaces how the app steps aside after an accepted hold (headless checks).
+    pub fn set_conceal(conceal: fn(&mut App), cx: &mut App) {
+        Self::state(cx).conceal = Some(conceal);
+    }
+
     /// A mod+q key down (`is_held` for auto-repeat). The caller stops the key there.
     pub fn key_down(is_held: bool, cx: &mut App) {
-        let now = Instant::now();
+        let now: Instant = cx.background_executor().now();
         let state = Self::state(cx);
         if is_held {
             state.repeat_cadence = now - state.last_repeat.or(state.held_since).unwrap_or(now);
@@ -85,7 +94,8 @@ impl QuitHold {
                 state.armed = false;
                 state.quit_on_release = true;
                 // `concealWindow`: the app steps aside while the key is still down.
-                cx.hide();
+                let conceal = state.conceal.unwrap_or(|cx: &mut App| cx.hide());
+                conceal(cx);
                 Self::quit_after_quiet_period(cx);
             }
             return;
