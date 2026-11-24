@@ -1,3 +1,4 @@
+use crate::backdrop::{BackdropPlan, BackdropRenderer};
 use crate::metal_atlas::MetalAtlas;
 use anyhow::{Context as _, Result};
 use block2::RcBlock;
@@ -31,6 +32,7 @@ use objc2_metal::{
 use objc2_metal::{MTLBlitCommandEncoder, MTLOrigin, MTLRegion, MTLSize};
 use objc2_quartz_core::{CAMetalDrawable, CAMetalLayer};
 use parking_lot::Mutex;
+use smallvec::SmallVec;
 
 use std::{cell::Cell, mem, mem::MaybeUninit, ops::Range, ptr, slice, sync::Arc};
 
@@ -144,6 +146,9 @@ pub struct MetalRenderer {
     depth_write_state: Retained<ProtocolObject<dyn MTLDepthStencilState>>,
     depth_test_state: Retained<ProtocolObject<dyn MTLDepthStencilState>>,
     depth_texture: Option<Retained<ProtocolObject<dyn MTLTexture>>>,
+    /// Kept to build the backdrop pipelines at the first backdrop.
+    library: Retained<ProtocolObject<dyn MTLLibrary>>,
+    backdrops: BackdropRenderer,
     instance_buffer_pool: Arc<Mutex<InstanceBufferPool>>,
     sprite_atlas: Arc<MetalAtlas>,
     core_video_texture_cache: CFRetained<CVMetalTextureCache>,
@@ -413,6 +418,8 @@ impl MetalRenderer {
             depth_write_state,
             depth_test_state,
             depth_texture: None,
+            library,
+            backdrops: BackdropRenderer::default(),
             instance_buffer_pool,
             sprite_atlas,
             core_video_texture_cache,
@@ -524,6 +531,12 @@ impl MetalRenderer {
         if shows_native_views != self.shows_native_views {
             self.shows_native_views = shows_native_views;
             layer.setOpaque(self.opaque && !shows_native_views);
+        }
+        // Backdrops copy out of the drawable, which a framebuffer-only layer
+        // forbids. Drawables made from here on can be read; a frame whose
+        // drawable predates this draws its backdrops unblurred.
+        if !scene.backdrops.is_empty() && layer.framebufferOnly() {
+            layer.setFramebufferOnly(false);
         }
         let drawable = match &mut self.display_link_mode {
             DisplayLinkMode::Attached { drawable } => {
@@ -771,35 +784,53 @@ impl MetalRenderer {
         let alpha = if self.opaque { 1. } else { 0. };
         let depth_texture = self.depth_texture_matching(texture)?;
 
-        let command_encoder = new_command_encoder_for_texture(
+        // A backdrop reads the frame drawn beneath it, so the frame is drawn
+        // in segments that end at each backdrop batch. Each segment's opaque
+        // quads are drawn first, as for a whole frame, so none drawn above a
+        // backdrop is in the frame when it is read.
+        let can_blur = !scene.backdrops.is_empty() && !texture.isFramebufferOnly();
+        let mut segment_quad_ends = SmallVec::<[usize; 4]>::new();
+        let mut backdrop_plans = SmallVec::<[Option<BackdropPlan>; 4]>::new();
+        if can_blur {
+            let mut quad_cursor = 0;
+            for batch in scene.batches() {
+                match batch {
+                    PrimitiveBatch::Quads(range) => quad_cursor += range.len(),
+                    PrimitiveBatch::Backdrops(_) => segment_quad_ends.push(quad_cursor),
+                    _ => {}
+                }
+            }
+            backdrop_plans.extend(
+                scene
+                    .backdrops
+                    .iter()
+                    .map(|backdrop| BackdropPlan::new(backdrop, viewport_size)),
+            );
+        }
+        segment_quad_ends.push(scene.quads.len());
+
+        let mut command_encoder = new_command_encoder_for_texture(
             &command_buffer,
             texture,
             &depth_texture,
             viewport_size,
-            MTLClearColor {
+            Some(MTLClearColor {
                 red: 0.,
                 green: 0.,
                 blue: 0.,
                 alpha,
-            },
+            }),
         )?;
         let depth_scale = quad_depth_scale(scene.quads.len());
-        // SAFETY: Metal copies both values, which match every vertex shader's
-        // `GlobalInputIndex_ViewportSize` and `GlobalInputIndex_DepthScale` arguments.
-        unsafe {
-            command_encoder.setVertexBytes_length_atIndex(
-                ptr::NonNull::from(&viewport_size).cast(),
-                mem::size_of_val(&viewport_size),
-                GlobalInputIndex::ViewportSize as usize,
-            );
-            command_encoder.setVertexBytes_length_atIndex(
-                ptr::NonNull::from(&depth_scale).cast(),
-                mem::size_of_val(&depth_scale),
-                GlobalInputIndex::DepthScale as usize,
-            );
-        }
+        set_global_inputs(&command_encoder, &viewport_size, &depth_scale);
 
-        self.draw_opaque_quads(scene.quads.len(), instance_bindings, &command_encoder);
+        let mut segment = 0;
+        self.draw_opaque_quads(
+            scene.quads.len(),
+            0..segment_quad_ends[segment],
+            instance_bindings,
+            &command_encoder,
+        );
         command_encoder.setDepthStencilState(Some(&self.depth_test_state));
 
         let mut quad_cursor: u32 = 0;
@@ -813,14 +844,15 @@ impl MetalRenderer {
                 let depth = quad_depth(quad_cursor, depth_scale) as f64;
                 (depth, depth)
             };
-            command_encoder.setViewport(MTLViewport {
+            let viewport = MTLViewport {
                 originX: 0.0,
                 originY: 0.0,
                 width: i32::from(viewport_size.width) as f64,
                 height: i32::from(viewport_size.height) as f64,
                 znear,
                 zfar,
-            });
+            };
+            command_encoder.setViewport(viewport);
 
             match batch {
                 PrimitiveBatch::Shadows(range) => {
@@ -874,6 +906,39 @@ impl MetalRenderer {
                 PrimitiveBatch::NativeViews(range) => {
                     self.draw_native_views(range, instance_bindings, &command_encoder)
                 }
+                PrimitiveBatch::Backdrops(range) => {
+                    if !can_blur {
+                        continue;
+                    }
+                    command_encoder.endEncoding();
+                    let plans: SmallVec<[BackdropPlan; 4]> =
+                        backdrop_plans[range].iter().flatten().copied().collect();
+                    self.backdrops.encode_blurs(
+                        &self.device,
+                        &self.library,
+                        &command_buffer,
+                        texture,
+                        &plans,
+                    )?;
+                    command_encoder = new_command_encoder_for_texture(
+                        &command_buffer,
+                        texture,
+                        &depth_texture,
+                        viewport_size,
+                        None,
+                    )?;
+                    set_global_inputs(&command_encoder, &viewport_size, &depth_scale);
+                    segment += 1;
+                    self.draw_opaque_quads(
+                        scene.quads.len(),
+                        quad_cursor as usize..segment_quad_ends[segment],
+                        instance_bindings,
+                        &command_encoder,
+                    );
+                    command_encoder.setDepthStencilState(Some(&self.depth_test_state));
+                    command_encoder.setViewport(viewport);
+                    self.backdrops.draw_composites(&command_encoder, &plans);
+                }
                 PrimitiveBatch::SubpixelSprites { .. } => unreachable!(),
             }
         }
@@ -916,13 +981,17 @@ impl MetalRenderer {
         Ok(depth_texture)
     }
 
+    /// Draws the opaque quads in `range` of the scene's `quad_count` quads.
+    /// The opaque pass draws front to back, so its instances count down from
+    /// the last quad.
     fn draw_opaque_quads(
         &self,
         quad_count: usize,
+        range: Range<usize>,
         instance_bindings: &InstanceBindings,
         command_encoder: &ProtocolObject<dyn MTLRenderCommandEncoder>,
     ) {
-        if quad_count == 0 {
+        if range.is_empty() {
             return;
         }
         let quad_count_value = quad_count as u32;
@@ -946,8 +1015,8 @@ impl MetalRenderer {
                 MTLPrimitiveType::TriangleStrip,
                 0,
                 4,
-                quad_count,
-                0,
+                range.len(),
+                quad_count - range.end,
             );
         }
     }
@@ -1338,12 +1407,15 @@ impl MetalRenderer {
     }
 }
 
+/// Begins a render pass of the frame, which clears it to `clear_color` or,
+/// with `None`, keeps what earlier passes drew. The depth of the opaque quads
+/// is always cleared.
 fn new_command_encoder_for_texture(
     command_buffer: &ProtocolObject<dyn MTLCommandBuffer>,
     texture: &ProtocolObject<dyn MTLTexture>,
     depth_texture: &ProtocolObject<dyn MTLTexture>,
     viewport_size: Size<DevicePixels>,
-    clear_color: MTLClearColor,
+    clear_color: Option<MTLClearColor>,
 ) -> Result<Retained<ProtocolObject<dyn MTLRenderCommandEncoder>>> {
     let render_pass_descriptor = MTLRenderPassDescriptor::new();
     // SAFETY: Index zero is within the render pass's color attachment array.
@@ -1354,8 +1426,13 @@ fn new_command_encoder_for_texture(
     };
     color_attachment.setTexture(Some(texture));
     color_attachment.setStoreAction(MTLStoreAction::Store);
-    color_attachment.setLoadAction(MTLLoadAction::Clear);
-    color_attachment.setClearColor(clear_color);
+    match clear_color {
+        Some(clear_color) => {
+            color_attachment.setLoadAction(MTLLoadAction::Clear);
+            color_attachment.setClearColor(clear_color);
+        }
+        None => color_attachment.setLoadAction(MTLLoadAction::Load),
+    }
 
     let depth_attachment = render_pass_descriptor.depthAttachment();
     depth_attachment.setTexture(Some(depth_texture));
@@ -1376,6 +1453,28 @@ fn new_command_encoder_for_texture(
         zfar: 1.0,
     });
     Ok(command_encoder)
+}
+
+/// Binds the viewport size and quad depth scale every vertex shader reads.
+fn set_global_inputs(
+    command_encoder: &ProtocolObject<dyn MTLRenderCommandEncoder>,
+    viewport_size: &Size<DevicePixels>,
+    depth_scale: &f32,
+) {
+    // SAFETY: Metal copies both values, which match every vertex shader's
+    // `GlobalInputIndex_ViewportSize` and `GlobalInputIndex_DepthScale` arguments.
+    unsafe {
+        command_encoder.setVertexBytes_length_atIndex(
+            ptr::NonNull::from(viewport_size).cast(),
+            mem::size_of_val(viewport_size),
+            GlobalInputIndex::ViewportSize as usize,
+        );
+        command_encoder.setVertexBytes_length_atIndex(
+            ptr::NonNull::from(depth_scale).cast(),
+            mem::size_of_val(depth_scale),
+            GlobalInputIndex::DepthScale as usize,
+        );
+    }
 }
 
 #[cfg(any(test, feature = "bench-support", feature = "test-support"))]

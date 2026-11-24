@@ -1,4 +1,5 @@
 // Modified for gpui-pre (snapshot of zed@f126950): the gpui sources it reads are vendored under `vendor/gpui`.
+// Patched for t3code-gpui: exports the backdrop shader types and checks runtime shaders at build time.
 #![allow(clippy::disallowed_methods, reason = "build scripts are exempt")]
 
 fn main() {
@@ -65,6 +66,8 @@ mod apple_build {
             "SurfaceInputIndex".into(),
             "SurfaceBounds".into(),
             "TransformationMatrix".into(),
+            "BackdropParams".into(),
+            "BackdropInputIndex".into(),
         ]);
         config.no_includes = true;
         config.enumeration.prefix_with_name = true;
@@ -83,7 +86,10 @@ mod apple_build {
         ];
 
         // Source files from this crate
-        let local_src_paths = [crate_dir.join("src/metal_renderer.rs")];
+        let local_src_paths = [
+            crate_dir.join("src/metal_renderer.rs"),
+            crate_dir.join("src/backdrop.rs"),
+        ];
 
         for src_path in gpui_src_paths.iter().chain(local_src_paths.iter()) {
             println!("cargo:rerun-if-changed={}", src_path.display());
@@ -121,8 +127,52 @@ mod apple_build {
         }
         let shader_source_path = "./src/shaders.metal";
         let shader_path = PathBuf::from(shader_source_path);
-        stitch_header(header_path, &shader_path).unwrap();
+        let stitched_path = stitch_header(header_path, &shader_path).unwrap();
         println!("cargo:rerun-if-changed={shader_source_path}");
+        check_stitched_shaders(&stitched_path);
+    }
+
+    /// Compiles the stitched shaders, which the app otherwise first compiles
+    /// at launch, so that a shader error fails the build where the Metal
+    /// compiler is installed (Xcode, as on CI). Without it, warns and goes on.
+    #[cfg(feature = "runtime_shaders")]
+    fn check_stitched_shaders(stitched_path: &Path) {
+        use std::process::{self, Command};
+
+        println!("cargo:rerun-if-env-changed=SDKROOT");
+        println!("cargo:rerun-if-env-changed=DEVELOPER_DIR");
+        let sdk = match env::var("CARGO_CFG_TARGET_OS").as_deref() {
+            Ok("ios") => "iphoneos",
+            _ => "macosx",
+        };
+        let has_compiler = Command::new("xcrun")
+            .args(["-sdk", sdk, "-f", "metal"])
+            .output()
+            .is_ok_and(|output| output.status.success());
+        if !has_compiler {
+            println!("cargo::warning=skipping the Metal shader check: xcrun cannot find `metal`");
+            return;
+        }
+        let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
+        let output = Command::new("xcrun")
+            .current_dir(&out_dir)
+            .args(["-sdk", sdk, "metal", "-c", "-o"])
+            .arg(out_dir.join("stitched_shaders.air"))
+            .arg(stitched_path)
+            .output()
+            .unwrap();
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        // Xcode 26 installs the Metal toolchain separately
+        // (`xcodebuild -downloadComponent MetalToolchain`).
+        if !output.status.success() && stderr.contains("Metal Toolchain") {
+            println!("cargo::warning=skipping the Metal shader check: {}", stderr.trim());
+            return;
+        }
+        if !output.status.success() {
+            println!("cargo::error=metal shader compilation failed:\n{stderr}");
+            process::exit(1);
+        }
+        std::fs::remove_file(out_dir.join("stitched_shaders.air")).ok();
     }
 
     #[cfg(not(feature = "runtime_shaders"))]

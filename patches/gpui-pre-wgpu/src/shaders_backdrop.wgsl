@@ -118,9 +118,9 @@ fn rounded_rect_coverage(point: vec2<f32>) -> f32 {
         radius = select(params.corner_radii.z, params.corner_radii.y, center_to_point.y < 0.0);
     }
     let corner_to_point = abs(center_to_point) - half_size + vec2<f32>(radius);
-    let distance = min(max(corner_to_point.x, corner_to_point.y), 0.0)
+    let edge_distance = min(max(corner_to_point.x, corner_to_point.y), 0.0)
         + length(max(corner_to_point, vec2<f32>(0.0))) - radius;
-    return saturate(0.5 - distance);
+    return saturate(0.5 - edge_distance);
 }
 
 @fragment

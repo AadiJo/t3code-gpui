@@ -5,6 +5,7 @@
 //! owns GPU resources, text rendering, Keychain access, and thermal notifications
 //! while leaving application lifecycle, windowing, and input to each platform backend.
 
+mod backdrop;
 mod dispatcher;
 pub mod display_link;
 pub mod keychain;

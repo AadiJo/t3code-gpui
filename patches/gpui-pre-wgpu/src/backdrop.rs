@@ -39,13 +39,10 @@ struct BackdropParams {
     pad: [u32; 2],
 }
 
-/// How one backdrop is blurred: the region it reads and the blur in
-/// downsampled texels.
+/// One backdrop's plan with the parameters its shaders read.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct BackdropPlan {
-    region_origin: [u32; 2],
-    region_size: [u32; 2],
-    down_size: [u32; 2],
+    plan: gpui::BackdropPlan,
     params: BackdropParams,
 }
 
@@ -57,27 +54,7 @@ impl BackdropPlan {
         viewport: Size<DevicePixels>,
         premultiplied_alpha: bool,
     ) -> Option<Self> {
-        let viewport = [viewport.width.0 as f32, viewport.height.0 as f32];
-        let sample = backdrop.sample_bounds();
-        let left = sample.origin.x.0.floor().max(0.);
-        let top = sample.origin.y.0.floor().max(0.);
-        let right = (sample.origin.x.0 + sample.size.width.0).ceil().min(viewport[0]);
-        let bottom = (sample.origin.y.0 + sample.size.height.0).ceil().min(viewport[1]);
-        if right <= left || bottom <= top {
-            return None;
-        }
-        let draw = backdrop.bounds.intersect(&backdrop.content_mask.bounds);
-        let draw_left = draw.origin.x.0.max(0.);
-        let draw_top = draw.origin.y.0.max(0.);
-        let draw_right = (draw.origin.x.0 + draw.size.width.0).min(viewport[0]);
-        let draw_bottom = (draw.origin.y.0 + draw.size.height.0).min(viewport[1]);
-        if draw_right <= draw_left || draw_bottom <= draw_top {
-            return None;
-        }
-
-        let region_size = [(right - left) as u32, (bottom - top) as u32];
-        let (factor, sigma) = downsampled_gaussian(backdrop.blur_radius.0);
-        let down_size = region_size.map(|size| size.div_ceil(factor));
+        let plan = backdrop.plan(viewport)?;
         let corner_radii = backdrop.corner_radii;
         let params = BackdropParams {
             corner_radii: [
@@ -86,46 +63,24 @@ impl BackdropPlan {
                 corner_radii.bottom_right.0,
                 corner_radii.bottom_left.0,
             ],
-            viewport_size: viewport,
-            region_origin: [left, top],
-            region_size: region_size.map(|size| size as f32),
-            down_size: down_size.map(|size| size as f32),
-            draw_origin: [draw_left, draw_top],
-            draw_size: [draw_right - draw_left, draw_bottom - draw_top],
+            viewport_size: [viewport.width.0 as f32, viewport.height.0 as f32],
+            region_origin: plan.region_origin.map(|value| value as f32),
+            region_size: plan.region_size.map(|value| value as f32),
+            down_size: plan.down_size.map(|value| value as f32),
+            draw_origin: plan.draw_origin,
+            draw_size: plan.draw_size,
             bounds_origin: [backdrop.bounds.origin.x.0, backdrop.bounds.origin.y.0],
             bounds_size: [backdrop.bounds.size.width.0, backdrop.bounds.size.height.0],
-            sigma: sigma.max(1e-3),
-            radius: if sigma > 0. { (3. * sigma).ceil() as i32 } else { 0 },
-            factor,
+            sigma: plan.sigma,
+            radius: plan.radius as i32,
+            factor: plan.factor,
             saturation: backdrop.saturation,
             opacity: backdrop.opacity,
             premultiplied_alpha: premultiplied_alpha as u32,
             pad: [0; 2],
         };
-        Some(Self {
-            region_origin: [left as u32, top as u32],
-            region_size,
-            down_size,
-            params,
-        })
+        Some(Self { plan, params })
     }
-}
-
-/// Splits a Gaussian of standard deviation `sigma` pixels into a box average
-/// over `factor` pixels and a Gaussian in the averaged texels, returning both.
-///
-/// The box average, the Gaussian and the bilinear upsample add their
-/// variances: `(f² - 1) / 12 + f²σ'² + f² / 6 = σ²`. A factor of at most a
-/// third of `sigma` keeps the box well inside the Gaussian, where the result
-/// differs from a full-resolution blur by less than one level in 255.
-fn downsampled_gaussian(sigma: f32) -> (u32, f32) {
-    if sigma <= 0. {
-        return (1, 0.);
-    }
-    let factor = ((sigma / 3.).max(1.).log2().floor().exp2() as u32).clamp(1, 8);
-    let f = factor as f32;
-    let variance = sigma * sigma - (f * f - 1.) / 12. - if factor > 1 { f * f / 6. } else { 0. };
-    (factor, (variance / (f * f)).max(0.25).sqrt())
 }
 
 /// A texture an intermediate image is drawn into or copied into.
@@ -281,8 +236,8 @@ impl BackdropRenderer {
                     texture: target,
                     mip_level: 0,
                     origin: wgpu::Origin3d {
-                        x: plan.region_origin[0],
-                        y: plan.region_origin[1],
+                        x: plan.plan.region_origin[0],
+                        y: plan.plan.region_origin[1],
                         z: 0,
                     },
                     aspect: wgpu::TextureAspect::All,
@@ -294,8 +249,8 @@ impl BackdropRenderer {
                     aspect: wgpu::TextureAspect::All,
                 },
                 wgpu::Extent3d {
-                    width: plan.region_size[0],
-                    height: plan.region_size[1],
+                    width: plan.plan.region_size[0],
+                    height: plan.plan.region_size[1],
                     depth_or_array_layers: 1,
                 },
             );
@@ -321,8 +276,8 @@ impl BackdropRenderer {
                 pass.set_viewport(
                     0.,
                     0.,
-                    plan.down_size[0] as f32,
-                    plan.down_size[1] as f32,
+                    plan.plan.down_size[0] as f32,
+                    plan.plan.down_size[1] as f32,
                     0.,
                     1.,
                 );
@@ -471,8 +426,8 @@ impl SlotResources<'_> {
         let region_usage = wgpu::TextureUsages::COPY_DST;
         let blur_usage = wgpu::TextureUsages::RENDER_ATTACHMENT;
         if index == slots.len() {
-            let region = step(plan.region_size);
-            let down = step(plan.down_size);
+            let region = step(plan.plan.region_size);
+            let down = step(plan.plan.down_size);
             slots.push(Slot {
                 region: Intermediate::new(device, "backdrop_region", format, region, region_usage),
                 first: Intermediate::new(device, "backdrop_first", format, down, blur_usage),
@@ -485,13 +440,13 @@ impl SlotResources<'_> {
             let current = texture.size();
             step([current[0].max(size[0]), current[1].max(size[1])])
         };
-        if !slot.region.fits(plan.region_size) || slot.region.texture.format() != format {
-            let size = grown(&slot.region, plan.region_size);
+        if !slot.region.fits(plan.plan.region_size) || slot.region.texture.format() != format {
+            let size = grown(&slot.region, plan.plan.region_size);
             slot.region = Intermediate::new(device, "backdrop_region", format, size, region_usage);
             slot.bind_groups = None;
         }
-        if !slot.first.fits(plan.down_size) || slot.first.texture.format() != format {
-            let size = grown(&slot.first, plan.down_size);
+        if !slot.first.fits(plan.plan.down_size) || slot.first.texture.format() != format {
+            let size = grown(&slot.first, plan.plan.down_size);
             slot.first = Intermediate::new(device, "backdrop_first", format, size, blur_usage);
             slot.second = Intermediate::new(device, "backdrop_second", format, size, blur_usage);
             slot.bind_groups = None;

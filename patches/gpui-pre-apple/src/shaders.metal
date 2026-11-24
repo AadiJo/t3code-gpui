@@ -1352,3 +1352,133 @@ bool has_border(Edges_ScaledPixels border_widths) {
 bool is_shaped(Quad quad) {
   return has_rounded_corners(quad.corner_radii) || has_border(quad.border_widths);
 }
+
+// --- backdrops --- //
+//
+// CSS `backdrop-filter: blur() saturate()`, mirroring gpui-pre-wgpu's
+// `shaders_backdrop.wgsl` function for function; `backdrop.rs` drives them.
+
+struct BackdropVertexOutput {
+  float4 position [[position]];
+};
+
+float2 backdrop_float2(constant float *values) {
+  return float2(values[0], values[1]);
+}
+
+// One triangle covering the viewport, which each pass sets to its target.
+vertex BackdropVertexOutput backdrop_fullscreen_vertex(uint vertex_id [[vertex_id]]) {
+  float2 unit = float2(float((vertex_id << 1u) & 2u), float(vertex_id & 2u));
+  return BackdropVertexOutput{float4(unit * float2(2., -2.) + float2(-1., 1.), 0., 1.)};
+}
+
+// Averages each factor x factor block of the copied region.
+fragment float4 backdrop_downsample_fragment(
+    BackdropVertexOutput input [[stage_in]],
+    constant BackdropParams *params [[buffer(BackdropInputIndex_Params)]],
+    texture2d<float> source [[texture(BackdropInputIndex_Source)]]) {
+  int factor = int(params->factor);
+  int2 origin = int2(input.position.xy) * factor;
+  int2 last = int2(backdrop_float2(params->region_size)) - int2(1);
+  float4 sum = float4(0.);
+  for (int y = 0; y < factor; y++) {
+    for (int x = 0; x < factor; x++) {
+      sum += source.read(uint2(min(origin + int2(x, y), last)));
+    }
+  }
+  return sum / float(factor * factor);
+}
+
+// Reflects a texel index that falls outside 0..=last back inside.
+int2 backdrop_mirror(int2 index, int2 last) {
+  int2 reflected = select(index, -index - int2(1), index < int2(0));
+  return clamp(select(reflected, 2 * last - reflected + int2(1), reflected > last),
+               int2(0), last);
+}
+
+float4 backdrop_gaussian_blur(float2 position, int2 direction,
+                              constant BackdropParams *params,
+                              texture2d<float> source) {
+  int2 texel = int2(position);
+  int2 last = int2(backdrop_float2(params->down_size)) - int2(1);
+  if (params->radius == 0) {
+    return source.read(uint2(min(texel, last)));
+  }
+  float exponent = -0.5 / (params->sigma * params->sigma);
+  float4 sum = float4(0.);
+  float weights = 0.;
+  for (int i = -params->radius; i <= params->radius; i++) {
+    float weight = exp(float(i * i) * exponent);
+    sum += weight * source.read(uint2(backdrop_mirror(texel + direction * i, last)));
+    weights += weight;
+  }
+  return sum / weights;
+}
+
+fragment float4 backdrop_blur_horizontal_fragment(
+    BackdropVertexOutput input [[stage_in]],
+    constant BackdropParams *params [[buffer(BackdropInputIndex_Params)]],
+    texture2d<float> source [[texture(BackdropInputIndex_Source)]]) {
+  return backdrop_gaussian_blur(input.position.xy, int2(1, 0), params, source);
+}
+
+fragment float4 backdrop_blur_vertical_fragment(
+    BackdropVertexOutput input [[stage_in]],
+    constant BackdropParams *params [[buffer(BackdropInputIndex_Params)]],
+    texture2d<float> source [[texture(BackdropInputIndex_Source)]]) {
+  return backdrop_gaussian_blur(input.position.xy, int2(0, 1), params, source);
+}
+
+vertex BackdropVertexOutput backdrop_composite_vertex(
+    uint vertex_id [[vertex_id]],
+    constant BackdropParams *params [[buffer(BackdropInputIndex_Params)]]) {
+  float2 unit = float2(float(vertex_id & 1u), 0.5 * float(vertex_id & 2u));
+  float2 position = backdrop_float2(params->draw_origin) + unit * backdrop_float2(params->draw_size);
+  float2 device = position / backdrop_float2(params->viewport_size) * float2(2., -2.) + float2(-1., 1.);
+  return BackdropVertexOutput{float4(device, 0., 1.)};
+}
+
+// The CSS `saturate()` matrix.
+float3 backdrop_saturate_color(float3 color, float amount) {
+  float3 r = float3(0.213 + 0.787 * amount, 0.715 - 0.715 * amount, 0.072 - 0.072 * amount);
+  float3 g = float3(0.213 - 0.213 * amount, 0.715 + 0.285 * amount, 0.072 - 0.072 * amount);
+  float3 b = float3(0.213 - 0.213 * amount, 0.715 - 0.715 * amount, 0.072 + 0.928 * amount);
+  return float3(dot(r, color), dot(g, color), dot(b, color));
+}
+
+// How much of the pixel at `point` the rounded border box covers, with the
+// same half-pixel antialiasing as quads.
+float backdrop_rounded_rect_coverage(float2 point, constant BackdropParams *params) {
+  float2 half_size = backdrop_float2(params->bounds_size) * 0.5;
+  float2 center_to_point = point - (backdrop_float2(params->bounds_origin) + half_size);
+  float radius;
+  if (center_to_point.x < 0.) {
+    radius = center_to_point.y < 0. ? params->corner_radii[0] : params->corner_radii[3];
+  } else {
+    radius = center_to_point.y < 0. ? params->corner_radii[1] : params->corner_radii[2];
+  }
+  float2 corner_to_point = abs(center_to_point) - half_size + float2(radius);
+  float edge_distance = min(max(corner_to_point.x, corner_to_point.y), 0.) +
+                        length(max(corner_to_point, float2(0.))) - radius;
+  return saturate(0.5 - edge_distance);
+}
+
+fragment float4 backdrop_composite_fragment(
+    BackdropVertexOutput input [[stage_in]],
+    constant BackdropParams *params [[buffer(BackdropInputIndex_Params)]],
+    texture2d<float> source [[texture(BackdropInputIndex_Source)]]) {
+  constexpr sampler linear_sampler(mag_filter::linear, min_filter::linear,
+                                   address::clamp_to_edge);
+  float2 down_size = backdrop_float2(params->down_size);
+  float2 texel = clamp((input.position.xy - backdrop_float2(params->region_origin)) /
+                           float(params->factor),
+                       float2(0.5), down_size - float2(0.5));
+  float2 texture_size = float2(source.get_width(), source.get_height());
+  float4 blurred = source.sample(linear_sampler, texel / texture_size);
+  float3 color = saturate(backdrop_saturate_color(blurred.rgb, params->saturation));
+  float coverage = backdrop_rounded_rect_coverage(input.position.xy, params) * params->opacity;
+  if (params->premultiplied_alpha != 0u) {
+    return float4(color * coverage, coverage);
+  }
+  return float4(color, coverage);
+}

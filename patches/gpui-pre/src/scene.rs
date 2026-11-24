@@ -5,7 +5,8 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    AtlasTextureId, AtlasTile, Background, Bounds, ContentMask, Corners, Edges, HitboxId, Hsla,
+    AtlasTextureId, AtlasTile, Background, Bounds, ContentMask, Corners, DevicePixels, Edges,
+    HitboxId, Hsla,
     NativeViewId, Path, PathTiles, Pixels, Point, Radians, ScaledPixels, Size, TimedTransformation,
     bounds_tree::BoundsTree,
 };
@@ -1290,6 +1291,79 @@ impl Backdrop {
     pub fn sample_bounds(&self) -> Bounds<ScaledPixels> {
         self.bounds
     }
+
+    /// How a renderer blurs this backdrop in a frame of `viewport` pixels, or
+    /// `None` when none of it is visible. Every renderer draws from this plan.
+    pub fn plan(&self, viewport: Size<DevicePixels>) -> Option<BackdropPlan> {
+        let viewport = [viewport.width.0 as f32, viewport.height.0 as f32];
+        let sample = self.sample_bounds();
+        let left = sample.origin.x.0.floor().max(0.);
+        let top = sample.origin.y.0.floor().max(0.);
+        let right = (sample.origin.x.0 + sample.size.width.0).ceil().min(viewport[0]);
+        let bottom = (sample.origin.y.0 + sample.size.height.0).ceil().min(viewport[1]);
+        let draw = self.bounds.intersect(&self.content_mask.bounds);
+        let draw_left = draw.origin.x.0.max(0.);
+        let draw_top = draw.origin.y.0.max(0.);
+        let draw_right = (draw.origin.x.0 + draw.size.width.0).min(viewport[0]);
+        let draw_bottom = (draw.origin.y.0 + draw.size.height.0).min(viewport[1]);
+        if right <= left || bottom <= top || draw_right <= draw_left || draw_bottom <= draw_top {
+            return None;
+        }
+        let region_size = [(right - left) as u32, (bottom - top) as u32];
+        let (factor, sigma) = downsampled_gaussian(self.blur_radius.0);
+        Some(BackdropPlan {
+            region_origin: [left as u32, top as u32],
+            region_size,
+            down_size: region_size.map(|size| size.div_ceil(factor)),
+            draw_origin: [draw_left, draw_top],
+            draw_size: [draw_right - draw_left, draw_bottom - draw_top],
+            factor,
+            sigma: sigma.max(1e-3),
+            radius: (3. * sigma).ceil() as u32,
+        })
+    }
+}
+
+/// How a [`Backdrop`] is blurred. The renderer copies `region` out of the
+/// frame, averages each `factor` x `factor` block into `down_size` texels,
+/// blurs those with a Gaussian of `sigma` texels reaching `radius` texels each
+/// way, mirrored at the region's edges, and draws the result over `draw`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct BackdropPlan {
+    /// The copied region's top left corner, in frame pixels.
+    pub region_origin: [u32; 2],
+    /// The copied region's size, in frame pixels.
+    pub region_size: [u32; 2],
+    /// The downsampled region's size, in texels.
+    pub down_size: [u32; 2],
+    /// Where the result is drawn: the border box within its content mask.
+    pub draw_origin: [f32; 2],
+    #[expect(missing_docs)]
+    pub draw_size: [f32; 2],
+    /// How many frame pixels each downsampled texel averages, per axis.
+    pub factor: u32,
+    /// The Gaussian's standard deviation, in downsampled texels.
+    pub sigma: f32,
+    /// How many texels the Gaussian reads on each side; zero for no blur.
+    pub radius: u32,
+}
+
+/// Splits a Gaussian of standard deviation `sigma` pixels into a box average
+/// over `factor` pixels and a Gaussian in the averaged texels, returning both.
+///
+/// The box average, the Gaussian and the bilinear upsample add their
+/// variances: `(f² - 1) / 12 + f²σ'² + f² / 6 = σ²`. A factor of at most a
+/// third of `sigma` keeps the box well inside the Gaussian, where the result
+/// stays within about one level in 255 of a full-resolution blur.
+fn downsampled_gaussian(sigma: f32) -> (u32, f32) {
+    if sigma <= 0. {
+        return (1, 0.);
+    }
+    let factor = ((sigma / 3.).max(1.).log2().floor().exp2() as u32).clamp(1, 8);
+    let f = factor as f32;
+    let upsample = if factor > 1 { f * f / 6. } else { 0. };
+    let variance = sigma * sigma - (f * f - 1.) / 12. - upsample;
+    (factor, (variance / (f * f)).max(0.25).sqrt())
 }
 
 impl From<Backdrop> for Primitive {
