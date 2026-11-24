@@ -272,6 +272,14 @@ impl Sidebar {
         &self.list
     }
 
+    /// Puts `text` in the search field, as typing it would.
+    pub fn set_search(&mut self, text: &str, window: &mut Window, cx: &mut Context<Self>) {
+        self.search.update(cx, |state, cx| state.set_value(text.to_owned(), window, cx));
+        self.options.search = SharedString::from(text.to_owned());
+        cx.emit(SidebarEvent::SearchChanged(self.options.search.clone()));
+        self.rebuild(cx);
+    }
+
     /// Mutable list options (shelves, folders, search), for scenes and restores.
     pub fn options_mut(&mut self, cx: &mut Context<Self>, f: impl FnOnce(&mut SidebarListOptions)) {
         f(&mut self.options);

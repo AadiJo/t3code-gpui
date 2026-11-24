@@ -14,11 +14,15 @@
 //   send     attachments through the signed upload, a model and mode change carried by the
 //            turn, the sent images, /clear, edit from here, fork and /side; writes
 //            send-record.json (what the server recorded for the send)
+//   sidebar  a second server (`T3_PAIRING_URL_B`, `T3_PROJECT_ROOT_B`): rows from both, one
+//            repository group across them and the per-project override, favicons, provider
+//            marks, a turn on one server leaving the other alone, unread and visits, message
+//            search, snooze, archive and the Archive list, the composer draft on disk
 //   import   a fresh data directory and a stand-in install (`T3CODE_IMPORT_HOME`, made by
 //            `import-check`, encrypted with the fixture macOS key): the launch import runs,
 //            the window explains the Keychain read, environments and settings arrive
 //
-// Usage: live-check <seed|drive|restart|import|send> <out-dir>
+// Usage: live-check <seed|drive|restart|import|send|sidebar> <out-dir>
 #[allow(dead_code)]
 #[path = "import/mod.rs"]
 mod import;
@@ -388,7 +392,7 @@ fn key_of(state: &Seeded, thread: &str) -> ThreadKey {
 
 fn main() -> anyhow::Result<()> {
     let mut args = std::env::args().skip(1);
-    let usage = "usage: live-check <seed|drive|restart|import|send> <out-dir> | live-check timeline <projections-dir> <out-dir> | live-check commands <corpus.json> <out.json>";
+    let usage = "usage: live-check <seed|drive|restart|import|send|sidebar> <out-dir> | live-check timeline <projections-dir> <out-dir> | live-check commands <corpus.json> <out.json>";
     let phase = args.next().context(usage)?;
     let out = PathBuf::from(args.next().context(usage)?);
     if phase == "timeline" {
@@ -406,6 +410,7 @@ fn main() -> anyhow::Result<()> {
         "restart" => run_restart(&mut check),
         "import" => run_import(&mut check),
         "send" => run_send(&mut check),
+        "sidebar" => run_sidebar(&mut check),
         other => Err(anyhow::anyhow!("unknown phase {other}")),
     };
     check.finish(&phase, result)
@@ -1531,5 +1536,223 @@ fn run_send(check: &mut Check) -> anyhow::Result<()> {
     let original = key.clone();
     check.pump(move |c| matches!(c.route(), Route::Thread(k) if k != original), Duration::from_secs(30), "the side chat opens")?;
     check.shot("36-side-chat.png")?;
+    Ok(())
+}
+
+/// Runs a row command as the sidebar's context menu does.
+fn sidebar_command(root: &Entity<AppRoot>, key: &ThreadKey, command: t3code_web::components::sidebar::context_menu::MenuCommand, _: &mut Window, cx: &mut App) {
+    let sidebar = root.read(cx).sidebar().clone();
+    let keys = vec![key.clone()];
+    sidebar.update(cx, |_, cx| cx.emit(t3code_web::components::sidebar::SidebarEvent::ThreadCommand(keys, command)));
+}
+
+/// The sidebar's groups: label and how many projects each joins.
+fn sidebar_groups(check: &mut Check) -> Vec<(String, usize, bool)> {
+    check.read(|root, cx| {
+        root.sidebar().read(cx).list().groups.iter().map(|g| (g.label.to_string(), g.member_refs.len(), g.favicon.is_some())).collect()
+    })
+}
+
+/// A shell row of the snapshot, by key.
+fn sidebar_row(check: &mut Check, key: &ThreadKey) -> Option<Arc<t3code_web::components::sidebar::model::SidebarThread>> {
+    let key = key.clone();
+    check.cx.update(|cx| StateBridge::shell(cx).read(cx).snapshot().threads.iter().find(|t| t.key == key).cloned())
+}
+
+/// The `sidebar` phase, with a second server (`T3_PAIRING_URL_B`, project at `T3_PROJECT_ROOT_B`,
+/// a clone of the first with the same remote): rows from both servers, one repository group across
+/// them and the per-project override splitting it, the project favicon and its monogram fallback,
+/// provider marks, a turn on one server leaving the other's open thread alone, unread and the
+/// visit on open, server message search, snooze, archive and the Archive list, and the composer
+/// draft on disk.
+fn run_sidebar(check: &mut Check) -> anyhow::Result<()> {
+    use t3code_web::components::sidebar::context_menu::{MenuCommand, SnoozePreset};
+    let state = load_state(&check.out)?;
+    check.pump(|c| c.connected(), Duration::from_secs(30), "server A connected")?;
+    let environments = check.cx.update(|cx| ConnectionRuntime::state(cx).read(cx).environments.len());
+    if environments < 2 {
+        let url = std::env::var("T3_PAIRING_URL_B").context("T3_PAIRING_URL_B")?;
+        let request = parse_pairing_url(&url)?;
+        let pairing = check.cx.update(|cx| ConnectionRuntime::global(cx).pair(request, None, cx));
+        let label = check.wait_task(pairing)?.map_err(|e| anyhow::anyhow!("{}", e.0))?;
+        check.note(format!("paired server B as {label}"));
+    }
+    check.pump(|c| c.connected() && c.cx.update(|cx| ConnectionRuntime::state(cx).read(cx).environments.len() >= 2), Duration::from_secs(30), "both servers connected")?;
+    let env_a = t3code_contracts::EnvironmentId::new(state.environment_id.as_str());
+    let env_b = check.cx.update(|cx| {
+        ConnectionRuntime::state(cx).read(cx).environments.iter().map(|e| e.entry.environment_id.clone()).find(|id| id.as_str() != env_a.as_str())
+    });
+    let env_b = t3code_contracts::EnvironmentId::new(env_b.context("server B")?.as_str());
+    let commands_b = commands_of(check, &env_b)?;
+    let root_b = PathBuf::from(std::env::var("T3_PROJECT_ROOT_B").context("T3_PROJECT_ROOT_B")?);
+    let root_b_text = root_b.display().to_string();
+    let existing = check.cx.update(|cx| {
+        let shell = StateBridge::environment(&env_b, cx)?.read(cx).shell.clone();
+        shell.snapshot.as_ref()?.projects.iter().find(|p| p.workspace_root == root_b_text).map(|p| p.id.clone())
+    });
+    let project_b = match existing {
+        Some(id) => id,
+        None => {
+            let id = ProjectId::new(uuid::Uuid::new_v4().to_string());
+            let mutation = ProjectMutation::ProjectCreate(ProjectMutationProjectCreate {
+                command_id: CommandId::new(uuid::Uuid::new_v4().to_string()),
+                project_id: id.clone(),
+                title: "orbit".into(),
+                workspace_root: root_b_text.clone(),
+                create_workspace_root_if_missing: Some(false),
+                default_model_selection: None,
+                scripts: None,
+            });
+            let c = commands_b.clone();
+            check.block(async move { c.mutate_project(mutation).await })?.map_err(|e| anyhow::anyhow!("{e}"))?;
+            id
+        }
+    };
+    let thread_b = ThreadId::new(uuid::Uuid::new_v4().to_string());
+    let create = CreateThread {
+        thread_id: thread_b.clone(),
+        project_id: project_b.clone(),
+        title: "Server B review".into(),
+        model_selection: ModelSelection { instance_id: "devReplay".into(), model: "multi-turn".into(), options: None },
+        runtime_mode: RuntimeMode::FullAccess,
+        interaction_mode: ProviderInteractionMode::Default,
+        branch: Some("feature/clamp".into()),
+        worktree_path: None,
+    };
+    let c = commands_b.clone();
+    check.block(async move { c.create_thread(create).await })?.map_err(|e| anyhow::anyhow!("{e}"))?;
+    let key_b = thread_key(&env_b, &thread_b);
+    let kb = key_b.clone();
+    check.pump(move |c| sidebar_row(c, &kb).is_some(), Duration::from_secs(20), "server B's thread reaches the sidebar")?;
+    let (rows_a, rows_b) = check.cx.update(|cx| {
+        let shell = StateBridge::shell(cx);
+        let threads = &shell.read(cx).snapshot().threads;
+        let a = threads.iter().filter(|t| t.key.environment_id.0.as_ref() == env_a.as_str()).count();
+        let b = threads.iter().filter(|t| t.key.environment_id.0.as_ref() == env_b.as_str()).count();
+        (a, b)
+    });
+    check.check("rows from both servers show", rows_a > 0 && rows_b > 0, format!("A {rows_a}, B {rows_b}"));
+    let marks = check.cx.update(|cx| StateBridge::shell(cx).read(cx).snapshot().threads.iter().filter(|t| t.provider.is_some()).count());
+    check.check("rows carry their provider mark", marks > 0, format!("{marks} rows with a mark"));
+
+    // One repository, two servers: one group once both servers resolved the identity.
+    // The web names a whole-repository group for the repository ("example/orbit") when the
+    // members' title is just the repository's name.
+    check.pump(
+        |c| sidebar_groups(c).iter().any(|(_, members, _)| *members == 2),
+        Duration::from_secs(30),
+        "the two servers' orbit projects share one repository group",
+    )
+    .ok();
+    let groups = sidebar_groups(check);
+    check.check("projects group by repository across servers", groups.iter().any(|(l, m, _)| l == "example/orbit" && *m == 2), format!("{groups:?}"));
+    check.pump(|c| sidebar_groups(c).iter().any(|(_, _, favicon)| *favicon), Duration::from_secs(20), "server A's favicon loaded").ok();
+    let groups = sidebar_groups(check);
+    check.check("the group shows the project's favicon", groups.iter().any(|(_, _, f)| *f), format!("{groups:?}"));
+    check.shot("40-two-servers.png")?;
+    // The owner's per-project override: B's project on its own.
+    let physical_b = t3code_client_runtime::state::project_grouping::physical_project_key(&env_b, &root_b_text);
+    check.cx.update(|cx| {
+        t3code_web::hooks::use_settings::ClientSettingsStore::update(cx, |s| {
+            s.sidebar_project_grouping_overrides.insert(physical_b.clone(), t3code_contracts::SidebarProjectGroupingMode::Separate);
+        })
+    });
+    check.pump(|c| sidebar_groups(c).iter().filter(|(l, m, _)| l == "example/orbit" && *m == 1).count() == 2, Duration::from_secs(5), "the override splits the group").ok();
+    let split = sidebar_groups(check);
+    check.check("a per-project override splits that project out", split.iter().filter(|(l, m, _)| l == "example/orbit" && *m == 1).count() == 2, format!("{split:?}"));
+    let favicons: Vec<bool> = split.iter().filter(|(l, _, _)| l == "example/orbit").map(|(_, _, f)| *f).collect();
+    check.check("server B's copy keeps the monogram (no favicon file there)", favicons.contains(&true) && favicons.contains(&false), format!("{favicons:?}"));
+    check.shot("41-override-separate.png")?;
+    check.cx.update(|cx| {
+        t3code_web::hooks::use_settings::ClientSettingsStore::update(cx, |s| {
+            s.sidebar_project_grouping_overrides.remove(&physical_b);
+        })
+    });
+
+    // A turn on server B while server A's thread is open leaves A alone.
+    let key_a = key_of(&state, &state.long_thread);
+    check.go(&key_a);
+    check.pump(|c| c.shown_input().entries.len() > 5, Duration::from_secs(20), "server A's long thread shown")?;
+    let before = check.shown_input().entries.len();
+    let message = SendMessage::text(thread_b.clone(), "Compare the zeppelin retry budget with server A.");
+    let c = commands_b.clone();
+    check.block(async move { c.send_message(message).await })?.map_err(|e| anyhow::anyhow!("{e}"))?;
+    let kb = key_b.clone();
+    check.pump(
+        move |c| sidebar_row(c, &kb).is_some_and(|t| t.latest_run.as_ref().is_some_and(|r| r.completed_at.is_some())),
+        Duration::from_secs(60),
+        "server B's turn completes",
+    )?;
+    let after = check.shown_input().entries.len();
+    let route = check.route();
+    check.check("server A's open thread is untouched", route == Route::Thread(key_a.clone()) && after == before, format!("{before} -> {after} entries"));
+    let unread = check.cx.update(|cx| {
+        let row = StateBridge::shell(cx).read(cx).snapshot().threads.iter().find(|t| t.key == key_b).cloned();
+        row.map(|t| t3code_web::components::sidebar_logic::has_unseen_completion(&t))
+    });
+    check.check("server B's finished thread is unread", unread == Some(true), format!("{unread:?}"));
+    check.shot("42-b-finished-unread.png")?;
+    check.go(&key_b);
+    let kb = key_b.clone();
+    check.pump(
+        move |c| c.cx.update(|cx| StateBridge::shell(cx).read(cx).row(&kb).is_some_and(|row| row.source.last_visited_at.is_some())),
+        Duration::from_secs(20),
+        "opening it records the visit on server B",
+    )?;
+    let kb = key_b.clone();
+    check
+        .pump(move |c| sidebar_row(c, &kb).is_some_and(|t| !t3code_web::components::sidebar_logic::has_unseen_completion(&t)), Duration::from_secs(10), "the row turns read")
+        .ok();
+    let read = check.cx.update(|cx| {
+        StateBridge::shell(cx).read(cx).snapshot().threads.iter().find(|t| t.key == key_b).map(|t| !t3code_web::components::sidebar_logic::has_unseen_completion(t))
+    });
+    check.check("the visited thread reads as read", read == Some(true), format!("{read:?}"));
+
+    // Search by a word only in server B's message.
+    let sidebar = check.read(|root, _| root.sidebar().clone());
+    check.cx.update_window(check.window, |_, w, cx| sidebar.update(cx, |s, cx| s.set_search("zeppelin", w, cx)))?;
+    let kb = key_b.clone();
+    check.pump(
+        move |c| c.read(|root, cx| root.sidebar().read(cx).list().thread_order.contains(&kb)),
+        Duration::from_secs(10),
+        "server message search lists server B's thread",
+    )
+    .ok();
+    let found = check.read(|root, cx| root.sidebar().read(cx).list().thread_order.clone());
+    check.check("a word from a message finds its thread", found.contains(&key_b), format!("{} results", found.len()));
+    check.shot("43-message-search.png")?;
+    check.cx.update_window(check.window, |_, w, cx| sidebar.update(cx, |s, cx| s.set_search("", w, cx)))?;
+
+    // Snooze with a preset, then wake.
+    let root = check.root.clone();
+    check.cx.update_window(check.window, |_, w, cx| sidebar_command(&root, &key_b, MenuCommand::Snooze(SnoozePreset::OneHour), w, cx))?;
+    let kb = key_b.clone();
+    check.pump(move |c| sidebar_row(c, &kb).is_some_and(|t| t.snoozed_until.is_some()), Duration::from_secs(10), "snoozed for an hour")?;
+    check.shot("44-snoozed.png")?;
+    let root = check.root.clone();
+    check.cx.update_window(check.window, |_, w, cx| sidebar_command(&root, &key_b, MenuCommand::Wake, w, cx))?;
+    let kb = key_b.clone();
+    check.pump(move |c| sidebar_row(c, &kb).is_some_and(|t| t.snoozed_until.is_none()), Duration::from_secs(10), "woken")?;
+
+    // A draft written in the composer reaches the drafts file.
+    check.go(&key_a);
+    check.focus_composer();
+    check.type_text("Draft that should survive a restart");
+    check.wait(Duration::from_millis(500));
+    let root = check.root.clone();
+    check.cx.update(|cx| root.update(cx, |root, cx| root.flush_state(cx)));
+    check.cx.update(|cx| StateBridge::drafts(cx).flush());
+    let file = std::fs::read_to_string(data_dir()?.join("client-state/composer-drafts.json")).unwrap_or_default();
+    check.check("the composer draft is on disk", file.contains("Draft that should survive a restart"), format!("{} bytes", file.len()));
+
+    // Archive, then the Archive settings list.
+    let root = check.root.clone();
+    check.cx.update_window(check.window, |_, w, cx| sidebar_command(&root, &key_b, MenuCommand::Archive, w, cx))?;
+    let kb = key_b.clone();
+    check.pump(move |c| sidebar_row(c, &kb).is_none(), Duration::from_secs(10), "the archived thread leaves the sidebar")?;
+    let router = check.read(|root, _| root.router().clone());
+    check.cx.update(|cx| router.update(cx, |r, cx| r.navigate(Route::parse("/settings/archived"), cx)));
+    check.wait(Duration::from_secs(2));
+    check.shot("45-archive-settings.png")?;
     Ok(())
 }
