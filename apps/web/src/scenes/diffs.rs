@@ -2,7 +2,9 @@
 //! and a 5,000-line file. `T3_DIFFS_SCENE` picks a variant as a comma list:
 //! `light`, `split`, `nowrap`, `expanded`, `tree`, `find`, `context`,
 //! `perf` (300 files, 60,000 changed lines), `file` (the plain code view),
-//! `menu`, `menu-turn`, `menu-commits` (the scope menu on the latest turn).
+//! `menu`, `menu-turn`, `menu-commits` (the scope menu on the latest turn),
+//! `base-ref` (the comparison target picker on Changes), `file-menu` (a file
+//! header's context menu), `whitespace` (a tool-call diff with whitespace hidden).
 
 use std::{collections::HashSet, fmt::Write as _, sync::Arc};
 
@@ -95,6 +97,30 @@ pub fn build(window: &mut Window, cx: &mut App) -> AnyView {
         };
         panel.update(cx, |panel, cx| panel.open_scope_menu(submenu, cx));
     }
+    if flags.contains("base-ref") {
+        cx.global_mut::<DiffPanelStore>().select_git_scope("env-local:thread-fixture", crate::diff_panel_store::GitScope::Branch);
+        panel.update(cx, |panel, cx| {
+            panel.set_input(fixture_input(&fixture), cx);
+            panel.toggle_base_ref_picker(window, cx);
+        });
+    }
+    if flags.contains("file-menu") {
+        panel.update(cx, |panel, cx| {
+            panel.set_file_menu_capabilities(
+                crate::file_context_menu::FileContextMenuCapabilities {
+                    reveal: Some(crate::file_context_menu::RevealKind::Finder),
+                    editor_ids: vec![t3code_contracts::EditorId::FileManager, t3code_contracts::EditorId::Vscode, t3code_contracts::EditorId::Zed],
+                },
+                cx,
+            );
+            panel.open_file_menu(fixture.chat_view_path.clone().into(), gpui_kit::point(gpui_kit::px(160.), gpui_kit::px(120.)), cx);
+        });
+    }
+    if flags.contains("whitespace") {
+        cx.global_mut::<DiffPanelStore>().select_tool_call("env-local:thread-fixture", "thread-fixture", "item-1", "1");
+        cx.global_mut::<DiffPanelStore>().ignore_whitespace = Some(true);
+        panel.update(cx, |panel, cx| panel.set_input(fixture_input(&fixture), cx));
+    }
     if flags.contains("find") {
         let view = panel.read(cx).code_view().clone();
         view.update(cx, |view, cx| view.find("message", window, cx));
@@ -112,9 +138,15 @@ pub fn fixture_input(fixture: &Fixture) -> DiffPanelInput {
             .rev()
             .map(|n| TurnSummary { turn_id: format!("turn-{n}").into(), turn_count: n, completed_label: format!("10:4{n} AM").into() })
             .collect(),
+        commits_status: crate::components::diff_panel::CommitsStatus::Loaded { truncated: false },
+        base_ref_choices: vec![
+            crate::components::diff_panel::BaseRefChoice { label: "main".into(), local: Some("main".into()), remote: Some("origin/main".into()) },
+            crate::components::diff_panel::BaseRefChoice { label: "release/0.1".into(), local: Some("release/0.1".into()), remote: None },
+            crate::components::diff_panel::BaseRefChoice { label: "origin/feature/relay".into(), local: None, remote: Some("origin/feature/relay".into()) },
+        ],
         commits: vec![
-            CommitSummary { sha: "4f1c2ab9d0e".into(), subject: "feat(web): diff panel".into(), relative_label: "2h ago".into() },
-            CommitSummary { sha: "9a8b7c6d5e4".into(), subject: "fix(server): stream turn diffs".into(), relative_label: "1d ago".into() },
+            CommitSummary { sha: "4f1c2ab9d0e".into(), subject: "feat(web): diff panel".into(), relative_label: "2h ago".into(), url: Some("https://example.com/commit/4f1c2ab9d0e".into()) },
+            CommitSummary { sha: "9a8b7c6d5e4".into(), subject: "fix(server): stream turn diffs".into(), relative_label: "1d ago".into(), url: None },
         ],
         head_ref: Some("diff-panel".into()),
         base_ref: Some("origin/main".into()),

@@ -118,6 +118,8 @@ pub enum CodeViewEvent {
     DeleteComment { id: SharedString },
     /// The scroll offset changed, for scroll restore.
     Scrolled { offset: f32 },
+    /// A file header was right-clicked: show the file menu at `position`.
+    HeaderContextMenu { path: SharedString, position: Point<Pixels> },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1699,6 +1701,13 @@ impl CodeView {
                 cx.notify();
             }))
             .on_click(cx.listener(move |this, _, _, cx| this.toggle_file(index, cx)))
+            .on_mouse_down(MouseButton::Right, {
+                let path = path.clone();
+                cx.listener(move |_, event: &MouseDownEvent, _, cx| {
+                    cx.stop_propagation();
+                    cx.emit(CodeViewEvent::HeaderContextMenu { path: path.clone(), position: event.position });
+                })
+            })
             .when(hovered, |el| {
                 el.child(div().absolute().left_0().top_0().bottom_0().w(px(3.)).bg(colors.header_hover_edge))
             })

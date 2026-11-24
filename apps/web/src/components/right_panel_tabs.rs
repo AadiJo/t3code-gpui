@@ -479,6 +479,11 @@ impl RightPanel {
                 cx.notify();
             }
             DiffPanelEvent::OpenFile(path) => self.open_file(path.clone(), None, window, cx),
+            DiffPanelEvent::FileMenuAction { action, path } => {
+                if let Some(files) = self.ensure_files(window, cx) {
+                    files.update(cx, |files, cx| files.run_file_action(action.clone(), path.clone(), cx));
+                }
+            }
             // Full contents and review comments need the server.
             DiffPanelEvent::RequestFileContents { .. }
             | DiffPanelEvent::ReviewComment(_)

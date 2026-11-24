@@ -46,7 +46,7 @@ use crate::{
         media::{
             media_actions::MediaKind,
             media_source::{MediaBytes, load_image},
-            video_preview::{ExternalFileCard, open_with_default_app},
+            video_preview::ExternalFileCard,
         },
         ui::{
             button::{Button, ButtonSize, ButtonVariant},
@@ -739,10 +739,13 @@ impl FilesPanel {
         self.expanded = Some((dialog, subscription));
     }
 
-    fn run_file_action(&mut self, action: FileContextMenuAction, path: SharedString, cx: &mut Context<Self>) {
+    /// Runs a file menu row for `path`; the diff panel's header menu uses it too.
+    pub fn run_file_action(&mut self, action: FileContextMenuAction, path: SharedString, cx: &mut Context<Self>) {
         let absolute = absolute_path(self.files.root(), &path);
         match action {
-            FileContextMenuAction::OpenLocally => open_with_default_app(&self.files, &path, cx),
+            FileContextMenuAction::Open => {
+                cx.emit(FilesPanelEvent::OpenInEditor { absolute_path: absolute, editor: EditorId::FileManager, reveal: false })
+            }
             FileContextMenuAction::RevealInFolder => {
                 cx.emit(FilesPanelEvent::OpenInEditor { absolute_path: absolute, editor: EditorId::FileManager, reveal: true })
             }
