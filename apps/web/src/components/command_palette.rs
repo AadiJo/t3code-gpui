@@ -26,7 +26,7 @@ use super::command_palette_logic::{
 };
 use super::command_palette_lookups::{CommandPaletteSource, PaletteFeature};
 use super::command_palette_port_forward_items::port_forwards_item;
-use super::command_palette_project_items::{new_thread_in_items, project_search_items};
+use super::command_palette_project_items::{new_thread_in_items, project_search_items, ProjectContext};
 use super::command_palette_results::{RowCallbacks, render_empty, render_item, render_label, row_height};
 use super::command_palette_theme_items::{change_appearance_item, change_theme_item, theme_editor_item};
 use super::command_palette_thread_items::{build_thread_items, recent_thread_items};
@@ -271,7 +271,7 @@ impl CommandPalette {
             root_groups,
             nested_items,
             thread_items,
-            project_items: project_search_items(&projects),
+            project_items: project_search_items(&projects, &source.environments()),
             settings_items,
             search,
             shown: Vec::new(),
@@ -329,7 +329,11 @@ impl CommandPalette {
                 groups: vec![PaletteGroup {
                     value: "projects".into(),
                     label: t!("Projects"),
-                    items: new_thread_in_items(&projects, scratch_environment.as_ref()),
+                    items: new_thread_in_items(
+                        &projects,
+                        scratch_environment.as_ref(),
+                        &ProjectContext { environments: &environments, current: current_project.clone() },
+                    ),
                 }],
                 initial_query: None,
             };
@@ -386,19 +390,28 @@ impl CommandPalette {
                     "copy", "share", "prompt", "link",
                 ]));
             }
-            items.push(
-                command("action:copy-thread-reference", t!("Copy thread"), IconName::Link, StaticCommand::ThreadCopyReference, &[
-                    "copy", "thread", "thread id", "reference",
-                ])
-                .shortcut(StaticCommand::ThreadCopyReference),
-            );
+            // The subtitle is the thread's title (`resolveThreadReferenceCopyTarget`).
+            let title = active
+                .as_ref()
+                .and_then(|key| source.threads().iter().find(|t| &t.key == key).map(|t| t.title.clone()))
+                .filter(|t| !t.is_empty());
+            let mut copy = command("action:copy-thread-reference", t!("Copy thread"), IconName::Link, StaticCommand::ThreadCopyReference, &[
+                "copy", "thread", "thread id", "reference",
+            ])
+            .shortcut(StaticCommand::ThreadCopyReference);
+            if let Some(title) = title {
+                copy = copy.description(title);
+            }
+            items.push(copy);
             if source.supports(PaletteFeature::LinkPullRequest) {
-                items.push(event("action:link-pull-request", t!("Link pull request to thread"), IconName::GitPullRequestArrow, PaletteEvent::LinkPullRequest, &[
+                items.push(event("action:link-pull-request", t!("Link pull request to thread"), IconName::Link2, PaletteEvent::LinkPullRequest, &[
                     "link", "pull request", "pr", "attach", "stack",
                 ]));
-                items.push(event("action:open-thread-pull-requests", t!("Show linked items"), IconName::GitPullRequestArrow, PaletteEvent::ShowLinkedItems, &[
+                let mut linked = event("action:open-thread-pull-requests", t!("Show linked items"), IconName::Link2, PaletteEvent::ShowLinkedItems, &[
                     "pull requests", "issues", "linked", "stack", "prs",
-                ]));
+                ]);
+                linked.disabled = !source.active_thread_has_linked_items();
+                items.push(linked);
             }
             if source.supports(PaletteFeature::GuestShare) {
                 items.push(event("action:share-thread-with-guest", t!("Share with guest"), IconName::UserPlus, PaletteEvent::ShareWithGuest, &[
@@ -430,7 +443,7 @@ impl CommandPalette {
                 "new project", "create project", "empty", "repository", "repo", "git init",
             ]));
         }
-        items.push(add_project_item(&environments));
+        items.push(add_project_item(&environments).without_chevron());
         items.push(change_theme_item(&source.themes(), cx));
         items.push(change_appearance_item(cx));
         items.push(theme_editor_item());
@@ -657,7 +670,7 @@ impl CommandPalette {
         );
         // `max-h-105` on the popup; the list takes what the input and footer leave.
         let popup_max = theme.rem(26.25).min(viewport.height - theme.sp(8.));
-        let chrome = theme.sp(3.) + theme.sp(8.5) + footer_height(&theme) + px(2.);
+        let chrome = theme.sp(3.) + theme.sp(8.5) + px(2.) + footer_height(&theme) + px(2.);
         let list_padding = theme.sp(4.);
         let content: gpui_kit::Pixels = rows.rows.iter().map(|row| row_height(row, &theme)).sum::<gpui_kit::Pixels>();
         let list_height = (content + list_padding).min(popup_max - chrome);
@@ -672,7 +685,7 @@ impl CommandPalette {
                     let value = shown.item.value.clone();
                     let active = highlighted.as_ref() == Some(&value);
                     let callbacks = {
-                        let (hover, click, drag) = (weak.clone(), weak.clone(), weak.clone());
+                        let (hover, click, drag, pin) = (weak.clone(), weak.clone(), weak.clone(), weak.clone());
                         let (hover_value, item) = (value.clone(), shown.item.clone());
                         RowCallbacks {
                             on_hover: Box::new(move |_, cx| {
@@ -681,13 +694,22 @@ impl CommandPalette {
                             on_click: Box::new(move |window, cx| {
                                 click.update(cx, |palette, cx| palette.run_item(item.clone(), window, cx)).ok();
                             }),
+                            on_pin: {
+                                let pin = pin.clone();
+                                let project = shown.item.project.as_ref().map(|p| p.project_ref.clone());
+                                Box::new(move |_, cx| {
+                                    if let Some(project) = project.clone() {
+                                        pin.update(cx, |_, cx| cx.emit(PaletteEvent::ToggleProjectPin(project))).ok();
+                                    }
+                                })
+                            },
                             on_drag_start: Box::new(move |window, cx| {
                                 drag.update(cx, |palette, cx| palette.close(window, cx)).ok();
                             }),
                         }
                     };
                     let _ = cx;
-                    render_item(ix, shown, active, labels[ix].clone(), theme, Some(callbacks))
+                    render_item(ix, shown, active, labels[ix].clone(), theme, Some(callbacks), cx)
                 }
             }
         })
@@ -745,13 +767,14 @@ impl CommandPalette {
             div()
                 .id("command-palette-back")
                 .cursor_pointer()
-                .child(Icon::new(IconName::ArrowLeft).size(IconSize::Md).color(c.icon_muted))
+                // The back arrow takes the text colour; the addon's 80% opacity dims it.
+                .child(Icon::new(IconName::ArrowLeft).size(IconSize::Custom(theme.rem(1.))).color(c.foreground()))
                 .on_click(cx.listener(|this, _, window, cx| {
                     this.pop_view(window, cx);
                 }))
                 .into_any_element()
         } else {
-            Icon::new(IconName::Search).size(IconSize::Md).color(c.icon_muted).into_any_element()
+            Icon::new(IconName::Search).size(IconSize::Custom(theme.rem(1.))).color(c.icon_muted).into_any_element()
         };
         let field = gpui_kit::component::input::Input::new(&session.input).appearance(false);
         let field = gpui_kit::Styled::h(field, theme.sp(8.5))
@@ -759,11 +782,14 @@ impl CommandPalette {
             .pl(theme.sp(2.) + theme.sp(6.))
             .pr(theme.sp(3.) - px(1.))
             .ui_text(theme, TextSize::Sm, weight::NORMAL);
-        // `CommandInput`: `px-[--command-shell-inset] py-1.5`, a `lg` input without chrome.
+        // `CommandInput`: `px-[--command-shell-inset] py-1.5`, a `lg` input whose
+        // control keeps its 1px transparent border; the addon sits at
+        // `ps-[calc(--spacing(3)-1px)]` inside it.
         div().px(theme.spacing.command_shell_inset).py(theme.sp(1.5)).child(
             div()
                 .relative()
-                .h(theme.sp(8.5))
+                .h(theme.sp(8.5) + px(2.))
+                .p(px(1.))
                 .flex()
                 .items_center()
                 .child(field)
@@ -772,7 +798,8 @@ impl CommandPalette {
                         .absolute()
                         .top_0()
                         .bottom_0()
-                        .left(theme.spacing.command_shell_inset + px(1.) + px(2.))
+                        // `[&_svg]:-mx-0.5` pulls the icon back by 0.125rem.
+                        .left(px(1.) + theme.sp(3.) - px(1.) - theme.rem(0.125))
                         .flex()
                         .items_center()
                         .opacity(0.8)

@@ -367,6 +367,23 @@ impl FixtureUsageSource {
         Rc::new(Self { environments: fixture.environments.clone(), now_ms: fixture.now_ms, hold_summaries: true })
     }
 
+    /// The environments with no provider reporting limits, as the reference server (Replay only) is.
+    pub fn without_limits() -> Rc<Self> {
+        let fixture = Self::new();
+        let environments: Arc<[UsageEnvironment]> = fixture
+            .environments
+            .borrow()
+            .iter()
+            .cloned()
+            .map(|mut environment| {
+                environment.limits.providers = Arc::from([]);
+                environment
+            })
+            .collect();
+        let (_, receiver) = watch::channel(environments);
+        Rc::new(Self { environments: receiver, now_ms: fixture.now_ms, hold_summaries: false })
+    }
+
     pub fn new() -> Rc<Self> {
         let iso = |minutes: i64| t3code_shared::usage_format::iso_millis(FIXTURE_NOW_MS + minutes * 60_000);
         let window = |id: &str, kind: &str, label: &str, used: f64, resets_in_minutes: i64, length: Option<u64>| {
@@ -387,7 +404,7 @@ impl FixtureUsageSource {
                 },
             })
         };
-        let laptop = serde_json::json!([
+        let mut laptop = serde_json::json!([
             provider("codex", "codex", None, "dev@example.test", "ChatGPT Pro 200 Subscription", serde_json::json!([
                 window("primary", "session", "5 hour", 38.0, 172, Some(300)),
                 window("secondary", "weekly", "Weekly", 61.0, 60 * 24 * 3 + 50, Some(10080)),
@@ -402,6 +419,8 @@ impl FixtureUsageSource {
                 window("apiPercentUsed", "monthly", "API", 83.0, 60 * 24 * 11, None),
             ]), 0),
         ]);
+        // The laptop's Codex signs in through ChatGPT sharing, so the cost view shows its row.
+        laptop[0]["auth"]["subscriptionSharing"] = serde_json::json!(true);
         let build_box = serde_json::json!([
             provider("codex-work", "codex", Some("Work"), "work@example.test", "ChatGPT Plus Subscription", serde_json::json!([
                 window("primary", "session", "5 hour", 91.0, 41, Some(300)),

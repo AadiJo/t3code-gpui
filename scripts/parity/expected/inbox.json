@@ -1,0 +1,156 @@
+{
+ "default": {
+  "inbox popover": {
+   "top": 515.0,
+   "left": 144.0,
+   "bottom": 742.5,
+   "right": 520.0,
+   "color": "#ffb38a",
+   "bg": "#19191b"
+  },
+  "inbox title": {
+   "top": 533.0,
+   "left": 159.5,
+   "bottom": 543.5,
+   "right": 240.0,
+   "color": "#e9e9e9",
+   "bg": "#19191b"
+  },
+  "mark all read": {
+   "top": 533.5,
+   "left": 420.0,
+   "bottom": 542.5,
+   "right": 486.0,
+   "color": "#888888",
+   "bg": "#1a1a1b"
+  },
+  "tabs": {
+   "top": 558.5,
+   "left": 160.0,
+   "bottom": 569.0,
+   "right": 244.0,
+   "color": "#e9e9e9",
+   "bg": "#19191b"
+  },
+  "item 1 icon": {
+   "top": 594.5,
+   "left": 161.0,
+   "bottom": 608.5,
+   "right": 172.0,
+   "color": "#ffb38a",
+   "bg": "#19191b"
+  },
+  "item 1 title": {
+   "top": 594.0,
+   "left": 182.0,
+   "bottom": 605.5,
+   "right": 333.0,
+   "color": "#e9e9e9",
+   "bg": "#19191b"
+  },
+  "item 1 subtitle": {
+   "top": 609.5,
+   "left": 181.5,
+   "bottom": 620.5,
+   "right": 277.5,
+   "color": "#888888",
+   "bg": "#171719"
+  },
+  "item 1 meta": {
+   "top": 625.0,
+   "left": 182.0,
+   "bottom": 635.5,
+   "right": 259.5,
+   "color": "#888888",
+   "bg": "#171719"
+  },
+  "item 1 read button": {
+   "top": 610.5,
+   "left": 471.5,
+   "bottom": 618.0,
+   "right": 481.5,
+   "color": "#888888",
+   "bg": "#181819"
+  },
+  "inbox fill": {
+   "color": "#1c1c1d"
+  }
+ },
+ "owner": {
+  "inbox popover": {
+   "top": 515.0,
+   "left": 144.0,
+   "bottom": 742.5,
+   "right": 520.0,
+   "color": "#ffb38a",
+   "bg": "#19191b"
+  },
+  "inbox title": {
+   "top": 533.0,
+   "left": 159.5,
+   "bottom": 543.5,
+   "right": 240.0,
+   "color": "#e9e9e9",
+   "bg": "#19191b"
+  },
+  "mark all read": {
+   "top": 533.5,
+   "left": 420.0,
+   "bottom": 542.5,
+   "right": 486.0,
+   "color": "#888888",
+   "bg": "#1a1a1b"
+  },
+  "tabs": {
+   "top": 558.5,
+   "left": 160.0,
+   "bottom": 569.0,
+   "right": 244.0,
+   "color": "#e9e9e9",
+   "bg": "#19191b"
+  },
+  "item 1 icon": {
+   "top": 594.5,
+   "left": 161.0,
+   "bottom": 608.5,
+   "right": 172.0,
+   "color": "#ffb38a",
+   "bg": "#19191b"
+  },
+  "item 1 title": {
+   "top": 594.0,
+   "left": 182.0,
+   "bottom": 605.5,
+   "right": 333.0,
+   "color": "#e9e9e9",
+   "bg": "#19191b"
+  },
+  "item 1 subtitle": {
+   "top": 609.5,
+   "left": 181.5,
+   "bottom": 620.5,
+   "right": 277.5,
+   "color": "#888888",
+   "bg": "#171719"
+  },
+  "item 1 meta": {
+   "top": 625.0,
+   "left": 182.0,
+   "bottom": 635.5,
+   "right": 259.5,
+   "color": "#888888",
+   "bg": "#171719"
+  },
+  "item 1 read button": {
+   "top": 610.5,
+   "left": 471.5,
+   "bottom": 618.0,
+   "right": 481.5,
+   "color": "#888888",
+   "bg": "#181819"
+  },
+  "inbox fill": {
+   "color": "#1c1c1d"
+  }
+ }
+}

@@ -13,16 +13,29 @@ use gpui_kit::{
     AnyElement, App, Context, Entity, EventEmitter, IntoElement, MouseButton, ParentElement as _, Pixels, Point,
     Render, Styled as _, TestSupportExt as _, Window, anchored, deferred, div, prelude::*, px,
 };
-use t3code_contracts::ThreadIssueLink;
+use std::rc::Rc;
+
+use gpui_kit::SharedString;
+
+use t3code_contracts::{PullRequestMergeMethod, ThreadIssueLink};
 
 use super::open_in_picker::OpenInPicker;
 use super::thread_details_items::{ThreadDetailsItem, ThreadDetailsItemSettings};
 use super::thread_details_panel_styles::{row, row_icon, section};
-use super::thread_details_pr_row::{PullRequestRowAction, PullRequestRowData, issue_row, pull_request_row};
+use super::thread_details_sections::{
+    ContextWindowRow, SERVER_PAGE_COUNT, SectionEmit, ThreadAutomationRow, ThreadDetailsSectionEvent, ThreadServerRow,
+    automations_section, context_section, servers_section,
+};
+use super::thread_details_pr_row::{
+    PullRequestRowAction, PullRequestRowData, PullRequestRowHandlers, checks_popover, issue_row, merge_method_key,
+    pull_request_row, resolve_row_action,
+};
 use crate::components::branch_toolbar::BranchToolbar;
 use crate::components::git_actions_control::GitActionsControl;
 use crate::components::icons::IconName;
 use crate::components::project_scripts_control::ProjectScriptsControl;
+use crate::components::ui::button::{Button, ButtonSize, ButtonVariant};
+use crate::components::ui::dialog::{DialogSurface, Modal};
 use crate::components::ui::menu::{MenuItem, MenuItemKind, MenuPopup};
 use crate::components::ui::popover::glass_surface;
 use crate::i18n::t;
@@ -65,6 +78,19 @@ pub struct ThreadDetailsInput {
     /// The branch's pull request, or the thread's linked one.
     pub pull_request: Option<PullRequestRowData>,
     pub issues: Vec<ThreadIssueLink>,
+    /// A draft has no servers, automations or lineage yet.
+    pub is_draft: bool,
+    pub servers: Vec<ThreadServerRow>,
+    /// The port a forward or stop is waiting on.
+    pub server_busy: Option<u16>,
+    pub automations: Vec<ThreadAutomationRow>,
+    /// The scheduled tasks query failed with this message.
+    pub automations_error: Option<SharedString>,
+    /// The session may run and pause scheduled tasks.
+    pub can_operate_automations: bool,
+    /// The task whose toggle or run is waiting.
+    pub automation_busy: Option<SharedString>,
+    pub context_window: Option<ContextWindowRow>,
     /// The card's height limit (`max-h-[min(100dvh-6.5rem, …)]`).
     pub max_height: Option<Pixels>,
 }
@@ -73,7 +99,13 @@ pub struct ThreadDetailsInput {
 #[derive(Clone, Debug, PartialEq)]
 pub enum ThreadDetailsEvent {
     OpenUrl(String),
+    /// Runs a row action. Merge arrives as [`Self::Merge`], after its confirmation.
     PullRequestAction(PullRequestRowAction),
+    Merge(PullRequestMergeMethod),
+    /// Stop watching the pull request.
+    StopWatching,
+    /// A server, automation or context row was used.
+    Section(ThreadDetailsSectionEvent),
 }
 
 /// The card and the controls it hosts.
@@ -86,6 +118,12 @@ pub struct ThreadDetailsPanel {
     open_in: Option<Entity<OpenInPicker>>,
     /// The items menu, at a window position.
     items_menu: Option<Point<Pixels>>,
+    /// The checks popover is open; `true` in it shows every completed check.
+    checks: Option<bool>,
+    /// "Merge pull request?" is showing.
+    confirming_merge: bool,
+    /// Servers shown before "Show N more".
+    server_page: usize,
 }
 
 impl EventEmitter<ThreadDetailsEvent> for ThreadDetailsPanel {}
@@ -101,12 +139,145 @@ impl ThreadDetailsPanel {
         cx: &mut Context<Self>,
     ) -> Self {
         cx.observe_global::<ThreadDetailsItemSettings>(|_, cx| cx.notify()).detach();
-        Self { input, workspace, branch, git, scripts, open_in, items_menu: None }
+        Self { input, workspace, branch, git, scripts, open_in, items_menu: None, checks: None, confirming_merge: false, server_page: SERVER_PAGE_COUNT }
+    }
+
+    /// The facts the card shows now.
+    pub fn input(&self) -> &ThreadDetailsInput {
+        &self.input
     }
 
     pub fn set_input(&mut self, input: ThreadDetailsInput, cx: &mut Context<Self>) {
         self.input = input;
+        // The confirmation closes once Merge is no longer the row's action.
+        let action = self.input.pull_request.as_ref().and_then(|pr| resolve_row_action(pr.detail.as_ref()));
+        if action != Some(PullRequestRowAction::Merge) {
+            self.confirming_merge = false;
+        }
         cx.notify();
+    }
+
+    /// Opens or closes the pull request's checks popover.
+    pub fn toggle_checks(&mut self, cx: &mut Context<Self>) {
+        self.checks = match self.checks {
+            Some(_) => None,
+            None => Some(false),
+        };
+        cx.notify();
+    }
+
+    /// Shows the merge confirmation, as the Merge pill does.
+    pub fn confirm_merge(&mut self, cx: &mut Context<Self>) {
+        self.confirming_merge = true;
+        cx.notify();
+    }
+
+    fn resolve_merge(&mut self, merge: bool, cx: &mut Context<Self>) {
+        self.confirming_merge = false;
+        if let Some(pr) = self.input.pull_request.as_ref().filter(|_| merge) {
+            cx.emit(ThreadDetailsEvent::Merge(pr.merge_method()));
+        }
+        cx.notify();
+    }
+
+    /// `Merge pull request?` with Cancel and Merge.
+    fn render_merge_confirm(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let pr = self.input.pull_request.as_ref().filter(|_| self.confirming_merge)?;
+        let term = pr.term().as_str();
+        let method = merge_method_key(pr.merge_method());
+        let this = cx.weak_entity();
+        let dialog = DialogSurface::new(t!(
+            "Merge {term, select, mr {merge request} cr {change request} other {pull request}}?",
+            term = term
+        ))
+        .description(t!(
+            "This merges #{number} using {method, select, merge {merge} squash {squash} rebase {rebase} fastForward {fast-forward} other {merge}}.",
+            number = pr.number,
+            method = method
+        ))
+        .footer(
+            Button::new("merge-cancel")
+                .variant(ButtonVariant::Outline)
+                .size(ButtonSize::Sm)
+                .label(t!("Cancel"))
+                .on_click(cx.listener(|this, _, _, cx| this.resolve_merge(false, cx))),
+        )
+        .footer(
+            Button::new("merge-confirm")
+                .size(ButtonSize::Sm)
+                .label(t!("Merge", context = "verb, merges a pull request"))
+                .on_click(cx.listener(|this, _, _, cx| this.resolve_merge(true, cx))),
+        );
+        Some(
+            deferred(Modal::dialog("merge-confirm-dialog", dialog, move |_, cx| {
+                this.update(cx, |this, cx| this.resolve_merge(false, cx)).ok();
+            }))
+            .with_priority(3)
+            .into_any_element(),
+        )
+    }
+
+    /// The pull request row with its checks popover while open.
+    fn pull_request_row(&self, pr: &PullRequestRowData, theme: &AppTheme, cx: &mut Context<Self>) -> AnyElement {
+        let this = cx.weak_entity();
+        let url = pr.url.to_string();
+        let open = {
+            let this = this.clone();
+            Rc::new(move |_: &mut Window, cx: &mut App| {
+                this.update(cx, |_, cx| cx.emit(ThreadDetailsEvent::OpenUrl(url.clone()))).ok();
+            })
+        };
+        let action = {
+            let this = this.clone();
+            Rc::new(move |action, _: &mut Window, cx: &mut App| {
+                this.update(cx, |this, cx| match action {
+                    PullRequestRowAction::Merge => this.confirm_merge(cx),
+                    action => cx.emit(ThreadDetailsEvent::PullRequestAction(action)),
+                })
+                .ok();
+            })
+        };
+        let toggle_checks = {
+            let this = this.clone();
+            Rc::new(move |_: &mut Window, cx: &mut App| {
+                this.update(cx, |this, cx| this.toggle_checks(cx)).ok();
+            })
+        };
+        let stop_watching = pr.watching.then(|| {
+            let this = this.clone();
+            Rc::new(move |_: &mut Window, cx: &mut App| {
+                this.update(cx, |_, cx| cx.emit(ThreadDetailsEvent::StopWatching)).ok();
+            }) as Rc<dyn Fn(&mut Window, &mut App)>
+        });
+        let popup = self.checks.zip(pr.detail.as_ref()).map(|(show_all, detail)| {
+            let toggle = this.clone();
+            let open_url = this.clone();
+            let popup = checks_popover(
+                theme,
+                &detail.checks,
+                show_all,
+                move |_, cx| {
+                    toggle
+                        .update(cx, |this, cx| {
+                            this.checks = Some(!show_all);
+                            cx.notify();
+                        })
+                        .ok();
+                },
+                move |url, _, cx| {
+                    open_url.update(cx, |_, cx| cx.emit(ThreadDetailsEvent::OpenUrl(url.to_string()))).ok();
+                },
+            );
+            div()
+                .occlude()
+                .on_mouse_down_out(cx.listener(|this, _, _, cx| {
+                    this.checks = None;
+                    cx.notify();
+                }))
+                .child(popup)
+                .into_any_element()
+        });
+        pull_request_row(0, theme, pr, PullRequestRowHandlers { open, action, toggle_checks, stop_watching }, popup)
     }
 
     pub fn git(&self) -> &Entity<GitActionsControl> {
@@ -202,16 +373,7 @@ impl ThreadDetailsPanel {
         // Without a branch selector, linked pull requests still need somewhere to show.
         if visible(ThreadDetailsItem::Branch) {
             if let Some(pr) = &self.input.pull_request {
-                let this = cx.entity();
-                let url = pr.url.to_string();
-                let action_target = cx.entity();
-                version_control.push(pull_request_row(
-                    0,
-                    theme,
-                    pr,
-                    move |_, cx| this.update(cx, |_, cx| cx.emit(ThreadDetailsEvent::OpenUrl(url.clone()))),
-                    move |action, _, cx| action_target.update(cx, |_, cx| cx.emit(ThreadDetailsEvent::PullRequestAction(action))),
-                ));
+                version_control.push(self.pull_request_row(pr, theme, cx));
             }
             for (index, issue) in self.input.issues.iter().enumerate() {
                 let this = cx.entity();
@@ -239,6 +401,43 @@ impl ThreadDetailsPanel {
         let has_workspace = !workspace.is_empty();
         out.extend(section(theme, false, workspace));
         out.extend(section(theme, has_workspace && density == ThreadDetailsDensity::Full, version_control));
+        let full = density == ThreadDetailsDensity::Full && !self.input.is_draft;
+        let this = cx.weak_entity();
+        let emit: SectionEmit = Rc::new(move |event, _, cx| {
+            this.update(cx, |_, cx| cx.emit(ThreadDetailsEvent::Section(event))).ok();
+        });
+        if full && visible(ThreadDetailsItem::Servers) {
+            let page = cx.weak_entity();
+            out.extend(servers_section(
+                theme,
+                &self.input.servers,
+                self.server_page,
+                self.input.server_busy,
+                move |next, _, cx| {
+                    page.update(cx, |this, cx| {
+                        this.server_page = next;
+                        cx.notify();
+                    })
+                    .ok();
+                },
+                emit.clone(),
+            ));
+        }
+        if full && visible(ThreadDetailsItem::Automations) {
+            out.extend(automations_section(
+                theme,
+                &self.input.automations,
+                self.input.automations_error.clone(),
+                self.input.can_operate_automations,
+                self.input.automation_busy.as_deref(),
+                emit,
+            ));
+        }
+        if visible(ThreadDetailsItem::Context)
+            && let Some(usage) = &self.input.context_window
+        {
+            out.push(context_section(theme, usage));
+        }
         out
     }
 }
@@ -249,7 +448,7 @@ impl Render for ThreadDetailsPanel {
         let sections = self.sections(&theme, cx);
         // Shown only when no section has content, so an emptied card can be refilled.
         let empty = sections.is_empty().then(|| {
-            div().p(px(8.)).child(
+            div().p(theme.rem(0.5)).child(
                 row("choose-items", &theme, Some(row_icon(&theme, IconName::SlidersHorizontal)), t!("Choose what to show"), false)
                     .on_click(cx.listener(|this, event: &gpui_kit::ClickEvent, _, cx| {
                         this.open_items_menu(event.position(), cx)
@@ -257,6 +456,7 @@ impl Render for ThreadDetailsPanel {
             )
         });
         let menu = self.items_menu.map(|at| self.render_items_menu(at, cx));
+        let merge = self.render_merge_confirm(cx);
         glass_surface(&theme)
             .id("thread-details-card")
             .rounded(theme.radii.xxl)
@@ -270,6 +470,7 @@ impl Render for ThreadDetailsPanel {
             .children(sections)
             .children(empty)
             .children(menu)
+            .children(merge)
             .test_support()
     }
 }

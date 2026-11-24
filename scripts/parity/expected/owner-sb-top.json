@@ -1,0 +1,316 @@
+{
+ "default": {
+  "sidebar fill": {
+   "color": "#181819"
+  },
+  "search placeholder": {
+   "top": 69.5,
+   "left": 38.0,
+   "bottom": 79.5,
+   "right": 80.5,
+   "color": "#838383",
+   "bg": "#181819"
+  },
+  "header actions": {
+   "top": 67.5,
+   "left": 174.5,
+   "bottom": 80.5,
+   "right": 241.5,
+   "color": "#737373",
+   "bg": "#181819"
+  },
+  "draft 1 top/bottom": {
+   "start": "#171819",
+   "edges": [
+    {
+     "at": 99.0,
+     "color": "#211c1c"
+    },
+    {
+     "at": 111.0,
+     "color": "#211d1c"
+    },
+    {
+     "at": 116.5,
+     "color": "#574137"
+    },
+    {
+     "at": 119.0,
+     "color": "#201c1c"
+    },
+    {
+     "at": 132.0,
+     "color": "#d4d3d3"
+    },
+    {
+     "at": 136.5,
+     "color": "#aba9aa"
+    },
+    {
+     "at": 137.5,
+     "color": "#221e1c"
+    },
+    {
+     "at": 138.5,
+     "color": "#211d1c"
+    },
+    {
+     "at": 172.0,
+     "color": "#181819"
+    }
+   ],
+   "vertical": true
+  },
+  "draft 1 pen": {
+   "top": 110.5,
+   "left": 18.0,
+   "bottom": 120.5,
+   "right": 28.0,
+   "color": "#ffb38a",
+   "bg": "#211d1c"
+  },
+  "draft 1 project": {
+   "top": 110.5,
+   "left": 55.0,
+   "bottom": 121.5,
+   "right": 80.5,
+   "color": "#a0a0a0",
+   "bg": "#211d1c"
+  },
+  "draft 1 title": {
+   "top": 131.0,
+   "left": 17.0,
+   "bottom": 144.0,
+   "right": 220.5,
+   "color": "#d4d3d3",
+   "bg": "#211d1c"
+  },
+  "card 1 top/bottom": {
+   "start": "#181818",
+   "edges": [
+    {
+     "at": 268.0,
+     "color": "#28282b"
+    },
+    {
+     "at": 341.0,
+     "color": "#18181a"
+    }
+   ],
+   "vertical": true
+  },
+  "card 1 project": {
+   "top": 279.0,
+   "left": 38.5,
+   "bottom": 290.5,
+   "right": 125.0,
+   "color": "#a0a0a0",
+   "bg": "#28282b"
+  },
+  "card 1 time": {
+   "top": 279.5,
+   "left": 222.5,
+   "bottom": 288.0,
+   "right": 237.5,
+   "color": "#a0a0a0",
+   "bg": "#28282b"
+  },
+  "card 1 title": {
+   "top": 302.0,
+   "left": 18.5,
+   "bottom": 312.5,
+   "right": 225.0,
+   "color": "#e8e8e8",
+   "bg": "#28282b"
+  },
+  "card 1 branch": {
+   "top": 321.5,
+   "left": 18.0,
+   "bottom": 330.5,
+   "right": 42.5,
+   "color": "#a0a0a0",
+   "bg": "#28282b"
+  },
+  "card 1 provider": {
+   "top": 323.0,
+   "left": 226.0,
+   "bottom": 331.0,
+   "right": 238.5,
+   "color": "#a9a9aa",
+   "bg": "#28282b"
+  },
+  "row 2 status": {
+   "top": 355.5,
+   "left": 191.5,
+   "bottom": 369.5,
+   "right": 238.0,
+   "color": "#00d492",
+   "bg": "#181819"
+  },
+  "row 3 status": {
+   "top": 433.5,
+   "left": 192.5,
+   "bottom": 447.5,
+   "right": 238.5,
+   "color": "#a3b3ff",
+   "bg": "#181819"
+  }
+ },
+ "owner": {
+  "sidebar fill": {
+   "color": "#181819"
+  },
+  "search placeholder": {
+   "top": 69.5,
+   "left": 38.0,
+   "bottom": 79.5,
+   "right": 80.5,
+   "color": "#838383",
+   "bg": "#181819"
+  },
+  "header actions": {
+   "top": 67.5,
+   "left": 174.5,
+   "bottom": 80.5,
+   "right": 241.5,
+   "color": "#737373",
+   "bg": "#181819"
+  },
+  "draft 1 top/bottom": {
+   "start": "#171819",
+   "edges": [
+    {
+     "at": 99.0,
+     "color": "#211c1c"
+    },
+    {
+     "at": 111.0,
+     "color": "#211d1c"
+    },
+    {
+     "at": 116.5,
+     "color": "#574137"
+    },
+    {
+     "at": 119.0,
+     "color": "#201c1c"
+    },
+    {
+     "at": 132.0,
+     "color": "#d4d3d3"
+    },
+    {
+     "at": 136.5,
+     "color": "#aba9aa"
+    },
+    {
+     "at": 137.5,
+     "color": "#221e1c"
+    },
+    {
+     "at": 138.5,
+     "color": "#211d1c"
+    },
+    {
+     "at": 172.0,
+     "color": "#181819"
+    }
+   ],
+   "vertical": true
+  },
+  "draft 1 pen": {
+   "top": 110.5,
+   "left": 18.0,
+   "bottom": 120.5,
+   "right": 28.0,
+   "color": "#ffb38a",
+   "bg": "#211d1c"
+  },
+  "draft 1 project": {
+   "top": 110.5,
+   "left": 55.0,
+   "bottom": 121.5,
+   "right": 80.5,
+   "color": "#a0a0a0",
+   "bg": "#211d1c"
+  },
+  "draft 1 title": {
+   "top": 131.0,
+   "left": 17.0,
+   "bottom": 144.0,
+   "right": 220.5,
+   "color": "#d4d3d3",
+   "bg": "#211d1c"
+  },
+  "card 1 top/bottom": {
+   "start": "#181818",
+   "edges": [
+    {
+     "at": 268.0,
+     "color": "#28282b"
+    },
+    {
+     "at": 341.0,
+     "color": "#18181a"
+    }
+   ],
+   "vertical": true
+  },
+  "card 1 project": {
+   "top": 279.0,
+   "left": 38.5,
+   "bottom": 290.5,
+   "right": 125.0,
+   "color": "#a0a0a0",
+   "bg": "#28282b"
+  },
+  "card 1 time": {
+   "top": 279.5,
+   "left": 222.5,
+   "bottom": 288.0,
+   "right": 237.5,
+   "color": "#a0a0a0",
+   "bg": "#28282b"
+  },
+  "card 1 title": {
+   "top": 302.0,
+   "left": 18.5,
+   "bottom": 312.5,
+   "right": 225.0,
+   "color": "#e8e8e8",
+   "bg": "#28282b"
+  },
+  "card 1 branch": {
+   "top": 321.5,
+   "left": 18.0,
+   "bottom": 330.5,
+   "right": 42.5,
+   "color": "#a0a0a0",
+   "bg": "#28282b"
+  },
+  "card 1 provider": {
+   "top": 323.0,
+   "left": 226.0,
+   "bottom": 331.0,
+   "right": 238.5,
+   "color": "#a9a9aa",
+   "bg": "#28282b"
+  },
+  "row 2 status": {
+   "top": 355.5,
+   "left": 191.5,
+   "bottom": 369.5,
+   "right": 238.0,
+   "color": "#00d492",
+   "bg": "#181819"
+  },
+  "row 3 status": {
+   "top": 433.5,
+   "left": 192.5,
+   "bottom": 447.5,
+   "right": 238.5,
+   "color": "#a3b3ff",
+   "bg": "#181819"
+  }
+ }
+}

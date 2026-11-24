@@ -1,0 +1,102 @@
+{
+ "default": {
+  "last card title": {
+   "top": 597.0,
+   "left": 18.5,
+   "bottom": 610.0,
+   "right": 195.5,
+   "color": "#e8e8e8",
+   "bg": "#181819"
+  },
+  "working label": {
+   "top": 649.5,
+   "left": 17.0,
+   "bottom": 660.5,
+   "right": 60.5,
+   "color": "#838383",
+   "bg": "#181819"
+  },
+  "snoozed label": {
+   "top": 680.5,
+   "left": 17.5,
+   "bottom": 689.5,
+   "right": 64.5,
+   "color": "#838383",
+   "bg": "#181819"
+  },
+  "settled label": {
+   "top": 711.5,
+   "left": 17.5,
+   "bottom": 720.5,
+   "right": 55.5,
+   "color": "#838383",
+   "bg": "#181819"
+  },
+  "shelf counts": {
+   "top": 649.5,
+   "left": 213.0,
+   "bottom": 720.5,
+   "right": 219.0,
+   "color": "#838383",
+   "bg": "#181819"
+  },
+  "shelf chevrons": {
+   "top": 651.5,
+   "left": 230.5,
+   "bottom": 720.0,
+   "right": 234.5,
+   "color": "#838383",
+   "bg": "#181819"
+  }
+ },
+ "owner": {
+  "last card title": {
+   "top": 597.0,
+   "left": 18.5,
+   "bottom": 610.0,
+   "right": 195.5,
+   "color": "#e8e8e8",
+   "bg": "#181819"
+  },
+  "working label": {
+   "top": 649.5,
+   "left": 17.0,
+   "bottom": 660.5,
+   "right": 60.5,
+   "color": "#838383",
+   "bg": "#181819"
+  },
+  "snoozed label": {
+   "top": 680.5,
+   "left": 17.5,
+   "bottom": 689.5,
+   "right": 64.5,
+   "color": "#838383",
+   "bg": "#181819"
+  },
+  "settled label": {
+   "top": 711.5,
+   "left": 17.5,
+   "bottom": 720.5,
+   "right": 55.5,
+   "color": "#838383",
+   "bg": "#181819"
+  },
+  "shelf counts": {
+   "top": 649.5,
+   "left": 213.0,
+   "bottom": 720.5,
+   "right": 219.0,
+   "color": "#838383",
+   "bg": "#181819"
+  },
+  "shelf chevrons": {
+   "top": 651.5,
+   "left": 230.5,
+   "bottom": 720.0,
+   "right": 234.5,
+   "color": "#838383",
+   "bg": "#181819"
+  }
+ }
+}

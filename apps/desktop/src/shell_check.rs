@@ -160,7 +160,9 @@ fn main() -> anyhow::Result<()> {
     };
     check.cx.update(|cx| {
         t3code_web::init(cx);
-        // The footer bell shows once an inbox has items (the desktop host loads them).
+        // The footer bell shows with the inbox setting on (the fork's default is off) once the
+        // inbox has items (the desktop host loads them).
+        t3code_web::hooks::use_settings::ClientSettingsStore::update(cx, |s| s.notification_inbox_enabled = true);
         NotificationInbox::set_items(FixtureStore::from_sidebar(fixtures::showcase_snapshot()).inbox_items(), cx);
     });
 

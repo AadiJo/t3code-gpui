@@ -1,7 +1,7 @@
 """Pixel measurements shared by record and compare. Coordinates are logical px;
 images are 2x, so one device pixel is 0.5 logical px.
 
-Kinds (one per element in spec.json):
+Kinds (one per element in the spec, gen_spec.py):
   fill  [x, y]                 colour at a point (median of the 2x2 device pixels)
   ink   [x0, y0, x1, y1]       bounding box of pixels that differ from the box's
                                background (its most common colour) by more than
@@ -148,4 +148,36 @@ def unshift(result, dy):
             out[key] -= dy
     if "edges" in out and isinstance(out.get("edges"), list) and out["edges"] and "vertical" in out:
         out["edges"] = [{**e, "at": e["at"] - dy} for e in out["edges"]]
+    return out
+
+
+def moved(element, dx, dy):
+    """The element moved by `dx` and `dy`, for a port image whose layout is offset."""
+    element = shifted(element, dy)
+    if not dx:
+        return element
+    at = list(element["at"])
+    kind = element["kind"]
+    if kind in ("fill", "vscan"):
+        at[0] += dx
+    elif kind == "ink":
+        at[0] += dx
+        at[2] += dx
+    else:
+        at[1] += dx
+        at[2] += dx
+    return {**element, "at": at}
+
+
+def unmoved(result, dx, dy):
+    """A measurement from `moved`, back in reference coordinates."""
+    result = unshift(result, dy)
+    if not dx or result.get("empty"):
+        return result
+    out = dict(result)
+    for key in ("left", "right"):
+        if key in out:
+            out[key] -= dx
+    if isinstance(out.get("edges"), list) and "vertical" not in out:
+        out["edges"] = [{**e, "at": e["at"] - dx} for e in out["edges"]]
     return out

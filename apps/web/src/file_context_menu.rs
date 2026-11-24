@@ -17,8 +17,8 @@ pub enum FileContextMenuAction {
     RevealInFolder,
     /// `editor:<id>`.
     OpenWith(EditorId),
-    /// Native only: fetch the file and open it with this machine's default app.
-    OpenLocally,
+    /// `open`: the host's default app, through `shell.openInEditor` with `file-manager`.
+    Open,
     /// The tree's own rows.
     CopyMention,
     AddToChat,
@@ -84,10 +84,14 @@ pub fn editor_label(editor: &EditorId) -> &'static str {
     }
 }
 
-/// `buildFileContextMenuItems`, with "Open" acting on this machine.
+/// `buildFileContextMenuItems`: Open (when the host has a file manager),
+/// Reveal, and Open with › each editor. Every action runs on the host.
 pub fn file_context_menu_items(capabilities: &FileContextMenuCapabilities, has_absolute_path: bool) -> Vec<FileContextMenuItem> {
     let mut items = Vec::new();
     if has_absolute_path {
+        if capabilities.editor_ids.contains(&EditorId::FileManager) {
+            items.push(item(FileContextMenuAction::Open, t!("Open", context = "verb, opens a file"), Some(IconName::Pencil)));
+        }
         if let Some(kind) = capabilities.reveal {
             items.push(item(FileContextMenuAction::RevealInFolder, reveal_label(kind), Some(IconName::FolderTree)));
         }
@@ -107,7 +111,6 @@ pub fn file_context_menu_items(capabilities: &FileContextMenuCapabilities, has_a
             });
         }
     }
-    items.insert(0, item(FileContextMenuAction::OpenLocally, t!("Open", context = "verb, opens a file"), Some(IconName::Pencil)));
     items
 }
 

@@ -10,7 +10,9 @@ use gpui_kit::{
 use t3code_shared::palette_search::{SearchMatchHint, char_ranges_to_bytes};
 
 use super::command_palette_drag::PaletteThreadDrag;
-use super::command_palette_logic::{PaletteItem, PaletteItemKind, PaletteRow, PaletteTitle, PaletteTrailing, ShownItem};
+use super::command_palette_lookups::PaletteThread;
+use super::sidebar::model::SidebarProviderMark;
+use super::command_palette_logic::{PaletteItem, PaletteItemKind, PaletteProjectRow, PaletteRow, PaletteTitle, PaletteTrailing, ShownItem};
 use super::icons::{Icon, IconName, IconSize};
 use super::ui::{DISABLED_OPACITY, TextStyleExt as _};
 use crate::AppTheme;
@@ -24,12 +26,22 @@ pub fn row_height(row: &PaletteRow, theme: &AppTheme) -> Pixels {
     let xs = px(TextSize::Xs.line_height(rem));
     match row {
         PaletteRow::Label { first, .. } => theme.sp(3.) + xs + if *first { px(0.) } else { theme.sp(1.5) },
-        PaletteRow::Item { shown, .. } => {
-            let title = px(TextSize::Sm.line_height(rem));
-            let second = if has_second_line(shown) { xs } else { px(0.) };
-            (theme.sp(3.) + title + second).max(theme.sp(7.))
-        }
+        PaletteRow::Item { shown, .. } => item_height(shown, theme),
     }
+}
+
+/// An item row's height: `py-1.5` around the title and second line. A thread
+/// subtitle is an inline-flex line, which the fork's line box makes 2px taller.
+fn item_height(shown: &ShownItem, theme: &AppTheme) -> Pixels {
+    let rem = theme.fonts.interface;
+    let title = px(TextSize::Sm.line_height(rem));
+    let second = if has_second_line(shown) { px(TextSize::Xs.line_height(rem)) } else { px(0.) };
+    let inline_flex = if shown.hint.is_none() && (shown.item.thread.is_some() || shown.item.project.is_some()) && has_second_line(shown) {
+        px(2.)
+    } else {
+        px(0.)
+    };
+    (theme.sp(3.) + title + second + inline_flex).max(theme.sp(7.))
 }
 
 fn has_second_line(shown: &ShownItem) -> bool {
@@ -40,6 +52,8 @@ fn has_second_line(shown: &ShownItem) -> bool {
 pub struct RowCallbacks {
     pub on_hover: Box<dyn Fn(&mut Window, &mut App)>,
     pub on_click: Box<dyn Fn(&mut Window, &mut App)>,
+    /// The project row's pin button.
+    pub on_pin: Box<dyn Fn(&mut Window, &mut App)>,
     pub on_drag_start: Box<dyn Fn(&mut Window, &mut App)>,
 }
 
@@ -63,13 +77,19 @@ fn title_element(item: &PaletteItem, theme: &AppTheme) -> AnyElement {
     match &item.title {
         PaletteTitle::Text(text) => div().truncate().child(text.clone()).into_any_element(),
         PaletteTitle::NewThreadIn { project } => {
+            // The project name is `font-semibold` inside the translated sentence.
             let full = item.search_name();
             let start = full.find(project.as_ref()).unwrap_or(full.len());
-            let bold = HighlightStyle { font_weight: Some(FontWeight(600.)), ..Default::default() };
+            let end = (start + project.len()).min(full.len());
             let _ = theme;
             div()
-                .truncate()
-                .child(StyledText::new(full.clone()).with_highlights([(start..start + project.len(), bold)]))
+                .flex()
+                .min_w_0()
+                .overflow_hidden()
+                .whitespace_nowrap()
+                .child(div().flex_none().child(SharedString::from(full[..start].replace(' ', "\u{a0}"))))
+                .child(div().flex_none().font(crate::appearance_fonts::ui_font(weight::SEMIBOLD)).child(SharedString::from(full[start..end].to_owned())))
+                .child(div().min_w_0().truncate().child(SharedString::from(full[end..].replace(' ', "\u{a0}"))))
                 .into_any_element()
         }
     }
@@ -132,9 +152,17 @@ pub fn render_item(
     shortcut_label: Option<SharedString>,
     theme: &AppTheme,
     callbacks: Option<RowCallbacks>,
+    cx: &gpui_kit::App,
 ) -> AnyElement {
     let c = &theme.colors;
     let item = &shown.item;
+    let (callbacks, on_pin) = match callbacks {
+        Some(mut callbacks) => {
+            let on_pin = std::mem::replace(&mut callbacks.on_pin, Box::new(|_, _| {}));
+            (Some(callbacks), Some(on_pin))
+        }
+        None => (None, None),
+    };
     let muted_70 = with_alpha(c.muted_foreground, 0.7);
     let title_line = div()
         .flex()
@@ -160,6 +188,10 @@ pub fn render_item(
     let content = if has_second_line(shown) {
         let second = match (&shown.hint, &item.description) {
             (Some(hint), _) => hint_line(hint, theme),
+            (None, _) if item.project.is_some() => project_location(item.project.as_ref().expect("checked"), theme),
+            (None, _) if item.thread.is_some() => {
+                thread_subtitle(item.thread.as_ref().expect("checked"), item.secondary, theme, cx)
+            }
             (None, Some(description)) => div()
                 .min_w_0()
                 .truncate()
@@ -180,7 +212,8 @@ pub fn render_item(
         .flex()
         .items_center()
         .gap(theme.sp(2.))
-        .min_h(theme.sp(7.))
+        // A fixed height keeps the 30px pitch where the line height rounds.
+        .h(item_height(shown, theme))
         .px(theme.sp(2.))
         .py(theme.sp(1.5))
         .rounded(theme.radii.sm)
@@ -195,13 +228,19 @@ pub fn render_item(
                 .items_center()
                 .self_start()
                 .pt(theme.sp(0.5))
-                .child(Icon::new(item.icon).size(IconSize::Md).color(c.icon_muted)),
+                .child(match &item.project {
+                    Some(project) => crate::components::project_favicon::ProjectFavicon::new(project.name.clone())
+                        .size(theme.rem(1.))
+                        .into_any_element(),
+                    None => Icon::new(item.icon).size(IconSize::Md).color(c.icon_muted).into_any_element(),
+                }),
         )
         .child(content)
         .when_some(item.trailing.as_ref(), |d, trailing| d.child(trailing_element(trailing, theme)))
         .when(item.unavailable, |d| {
             d.child(div().flex_none().ui_text(theme, TextSize::Xs, weight::NORMAL).text_color(muted_70).child(t!("Unavailable")))
         })
+        .when_some(item.project.as_ref().zip(on_pin), |d, (project, on_pin)| d.child(pin_button(ix, project, active, theme, on_pin)))
         .when_some(item.timestamp.clone(), |d, timestamp| {
             d.child(
                 div()
@@ -225,13 +264,13 @@ pub fn render_item(
                     .child(spaced(&label)),
             )
         })
-        .when(item.is_submenu(), |d| {
+        .when(item.is_submenu() && !item.hide_chevron, |d| {
             d.child(div().flex_none().ml_auto().mr(px(-2.)).child(Icon::new(IconName::ChevronRight).size(IconSize::Md).color(muted_70)))
         });
     let Some(callbacks) = callbacks.filter(|_| enabled) else {
         return row.into_any_element();
     };
-    let RowCallbacks { on_hover, on_click, on_drag_start } = callbacks;
+    let RowCallbacks { on_hover, on_click, on_drag_start, .. } = callbacks;
     let row = row
         .cursor_pointer()
         .on_mouse_move(move |_, window, cx| on_hover(window, cx))
@@ -273,5 +312,129 @@ pub fn render_empty(message: SharedString, theme: &AppTheme) -> AnyElement {
         .ui_text(theme, TextSize::Sm, weight::NORMAL)
         .text_color(theme.colors.muted_foreground)
         .child(message)
+        .into_any_element()
+}
+
+/// `ThreadCommandSubtitle`: the project's icon and name · environment, the
+/// workspace icon and branch, the provider's mark, and "Current thread", in
+/// `text-xs text-muted-foreground/70` with dots between.
+fn thread_subtitle(thread: &PaletteThread, is_current: bool, theme: &AppTheme, cx: &gpui_kit::App) -> AnyElement {
+    let muted = with_alpha(theme.colors.muted_foreground, 0.7);
+    let small = theme.rem(0.75);
+    let dot = || div().flex_none().child("·");
+    let mut parts: Vec<AnyElement> = Vec::new();
+    if let Some(project) = thread.project_title.clone() {
+        parts.push(
+            div()
+                .flex()
+                .min_w_0()
+                .items_center()
+                .gap(theme.rem(0.25))
+                .child(crate::components::project_favicon::ProjectFavicon::new(project.clone()).size(small))
+                .child(div().min_w_0().truncate().child(project))
+                .child(dot())
+                .child(div().flex_none().child(thread.environment_label.clone()))
+                .into_any_element(),
+        );
+    }
+    if let Some(branch) = thread.branch.clone() {
+        parts.push(
+            div()
+                .flex()
+                .min_w_0()
+                .items_center()
+                .gap(theme.rem(0.25))
+                .child(Icon::new(if thread.in_worktree { IconName::FolderGit2 } else { IconName::Folder }).size(IconSize::Custom(small)).color(muted))
+                .child(div().min_w_0().truncate().child(branch))
+                .into_any_element(),
+        );
+    }
+    if let Some(provider) = &thread.provider {
+        let mark = match provider.mark {
+            SidebarProviderMark::Brand(mark) => {
+                let composer = crate::components::chat::composer_theme::ComposerColors::new(cx);
+                crate::components::chat::composer_icons::provider_icon(mark, small, &provider.initials, &composer, cx)
+            }
+            SidebarProviderMark::AcpRegistry => {
+                Icon::new(crate::components::icons::BrandIcon::AcpRegistry).size(IconSize::Custom(small)).color(muted).into_any_element()
+            }
+        };
+        parts.push(div().flex_none().opacity(0.7).child(mark).into_any_element());
+    }
+    if is_current {
+        parts.push(div().flex_none().child(t!("Current thread")).into_any_element());
+    }
+    let mut row = div()
+        .flex()
+        .min_w_0()
+        .items_center()
+        .gap(theme.rem(0.25))
+        .ui_text(theme, TextSize::Xs, weight::NORMAL)
+        .text_color(muted);
+    for (index, part) in parts.into_iter().enumerate() {
+        if index > 0 {
+            row = row.child(dot());
+        }
+        row = row.child(part);
+    }
+    row.into_any_element()
+}
+
+/// `ProjectLocationDescription`: "Current · Local · /path", the path truncating.
+fn project_location(project: &PaletteProjectRow, theme: &AppTheme) -> AnyElement {
+    let muted = with_alpha(theme.colors.muted_foreground, 0.7);
+    let dot = || div().flex_none().child("·");
+    div()
+        .flex()
+        .min_w_0()
+        .items_center()
+        .gap(theme.rem(0.25))
+        .ui_text(theme, TextSize::Xs, weight::NORMAL)
+        .text_color(muted)
+        .when(project.current, |d| d.child(div().flex_none().child(t!("Current", context = "this project is the current one"))).child(dot()))
+        .child(div().flex_none().truncate().child(project.location.clone().unwrap_or_else(|| t!("Remote", context = "machine location"))))
+        .child(dot())
+        .child(div().flex_1().min_w_0().truncate().child(project.workspace_root.clone()))
+        .into_any_element()
+}
+
+/// `ProjectPinButton`: a pinned project always shows its pin (crossed on
+/// hover); an unpinned one shows it on the highlighted row only.
+fn pin_button(ix: usize, project: &PaletteProjectRow, active: bool, theme: &AppTheme, on_pin: Box<dyn Fn(&mut Window, &mut App)>) -> AnyElement {
+    let group: SharedString = format!("palette-pin-{ix}").into();
+    let muted = theme.colors.muted_foreground;
+    let hover = theme.colors.highlight();
+    let size = IconSize::Custom(theme.rem(0.875));
+    let title = if project.pinned {
+        t!("Unpin {name}", name = project.name.as_ref())
+    } else {
+        t!("Pin {name}", name = project.name.as_ref())
+    };
+    div()
+        .id(("palette-pin", ix))
+        .group(group.clone())
+        .flex()
+        .flex_none()
+        .ml_auto()
+        .size(theme.rem(1.5))
+        .items_center()
+        .justify_center()
+        .rounded(theme.radii.md)
+        .when(!project.pinned && !active, |d| d.invisible())
+        .hover(move |s| s.bg(hover))
+        .tooltip(crate::components::ui::tooltip::tooltip(title))
+        .on_mouse_down(gpui_kit::MouseButton::Left, |_, _, cx| cx.stop_propagation())
+        .on_click(move |_, window, cx| {
+            cx.stop_propagation();
+            on_pin(window, cx)
+        })
+        .map(|d| {
+            if project.pinned {
+                d.child(div().group_hover(group.clone(), |d| d.invisible()).child(Icon::new(IconName::Pin).size(size).color(muted)))
+                    .child(div().absolute().invisible().group_hover(group, |d| d.visible()).child(Icon::new(IconName::PinOff).size(size).color(muted)))
+            } else {
+                d.child(Icon::new(IconName::Pin).size(size).color(muted))
+            }
+        })
         .into_any_element()
 }

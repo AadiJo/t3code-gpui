@@ -1,16 +1,21 @@
 """Visual parity between the GPUI port and the fork's web app.
 
-  record  <ref-dir> [prefix]              measure the reference PNGs once and write
-                                          expected.json (committed; the PNGs are not);
-                                          with a prefix, only scenes starting with it,
-                                          kept alongside the others
+  record  <ref-dir> [scene-filter ...]    measure the reference PNGs once and write each
+                                          scene's values to expected/<scene>.json under the
+                                          mode (committed; the PNGs are not); filters
+                                          re-record only the scenes whose name contains
+                                          one, skipping those without a PNG here
   compare <port-dir> <out-dir> [ref-dir]  measure the port PNGs, write report.md and
                                           results.json, and side-by-side images when
                                           the reference PNGs are available
 
-spec.json lists, per scene, the elements to measure (see measure.py) with a name,
+`PARITY_MODE=owner` records and judges the capture at the owner's settings (contrast 95,
+glass 40) instead of the shared one (`default`).
+
+The spec (gen_spec.py, one module per area under specs/) lists, per scene, the elements to measure (see measure.py) with a name,
 optionally `blur: true` on a scan across backdrop-blurred glass (edge
-positions judged, colours shown only), `anchor: "<element>"` (measure relative to where that element landed,
+positions judged, colours shown only), `anchor: "<element>"` (measure relative to where that element landed, also
+horizontally with `anchor_x: true`,
 for content below a documented difference that moves it),
 and optionally `text: true` (glyph shapes differ by rasteriser, so a text run's
 right edge is reported but not judged; `text: "right"` for right-aligned text
@@ -18,16 +23,19 @@ judges the right edge and reports the left) or `exclude: "<reason>"` (a fixture 
 documented GPUI limit; measured and shown, never judged).
 """
 import json
+import os
 import sys
 from pathlib import Path
 
 from PIL import Image, ImageDraw
 
+import gen_spec
 import measure as m
 
 HERE = Path(__file__).resolve().parent
-SPEC = json.loads((HERE / "spec.json").read_text())
-EXPECTED = HERE / "expected.json"
+SPEC = gen_spec.build()
+EXPECTED_DIR = HERE / "expected"
+MODE = os.environ.get("PARITY_MODE", "default")
 PX = SPEC["tolerance"]["px"]
 # GPUI places a line's baseline with the font's exact ascent and descent
 # (gpui text_system/line.rs: padding_top = (line_height - ascent - descent) / 2);
@@ -43,16 +51,35 @@ def channels(a, b):
     return max(abs(int(a[i : i + 2], 16) - int(b[i : i + 2], 16)) for i in (0, 2, 4))
 
 
-def record(ref_dir, prefix=None):
+def load_expected():
+    """Every scene's recorded values in MODE."""
+    expected = {}
+    for path in sorted(EXPECTED_DIR.glob("*.json")):
+        modes = json.loads(path.read_text())
+        if MODE in modes:
+            expected[path.stem] = modes[MODE]
+    return expected
+
+
+def record(ref_dir, *only):
+    """Measures the reference PNGs into each scene's file under MODE, keeping its other mode;
+    with filters, re-records just the scenes whose name contains one (references live in
+    several directories, captured at different times)."""
     ref_dir = Path(ref_dir)
-    expected = json.loads(EXPECTED.read_text()) if prefix and EXPECTED.exists() else {}
+    EXPECTED_DIR.mkdir(exist_ok=True)
     for scene, body in SPEC["scenes"].items():
-        if prefix and not scene.startswith(prefix):
+        if only and not any(f in scene for f in only):
             continue
-        im = m.load(ref_dir / f"{body.get('reference', scene)}.png")
-        expected[scene] = {e["name"]: m.measure(im, e) for e in body["elements"]}
-    EXPECTED.write_text(json.dumps(expected, indent=1) + "\n")
-    print(f"wrote {EXPECTED.name}")
+        png = ref_dir / f"{body.get('reference', scene)}.png"
+        if only and not png.exists():
+            print(f"skipped {scene}: no {png.name} in {ref_dir}")
+            continue
+        im = m.load(png)
+        path = EXPECTED_DIR / f"{scene}.json"
+        modes = json.loads(path.read_text()) if path.exists() else {}
+        modes[MODE] = {e["name"]: m.measure(im, e) for e in body["elements"]}
+        path.write_text(json.dumps(dict(sorted(modes.items())), indent=1) + "\n")
+        print(f"wrote {path.relative_to(HERE)} ({MODE})")
 
 
 def judge(element, ref, port):
@@ -143,7 +170,7 @@ def side_by_side(ref_png, port_png, marks, out):
 def compare(port_dir, out_dir, ref_dir=None):
     port_dir, out_dir = Path(port_dir), Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    expected = json.loads(EXPECTED.read_text())
+    expected = load_expected()
     body_lines = []
     summary = []
     results = {}
@@ -153,6 +180,9 @@ def compare(port_dir, out_dir, ref_dir=None):
         if not port_png.exists():
             summary.append((scene, 0, 0, 0, "(no port image)"))
             continue
+        if scene not in expected:
+            summary.append((scene, 0, 0, 0, f"(not recorded for {MODE})"))
+            continue
         im = m.load(port_png)
         by_name = {e["name"]: e for e in body["elements"]}
         counts = {"pass": 0, "FAIL": 0, "excluded": 0}
@@ -160,7 +190,7 @@ def compare(port_dir, out_dir, ref_dir=None):
         marks = []
         for element in body["elements"]:
             ref = expected[scene][element["name"]]
-            dy = 0.0
+            dy = dx = 0.0
             if "anchor" in element:
                 # Content below a known, documented difference: measure it where
                 # the anchor actually landed, so spacing compares like for like.
@@ -168,7 +198,12 @@ def compare(port_dir, out_dir, ref_dir=None):
                 found = m.measure(im, anchor)
                 if not found.get("empty"):
                     dy = found["top"] - expected[scene][anchor["name"]]["top"]
-            port = m.unshift(m.measure(im, m.shifted(element, dy)), dy)
+                    if element.get("anchor_x"):
+                        dx = found["left"] - expected[scene][anchor["name"]]["left"]
+            # Scene captures lay out without the sidebar or with the Linux topbar; `port_dx`/`port_dy` say how far.
+            dx += element.get("port_dx", 0)
+            dy += element.get("port_dy", 0)
+            port = m.unmoved(m.measure(im, m.moved(element, dx, dy)), dx, dy)
             rows = judge(element, ref, port)
             verdicts = [ok for *_, ok in rows if ok is not None]
             state = "excluded" if element.get("exclude") else ("pass" if all(verdicts) else "FAIL")

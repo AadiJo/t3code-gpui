@@ -1,0 +1,172 @@
+{
+ "default": {
+  "titlebar fill": {
+   "color": "#141415"
+  },
+  "sidebar fill (top)": {
+   "color": "#181819"
+  },
+  "sidebar edge": {
+   "start": "#171818",
+   "edges": [
+    {
+     "at": 255.0,
+     "color": "#141415"
+    },
+    {
+     "at": 256.0,
+     "color": "#141415"
+    }
+   ]
+  },
+  "sidebar toggle": {
+   "top": 19.0,
+   "left": 90.5,
+   "bottom": 33.0,
+   "right": 103.5,
+   "color": "#8f8f8f",
+   "bg": "#181819"
+  },
+  "right toggles": {
+   "top": 19.0,
+   "left": 1002.5,
+   "bottom": 33.0,
+   "right": 1079.5,
+   "color": "#8f8f8f",
+   "bg": "#141415"
+  },
+  "breadcrumb monogram": {
+   "top": 19.0,
+   "left": 276.0,
+   "bottom": 33.0,
+   "right": 290.0,
+   "color": "#00d5be",
+   "bg": "#141415"
+  },
+  "breadcrumb project": {
+   "top": 20.5,
+   "left": 296.0,
+   "bottom": 31.5,
+   "right": 342.5,
+   "color": "#8f8f8f",
+   "bg": "#141415"
+  },
+  "breadcrumb slash": {
+   "top": 20.0,
+   "left": 355.0,
+   "bottom": 32.5,
+   "right": 360.0,
+   "color": "#8a8a8a",
+   "bg": "#141415"
+  },
+  "breadcrumb title": {
+   "top": 20.0,
+   "left": 372.5,
+   "bottom": 34.0,
+   "right": 507.0,
+   "color": "#f5f5f5",
+   "bg": "#141415"
+  },
+  "dev badge": {
+   "top": 22.5,
+   "left": 8.5,
+   "bottom": 30.5,
+   "right": 26.5,
+   "color": "#f5f5f5",
+   "bg": "#212121"
+  },
+  "menu left edge": {
+   "start": "#1a1a1b",
+   "edges": [
+    {
+     "at": 360.5,
+     "color": "#1a1a1b"
+    },
+    {
+     "at": 369.5,
+     "color": "#343a3d"
+    },
+    {
+     "at": 370.5,
+     "color": "#1d1f22"
+    },
+    {
+     "at": 372.0,
+     "color": "#1d1f22"
+    },
+    {
+     "at": 373.0,
+     "color": "#1d1f22"
+    }
+   ]
+  },
+  "menu top edge": {
+   "start": "#555555",
+   "edges": [
+    {
+     "at": 31.0,
+     "color": "#141415"
+    },
+    {
+     "at": 41.0,
+     "color": "#1a191c"
+    },
+    {
+     "at": 42.0,
+     "color": "#1a191c"
+    },
+    {
+     "at": 57.5,
+     "color": "#f5f5f5"
+    }
+   ],
+   "vertical": true
+  },
+  "menu bottom edge": {
+   "start": "#1f1f20",
+   "edges": [
+    {
+     "at": 422.0,
+     "color": "#1c1c1d"
+    },
+    {
+     "at": 426.0,
+     "color": "#1b1b1c"
+    }
+   ],
+   "vertical": true
+  },
+  "item 1 icon": {
+   "top": 81.0,
+   "left": 385.5,
+   "bottom": 86.0,
+   "right": 400.0,
+   "color": "#8f8f8f",
+   "bg": "#1b1a1d"
+  },
+  "item 1 label": {
+   "top": 64.0,
+   "left": 410.0,
+   "bottom": 88.0,
+   "right": 520.0,
+   "color": "#f5f5f5",
+   "bg": "#1b1a1d"
+  },
+  "snooze chevron": {
+   "top": 166.5,
+   "left": 556.0,
+   "bottom": 177.5,
+   "right": 562.5,
+   "color": "#777777",
+   "bg": "#181819"
+  },
+  "delete label": {
+   "top": 417.5,
+   "left": 410.0,
+   "bottom": 426.0,
+   "right": 450.5,
+   "color": "#ff8681",
+   "bg": "#1d1d1e"
+  }
+ }
+}

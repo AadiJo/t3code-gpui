@@ -18,11 +18,12 @@ use t3code_contracts::{
 
 use super::provider_driver_meta::{DRIVERS, FieldControl, driver_meta, local_acp_fields};
 use super::provider_settings_panel::{provider_instance_icon, toast_error};
+use super::provider_accent_color_picker::ProviderAccentColorPicker;
 use super::server_settings_controls::{Fields, field_input, hint, tinted};
 use super::server_settings_data::ServerPanelsModel;
 use crate::ActiveAppTheme as _;
 use crate::appearance_fonts::{TextSize, weight};
-use crate::components::icons::{Icon, IconName, IconSize};
+use crate::components::icons::{BrandIcon, Icon, IconName, IconSize};
 use crate::components::managed_policy::is_managed_driver_allowed;
 use crate::components::ui::TextStyleExt as _;
 use crate::components::ui::badge::{Badge, BadgeSize, BadgeVariant};
@@ -68,7 +69,9 @@ pub struct AddProviderInstanceDialog {
     local_acp: bool,
     label: Entity<InputState>,
     instance_id: Entity<InputState>,
-    accent: Entity<InputState>,
+    accent_picker: Entity<ProviderAccentColorPicker>,
+    /// The accent chosen in the picker, normalized.
+    accent: Option<String>,
     /// Typed ids per driver; `None` follows the label.
     id_override: BTreeMap<String, String>,
     config: serde_json::Map<String, serde_json::Value>,
@@ -83,7 +86,7 @@ impl AddProviderInstanceDialog {
     pub fn new(model: Entity<ServerPanelsModel>, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let label = cx.new(|cx| InputState::new(window, cx).placeholder(t!("e.g. Work")));
         let instance_id = cx.new(|cx| InputState::new(window, cx).placeholder("codex_work"));
-        let accent = cx.new(|cx| InputState::new(window, cx).placeholder("#2563eb"));
+        let accent_picker = cx.new(|cx| ProviderAccentColorPicker::new(window, cx));
         let on_label = cx.subscribe(&label, |this, _, event: &InputEvent, cx| {
             if let InputEvent::Change = event {
                 cx.notify();
@@ -105,7 +108,8 @@ impl AddProviderInstanceDialog {
             local_acp: false,
             label,
             instance_id,
-            accent,
+            accent_picker,
+            accent: None,
             id_override: BTreeMap::new(),
             config: serde_json::Map::new(),
             fields: Fields::default(),
@@ -198,7 +202,7 @@ impl AddProviderInstanceDialog {
         }
         let id = self.resolved_instance_id(cx);
         let label = self.label.read(cx).value().trim().to_owned();
-        let accent = normalize_provider_accent_color(Some(self.accent.read(cx).value().as_ref()));
+        let accent = normalize_provider_accent_color(self.accent.as_deref());
         let mut config = self.config.clone();
         if self.driver == "acpRegistry" {
             config.insert("source".into(), serde_json::json!(if self.local_acp { "local" } else { "registry" }));
@@ -256,22 +260,37 @@ impl AddProviderInstanceDialog {
             let label = meta.as_ref().map_or(driver, |m| m.label);
             let selected = this.driver == driver;
             let allowed = is_managed_driver_allowed(policy.as_deref(), driver);
+            // `ProviderOptionGrid` radio: ring-1 white/5 on white/3, checked ring-2 primary on primary/15 with a check badge.
             div()
                 .id(SharedString::from(format!("add-driver-{driver}")))
+                .relative()
                 .flex()
                 .items_center()
-                .gap(theme.sp(2.5))
-                .p(theme.sp(3.))
+                .gap(theme.sp(3.))
+                // The web draws these borders as rings, outside layout; the padding gives the width back.
+                .when(!selected, |d| d.px(theme.sp(3.) - px(1.)).py(theme.sp(3.) - px(1.)))
+                .when(selected, |d| d.px(theme.sp(3.) - px(2.)).py(theme.sp(3.) - px(2.)))
                 .rounded(theme.radii.lg)
-                .border_1()
-                .border_color(if selected { c.foreground() } else { with_alpha(c.border, 0.8) })
-                .when(selected, |d| d.bg(with_alpha(c.foreground(), 0.04)))
+                .when(!selected, |d| d.border_1().border_color(with_alpha(c.foreground(), 0.05)).bg(with_alpha(c.foreground(), 0.03)))
+                .when(selected, |d| d.border_2().border_color(c.primary()).bg(with_alpha(c.primary(), 0.15)))
                 .when(!allowed, |d| d.opacity(0.5))
-                .when(allowed, |d| {
-                    d.cursor_pointer().hover(|d| d.bg(with_alpha(c.muted, 0.3))).on_click(cx.listener(move |this, _, _, cx| this.pick_driver(driver, cx)))
-                })
+                .when(allowed && !selected, |d| d.cursor_pointer().hover(|d| d.bg(with_alpha(c.foreground(), 0.05))))
+                .when(allowed, |d| d.on_click(cx.listener(move |this, _, _, cx| this.pick_driver(driver, cx))))
                 .child(provider_instance_icon(driver, label, None, cx))
-                .child(div().flex_1().ui_text(theme, TextSize::Sm, weight::MEDIUM).child(label))
+                .child(div().flex_1().min_w_0().truncate().ui_text(theme, TextSize::Sm, weight::MEDIUM).text_color(c.foreground()).child(label))
+                .when(selected, |d| {
+                    d.child(
+                        div()
+                            .size(theme.sp(5.))
+                            .flex_none()
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .rounded_full()
+                            .bg(c.primary())
+                            .child(Icon::new(IconName::Check).size(IconSize::Sm).color(c.primary_foreground())),
+                    )
+                })
                 .children(meta.and_then(|m| m.badge_label).map(|b| Badge::new(b).variant(BadgeVariant::Warning).size(BadgeSize::Sm)))
                 .test_support()
         };
@@ -280,66 +299,96 @@ impl AddProviderInstanceDialog {
         let more: Vec<&'static str> =
             DRIVERS.iter().copied().filter(|d| *d != "acpRegistry" && driver_meta(d).is_some_and(|m| !m.featured)).collect();
         let grid = |drivers: &[&'static str], this: &Self, cx: &mut Context<Self>| {
-            div().grid().grid_cols(2).gap(theme.sp(2.)).children(drivers.iter().map(|d| card(d, this, cx)).collect::<Vec<_>>())
+            div().grid().grid_cols(2).gap(theme.sp(3.)).children(drivers.iter().map(|d| card(d, this, cx)).collect::<Vec<_>>())
         };
         let first = grid(&featured, self, cx);
-        let rest = self.show_more.then(|| grid(&more, self, cx));
         let acp_selected = self.driver == "acpRegistry";
+        let more_content = self.show_more.then(|| {
+            div()
+                .flex()
+                .flex_col()
+                .gap(theme.sp(4.))
+                .pt(theme.sp(4.))
+                .child(grid(&more, self, cx))
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap(theme.sp(3.))
+                        .ui_text(theme, TextSize::Xs, weight::NORMAL)
+                        .text_color(c.muted_foreground)
+                        .child(div().flex_1().border_t_1().border_color(with_alpha(c.border, 0.7)))
+                        .child(t!("Or choose from ACP Registry"))
+                        .child(div().flex_1().border_t_1().border_color(with_alpha(c.border, 0.7))),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .gap(theme.sp(2.))
+                        .child(
+                            Button::new("add-acp-manual")
+                                .variant(if acp_selected && !self.local_acp { ButtonVariant::Secondary } else { ButtonVariant::Outline })
+                                .size(ButtonSize::Sm)
+                                .label(t!("Enter manually"))
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.pick_driver("acpRegistry", cx);
+                                    this.local_acp = false;
+                                })),
+                        )
+                        .child(
+                            Button::new("add-acp-local")
+                                .variant(if acp_selected && self.local_acp { ButtonVariant::Secondary } else { ButtonVariant::Outline })
+                                .size(ButtonSize::Sm)
+                                .label(t!("Local ACP command"))
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.pick_driver("acpRegistry", cx);
+                                    this.local_acp = true;
+                                })),
+                        ),
+                )
+        });
         div()
             .flex()
             .flex_col()
-            .gap(theme.sp(2.))
-            .child(div().ui_text(theme, TextSize::Sm, weight::MEDIUM).child(t!("Provider", context = "wizard step")))
-            .child(first)
             .child(
-                div().child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(theme.sp(2.))
+                    .child(div().ui_text(theme, TextSize::Sm, weight::MEDIUM).text_color(c.foreground()).child(t!("Provider", context = "wizard step")))
+                    .child(first),
+            )
+            .child(
+                div().flex().pt(theme.sp(2.)).child(
                     Button::new("add-driver-more")
                         .variant(ButtonVariant::GhostMuted)
                         .size(ButtonSize::Xs)
                         .label(if self.show_more { t!("Show less") } else { t!("Show more") })
+                        .trailing_icon(if self.show_more { IconName::ChevronDown } else { IconName::ChevronRight })
                         .on_click(cx.listener(|this, _, _, cx| {
                             this.show_more = !this.show_more;
                             cx.notify();
                         })),
                 ),
             )
-            .children(rest)
-            .child(
-                div()
-                    .pt(theme.sp(2.))
-                    .flex()
-                    .flex_col()
-                    .gap(theme.sp(2.))
-                    .child(div().ui_text(theme, TextSize::Xs, weight::MEDIUM).text_color(c.muted_foreground).child(t!("Or choose from ACP Registry")))
-                    .child(
-                        div()
-                            .flex()
-                            .gap(theme.sp(2.))
-                            .child(
-                                Button::new("add-acp-manual")
-                                    .variant(if acp_selected && !self.local_acp { ButtonVariant::Secondary } else { ButtonVariant::Outline })
-                                    .size(ButtonSize::Sm)
-                                    .label(t!("Enter manually"))
-                                    .on_click(cx.listener(|this, _, _, cx| {
-                                        this.pick_driver("acpRegistry", cx);
-                                        this.local_acp = false;
-                                    })),
-                            )
-                            .child(
-                                Button::new("add-acp-local")
-                                    .variant(if acp_selected && self.local_acp { ButtonVariant::Secondary } else { ButtonVariant::Outline })
-                                    .size(ButtonSize::Sm)
-                                    .label(t!("Local ACP command"))
-                                    .on_click(cx.listener(|this, _, _, cx| {
-                                        this.pick_driver("acpRegistry", cx);
-                                        this.local_acp = true;
-                                    })),
-                            ),
-                    ),
-            )
+            .children(more_content)
     }
 
-    fn render_identity(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render_identity(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let label_text = self.label.read(cx).value();
+        let display: SharedString = if label_text.trim().is_empty() { driver_meta(&self.driver).map_or_else(|| self.driver.clone().into(), |m| m.label.into()) } else { label_text };
+        let this = cx.entity().downgrade();
+        let accent = self.accent.clone();
+        let picker = self.accent_picker.clone();
+        picker.update(cx, |p, cx| {
+            p.sync(display, accent.as_deref(), move |color, _, cx| {
+                this.update(cx, |this, cx| {
+                    this.accent = (!color.is_empty()).then_some(color);
+                    cx.notify();
+                })
+                .ok();
+            }, window, cx)
+        });
         let theme = &cx.app_theme().clone();
         let c = &theme.colors;
         let error = self.id_error(cx);
@@ -377,7 +426,7 @@ impl AddProviderInstanceDialog {
                     .into_any_element(),
             ))
             .children(error.map(|e| tinted(e, c.destructive(), cx)))
-            .child(label_row(t!("Accent color"), t!("Optional marker shown in the picker."), field_input(&self.accent, true, false, false).into_any_element()))
+            .child(label_row(t!("Accent color"), t!("Optional marker shown in the picker."), div().flex().justify_end().child(picker).into_any_element()))
     }
 
     fn render_config(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
@@ -466,43 +515,69 @@ impl Render for AddProviderInstanceDialog {
         let steps = self.steps();
         let last = steps.len() - 1;
         let environment = self.model.read(cx).snapshot().environment_label.clone();
-        let stepper = div().flex().items_center().gap(theme.sp(2.)).children(steps.iter().enumerate().map(|(ix, label)| {
-            let active = ix == self.step;
-            let done = ix < self.step;
-            div()
-                .id(SharedString::from(format!("add-step-{ix}")))
-                .flex()
-                .items_center()
-                .gap(theme.sp(1.5))
-                .cursor_pointer()
-                .on_click(cx.listener(move |this, _, _, cx| this.go_to(ix, cx)))
-                .child(
-                    div()
-                        .size(px(20.))
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .rounded(theme.radii.full)
-                        .border_1()
-                        .border_color(if active || done { c.foreground() } else { c.border })
-                        .when(active, |d| d.bg(c.foreground()).text_color(c.background()))
-                        .ui_text(theme, TextSize::Xs, weight::SEMIBOLD)
-                        .child(if done {
-                            Icon::new(IconName::Check).size(IconSize::Xs).color(c.foreground()).into_any_element()
-                        } else {
-                            (ix + 1).to_string().into_any_element()
-                        }),
-                )
-                .child(
-                    div()
-                        .ui_text(theme, TextSize::Sm, if active { weight::MEDIUM } else { weight::NORMAL })
-                        .text_color(if active { c.foreground() } else { c.muted_foreground })
-                        .child(label.clone()),
-                )
-        }));
+        // `WizardSteps`: equal cells in a white/4 tray; the current cell is a card.
+        let stepper = div()
+            .grid()
+            .grid_cols(steps.len() as u16)
+            .gap(theme.sp(1.))
+            .p(theme.sp(1.))
+            .rounded(theme.radii.xl)
+            .bg(with_alpha(c.foreground(), 0.04))
+            .border_1()
+            .border_color(with_alpha(c.foreground(), 0.05))
+            .children(steps.iter().enumerate().map(|(ix, label)| {
+                let active = ix == self.step;
+                let done = ix < self.step;
+                div()
+                    .id(SharedString::from(format!("add-step-{ix}")))
+                    .flex()
+                    .items_center()
+                    .gap(theme.sp(2.))
+                    .min_w_0()
+                    .px(theme.sp(2.5))
+                    .py(theme.sp(2.))
+                    .rounded(theme.radii.lg)
+                    .cursor_pointer()
+                    .when(active, |d| d.bg(c.card()).border_1().border_color(with_alpha(c.foreground(), 0.05)))
+                    .when(!active, |d| d.hover(|d| d.bg(c.card())))
+                    .on_click(cx.listener(move |this, _, _, cx| this.go_to(ix, cx)))
+                    .child(
+                        div()
+                            .size(theme.sp(5.))
+                            .flex_none()
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .rounded_full()
+                            .border_1()
+                            .ui_text(theme, TextSize::Sm, weight::MEDIUM)
+                            .map(|d| {
+                                if done {
+                                    d.bg(c.primary()).border_color(c.primary()).text_color(c.primary_foreground())
+                                } else if active {
+                                    d.bg(with_alpha(c.primary(), 0.1)).border_color(with_alpha(c.primary(), 0.3)).text_color(c.primary())
+                                } else {
+                                    d.bg(with_alpha(c.foreground(), 0.05)).border_color(with_alpha(c.foreground(), 0.1)).text_color(c.muted_foreground)
+                                }
+                            })
+                            .child(if done {
+                                Icon::new(IconName::Check).size(IconSize::Md).color(c.primary_foreground()).into_any_element()
+                            } else {
+                                (ix + 1).to_string().into_any_element()
+                            }),
+                    )
+                    .child(
+                        div()
+                            .min_w_0()
+                            .truncate()
+                            .ui_text(theme, TextSize::Sm, weight::MEDIUM)
+                            .text_color(if active { c.foreground() } else { c.muted_foreground })
+                            .child(label.clone()),
+                    )
+            }));
         let panel = match self.step {
             0 => self.render_driver_grid(cx).into_any_element(),
-            1 => self.render_identity(cx).into_any_element(),
+            1 => self.render_identity(window, cx).into_any_element(),
             _ => self.render_config(window, cx).into_any_element(),
         };
         let next_label = if self.saving {
@@ -514,7 +589,7 @@ impl Render for AddProviderInstanceDialog {
         };
         dialog_glass(theme)
             .id("add-provider-dialog")
-            .w(theme.rem(42.))
+            .w(theme.rem(48.))
             .child(
                 div()
                     .flex()
@@ -529,7 +604,18 @@ impl Render for AddProviderInstanceDialog {
                     )))
                     .child(stepper),
             )
-            .child(div().px(theme.sp(6.)).pb(theme.sp(6.)).min_h(px(280.)).ui_text(theme, TextSize::Sm, weight::NORMAL).child(panel))
+            // `WizardPanel`: white/2 with a white/5 hairline above and below.
+            .child(
+                div()
+                    .px(theme.sp(6.))
+                    .py(theme.sp(5.))
+                    .bg(with_alpha(c.foreground(), 0.02))
+                    .border_t_1()
+                    .border_b_1()
+                    .border_color(with_alpha(c.foreground(), 0.05))
+                    .ui_text(theme, TextSize::Sm, weight::NORMAL)
+                    .child(panel),
+            )
             .child(
                 div()
                     .flex()
@@ -537,10 +623,6 @@ impl Render for AddProviderInstanceDialog {
                     .gap(theme.sp(2.))
                     .px(theme.sp(6.))
                     .py(theme.sp(4.))
-                    .border_t_1()
-                    .border_color(c.border)
-                    .bg(theme.derived.dialog_footer)
-                    .rounded_b(theme.radii.xxl - px(1.))
                     .child(
                         Button::new("add-back")
                             .variant(if self.step == 0 { ButtonVariant::GhostMuted } else { ButtonVariant::Outline })
@@ -555,7 +637,12 @@ impl Render for AddProviderInstanceDialog {
                                 }
                             })),
                     )
-                    .when(self.step < last, |d| {
+                    .when(self.step == 0 && self.driver == "codex", |d| {
+                        // The ChatGPT sign-in (`AddManagedCodexAccountDialog`) is not ported; see the report.
+                        d.child(Button::new("add-configure").variant(ButtonVariant::Outline).size(ButtonSize::Sm).label(t!("Configure manually")).on_click(cx.listener(|this, _, _, cx| this.go_to(1, cx))))
+                            .child(chatgpt_button(cx))
+                    })
+                    .when(self.step < last && !(self.step == 0 && self.driver == "codex"), |d| {
                         d.child(Button::new("add-next").size(ButtonSize::Sm).label(t!("Next")).on_click(cx.listener(|this, _, _, cx| this.go_to(this.step + 1, cx))))
                     })
                     .when(self.step == last, |d| {
@@ -569,4 +656,25 @@ impl Render for AddProviderInstanceDialog {
                     }),
             )
     }
+}
+
+/// `ChatGptConnectionButton` (size sm): the primary button with the OpenAI mark.
+fn chatgpt_button(cx: &App) -> impl IntoElement {
+    let theme = cx.app_theme();
+    let c = &theme.colors;
+    div()
+        .id("add-chatgpt")
+        .flex()
+        .items_center()
+        .gap(theme.sp(1.5))
+        .h(theme.sp(7.))
+        .px(theme.sp(2.5))
+        .rounded(theme.radii.lg)
+        .bg(c.primary())
+        .text_color(c.primary_foreground())
+        .ui_text(theme, TextSize::Sm, weight::MEDIUM)
+        .cursor_pointer()
+        .hover(|d| d.opacity(0.9))
+        .child(Icon::new(BrandIcon::OpenAi).size(IconSize::Md).color(c.primary_foreground()))
+        .child(t!("Continue with ChatGPT"))
 }

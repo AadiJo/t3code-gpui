@@ -12,7 +12,7 @@ use gpui_kit::{
 };
 use t3code_contracts::{EditorId, LaunchEditorInput};
 
-use super::thread_details_panel_styles::{DismissPress, below_row, row_base, row_icon, split_row, split_secondary};
+use super::thread_details_panel_styles::{DismissPress, below_row, row_base, row_width, row_icon, split_row, split_secondary};
 use crate::components::git_actions_control_source::GitActionsSource;
 use crate::components::icons::{BrandIcon, Icon, IconName, IconSize, IconSource};
 use crate::components::ui::popover::glass_surface;
@@ -204,7 +204,7 @@ impl OpenInPicker {
                         .px(theme.sp(2.))
                         .rounded(theme.radii.sm)
                         .ui_text(theme, TextSize::Sm, weight::NORMAL)
-                        .child(Icon::new(icon).size(IconSize::Md).color(if brand { c.foreground() } else { c.muted_foreground }))
+                        .child(Icon::new(icon).size(IconSize::Custom(theme.rem(1.))).color(if brand { c.foreground() } else { c.muted_foreground }))
                         .child(div().flex_1().min_w_0().truncate().child(editor_label(editor, self.platform)))
                         .when(Some(editor) == preferred, |r| {
                             r.child(
@@ -237,7 +237,7 @@ impl OpenInPicker {
             glass_surface(theme)
                 .id("open-in-menu")
                 .occlude()
-                .w(theme.spacing.thread_details_panel_width - px(16.))
+                .w(row_width(&theme))
                 .p(theme.sp(1.))
                 .on_mouse_down_out(cx.listener(|this, event: &gpui_kit::MouseDownEvent, _, cx| {
                     this.dismissed.record(event.position);
@@ -259,7 +259,7 @@ impl Render for OpenInPicker {
         let icon = match preferred {
             Some(editor) => {
                 let (icon, brand) = editor_icon(editor, self.platform);
-                Icon::new(icon).size(IconSize::Md).color(if brand { theme.colors.foreground() } else { theme.colors.muted_foreground })
+                Icon::new(icon).size(IconSize::Custom(theme.rem(1.))).color(if brand { theme.colors.foreground() } else { theme.colors.muted_foreground })
             }
             None => row_icon(&theme, IconName::SquareArrowOutUpRight),
         };

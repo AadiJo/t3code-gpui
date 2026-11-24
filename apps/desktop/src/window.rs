@@ -12,6 +12,7 @@ use gpui_kit::{component::TitleBar, *};
 use serde::{Deserialize, Serialize};
 use t3code_web::app_root::{AppRootOptions, WindowRoot};
 use t3code_web::components::app_sidebar_layout::TitlebarPlatform;
+use t3code_web::components::ui::motion::PrefersReducedMotion;
 use t3code_web::theme_palette::ThemeSettings;
 use t3code_web::ui_state_store::StateDir;
 
@@ -44,8 +45,11 @@ impl SavedWindowState {
     }
 }
 
-/// `<data dir>/t3code-gpui`: window bounds, layout, panels and UI state.
+/// `<data dir>/t3code-gpui` (or `T3CODE_DATA_DIR`): window bounds, layout, panels and UI state.
 pub fn data_dir() -> Option<PathBuf> {
+    if let Some(dir) = std::env::var_os("T3CODE_DATA_DIR") {
+        return Some(PathBuf::from(dir).join("ui"));
+    }
     Some(dirs::data_dir()?.join("t3code-gpui"))
 }
 
@@ -107,12 +111,13 @@ pub fn main_window_options(cx: &App) -> WindowOptions {
 }
 
 /// Opens the main window and keeps its bounds saved. `fixtures` loads the
-/// showcase data; without it the app starts empty (first-run state until an
-/// environment is saved). Needs the connection runtime.
+/// showcase data; without it the app runs on the saved environments (the
+/// first-run state while none is saved). Needs the connection runtime.
 pub fn open_main_window(options: WindowOptions, fixtures: bool, cx: &mut App) -> anyhow::Result<(AnyWindowHandle, WindowRoot)> {
     let platform = TitlebarPlatform::current();
-    let app = if fixtures { AppRootOptions::fixtures(platform) } else { AppRootOptions::without_fixtures(platform) };
+    let app = if fixtures { AppRootOptions::fixtures(platform) } else { AppRootOptions::live(platform) };
     let app = AppRootOptions { state_dir: StateDir(data_dir()), ..app };
+    follow_os_reduced_motion(cx);
     let (handle, root) = WindowRoot::open_window(options, app, cx)?;
     handle.update(cx, |_, window, cx| {
         ThemeSettings::follow_window(window, cx);
@@ -153,4 +158,57 @@ fn persist_bounds<T: 'static>(window: &mut Window, cx: &mut Context<T>) {
         .detach();
     })
     .detach();
+}
+
+/// Reads the OS "reduce motion" setting off the main thread and applies it
+/// as `prefers-reduced-motion` (Chromium reads the same settings).
+fn follow_os_reduced_motion(cx: &mut App) {
+    let read = cx.background_spawn(async { os_prefers_reduced_motion() });
+    cx.spawn(async move |cx| {
+        let reduce = read.await;
+        cx.update(|cx| {
+            cx.set_global(PrefersReducedMotion(reduce));
+            cx.refresh_windows();
+        });
+    })
+    .detach();
+}
+
+/// macOS: Accessibility > Display > Reduce motion.
+#[cfg(target_os = "macos")]
+fn os_prefers_reduced_motion() -> bool {
+    std::process::Command::new("/usr/bin/defaults")
+        .args(["read", "com.apple.universalaccess", "reduceMotion"])
+        .output()
+        .is_ok_and(|out| String::from_utf8_lossy(&out.stdout).trim() == "1")
+}
+
+/// Windows: "Show animations in Windows" (`SPI_GETCLIENTAREAANIMATION`).
+#[cfg(target_os = "windows")]
+fn os_prefers_reduced_motion() -> bool {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{SPI_GETCLIENTAREAANIMATION, SystemParametersInfoW};
+    let mut animate: i32 = 1;
+    // SAFETY: the out pointer is a live BOOL for the duration of the call.
+    let ok = unsafe { SystemParametersInfoW(SPI_GETCLIENTAREAANIMATION, 0, (&raw mut animate).cast(), 0) };
+    ok != 0 && animate == 0
+}
+
+/// Linux: GNOME's `enable-animations`, which GTK and Chromium follow.
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+fn os_prefers_reduced_motion() -> bool {
+    std::process::Command::new("gsettings")
+        .args(["get", "org.gnome.desktop.interface", "enable-animations"])
+        .output()
+        .is_ok_and(|out| String::from_utf8_lossy(&out.stdout).trim() == "false")
+}
+
+/// This app's URL scheme. It is not the Electron app's `t3code://`, so the
+/// two can be installed side by side.
+pub const URL_SCHEME: &str = "t3code-gpui";
+
+/// The route a `t3code-gpui://threads/<env>/<thread>` link opens, read with
+/// the web's `t3code://` deep-link rules.
+pub fn route_from_url(url: &str) -> Option<t3code_web::router::Route> {
+    let rest = url.strip_prefix(URL_SCHEME)?.strip_prefix("://")?;
+    t3code_web::router::route_from_deep_link(&format!("t3code://{rest}"))
 }

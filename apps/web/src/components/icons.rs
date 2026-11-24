@@ -321,12 +321,20 @@ brand_icons! {
     Anthropic => "anthropic",
     Antigravity => "antigravity",
     Apple => "apple",
+    AzureDevOps => "azure-devops",
+    Bitbucket => "bitbucket",
     ClaudeAi => "claude-ai",
     Cursor => "cursor",
+    CursorOrigin => "cursor-origin",
     FileExplorer => "file-explorer",
+    Forgejo => "forgejo",
+    Fx => "fx",
     Finder => "finder",
     Gemini => "gemini",
     Git => "git",
+    GitCafe => "gitcafe",
+    GitHub => "github",
+    GitLab => "gitlab",
     Grok => "grok",
     Jujutsu => "jujutsu",
     Kiro => "kiro",
@@ -335,10 +343,14 @@ brand_icons! {
     MacAccessibility => "mac-accessibility",
     MacScreenRecording => "mac-screen-recording",
     Meta => "meta",
+    MuseCode => "muse-code",
     Ollama => "ollama",
     OnePassword => "one-password",
     OpenAi => "open-ai",
+    OpenCodeDark => "opencode-dark",
+    OpenCodeLight => "opencode-light",
     OpenRouter => "open-router",
+    Pi => "pi",
     Trae => "trae",
     Ultrafast => "ultrafast",
     VisualStudioCode => "visual-studio-code",
@@ -364,10 +376,11 @@ impl BrandIcon {
         use BrandIcon::*;
         match self {
             Android | Anthropic | Apple | Linear | Linux | Ollama | OnePassword | OpenAi
-            | OpenRouter | Trae | Ultrafast | Zed => BrandPaint::Current,
+            | OpenRouter | Trae | Ultrafast | Zed | GitHub | CursorOrigin => BrandPaint::Current,
             AcpRegistry => BrandPaint::Fixed { light: 0x000000, dark: 0xffffff },
             Cursor => BrandPaint::Fixed { light: 0x26251e, dark: 0xedecec },
-            Grok => BrandPaint::Fixed { light: 0x0f0f0f, dark: 0xf5f5f5 },
+            Grok | Pi | Fx => BrandPaint::Fixed { light: 0x0f0f0f, dark: 0xf5f5f5 },
+            ClaudeAi => BrandPaint::Fixed { light: 0xd97757, dark: 0xd97757 },
             _ => BrandPaint::FullColor,
         }
     }
@@ -409,6 +422,16 @@ pub enum IconSize {
 }
 
 impl IconSize {
+    /// The size at a root font size: named sizes are Tailwind's rem sizes
+    /// (`size-4` is 1rem), so they follow the Interface size setting.
+    pub fn at_rem(self, rem: Pixels) -> Pixels {
+        match self {
+            Self::Custom(size) => size,
+            named => named.pixels() * (rem / px(16.)),
+        }
+    }
+
+    /// The size at the default 16px root.
     pub fn pixels(self) -> Pixels {
         match self {
             Self::Xs => px(12.),
@@ -425,7 +448,7 @@ impl IconSize {
 #[derive(IntoElement)]
 pub struct Icon {
     source: IconSource,
-    size: Pixels,
+    size: IconSize,
     color: Option<Hsla>,
     opacity: f32,
     stroke: Option<f32>,
@@ -438,7 +461,7 @@ impl Icon {
     pub fn new(source: impl Into<IconSource>) -> Self {
         Self {
             source: source.into(),
-            size: px(16.),
+            size: IconSize::Md,
             color: None,
             opacity: 1.,
             stroke: None,
@@ -449,7 +472,7 @@ impl Icon {
     }
 
     pub fn size(mut self, size: IconSize) -> Self {
-        self.size = size.pixels();
+        self.size = size;
         self
     }
 
@@ -500,6 +523,7 @@ fn stroked_path(name: IconName, width: f32) -> SharedString {
 impl RenderOnce for Icon {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let current = window.text_style().color;
+        let size = self.size.at_rem(window.rem_size());
         let appearance = crate::ActiveAppTheme::app_theme(cx).appearance;
         let tint = |color: Hsla| Hsla { a: color.a * self.opacity, ..color };
         let (path, color): (SharedString, Option<Hsla>) = match self.source {
@@ -521,7 +545,7 @@ impl RenderOnce for Icon {
         };
         let Some(color) = color else {
             return img(ImageSource::from(path))
-                .size(self.size)
+                .size(size)
                 .flex_none()
                 .opacity(self.opacity)
                 .into_any_element();
@@ -533,7 +557,7 @@ impl RenderOnce for Icon {
         };
         let mut icon = svg()
             .path(path)
-            .size(self.size)
+            .size(size)
             .flex_none()
             .text_color(tint(color))
             .with_timed_transformation(transformation);

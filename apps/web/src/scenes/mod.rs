@@ -9,7 +9,6 @@ pub mod git_actions;
 mod i18n;
 mod notifications;
 pub mod pull_requests;
-pub mod live;
 pub mod composer;
 pub mod diffs;
 pub mod files;
@@ -34,6 +33,7 @@ pub fn scenes() -> &'static [(&'static str, SceneBuilder)] {
         ("sidebar", sidebar::build),
         ("chat", chat::build),
         ("chat-light", chat::build_light),
+        ("chat-projection", chat::build_projection),
         ("composer", composer::build),
         ("terminal", terminal::build),
         ("terminal-light", terminal::build_light),
@@ -56,6 +56,7 @@ pub fn scenes() -> &'static [(&'static str, SceneBuilder)] {
         ("git-actions", git_actions::build),
         ("git-actions-light", git_actions::build_light),
         ("git-actions-panel", git_actions::build_panel),
+        ("thread-details-all", git_actions::build_panel_all),
         ("git-actions-panel-light", git_actions::build_panel_light),
         ("files", files::build),
         ("files-light", files::build_light),
@@ -87,6 +88,8 @@ pub fn scenes() -> &'static [(&'static str, SceneBuilder)] {
         ("settings-server-devices", settings_server::build_devices),
         ("settings-server-projects", settings_server::build_projects),
         ("settings-server-access", settings_server::build_access),
+        ("settings-server-browser", settings_server::build_browser),
+        ("settings-server-signin-terminal", settings_server::build_signin_terminal),
         ("settings", settings::build),
         ("settings-appearance", settings::build_appearance),
         ("settings-chat", settings::build_chat),
@@ -110,6 +113,7 @@ pub fn scenes() -> &'static [(&'static str, SceneBuilder)] {
         ("usage-day-breakdown", usage::build_time_breakdown),
         ("usage-model", usage::build_model),
         ("usage-loading", usage::build_loading),
+        ("usage-empty", usage::build_empty),
         ("pull-requests", pull_requests::build),
         ("pull-requests-light", pull_requests::build),
         ("pull-requests-summary", pull_requests::build_summary),
@@ -122,7 +126,6 @@ pub fn scenes() -> &'static [(&'static str, SceneBuilder)] {
         ("pull-requests-code-light", pull_requests::build_code),
         ("issues", pull_requests::build_issues),
         ("issues-light", pull_requests::build_issues),
-        ("live", live::build),
     ]
 }
 

@@ -14,7 +14,9 @@ use t3code_contracts::{
     GitRunStackedActionResultPr, GitRunStackedActionResultPrStatus, GitRunStackedActionResultPush,
     GitRunStackedActionResultPushStatus, GitRunStackedActionResultToast, GitRunStackedActionResultToastCta,
     GitRunStackedActionResultToastCtaNoneType, LaunchEditorInput, ProjectMutation, PullRequestDetail, PullRequestRef,
-    PullRequestState, SourceControlProviderInfo, SourceControlProviderKind, VcsCreateRefInput, VcsCreateRefResult,
+    PullRequestState, SourceControlDiscoveryResult, SourceControlProviderInfo, SourceControlProviderKind,
+    SourceControlPublishRepositoryInput, SourceControlPublishRepositoryResult, SourceControlPublishStatus,
+    SourceControlRepositoryInfo, VcsCreateRefInput, VcsCreateRefResult,
     VcsInitInput, VcsListRefsInput, VcsListRefsResult, VcsPullInput, VcsPullResult, VcsPullResultStatus, VcsRef,
     VcsRefreshStatusPayload, VcsRemoveWorktreeInput, VcsStatusLocalResultWorkingTree,
     VcsStatusLocalResultWorkingTreeFilesItem, VcsStatusRemoteResultPr, VcsStatusResult,
@@ -224,6 +226,30 @@ impl GitActionsSource for FixtureGitSource {
     fn mutate_project(&self, _: ProjectMutation) -> RpcFuture<()> {
         self.write("projects.mutate", ())
     }
+
+    fn source_control_discovery(&self) -> RpcFuture<SourceControlDiscoveryResult> {
+        self.record("server.discoverSourceControl");
+        ready(Ok(fixture_source_control_discovery()))
+    }
+
+    fn publish_repository(&self, input: SourceControlPublishRepositoryInput) -> RpcFuture<SourceControlPublishRepositoryResult> {
+        let name = input.repository.clone();
+        self.write(
+            "sourceControl.publishRepository",
+            SourceControlPublishRepositoryResult {
+                repository: SourceControlRepositoryInfo {
+                    provider: input.provider,
+                    name_with_owner: name.clone(),
+                    url: format!("https://github.com/{name}"),
+                    ssh_url: format!("git@github.com:{name}.git"),
+                },
+                remote_name: input.remote_name.unwrap_or_else(|| "origin".into()),
+                remote_url: format!("git@github.com:{name}.git"),
+                branch: "main".into(),
+                status: SourceControlPublishStatus::Pushed,
+            },
+        )
+    }
 }
 
 fn fixture_resolved_pull_request(reference: &str) -> GitPreparePullRequestThreadResultPullRequest {
@@ -313,5 +339,48 @@ pub fn fixture_open_pr() -> VcsStatusRemoteResultPr {
         state: PullRequestState::Open,
         is_draft: Some(false),
         updated_at: None,
+    }
+}
+
+/// GitHub installed and signed in as `scenario`; GitLab not installed.
+pub fn fixture_source_control_discovery() -> SourceControlDiscoveryResult {
+    use t3code_contracts::{
+        SourceControlDiscoveryStatus as Status, SourceControlProviderAuth, SourceControlProviderAuthAccount as Account,
+        SourceControlProviderAuthAccountNoneType, SourceControlProviderAuthAccountSomeType,
+        SourceControlProviderAuthDetail as Detail, SourceControlProviderAuthDetailNoneType,
+        SourceControlProviderAuthHost as Host, SourceControlProviderAuthHostNoneType, SourceControlProviderAuthHostSomeType,
+        SourceControlProviderAuthStatus as Auth, SourceControlProviderDiscoveryItem, SourceControlProviderDiscoveryItemDetail,
+        SourceControlProviderDiscoveryItemDetailNoneType, SourceControlProviderDiscoveryItemVersion,
+        SourceControlProviderDiscoveryItemVersionNoneType,
+    };
+    let item = |kind: &str, label: &str, status, auth, account: Option<&str>, host: Option<&str>| SourceControlProviderDiscoveryItem {
+        kind: SourceControlProviderKind::from(kind),
+        label: label.into(),
+        executable: None,
+        status,
+        version: SourceControlProviderDiscoveryItemVersion::NoneType(SourceControlProviderDiscoveryItemVersionNoneType {}),
+        install_hint: format!("Install the {label} CLI."),
+        detail: SourceControlProviderDiscoveryItemDetail::NoneType(SourceControlProviderDiscoveryItemDetailNoneType {}),
+        auth: SourceControlProviderAuth {
+            status: auth,
+            account: match account {
+                Some(a) => Account::SomeType(SourceControlProviderAuthAccountSomeType { value: a.into() }),
+                None => Account::NoneType(SourceControlProviderAuthAccountNoneType {}),
+            },
+            host: match host {
+                Some(h) => Host::SomeType(SourceControlProviderAuthHostSomeType { value: h.into() }),
+                None => Host::NoneType(SourceControlProviderAuthHostNoneType {}),
+            },
+            detail: Detail::NoneType(SourceControlProviderAuthDetailNoneType {}),
+            accounts: None,
+        },
+        app_sign_in: None,
+    };
+    SourceControlDiscoveryResult {
+        version_control_systems: Vec::new(),
+        source_control_providers: vec![
+            item("github", "GitHub", Status::Available, Auth::Authenticated, Some("scenario"), Some("github.com")),
+            item("gitlab", "GitLab", Status::Missing, Auth::Unknown, None, None),
+        ],
     }
 }

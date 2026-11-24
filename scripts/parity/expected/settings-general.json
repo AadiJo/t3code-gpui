@@ -1,0 +1,212 @@
+{
+ "default": {
+  "modal fill (content)": {
+   "color": "#131314"
+  },
+  "nav search kbd": {
+   "top": 59.5,
+   "left": 252.0,
+   "bottom": 70.5,
+   "right": 256.5,
+   "color": "#8f8f8f",
+   "bg": "#141415"
+  },
+  "breadcrumb": {
+   "top": 59.0,
+   "left": 301.5,
+   "bottom": 73.0,
+   "right": 435.5,
+   "color": "#f5f5f5",
+   "bg": "#141415"
+  },
+  "close button": {
+   "top": 60.5,
+   "left": 1032.5,
+   "bottom": 69.5,
+   "right": 1041.5,
+   "color": "#8f8f8f",
+   "bg": "#141415"
+  },
+  "group left edge": {
+   "start": "#141415",
+   "edges": [
+    {
+     "at": 311.0,
+     "color": "#191919"
+    },
+    {
+     "at": 312.0,
+     "color": "#191919"
+    }
+   ]
+  },
+  "group right edge": {
+   "start": "#191919",
+   "edges": [
+    {
+     "at": 1028.0,
+     "color": "#141415"
+    },
+    {
+     "at": 1029.0,
+     "color": "#141415"
+    }
+   ]
+  },
+  "restore defaults left edge": {
+   "start": "#141415",
+   "edges": []
+  },
+  "restore defaults right edge": {
+   "start": "#141415",
+   "edges": []
+  },
+  "restore defaults top/bottom": {
+   "start": "#141415",
+   "edges": [],
+   "vertical": true
+  },
+  "h2 Notifications": {
+   "top": 120.5,
+   "left": 328.0,
+   "bottom": 133.5,
+   "right": 425.5,
+   "color": "#f5f5f5",
+   "bg": "#141415"
+  },
+  "notifications card top": {
+   "start": "#141415",
+   "edges": [
+    {
+     "at": 151.0,
+     "color": "#191919"
+    },
+    {
+     "at": 152.0,
+     "color": "#191919"
+    }
+   ],
+   "vertical": true
+  },
+  "thread notifications title": {
+   "top": 168.0,
+   "left": 328.5,
+   "bottom": 179.5,
+   "right": 461.0,
+   "color": "#f5f5f5",
+   "bg": "#191919"
+  },
+  "thread notifications description": {
+   "top": 191.5,
+   "left": 328.0,
+   "bottom": 221.5,
+   "right": 721.5,
+   "color": "#8f8f8f",
+   "bg": "#191919"
+  },
+  "thread notifications select left edge": {
+   "start": "#191919",
+   "edges": [
+    {
+     "at": 788.0,
+     "color": "#202021"
+    },
+    {
+     "at": 789.0,
+     "color": "#202021"
+    }
+   ]
+  },
+  "thread notifications select right edge": {
+   "start": "#202021",
+   "edges": [
+    {
+     "at": 1011.0,
+     "color": "#191919"
+    },
+    {
+     "at": 1012.0,
+     "color": "#191919"
+    }
+   ]
+  },
+  "thread notifications select top/bottom": {
+   "start": "#191919",
+   "edges": [
+    {
+     "at": 181.5,
+     "color": "#202021"
+    },
+    {
+     "at": 205.0,
+     "color": "#171718"
+    }
+   ],
+   "vertical": true
+  },
+  "in-app title": {
+   "top": 253.0,
+   "left": 329.0,
+   "bottom": 267.0,
+   "right": 458.0,
+   "color": "#f5f5f5",
+   "bg": "#191919"
+  },
+  "h2 Sidebar": {
+   "top": 477.5,
+   "left": 327.5,
+   "bottom": 490.5,
+   "right": 385.5,
+   "color": "#f5f5f5",
+   "bg": "#141415"
+  },
+  "project order select left edge": {
+   "start": "#191919",
+   "edges": [
+    {
+     "at": 836.0,
+     "color": "#202021"
+    },
+    {
+     "at": 837.0,
+     "color": "#202021"
+    }
+   ]
+  },
+  "project order select right edge": {
+   "start": "#202021",
+   "edges": [
+    {
+     "at": 1011.0,
+     "color": "#191919"
+    },
+    {
+     "at": 1012.0,
+     "color": "#191919"
+    }
+   ]
+  },
+  "project order select top/bottom": {
+   "start": "#191919",
+   "edges": [
+    {
+     "at": 596.5,
+     "color": "#202021"
+    },
+    {
+     "at": 620.0,
+     "color": "#171718"
+    }
+   ],
+   "vertical": true
+  },
+  "working section title": {
+   "top": 659.0,
+   "left": 328.0,
+   "bottom": 673.0,
+   "right": 435.5,
+   "color": "#f5f5f5",
+   "bg": "#191919"
+  }
+ }
+}

@@ -58,6 +58,7 @@ keyring = "4.2"
 rand = "0.9"
 resvg = { version = "0.46", default-features = false, features = ["text"] }
 rodio = { version = "0.21", default-features = false, features = ["playback", "mp3"] }
+rusty-leveldb = "4"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls-webpki-roots-no-provider", "http2"] }
 ring = "0.17"
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
@@ -71,7 +72,6 @@ smallvec = "1"
 syntect = { version = "5.3", default-features = false, features = ["parsing", "default-syntaxes", "regex-fancy"] }
 unicode-segmentation = "1"
 markdown = "=1.0.0"
-two-face = { version = "0.4.5", default-features = false, features = ["syntect-fancy"] }
 wasmi = { version = "0.51", default-features = false, features = ["std", "simd"] }
 unicode-ident = "1"
 regex = "1"
@@ -79,6 +79,7 @@ unicode-width = "0.2"
 aes = "0.8"
 cbc = { version = "0.1", features = ["alloc"] }
 windows-sys = "0.61"
+embed-resource = "3"
 
 # No debuginfo: debug builds of this workspace are large, and panics still
 # report their file and line.

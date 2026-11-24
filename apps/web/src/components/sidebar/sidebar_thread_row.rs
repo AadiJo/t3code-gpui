@@ -572,7 +572,7 @@ impl Sidebar {
                 .flex()
                 .items_center()
                 .child(
-                    gpui_kit::component::input::Input::new(&renaming.input)
+                    gpui_kit::component::input::Input::new(&renaming.field)
                         .appearance(false)
                         .bordered(false)
                         .focus_bordered(false)
@@ -752,3 +752,4 @@ pub(crate) fn middle_truncate(value: &SharedString) -> Div {
         None => row.child(div().min_w_0().truncate().child(value.clone())),
     }
 }
+

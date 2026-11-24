@@ -35,19 +35,25 @@ enum Variant {
     Model,
     TimeBreakdown,
     Loading,
+    /// Limits, with no provider reporting any (the reference capture).
+    Empty,
 }
 
 fn build_variant(variant: Variant, light: bool, window: &mut Window, cx: &mut App) -> AnyView {
     if light {
         set_app_theme(AppTheme::new(&ThemeDocument::graphite(), Appearance::Light), cx);
     }
-    let source: Rc<dyn UsageSource> = if matches!(variant, Variant::Loading) { FixtureUsageSource::loading() } else { FixtureUsageSource::new() };
+    let source: Rc<dyn UsageSource> = match variant {
+        Variant::Loading => FixtureUsageSource::loading(),
+        Variant::Empty => FixtureUsageSource::without_limits(),
+        _ => FixtureUsageSource::new(),
+    };
     let app = cx.new(|cx| AppRoot::new(window, cx));
     let route = cx.new(|cx| UsageRoute::new(source, None, window, cx));
     let page = route.read(cx).page().clone();
     page.update(cx, |page, cx| {
         let (metric, days) = match variant {
-            Variant::Limits => (UsageMetric::Limits, UsageWindowDays::Month),
+            Variant::Limits | Variant::Empty => (UsageMetric::Limits, UsageWindowDays::Month),
             Variant::Cost | Variant::Model | Variant::Loading => (UsageMetric::Cost, UsageWindowDays::Month),
             Variant::Tokens => (UsageMetric::Tokens, UsageWindowDays::Week),
             Variant::Day | Variant::TimeBreakdown => (UsageMetric::Cost, UsageWindowDays::Day),
@@ -89,4 +95,7 @@ pub fn build_model(window: &mut Window, cx: &mut App) -> AnyView {
 }
 pub fn build_loading(window: &mut Window, cx: &mut App) -> AnyView {
     build_variant(Variant::Loading, false, window, cx)
+}
+pub fn build_empty(window: &mut Window, cx: &mut App) -> AnyView {
+    build_variant(Variant::Empty, false, window, cx)
 }

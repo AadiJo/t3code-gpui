@@ -18,8 +18,15 @@ use crate::components::chat::expanded_image_dialog::{ExpandedImageDialog, Expand
 use crate::components::chat::timeline_entries::Attachment;
 use crate::components::media::media_actions::MediaKind;
 use crate::components::media::media_source::MediaBytes;
-use crate::components::right_panel_tabs::{RightPanel, RightPanelEvent, ScriptBackendFactory, TerminalBackends};
+use crate::components::right_panel_tabs::{RightPanel, RightPanelEvent, ScriptBackendFactory};
 use crate::components::ui::toast::{ToastData, ToastKind, Toaster};
+use crate::components::ui::dialog::Modal;
+use crate::components::issue::issue_detail_panel::IssueDetailPanel;
+use crate::components::issue::issues_page::{IssuesPage, IssuesPageEvent};
+use crate::components::pull_request::pull_request_detail_panel::PullRequestDetailPanel;
+use crate::components::pull_request::pull_requests_page::{PullRequestsPage, PullRequestsPageEvent};
+use crate::components::usage::usage_page::UsagePageEvent;
+use crate::routes::usage::UsageRoute;
 use crate::file_source::absolute_path;
 use crate::thread_find_store::ThreadFindStore;
 use crate::i18n::t;
@@ -28,6 +35,7 @@ use crate::components::sidebar::model::{ProjectRef, ThreadKey};
 use crate::components::sidebar::{Sidebar, SidebarEvent};
 use crate::components::thread_route_view::{ThreadRouteEvent, ThreadRouteView};
 use crate::components::thread_terminal_drawer::{BackendFactory, TerminalLaunch};
+use crate::components::sidebar::context_menu::MenuCommand;
 use crate::components::command_palette::CommandPalette;
 use crate::components::command_palette_logic::PaletteEvent;
 use crate::components::command_palette_lookups::CommandPaletteSource;
@@ -35,7 +43,6 @@ use crate::components::sidebar_logic::SidebarListEntry;
 use crate::components::thread_notification_coordinator::{NotificationInput, ThreadNotificationCoordinator};
 use crate::connection::shell::EnvironmentShell;
 use crate::desktop_notifications::{InboxEvent, NotificationInbox};
-use crate::fixtures::palette_source::FixturePaletteSource;
 use crate::router::SettingsPanel;
 use crate::shortcuts::ShortcutRoot;
 use crate::shortcuts::commands::{
@@ -45,9 +52,11 @@ use crate::shortcuts::commands::{
     NewRightPanelTab, NextThread, OpenUsage, PreviousThread, ReopenClosedView, ToggleDiff, TogglePreview,
     ToggleRightPanel, ToggleRightPanelMaximized, ToggleSidebar, ToggleTerminal,
 };
-use crate::fixtures::{FixtureEvent, FixtureStore, scoped_key};
+use crate::fixtures::app_data::FixtureData;
+use crate::fixtures::{FixtureStore, scoped_key};
+use crate::state::app_data::{CommandOutcome, DataEvent, DataEvents, SharedAppData};
 use crate::right_panel_store::{RightPanelStore, SingletonKind};
-use crate::router::{Route, RouteChanged, Router, ThreadTarget};
+use crate::router::{DraftId, Route, RouteChanged, Router, ThreadTarget};
 use crate::routes::RoutePage;
 #[cfg(unix)]
 use crate::terminal::local_pty::LocalPty;
@@ -85,33 +94,35 @@ pub fn init(cx: &mut App) {
     cx.bind_keys([KeyBinding::new(mod_key!(","), OpenSettings, None), KeyBinding::new(mod_key!("q"), Quit, None)]);
 }
 
-/// How to build the window: which data, which titlebar, where state lives
-/// and how terminals start.
+/// Where the window's data comes from.
+pub enum DataSource {
+    /// The in-memory fixtures (checks, scenes, the parity tool).
+    Fixtures(FixtureStore),
+    /// The saved environments' stores and sessions. Needs the connection runtime.
+    Live,
+}
+
+/// How to build the window: which data, which titlebar and where state lives.
 pub struct AppRootOptions {
-    pub store: FixtureStore,
+    pub data: DataSource,
     pub platform: TitlebarPlatform,
     pub state_dir: StateDir,
-    pub terminal_backend: BackendFactory,
-    /// Starts project scripts in terminal tabs.
-    pub script_backend: ScriptBackendFactory,
 }
 
 impl AppRootOptions {
     /// The showcase fixtures, nothing persisted, terminals on a local shell.
     pub fn fixtures(platform: TitlebarPlatform) -> Self {
-        Self {
-            store: FixtureStore::showcase(),
-            platform,
-            state_dir: StateDir(None),
-            terminal_backend: local_shell_backend(),
-            script_backend: local_script_backend(),
-        }
+        Self { data: DataSource::Fixtures(FixtureStore::showcase()), platform, state_dir: StateDir(None) }
     }
 
-    /// No fixture data: the app shows what the environments provide, and the
-    /// first-run empty state while none is saved.
+    /// No fixture data and no environment: the first-run empty state.
     pub fn without_fixtures(platform: TitlebarPlatform) -> Self {
-        Self { store: FixtureStore::empty(), ..Self::fixtures(platform) }
+        Self { data: DataSource::Fixtures(FixtureStore::empty()), ..Self::fixtures(platform) }
+    }
+
+    /// The saved environments' data.
+    pub fn live(platform: TitlebarPlatform) -> Self {
+        Self { data: DataSource::Live, ..Self::fixtures(platform) }
     }
 }
 
@@ -128,7 +139,7 @@ impl WindowRoot {
     pub fn new(options: AppRootOptions, window: &mut Window, cx: &mut App) -> Self {
         let app = cx.new(|cx| AppRoot::with_options(options, window, cx));
         let shell = cx.new(|cx| EnvironmentShell::new(app.clone(), window, cx));
-        let source = app.read(cx).palette_source();
+        let source = app.read(cx).data.palette_source();
         let shortcuts = cx.new(|cx| {
             let mut root = ShortcutRoot::new(shell.clone().into(), source, window, cx);
             root.set_default_focus(app.read(cx).focus.clone());
@@ -197,7 +208,27 @@ struct MainPane {
     thread_view: Entity<ThreadRouteView>,
     /// `None` shows the thread view (or the no-thread state when there is no thread).
     page: Option<Route>,
+    /// The built view of a page route (pull requests, issues), kept while it shows.
+    page_view: Option<(Route, Entity<ListPage>)>,
     has_thread: bool,
+}
+
+/// The pull requests or issues page, with the item it opened beside it.
+struct ListPage {
+    list: AnyView,
+    detail: Option<AnyView>,
+    width: Pixels,
+    _subscription: Subscription,
+}
+
+impl Render for ListPage {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        div()
+            .size_full()
+            .flex()
+            .child(div().flex_1().min_w_0().h_full().child(self.list.clone()))
+            .children(self.detail.clone().map(|detail| div().flex_none().w(self.width).h_full().child(detail)))
+    }
 }
 
 impl Render for MainPane {
@@ -207,6 +238,11 @@ impl Render for MainPane {
             .read_with(cx, |layout, _| (layout.platform().topbar_height(), layout.header_content_left()))
             .unwrap_or((px(40.), px(0.)));
         if let Some(route) = &self.page {
+            if let Some((built, view)) = &self.page_view
+                && built == route
+            {
+                return view.clone().into_any_element();
+            }
             return RoutePage { route: route.clone(), topbar, leading_inset: inset }.into_any_element();
         }
         if !self.has_thread {
@@ -223,7 +259,9 @@ pub struct AppRoot {
     layout: Entity<AppSidebarLayout>,
     sidebar: Entity<Sidebar>,
     router: Entity<Router>,
-    store: Entity<FixtureStore>,
+    data: SharedAppData,
+    /// The fixture data, when the window runs on it (checks script it).
+    fixture: Option<Rc<FixtureData>>,
     thread_view: Entity<ThreadRouteView>,
     main: Entity<MainPane>,
     right_panel: Entity<RightPanel>,
@@ -231,14 +269,12 @@ pub struct AppRoot {
     terminals: Entity<PersistentThreadTerminals>,
     /// The media viewer over the whole window, while open.
     expanded: Option<(Entity<ExpandedImageDialog>, Subscription)>,
+    /// The Usage page in the large route modal, while its route shows.
+    usage: Option<(Entity<UsageRoute>, Subscription)>,
     /// The thread details card is open (a popover; the toggle stays unpressed).
     details_open: bool,
     /// The thread under the main pane; it stays shown under modal routes.
     shown: Option<ThreadTarget>,
-    /// Whether the store started with data (fixtures); without it the
-    /// environment shell shows the first-run empty state.
-    has_fixture_data: bool,
-    palette_source: Rc<FixturePaletteSource>,
     focus: FocusHandle,
     _subscriptions: Vec<Subscription>,
 }
@@ -256,12 +292,12 @@ impl AppRoot {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        let options = AppRootOptions { store: FixtureStore::from_sidebar(snapshot), ..AppRootOptions::fixtures(platform) };
+        let options = AppRootOptions { data: DataSource::Fixtures(FixtureStore::from_sidebar(snapshot)), ..AppRootOptions::fixtures(platform) };
         Self::with_options(options, window, cx)
     }
 
     pub fn with_options(options: AppRootOptions, window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let AppRootOptions { store, platform, state_dir, terminal_backend, script_backend } = options;
+        let AppRootOptions { data, platform, state_dir } = options;
         let ui = UiStateStore::load(state_dir.clone());
         let layout_state = ui.layout.clone();
         let right_panels = cx.new(|_| {
@@ -272,19 +308,25 @@ impl AppRoot {
         }
         cx.set_global(ui);
 
-        let has_fixture_data = !store.is_empty();
-        let palette_source = Rc::new(FixturePaletteSource::new(store.snapshot(None)));
-        let store = cx.new(|_| store);
+        let (data, fixture): (SharedAppData, _) = match data {
+            DataSource::Fixtures(store) => {
+                let fixture = FixtureData::new(store, cx);
+                (fixture.clone(), Some(fixture))
+            }
+            DataSource::Live => (crate::live::LiveData::new(cx), None),
+        };
         // A modal route (settings) is not restored: the app opens on the page under it.
         let initial = Route::parse(&layout_state.last_route);
+        // Live stores open on tokio, so a saved thread may not be listed yet; the route stays and
+        // the thread shows once the shell lists it.
         let initial = match initial.thread_target() {
-            Some(target) if !store.read(cx).thread_exists(&target) => Route::Index,
+            Some(target) if fixture.is_some() && !data.thread_exists(&target, cx) => Route::Index,
             _ if initial.is_modal() => Route::Index,
             _ => initial,
         };
         let router = cx.new(|_| Router::new(initial));
 
-        let snapshot = store.read(cx).snapshot(None);
+        let snapshot = data.snapshot(None, cx);
         let sidebar = cx.new(|cx| Sidebar::new(snapshot, window, cx));
         let layout = cx.new(|cx| {
             let mut layout = AppSidebarLayout::new(sidebar.clone(), platform, cx);
@@ -297,11 +339,12 @@ impl AppRoot {
             );
             layout
         });
-        let thread_view = cx.new(|cx| ThreadRouteView::new(store.clone(), window, cx));
-        let main = cx.new(|_| MainPane { layout: layout.downgrade(), thread_view: thread_view.clone(), page: None, has_thread: false });
-        let backends = TerminalBackends { shell: terminal_backend.clone(), script: script_backend };
-        let right_panel = cx.new(|cx| RightPanel::new(right_panels.clone(), layout.downgrade(), store.clone(), backends, cx));
-        let terminals = cx.new(|cx| PersistentThreadTerminals::new(terminal_backend, cx));
+        let thread_view = cx.new(|cx| ThreadRouteView::new(data.clone(), window, cx));
+        let main = cx.new(|_| MainPane { layout: layout.downgrade(), thread_view: thread_view.clone(), page: None, page_view: None, has_thread: false });
+        let backends = data.terminal_backends(cx);
+        let shell_backend = backends.shell.clone();
+        let right_panel = cx.new(|cx| RightPanel::new(right_panels.clone(), layout.downgrade(), data.clone(), backends, cx));
+        let terminals = cx.new(|cx| PersistentThreadTerminals::new(shell_backend, cx));
         layout.update(cx, |layout, cx| {
             layout.set_main(main.clone().into(), cx);
             layout.set_right_panel(right_panel.clone().into(), cx);
@@ -316,7 +359,7 @@ impl AppRoot {
             cx.subscribe_in(&layout, window, Self::on_layout_event),
             // Drags end wherever the pointer is released, so widths are saved as they change.
             cx.observe(&layout, |_, layout, cx| Self::persist_layout(&layout, cx)),
-            cx.subscribe(&store, Self::on_store_event),
+            cx.subscribe_in(&data.events(), window, Self::on_data_event),
             cx.subscribe_in(&thread_view, window, Self::on_thread_event),
             cx.subscribe_in(&right_panel, window, |this, _, event: &RightPanelEvent, window, cx| match event {
                 RightPanelEvent::Changed => this.panels_changed(window, cx),
@@ -336,17 +379,17 @@ impl AppRoot {
             layout,
             sidebar,
             router,
-            store,
+            data,
+            fixture,
             thread_view,
             main,
             right_panel,
             right_panels,
             terminals,
             expanded: None,
+            usage: None,
             details_open: false,
             shown: None,
-            has_fixture_data,
-            palette_source,
             focus: cx.focus_handle(),
             _subscriptions: subscriptions,
         };
@@ -367,8 +410,19 @@ impl AppRoot {
         &self.router
     }
 
-    pub fn store(&self) -> &Entity<FixtureStore> {
-        &self.store
+    /// The window's data.
+    pub fn data(&self) -> &SharedAppData {
+        &self.data
+    }
+
+    /// The fixture store, when the window runs on fixtures.
+    pub fn store(&self) -> Option<&Entity<FixtureStore>> {
+        self.fixture.as_ref().map(|fixture| fixture.store())
+    }
+
+    /// The fixture data, when the window runs on fixtures.
+    pub fn fixture_data(&self) -> Option<&Rc<FixtureData>> {
+        self.fixture.as_ref()
     }
 
     pub fn thread_view(&self) -> &Entity<ThreadRouteView> {
@@ -392,9 +446,10 @@ impl AppRoot {
         self.expanded.as_ref().map(|(dialog, _)| dialog)
     }
 
-    /// Whether the app was built with fixture data.
-    pub fn has_fixture_data(&self, _: &App) -> bool {
-        self.has_fixture_data
+    /// Whether the data has anything to show; without it the environment shell
+    /// shows the first-run empty state.
+    pub fn has_fixture_data(&self, cx: &App) -> bool {
+        self.fixture.is_some() && self.data.has_data(cx)
     }
 
     /// The app's own main pane view (route content), for whoever swapped it out.
@@ -404,7 +459,7 @@ impl AppRoot {
 
     /// The palette's data source.
     pub fn palette_source(&self) -> Rc<dyn CommandPaletteSource> {
-        self.palette_source.clone()
+        self.data.palette_source()
     }
 
     /// Handles what the window's command palette asks for.
@@ -453,10 +508,7 @@ impl AppRoot {
     fn apply_route(&mut self, route: Route, window: &mut Window, cx: &mut Context<Self>) {
         if route == Route::Index {
             // `_chat.index.tsx`: start a draft in the most recent project.
-            let draft = self.store.update(cx, |store, _| {
-                let project = store.most_recent_project()?;
-                Some(store.create_draft(Some(project)))
-            });
+            let draft = self.data.most_recent_project(cx).map(|project| self.data.create_draft(Some(project), cx));
             if let Some(draft) = draft {
                 self.router.update(cx, |router, cx| router.replace(Route::Draft(draft), cx));
                 return;
@@ -468,13 +520,23 @@ impl AppRoot {
         } else if !route.is_modal() {
             self.shown = None;
         }
+        // Usage opens in the route modal over whatever the main pane showed.
+        if route == Route::Usage {
+            self.sync_usage(&route, window, cx);
+            return self.persist_route(&route, cx);
+        }
         // Settings is a modal over whatever the main pane showed.
         let page = (route.thread_target().is_none() && route != Route::Index && !route.is_modal()).then(|| route.clone());
         if route.is_modal() && self.main.read(cx).page.is_some() {
             return self.persist_route(&route, cx);
         }
         let has_thread = self.shown.is_some();
+        let page_view = page.as_ref().and_then(|route| self.page_view(route, window, cx));
+        self.sync_usage(&route, window, cx);
         self.main.update(cx, |main, cx| {
+            if page_view.is_some() || page.is_none() {
+                main.page_view = page_view;
+            }
             main.page = page;
             main.has_thread = has_thread;
             cx.notify();
@@ -483,7 +545,8 @@ impl AppRoot {
         let shown_key = self.panel_key();
         ThreadFindStore::retain_for_route(cx, route.is_modal(), shown_key.as_deref());
         self.sidebar.update(cx, |sidebar, cx| sidebar.set_active_thread(active.clone(), cx));
-        self.palette_source.set_active_thread(active.clone());
+        self.sync_sidebar_drafts(cx);
+        self.data.set_active_thread(active.as_ref(), cx);
         ThreadNotificationCoordinator::apply(NotificationInput::Route(active.clone()), cx);
         if let Some(key) = &active {
             let visited = jiff::Timestamp::now().to_string();
@@ -497,6 +560,76 @@ impl AppRoot {
         if panel_focused && !self.layout.read(cx).is_right_panel_open() {
             self.restore_focus(window, cx);
         }
+    }
+
+    /// The pull requests or issues page for `route`, reused while the route stays.
+    fn page_view(&mut self, route: &Route, window: &mut Window, cx: &mut Context<Self>) -> Option<(Route, Entity<ListPage>)> {
+        if let Some((built, view)) = &self.main.read(cx).page_view
+            && built == route
+        {
+            return Some((built.clone(), view.clone()));
+        }
+        let width = self.layout.read(cx).right_panel_width();
+        let view = match route {
+            Route::PullRequests { .. } => {
+                let sources = self.data.pull_request_sources(cx);
+                let page = cx.new(|cx| PullRequestsPage::new(sources, window, cx));
+                let data = self.data.clone();
+                cx.new(|cx| {
+                    let subscription = cx.subscribe(&page, move |this: &mut ListPage, _, event: &PullRequestsPageEvent, cx| {
+                        let PullRequestsPageEvent::Open { environment_id, reference } = event;
+                        let Some(source) = data.pull_request_detail(environment_id, cx) else { return };
+                        let reference = reference.clone();
+                        this.detail = Some(cx.new(|cx| PullRequestDetailPanel::new(source, reference, cx)).into());
+                        cx.notify();
+                    });
+                    ListPage { list: page.into(), detail: None, width, _subscription: subscription }
+                })
+            }
+            Route::Issues { .. } => {
+                let sources = self.data.issue_sources(cx);
+                let lookup = sources.clone();
+                let page = cx.new(|cx| IssuesPage::new(sources, window, cx));
+                cx.new(|cx| {
+                    let subscription = cx.subscribe_in(&page, window, move |this: &mut ListPage, _, event: &IssuesPageEvent, window, cx| {
+                        let IssuesPageEvent::Open { environment_id, reference } = event else { return };
+                        let Some(source) = lookup.iter().find(|s| &s.environment_id == environment_id).map(|s| s.source.clone()) else { return };
+                        let reference = reference.clone();
+                        this.detail = Some(cx.new(|cx| IssueDetailPanel::new(source, reference, window, cx)).into());
+                        cx.notify();
+                    });
+                    ListPage { list: page.into(), detail: None, width, _subscription: subscription }
+                })
+            }
+            _ => return None,
+        };
+        Some((route.clone(), view))
+    }
+
+    /// Opens the Usage page over the window while its route shows, and closes it after.
+    fn sync_usage(&mut self, route: &Route, window: &mut Window, cx: &mut Context<Self>) {
+        if *route != Route::Usage {
+            if self.usage.take().is_some() {
+                cx.notify();
+            }
+            return;
+        }
+        if self.usage.is_some() {
+            return;
+        }
+        let source = self.data.usage_source(cx);
+        let prefs = cx.global::<UiStateStore>().dir.0.as_ref().map(|dir| dir.join("usage-preferences.json"));
+        let usage = cx.new(|cx| UsageRoute::new(source, prefs, window, cx));
+        let subscription = cx.subscribe(&usage, |this, _, _: &UsagePageEvent, cx| this.router.update(cx, |router, cx| router.back(cx)));
+        window.focus(&usage.focus_handle(cx), cx);
+        self.usage = Some((usage, subscription));
+        cx.notify();
+    }
+
+    /// The server settings pages over the live data, for the settings modal.
+    pub fn server_settings_pages(&self, cx: &mut App) -> Option<Entity<crate::components::settings::server_settings_pages::ServerSettingsPages>> {
+        let model = self.data.server_settings(cx)?;
+        Some(cx.new(|_| crate::components::settings::server_settings_pages::ServerSettingsPages::new(model)))
     }
 
     fn persist_route(&self, route: &Route, cx: &mut Context<Self>) {
@@ -529,7 +662,7 @@ impl AppRoot {
 
     fn thread_cwd(&self, cx: &mut Context<Self>) -> SharedString {
         let Some(target) = self.shown.clone() else { return SharedString::default() };
-        self.store.update(cx, |store, _| store.thread_view(&target).map(|v| v.cwd).unwrap_or_default())
+        self.data.thread_view(&target, cx).map(|v| v.cwd).unwrap_or_default()
     }
 
     /// A store edit happened: persist it and re-sync the panes.
@@ -595,6 +728,12 @@ impl AppRoot {
                 self.right_panel.update(cx, |panel, cx| panel.run_script(script, cx));
             }
             ThreadRouteEvent::DetailsClosed => self.details_open = false,
+            ThreadRouteEvent::Navigate(path) => self.navigate(Route::parse(path), cx),
+            ThreadRouteEvent::OpenLinkedItems => self.right_panel.update(cx, |panel, cx| panel.open_linked_items(cx)),
+            ThreadRouteEvent::OpenBrowser(tab) => {
+                let tab = tab.clone();
+                self.right_panel.update(cx, |panel, cx| panel.open_browser_tab(&tab, cx));
+            }
         }
     }
 
@@ -742,28 +881,79 @@ impl AppRoot {
             SidebarEvent::OpenIssues => self.navigate(Route::parse("/issues"), cx),
             SidebarEvent::OpenUsage => self.navigate(Route::Usage, cx),
             SidebarEvent::DiscardDraft(key) => {
+                self.data.discard_draft(key, cx);
                 let route = Route::Thread(key.clone());
                 self.router.update(cx, |router, _| router.retain_history(|r| *r != route));
             }
-            SidebarEvent::ActivateDraft(id) => self.navigate(Route::Draft(crate::router::DraftId(id.clone())), cx),
-            SidebarEvent::DiscardDraftSession(id) => {
-                self.store.update(cx, |store, _| store.discard_draft(&crate::router::DraftId(id.clone())));
+            SidebarEvent::ActivateDraft(id) => self.navigate(Route::Draft(DraftId(id.clone())), cx),
+            SidebarEvent::DiscardDraftSession(id) => self.discard_draft_session(DraftId(id.clone()), cx),
+            SidebarEvent::DraftCommand(id, command) => self.draft_command(DraftId(id.clone()), *command, cx),
+            SidebarEvent::ThreadCommand(keys, command) => self.thread_command(keys, *command, window, cx),
+            SidebarEvent::RenameThread(key, title) => self.data.rename_thread(key, title.clone(), cx),
+            SidebarEvent::ProjectCommand(project, MenuCommand::ProjectSettings) => self.open_project_settings(project, cx),
+            SidebarEvent::AddProject | SidebarEvent::OpenProjectFilter | SidebarEvent::ProjectCommand(..) => {}
+        }
+    }
+
+    /// Discards a new-thread draft; when it is the one shown, the index route takes its place.
+    fn discard_draft_session(&mut self, id: DraftId, cx: &mut Context<Self>) {
+        self.data.discard_draft_session(&id, cx);
+        let route = Route::Draft(id.clone());
+        self.router.update(cx, |router, _| router.retain_history(|r| *r != route));
+        if self.shown == Some(ThreadTarget::Draft(id)) {
+            self.navigate(Route::Index, cx);
+        }
+        self.sync_sidebar_drafts(cx);
+    }
+
+    /// A draft row's menu (`buildDraftActionMenuItems`): copy its project's path, open the
+    /// project's settings, or discard it.
+    fn draft_command(&mut self, id: DraftId, command: MenuCommand, cx: &mut Context<Self>) {
+        let project = self.sidebar.read(cx).snapshot().drafts.iter().find(|d| d.id == id.0).map(|d| d.project.clone());
+        match (command, project) {
+            (MenuCommand::Delete, _) => self.discard_draft_session(id, cx),
+            (MenuCommand::ProjectSettings, Some(project)) => self.open_project_settings(&project, cx),
+            (MenuCommand::CopyPath, Some(project)) => {
+                let snapshot = self.sidebar.read(cx).snapshot();
+                if let Some(root) = snapshot.projects.iter().find(|p| p.project_ref == project).map(|p| p.workspace_root.to_string()) {
+                    cx.write_to_clipboard(gpui_kit::ClipboardItem::new_string(root));
+                }
             }
-            SidebarEvent::AddProject
-            | SidebarEvent::OpenProjectFilter
-            | SidebarEvent::ThreadCommand(..)
-            | SidebarEvent::ProjectCommand(..)
-            | SidebarEvent::DraftCommand(..)
-            | SidebarEvent::RenameThread(..) => {}
+            _ => {}
+        }
+    }
+
+    /// Settings > Projects on `project`, as the palette's "Project settings" opens it.
+    fn open_project_settings(&self, project: &ProjectRef, cx: &mut App) {
+        self.navigate(
+            Route::Settings { panel: SettingsPanel::Projects, query: format!("project={}", project.project_id.0).into() },
+            cx,
+        );
+    }
+
+    /// Gives the sidebar the current unsent drafts and the shown one.
+    fn sync_sidebar_drafts(&self, cx: &mut Context<Self>) {
+        let drafts = self.data.drafts(cx);
+        let active = match &self.shown {
+            Some(ThreadTarget::Draft(id)) => Some(id.0.clone()),
+            _ => None,
+        };
+        self.sidebar.update(cx, |sidebar, cx| sidebar.set_drafts(drafts, active, cx));
+    }
+
+    /// Runs a sidebar row or context-menu command on threads.
+    fn thread_command(&mut self, keys: &[ThreadKey], command: MenuCommand, window: &mut Window, cx: &mut Context<Self>) {
+        match self.data.thread_command(keys, command, cx) {
+            CommandOutcome::Done => {}
+            CommandOutcome::Rename(key) => self.sidebar.update(cx, |sidebar, cx| sidebar.start_rename(key, window, cx)),
+            CommandOutcome::NewThread(project) => self.new_thread(project, window, cx),
         }
     }
 
     /// Starts a draft in `project` (or the most recent one) and shows it (`chat.new`).
     fn new_thread(&mut self, project: Option<ProjectRef>, window: &mut Window, cx: &mut Context<Self>) {
-        let draft = self.store.update(cx, |store, _| {
-            let project = project.or_else(|| store.most_recent_project());
-            store.create_draft(project)
-        });
+        let project = project.or_else(|| self.data.most_recent_project(cx));
+        let draft = self.data.create_draft(project, cx);
         self.navigate(Route::Draft(draft), cx);
         self.restore_focus(window, cx);
     }
@@ -808,10 +998,7 @@ impl AppRoot {
                 let panel = SettingsPanel::from_slug(id).unwrap_or(SettingsPanel::General);
                 self.navigate(Route::Settings { panel, query: SharedString::default() }, cx);
             }
-            PaletteEvent::OpenProjectSettings(project) => self.navigate(
-                Route::Settings { panel: SettingsPanel::Projects, query: format!("project={}", project.project_id.0).into() },
-                cx,
-            ),
+            PaletteEvent::OpenProjectSettings(project) => self.open_project_settings(project, cx),
             PaletteEvent::OpenPullRequests => self.navigate(Route::parse("/pull-requests"), cx),
             PaletteEvent::OpenIssues => self.navigate(Route::parse("/issues"), cx),
             // Need the sync layer or server features the fixture store does not have.
@@ -857,12 +1044,23 @@ impl AppRoot {
         });
     }
 
-    fn on_store_event(&mut self, store: Entity<FixtureStore>, event: &FixtureEvent, cx: &mut Context<Self>) {
-        if let FixtureEvent::SnapshotChanged = event {
+    fn on_data_event(&mut self, _: &Entity<DataEvents>, event: &DataEvent, window: &mut Window, cx: &mut Context<Self>) {
+        if let DataEvent::SnapshotChanged = event {
+            let route = self.router.read(cx).current().clone();
+            if self.shown.is_none()
+                && let Some(target) = route.thread_target()
+                && self.data.thread_exists(&target, cx)
+            {
+                return self.apply_route(route, window, cx);
+            }
+            // `_chat.index.tsx` starts a draft once a project is known.
+            if route == Route::Index && self.data.most_recent_project(cx).is_some() {
+                return self.apply_route(route, window, cx);
+            }
             let active = self.shown_key();
-            let snapshot = store.read(cx).snapshot(active.as_ref());
-            self.palette_source.set_snapshot(snapshot.clone());
+            let snapshot = self.data.snapshot(active.as_ref(), cx);
             self.sidebar.update(cx, |sidebar, cx| sidebar.set_snapshot(snapshot, cx));
+            self.sync_sidebar_drafts(cx);
         }
     }
 
@@ -967,6 +1165,12 @@ impl Render for AppRoot {
             .on_action(|_: &Minimize, window, _| window.minimize_window())
             .on_action(|_: &ZoomWindow, window, _| window.zoom_window())
             .child(self.layout.clone())
+            .children(self.usage.as_ref().map(|(usage, _)| {
+                let router = self.router.downgrade();
+                Modal::dialog("usage-route", usage.clone(), move |_, cx| {
+                    _ = router.update(cx, |router, cx| router.back(cx));
+                })
+            }))
             .children(self.expanded.as_ref().map(|(dialog, _)| dialog.clone()))
     }
 }

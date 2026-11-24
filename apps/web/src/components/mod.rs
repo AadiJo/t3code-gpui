@@ -1,4 +1,6 @@
 pub mod add_project_to_machine_dialog;
+pub mod animated_height;
+pub mod animated_width;
 pub mod app_sidebar_layout;
 pub mod background_thread_announcer;
 pub mod chat;
@@ -50,6 +52,7 @@ pub mod ui;
 pub mod usage;
 pub mod branch_toolbar_logic;
 pub mod git_actions_control_logic;
+pub mod git_actions_control_publish;
 pub mod git_actions_control_source;
 pub mod git_actions_control;
 pub mod branch_picker;

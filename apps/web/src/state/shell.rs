@@ -96,14 +96,80 @@ fn run_status(status: ShellStatus) -> RunStatus {
     }
 }
 
+/// One provider instance as a sidebar row marks it, before the row's model picks the glyph.
+#[derive(Clone)]
+struct InstanceMark {
+    driver: crate::model_selection::ProviderDriverKind,
+    acp_registry: bool,
+    initials: SharedString,
+    show_badge: bool,
+}
+
+/// Every provider instance of one environment's config, by instance id
+/// (`SidebarProviderStack` inputs: `ProviderInstanceIcon`, `providerInstanceInitials`,
+/// `shouldShowInstanceBadge`).
+fn instance_marks(config: Option<&t3code_contracts::ServerConfig>) -> HashMap<String, InstanceMark> {
+    use crate::provider_instances::{derive_provider_instance_entries, provider_instance_initials, should_show_instance_badge};
+    let Some(config) = config else { return HashMap::new() };
+    let providers: Vec<_> = config.providers.iter().cloned().map(Arc::new).collect();
+    let entries = derive_provider_instance_entries(&providers);
+    entries
+        .iter()
+        .map(|entry| {
+            let mark = InstanceMark {
+                driver: driver_kind(&entry.driver_kind),
+                acp_registry: entry.driver_kind == "acpRegistry",
+                initials: provider_instance_initials(&entry.display_name).into(),
+                show_badge: should_show_instance_badge(entry, &entries),
+            };
+            (entry.instance_id.clone(), mark)
+        })
+        .collect()
+}
+
+fn driver_kind(name: &str) -> crate::model_selection::ProviderDriverKind {
+    use crate::model_selection::ProviderDriverKind as Kind;
+    match name {
+        "codex" => Kind::Codex,
+        "claudeAgent" => Kind::ClaudeAgent,
+        "cursor" => Kind::Cursor,
+        "opencode" => Kind::OpenCode,
+        "grok" => Kind::Grok,
+        "antigravity" => Kind::Antigravity,
+        other => Kind::Other(SharedString::from(other.to_owned())),
+    }
+}
+
+/// The mark a row shows for the instance and model it runs on.
+fn row_provider(row: &ThreadRow, marks: &HashMap<String, InstanceMark>) -> Option<model::SidebarProvider> {
+    let selection = &row.source.model_selection;
+    let mark = marks.get(&selection.instance_id)?;
+    Some(model::SidebarProvider {
+        mark: if mark.acp_registry {
+            model::SidebarProviderMark::AcpRegistry
+        } else {
+            model::SidebarProviderMark::Brand(crate::model_selection::ProviderIcon::for_model(&mark.driver, Some(&selection.model)))
+        },
+        initials: mark.initials.clone(),
+        show_badge: mark.show_badge,
+    })
+}
+
 /// One presented row as the sidebar draws it (`SidebarThreadSummary`).
-fn map_row(row: &ThreadRow, local_visit: Option<EpochMs>, woke_at: Option<EpochMs>, has_draft: bool, remote: bool) -> SidebarThread {
+fn map_row(
+    row: &ThreadRow,
+    local_visit: Option<EpochMs>,
+    woke_at: Option<EpochMs>,
+    has_draft: bool,
+    remote: bool,
+    provider: Option<model::SidebarProvider>,
+) -> SidebarThread {
     let source: &OrchestrationV2ThreadShell = &row.source;
     SidebarThread {
         key: thread_key(&row.environment_id, &source.id),
         project_id: model::ProjectId(SharedString::from(Arc::clone(&source.project_id.0))),
         title: SharedString::from(source.title.clone()),
-        provider: None,
+        provider,
         branch: source.branch.clone().map(SharedString::from),
         in_worktree: source.worktree_path.is_some(),
         created_at: TimestampMs(row.created_at.unwrap_or_default()),
@@ -288,6 +354,8 @@ impl LiveShell {
         let drafts = self.drafts.current();
         let ui_state = self.ui_state.current();
         let remote = envs.len() > 1;
+        let marks: HashMap<_, _> = envs.iter().map(|env| (env.environment_id().clone(), instance_marks(env.config.as_deref()))).collect();
+        let no_marks = HashMap::new();
         let mut next = HashMap::with_capacity(listed.len());
         let threads: Vec<Arc<SidebarThread>> = listed
             .iter()
@@ -297,7 +365,9 @@ impl LiveShell {
                 let has_draft = drafts.drafts_by_thread_key.get(&scoped).is_some_and(|draft| !draft.prompt.trim().is_empty());
                 let woke_at = thread_woke_at(row, now);
                 let key = (row.environment_id.clone(), row.id().clone());
+                let provider = row_provider(row, marks.get(&row.environment_id).unwrap_or(&no_marks));
                 let reused = self.mapped.remove(&key).filter(|mapped| {
+                    mapped.thread.provider == provider &&
                     Arc::ptr_eq(&mapped.source, row)
                         && mapped.local_visit == local_visit
                         && mapped.woke_at == woke_at
@@ -310,7 +380,7 @@ impl LiveShell {
                     woke_at,
                     has_draft,
                     remote,
-                    thread: Arc::new(map_row(row, local_visit, woke_at, has_draft, remote)),
+                    thread: Arc::new(map_row(row, local_visit, woke_at, has_draft, remote, provider)),
                 });
                 let thread = Arc::clone(&mapped.thread);
                 next.insert(key, mapped);

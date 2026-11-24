@@ -548,3 +548,81 @@ impl FileContents {
         Self { old: TextLines::from_contents(old), new: TextLines::from_contents(new) }
     }
 }
+
+/// Hunks larger than this many old × new lines keep their blocks when hiding whitespace.
+const WHITESPACE_DIFF_LIMIT: usize = 4_000_000;
+
+/// The file with whitespace-only changes shown as context: each hunk's lines
+/// are compared again with all whitespace removed, as `hideWhitespaceChanges`
+/// does for tool-call diffs, which the server cannot re-diff.
+pub fn hide_whitespace_changes(file: &FileDiff) -> FileDiff {
+    let strip = |line: &str| line.chars().filter(|c| !c.is_whitespace()).collect::<String>();
+    let mut out = file.clone();
+    let (mut additions, mut deletions) = (0u32, 0u32);
+    for hunk in &mut out.hunks {
+        let old_len: u32 = hunk.blocks.iter().map(|b| match b {
+            HunkBlock::Context { lines } => *lines,
+            HunkBlock::Change { deletions, .. } => *deletions,
+        }).sum();
+        let new_len: u32 = hunk.blocks.iter().map(|b| match b {
+            HunkBlock::Context { lines } => *lines,
+            HunkBlock::Change { additions, .. } => *additions,
+        }).sum();
+        let old: Vec<String> = (0..old_len).map(|i| strip(file.old_lines.line((hunk.old_index + i) as usize))).collect();
+        let new: Vec<String> = (0..new_len).map(|i| strip(file.new_lines.line((hunk.new_index + i) as usize))).collect();
+        if old.len() * new.len() <= WHITESPACE_DIFF_LIMIT {
+            hunk.blocks = diff_blocks(&old, &new);
+        }
+        for block in &hunk.blocks {
+            if let HunkBlock::Change { deletions: d, additions: a } = block {
+                deletions += d;
+                additions += a;
+            }
+        }
+    }
+    out.additions = additions;
+    out.deletions = deletions;
+    // Layout caches key on the version; the filtered rows are a different layout.
+    out.version = out.version.rotate_left(1) ^ 0x5768_6974_6573_7061;
+    out
+}
+
+/// Line blocks between two sequences by longest common subsequence.
+fn diff_blocks(old: &[String], new: &[String]) -> Vec<HunkBlock> {
+    let (n, m) = (old.len(), new.len());
+    // lcs[i][j]: common length of old[i..] and new[j..].
+    let mut lcs = vec![0u32; (n + 1) * (m + 1)];
+    for i in (0..n).rev() {
+        for j in (0..m).rev() {
+            lcs[i * (m + 1) + j] = if old[i] == new[j] {
+                lcs[(i + 1) * (m + 1) + j + 1] + 1
+            } else {
+                lcs[(i + 1) * (m + 1) + j].max(lcs[i * (m + 1) + j + 1])
+            };
+        }
+    }
+    let mut blocks = Vec::new();
+    let push = |blocks: &mut Vec<HunkBlock>, block: HunkBlock| match (blocks.last_mut(), block) {
+        (Some(HunkBlock::Context { lines }), HunkBlock::Context { lines: more }) => *lines += more,
+        (Some(HunkBlock::Change { deletions, additions }), HunkBlock::Change { deletions: d, additions: a }) => {
+            *deletions += d;
+            *additions += a;
+        }
+        (_, block) => blocks.push(block),
+    };
+    let (mut i, mut j) = (0, 0);
+    while i < n || j < m {
+        if i < n && j < m && old[i] == new[j] {
+            push(&mut blocks, HunkBlock::Context { lines: 1 });
+            i += 1;
+            j += 1;
+        } else if j < m && (i == n || lcs[i * (m + 1) + j + 1] >= lcs[(i + 1) * (m + 1) + j]) {
+            push(&mut blocks, HunkBlock::Change { deletions: 0, additions: 1 });
+            j += 1;
+        } else {
+            push(&mut blocks, HunkBlock::Change { deletions: 1, additions: 0 });
+            i += 1;
+        }
+    }
+    blocks
+}

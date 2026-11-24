@@ -1,0 +1,226 @@
+{
+ "default": {
+  "card left edge": {
+   "start": "#141415",
+   "edges": [
+    {
+     "at": 827.0,
+     "color": "#171719"
+    },
+    {
+     "at": 828.0,
+     "color": "#171719"
+    }
+   ]
+  },
+  "card right edge": {
+   "start": "#181819",
+   "edges": [
+    {
+     "at": 1089.0,
+     "color": "#141415"
+    },
+    {
+     "at": 1090.0,
+     "color": "#141415"
+    }
+   ]
+  },
+  "card top edge": {
+   "start": "#141415",
+   "edges": [
+    {
+     "at": 60.0,
+     "color": "#171719"
+    },
+    {
+     "at": 61.0,
+     "color": "#171719"
+    }
+   ],
+   "vertical": true
+  },
+  "workspace rows": {
+   "top": 76.0,
+   "left": 846.5,
+   "bottom": 152.0,
+   "right": 1071.0,
+   "color": "#edecec",
+   "bg": "#171719"
+  },
+  "section rule": {
+   "start": "#171719",
+   "edges": [
+    {
+     "at": 168.0,
+     "color": "#171719"
+    },
+    {
+     "at": 169.0,
+     "color": "#171719"
+    }
+   ],
+   "vertical": true
+  },
+  "branch icon": {
+   "top": 185.5,
+   "left": 847.0,
+   "bottom": 197.5,
+   "right": 860.0,
+   "color": "#888888",
+   "bg": "#181819"
+  },
+  "branch label": {
+   "top": 186.0,
+   "left": 871.0,
+   "bottom": 196.5,
+   "right": 899.5,
+   "color": "#bebebf",
+   "bg": "#181819"
+  },
+  "branch chevron": {
+   "top": 189.0,
+   "left": 1062.0,
+   "bottom": 194.0,
+   "right": 1071.0,
+   "color": "#888888",
+   "bg": "#181819"
+  },
+  "git action row": {
+   "top": 216.0,
+   "left": 847.5,
+   "bottom": 226.5,
+   "right": 920.0,
+   "color": "#bebebf",
+   "bg": "#1a1a1b"
+  },
+  "changes label": {
+   "top": 244.0,
+   "left": 871.5,
+   "bottom": 257.0,
+   "right": 926.5,
+   "color": "#bebebf",
+   "bg": "#1b1b1c"
+  },
+  "changes counts": {
+   "top": 244.0,
+   "left": 960.0,
+   "bottom": 257.0,
+   "right": 1070.5,
+   "color": "#ff6467",
+   "bg": "#181819"
+  }
+ },
+ "owner": {
+  "card left edge": {
+   "start": "#141415",
+   "edges": [
+    {
+     "at": 827.0,
+     "color": "#171719"
+    },
+    {
+     "at": 828.0,
+     "color": "#171719"
+    }
+   ]
+  },
+  "card right edge": {
+   "start": "#181819",
+   "edges": [
+    {
+     "at": 1089.0,
+     "color": "#141415"
+    },
+    {
+     "at": 1090.0,
+     "color": "#141415"
+    }
+   ]
+  },
+  "card top edge": {
+   "start": "#141415",
+   "edges": [
+    {
+     "at": 60.0,
+     "color": "#171719"
+    },
+    {
+     "at": 61.0,
+     "color": "#171719"
+    }
+   ],
+   "vertical": true
+  },
+  "workspace rows": {
+   "top": 76.0,
+   "left": 846.5,
+   "bottom": 152.0,
+   "right": 1071.0,
+   "color": "#edecec",
+   "bg": "#171719"
+  },
+  "section rule": {
+   "start": "#171719",
+   "edges": [
+    {
+     "at": 168.0,
+     "color": "#171719"
+    },
+    {
+     "at": 169.0,
+     "color": "#171719"
+    }
+   ],
+   "vertical": true
+  },
+  "branch icon": {
+   "top": 185.5,
+   "left": 847.0,
+   "bottom": 197.5,
+   "right": 860.0,
+   "color": "#888888",
+   "bg": "#181819"
+  },
+  "branch label": {
+   "top": 186.0,
+   "left": 871.0,
+   "bottom": 196.5,
+   "right": 899.5,
+   "color": "#bebebf",
+   "bg": "#181819"
+  },
+  "branch chevron": {
+   "top": 189.0,
+   "left": 1062.0,
+   "bottom": 194.0,
+   "right": 1071.0,
+   "color": "#888888",
+   "bg": "#181819"
+  },
+  "git action row": {
+   "top": 216.0,
+   "left": 847.5,
+   "bottom": 226.5,
+   "right": 920.0,
+   "color": "#bebebf",
+   "bg": "#1a1a1b"
+  },
+  "changes label": {
+   "top": 244.0,
+   "left": 871.5,
+   "bottom": 257.0,
+   "right": 926.5,
+   "color": "#bebebf",
+   "bg": "#1b1b1c"
+  },
+  "changes counts": {
+   "top": 244.0,
+   "left": 960.0,
+   "bottom": 257.0,
+   "right": 1070.5,
+   "color": "#ff6467",
+   "bg": "#181819"
+  }
+ }
+}

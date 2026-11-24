@@ -1,0 +1,130 @@
+{
+ "default": {
+  "snoozed 2 title": {
+   "top": 505.0,
+   "left": 43.0,
+   "bottom": 518.0,
+   "right": 192.5,
+   "color": "#a0a0a0",
+   "bg": "#181819"
+  },
+  "snoozed 2 time": {
+   "top": 504.5,
+   "left": 203.5,
+   "bottom": 514.5,
+   "right": 237.5,
+   "color": "#50a2ff",
+   "bg": "#181819"
+  },
+  "settled label": {
+   "top": 537.5,
+   "left": 17.5,
+   "bottom": 546.5,
+   "right": 55.5,
+   "color": "#838383",
+   "bg": "#181819"
+  },
+  "settled 1 title": {
+   "top": 571.0,
+   "left": 42.5,
+   "bottom": 581.5,
+   "right": 149.0,
+   "color": "#a0a0a0",
+   "bg": "#181819"
+  },
+  "settled 1 time": {
+   "top": 570.5,
+   "left": 222.5,
+   "bottom": 579.0,
+   "right": 237.5,
+   "color": "#a0a0a0",
+   "bg": "#181819"
+  },
+  "hovered settled row": {
+   "start": "#171718",
+   "edges": [
+    {
+     "at": 699.0,
+     "color": "#222224"
+    },
+    {
+     "at": 731.0,
+     "color": "#181819"
+    }
+   ],
+   "vertical": true
+  },
+  "settled 5 title": {
+   "top": 710.0,
+   "left": 43.0,
+   "bottom": 723.0,
+   "right": 193.5,
+   "color": "#e8e8e8",
+   "bg": "#222224"
+  }
+ },
+ "owner": {
+  "snoozed 2 title": {
+   "top": 505.0,
+   "left": 43.0,
+   "bottom": 518.0,
+   "right": 192.5,
+   "color": "#a0a0a0",
+   "bg": "#181819"
+  },
+  "snoozed 2 time": {
+   "top": 504.5,
+   "left": 203.5,
+   "bottom": 514.5,
+   "right": 237.5,
+   "color": "#50a2ff",
+   "bg": "#181819"
+  },
+  "settled label": {
+   "top": 537.5,
+   "left": 17.5,
+   "bottom": 546.5,
+   "right": 55.5,
+   "color": "#838383",
+   "bg": "#181819"
+  },
+  "settled 1 title": {
+   "top": 571.0,
+   "left": 42.5,
+   "bottom": 581.5,
+   "right": 149.0,
+   "color": "#a0a0a0",
+   "bg": "#181819"
+  },
+  "settled 1 time": {
+   "top": 570.5,
+   "left": 222.5,
+   "bottom": 579.0,
+   "right": 237.5,
+   "color": "#a0a0a0",
+   "bg": "#181819"
+  },
+  "hovered settled row": {
+   "start": "#171718",
+   "edges": [
+    {
+     "at": 699.0,
+     "color": "#222224"
+    },
+    {
+     "at": 731.0,
+     "color": "#181819"
+    }
+   ],
+   "vertical": true
+  },
+  "settled 5 title": {
+   "top": 710.0,
+   "left": 43.0,
+   "bottom": 723.0,
+   "right": 193.5,
+   "color": "#e8e8e8",
+   "bg": "#222224"
+  }
+ }
+}

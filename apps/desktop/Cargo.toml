@@ -32,7 +32,8 @@ path = "src/settings/connections_check.rs"
 required-features = ["headless"]
 
 # Imports made-up Electron catalogs encrypted with the Windows and macOS
-# safeStorage schemes. Usage: import-check <out-dir>
+# safeStorage schemes, and runs the first-launch file import over a stand-in
+# install built around copied owner files. Usage: import-check <out-dir> [owner-dir]
 [[bin]]
 name = "import-check"
 path = "src/import/import_check.rs"
@@ -69,6 +70,13 @@ futures.workspace = true
 jiff.workspace = true
 url.workspace = true
 uuid.workspace = true
+rusty-leveldb.workspace = true
+
+[build-dependencies]
+embed-resource.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true, features = ["Win32_UI_WindowsAndMessaging"] }
 
 # Scripted end-to-end checks of the app shell: screenshots with hover, click,
 # menus and resize, pixel samples, row metrics and frame times.
@@ -101,6 +109,13 @@ required-features = ["headless"]
 [[bin]]
 name = "app-check"
 path = "src/app_check.rs"
+required-features = ["headless"]
+
+# Drives panel, toast and popup transitions and checks the window stops
+# asking for frames once each ends. Usage: motion-check <out-dir>
+[[bin]]
+name = "motion-check"
+path = "src/motion_check.rs"
 required-features = ["headless"]
 # Runs a scripted notification sequence through the engine and inbox and logs
 # every decision. Usage: notification-check <fixture.json> <out.jsonl> <darwin|linux> [--notify]

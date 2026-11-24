@@ -283,6 +283,14 @@ fn checks(root: &Path, appearance: Appearance, out: &Path) -> anyhow::Result<(St
     let table_rows = h.read(|p, cx| p.table_view().map(|t| t.read(cx).row_count()));
     h.check("csv opens as a table with a header row", table_rows == Some(9), format!("{table_rows:?} data rows"));
     h.shot(&format!("08-csv-{suffix}"))?;
+    h.with(|panel, _, cx| {
+        if let Some(table) = panel.read(cx).table_view().cloned() {
+            table.update(cx, |table, cx| table.scroll_cells_to(px(160.), cx));
+        }
+    });
+    h.frame();
+    h.frame();
+    h.shot(&format!("08b-csv-scrolled-sideways-{suffix}"))?;
 
     // Image with zoom.
     h.open("assets/orbit.png", None);
@@ -373,21 +381,36 @@ fn checks(root: &Path, appearance: Appearance, out: &Path) -> anyhow::Result<(St
     h.press("escape");
     h.focus_editor();
 
-    // Conflict: the file changes on disk under the editor.
-    h.wait_until("save before conflict", |p, _| p.save_state() == Some(&SaveState::Saved));
+    // The web writes without comparing with the disk (`projects.writeFile`): the last write wins.
+    h.wait_until("save before outside change", |p, _| p.save_state() == Some(&SaveState::Saved));
     std::fs::write(root.join("src/main.rs"), "// changed by someone else\n")?;
     h.set_caret(Pos::new(0, 0));
     h.type_text("y");
     h.press(&format!("{m}-s"));
-    let conflict = h.wait_until("conflict", |p, _| matches!(p.save_state(), Some(SaveState::Conflict(_))));
-    let untouched = std::fs::read_to_string(root.join("src/main.rs"))? == "// changed by someone else\n";
-    h.check("a file changed on disk stops the save", conflict && untouched, "conflict notice, disk untouched");
-    h.shot(&format!("15-conflict-{suffix}"))?;
-    h.with(|panel, _, cx| panel.update(cx, |panel, cx| panel.keep_my_changes(cx)));
     h.wait_until("overwrite", |p, _| p.save_state() == Some(&SaveState::Saved));
     let disk = std::fs::read_to_string(root.join("src/main.rs"))?;
     let editor = h.editor_text();
-    h.check("keep my changes writes the editor's text", disk == editor && disk.starts_with('y'), format!("{} bytes", disk.len()));
+    h.check("a save writes the editor's text over an outside change, with no prompt", disk == editor && disk.starts_with('y'), format!("{} bytes", disk.len()));
+    h.shot(&format!("15-saved-over-outside-change-{suffix}"))?;
+
+    // Word wrap: the toolbar toggle wraps long lines into rows.
+    h.set_caret(Pos::new(0, 0));
+    h.type_text(&format!("// {}\n", "wrapped words ".repeat(24)));
+    h.with(|panel, _, cx| panel.update(cx, |panel, cx| panel.set_word_wrap(false, cx)));
+    h.frame();
+    let unwrapped = h.read(|p, cx| p.editor().map(|e| (e.read(cx).row_count(), e.read(cx).line_count())));
+    h.with(|panel, _, cx| panel.update(cx, |panel, cx| panel.set_word_wrap(true, cx)));
+    h.frame();
+    let wrapped = h.read(|p, cx| p.editor().map(|e| (e.read(cx).row_count(), e.read(cx).line_count())));
+    h.check(
+        "word wrap breaks a long line into rows, and off keeps one row per line",
+        unwrapped.is_some_and(|(rows, lines)| rows == lines) && wrapped.is_some_and(|(rows, lines)| rows > lines),
+        format!("off {unwrapped:?}, on {wrapped:?} (rows, lines)"),
+    );
+    h.shot(&format!("15a-word-wrap-{suffix}"))?;
+    h.press(&format!("{m}-z"));
+    h.cx.advance_clock(Duration::from_millis(650));
+    h.wait_until("save after wrap test", |p, _| p.save_state() == Some(&SaveState::Saved));
 
     // Highlighting follows edits: opening a block comment recolours the lines below it.
     h.set_caret(Pos::new(4, 0));
@@ -406,20 +429,33 @@ fn checks(root: &Path, appearance: Appearance, out: &Path) -> anyhow::Result<(St
     h.cx.advance_clock(Duration::from_millis(650));
     h.wait_until("save after comment test", |p, _| p.save_state() == Some(&SaveState::Saved));
 
-    // Unsaved edits that cannot be written ask before another file opens.
-    std::fs::write(root.join("src/main.rs"), "// changed again elsewhere\n")?;
+    // Edits that cannot be written stay as the file's draft (`fileSaveSessions`):
+    // leaving opens the other file at once, and coming back shows and writes them.
+    let main = root.join("src/main.rs");
+    let mut permissions = std::fs::metadata(&main)?.permissions();
+    permissions.set_readonly(true);
+    std::fs::set_permissions(&main, permissions.clone())?;
+    let before = std::fs::read_to_string(&main)?;
+    h.set_caret(Pos::new(0, 0));
     h.type_text("z");
-    h.press(&format!("{m}-s"));
-    h.wait_until("second conflict", |p, _| matches!(p.save_state(), Some(SaveState::Conflict(_))));
     h.open("Cargo.toml", None);
-    let prompted = h.read(|p, _| p.prompt_open() && p.open_path().map(|s| s.as_ref()) == Some("src/main.rs"));
-    h.check("leaving unsaveable edits asks first", prompted, "prompt shown, main.rs still open");
-    h.shot(&format!("15c-unsaved-prompt-{suffix}"))?;
-    h.with(|panel, window, cx| panel.update(cx, |panel, cx| panel.discard_unsaved(window, cx)));
     h.settle();
     let opened = h.read(|p, _| p.open_path().map(|s| s.to_string()));
-    let disk = std::fs::read_to_string(root.join("src/main.rs"))?;
-    h.check("discard opens the other file and leaves the disk copy", opened.as_deref() == Some("Cargo.toml") && disk == "// changed again elsewhere\n", format!("{opened:?}"));
+    let pending = h.read(|p, _| p.has_unsaved());
+    h.check("leaving a file whose write fails opens the next file with no prompt", opened.as_deref() == Some("Cargo.toml") && pending, format!("{opened:?}, unsaved {pending}"));
+    h.check("the failed write left the disk copy alone", std::fs::read_to_string(&main)? == before, "unchanged");
+    #[allow(clippy::permissions_set_readonly_false)]
+    permissions.set_readonly(false);
+    std::fs::set_permissions(&main, permissions)?;
+    h.open("src/main.rs", None);
+    let draft = h.editor_text();
+    h.check("reopening the file shows the unsaved draft", draft.starts_with('z'), format!("starts {:?}", draft.chars().take(8).collect::<String>()));
+    h.cx.advance_clock(Duration::from_millis(650));
+    h.wait_until("draft written", |p, _| p.save_state() == Some(&SaveState::Saved));
+    let disk = std::fs::read_to_string(&main)?;
+    let clean = !h.read(|p, _| p.has_unsaved());
+    h.check("the draft is written once the file is writable again", disk == draft && clean, format!("{} bytes", disk.len()));
+    h.shot(&format!("15c-draft-restored-{suffix}"))?;
 
     // Content search: query, move, open at the line.
     h.with(|panel, window, cx| panel.update(cx, |panel, cx| panel.open_content_search(window, cx)));
@@ -433,6 +469,14 @@ fn checks(root: &Path, appearance: Appearance, out: &Path) -> anyhow::Result<(St
     let count = h.read(|p, cx| p.content_search().map(|s| s.read(cx).match_count()));
     h.check("content search finds matches across files", count.is_some_and(|c| c >= 3), format!("{count:?}"));
     h.shot(&format!("16-content-search-{suffix}"))?;
+    h.with(|panel, _, cx| {
+        if let Some(search) = panel.read(cx).content_search().cloned() {
+            search.update(cx, |search, cx| search.scroll_results_by(px(60.), cx));
+        }
+    });
+    h.frame();
+    h.frame();
+    h.shot(&format!("16b-content-search-scrolled-{suffix}"))?;
     h.press("down");
     let target = h.read(|p, cx| p.content_search().and_then(|s| s.read(cx).selected_match().map(|m| (m.path.clone(), m.line_number))));
     h.press("enter");

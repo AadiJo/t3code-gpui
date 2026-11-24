@@ -1,0 +1,227 @@
+{
+ "default": {
+  "modal fill (content)": {
+   "color": "#191919"
+  },
+  "nav search kbd": {
+   "top": 59.5,
+   "left": 252.0,
+   "bottom": 70.5,
+   "right": 256.5,
+   "color": "#8f8f8f",
+   "bg": "#141415"
+  },
+  "breadcrumb": {
+   "top": 59.0,
+   "left": 301.5,
+   "bottom": 73.0,
+   "right": 423.0,
+   "color": "#f5f5f5",
+   "bg": "#141415"
+  },
+  "close button": {
+   "top": 60.5,
+   "left": 1032.5,
+   "bottom": 69.5,
+   "right": 1041.5,
+   "color": "#8f8f8f",
+   "bg": "#141415"
+  },
+  "scope sentence": {
+   "top": 113.0,
+   "left": 327.5,
+   "bottom": 141.0,
+   "right": 786.0,
+   "color": "#f5f5f5",
+   "bg": "#141415"
+  },
+  "h2 Input": {
+   "top": 181.0,
+   "left": 328.0,
+   "bottom": 196.5,
+   "right": 366.5,
+   "color": "#f5f5f5",
+   "bg": "#141415"
+  },
+  "refresh microphones left edge": {
+   "start": "#191919",
+   "edges": [
+    {
+     "at": 984.0,
+     "color": "#202021"
+    },
+    {
+     "at": 985.0,
+     "color": "#202021"
+    }
+   ]
+  },
+  "refresh microphones right edge": {
+   "start": "#202021",
+   "edges": [
+    {
+     "at": 1011.0,
+     "color": "#191919"
+    },
+    {
+     "at": 1012.0,
+     "color": "#191919"
+    }
+   ]
+  },
+  "refresh microphones top/bottom": {
+   "start": "#191919",
+   "edges": [
+    {
+     "at": 232.5,
+     "color": "#202021"
+    },
+    {
+     "at": 256.0,
+     "color": "#171718"
+    }
+   ],
+   "vertical": true
+  },
+  "microphone list": {
+   "top": 291.0,
+   "left": 342.0,
+   "bottom": 305.0,
+   "right": 971.5,
+   "color": "#f5f5f5",
+   "bg": "#191919"
+  },
+  "record button left edge": {
+   "start": "#191919",
+   "edges": [
+    {
+     "at": 927.0,
+     "color": "#202021"
+    },
+    {
+     "at": 928.0,
+     "color": "#202021"
+    }
+   ]
+  },
+  "record button right edge": {
+   "start": "#202021",
+   "edges": [
+    {
+     "at": 1011.0,
+     "color": "#191919"
+    },
+    {
+     "at": 1012.0,
+     "color": "#191919"
+    }
+   ]
+  },
+  "record button top/bottom": {
+   "start": "#191919",
+   "edges": [
+    {
+     "at": 349.5,
+     "color": "#202021"
+    },
+    {
+     "at": 373.0,
+     "color": "#171718"
+    }
+   ],
+   "vertical": true
+  },
+  "dictation select left edge": {
+   "start": "#191919",
+   "edges": [
+    {
+     "at": 852.0,
+     "color": "#202021"
+    },
+    {
+     "at": 853.0,
+     "color": "#202021"
+    }
+   ]
+  },
+  "dictation select right edge": {
+   "start": "#202021",
+   "edges": [
+    {
+     "at": 1011.0,
+     "color": "#191919"
+    },
+    {
+     "at": 1012.0,
+     "color": "#191919"
+    }
+   ]
+  },
+  "dictation select top/bottom": {
+   "start": "#191919",
+   "edges": [
+    {
+     "at": 416.5,
+     "color": "#202021"
+    },
+    {
+     "at": 440.0,
+     "color": "#171718"
+    }
+   ],
+   "vertical": true
+  },
+  "h2 Transcription": {
+   "top": 502.5,
+   "left": 327.5,
+   "bottom": 518.5,
+   "right": 429.0,
+   "color": "#f5f5f5",
+   "bg": "#141415"
+  },
+  "transcribe with select left edge": {
+   "start": "#191919",
+   "edges": [
+    {
+     "at": 852.0,
+     "color": "#202021"
+    },
+    {
+     "at": 853.0,
+     "color": "#202021"
+    }
+   ]
+  },
+  "transcribe with select right edge": {
+   "start": "#202021",
+   "edges": [
+    {
+     "at": 1011.0,
+     "color": "#191919"
+    },
+    {
+     "at": 1012.0,
+     "color": "#191919"
+    }
+   ]
+  },
+  "transcribe with select top/bottom": {
+   "start": "#191919",
+   "edges": [
+    {
+     "at": 554.5,
+     "color": "#202021"
+    },
+    {
+     "at": 578.0,
+     "color": "#171718"
+    }
+   ],
+   "vertical": true
+  },
+  "h2 Dictionary": {
+   "empty": true,
+   "bg": "#131314"
+  }
+ }
+}

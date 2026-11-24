@@ -91,15 +91,15 @@ pub enum SidebarEvent {
     DraftCommand(SharedString, MenuCommand),
     /// Discard a new-thread draft (its row's X button).
     DiscardDraftSession(SharedString),
-    /// Inline rename committed a new, non-empty title.
-    RenameThread(ThreadKey, SharedString),
+    /// The inline rename field committed a new, non-empty title.
+    RenameThread(ThreadKey, String),
 }
 
-/// An inline rename in progress (`ThreadRenameInput`).
+/// The row whose title is being edited (`ThreadRenameInput`).
 pub(crate) struct Renaming {
     pub(crate) key: ThreadKey,
-    pub(crate) input: Entity<InputState>,
     original: SharedString,
+    pub(crate) field: Entity<InputState>,
     _subscription: Subscription,
 }
 
@@ -247,6 +247,66 @@ impl Sidebar {
     pub fn set_active_thread(&mut self, key: Option<ThreadKey>, cx: &mut Context<Self>) {
         if self.snapshot.active_thread != key {
             self.snapshot.active_thread = key;
+            cx.notify();
+        }
+    }
+
+    /// Replaces the unsent drafts and marks the shown one. Rebuilds only when the drafts changed.
+    pub fn set_drafts(&mut self, drafts: Vec<model::SidebarDraft>, active: Option<SharedString>, cx: &mut Context<Self>) {
+        if self.snapshot.active_draft != active {
+            self.snapshot.active_draft = active;
+            cx.notify();
+        }
+        if self.snapshot.drafts != drafts {
+            self.snapshot.drafts = drafts;
+            self.rebuild(cx);
+        }
+    }
+
+    /// Swaps the row's title for a focused field holding it, all selected (`startThreadRename`).
+    /// Enter or leaving the field commits; Escape cancels.
+    pub fn start_rename(&mut self, key: ThreadKey, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(title) = self.snapshot.threads.iter().find(|t| t.key == key).map(|t| t.title.clone()) else { return };
+        let field = cx.new(|cx| InputState::new(window, cx).default_value(title.clone()));
+        let subscription = cx.subscribe_in(&field, window, |this, _, event: &InputEvent, window, cx| match event {
+            InputEvent::PressEnter { .. } | InputEvent::Blur => this.commit_rename(window, cx),
+            _ => {}
+        });
+        field.update(cx, |field, cx| {
+            field.focus(window, cx);
+            field.select_all(window, cx);
+        });
+        self.hover_card = None;
+        self.renaming = Some(Renaming { key, original: title, field, _subscription: subscription });
+        cx.notify();
+    }
+
+    /// The thread whose title is being edited.
+    pub fn renaming(&self) -> Option<(&ThreadKey, &Entity<InputState>)> {
+        self.renaming.as_ref().map(|r| (&r.key, &r.field))
+    }
+
+    /// `commitThreadRename`: an empty title warns, an unchanged one does nothing.
+    pub fn commit_rename(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(renaming) = self.renaming.take() else { return };
+        let title = renaming.field.read(cx).value().trim().to_owned();
+        window.focus(&self.focus_handle, cx);
+        cx.notify();
+        if title.is_empty() {
+            let toast = crate::components::ui::toast::ToastData::new(
+                crate::components::ui::toast::ToastKind::Warning,
+                crate::i18n::t!("Thread title cannot be empty"),
+            );
+            crate::components::ui::toast::Toaster::push(toast, cx);
+        } else if title != renaming.original.as_ref() {
+            cx.emit(SidebarEvent::RenameThread(renaming.key, title));
+        }
+    }
+
+    /// Escape in the field: the title stays as it was.
+    pub fn cancel_rename(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.renaming.take().is_some() {
+            window.focus(&self.focus_handle, cx);
             cx.notify();
         }
     }
@@ -540,44 +600,6 @@ impl Sidebar {
         self.snapshot.active_thread = None;
         cx.emit(SidebarEvent::ActivateDraft(id));
         cx.notify();
-    }
-
-    /// Replaces a row's title with the rename field (`startThreadRename`).
-    pub fn start_rename(&mut self, key: ThreadKey, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(title) = self.snapshot.threads.iter().find(|t| t.key == key).map(|t| t.title.clone()) else {
-            return;
-        };
-        let input = cx.new(|cx| InputState::new(window, cx).default_value(title.clone()));
-        let subscription = cx.subscribe_in(&input, window, |this, _, event, window, cx| match event {
-            InputEvent::PressEnter { .. } | InputEvent::Blur => this.commit_rename(window, cx),
-            _ => {}
-        });
-        input.update(cx, |state, cx| {
-            state.focus(window, cx);
-            state.select_all(window, cx);
-        });
-        self.hover_card = None;
-        self.renaming = Some(Renaming { key, input, original: title, _subscription: subscription });
-        cx.notify();
-    }
-
-    /// `commitThreadRename`: a trimmed, changed, non-empty title is sent.
-    pub(crate) fn commit_rename(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(renaming) = self.renaming.take() else { return };
-        let title = renaming.input.read(cx).value().trim().to_string();
-        if !title.is_empty() && title != renaming.original.as_ref() {
-            cx.emit(SidebarEvent::RenameThread(renaming.key, title.into()));
-        }
-        window.focus(&self.focus_handle, cx);
-        cx.notify();
-    }
-
-    /// Escape: the title stays as it was.
-    pub(crate) fn cancel_rename(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.renaming.take().is_some() {
-            window.focus(&self.focus_handle, cx);
-            cx.notify();
-        }
     }
 
     pub(crate) fn toggle_folder(&mut self, group: usize, cx: &mut Context<Self>) {

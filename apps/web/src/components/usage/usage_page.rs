@@ -648,6 +648,7 @@ impl UsagePage {
             .gap(theme.sp(1.))
             .min_w_0()
             .cursor_pointer()
+            .text_color(c.foreground())
             .child(div().truncate().child(environment_label))
             .child(if !showing_limits && has_issue {
                 Icon::new(IconName::CircleAlert).size(IconSize::Sm).color(c.warning_foreground)
@@ -675,7 +676,7 @@ impl UsagePage {
             .child(Icon::new(IconName::ChevronDown).size(IconSize::Sm).color(with_alpha(c.muted_foreground, 0.6)));
         let page = cx.entity();
         let provider_menu = dropdown_menu("usage-providers", provider_trigger, move |_, cx| page.update(cx, |this, cx| this.provider_menu(cx)));
-        let separator = || div().text_color(c.muted_foreground).child("/");
+        let separator = || div().flex_none().text_color(c.icon_muted).child("/");
         let breadcrumb = div()
             .flex()
             .items_center()
@@ -735,12 +736,22 @@ impl UsagePage {
             )
         }));
         let can_read = self.selected_environments().any(|e| e.access.can_read_diagnostics);
-        let refresh = Button::new("usage-refresh")
-            .variant(ButtonVariant::Ghost)
-            .size(ButtonSize::IconSm)
-            .icon(IconName::RefreshCw)
-            .disabled(self.refreshing || (!showing_limits && !can_read))
-            .on_click(cx.listener(|this, _, _, cx| this.refresh(cx)));
+        // An icon-sm ghost button holding `RefreshIcon size="sm"`, a 14px glyph.
+        let refresh_disabled = self.refreshing || (!showing_limits && !can_read);
+        let refresh = div()
+            .id("usage-refresh")
+            .size(theme.sp(7.))
+            .flex()
+            .flex_none()
+            .items_center()
+            .justify_center()
+            .rounded(theme.radii.control)
+            .child(Icon::new(IconName::RefreshCw).size(IconSize::Custom(theme.sp(3.5))).color(c.muted_foreground))
+            .when(refresh_disabled, |el| el.opacity(crate::components::ui::DISABLED_OPACITY))
+            .when(!refresh_disabled, |el| {
+                el.cursor_pointer().hover(|el| el.bg(c.highlight())).on_click(cx.listener(|this, _, _, cx| this.refresh(cx)))
+            })
+;
         let controls = if wide {
             div().ml_auto().flex().flex_none().items_center().gap(theme.sp(2.)).children(period_group).child(metric_group).child(refresh).into_any_element()
         } else {
@@ -762,15 +773,24 @@ impl UsagePage {
             .flex()
             .flex_none()
             .items_center()
-            .gap(theme.sp(3.))
+            .gap(theme.sp(1.))
             .min_h(theme.sp(12.))
             .pl(theme.sp(5.))
             .pr(theme.sp(2.))
             .border_b_1()
             .border_color(c.border)
-            .child(breadcrumb)
-            .children(window_label)
-            .child(controls)
+            .child(
+                div()
+                    .flex()
+                    .flex_1()
+                    .min_w_0()
+                    .items_center()
+                    .gap(theme.sp(3.))
+                    .py(theme.sp(2.))
+                    .child(breadcrumb)
+                    .children(window_label)
+                    .child(controls),
+            )
             .child(
                 Button::new("usage-close")
                     .variant(ButtonVariant::Ghost)
@@ -779,6 +799,38 @@ impl UsagePage {
                     .on_click(cx.listener(|_, _, _, cx| cx.emit(UsagePageEvent::Close))),
             )
             .into_any_element()
+    }
+
+    /// "ChatGPT shared usage" with "Manage usage", shown when Codex is visible
+    /// and a selected environment signs in to Codex through ChatGPT.
+    fn chatgpt_sharing_row(&self, cx: &App) -> Option<AnyElement> {
+        let shown = !self.prefs.hidden_providers.contains(&UsageProviderKind::Codex)
+            && self
+                .selected_environments()
+                .any(|environment| environment.limits.providers.iter().any(t3code_shared::usage_limits::uses_chatgpt_sharing));
+        if !shown {
+            return None;
+        }
+        let theme = cx.app_theme();
+        Some(
+            div()
+                .flex()
+                .items_center()
+                .justify_between()
+                .gap(theme.sp(2.))
+                .ui_text(theme, TextSize::Xs, weight::NORMAL)
+                .text_color(theme.colors.muted_foreground)
+                .child(t!("ChatGPT shared usage"))
+                .child(
+                    Button::new("usage-chatgpt-manage")
+                        .variant(ButtonVariant::GhostMuted)
+                        .size(ButtonSize::Xs)
+                        .label(t!("Manage usage"))
+                        .trailing_icon(IconName::ExternalLink)
+                        .on_click(|_, _, cx| cx.open_url(t3code_shared::usage_limits::CHATGPT_USAGE_URL)),
+                )
+                .into_any_element(),
+        )
     }
 
     fn environment_menu(&mut self, cx: &mut Context<Self>) -> MenuPopup {
@@ -988,6 +1040,7 @@ impl UsagePage {
                         )
                     }),
             );
+        let chatgpt_sharing = self.chatgpt_sharing_row(cx);
         let provider_rows = overview.ranked_providers.iter().map(|provider| {
             let totals = merged.providers.iter().find(|t| t.provider == *provider);
             let share = totals.map_or(0.0, |t| if by_cost { t.cost_share } else { t.token_share });
@@ -1057,6 +1110,7 @@ impl UsagePage {
             .min_w_0()
             .when(lg, |el| el.w(theme.rem(18.)).flex_none())
             .child(headline)
+            .children(chatgpt_sharing)
             .children(provider_rows);
         let chart_title = match (hourly, by_cost) {
             (true, false) => t!("Hourly processed tokens"),

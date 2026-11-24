@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::Arc;
 
-use gpui_kit::{AnyElement, Context, Hsla, IntoElement, Render, SharedString, Window, div, prelude::*, px, relative};
+use gpui_kit::{AnyElement, Context, Hsla, IntoElement, Render, SharedString, Window, canvas, div, point, prelude::*, px, relative};
 use t3code_contracts::{
     ProviderConsumeResetCreditInput, ProviderConsumeResetCreditOutcome,
     ServerConfigProvidersItemUsageLimitsResetCredits as ResetCredits,
@@ -29,7 +29,7 @@ use crate::components::icons::{Icon, IconName, IconSize};
 use crate::components::ui::TextStyleExt as _;
 use crate::components::ui::button::{Button, ButtonSize, ButtonVariant};
 use crate::components::ui::dialog::{DialogSurface, Modal};
-use crate::components::ui::popover::{Popover, PopoverSurface, PopoverWidth};
+use crate::components::ui::popover::{PopoverSurface, PopoverWidth, below};
 use crate::components::ui::tooltip::tooltip;
 use crate::i18n::t;
 use crate::theme_color::with_alpha;
@@ -273,7 +273,24 @@ pub struct UsageLimitsView {
     redeem: HashMap<String, RedeemState>,
     confirming: Option<Confirming>,
     timestamp_format: TimestampFormat,
+    /// The segment whose details are open.
+    open_segment: Option<SharedString>,
+    /// Whether the pointer is over the open segment or its details.
+    hover: SegmentHover,
+    _hover_timer: Option<gpui_kit::Task<()>>,
 }
+
+/// Where the pointer is relative to a segment's hover popup.
+#[derive(Default)]
+struct SegmentHover {
+    segment: Option<SharedString>,
+    over_popup: bool,
+}
+
+/// Base UI's `openOnHover` delay.
+const HOVER_OPEN_DELAY: std::time::Duration = std::time::Duration::from_millis(300);
+/// Lets the pointer cross the gap between a segment and its details.
+const HOVER_CLOSE_GRACE: std::time::Duration = std::time::Duration::from_millis(100);
 
 impl UsageLimitsView {
     pub fn new(source: Rc<dyn UsageSource>) -> Self {
@@ -288,6 +305,9 @@ impl UsageLimitsView {
             redeem: HashMap::new(),
             confirming: None,
             timestamp_format: TimestampFormat::Locale,
+            open_segment: None,
+            hover: SegmentHover::default(),
+            _hover_timer: None,
         }
     }
 
@@ -518,7 +538,7 @@ impl UsageLimitsView {
             .overflow_hidden()
             .child(div().absolute().top_0().bottom_0().left_0().w(relative(remaining / 100.0)).rounded(theme.radii.md).bg(with_alpha(color, 0.35)))
             .children(hatch.map(|width| {
-                div().absolute().top_0().bottom_0().right_0().w(relative(width / 100.0)).bg(with_alpha(color, 0.2 * 0.35))
+                div().absolute().top_0().bottom_0().right_0().w(relative(width / 100.0)).child(refill_hatch(color)).overflow_hidden()
             }));
         let chip = (resets_in.is_some() || credits > 0).then(|| {
             div()
@@ -600,25 +620,90 @@ impl UsageLimitsView {
                     .child(div().absolute().top(px(2.)).bottom(px(2.)).left(bar / 2. - px(1.)).w(px(2.)).rounded_full().bg(c.foreground()))
             }))
             .child(content);
-        let account_for_popover = account.clone();
-        let window_for_popover = window.clone();
         let restores = reset.map(|r| r.restores_percent);
-        let entity = cx.entity();
-        Some(
-            Popover::new(
-                SharedString::from(format!("segment-{}-{}-{}", pool.kind.as_str(), pool.id, account.key)),
-                trigger,
-                move |_, _, cx| {
-                    entity.update(cx, |this, cx| {
-                        PopoverSurface::new()
-                            .width(PopoverWidth::Auto)
-                            .child(this.segment_details(&account_for_popover, &window_for_popover, restores, cx))
-                            .into_any_element()
-                    })
-                },
+        let key = SharedString::from(format!("segment-{}-{}-{}", pool.kind.as_str(), pool.id, account.key));
+        let open = self.open_segment.as_ref() == Some(&key);
+        // `data-[popup-open]:ring-1 ring-inset ring-border`.
+        let ring = open.then(|| div().absolute().inset_0().rounded(theme.radii.md).border_1().border_color(c.border));
+        let trigger = trigger.children(ring);
+        let details = open.then(|| {
+            let details = self.segment_details(account, window, restores, cx);
+            below(
+                div()
+                    .id("segment-details")
+                    .occlude()
+                    .on_hover(cx.listener(|this, hovered: &bool, _, cx| this.hover_popup(*hovered, cx)))
+                    .on_mouse_down_out(cx.listener(|this, _, _, cx| {
+                        this.open_segment = None;
+                        cx.notify();
+                    }))
+                    .child(PopoverSurface::new().width(PopoverWidth::Auto).child(details)),
             )
-            .into_any_element(),
+        });
+        let (hover_key, click_key) = (key.clone(), key.clone());
+        Some(
+            div()
+                .id(key)
+                .flex()
+                .flex_col()
+                .child(
+                    div()
+                        .id("trigger")
+                        .child(trigger)
+                        .on_hover(cx.listener(move |this, hovered: &bool, _, cx| this.hover_segment(&hover_key, *hovered, cx)))
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            this.open_segment = if this.open_segment.as_ref() == Some(&click_key) { None } else { Some(click_key.clone()) };
+                            cx.notify();
+                        })),
+                )
+                .children(details)
+                .into_any_element(),
         )
+    }
+
+    /// The pointer entered or left a segment: open its details after the
+    /// hover delay, or close them once it is over neither the segment nor them.
+    fn hover_segment(&mut self, key: &SharedString, hovered: bool, cx: &mut Context<Self>) {
+        if hovered {
+            self.hover.segment = Some(key.clone());
+            if self.open_segment.as_ref() == Some(key) {
+                return;
+            }
+            let key = key.clone();
+            self._hover_timer = Some(cx.spawn(async move |this, cx| {
+                cx.background_executor().timer(HOVER_OPEN_DELAY).await;
+                this.update(cx, |this, cx| {
+                    if this.hover.segment.as_ref() == Some(&key) {
+                        this.open_segment = Some(key);
+                        cx.notify();
+                    }
+                })
+                .ok();
+            }));
+        } else if self.hover.segment.as_ref() == Some(key) {
+            self.hover.segment = None;
+            self.schedule_hover_close(cx);
+        }
+    }
+
+    fn hover_popup(&mut self, hovered: bool, cx: &mut Context<Self>) {
+        self.hover.over_popup = hovered;
+        if !hovered {
+            self.schedule_hover_close(cx);
+        }
+    }
+
+    fn schedule_hover_close(&mut self, cx: &mut Context<Self>) {
+        self._hover_timer = Some(cx.spawn(async move |this, cx| {
+            cx.background_executor().timer(HOVER_CLOSE_GRACE).await;
+            this.update(cx, |this, cx| {
+                let over_open = this.hover.segment.is_some() && this.hover.segment == this.open_segment;
+                if !over_open && !this.hover.over_popup && this.open_segment.take().is_some() {
+                    cx.notify();
+                }
+            })
+            .ok();
+        }));
     }
 
     fn render_legend_row(&self, pool: &LimitPoolWindow, position: usize, color: Hsla, theme: &AppTheme) -> Option<AnyElement> {
@@ -926,3 +1011,27 @@ impl Render for UsageLimitsView {
     }
 }
 
+/// The refill share's stripes: `repeating-linear-gradient(135deg, color 0 1px,
+/// transparent 1px 5px)` at 20% opacity, as 1px lines every 5px along the diagonal.
+fn refill_hatch(color: Hsla) -> impl IntoElement {
+    canvas(
+        |_, _, _| {},
+        move |bounds, _, window, _| {
+            let period = 5.0 * std::f32::consts::SQRT_2;
+            let (w, h) = (f32::from(bounds.size.width), f32::from(bounds.size.height));
+            let stroke = std::f32::consts::FRAC_1_SQRT_2;
+            let mut path = gpui_kit::PathBuilder::stroke(px(1.));
+            // Lines x + y = c, measured from the box's top-left; the gradient starts at its top-left corner.
+            let mut c = stroke;
+            while c < w + h + period {
+                path.move_to(bounds.origin + point(px(c), px(0.)));
+                path.line_to(bounds.origin + point(px(c - h), px(h)));
+                c += period;
+            }
+            if let Ok(path) = path.build() {
+                window.paint_path(path, with_alpha(color, 0.2));
+            }
+        },
+    )
+    .size_full()
+}

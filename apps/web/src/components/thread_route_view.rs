@@ -2,7 +2,7 @@
 //! and one composer stay mounted across thread switches (the composer keeps a
 //! draft per thread key), and switching only swaps the data they show. The
 //! composer's events, the timeline's buttons and the source control controls
-//! go to the fixture store until the sync layer replaces it.
+//! go to the window's [`AppData`].
 //!
 //! Each thread gets its own source control model and branch strip (under the
 //! composer), built when the thread is first shown and kept for the most
@@ -15,29 +15,34 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use gpui_kit::*;
-use t3code_contracts::{EditorId, ProjectId, ProjectScript};
+use t3code_contracts::{ProjectId, ProjectScript};
 
 use crate::components::branch_toolbar::{BranchToolbar, BranchToolbarEvent, BranchToolbarLayout, BranchToolbarProps};
 use crate::components::chat::composer::{ChatComposer, ComposerEvent, ComposerState};
 use crate::components::chat::messages_timeline::TimelineAction;
 use crate::components::chat::open_in_picker::OpenInPicker;
 use crate::components::chat::thread_details_items::ThreadDetailsItemSettings;
-use crate::components::chat::thread_details_panel::{ThreadDetailsInput, ThreadDetailsPanel};
+use crate::components::chat::thread_details_panel::{ThreadDetailsEvent, ThreadDetailsInput, ThreadDetailsPanel};
+use crate::components::chat::thread_details_sections::ThreadDetailsSectionEvent;
 use crate::components::chat::timeline_entries::{Attachment, MessageId};
 use crate::components::chat_view::{ChatView, ChatViewEvent, HeaderThreadMenu};
-use crate::components::git_actions_control::{GitActionsControl, GitActionsEvent, GitActionsProps};
-use crate::components::git_actions_control_fixture::{FixtureGitSource, fixture_status};
-use crate::components::git_actions_control_source::{GitActionsSource, SourceControlModel};
+use crate::components::git_actions_control::{GitActionsControl, GitActionsEvent};
+use crate::components::chat::composer_command_menu::{ComposerCommandItem, ComposerMenuSource};
+use crate::components::git_actions_control_source::SourceControlModel;
 use crate::components::project_scripts_control::{ProjectScriptsControl, ProjectScriptsEvent};
 use crate::components::sidebar::model::ThreadKey;
-use crate::composer_draft_store::{ComposerDraftKey, ComposerDraftStore, InMemoryDraftStore};
+use crate::components::ui::toast::{ToastData, ToastKind, Toaster};
 use crate::composer_editor_mentions::format_context_reference;
-use crate::fixtures::{FixtureEvent, FixtureStore, ThreadView};
+use crate::composer_logic::ComposerTrigger;
 use crate::i18n::t;
-use crate::remote_open::RemoteOpenState;
 use crate::router::ThreadTarget;
-use crate::scenes::composer::{FixtureMenuSource, fixture_state};
-use crate::scenes::git_actions::{fixture_git_props, fixture_scripts, fixture_toolbar_props};
+use crate::scenes::composer::fixture_state;
+use crate::state::app_data::{ActionOutcome, DataEvent, DetailsOutcome, GitControlsSetup, SharedAppData, ThreadView};
+
+/// The card's facts that do not come from the server.
+fn details_base(is_git_repo: bool) -> ThreadDetailsInput {
+    ThreadDetailsInput { offers_git: true, is_git_repo, show_open_in: true, ..Default::default() }
+}
 
 /// Threads whose source control controls stay built.
 const GIT_CONTROLS_KEPT: usize = 16;
@@ -59,13 +64,30 @@ pub enum ThreadRouteEvent {
     RunScript(ProjectScript),
     /// A click outside the details popover closed it.
     DetailsClosed,
+    /// Open an app route (a settings page the controls link to).
+    Navigate(&'static str),
+    /// Open the Linked items tab (the strip's badge with several pull requests).
+    OpenLinkedItems,
+    /// Show this browser tab (a thread server opened in the preview).
+    OpenBrowser(SharedString),
+}
+
+/// The menu of the shown thread's workspace; the composer keeps one source.
+#[derive(Clone)]
+struct ShownMenu(Rc<RefCell<Option<Rc<dyn ComposerMenuSource>>>>);
+
+impl ComposerMenuSource for ShownMenu {
+    fn items(&self, trigger: &ComposerTrigger) -> (Vec<ComposerCommandItem>, bool) {
+        let source = self.0.borrow().clone();
+        source.map(|source| source.items(trigger)).unwrap_or_default()
+    }
 }
 
 /// One thread's source control model and the controls drawn on it.
 struct GitControls {
     key: SharedString,
     model: Entity<SourceControlModel>,
-    source: FixtureGitSource,
+    setup: GitControlsSetup,
     strip: Entity<BranchToolbar>,
     props: BranchToolbarProps,
     project_id: ProjectId,
@@ -77,7 +99,8 @@ struct GitControls {
 
 /// The chat view for whichever thread the route names.
 pub struct ThreadRouteView {
-    store: Entity<FixtureStore>,
+    data: SharedAppData,
+    menu: ShownMenu,
     chat: Entity<ChatView>,
     composer: Entity<ChatComposer>,
     target: Option<ThreadTarget>,
@@ -92,13 +115,14 @@ pub struct ThreadRouteView {
 impl EventEmitter<ThreadRouteEvent> for ThreadRouteView {}
 
 impl ThreadRouteView {
-    pub fn new(store: Entity<FixtureStore>, window: &mut Window, cx: &mut Context<Self>) -> Self {
+    pub fn new(data: SharedAppData, window: &mut Window, cx: &mut Context<Self>) -> Self {
         cx.default_global::<ThreadDetailsItemSettings>();
         let base = fixture_state("none");
-        let drafts: Rc<RefCell<dyn ComposerDraftStore>> = Rc::new(RefCell::new(InMemoryDraftStore::default()));
+        let drafts = data.draft_store(cx);
+        let menu = ShownMenu(Rc::default());
         let composer = {
-            let state = base.clone();
-            cx.new(|cx| ChatComposer::new(state, Rc::new(FixtureMenuSource), drafts, cx))
+            let (state, menu) = (base.clone(), menu.clone());
+            cx.new(|cx| ChatComposer::new(state, Rc::new(menu), drafts, cx))
         };
         let chat = cx.new(ChatView::new);
         let focus = composer.focus_handle(cx);
@@ -106,9 +130,9 @@ impl ThreadRouteView {
         let subscriptions = vec![
             cx.subscribe(&composer, Self::on_composer_event),
             cx.subscribe_in(&chat, window, Self::on_chat_event),
-            cx.subscribe(&store, Self::on_store_event),
+            cx.subscribe(&data.events(), Self::on_data_event),
         ];
-        Self { store, chat, composer, target: None, base, git: VecDeque::new(), details_open: false, _subscriptions: subscriptions }
+        Self { data, menu, chat, composer, target: None, base, git: VecDeque::new(), details_open: false, _subscriptions: subscriptions }
     }
 
     pub fn chat(&self) -> &Entity<ChatView> {
@@ -128,9 +152,11 @@ impl ThreadRouteView {
         if self.target.as_ref() == Some(&target) {
             return true;
         }
-        let Some(view) = self.store.update(cx, |store, _| store.thread_view(&target)) else { return false };
+        let Some(view) = self.data.thread_view(&target, cx) else { return false };
         let thread_menu = self.thread_menu(&target, cx);
         self.target = Some(target);
+        let source = self.data.menu_source(&view, &self.composer, cx);
+        *self.menu.0.borrow_mut() = Some(source);
         self.chat.update(cx, |chat, cx| {
             chat.set_thread_menu(thread_menu, cx);
             let hero = view.is_draft && view.timeline.entries.is_empty();
@@ -147,7 +173,7 @@ impl ThreadRouteView {
     /// The header "Thread actions" facts for a server thread's sidebar row.
     fn thread_menu(&self, target: &ThreadTarget, cx: &App) -> Option<HeaderThreadMenu> {
         let ThreadTarget::Server(key) = target else { return None };
-        let snapshot = self.store.read(cx).snapshot(None);
+        let snapshot = self.data.snapshot(None, cx);
         let row = snapshot.threads.iter().find(|row| &row.key == key)?;
         Some(HeaderThreadMenu::from_row(row, snapshot.now, !snapshot.auto_settle_disabled.contains(key)))
     }
@@ -155,7 +181,7 @@ impl ThreadRouteView {
     /// Re-reads the shown thread after the store changed it.
     fn refresh(&mut self, anchor: bool, cx: &mut Context<Self>) {
         let Some(target) = self.target.clone() else { return };
-        let Some(view) = self.store.update(cx, |store, _| store.thread_view(&target)) else { return };
+        let Some(view) = self.data.thread_view(&target, cx) else { return };
         let timeline = self.chat.read(cx).timeline().clone();
         timeline.update(cx, |timeline, cx| {
             timeline.update_input(view.timeline.clone(), cx);
@@ -172,6 +198,7 @@ impl ThreadRouteView {
         });
         self.sync_composer(&view, cx);
         self.sync_git_props(&view, cx);
+        self.sync_details(&view, cx);
     }
 
     fn sync_composer(&mut self, view: &ThreadView, cx: &mut Context<Self>) {
@@ -183,30 +210,10 @@ impl ThreadRouteView {
         } else {
             None
         };
-        let state = ComposerState {
-            draft_key: ComposerDraftKey(view.key.clone()),
-            is_draft_thread: view.is_draft,
-            running: view.running,
-            can_interrupt: view.running,
-            // The branch toolbar under the composer replaces the static strip.
-            context_strip: None,
-            placeholder,
-            ..self.base.clone()
-        };
+        let state = self.data.composer_state(view, &self.base, cx);
+        // The branch toolbar under the composer replaces the static strip.
+        let state = ComposerState { context_strip: None, placeholder, ..state };
         self.composer.update(cx, |composer, cx| composer.set_state(state, cx));
-    }
-
-    /// The toolbar props for a thread on the fixture machine.
-    fn toolbar_props(view: &ThreadView) -> BranchToolbarProps {
-        let branch = view.branch.as_deref().unwrap_or("main");
-        BranchToolbarProps {
-            project_cwd: view.cwd.to_string(),
-            is_server_thread: !view.is_draft,
-            env_locked: !view.is_draft,
-            turn_running: view.running,
-            thread_branch: Some(branch.to_owned()),
-            ..fixture_toolbar_props(Some(branch))
-        }
     }
 
     /// Mounts the shown thread's controls, building them on first show.
@@ -226,12 +233,11 @@ impl ThreadRouteView {
     }
 
     fn build_git(&mut self, view: &ThreadView, cx: &mut Context<Self>) -> GitControls {
-        let branch = view.branch.clone().unwrap_or_else(|| "main".into());
-        let source = FixtureGitSource::new(fixture_status(Some(&branch), true, true, 1, 0));
-        let arc: Arc<dyn GitActionsSource> = Arc::new(source.clone());
+        let setup = self.data.git_controls(view, cx);
         let cwd = view.cwd.to_string();
-        let model = cx.new(|cx| SourceControlModel::new(arc, cwd, cx));
-        let props = Self::toolbar_props(view);
+        let source = setup.source.clone();
+        let model = cx.new(|cx| SourceControlModel::new(source, cwd, cx));
+        let props = self.data.toolbar_props(view, cx);
         let strip = cx.new(|cx| BranchToolbar::new(BranchToolbarLayout::Composer, model.clone(), props.clone(), cx));
         let key = view.key.clone();
         let subscription = cx.subscribe(&strip, {
@@ -239,7 +245,7 @@ impl ThreadRouteView {
             move |this, _, event: &BranchToolbarEvent, cx| this.on_branch_event(&key, event, cx)
         });
         let project_id = ProjectId::new(view.project_id.as_ref().map(|p| p.0.to_string()).unwrap_or_default());
-        GitControls { key, model, source, strip, props, project_id, panel: None, open_in: None, _subscriptions: vec![subscription] }
+        GitControls { key, model, setup, strip, props, project_id, panel: None, open_in: None, _subscriptions: vec![subscription] }
     }
 
     /// The shown thread's details card, built on first use: two branch
@@ -249,21 +255,24 @@ impl ThreadRouteView {
         if let Some(panel) = &front.panel {
             return Some(panel.clone());
         }
-        let (key, model, props, source, project_id) =
-            (front.key.clone(), front.model.clone(), front.props.clone(), front.source.clone(), front.project_id.clone());
-        let arc: Arc<dyn GitActionsSource> = Arc::new(source);
+        let (key, model, props, project_id) = (front.key.clone(), front.model.clone(), front.props.clone(), front.project_id.clone());
+        let setup = &front.setup;
+        let (arc, git_props, scripts, editors, open_state, is_git_repo) = (
+            setup.source.clone(),
+            setup.git.clone(),
+            setup.scripts.clone(),
+            setup.editors.clone(),
+            setup.open_state.clone(),
+            setup.is_git_repo,
+        );
         let workspace = cx.new(|cx| BranchToolbar::new(BranchToolbarLayout::PanelWorkspace, model.clone(), props.clone(), cx));
         let branch = cx.new(|cx| BranchToolbar::new(BranchToolbarLayout::PanelBranch, model.clone(), props.clone(), cx));
-        let git_props = GitActionsProps { project_id: Some(project_id.clone()), ..fixture_git_props() };
         let git = cx.new(|cx| GitActionsControl::new(model.clone(), git_props, cx));
-        let scripts = cx.new(|_| ProjectScriptsControl::new(arc.clone(), project_id, fixture_scripts(), true));
+        let scripts = cx.new(|_| ProjectScriptsControl::new(arc.clone(), project_id, scripts, true));
         let cwd = Some(props.project_cwd.clone());
-        let open_in = cx.new(|_| {
-            OpenInPicker::new(arc, vec![EditorId::Vscode, EditorId::Cursor, EditorId::Zed], RemoteOpenState::LocalExec, cwd)
-        });
-        let input = ThreadDetailsInput { offers_git: true, is_git_repo: true, show_open_in: true, ..Default::default() };
+        let open_in = cx.new(|_| OpenInPicker::new(arc, editors, open_state, cwd));
         let panel = cx.new(|cx| {
-            ThreadDetailsPanel::new(input, workspace.clone(), branch.clone(), git.clone(), Some(scripts.clone()), Some(open_in.clone()), cx)
+            ThreadDetailsPanel::new(details_base(is_git_repo), workspace.clone(), branch.clone(), git.clone(), Some(scripts.clone()), Some(open_in.clone()), cx)
         });
         let mut subscriptions = Vec::new();
         for toolbar in [&workspace, &branch] {
@@ -275,9 +284,11 @@ impl ThreadRouteView {
             move |this, _, event: &GitActionsEvent, cx| match event {
                 GitActionsEvent::OpenChanges => cx.emit(ThreadRouteEvent::OpenDiff { turn: None, file: None }),
                 GitActionsEvent::ThreadBranchChanged(branch) => this.set_branch(&key, branch.clone().into(), cx),
-                GitActionsEvent::OpenPublish => {}
+                GitActionsEvent::OpenUrl(url) => cx.open_url(url),
+                GitActionsEvent::OpenSourceControlSettings => cx.emit(ThreadRouteEvent::Navigate("/settings/source-control")),
             }
         }));
+        subscriptions.push(cx.subscribe(&panel, Self::on_details_event));
         subscriptions.push(cx.subscribe(&scripts, |_, _, event: &ProjectScriptsEvent, cx| {
             let ProjectScriptsEvent::Run(script) = event;
             cx.emit(ThreadRouteEvent::RunScript(script.clone()));
@@ -286,27 +297,76 @@ impl ThreadRouteView {
         front.panel = Some(panel.clone());
         front.open_in = Some(open_in);
         front._subscriptions.extend(subscriptions);
+        if let Some(view) = self.target.clone().and_then(|target| self.data.thread_view(&target, cx)) {
+            self.sync_details(&view, cx);
+        }
         Some(panel)
     }
 
-    fn on_branch_event(&mut self, key: &SharedString, event: &BranchToolbarEvent, cx: &mut Context<Self>) {
-        if let BranchToolbarEvent::ThreadBranchChanged { branch, .. } = event {
-            self.set_branch(key, branch.clone().into(), cx);
+    /// Re-reads the shown thread's details card from the data, once built.
+    fn sync_details(&mut self, view: &ThreadView, cx: &mut Context<Self>) {
+        let Some(front) = self.git.front().filter(|g| g.key == view.key) else { return };
+        let Some(panel) = front.panel.clone() else { return };
+        let input = self.data.thread_details(view, details_base(front.setup.is_git_repo), cx);
+        if panel.read(cx).input() != &input {
+            panel.update(cx, |panel, cx| panel.set_input(input, cx));
         }
     }
 
-    /// The thread moved to `branch`: the fixture records it and every toolbar follows.
+    /// A details card row: links and settings pages open here, the rest runs on the data.
+    fn on_details_event(&mut self, _: Entity<ThreadDetailsPanel>, event: &ThreadDetailsEvent, cx: &mut Context<Self>) {
+        match event {
+            ThreadDetailsEvent::OpenUrl(url) => return cx.open_url(url),
+            ThreadDetailsEvent::Section(ThreadDetailsSectionEvent::ManageAutomations(_)) => {
+                return cx.emit(ThreadRouteEvent::Navigate("/settings/scheduled-tasks"));
+            }
+            _ => {}
+        }
+        let Some(ThreadTarget::Server(key)) = self.target.clone() else { return };
+        let task = self.data.thread_details_event(&key, event, cx);
+        cx.spawn(async move |this, cx| {
+            let outcome = task.await;
+            this.update(cx, |this, cx| match outcome {
+                DetailsOutcome::Done => {}
+                DetailsOutcome::OpenBrowser(tab) => cx.emit(ThreadRouteEvent::OpenBrowser(tab)),
+                DetailsOutcome::LoadComposer(text) => {
+                    this.append_handoff(&text, cx);
+                    Toaster::push(
+                        ToastData::new(ToastKind::Success, t!("Added to the composer"))
+                            .description(t!("The task is in the composer. Read it over, then send.")),
+                        cx,
+                    );
+                }
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    fn on_branch_event(&mut self, key: &SharedString, event: &BranchToolbarEvent, cx: &mut Context<Self>) {
+        match event {
+            BranchToolbarEvent::ThreadBranchChanged { branch, .. } => self.set_branch(key, branch.clone().into(), cx),
+            BranchToolbarEvent::OpenPullRequest(url) => cx.open_url(url),
+            BranchToolbarEvent::OpenPullRequestList => cx.emit(ThreadRouteEvent::OpenLinkedItems),
+            _ => {}
+        }
+    }
+
+    /// The thread moved to `branch`: the data records it and every toolbar follows.
     fn set_branch(&mut self, key: &SharedString, branch: SharedString, cx: &mut Context<Self>) {
         let Some(ThreadTarget::Server(thread)) = self.target.clone() else { return };
         if crate::fixtures::scoped_key(&thread) != *key {
             return;
         }
-        self.store.update(cx, |store, cx| store.set_thread_branch(&thread, branch, cx));
+        self.data.set_thread_branch(&thread, branch, cx);
     }
 
     fn sync_git_props(&mut self, view: &ThreadView, cx: &mut Context<Self>) {
+        if !self.git.iter().any(|g| g.key == view.key) {
+            return;
+        }
+        let props = self.data.toolbar_props(view, cx);
         let Some(controls) = self.git.iter_mut().find(|g| g.key == view.key) else { return };
-        let props = Self::toolbar_props(view);
         if props == controls.props {
             return;
         }
@@ -351,9 +411,9 @@ impl ThreadRouteView {
         }
     }
 
-    /// The RPC calls the shown thread's fixture git source received, for checks.
-    pub fn git_calls(&self) -> Vec<String> {
-        self.git.front().map(|g| g.source.calls.lock().map(|c| c.clone()).unwrap_or_default()).unwrap_or_default()
+    /// The shown thread's key (`ThreadView::key`), once shown.
+    pub fn shown_key(&self) -> Option<SharedString> {
+        self.git.front().map(|g| g.key.clone())
     }
 
     /// Inserts a reference chip at the composer's caret and focuses it.
@@ -364,6 +424,22 @@ impl ThreadRouteView {
     }
 
     /// Puts `text` in the composer (edit from here, edit a queued message).
+    /// `appendHandoff`: adds a task below the composer's text unless it is already there.
+    fn append_handoff(&mut self, task: &str, cx: &mut Context<Self>) {
+        let editor = self.composer.read(cx).editor().clone();
+        editor.update(cx, |editor, cx| {
+            let kept = editor.text().trim_end().to_owned();
+            let added = task.trim();
+            if added.is_empty() || format!("\n\n{kept}\n\n").contains(&format!("\n\n{added}\n\n")) {
+                return;
+            }
+            let text = if kept.is_empty() { added.to_owned() } else { format!("{kept}\n\n{added}") };
+            let end = text.len();
+            editor.set_text(text, cx);
+            editor.set_cursor(end, cx);
+        });
+    }
+
     fn load_composer(&mut self, text: &str, window: &mut Window, cx: &mut Context<Self>) {
         let editor = self.composer.read(cx).editor().clone();
         editor.update(cx, |editor, cx| {
@@ -373,37 +449,18 @@ impl ThreadRouteView {
         window.focus(&self.composer.focus_handle(cx), cx);
     }
 
-    fn on_composer_event(&mut self, _: Entity<ChatComposer>, event: &ComposerEvent, cx: &mut Context<Self>) {
+    fn on_composer_event(&mut self, composer: Entity<ChatComposer>, event: &ComposerEvent, cx: &mut Context<Self>) {
         let Some(target) = self.target.clone() else { return };
-        match event {
-            ComposerEvent::Submit { prompt, dispatch, .. } => {
-                let (prompt, dispatch) = (prompt.clone(), *dispatch);
-                let sent_to = self.store.update(cx, |store, cx| store.submit(&target, prompt, dispatch, cx));
-                if let (ThreadTarget::Draft(_), Some(key)) = (&target, sent_to) {
-                    // The draft is now a server thread: show it under its own key.
-                    let promoted = ThreadTarget::Server(key);
-                    self.target = None;
-                    self.show(promoted.clone(), cx);
-                    cx.emit(ThreadRouteEvent::Promoted(promoted));
-                }
-                self.refresh(true, cx);
-            }
-            ComposerEvent::Stop => {
-                if let ThreadTarget::Server(key) = &target {
-                    self.store.update(cx, |store, cx| store.stop(key, cx));
-                }
-            }
-            ComposerEvent::PageScroll { .. }
-            | ComposerEvent::ClearSession
-            | ComposerEvent::SideChat { .. }
-            | ComposerEvent::AttachRequested
-            | ComposerEvent::AttachmentsAdded(_)
-            | ComposerEvent::AttachmentRemoved(_)
-            | ComposerEvent::ModelChanged(_)
-            | ComposerEvent::RuntimeModeChanged(_)
-            | ComposerEvent::FavoriteToggled { .. }
-            | ComposerEvent::VoiceRequested
-            | ComposerEvent::ContextStripClicked(_) => {}
+        let promoted = self.data.composer_event(&target, event, &composer.downgrade(), cx);
+        if let (ThreadTarget::Draft(_), Some(key)) = (&target, promoted) {
+            // The draft is now a server thread: show it under its own key.
+            let promoted = ThreadTarget::Server(key);
+            self.target = None;
+            self.show(promoted.clone(), cx);
+            cx.emit(ThreadRouteEvent::Promoted(promoted));
+        }
+        if matches!(event, ComposerEvent::Submit { .. }) {
+            self.refresh(true, cx);
         }
     }
 
@@ -411,7 +468,7 @@ impl ThreadRouteView {
         match event {
             ChatViewEvent::AnswerQuestions(answers) => {
                 if let Some(ThreadTarget::Server(key)) = self.target.clone() {
-                    self.store.update(cx, |store, cx| store.answer_questions(&key, answers, cx));
+                    self.data.answer_questions(&key, answers, cx);
                 }
             }
             ChatViewEvent::InsertReference(text) => self.insert_reference(text, window, cx),
@@ -459,54 +516,34 @@ impl ThreadRouteView {
             (_, Some(ThreadTarget::Server(key))) => key,
             _ => return,
         };
-        match action {
-            TimelineAction::RespondToApproval { request, approve } => {
-                self.store.update(cx, |store, cx| store.respond_to_approval(&key, &request, approve, cx));
-            }
-            TimelineAction::Fork(message) => {
-                if let Some(fork) = self.store.update(cx, |store, cx| store.fork_from_message(&key, &message, cx)) {
-                    cx.emit(ThreadRouteEvent::OpenThread(fork));
-                }
-            }
-            TimelineAction::EditFrom(message) => {
-                if let Some(text) = self.store.update(cx, |store, cx| store.revert_to_message(&key, &message, cx)) {
-                    self.load_composer(&text, window, cx);
-                }
-            }
-            TimelineAction::SendQueuedNow(id) => self.store.update(cx, |store, cx| store.send_queued_now(&key, &id, cx)),
-            TimelineAction::EditQueued(id) => {
-                if let Some(text) = self.store.update(cx, |store, cx| store.remove_queued(&key, &id, cx)) {
-                    self.load_composer(&text, window, cx);
-                }
-            }
-            TimelineAction::RemoveQueued(id) => {
-                self.store.update(cx, |store, cx| store.remove_queued(&key, &id, cx));
-            }
-            TimelineAction::OpenDiff { .. }
-            | TimelineAction::OpenImage { .. }
-            | TimelineAction::OpenLink(_)
-            | TimelineAction::RunShellCommand(_)
-            | TimelineAction::Reply { .. } => {}
+        match self.data.timeline_action(&key, &action, cx) {
+            ActionOutcome::Done => {}
+            ActionOutcome::OpenThread(thread) => cx.emit(ThreadRouteEvent::OpenThread(thread)),
+            ActionOutcome::LoadComposer(text) => self.load_composer(&text, window, cx),
         }
     }
 
-    fn on_store_event(&mut self, _: Entity<FixtureStore>, event: &FixtureEvent, cx: &mut Context<Self>) {
+    fn on_data_event(&mut self, _: Entity<crate::state::app_data::DataEvents>, event: &DataEvent, cx: &mut Context<Self>) {
         match event {
-            FixtureEvent::ThreadChanged(target) if self.target.as_ref() == Some(target) => self.refresh(false, cx),
-            FixtureEvent::Delta { thread, message, text } => {
+            DataEvent::ThreadChanged(target) if self.target.as_ref() == Some(target) => self.refresh(false, cx),
+            DataEvent::Text { thread, changes } => {
                 if self.target.as_ref() == Some(&ThreadTarget::Server(thread.clone())) {
                     let timeline = self.chat.read(cx).timeline().clone();
-                    timeline.update(cx, |timeline, cx| timeline.update_message_text(message, text.clone(), true, cx));
+                    timeline.update(cx, |timeline, cx| {
+                        for (message, text, streaming) in changes.iter() {
+                            timeline.update_message_text(message, text.clone(), *streaming, cx);
+                        }
+                    });
                 }
             }
-            FixtureEvent::DraftPromoted { draft, thread } => {
+            DataEvent::DraftPromoted { draft, thread } => {
                 if self.target.as_ref() == Some(&ThreadTarget::Draft(draft.clone())) {
                     let target = ThreadTarget::Server(thread.clone());
                     self.target = Some(target.clone());
                     cx.emit(ThreadRouteEvent::Promoted(target));
                 }
             }
-            FixtureEvent::ThreadChanged(_) | FixtureEvent::SnapshotChanged => {}
+            DataEvent::ThreadChanged(_) | DataEvent::SnapshotChanged => {}
         }
     }
 }

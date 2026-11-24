@@ -307,7 +307,7 @@ pub struct SidebarNotification {
 }
 
 /// One unsent new-thread draft: a draft session whose composer has content.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct SidebarDraft {
     pub id: SharedString,
     pub project: ProjectRef,

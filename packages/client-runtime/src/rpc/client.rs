@@ -278,6 +278,23 @@ impl RpcClient {
     where
         M::Error: std::fmt::Debug,
     {
+        self.start_subscription(payload, false)
+    }
+
+    /// Like [`Self::subscribe`], but a chunk is acked only when the consumer calls
+    /// [`RpcSubscription::ack`], so it can ack after handing the chunk on (terminal output
+    /// acks once the terminal's inbound queue took it).
+    pub fn subscribe_manual_ack<M: RpcStream>(&self, payload: M::Payload) -> RpcSubscription<M>
+    where
+        M::Error: std::fmt::Debug,
+    {
+        self.start_subscription(payload, true)
+    }
+
+    fn start_subscription<M: RpcStream>(&self, payload: M::Payload, manual_ack: bool) -> RpcSubscription<M>
+    where
+        M::Error: std::fmt::Debug,
+    {
         let id = self.shared.next_id.fetch_add(1, Ordering::Relaxed);
         let (tx, rx) = mpsc::unbounded_channel();
         let start = encode_payload::<M>(&payload).and_then(|payload| {
@@ -288,6 +305,7 @@ impl RpcClient {
         RpcSubscription {
             shared: self.shared.clone(),
             id,
+            manual_ack,
             rx,
             state: match start {
                 Ok(()) => SubscriptionState::Open,
@@ -377,6 +395,8 @@ where
 {
     shared: Arc<Shared>,
     id: RequestId,
+    /// Chunks wait for [`Self::ack`] instead of being acked when taken.
+    manual_ack: bool,
     rx: mpsc::UnboundedReceiver<StreamEvent>,
     state: SubscriptionState<M::Error>,
     _method: PhantomData<fn() -> M>,
@@ -389,6 +409,13 @@ where
     /// The request id on the socket, for logs and transcripts.
     pub fn request_id(&self) -> RequestId {
         self.id
+    }
+
+    /// Acks the last chunk taken from a [`RpcClient::subscribe_manual_ack`] stream.
+    pub fn ack(&self) {
+        if matches!(self.state, SubscriptionState::Open) {
+            self.shared.send(&ClientMessage::Ack { request_id: self.id });
+        }
     }
 }
 
@@ -418,7 +445,9 @@ where
             };
             match event {
                 StreamEvent::Chunk(values) => {
-                    this.shared.send(&ClientMessage::Ack { request_id: this.id });
+                    if !this.manual_ack {
+                        this.shared.send(&ClientMessage::Ack { request_id: this.id });
+                    }
                     let decoded: Vec<M::Success> = values
                         .iter()
                         .filter_map(|value| match serde_json::from_str(value.get()) {
@@ -430,6 +459,10 @@ where
                         })
                         .collect();
                     if decoded.is_empty() {
+                        // Nothing reaches the consumer, so nothing would ack it.
+                        if this.manual_ack {
+                            this.shared.send(&ClientMessage::Ack { request_id: this.id });
+                        }
                         continue;
                     }
                     return Poll::Ready(Some(Ok(decoded)));

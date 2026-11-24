@@ -136,9 +136,15 @@ pub fn diff_input(
         thread_key: Some(thread_key),
         workspace_root: Some(workspace_root),
         turns,
+        commits_status: crate::components::diff_panel::CommitsStatus::Loaded { truncated: false },
+        base_ref_choices: vec![
+            crate::components::diff_panel::BaseRefChoice { label: "main".into(), local: Some("main".into()), remote: Some("origin/main".into()) },
+            crate::components::diff_panel::BaseRefChoice { label: "release/0.1".into(), local: Some("release/0.1".into()), remote: None },
+            crate::components::diff_panel::BaseRefChoice { label: "origin/feature/relay".into(), local: None, remote: Some("origin/feature/relay".into()) },
+        ],
         commits: vec![
-            CommitSummary { sha: "4f1c2ab9d0e".into(), subject: "feat: replay loop batches writes".into(), relative_label: "2h ago".into() },
-            CommitSummary { sha: "9a8b7c6d5e4".into(), subject: "fix: persist the cursor after commit".into(), relative_label: "1d ago".into() },
+            CommitSummary { sha: "4f1c2ab9d0e".into(), subject: "feat: replay loop batches writes".into(), relative_label: "2h ago".into(), url: None },
+            CommitSummary { sha: "9a8b7c6d5e4".into(), subject: "fix: persist the cursor after commit".into(), relative_label: "1d ago".into(), url: None },
         ],
         head_ref: branch.or(Some("main".into())),
         base_ref: Some("origin/main".into()),
