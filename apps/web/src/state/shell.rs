@@ -69,6 +69,9 @@ pub struct LiveShell {
     /// What the Settled shelf shows, and the older pages asked of each environment for it.
     settled_request: model::SettledShelfRequest,
     settled_pages: HashMap<t3code_contracts::EnvironmentId, usize>,
+    /// The environments those pages were asked of; another set starts over, as the web keys
+    /// requested pages by the shelf's scopes.
+    settled_scope: Vec<t3code_contracts::EnvironmentId>,
     /// The family of the open thread while the shell leaves it out (`useOpenThreadFamily`).
     open_family: Option<(ThreadKey, FamilyMount)>,
     _environment_subscriptions: Vec<Subscription>,
@@ -335,6 +338,7 @@ impl LiveShell {
             hiding: false,
             settled_request: model::SettledShelfRequest::default(),
             settled_pages: HashMap::new(),
+            settled_scope: Vec::new(),
             open_family: None,
             _environment_subscriptions: Vec::new(),
             _subscriptions: vec![subscription, settings, inbox],
@@ -596,6 +600,13 @@ impl LiveShell {
                 }
             })
             .collect();
+        // The web's scopes are the environments with a config (`serverConfigs`).
+        let mut scope_ids: Vec<_> = scopes.iter().filter(|(env, _)| env.config_loaded()).map(|(env, _)| env.environment_id().clone()).collect();
+        scope_ids.sort();
+        if scope_ids != self.settled_scope {
+            self.settled_scope = scope_ids;
+            self.settled_pages.clear();
+        }
         let views: Vec<&OlderSettledView> = scopes.iter().map(|(env, _)| env.older.as_ref()).collect();
         let frontier = settled_shelf_frontier(views.iter().copied());
         let mut shelf = model::OlderSettledShelf {
