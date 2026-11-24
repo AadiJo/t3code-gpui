@@ -927,14 +927,15 @@ impl Render for FileTree {
             .bg(colors.canvas)
             .child(
                 div()
-                    .h(rems(2.5))
+                    .h(rems(2.25))
+                    .mb(rems(0.25))
                     .flex_none()
                     .flex()
                     .items_center()
                     .gap(rems(0.25))
                     .px(rems(0.5))
                     .border_b_1()
-                    .border_color(colors.border.opacity(0.6))
+                    .border_color(gpui_kit::transparent_black())
                     .child(
                         div().id("file-tree-refresh-tip").tooltip(tooltip(refresh_label)).child(
                             Button::new("file-tree-refresh")

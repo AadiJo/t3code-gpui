@@ -50,7 +50,7 @@ pub fn chat_header(
         .flex()
         .items_center()
         .px(colors.r(HEADER_PADDING))
-        .pl(colors.r(HEADER_PADDING) + leading_inset)
+        .pl(colors.r(HEADER_PADDING).max(leading_inset))
         .bg(colors.theme.toolbar)
         .child(
             div()

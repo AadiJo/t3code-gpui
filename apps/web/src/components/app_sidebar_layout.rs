@@ -45,11 +45,12 @@ impl TitlebarPlatform {
         }
     }
 
-    /// x of the sidebar toggle (`--workspace-controls-left` + `ml-px`).
-    pub fn controls_left(self) -> Pixels {
+    /// x of the sidebar toggle (`--workspace-controls-left` + `ml-px`), at `rem`.
+    pub fn controls_left(self, rem: Pixels) -> Pixels {
+        let inset = rem * 0.75 + px(1.);
         match self {
-            Self::Mac => MAC_CONTROLS_LEFT,
-            Self::Overlay => OVERLAY_CONTROLS_LEFT,
+            Self::Mac => MAC_TRAFFIC_LIGHTS_WIDTH + inset,
+            Self::Overlay => inset,
         }
     }
 
@@ -57,7 +58,7 @@ impl TitlebarPlatform {
     /// (`--workspace-titlebar-content-left`): the controls' inset, the 1.75rem toggle and the
     /// 0.75rem gap, at `rem`.
     pub fn titlebar_content_left(self, rem: Pixels) -> Pixels {
-        self.controls_left() - px(1.) + rem * 1.75 + rem * 0.75
+        self.controls_left(rem) - px(1.) + rem * 1.75 + rem * 0.75
     }
 }
 
@@ -323,7 +324,8 @@ impl AppSidebarLayout {
         self.sidebar_width
     }
 
-    /// Left padding the main pane's header needs to clear the floating toggle.
+    /// Left padding the main pane's header needs to clear the floating toggle. It replaces the
+    /// header's own padding (`workspaceTitlebar.ts`), so headers take the larger of the two.
     /// Eases with the sidebar's transition (`transition-[padding-left]`).
     pub fn header_content_left(&self) -> Pixels {
         if self.sheet_mode {
@@ -653,8 +655,8 @@ impl Render for AppSidebarLayout {
             .h(topbar)
             .flex()
             .items_center()
-            .px_5()
-            .pl(px(20.) + self.header_content_left())
+            .px(self.rem * 1.25)
+            .pl((self.rem * 1.25).max(self.header_content_left()))
             .border_b_1()
             .border_color(colors.border)
             .text_xs()
@@ -793,7 +795,7 @@ impl Render for AppSidebarLayout {
         let sidebar_toggle = div()
             .absolute()
             .top_0()
-            .left(self.controls_platform().controls_left())
+            .left(self.controls_platform().controls_left(self.rem))
             .h(topbar)
             .flex()
             .items_center()
