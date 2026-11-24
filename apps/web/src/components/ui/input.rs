@@ -101,11 +101,13 @@ pub struct TextInput {
     forced: Option<ControlState>,
     /// An `InputGroupAddon` icon before the text, such as search.
     leading_icon: Option<crate::components::icons::IconName>,
+    /// An icon after the text, as a native time input's clock.
+    trailing_icon: Option<crate::components::icons::IconName>,
 }
 
 impl TextInput {
     pub fn new(state: &Entity<InputState>) -> Self {
-        Self { state: state.clone(), size: InputSize::Default, mono: false, invalid: false, disabled: false, forced: None, leading_icon: None }
+        Self { state: state.clone(), size: InputSize::Default, mono: false, invalid: false, disabled: false, forced: None, leading_icon: None, trailing_icon: None }
     }
 
     pub fn size(mut self, size: InputSize) -> Self {
@@ -133,6 +135,12 @@ impl TextInput {
     /// An icon in an inline-start addon (`InputGroup` + `InputGroupAddon`).
     pub fn leading_icon(mut self, icon: crate::components::icons::IconName) -> Self {
         self.leading_icon = Some(icon);
+        self
+    }
+
+    /// An icon at the end of the field, such as a time input's clock.
+    pub fn trailing_icon(mut self, icon: crate::components::icons::IconName) -> Self {
+        self.trailing_icon = Some(icon);
         self
     }
 
@@ -168,6 +176,14 @@ impl RenderOnce for TextInput {
                 )
                 // `opacity-80` on the addon's svg; the placeholder starts where the web's control text does.
                 .gap(sp(1.5) + px(1.)),
+            None => field,
+        };
+        let field = match self.trailing_icon {
+            Some(icon) => field.suffix(
+                crate::components::icons::Icon::new(icon)
+                    .size(crate::components::icons::IconSize::Custom(sp(3.5)))
+                    .color(theme.colors.foreground()),
+            ),
             None => field,
         };
         let field = match self.leading_icon {

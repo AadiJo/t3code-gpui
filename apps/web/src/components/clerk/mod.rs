@@ -171,10 +171,16 @@ impl Render for T3ConnectSignIn {
 }
 
 /// The settings nav footer: "Sign in to T3 Connect" while signed out
-/// (`ConfiguredT3ConnectSidebarSignIn`), nothing otherwise.
+/// (`ConfiguredT3ConnectSidebarSignIn`), the account avatar while signed in
+/// (`ConfiguredT3ConnectSidebarAvatar`), nothing while Clerk loads.
 pub fn t3_connect_sidebar_sign_in(environments: Entity<ConnectionsSettings>, cx: &App) -> Option<AnyElement> {
     let state = environments.read(cx).state().clone();
-    let signed_out = matches!(state.read(cx).cloud.as_ref()?.account, CloudAccountState::SignedOut);
+    let account = state.read(cx).cloud.as_ref()?.account.clone();
+    let signed_out = match account {
+        CloudAccountState::SignedOut => true,
+        CloudAccountState::SignedIn(account) => return Some(t3_connect_sidebar_avatar(account, cx)),
+        CloudAccountState::Loading => false,
+    };
     if !signed_out {
         return None;
     }
@@ -204,4 +210,62 @@ pub fn t3_connect_sidebar_sign_in(environments: Entity<ConnectionsSettings>, cx:
             )
             .into_any_element(),
     )
+}
+
+/// `UserButton` (`avatarBox: size-7`, trigger `mb-1 rounded-lg p-1`): the
+/// account's initial in a circle; its menu names the account and signs out.
+/// Clerk's "Manage account" profile pages are web-only and not offered.
+fn t3_connect_sidebar_avatar(account: t3code_client_runtime::relay::CloudAccount, cx: &App) -> AnyElement {
+    use crate::components::ui::menu::{MenuItem, MenuPopup, dropdown_menu};
+    let theme = cx.app_theme();
+    let c = &theme.colors;
+    let label = account.name.clone().or(account.email.clone()).unwrap_or_default();
+    let initial: SharedString = label.chars().next().map(|ch| ch.to_uppercase().collect::<String>()).unwrap_or_default().into();
+    let trigger = div()
+        .id("t3-connect-avatar")
+        .mb(theme.sp(1.))
+        .p(theme.sp(1.))
+        .rounded(theme.radii.lg)
+        .cursor_pointer()
+        .hover(|s| s.bg(c.sidebar_row_hover))
+        .child(
+            div()
+                .size(theme.sp(7.))
+                .flex()
+                .items_center()
+                .justify_center()
+                .rounded_full()
+                .bg(c.muted)
+                .ui_text(theme, TextSize::Sm, weight::MEDIUM)
+                .text_color(c.foreground())
+                .child(initial),
+        );
+    let (name, email) = (account.name.clone(), account.email.clone());
+    div()
+        .p(theme.sp(2.))
+        .child(dropdown_menu("t3-connect-account", trigger, move |_, _| {
+            let mut menu = MenuPopup::new();
+            if let Some(name) = &name {
+                menu = menu.item(MenuItem::new(name.clone()).disabled(true));
+            }
+            if let Some(email) = &email {
+                menu = menu.item(MenuItem::new(email.clone()).disabled(true));
+            }
+            menu.separator().item(MenuItem::new(t!("Sign out")).on_select(|_, cx| {
+                let Some(runtime) = cx.try_global::<ConnectionRuntime>() else { return };
+                let task = runtime.sign_out(cx);
+                cx.spawn(async move |cx| {
+                    if let Err(error) = task.await {
+                        cx.update(|cx| {
+                            crate::components::ui::toast::Toaster::push(
+                                crate::components::ui::toast::ToastData::new(crate::components::ui::toast::ToastKind::Error, SharedString::from(error.0.to_string())),
+                                cx,
+                            )
+                        });
+                    }
+                })
+                .detach();
+            }))
+        }))
+        .into_any_element()
 }

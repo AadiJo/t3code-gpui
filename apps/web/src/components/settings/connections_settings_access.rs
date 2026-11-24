@@ -34,7 +34,7 @@ use crate::theme_color::with_alpha;
 
 /// What the session check found (`useEnvironmentSessionState`).
 #[derive(Clone)]
-enum SessionCheck {
+pub(super) enum SessionCheck {
     Unavailable,
     Checking,
     Failed,
@@ -74,6 +74,73 @@ fn scope_options() -> [(AuthEnvironmentScope, SharedString); 17] {
         (S::RelayWrite, t!("Manage relay")),
         (S::RelayConfigure, t!("Configure relay (admin)")),
     ]
+}
+
+/// `SessionPermissions`: what this session may do on the environment, two
+/// columns of scope and state, or why that is not known. `route_context`
+/// says the list is the active route's (a saved environment's row).
+pub(super) fn session_permissions(session: &SessionCheck, route_context: bool, cx: &App) -> AnyElement {
+    let theme = cx.app_theme();
+    let c = &theme.colors;
+    let text = |s: SharedString| div().ui_text(theme, TextSize::Xs, weight::NORMAL).child(s);
+    match session {
+        SessionCheck::Done(session) if session.authenticated => {
+            let items: Vec<AnyElement> = scope_options()
+                .into_iter()
+                .map(|(scope, title)| {
+                    div()
+                        .flex()
+                        .items_start()
+                        .justify_between()
+                        .gap(theme.sp(3.))
+                        .child(text(title))
+                        .child(text(if grants(session, scope) { t!("Allowed", context = "permission state") } else { t!("Not granted") }).text_color(c.muted_foreground))
+                        .into_any_element()
+                })
+                .collect();
+            let mut rows = Vec::new();
+            let mut iter = items.into_iter();
+            while let Some(left) = iter.next() {
+                let right = iter.next();
+                rows.push(div().flex().gap(theme.sp(6.)).child(div().flex_1().min_w_0().child(left)).child(div().flex_1().min_w_0().children(right)));
+            }
+            let note = if route_context {
+                t!("These permissions apply to your active route. Other routes may have different permissions.")
+            } else {
+                t!("These permissions apply to this client’s current connection.")
+            };
+            div()
+                .flex()
+                .flex_col()
+                .gap(theme.sp(3.))
+                .py(theme.sp(3.))
+                .child(text(note).text_color(c.muted_foreground))
+                .child(div().flex().flex_col().gap(theme.sp(2.)).children(rows))
+                .into_any_element()
+        }
+        state => {
+            let message = match state {
+                SessionCheck::Unavailable => t!("Connect to this environment to view this session’s permissions."),
+                SessionCheck::Done(_) => t!("This environment did not accept your session. Reconnect to try again."),
+                SessionCheck::Failed => t!("Could not verify your permissions. Retrying automatically."),
+                SessionCheck::Checking => t!("Checking permissions…"),
+            };
+            div().py(theme.sp(3.)).child(text(message).text_color(c.muted_foreground)).into_any_element()
+        }
+    }
+}
+
+/// Asks the environment what this session may do; `None` without a runtime
+/// or a link to it.
+pub(super) fn check_session(id: &EnvironmentId, cx: &App) -> Option<Task<Result<AuthSessionState, crate::connection::CommandError>>> {
+    if !ConnectionRuntime::is_running(cx) {
+        return None;
+    }
+    let link = ConnectionRuntime::global(cx).environment_link(id)?;
+    Some(ConnectionRuntime::global(cx).spawn(
+        async move { link.session_state().await.map_err(|e| crate::connection::CommandError(e.to_string().into())) },
+        cx,
+    ))
 }
 
 /// `sessionGrantsScope`, with the legacy parent scopes.
@@ -192,58 +259,7 @@ impl AccessSettingsPanel {
             }))
             .child(t!("Permissions"))
             .child(Icon::new(if open { IconName::ChevronDown } else { IconName::ChevronRight }).size(IconSize::Xs).color(c.muted_foreground));
-        let body = open.then(|| {
-            let text = |s: SharedString| div().ui_text(theme, TextSize::Xs, weight::NORMAL).child(s);
-            match &self.session {
-                SessionCheck::Done(session) if session.authenticated => {
-                    let items: Vec<AnyElement> = scope_options()
-                        .into_iter()
-                        .map(|(scope, title)| {
-                            div()
-                                .flex()
-                                .items_start()
-                                .justify_between()
-                                .gap(theme.sp(3.))
-                                .child(text(title))
-                                .child(
-                                    text(if grants(session, scope) { t!("Allowed", context = "permission state") } else { t!("Not granted") })
-                                        .text_color(c.muted_foreground),
-                                )
-                                .into_any_element()
-                        })
-                        .collect();
-                    let mut rows = Vec::new();
-                    let mut iter = items.into_iter();
-                    while let Some(left) = iter.next() {
-                        let right = iter.next();
-                        rows.push(
-                            div()
-                                .flex()
-                                .gap(theme.sp(6.))
-                                .child(div().flex_1().min_w_0().child(left))
-                                .child(div().flex_1().min_w_0().children(right)),
-                        );
-                    }
-                    div()
-                        .flex()
-                        .flex_col()
-                        .gap(theme.sp(3.))
-                        .py(theme.sp(3.))
-                        .child(text(t!("These permissions apply to this client’s current connection.")).text_color(c.muted_foreground))
-                        .child(div().flex().flex_col().gap(theme.sp(2.)).children(rows))
-                        .into_any_element()
-                }
-                state => {
-                    let message = match state {
-                        SessionCheck::Unavailable => t!("Connect to this environment to view this session’s permissions."),
-                        SessionCheck::Done(_) => t!("This environment did not accept your session. Reconnect to try again."),
-                        SessionCheck::Failed => t!("Could not verify your permissions. Retrying automatically."),
-                        SessionCheck::Checking => t!("Checking permissions…"),
-                    };
-                    div().py(theme.sp(3.)).child(text(message).text_color(c.muted_foreground)).into_any_element()
-                }
-            }
-        });
+        let body = open.then(|| session_permissions(&self.session, false, cx));
         div().px(theme.sp(4.)).child(summary).children(body).into_any_element()
     }
 

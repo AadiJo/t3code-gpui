@@ -5,7 +5,7 @@
 //!
 //! Contrast, Glass opacity and font smoothing write the client settings the
 //! theme reads. Not built: the theme editor (Create theme and Duplicate add
-//! a copy instead of opening it; custom themes have no Edit or Export), the
+//! a copy instead of opening it; custom themes have no Edit), the
 //! installed-font picker, and the live font previews under the font rows.
 
 use std::rc::Rc;
@@ -400,11 +400,6 @@ impl AppearanceSettings {
         let removable = card.source == ThemeSource::Custom;
         let remove_card = card.clone();
         let remove_handle = cx.entity();
-        let action = |slug: &str, tip: SharedString, icon: IconName| {
-            div().id(SharedString::from(format!("theme-{slug}-tip-{id}"))).tooltip(tooltip(tip)).child(
-                Button::new(SharedString::from(format!("theme-{slug}-{id}"))).variant(ButtonVariant::Ghost).size(ButtonSize::IconXs).icon(icon),
-            )
-        };
         let duplicate_id = id.clone();
         let duplicate = div()
             .id(SharedString::from(format!("theme-duplicate-tip-{id}")))
@@ -419,7 +414,20 @@ impl AppearanceSettings {
                         duplicate_theme(&duplicate_id, cx);
                     }),
             );
-        let _ = action;
+        let export_id = id.clone();
+        let export = div()
+            .id(SharedString::from(format!("theme-export-tip-{id}")))
+            .tooltip(tooltip(t!("Export theme file")))
+            .child(
+                Button::new(SharedString::from(format!("theme-export-{id}")))
+                    .variant(ButtonVariant::Ghost)
+                    .size(ButtonSize::IconXs)
+                    .icon(IconName::Upload)
+                    .on_click(move |_, _, cx| {
+                        cx.stop_propagation();
+                        export_theme(&export_id, cx);
+                    }),
+            );
         div()
             .id(SharedString::from(format!("theme-card-{id}")))
             .flex()
@@ -445,10 +453,10 @@ impl AppearanceSettings {
                     .pt(theme.sp(2.))
                     .child(div().flex_1().min_w_0().truncate().ui_text(theme, TextSize::Sm, weight::MEDIUM).text_color(c.foreground()).child(SharedString::from(card.document.name.clone())))
                     .child(div().flex().flex_none().items_center().gap(theme.sp(1.)).child(duplicate).when(removable, |d| {
-                        d.child(
+                        d.child(export).child(
                             div().id(SharedString::from(format!("theme-remove-tip-{id}"))).tooltip(tooltip(t!("Remove theme"))).child(
                                 Button::new(SharedString::from(format!("theme-remove-{id}")))
-                                    .variant(ButtonVariant::Ghost)
+                                    .variant(ButtonVariant::GhostDestructive)
                                     .size(ButtonSize::IconXs)
                                     .icon(IconName::Trash2)
                                     .on_click(move |_, _, cx| {
@@ -587,7 +595,7 @@ impl AppearanceSettings {
             t!("Adjust the contrast of colors and borders across the interface."),
             |s| &s.appearance_contrast,
             |s, v| s.appearance_contrast = v,
-            slider_row("contrast", settings.appearance_contrast, format!("{}%", settings.appearance_contrast), 3., (50, 150, 5), |s, v| s.appearance_contrast = v),
+            slider_row("contrast", settings.appearance_contrast, format!("{}%", settings.appearance_contrast), 3., (50, 200, 5), |s, v| s.appearance_contrast = v),
             cx,
         );
         let glass = client_row(
@@ -595,7 +603,7 @@ impl AppearanceSettings {
             t!("Higher values make menus, dialogs, and the composer more solid."),
             |s| &s.glass_opacity,
             |s, v| s.glass_opacity = v,
-            slider_row("glass", settings.glass_opacity, format!("{}%", settings.glass_opacity), 3., (0, 100, 5), |s, v| s.glass_opacity = v),
+            slider_row("glass", settings.glass_opacity, format!("{}%", settings.glass_opacity), 3., (40, 100, 5), |s, v| s.glass_opacity = v),
             cx,
         );
         // `grid sm:grid-cols-[7rem_13rem] sm:gap-4`: the preview, then the chip and slider.
@@ -1050,6 +1058,9 @@ fn wireframe_colors(appearance: Appearance, cx: &App) -> WireframeColors {
 fn wireframe(panes: &[(WireframeColors, Option<Half>)], cx: &App) -> AnyElement {
     let theme = cx.app_theme();
     let line = gpui_kit::hsla(0., 0., 127. / 255., 0.25);
+    // Dots are `aspect-square` at a percentage of their parent's height, inside the 1px border.
+    let pane_height = theme.rem(8.75) - px(2.);
+    let (send_dot, menu_dot) = (pane_height * 0.15 * 0.58, pane_height * 0.46 * 0.20 * 0.26);
     let pane = |colors: WireframeColors| {
         let rect = |left: f32, top: f32, w: f32, h: f32| {
             div().absolute().left(gpui_kit::relative(left)).top(gpui_kit::relative(top)).w(gpui_kit::relative(w)).h(gpui_kit::relative(h))
@@ -1074,7 +1085,7 @@ fn wireframe(panes: &[(WireframeColors, Option<Half>)], cx: &App) -> AnyElement 
                     .justify_between()
                     .px(theme.sp(1.))
                     .child(div().h(gpui_kit::relative(0.26)).w(gpui_kit::relative(0.34)).rounded_full().bg(with_alpha(line, 0.7 * 0.25)))
-                    .child(div().size(px(11.)).rounded_full().bg(colors.message_action)),
+                    .child(div().size(send_dot).flex_none().rounded_full().bg(colors.message_action)),
             )
             .child(
                 outline(rect(0.75, 0.08, 0.20, 0.46).rounded(theme.radii.lg).bg(colors.surface))
@@ -1095,7 +1106,7 @@ fn wireframe(panes: &[(WireframeColors, Option<Half>)], cx: &App) -> AnyElement 
                             .flex()
                             .items_center()
                             .gap(theme.sp(1.))
-                            .child(div().size(px(4.)).flex_none().rounded_full().bg(with_alpha(dot, 0.55)))
+                            .child(div().size(menu_dot).flex_none().rounded_full().bg(with_alpha(dot, 0.55)))
                             .child(div().h(gpui_kit::relative(0.30)).w(gpui_kit::relative(0.52)).rounded_sm().bg(line))
                     })),
             )
@@ -1179,6 +1190,19 @@ fn panel_animations_preview(cx: &App) -> AnyElement {
 
 /// Copies a theme as a custom theme and uses it. The web opens the theme
 /// editor seeded with it instead; this app has no editor.
+/// `downloadThemeFile`: asks where to save `<id>.json`, then writes the theme file.
+fn export_theme(id: &str, cx: &mut App) {
+    let Some(contents) = ThemeStore::export_custom(id, cx) else { return };
+    let directory = std::env::var_os("HOME").map(std::path::PathBuf::from).map(|home| home.join("Downloads")).unwrap_or_default();
+    let target = cx.prompt_for_new_path(&directory, Some(&format!("{id}.json")));
+    cx.background_spawn(async move {
+        if let Ok(Ok(Some(path))) = target.await {
+            std::fs::write(path, contents).ok();
+        }
+    })
+    .detach();
+}
+
 fn duplicate_theme(id: &str, cx: &mut App) {
     match ThemeStore::duplicate(id, cx) {
         Ok(new_id) => {

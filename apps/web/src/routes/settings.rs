@@ -115,6 +115,9 @@ impl SettingsRoute {
 
     /// Shows the server-side pages (Providers, Threads, …) for one environment.
     pub fn set_server_pages(&mut self, pages: Entity<ServerSettingsPages>, cx: &mut Context<Self>) {
+        let id = pages.read(cx).model().read(cx).snapshot().environment_id.clone();
+        let id = (!id.is_empty()).then(|| t3code_client_runtime::environment::EnvironmentId::new(id.to_string()));
+        cx.set_global(crate::components::settings::settings_controls::PagesEnvironment(id));
         self.server_pages = Some(pages);
         cx.notify();
     }

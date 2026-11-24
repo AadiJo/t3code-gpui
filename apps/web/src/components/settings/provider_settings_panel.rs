@@ -12,7 +12,7 @@ use std::sync::Arc;
 
 use gpui_kit::{TestSupportExt as _, 
     AnyElement, App, ClickEvent, ClipboardItem, Context, Entity, EventEmitter, IntoElement, Render, SharedString,
-    Subscription, Window, div, prelude::*, px,
+    Pixels, Subscription, Window, div, prelude::*, px,
 };
 use t3code_contracts::{
     ClientServerSettingsPatch, ClientServerSettingsPatchSetModelFavoritesItem, ClientServerSettingsPatchSetModelsHiddenItem,
@@ -172,11 +172,17 @@ pub fn driver_brand(driver: &str, dark: bool) -> Option<BrandIcon> {
 
 /// `ProviderInstanceIcon`: the driver mark (or initials) with an accent badge.
 pub fn provider_instance_icon(driver: &str, name: &str, accent: Option<&str>, cx: &App) -> AnyElement {
+    provider_instance_icon_sized(driver, name, accent, px(20.), cx)
+}
+
+/// [`provider_instance_icon`] with the mark at `size` (`iconClassName="size-4"`).
+pub fn provider_instance_icon_sized(driver: &str, name: &str, accent: Option<&str>, size: Pixels, cx: &App) -> AnyElement {
     let theme = &cx.app_theme().clone();
     let c = &theme.colors;
     let dark = theme.appearance == crate::theme_palette::Appearance::Dark;
+    let mark_size = if size >= px(20.) { IconSize::Md } else { IconSize::Custom(size) };
     let mark = match driver_brand(driver, dark) {
-        Some(brand) => Icon::new(brand).size(IconSize::Md).color(with_alpha(c.foreground(), 0.8)).into_any_element(),
+        Some(brand) => Icon::new(brand).size(mark_size).color(with_alpha(c.foreground(), 0.8)).into_any_element(),
         None => div()
             .size(px(16.))
             .flex()
@@ -196,7 +202,7 @@ pub fn provider_instance_icon(driver: &str, name: &str, accent: Option<&str>, cx
     div()
         .relative()
         .flex_none()
-        .size(px(20.))
+        .size(size)
         .flex()
         .items_center()
         .justify_center()
@@ -475,9 +481,12 @@ impl ProviderSettingsPanel {
             }
         };
         let updates = ProviderUpdatesAction::new(self.model.clone());
+        // `-me-2`: the ghost button's padding would inset its label from the card edge.
         div()
             .flex()
             .items_center()
+            .min_h(theme.sp(7.))
+            .mr(-theme.sp(2.))
             .gap(theme.sp(2.))
             .child(updates)
             .child(
@@ -494,7 +503,8 @@ impl ProviderSettingsPanel {
             .into_any_element()
     }
 
-    fn render_list_row(&self, row: &InstanceRow, cx: &mut Context<Self>) -> AnyElement {
+    /// One provider row; `divided` draws the `divide-y` line inside its top edge, so `min-h-18` includes it.
+    fn render_list_row(&self, row: &InstanceRow, divided: bool, cx: &mut Context<Self>) -> AnyElement {
         let theme = &cx.app_theme().clone();
         let c = &theme.colors;
         let snapshot = self.model.read(cx).snapshot().clone();
@@ -573,6 +583,7 @@ impl ProviderSettingsPanel {
             .cursor_pointer()
             .when(selected, |d| d.bg(with_alpha(c.foreground(), 0.06)))
             .when(!selected, |d| d.hover(|d| d.bg(with_alpha(c.muted, 0.25))))
+            .when(divided, |d| d.border_t_1().border_color(with_alpha(c.border, 0.5)))
             .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.select(&id, cx)))
             .test_support()
             .child(
@@ -609,6 +620,8 @@ impl ProviderSettingsPanel {
                                     .items_start()
                                     .gap(theme.sp(1.5))
                                     .ui_text(theme, TextSize::Xs, weight::NORMAL)
+                                    // `leading-normal`.
+                                    .line_height(px(TextSize::Xs.size(theme.fonts.interface) * 1.5))
                                     .text_color(with_alpha(c.muted_foreground, 0.8))
                                     .when(needs_attention && !updating, |d| {
                                         d.child(div().h(px(17.)).flex().items_center().child(
@@ -1946,7 +1959,7 @@ impl Render for ProviderSettingsPanel {
             .flex()
             .flex_col()
             .children(rows.iter().enumerate().map(|(ix, row)| {
-                div().when(ix > 0, |d| d.border_t_1().border_color(with_alpha(c.border, 0.5))).child(self.render_list_row(row, cx))
+                self.render_list_row(row, ix > 0, cx)
             }))
             .when(can_add, |d| {
                 d.child(
@@ -2023,15 +2036,18 @@ impl Render for ProviderSettingsPanel {
         )
         .absolute()
         .size_full();
+        // `SettingsSection`'s header: the title and its actions each `min-h-7`.
         let title_row = div()
             .flex()
             .items_center()
             .justify_between()
+            .min_h(theme.sp(7.))
             .px(theme.sp(4.))
             .child(
                 div()
                     .flex()
                     .items_center()
+                    .min_h(theme.sp(7.))
                     .gap(theme.sp(1.))
                     .ui_text(theme, TextSize::Base, weight::SEMIBOLD)
                     .child(t!("Providers"))

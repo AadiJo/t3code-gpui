@@ -81,6 +81,7 @@ mod import;
 mod live_check_families;
 mod live_check_palette;
 mod live_check_setup;
+mod live_check_settings;
 #[allow(dead_code)]
 #[path = "notifications/mod.rs"]
 mod notifications;
@@ -570,6 +571,7 @@ fn main() -> anyhow::Result<()> {
         "delete-thread" => run_delete_thread(&mut check),
         "timer" => run_timer(&mut check),
         "breadcrumb" => run_breadcrumb(&mut check),
+        "settings" => live_check_settings::run_settings(&mut check),
         other => Err(anyhow::anyhow!("unknown phase {other}")),
     };
     check.finish(&phase, result)

@@ -341,6 +341,23 @@ impl ThemeStore {
         }
     }
 
+    /// `serializeThemeFile`: a custom theme as the T3 theme file the fork
+    /// exports (`version`, `id`, `name`, `appearance`, `colors`, `variants`),
+    /// pretty-printed with a trailing newline.
+    pub fn export_custom(id: &str, cx: &App) -> Option<String> {
+        let theme = cx.global::<Self>().custom.iter().find(|theme| theme.document.id == id)?;
+        let mut file = serde_json::Map::new();
+        file.insert("version".into(), Value::from(1));
+        for key in ["id", "name", "appearance", "colors", "variants", "collection", "managed", "css"] {
+            if let Some(value) = theme.source.get(key) {
+                file.insert(key.into(), value.clone());
+            }
+        }
+        let mut text = serde_json::to_string_pretty(&Value::Object(file)).ok()?;
+        text.push('\n');
+        Some(text)
+    }
+
     fn save_custom(custom: Vec<CustomTheme>, cx: &mut App) {
         let sources: Vec<Value> = custom.iter().map(|theme| theme.source.clone()).collect();
         LocalStorage::set(cx, CUSTOM_THEMES_STORAGE_KEY, Some(&sources));

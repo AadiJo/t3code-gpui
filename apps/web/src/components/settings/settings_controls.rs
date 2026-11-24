@@ -6,7 +6,7 @@
 
 use std::rc::Rc;
 
-use gpui_kit::{AnyElement, App, Global, IntoElement, SharedString, Window, div, prelude::*};
+use gpui_kit::{AnyElement, App, Global, IntoElement, Pixels, SharedString, Window, div, prelude::*};
 use t3code_client_runtime::environment::EnvironmentId;
 use t3code_contracts::{ClientServerSettingsPatch, ServerSettings};
 
@@ -259,42 +259,65 @@ pub fn inheritance_marker(id: &'static str, summary: SharedString) -> AnyElement
         .into_any_element()
 }
 
+/// The environment the open server settings pages read, which a page that
+/// edits one environment (Providers, Secrets) names when no environment is
+/// picked. The settings route sets it from its server pages.
+#[derive(Clone, Default)]
+pub struct PagesEnvironment(pub Option<EnvironmentId>);
+
+impl Global for PagesEnvironment {}
+
 /// `SettingsScopeSentence` for this app: "Applying settings for All
-/// projects across All environments" (or "on" one environment). Projects
-/// come from the shell, which these pages do not read, so the project
-/// menu offers All projects only.
+/// projects across All environments" (or "on" one environment). Providers
+/// and Secrets edit one environment (`singleEnvironment`): they name the
+/// picked one, else the one their page shows, and offer no "All
+/// environments". Projects come from the shell, which these pages do not
+/// read, so the project menu offers All projects only.
 pub fn scope_sentence(cx: &App) -> AnyElement {
     let theme = cx.app_theme();
     let scope = SettingsScope::get(cx);
     let mut ids = ServerSettingsStore::environment_ids(cx);
     ids.sort_by(|a, b| a.as_str().cmp(b.as_str()));
-    let environment_name = match &scope.environment {
+    let single = cx
+        .try_global::<super::settings_layout::CurrentSettingsPath>()
+        .is_some_and(|path| matches!(path.0, super::settings_search::SettingsPath::Providers | super::settings_search::SettingsPath::Secrets));
+    let shown = match &scope.environment {
+        Some(id) => Some(id.clone()),
+        None if single => cx.try_global::<PagesEnvironment>().and_then(|e| e.0.clone()).or_else(|| ids.first().cloned()),
+        None => None,
+    };
+    let environment_name = match &shown {
         Some(id) => SharedString::from(environment_label(id, cx)),
-        None if ids.is_empty() => t!("No environments"),
+        None if ids.is_empty() || single => t!("No environments"),
         None => t!("All environments"),
     };
-    // Triggers carry an icon only for a picked project or environment.
-    let menu_button = |id: &'static str, icon: Option<IconName>, label: SharedString| {
-        let button = Button::new(id).variant(ButtonVariant::Outline).size(ButtonSize::Sm).label(label).trailing_icon(IconName::ChevronDown);
-        match icon {
-            Some(icon) => button.icon(icon),
-            None => button,
-        }
+    let menu_button = |id: &'static str, label: SharedString| {
+        Button::new(id).variant(ButtonVariant::Outline).size(ButtonSize::Sm).label(label).trailing_icon(IconName::ChevronDown)
     };
-    let project = dropdown_menu("scope-project", menu_button("scope-project-trigger", None, t!("All projects")), |_, _| {
+    let project = dropdown_menu("scope-project", menu_button("scope-project-trigger", t!("All projects")), |_, _| {
         MenuPopup::new().item(MenuItem::new(t!("All projects")).kind(MenuItemKind::Radio(true)).on_select(|_, _| {}))
     });
-    let environment_icon = scope.environment.as_ref().map(|_| IconName::Server);
+    // A picked environment's trigger leads with its machine icon (`size-3.5`).
+    let environment_trigger = match &shown {
+        Some(id) => menu_button("scope-environment-trigger", environment_name)
+            .icon(machine_icon_source(environment_machine_kind(id, cx)))
+            .icon_size(crate::components::icons::IconSize::Custom(theme.sp(3.5))),
+        None => menu_button("scope-environment-trigger", environment_name),
+    };
     let environments = ids.clone();
-    let selected = scope.environment.clone();
-    let environment = dropdown_menu("scope-environment", menu_button("scope-environment-trigger", environment_icon, environment_name), move |_, cx| {
-        let mut menu = MenuPopup::new().item(
-            MenuItem::new(t!("All environments"))
-                .kind(MenuItemKind::Radio(selected.is_none()))
-                .on_select(|_, cx| SettingsScope::set(SettingsScope { environment: None }, cx)),
-        );
-        if !environments.is_empty() {
-            menu = menu.separator();
+    let selected = shown.clone();
+    let environment = dropdown_menu("scope-environment", environment_trigger, move |_, cx| {
+        let mut menu = MenuPopup::new();
+        if !single {
+            menu = menu.item(
+                MenuItem::new(t!("All environments"))
+                    .icon(IconName::Layers)
+                    .kind(MenuItemKind::Radio(selected.is_none()))
+                    .on_select(|_, cx| SettingsScope::set(SettingsScope { environment: None }, cx)),
+            );
+            if !environments.is_empty() {
+                menu = menu.separator();
+            }
         }
         for id in &environments {
             let picked = id.clone();
@@ -308,7 +331,7 @@ pub fn scope_sentence(cx: &App) -> AnyElement {
     });
     // The web translates this sentence as one rich `<T>` block whose menus
     // are variables; its words stay English here.
-    let word = if scope.environment.is_some() { "on" } else { "across" };
+    let word = if shown.is_some() { "on" } else { "across" };
     div()
         .flex()
         .flex_wrap()
@@ -458,4 +481,60 @@ pub fn linked_description(id: &'static str, text: crate::i18n::RichText, targets
             None => {}
         })
         .into_any_element()
+}
+
+/// `EnvironmentMachineIcon` at `size`: Lucide glyphs, the fork's Linux mark,
+/// and its Mac mini and Mac Studio glyphs drawn from their SVG geometry
+/// (24px viewBox, 1.75 stroke).
+pub fn environment_machine_icon(kind: t3code_contracts::EnvironmentMachineKind, size: Pixels, color: gpui_kit::Hsla) -> AnyElement {
+    use crate::components::icons::{BrandIcon, Icon, IconSize};
+    use t3code_contracts::EnvironmentMachineKind as Kind;
+    let unit = size / 24.;
+    let lucide = |name: IconName| Icon::new(name).size(IconSize::Custom(size)).color(color).into_any_element();
+    let frame = |x: f32, y: f32, w: f32, h: f32, r: f32| {
+        div()
+            .absolute()
+            .left(unit * (x - 0.875))
+            .top(unit * (y - 0.875))
+            .w(unit * (w + 1.75))
+            .h(unit * (h + 1.75))
+            .rounded(unit * (r + 0.875))
+            .border(unit * 1.75)
+            .border_color(color)
+    };
+    let dot = |cx: f32, cy: f32, d: f32| div().absolute().left(unit * (cx - d / 2.)).top(unit * (cy - d / 2.)).size(unit * d).rounded_full().bg(color);
+    match kind {
+        Kind::Server => lucide(IconName::Server),
+        Kind::Cloud => lucide(IconName::Cloud),
+        Kind::Laptop => lucide(IconName::Laptop),
+        Kind::Linux => Icon::new(BrandIcon::Linux).size(IconSize::Custom(size)).color(color).into_any_element(),
+        Kind::MacMini => div().relative().flex_none().size(size).child(frame(3., 6., 18., 12., 2.5)).child(dot(7.5, 12., 2.)).into_any_element(),
+        Kind::MacStudio => div()
+            .relative()
+            .flex_none()
+            .size(size)
+            .child(frame(3., 5., 18., 14., 2.))
+            .children([7., 11., 15.].map(|x| dot(x, 15., 1.75)))
+            .into_any_element(),
+        _ => lucide(IconName::Monitor),
+    }
+}
+
+/// [`environment_machine_icon`] as an icon a button can carry; the two
+/// drawn Mac glyphs fall back to the monitor.
+pub fn machine_icon_source(kind: t3code_contracts::EnvironmentMachineKind) -> crate::components::icons::IconSource {
+    use t3code_contracts::EnvironmentMachineKind as Kind;
+    match kind {
+        Kind::Server => IconName::Server.into(),
+        Kind::Cloud => IconName::Cloud.into(),
+        Kind::Laptop => IconName::Laptop.into(),
+        Kind::Linux => crate::components::icons::IconSource::Brand(crate::components::icons::BrandIcon::Linux),
+        _ => IconName::Monitor.into(),
+    }
+}
+
+/// The machine kind an environment shows (`resolveEnvironmentMachineKind`).
+pub fn environment_machine_kind(id: &EnvironmentId, cx: &App) -> t3code_contracts::EnvironmentMachineKind {
+    let config = ServerSettingsStore::config(cx, id);
+    t3code_contracts::server::resolve_environment_machine_kind(config.as_ref().map(|c| &c.environment), config.as_ref().map(|c| &c.settings))
 }

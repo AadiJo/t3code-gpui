@@ -87,11 +87,18 @@ fn is_ready(provider: &ServerConfigProvidersItem) -> bool {
 
 /// The picker's catalog for one environment's config.
 pub fn model_catalog(config: &ServerConfig) -> ModelCatalog {
-    let settings = &config.settings;
+    model_catalog_for(&config.providers, &config.settings)
+}
+
+/// The picker's catalog from an environment's providers and settings.
+pub fn model_catalog_for<'a>(
+    providers: impl IntoIterator<Item = &'a ServerConfigProvidersItem> + Clone,
+    settings: &t3code_contracts::ServerSettings,
+) -> ModelCatalog {
     let preferences = settings.provider_model_preferences.as_ref();
-    let instances: Vec<ProviderInstanceEntry> = config
-        .providers
-        .iter()
+    let instances: Vec<ProviderInstanceEntry> = providers
+        .clone()
+        .into_iter()
         .filter(|provider| provider.enabled)
         .map(|provider| ProviderInstanceEntry {
             instance_id: ProviderInstanceId(SharedString::from(provider.instance_id.clone())),
@@ -104,7 +111,7 @@ pub fn model_catalog(config: &ServerConfig) -> ModelCatalog {
     let instances = order_claude_before_openai(&instances, |entry| &entry.driver_kind);
     let mut models = HashMap::new();
     let mut hidden = HashMap::new();
-    for provider in &config.providers {
+    for provider in providers {
         let id = ProviderInstanceId(SharedString::from(provider.instance_id.clone()));
         let prefs = preferences.and_then(|prefs| prefs.get(&provider.instance_id));
         let unavailable = !is_ready(provider);

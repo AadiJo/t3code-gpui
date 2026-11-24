@@ -196,7 +196,7 @@ fn write_client_document<T: Serialize + serde::de::DeserializeOwned>(data_dir: &
 /// The web app stores a custom theme as `{ id, label, appearance, colors, variants }`
 /// (`parseStoredTheme`); this app's theme store keeps the theme file form it imports
 /// (`version: 1`, `name`). Managed and CSS-only fields have no counterpart and are dropped.
-fn custom_themes_as_files(value: Value) -> Value {
+pub fn custom_themes_as_files(value: Value) -> Value {
     let Value::Array(themes) = value else { return value };
     Value::Array(
         themes

@@ -34,7 +34,7 @@ use crate::components::chat::composer_theme::{
     CONTROL_RADIUS, ComposerColors, DRAWER_INSET, FOOTER_COMPACT_BREAKPOINT, FOOTER_PADDING_BOTTOM, FOOTER_PADDING_X,
     ICON_ACTION_RADIUS, SURFACE_RADIUS, ui_font_family,
 };
-use crate::components::chat::model_picker::{MODEL_PICKER_SIZE, ModelPicker, ModelPickerEvent, input_handler_canvas, popup_shadow};
+use crate::components::chat::model_picker::{ModelPicker, model_picker_size, ModelPickerEvent, input_handler_canvas, popup_shadow};
 use crate::components::composer_prompt_editor::{
     self as editor_mod, ComposerEditorEvent, ComposerPromptEditor, PastedContent,
 };
@@ -1243,7 +1243,7 @@ impl Render for ChatComposer {
                         .bottom(c.r((CONTROL_HEIGHT)) + c.r(px(4.)))
                         .right(px(0.))
                         // Cached at its fixed size: composer keystrokes reuse the picker's last frame.
-                        .child(picker.clone().cached(gpui_kit::StyleRefinement::default().w(MODEL_PICKER_SIZE.width).h(MODEL_PICKER_SIZE.height)))
+                        .child(picker.clone().cached(gpui_kit::StyleRefinement::default().w(model_picker_size(false, &c).width).h(model_picker_size(false, &c).height)))
                         .child(input_handler_canvas(picker.clone())),
                 )
                 .with_priority(1),
@@ -1375,6 +1375,7 @@ impl Render for ChatComposer {
         div()
             .id("chat-composer")
             .key_context("ChatComposer")
+            .on_action(cx.listener(|this, _: &crate::shortcuts::commands::ToggleModelPicker, window, cx| this.toggle_picker(window, cx)))
             .font_family(ui_font_family())
             .relative()
             .w_full()
