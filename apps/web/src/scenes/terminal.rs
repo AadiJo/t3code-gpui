@@ -123,7 +123,7 @@ pub fn full_screen_output(size: GridSize) -> Vec<u8> {
     out.into_bytes()
 }
 
-fn build_scene(appearance: Appearance, with_find: bool, window: &mut Window, cx: &mut App) -> AnyView {
+fn build_scene(appearance: Appearance, cx: &mut App) -> AnyView {
     crate::theme_palette::ThemeSettings::set_appearance(appearance, cx);
     let thread = ThreadKey("environment-1:thread-1".into());
     cx.update_global::<TerminalUiStateStore, _>(|store, _| {
@@ -146,14 +146,6 @@ fn build_scene(appearance: Appearance, with_find: bool, window: &mut Window, cx:
         terminals.set_active_thread(Some((thread.clone(), "/home/user/project".into())), cx);
         terminals
     });
-    if with_find {
-        if let Some(drawer) = terminals.read(cx).drawer(&thread).cloned() {
-            drawer.update(cx, |drawer, cx| {
-                let surface = drawer.surface("term-1", window, cx);
-                surface.update(cx, |surface, cx| surface.find("rgb", cx));
-            });
-        }
-    }
     cx.new(|_| TerminalScene { terminals }).into()
 }
 
@@ -175,14 +167,10 @@ impl Render for TerminalScene {
     }
 }
 
-pub fn build(window: &mut Window, cx: &mut App) -> AnyView {
-    build_scene(Appearance::Dark, false, window, cx)
+pub fn build(_: &mut Window, cx: &mut App) -> AnyView {
+    build_scene(Appearance::Dark, cx)
 }
 
-pub fn build_light(window: &mut Window, cx: &mut App) -> AnyView {
-    build_scene(Appearance::Light, false, window, cx)
-}
-
-pub fn build_find(window: &mut Window, cx: &mut App) -> AnyView {
-    build_scene(Appearance::Dark, true, window, cx)
+pub fn build_light(_: &mut Window, cx: &mut App) -> AnyView {
+    build_scene(Appearance::Light, cx)
 }

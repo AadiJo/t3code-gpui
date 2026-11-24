@@ -37,7 +37,6 @@ pub fn scenes() -> &'static [(&'static str, SceneBuilder)] {
         ("composer", composer::build),
         ("terminal", terminal::build),
         ("terminal-light", terminal::build_light),
-        ("terminal-find", terminal::build_find),
         ("i18n", i18n::build),
         ("composer-light", composer::build_light),
         ("composer-popovers", composer::build_popovers),

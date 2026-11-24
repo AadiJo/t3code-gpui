@@ -10,7 +10,15 @@ use std::rc::Rc;
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
+use crate::components::ui::button::{Button, ButtonSize, ButtonVariant};
+use crate::components::ui::dialog::{DialogSurface, Modal};
+use crate::components::ui::tooltip::tooltip;
+use crate::hooks::use_settings::ClientSettingsStore;
+use crate::i18n::t;
+use crate::keybindings::{ShortcutContext, WhenKey, shortcut_label_for_command};
+use crate::shortcuts::keymap::ShortcutState;
 use crate::terminal::{TerminalBackend, TerminalSurface, TerminalSurfaceEvent};
+use t3code_shared::keybindings::{KeybindingCommand, StaticCommand};
 use crate::terminal_ui_state_store::{
     DEFAULT_THREAD_TERMINAL_HEIGHT, MAX_TERMINALS_PER_GROUP, SplitDirection, TerminalUiStateStore, ThreadKey,
     ThreadTerminalGroup, ThreadTerminalUiState,
@@ -82,6 +90,8 @@ pub enum DrawerMode {
 pub enum ThreadTerminalDrawerEvent {
     /// A link in one of the terminals was activated.
     LinkActivated(TerminalSurfaceEvent),
+    /// "Add to chat" on a terminal selection (`TerminalContextSelection`).
+    AddTerminalContext { terminal_id: SharedString, terminal_label: SharedString, text: SharedString, line_start: usize, line_end: usize },
 }
 
 impl EventEmitter<ThreadTerminalDrawerEvent> for ThreadTerminalDrawer {}
@@ -104,6 +114,9 @@ pub struct ThreadTerminalDrawer {
     drag: Option<HeightDrag>,
     visible: bool,
     can_operate: bool,
+    can_add_to_chat: bool,
+    /// The terminal whose close waits on the confirmation dialog.
+    pending_close: Option<String>,
     focus: FocusHandle,
     _subscriptions: Vec<Subscription>,
 }
@@ -145,6 +158,8 @@ impl ThreadTerminalDrawer {
             drag: None,
             visible: true,
             can_operate: true,
+            can_add_to_chat: false,
+            pending_close: None,
             focus: cx.focus_handle(),
             _subscriptions: vec![observe],
         }
@@ -167,6 +182,14 @@ impl ThreadTerminalDrawer {
             surface.update(cx, |surface, _| surface.set_read_only(!can_operate));
         }
         cx.notify();
+    }
+
+    /// Whether the terminals' context menus offer "Add to chat"; the host then handles `AddTerminalContext`.
+    pub fn set_can_add_to_chat(&mut self, can_add: bool, cx: &mut Context<Self>) {
+        self.can_add_to_chat = can_add;
+        for surface in self.surfaces.values() {
+            surface.update(cx, |surface, _| surface.set_can_add_to_chat(can_add));
+        }
     }
 
     /// Labels from server metadata (running process names), keyed by terminal id.
@@ -200,10 +223,11 @@ impl ThreadTerminalDrawer {
             worktree_path: self.worktree_path.clone(),
         };
         let backend = (self.factory)(&launch, cx);
-        let can_operate = self.can_operate;
+        let (can_operate, can_add_to_chat) = (self.can_operate, self.can_add_to_chat);
         let surface = cx.new(|cx| {
             let mut surface = TerminalSurface::new(backend, window, cx);
             surface.set_read_only(!can_operate);
+            surface.set_can_add_to_chat(can_add_to_chat);
             surface
         });
         let id = terminal_id.to_string();
@@ -214,6 +238,13 @@ impl ThreadTerminalDrawer {
                 }
             }
             TerminalSurfaceEvent::LinkActivated { .. } => cx.emit(ThreadTerminalDrawerEvent::LinkActivated(event.clone())),
+            TerminalSurfaceEvent::AddToChat { text, line_start, line_end } => cx.emit(ThreadTerminalDrawerEvent::AddTerminalContext {
+                terminal_id: id.clone().into(),
+                terminal_label: this.label(&id),
+                text: text.clone(),
+                line_start: *line_start,
+                line_end: *line_end,
+            }),
             _ => {}
         })
         .detach();
@@ -260,6 +291,54 @@ impl ThreadTerminalDrawer {
         cx.notify();
     }
 
+    /// Closes a terminal the user asked to close, behind the `confirmTerminalClose` dialog when that setting is on.
+    pub fn request_close(&mut self, terminal_id: &str, cx: &mut Context<Self>) {
+        if !self.can_operate {
+            return;
+        }
+        if ClientSettingsStore::get(cx).confirm_terminal_close {
+            self.pending_close = Some(terminal_id.to_string());
+            cx.notify();
+        } else {
+            self.close_terminal(terminal_id, cx);
+        }
+    }
+
+    fn resolve_close(&mut self, confirmed: bool, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(id) = self.pending_close.take() else { return };
+        if confirmed && self.can_operate {
+            self.close_terminal(&id, cx);
+        }
+        let active = self.state(cx).active_terminal_id;
+        if self.visible && !active.is_empty() {
+            self.focus_terminal(&active, window, cx);
+        }
+        cx.notify();
+    }
+
+    /// `Close terminal "{label}"?` with Cancel and a destructive Confirm (`ConfirmDialogHost`).
+    fn render_close_confirm(&self, cx: &mut Context<Self>) -> Option<impl IntoElement + use<>> {
+        let id = self.pending_close.as_ref()?;
+        let label = self.label(id);
+        let cancel = cx.listener(|this, _: &ClickEvent, window, cx| this.resolve_close(false, window, cx));
+        let confirm = cx.listener(|this, _: &ClickEvent, window, cx| this.resolve_close(true, window, cx));
+        let this = cx.weak_entity();
+        let dialog = DialogSurface::new(t!("Close terminal \"{label}\"?", label = label))
+            .description(t!("This stops the running process and clears its history."))
+            .footer(Button::new("terminal-close-cancel").variant(ButtonVariant::Outline).size(ButtonSize::Default).label(t!("Cancel")).on_click(cancel))
+            .footer(Button::new("terminal-close-confirm").variant(ButtonVariant::Destructive).size(ButtonSize::Default).label(t!("Confirm")).on_click(confirm));
+        Some(Modal::dialog("terminal-close-confirm-dialog", dialog, move |window, cx| {
+            this.update(cx, |this, cx| this.resolve_close(false, window, cx)).ok();
+        }))
+    }
+
+    /// A terminal command's shortcut label as the drawer shows it (terminal focused and open).
+    fn shortcut_label(command: StaticCommand, cx: &App) -> Option<SharedString> {
+        let state = cx.try_global::<ShortcutState>()?;
+        let context = ShortcutContext::default().with(WhenKey::TerminalFocus, true).with(WhenKey::TerminalOpen, true);
+        shortcut_label_for_command(&state.config, &KeybindingCommand::Static(command), context, state.platform)
+    }
+
     fn activate(&mut self, terminal_id: &str, window: &mut Window, cx: &mut Context<Self>) {
         self.update_store(cx, |store, thread| store.set_active_terminal(thread, terminal_id));
         if self.visible {
@@ -278,10 +357,11 @@ impl ThreadTerminalDrawer {
 
     // Rendering.
 
-    fn action_button(&self, id: &'static str, icon: &'static str, enabled: bool, compact: bool, cx: &mut Context<Self>, on_click: impl Fn(&mut Self, &mut Window, &mut Context<Self>) + 'static) -> Stateful<Div> {
+    fn action_button(&self, id: &'static str, icon: &'static str, label: SharedString, enabled: bool, compact: bool, cx: &mut Context<Self>, on_click: impl Fn(&mut Self, &mut Window, &mut Context<Self>) + 'static) -> Stateful<Div> {
         let colors = &cx.app_theme().colors;
         let mut button = div()
             .id(id)
+            .tooltip(tooltip(label))
             .flex()
             .items_center()
             .justify_center()
@@ -299,19 +379,42 @@ impl ThreadTerminalDrawer {
         }
     }
 
+    /// The new-terminal label: "New Terminal (⌘N)" or "New Terminal".
+    fn new_terminal_label(cx: &App) -> SharedString {
+        match Self::shortcut_label(StaticCommand::TerminalNew, cx) {
+            Some(shortcut) => t!("New Terminal ({shortcut})", shortcut = shortcut),
+            None => t!("New Terminal"),
+        }
+    }
+
     fn action_buttons(&self, split_enabled: bool, compact: bool, cx: &mut Context<Self>) -> Vec<Stateful<Div>> {
         let operate = self.can_operate;
+        let max = MAX_TERMINALS_PER_GROUP;
+        let split_label = match (split_enabled, Self::shortcut_label(StaticCommand::TerminalSplit, cx)) {
+            (false, _) => t!("Split Terminal Horizontally (max {max} per group)", max = max),
+            (true, Some(shortcut)) => t!("Split Terminal Horizontally ({shortcut})", shortcut = shortcut),
+            (true, None) => t!("Split Terminal Horizontally"),
+        };
+        let split_vertical_label = match (split_enabled, Self::shortcut_label(StaticCommand::TerminalSplitVertical, cx)) {
+            (false, _) => t!("Split Terminal Vertically (max {max} per group)", max = max),
+            (true, Some(shortcut)) => t!("Split Terminal Vertically ({shortcut})", shortcut = shortcut),
+            (true, None) => t!("Split Terminal Vertically"),
+        };
+        let close_label = match Self::shortcut_label(StaticCommand::TerminalClose, cx) {
+            Some(shortcut) => t!("Close Terminal ({shortcut})", shortcut = shortcut),
+            None => t!("Close Terminal"),
+        };
         vec![
-            self.action_button("terminal-split", IconName::SquareSplitHorizontal.path(), operate && split_enabled, compact, cx, |this, window, cx| {
+            self.action_button("terminal-split", IconName::SquareSplitHorizontal.path(), split_label, operate && split_enabled, compact, cx, |this, window, cx| {
                 this.launch(Some(SplitDirection::Horizontal), window, cx)
             }),
-            self.action_button("terminal-split-vertical", IconName::SquareSplitVertical.path(), operate && split_enabled, compact, cx, |this, window, cx| {
+            self.action_button("terminal-split-vertical", IconName::SquareSplitVertical.path(), split_vertical_label, operate && split_enabled, compact, cx, |this, window, cx| {
                 this.launch(Some(SplitDirection::Vertical), window, cx)
             }),
-            self.action_button("terminal-new", IconName::Plus.path(), operate, compact, cx, |this, window, cx| this.launch(None, window, cx)),
-            self.action_button("terminal-close", IconName::Trash2.path(), operate, compact, cx, |this, _, cx| {
+            self.action_button("terminal-new", IconName::Plus.path(), Self::new_terminal_label(cx), operate, compact, cx, |this, window, cx| this.launch(None, window, cx)),
+            self.action_button("terminal-close", IconName::Trash2.path(), close_label, operate, compact, cx, |this, _, cx| {
                 let active = this.state(cx).active_terminal_id;
-                this.close_terminal(&active, cx);
+                this.request_close(&active, cx);
             }),
         ]
     }
@@ -382,9 +485,9 @@ impl ThreadTerminalDrawer {
         let group_active = group.terminal_ids.iter().any(|id| id == active);
         let count = group.terminal_ids.len();
         let (label, icon) = match (count > 1, group.split_direction) {
-            (false, _) => ("Single", IconName::Square.path()),
-            (true, SplitDirection::Vertical) => ("Stacked", IconName::SquareSplitVertical.path()),
-            (true, SplitDirection::Horizontal) => ("Side by side", IconName::SquareSplitHorizontal.path()),
+            (false, _) => (t!("Single", context = "terminal group with one terminal"), IconName::Square.path()),
+            (true, SplitDirection::Vertical) => (t!("Stacked", context = "terminals split vertically"), IconName::SquareSplitVertical.path()),
+            (true, SplitDirection::Horizontal) => (t!("Side by side", context = "terminals split horizontally"), IconName::SquareSplitHorizontal.path()),
         };
         let mut column = div().pb(px(2.)).flex().flex_col();
         if show_header {
@@ -412,8 +515,14 @@ impl ThreadTerminalDrawer {
             );
         }
         let mut rows = div().flex().flex_col().gap(px(2.));
+        let close_shortcut = Self::shortcut_label(StaticCommand::TerminalClose, cx);
         for terminal_id in &group.terminal_ids {
             let is_active = terminal_id == active;
+            let terminal = self.label(terminal_id);
+            let close_label = match (&close_shortcut, is_active) {
+                (Some(shortcut), true) => t!("Close {terminal} ({shortcut})", terminal = terminal, shortcut = shortcut),
+                _ => t!("Close {terminal}", terminal = terminal),
+            };
             let text = if is_active { colors.text } else { colors.muted_foreground };
             let row_id = SharedString::from(format!("terminal-row-{terminal_id}"));
             let close_id = terminal_id.clone();
@@ -437,9 +546,10 @@ impl ThreadTerminalDrawer {
                             .group_hover(row_id.clone(), |style| style.visible()),
                     )
                     .cursor_pointer()
+                    .tooltip(tooltip(close_label))
                     .on_click(cx.listener(move |this, _, _, cx| {
                         cx.stop_propagation();
-                        this.close_terminal(&close_id, cx);
+                        this.request_close(&close_id, cx);
                     }))
                 });
             rows = rows.child(
@@ -538,8 +648,9 @@ impl Render for ThreadTerminalDrawer {
             .on_action(cx.listener(|this, _: &SplitTerminalVertical, window, cx| this.launch(Some(SplitDirection::Vertical), window, cx)))
             .on_action(cx.listener(|this, _: &CloseTerminal, _, cx| {
                 let active = this.state(cx).active_terminal_id;
-                this.close_terminal(&active, cx);
-            }));
+                this.request_close(&active, cx);
+            }))
+            .children(self.render_close_confirm(cx));
         root = if is_drawer {
             root.flex_none().h(px(height)).border_t_1().border_color(colors.border.opacity(0.8))
         } else {
@@ -566,7 +677,7 @@ impl Render for ThreadTerminalDrawer {
                     .py(px(24.))
                     .text_size(px(14.))
                     .text_color(colors.muted_foreground)
-                    .child("No terminal sessions for this thread yet.")
+                    .child(t!("No terminal sessions for this thread yet."))
                     .child(
                         div()
                             .id("terminal-empty-new")
@@ -586,7 +697,7 @@ impl Render for ThreadTerminalDrawer {
                                     .on_click(cx.listener(|this, _, window, cx| this.launch(None, window, cx)))
                             })
                             .when(!operate, |button| button.opacity(0.64))
-                            .child("New Terminal"),
+                            .child(Self::new_terminal_label(cx)),
                     ),
             );
         };

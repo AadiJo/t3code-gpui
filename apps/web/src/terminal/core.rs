@@ -1,6 +1,6 @@
 //! The terminal model: an `alacritty_terminal` grid fed with bytes. Ports the
 //! role of `terminal/ghostty/core.ts`: parse output, keep scrollback, track
-//! modes, selection and search, and report what changed since the last paint.
+//! modes and selection, and report what changed since the last paint.
 
 use std::cell::RefCell;
 use std::ops::RangeInclusive;
@@ -9,17 +9,21 @@ use std::time::Instant;
 
 use alacritty_terminal::event::{Event, EventListener, WindowSize};
 use alacritty_terminal::grid::{Dimensions, Scroll};
-use alacritty_terminal::index::{Boundary, Column, Direction, Line, Point, Side};
+use alacritty_terminal::index::{Boundary, Column, Line, Point, Side};
 use alacritty_terminal::selection::{Selection, SelectionType};
-use alacritty_terminal::term::cell::Flags;
-use alacritty_terminal::term::search::{Match, RegexIter, RegexSearch};
+use alacritty_terminal::term::cell::{Cell, Flags};
 use alacritty_terminal::term::{Config, Term, TermDamage, TermMode};
 use alacritty_terminal::vte::ansi::{CursorShape, CursorStyle, Processor, StdSyncHandler};
 
 use super::backend::GridSize;
 
-/// Lines of scrollback kept by default. The web terminal keeps 10 MB.
-pub const DEFAULT_SCROLLBACK: usize = 10_000;
+/// Scrollback memory budget in bytes, Ghostty's default limit as the web terminal sets it (`core.ts`).
+pub const MAX_SCROLLBACK_BYTES: usize = 10_000_000;
+
+/// Lines of history that fit `MAX_SCROLLBACK_BYTES` at `cols` columns, so memory is bounded like the web's.
+pub fn scrollback_lines(cols: u16) -> usize {
+    MAX_SCROLLBACK_BYTES / (usize::from(cols.max(1)) * std::mem::size_of::<Cell>())
+}
 
 /// Collects the events the parser raises while bytes are fed.
 #[derive(Clone, Default)]
@@ -59,21 +63,21 @@ pub struct TerminalCore {
     events: EventCollector,
     size: GridSize,
     scrollback: usize,
-    search: Option<RegexSearch>,
     /// Everything that changed since the last `take_damage`, beyond what the grid tracks.
     force_full_damage: bool,
 }
 
 impl TerminalCore {
-    pub fn new(size: GridSize, scrollback: usize) -> Self {
+    /// A model whose history is capped at `MAX_SCROLLBACK_BYTES`.
+    pub fn new(size: GridSize) -> Self {
         let events = EventCollector::default();
+        let scrollback = scrollback_lines(size.cols);
         Self {
             term: Term::new(Self::config(scrollback), &size, events.clone()),
             parser: Processor::new(),
             events,
             size,
             scrollback,
-            search: None,
             force_full_damage: true,
         }
     }
@@ -87,11 +91,6 @@ impl TerminalCore {
         }
     }
 
-    /// Changes how many lines of history are kept.
-    pub fn set_scrollback(&mut self, lines: usize) {
-        self.scrollback = lines;
-        self.term.set_options(Self::config(lines));
-    }
 
     /// The visible rows as text, trailing blanks trimmed. Used by scripted checks.
     pub fn screen_text(&self) -> String {
@@ -150,6 +149,10 @@ impl TerminalCore {
     pub fn resize(&mut self, size: GridSize) -> bool {
         if size == self.size {
             return false;
+        }
+        if size.cols != self.size.cols {
+            self.scrollback = scrollback_lines(size.cols);
+            self.term.set_options(Self::config(self.scrollback));
         }
         self.size = size;
         self.term.resize(size);
@@ -287,46 +290,13 @@ impl TerminalCore {
         Some(range.start.line..=range.end.line)
     }
 
-    // Search.
-
-    /// Sets the find query. An empty query ends the search.
-    pub fn set_search(&mut self, query: &str) {
-        self.search = if query.is_empty() {
-            None
-        } else {
-            RegexSearch::new(&format!("(?i){}", escape_regex(query))).ok()
-        };
-        self.mark_dirty();
-    }
-
-    /// The next match from `origin` in `direction`, wrapping around the buffer.
-    pub fn find(&mut self, origin: Point, forward: bool) -> Option<Match> {
-        let regex = self.search.as_mut()?;
-        let direction = if forward { Direction::Right } else { Direction::Left };
-        let side = if forward { Side::Left } else { Side::Right };
-        self.term.search_next(regex, origin, direction, side, None)
-    }
-
-    /// Every match on the visible rows, for highlighting.
-    pub fn visible_matches(&mut self) -> Vec<Match> {
-        let Some(regex) = self.search.as_mut() else {
-            return Vec::new();
-        };
-        let offset = self.term.grid().display_offset() as i32;
-        let start = Point::new(Line(-offset), Column(0));
-        let end = Point::new(
-            Line(self.size.rows as i32 - 1 - offset),
-            Column(self.size.cols as usize - 1),
-        );
-        let start = self.term.line_search_left(start);
-        let end = self.term.line_search_right(end);
-        RegexIter::new(start, end, Direction::Right, &self.term, regex).collect()
-    }
-
-    /// Scrolls so a match is visible.
-    pub fn reveal(&mut self, point: Point) {
-        self.term.scroll_to_point(point);
-        self.mark_dirty();
+    /// The selection's 1-based buffer line range, counted from the top of scrollback
+    /// (`terminalSelectionLineRange`).
+    pub fn selection_buffer_lines(&self) -> Option<(usize, usize)> {
+        let lines = self.selection_lines()?;
+        let history = self.history_size() as i32;
+        let start = (lines.start().0 + history + 1).max(1) as usize;
+        Some((start, ((lines.end().0 + history + 1).max(1) as usize).max(start)))
     }
 
     // Text.
@@ -379,15 +349,4 @@ impl LogicalLine {
     pub fn offset_of(&self, point: Point) -> Option<usize> {
         self.points.iter().find(|(_, p)| *p == point).map(|(offset, _)| *offset)
     }
-}
-
-fn escape_regex(text: &str) -> String {
-    let mut out = String::with_capacity(text.len());
-    for ch in text.chars() {
-        if "\\.+*?()|[]{}^$#&-~".contains(ch) {
-            out.push('\\');
-        }
-        out.push(ch);
-    }
-    out
 }
