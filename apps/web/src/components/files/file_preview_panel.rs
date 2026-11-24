@@ -13,7 +13,7 @@
 
 use std::{collections::HashMap, sync::Arc, time::Duration};
 
-use gpui_kit::{
+use gpui_kit::{rems, 
     AnyElement, App, AppContext as _, ClipboardItem, Context, Entity, EventEmitter, FocusHandle, Focusable,
     IntoElement, KeyBinding, MouseButton, StyleRefinement, MouseMoveEvent, ParentElement as _, Render, actions, SharedString, Styled as _,
     Subscription, Task, Window, div, prelude::*, px,
@@ -767,7 +767,7 @@ impl FilesPanel {
         crumbs.push(
             div()
                 .id("crumb-project")
-                .px(px(2.))
+                .px(rems(0.125))
                 .rounded(theme.radii.sm)
                 .text_color(colors.muted_foreground)
                 .hover(|el| el.bg(colors.accent_surface).text_color(colors.text))
@@ -776,18 +776,18 @@ impl FilesPanel {
                 .into_any_element(),
         );
         for (index, segment) in segments.iter().enumerate() {
-            crumbs.push(div().mx(px(2.)).flex().child(separator()).into_any_element());
+            crumbs.push(div().mx(rems(0.125)).flex().child(separator()).into_any_element());
             let last = index + 1 == segments.len();
             if last {
-                crumbs.push(div().px(px(2.)).text_color(colors.text).whitespace_nowrap().child(segment.to_string()).into_any_element());
+                crumbs.push(div().px(rems(0.125)).text_color(colors.text).whitespace_nowrap().child(segment.to_string()).into_any_element());
             } else {
                 let folder: SharedString = segments[..=index].join("/").into();
                 let tree = tree.clone();
                 crumbs.push(
                     div()
                         .id(("crumb", index))
-                        .max_w(px(160.))
-                        .px(px(2.))
+                        .max_w(rems(10.))
+                        .px(rems(0.125))
                         .rounded(theme.radii.sm)
                         .text_color(colors.muted_foreground)
                         .whitespace_nowrap()
@@ -893,8 +893,8 @@ impl FilesPanel {
                 .flex_col()
                 .items_center()
                 .justify_center()
-                .gap(px(12.))
-                .px(px(24.))
+                .gap(rems(0.75))
+                .px(rems(1.5))
                 .text_size(px(12.))
                 .text_center()
                 .child(div().text_color(colors.destructive()).child(message.clone()))
@@ -959,7 +959,7 @@ impl FilesPanel {
             .id("file-markdown")
             .size_full()
             .overflow_y_scroll()
-            .child(div().mx_auto().max_w(px(896.)).px(px(24.)).py(px(20.)).child(render_markdown(&view, window, cx)))
+            .child(div().mx_auto().max_w(rems(56.)).px(rems(1.5)).py(rems(1.25)).child(render_markdown(&view, window, cx)))
             .into_any_element()
     }
 
@@ -1109,12 +1109,12 @@ impl Render for FilesPanel {
             let breadcrumbs = self.render_breadcrumbs(&open.path, cx).into_any_element();
             let actions = self.render_actions(open, cx);
             div()
-                .h(px(40.))
+                .h(rems(2.5))
                 .flex_none()
                 .flex()
                 .items_center()
-                .gap(px(8.))
-                .px(px(12.))
+                .gap(rems(0.5))
+                .px(rems(0.75))
                 .border_b_1()
                 .border_color(colors.border.opacity(0.6))
                 .bg(colors.canvas)

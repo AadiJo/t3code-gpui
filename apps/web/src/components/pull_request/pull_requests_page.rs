@@ -15,7 +15,7 @@ use std::time::Instant;
 
 use gpui_kit::component::input::{InputEvent, InputState};
 use gpui_kit::base::TestSupportExt as _;
-use gpui_kit::{
+use gpui_kit::{rems, 
     AnyElement, App, AppContext as _, Context, Entity, EventEmitter, FocusHandle, Focusable, InteractiveElement as _,
     IntoElement, KeyBinding, ListAlignment, ListState, ParentElement as _, Pixels, Render, SharedString,
     StatefulInteractiveElement as _, Styled as _, Subscription, Window, actions, div, list, prelude::FluentBuilder as _, px,
@@ -1303,7 +1303,7 @@ fn filters_popup(this: &Entity<PullRequestsPage>, handle: PopupHandle, cx: &mut 
     if let Some((submenu, popup)) = submenu {
         let top = offsets.iter().find(|(s, _)| *s == submenu).map_or(Pixels::ZERO, |(_, y)| *y);
         // Base UI's sub popup: inline-end, aligned to its trigger row 5px up.
-        row = row.child(div().mt(px(1.) + theme.sp(1.) + top - px(5.)).max_h(px(320.)).child(popup));
+        row = row.child(div().mt(px(1.) + theme.sp(1.) + top - theme.rem(0.3125)).max_h(theme.rem(20.)).child(popup));
     }
     row.into_any_element()
 }
@@ -1337,7 +1337,7 @@ fn render_row(
         .flex()
         .flex_none()
         .items_center()
-        .gap(px(4.))
+        .gap(rems(0.25))
         .when_some(entry.checks_state, |el, state| {
             let (icon, color) = match state {
                 t3code_contracts::PullRequestChecksState::Passing => (IconName::CircleCheck, open_tone(theme)),
@@ -1355,7 +1355,7 @@ fn render_row(
         .flex()
         .flex_none()
         .items_center()
-        .gap(px(6.))
+        .gap(rems(0.375))
         .ui_text(theme, TextSize::Xs3, weight::NORMAL)
         .when_some(entry.stack.as_ref(), |el, stack| {
             el.child(
@@ -1364,14 +1364,14 @@ fn render_row(
                     .test_support()
                     .flex()
                     .items_center()
-                    .gap(px(3.))
-                    .px(px(5.))
-                    .h(px(16.))
+                    .gap(rems(0.1875))
+                    .px(rems(0.3125))
+                    .h(rems(1.))
                     .rounded_full()
                     .border_1()
                     .border_color(theme.colors.border)
                     .text_color(muted)
-                    .child(Icon::new(IconName::Layers).size(IconSize::Custom(px(10.))).color(muted))
+                    .child(Icon::new(IconName::Layers).size(IconSize::Custom(theme.rem(0.625))).color(muted))
                     .child(format!("{}/{}", stack.position, stack.size)),
             )
         })
@@ -1381,15 +1381,15 @@ fn render_row(
         .flex()
         .min_w_0()
         .items_center()
-        .gap(px(6.))
+        .gap(rems(0.375))
         .overflow_hidden()
         .ui_text(theme, TextSize::Xs3, weight::NORMAL)
         .text_color(muted)
-        .child(div().flex().items_center().gap(px(4.)).child(avatar(theme, author, 14.)).child(SharedString::from(author.unwrap_or("ghost").to_owned())))
+        .child(div().flex().items_center().gap(rems(0.25)).child(avatar(theme, author, 14.)).child(SharedString::from(author.unwrap_or("ghost").to_owned())))
         .child(SharedString::from(entry.repository.clone()))
         .children(entry.labels.iter().take(3).map(|l| label_chip(theme, &l.name, l.color.as_deref())))
         .child(div().ml_auto().flex_none().whitespace_nowrap().child(relative_label(&entry.updated_at, now)));
-    let actions = div().flex().flex_none().gap(px(2.)).pr(px(4.)).invisible().group_hover("pr-row", |s| s.visible()).children(quick.into_iter().map(|q| {
+    let actions = div().flex().flex_none().gap(rems(0.125)).pr(rems(0.25)).invisible().group_hover("pr-row", |s| s.visible()).children(quick.into_iter().map(|q| {
         let page = page.clone();
         let row = row.clone();
         let (icon, label) = match q {
@@ -1424,24 +1424,24 @@ fn render_row(
                 .flex()
                 .flex_1()
                 .min_w_0()
-                .gap(px(8.))
-                .px(px(12.))
-                .py(px(10.))
-                .child(div().pt(px(3.)).child(state_glyph(theme, entry.state, entry.is_draft, Some(entry.mergeability))))
+                .gap(rems(0.5))
+                .px(rems(0.75))
+                .py(rems(0.625))
+                .child(div().pt(rems(0.1875)).child(state_glyph(theme, entry.state, entry.is_draft, Some(entry.mergeability))))
                 .child(
                     div()
                         .flex()
                         .flex_col()
                         .flex_1()
                         .min_w_0()
-                        .gap(px(2.))
+                        .gap(rems(0.125))
                         .child(
                             div()
                                 .flex()
                                 .min_w_0()
                                 .items_center()
-                                .gap(px(6.))
-                                .child(div().flex_none().mono_text(px(12.), weight::NORMAL).text_color(muted).child(format!("#{}", entry.number)))
+                                .gap(rems(0.375))
+                                .child(div().flex_none().mono_text(theme.rem(0.75), weight::NORMAL).text_color(muted).child(format!("#{}", entry.number)))
                                 .child(
                                     div()
                                         .min_w_0()
@@ -1515,10 +1515,10 @@ impl Render for PullRequestsPage {
                     .w_full()
                     .flex()
                     .items_end()
-                    .gap(px(6.))
-                    .h(px(34.))
-                    .px(px(12.))
-                    .pb(px(6.))
+                    .gap(rems(0.375))
+                    .h(rems(2.125))
+                    .px(rems(0.75))
+                    .pb(rems(0.375))
                     .ui_text(&theme_rows, TextSize::Xs, weight::MEDIUM)
                     .text_color(theme_rows.colors.muted_foreground)
                     .child(group_label(*key))

@@ -31,8 +31,8 @@ use crate::theme_palette::ActiveAppTheme as _;
 pub const MIN_DRAWER_HEIGHT: f32 = 180.;
 /// The drawer may take at most this share of the window height.
 const MAX_DRAWER_HEIGHT_RATIO: f32 = 0.75;
-const RESIZE_HANDLE_HEIGHT: Pixels = px(6.);
-const SIDEBAR_WIDTH: Pixels = px(144.);
+const RESIZE_HANDLE_HEIGHT: Rems = rems(0.375);
+const SIDEBAR_WIDTH: Rems = rems(9.);
 
 /// Where a terminal session runs, as the server's `terminal.open` input needs it.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -703,7 +703,7 @@ impl Render for ThreadTerminalDrawer {
                 }
                 group_buttons = group_buttons.child(button);
             }
-            root = root.child(div().absolute().top(px(8.)).right(px(8.)).child(group_buttons));
+            root = root.child(div().absolute().top(rems(0.5)).right(rems(0.5)).child(group_buttons));
         }
         root
     }

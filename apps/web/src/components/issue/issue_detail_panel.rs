@@ -8,7 +8,7 @@ use std::rc::Rc;
 
 use gpui_kit::component::input::InputState;
 use gpui_kit::base::TestSupportExt as _;
-use gpui_kit::{
+use gpui_kit::{rems, 
     AnyElement, AppContext as _, Context, Entity, EventEmitter, InteractiveElement as _, IntoElement, ParentElement as _,
     Render, SharedString, StatefulInteractiveElement as _, Styled as _, Window, div, prelude::FluentBuilder as _, px,
 };
@@ -272,7 +272,7 @@ impl IssueDetailPanel {
     }
 
     fn section(theme: &AppTheme, title: SharedString) -> gpui_kit::Div {
-        div().flex().flex_col().gap(px(6.)).child(div().ui_text(theme, TextSize::Xs, weight::SEMIBOLD).text_color(theme.colors.muted_foreground).child(title))
+        div().flex().flex_col().gap(rems(0.375)).child(div().ui_text(theme, TextSize::Xs, weight::SEMIBOLD).text_color(theme.colors.muted_foreground).child(title))
     }
 }
 
@@ -282,7 +282,7 @@ impl Render for IssueDetailPanel {
         let theme = cx.app_theme().clone();
         let Some(detail) = self.detail.clone() else {
             let text = self.error.clone().unwrap_or_else(|| t!("Loading issue"));
-            return div().id("issue-detail").test_support().size_full().p(px(20.)).bg(theme.colors.background()).text_color(theme.colors.muted_foreground).child(text);
+            return div().id("issue-detail").test_support().size_full().p(rems(1.25)).bg(theme.colors.background()).text_color(theme.colors.muted_foreground).child(text);
         };
         let access = self.access().expect("detail loaded");
         let now = self.now_ms.unwrap_or_else(crate::timestamp_format::now_ms);
@@ -311,7 +311,7 @@ impl Render for IssueDetailPanel {
                 comment.created_at.clone(),
                 div()
                     .flex()
-                    .gap(px(10.))
+                    .gap(rems(0.625))
                     .child(avatar(&theme, Some(&login), 24.))
                     .child(
                         div()
@@ -319,8 +319,8 @@ impl Render for IssueDetailPanel {
                             .flex_col()
                             .flex_1()
                             .min_w_0()
-                            .gap(px(4.))
-                            .child(div().flex().gap(px(6.)).ui_text(&theme, TextSize::Xs, weight::NORMAL).text_color(theme.colors.muted_foreground).child(div().text_color(theme.colors.text).font_weight(weight::SEMIBOLD).child(SharedString::from(login))).child(relative_label(&comment.created_at, now)))
+                            .gap(rems(0.25))
+                            .child(div().flex().gap(rems(0.375)).ui_text(&theme, TextSize::Xs, weight::NORMAL).text_color(theme.colors.muted_foreground).child(div().text_color(theme.colors.text).font_weight(weight::SEMIBOLD).child(SharedString::from(login))).child(relative_label(&comment.created_at, now)))
                             .child(div().ui_text(&theme, TextSize::Sm, weight::NORMAL).text_color(theme.colors.text).child(body))
                             .children(comment.reactions.as_ref().filter(|r| !r.is_empty()).map(|rs| {
                                 div().flex().gap(px(4.)).children(rs.iter().map(|r| div().flex().gap(px(3.)).px(px(6.)).h(px(20.)).items_center().rounded_full().border_1().border_color(theme.colors.border).ui_text(&theme, TextSize::Xs, weight::MEDIUM).text_color(theme.colors.text).child(pull_request_reaction_emoji(r.content)).child(r.count.to_string())))
@@ -336,8 +336,8 @@ impl Render for IssueDetailPanel {
                 div()
                     .flex()
                     .items_center()
-                    .gap(px(8.))
-                    .pl(px(4.))
+                    .gap(rems(0.5))
+                    .pl(rems(0.25))
                     .ui_text(&theme, TextSize::Xs, weight::NORMAL)
                     .text_color(theme.colors.muted_foreground)
                     .child(Icon::new(IconName::CircleDot).size(IconSize::Xs))
@@ -349,7 +349,7 @@ impl Render for IssueDetailPanel {
         }
         activity.sort_by(|a, b| a.0.cmp(&b.0));
         let reactions = detail.reactions.clone().unwrap_or_default();
-        let mut reaction_row = div().flex().flex_wrap().gap(px(4.));
+        let mut reaction_row = div().flex().flex_wrap().gap(rems(0.25));
         for content in PULL_REQUEST_REACTION_ORDER {
             let held = reactions.iter().find(|r| r.content == content);
             if held.is_none() && !access.react {
@@ -365,9 +365,9 @@ impl Render for IssueDetailPanel {
                     .test_support()
                     .flex()
                     .items_center()
-                    .gap(px(4.))
-                    .h(px(22.))
-                    .px(px(7.))
+                    .gap(rems(0.25))
+                    .h(rems(1.375))
+                    .px(rems(0.4375))
                     .rounded_full()
                     .border_1()
                     .border_color(if reacted { theme.colors.primary().opacity(0.5) } else { theme.colors.border })
@@ -392,18 +392,18 @@ impl Render for IssueDetailPanel {
                 div()
                     .flex()
                     .flex_col()
-                    .gap(px(10.))
-                    .px(px(20.))
-                    .pt(px(16.))
-                    .pb(px(12.))
+                    .gap(rems(0.625))
+                    .px(rems(1.25))
+                    .pt(rems(1.))
+                    .pb(rems(0.75))
                     .border_b_1()
                     .border_color(theme.colors.border)
                     .child(
                         div()
                             .flex()
                             .items_start()
-                            .gap(px(8.))
-                            .child(div().pt(px(3.)).child(Icon::new(state_icon).size(IconSize::Lg).color(state_tone)))
+                            .gap(rems(0.5))
+                            .child(div().pt(rems(0.1875)).child(Icon::new(state_icon).size(IconSize::Lg).color(state_tone)))
                             .child(div().flex_1().ui_text(&theme, TextSize::Lg, weight::SEMIBOLD).text_color(theme.colors.text).child(SharedString::from(detail.title.clone())))
                             .child(div().ui_text(&theme, TextSize::Lg, weight::NORMAL).text_color(theme.colors.muted_foreground).child(SharedString::from(detail.display_key.clone()))),
                     )
@@ -412,11 +412,11 @@ impl Render for IssueDetailPanel {
                             .flex()
                             .flex_wrap()
                             .items_center()
-                            .gap(px(8.))
+                            .gap(rems(0.5))
                             .ui_text(&theme, TextSize::Xs, weight::NORMAL)
                             .text_color(theme.colors.muted_foreground)
                             .children(state_menu)
-                            .when(access.states.is_empty(), |el| el.child(div().flex().items_center().gap(px(4.)).px(px(8.)).h(px(20.)).rounded_full().bg(state_tone.opacity(0.14)).text_color(state_tone).child(SharedString::from(detail.state.name.clone()))))
+                            .when(access.states.is_empty(), |el| el.child(div().flex().items_center().gap(rems(0.25)).px(rems(0.5)).h(rems(1.25)).rounded_full().bg(state_tone.opacity(0.14)).text_color(state_tone).child(SharedString::from(detail.state.name.clone()))))
                             .child(avatar(&theme, detail.author.as_ref().map(|a| a.login.as_str()), 16.))
                             .child(SharedString::from(detail.author.as_ref().map_or("ghost".into(), |a| a.login.clone())))
                             .child(relative_label(&detail.updated_at, now))
@@ -424,7 +424,7 @@ impl Render for IssueDetailPanel {
                             .child(Button::new("issue-link-thread").size(ButtonSize::Sm).variant(ButtonVariant::Ghost).icon(IconName::MessageSquare).label(t!("Link to thread")).on_click(cx.listener(move |_, _, _, cx| cx.emit(IssueDetailEvent::LinkToThread(reference.clone()))))),
                     )
                     .when_some(access.blocked, |el, b| {
-                        el.child(div().flex().items_center().gap(px(6.)).ui_text(&theme, TextSize::Xs, weight::NORMAL).text_color(theme.colors.muted_foreground).child(Icon::new(IconName::TriangleAlert).size(IconSize::Xs)).child(t!("Read-only")).child(SharedString::new_static(b.message())))
+                        el.child(div().flex().items_center().gap(rems(0.375)).ui_text(&theme, TextSize::Xs, weight::NORMAL).text_color(theme.colors.muted_foreground).child(Icon::new(IconName::TriangleAlert).size(IconSize::Xs)).child(t!("Read-only")).child(SharedString::new_static(b.message())))
                     })
                     .when_some(self.status.clone(), |el, s| el.child(div().ui_text(&theme, TextSize::Xs, weight::NORMAL).text_color(theme.colors.destructive()).child(s))),
             )
@@ -439,8 +439,8 @@ impl Render for IssueDetailPanel {
                         div()
                             .flex()
                             .flex_col()
-                            .gap(px(20.))
-                            .p(px(20.))
+                            .gap(rems(1.25))
+                            .p(rems(1.25))
                             .child(div().ui_text(&theme, TextSize::Sm, weight::NORMAL).text_color(theme.colors.text).child(body))
                             .child(reaction_row)
                             .child(self.render_meta_rows(&detail, &theme))
@@ -450,20 +450,20 @@ impl Render for IssueDetailPanel {
                                     div()
                                         .flex()
                                         .items_center()
-                                        .gap(px(6.))
+                                        .gap(rems(0.375))
                                         .ui_text(&theme, TextSize::Xs, weight::NORMAL)
                                         .text_color(theme.colors.text)
                                         .child(Icon::new(icon).size(IconSize::Sm).color(tone))
                                         .child(div().text_color(theme.colors.muted_foreground).child(format!("#{}", pr.number)))
                                         .child(SharedString::from(pr.title.clone()))
-                                        .when(pr.closes_issue, |el| el.child(div().px(px(6.)).rounded_full().bg(theme.colors.muted).ui_text(&theme, TextSize::Xs3, weight::MEDIUM).child(t!("Closes this issue"))))
+                                        .when(pr.closes_issue, |el| el.child(div().px(rems(0.375)).rounded_full().bg(theme.colors.muted).ui_text(&theme, TextSize::Xs3, weight::MEDIUM).child(t!("Closes this issue"))))
                                 })))
                             })
-                            .child(Self::section(&theme, t!("Activity")).gap(px(14.)).children(activity.into_iter().map(|(_, el)| el)))
+                            .child(Self::section(&theme, t!("Activity")).gap(rems(0.875)).children(activity.into_iter().map(|(_, el)| el)))
                             .child(if access.comment {
                                 div()
                                     .flex()
-                                    .gap(px(6.))
+                                    .gap(rems(0.375))
                                     .child(div().id("issue-comment-input").flex_1().child(TextInput::new(&self.composer)))
                                     .child(Button::new("issue-comment-send").size(ButtonSize::Sm).label(t!("Comment", context = "verb, posts the comment")).on_click(cx.listener(|this, _, window, cx| this.send_comment(window, cx))))
                                     .into_any_element()

@@ -10,7 +10,7 @@ use std::rc::Rc;
 use gpui_kit::component::input::{InputEvent, InputState};
 use gpui_kit::base::TestSupportExt as _;
 use serde::{Deserialize, Serialize};
-use gpui_kit::{
+use gpui_kit::{rems, 
     AnyElement, App, Pixels, AppContext as _, Context, Entity, EventEmitter, InteractiveElement as _, IntoElement, ParentElement as _,
     Render, SharedString, StatefulInteractiveElement as _, Styled as _, Subscription, Window, div, prelude::FluentBuilder as _, px,
 };
@@ -514,15 +514,15 @@ impl Render for IssuesPage {
                 _ => None,
             })
             .collect();
-        let mut list = div().flex().flex_col().gap(px(16.));
+        let mut list = div().flex().flex_col().gap(rems(1.));
         for group in &self.groups {
             let mut column = div().flex().flex_col().child(
                 div()
                     .flex()
                     .items_center()
-                    .gap(px(6.))
-                    .px(px(12.))
-                    .pb(px(6.))
+                    .gap(rems(0.375))
+                    .px(rems(0.75))
+                    .pb(rems(0.375))
                     .ui_text(&theme, TextSize::Xs, weight::MEDIUM)
                     .text_color(theme.colors.muted_foreground)
                     .child(SharedString::from(format!("{} · {}", group.tracker.tracker.as_str(), group.tracker.host)))
@@ -538,9 +538,9 @@ impl Render for IssuesPage {
                         .id(SharedString::from(format!("issue-row-{}", entry.url)))
                         .test_support()
                         .flex()
-                        .gap(px(8.))
-                        .px(px(12.))
-                        .py(px(10.))
+                        .gap(rems(0.5))
+                        .px(rems(0.75))
+                        .py(rems(0.625))
                         .rounded(theme.radii.md)
                         .when(selected, |el| el.bg(theme.colors.accent_surface))
                         .hover(|s| s.bg(theme.colors.accent_surface.opacity(0.6)))
@@ -549,45 +549,45 @@ impl Render for IssuesPage {
                             let entry = entry.clone();
                             move |this, _, _, cx| this.open(env.clone(), &entry, cx)
                         }))
-                        .child(div().pt(px(3.)).child(Icon::new(icon).size(IconSize::Md).color(tone)))
+                        .child(div().pt(rems(0.1875)).child(Icon::new(icon).size(IconSize::Md).color(tone)))
                         .child(
                             div()
                                 .flex()
                                 .flex_col()
                                 .flex_1()
                                 .min_w_0()
-                                .gap(px(2.))
+                                .gap(rems(0.125))
                                 .child(
                                     div()
                                         .flex()
                                         .items_center()
-                                        .gap(px(6.))
-                                        .child(div().mono_text(px(12.), weight::NORMAL).text_color(theme.colors.muted_foreground).child(SharedString::from(entry.display_key.clone())))
+                                        .gap(rems(0.375))
+                                        .child(div().mono_text(theme.rem(0.75), weight::NORMAL).text_color(theme.colors.muted_foreground).child(SharedString::from(entry.display_key.clone())))
                                         .child(div().min_w_0().overflow_hidden().whitespace_nowrap().text_ellipsis().ui_text(&theme, TextSize::Sm, weight::NORMAL).text_color(theme.colors.text).child(SharedString::from(entry.title.clone())))
                                         .children(entry.labels.iter().take(3).map(|l| label_chip(&theme, &l.name, l.color.as_deref())))
-                                        .child(div().ml_auto().flex().gap(px(2.)).children(entry.assignees.iter().map(|a| avatar(&theme, Some(&a.login), 16.)))),
+                                        .child(div().ml_auto().flex().gap(rems(0.125)).children(entry.assignees.iter().map(|a| avatar(&theme, Some(&a.login), 16.)))),
                                 )
                                 .child(
                                     div()
                                         .flex()
-                                        .gap(px(8.))
+                                        .gap(rems(0.5))
                                         .ui_text(&theme, TextSize::Xs3, weight::NORMAL)
                                         .text_color(theme.colors.muted_foreground)
                                         .child(SharedString::from(entry.state.name.clone()))
                                         .child(SharedString::from(entry.author.as_ref().map_or("ghost".into(), |a| a.login.clone())))
-                                        .when(entry.comment_count > 0, |el| el.child(div().flex().gap(px(3.)).items_center().child(Icon::new(IconName::MessageSquare).size(IconSize::Custom(px(10.)))).child(entry.comment_count.to_string())))
+                                        .when(entry.comment_count > 0, |el| el.child(div().flex().gap(theme.rem(0.1875)).items_center().child(Icon::new(IconName::MessageSquare).size(IconSize::Custom(theme.rem(0.625)))).child(entry.comment_count.to_string())))
                                         .child(div().ml_auto().child(relative_label(&entry.updated_at, now))),
                                 ),
                         ),
                 );
             }
             for error in &group.errors {
-                column = column.child(div().px(px(12.)).ui_text(&theme, TextSize::Xs, weight::NORMAL).text_color(theme.colors.muted_foreground).child(SharedString::from(format!("{}: {}", error.project_title, error.message))));
+                column = column.child(div().px(rems(0.75)).ui_text(&theme, TextSize::Xs, weight::NORMAL).text_color(theme.colors.muted_foreground).child(SharedString::from(format!("{}: {}", error.project_title, error.message))));
             }
             for env in group.more.clone() {
                 let host = group.tracker.host.clone();
                 column = column.child(
-                    div().px(px(12.)).pt(px(6.)).child(
+                    div().px(rems(0.75)).pt(rems(0.375)).child(
                         Button::new(SharedString::from(format!("issues-more-{}-{host}", env.as_str())))
                             .size(ButtonSize::Xs)
                             .variant(ButtonVariant::Outline)
@@ -657,13 +657,13 @@ impl Render for IssuesPage {
                                         .flex()
                                         .items_center()
                                         .justify_between()
-                                        .gap(px(12.))
+                                        .gap(rems(0.75))
                                         .rounded(theme.radii.lg)
                                         .border_1()
                                         .border_color(theme.colors.warning.opacity(0.3))
                                         .bg(theme.colors.warning_surface)
-                                        .px(px(12.))
-                                        .py(px(8.))
+                                        .px(rems(0.75))
+                                        .py(rems(0.5))
                                         .ui_text(&theme, TextSize::Xs, weight::NORMAL)
                                         .text_color(theme.colors.text)
                                         .child(div().flex().flex_col().children(failed.iter().map(|(l, m)| div().child(SharedString::from(format!("{l}: {m}"))))))
@@ -681,7 +681,7 @@ impl Render for IssuesPage {
                                 )
                             })
                             .when(!self.groups.is_empty() && self.groups.iter().all(|g| g.rows.is_empty()) && !self.loads.values().any(|l| matches!(l, Load::Loading)), |el| {
-                                el.child(div().py(px(32.)).flex().justify_center().text_color(theme.colors.muted_foreground).child(t!("No issues under these filters.")))
+                                el.child(div().py(rems(2.)).flex().justify_center().text_color(theme.colors.muted_foreground).child(t!("No issues under these filters.")))
                             })
                             .child(list),
                     ),
@@ -814,7 +814,7 @@ fn issue_filters_popup(this: &Entity<IssuesPage>, handle: PopupHandle, cx: &mut 
     });
     let mut row = div().flex().items_start().child(menu);
     if let Some(popup) = sub {
-        row = row.child(div().mt(px(1.) + theme.sp(1.) + offset - px(5.)).max_h(px(320.)).child(popup));
+        row = row.child(div().mt(px(1.) + theme.sp(1.) + offset - theme.rem(0.3125)).max_h(theme.rem(20.)).child(popup));
     }
     row.into_any_element()
 }

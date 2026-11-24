@@ -5,7 +5,7 @@
 
 use std::{collections::HashSet, ops::Range, sync::Arc};
 
-use gpui_kit::{base::TestSupportExt as _, prelude::FluentBuilder as _, *};
+use gpui_kit::{rems, base::TestSupportExt as _, prelude::FluentBuilder as _, *};
 
 use crate::pierre_icons::{pierre_icon, resolve_file_icon};
 use crate::{
@@ -309,8 +309,8 @@ impl DiffFileTree {
                     .flex()
                     .items_center()
                     .gap(px(4.))
-                    .rounded(px(6.))
-                    .text_size(px(12.))
+                    .rounded(theme.radii.md)
+                    .text_size(rems(0.75))
                     .text_color(status_color.unwrap_or(fg))
                     .when(selected, |el| el.bg(fg.opacity(0.12)))
                     .when(focused && !selected, |el| el.bg(fg.opacity(0.07)))
@@ -404,17 +404,17 @@ impl Render for DiffFileTree {
             .bg(colors.canvas)
             .child(
                 div()
-                    .h(px(40.))
+                    .h(rems(2.5))
                     .flex_none()
                     .flex()
                     .items_center()
-                    .gap(px(4.))
-                    .px(px(8.))
+                    .gap(rems(0.25))
+                    .px(rems(0.5))
                     .border_b_1()
                     .border_color(colors.border.opacity(0.6))
-                    .text_size(px(12.))
+                    .text_size(rems(0.75))
                     .text_color(colors.muted_foreground)
-                    .child(div().px(px(4.)).font_weight(FontWeight::MEDIUM).text_color(colors.text).child("Files"))
+                    .child(div().px(rems(0.25)).font_weight(FontWeight::MEDIUM).text_color(colors.text).child("Files"))
                     .child(div().ml_auto().child(self.entries.len().to_string()))
                     .when(has_directories, |el| {
                         el.child(
@@ -425,7 +425,7 @@ impl Render for DiffFileTree {
                                 .flex()
                                 .items_center()
                                 .justify_center()
-                                .rounded(px(8.))
+                                .rounded(rems(0.5))
                                 .hover(|s| s.bg(colors.toolbar_control_hover))
                                 .on_click(cx.listener(move |this, _, _, cx| this.set_all_expanded(!all_expanded, cx)))
                                 .child(
@@ -441,7 +441,7 @@ impl Render for DiffFileTree {
                 uniform_list("diff-file-tree-rows", self.rows.len(), cx.processor(Self::render_rows))
                     .track_scroll(&self.scroll)
                     .flex_1()
-                    .py(px(4.)),
+                    .py(rems(0.25)),
             )
     }
 }
