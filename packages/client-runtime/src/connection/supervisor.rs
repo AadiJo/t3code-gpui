@@ -117,6 +117,7 @@ impl EnvironmentSupervisor {
             desired,
             network: NetworkStatus::Unknown,
             cooldowns: HashMap::new(),
+            switching_to: None,
             silent_routes: HashMap::new(),
         };
         let task = tokio::spawn(state.run());
@@ -150,6 +151,8 @@ struct Supervisor {
     desired: bool,
     network: NetworkStatus,
     cooldowns: HashMap<String, Instant>,
+    /// The better route the last session ended to move to, until the next connect lands.
+    switching_to: Option<String>,
     /// Earlier routes that were silent: (failures, next check).
     silent_routes: HashMap<String, (u32, Instant)>,
 }
@@ -321,6 +324,10 @@ impl Supervisor {
         *generation += 1;
         let session = lease.session;
         let active_route_id = session.prepared.route_id.clone();
+        // A better route that passed its check but did not take the connect rests a while.
+        if let Some(route) = self.switching_to.take().filter(|route| *route != active_route_id) {
+            self.cooldowns.insert(route, Instant::now() + BETTER_ROUTE_COOLDOWN);
+        }
         let connected_at = Instant::now();
         // Observers that see `Connected` must already see its session.
         self.auth.send_replace(Some(session.prepared.http_authorization.clone()));
@@ -379,10 +386,7 @@ impl Supervisor {
         self.session.send_replace(None);
         self.auth.send_replace(None);
         drop(session);
-        if let Some(route) = switching_to {
-            // If the next connect lands elsewhere, that route rests a while.
-            self.cooldowns.insert(route, Instant::now() + BETTER_ROUTE_COOLDOWN);
-        }
+        self.switching_to = switching_to;
         Some(ended)
     }
 

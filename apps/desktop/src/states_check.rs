@@ -354,41 +354,41 @@ fn run_states(check: &mut Check) -> anyhow::Result<()> {
 
 fn run_routing(check: &mut Check) -> anyhow::Result<()> {
     let direct = std::env::var("T3_DIRECT_URL").context("T3_DIRECT_URL")?;
-    check.control("POST", "/direct/up?port=39410")?;
+    let port = std::env::var("T3_SERVER_PORT").unwrap_or_else(|_| "39410".into());
+    check.control("POST", &format!("/direct/up?port={port}"))?;
     check.open_environments()?;
     check.pair(&direct)?;
     check.wait("connected over the paired loopback address", Duration::from_secs(30), connected)?;
     let paired = check.env(|e| route_id(&e.entry.routes[0].target).to_owned());
-    check.wait("learned the host's LAN and Tailscale addresses", Duration::from_secs(30), |s| {
-        let routes = &s.environments[0].entry.routes;
-        routes.iter().any(|r| is_learned(r) && route_kind(r) == RouteKind::Lan)
-            && routes.iter().any(|r| is_learned(r) && route_kind(r) == RouteKind::Tailnet)
+    check.wait("learned the host's Tailscale addresses", Duration::from_secs(30), |s| {
+        s.environments[0].entry.routes.iter().any(|r| is_learned(r) && route_kind(r) == RouteKind::Tailnet)
     })?;
-    let (kinds, usable) = check.env(|e| {
-        let kinds: Vec<String> =
-            e.entry.routes.iter().map(|r| format!("{} {:?} learned={}", route_id(&r.target), route_kind(r), is_learned(r))).collect();
-        let usable: Vec<String> = usable_routes(&e.entry).iter().map(|r| route_id(&r.target).to_owned()).collect();
-        (kinds, usable)
+    let kinds: Vec<String> = check.env(|e| {
+        e.entry.routes.iter().map(|r| format!("{} {:?} learned={}", route_id(&r.target), route_kind(r), is_learned(r))).collect()
     });
     for kind in &kinds {
         check.note(format!("route {kind}"));
     }
-    check.note(format!("usable {usable:?}"));
-    let lan_ids = check.env(|e| {
-        e.entry.routes.iter().filter(|r| route_kind(r) == RouteKind::Lan).map(|r| route_id(&r.target).to_owned()).collect::<Vec<_>>()
+    let learned_lan = check.env(|e| e.entry.routes.iter().any(|r| is_learned(r) && route_kind(r) == RouteKind::Lan));
+    check.expect(
+        !learned_lan,
+        "the host's plain-HTTP LAN addresses are not learned for a loopback-paired token (it never goes over cleartext)",
+    );
+    let usable: Vec<String> = check.env(|e| usable_routes(&e.entry).iter().map(|r| route_id(&r.target).to_owned()).collect());
+    let tailnet_usable = check.env(|e| {
+        e.entry.routes.iter().filter(|r| route_kind(r) == RouteKind::Tailnet).all(|r| usable.contains(&route_id(&r.target).to_owned()))
     });
-    let tailnet = check.env(|e| {
-        e.entry.routes.iter().find(|r| route_kind(r) == RouteKind::Tailnet).map(|r| route_id(&r.target).to_owned())
+    check.expect(tailnet_usable, "the Tailscale addresses may carry it");
+    let tailnet_ids: Vec<String> = check.env(|e| {
+        e.entry.routes.iter().filter(|r| route_kind(r) == RouteKind::Tailnet).map(|r| route_id(&r.target).to_owned()).collect()
     });
-    check.expect(lan_ids.iter().all(|id| !usable.contains(id)), "a loopback-paired token is never offered to the plain-HTTP LAN addresses");
-    check.expect(tailnet.as_ref().is_some_and(|id| usable.contains(id)), "the Tailscale address may carry it");
     check.open_row(true, false)?;
     check.shot("r01-learned-routes.png")?;
 
     // The preferred address goes silent: after the 500 ms head start the next route connects.
     check.control("POST", "/direct/silent")?;
     let took = check.wait("connected through Tailscale while loopback is silent", Duration::from_secs(30), |s| {
-        active_route(s).is_some_and(|r| Some(&r) == tailnet.as_ref())
+        active_route(s).is_some_and(|r| tailnet_ids.contains(&r))
     })?;
     check.expect(took < Duration::from_secs(5), format!("fell over in {:.2}s", took.as_secs_f64()));
     check.shot("r02-connected-tailscale.png")?;
@@ -402,16 +402,37 @@ fn run_routing(check: &mut Check) -> anyhow::Result<()> {
 
     // The user puts Tailscale first: the next connect follows that order.
     let mut order: Vec<String> = check.env(|e| e.entry.routes.iter().map(|r| route_id(&r.target).to_owned()).collect());
-    if let Some(tailnet) = &tailnet {
-        order.retain(|id| id != tailnet);
-        order.insert(0, tailnet.clone());
-    }
+    order.sort_by_key(|id| !tailnet_ids.contains(id));
     check.reorder(order)?;
-    let took = check.wait("the better-route check moves to the route now first", Duration::from_secs(80), |s| {
-        active_route(s).is_some_and(|r| Some(&r) == tailnet.as_ref())
+    let took = check.wait("the better-route check moves to the Tailscale routes now first", Duration::from_secs(80), |s| {
+        active_route(s).is_some_and(|r| tailnet_ids.contains(&r))
     })?;
     check.note(format!("followed the new order after {:.1}s", took.as_secs_f64()));
     check.shot("r04-user-order.png")?;
+
+    // Pairing the host's LAN address too (Add route): a token paired over plain HTTP on the
+    // LAN may use that LAN address; put it first and it connects there.
+    if let Ok(lan) = std::env::var("T3_LAN_URL") {
+        let id = check.env(|e| e.id().clone());
+        let credential = check.command("T3_PAIR_CMD", "")?;
+        let request = parse_pairing_url(&format!("{lan}#token={credential}")).map_err(|e| anyhow::anyhow!("{e}"))?;
+        check.cx.update(|cx| ConnectionRuntime::global(cx).pair(request, Some(id), cx).detach());
+        check.wait("the LAN route was added", Duration::from_secs(20), |s| {
+            s.environments[0].entry.routes.iter().any(|r| !is_learned(r) && route_kind(r) == RouteKind::Lan)
+        })?;
+        let lan_id = check.env(|e| {
+            e.entry.routes.iter().find(|r| !is_learned(r) && route_kind(r) == RouteKind::Lan).map(|r| route_id(&r.target).to_owned())
+        });
+        let mut order: Vec<String> = check.env(|e| e.entry.routes.iter().map(|r| route_id(&r.target).to_owned()).collect());
+        if let Some(lan_id) = &lan_id {
+            order.retain(|id| id != lan_id);
+            order.insert(0, lan_id.clone());
+        }
+        check.reorder(order)?;
+        check.retry();
+        check.wait("connected over the LAN", Duration::from_secs(90), |s| active_route(s) == lan_id)?;
+        check.shot("r05-connected-lan.png")?;
+    }
     Ok(())
 }
 
