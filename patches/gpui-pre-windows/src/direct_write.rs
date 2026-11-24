@@ -596,6 +596,7 @@ impl DirectWriteState {
                 descent,
                 runs,
                 len: text.len(),
+                padded_runs: Default::default(),
             })
         }
     }

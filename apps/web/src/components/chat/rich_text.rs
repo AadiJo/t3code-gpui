@@ -194,7 +194,7 @@ impl Element for RichText {
                 });
                 (baseline - ascent - extra, baseline + descent + extra, size * inline.pad_x_em + inline.border)
             });
-            for quad in range_quads(&layout, text_box.range.clone(), line_height) {
+            for quad in layout.fragment_bounds(text_box.range.clone()) {
                 // An inline element's padding already takes space in the line: the range's
                 // first glyph sits after it and its end is the next glyph, past the trailing one.
                 let (pad_left, pad_right) = inline.map_or((text_box.pad_x, text_box.pad_x), |(_, _, pad_x)| (pad_x, px(0.)));

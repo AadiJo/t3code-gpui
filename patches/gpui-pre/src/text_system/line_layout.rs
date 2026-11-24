@@ -30,6 +30,11 @@ pub struct LineLayout {
     pub runs: Vec<ShapedRun>,
     /// The length of the line in utf-8 bytes
     pub len: usize,
+    /// Runs laid out with inline padding (see `RunLayout`): each one's byte range and the
+    /// padding on each side, already in the glyph positions. Where the line wraps inside
+    /// one, both fragments are padded again at the break, as CSS
+    /// `box-decoration-break: clone` pads every fragment of an inline box.
+    pub padded_runs: SmallVec<[(Range<usize>, Pixels); 1]>,
 }
 
 /// A run of text that has been shaped .
@@ -58,6 +63,16 @@ pub struct ShapedGlyph {
 }
 
 impl LineLayout {
+    /// The padding a wrap at byte `index` adds to each side of the break: that of every
+    /// padded run the break falls strictly inside.
+    pub fn break_padding(&self, index: usize) -> Pixels {
+        self.padded_runs
+            .iter()
+            .filter(|(range, _)| range.start < index && index < range.end)
+            .map(|(_, padding)| *padding)
+            .sum()
+    }
+
     /// The index for the character at the given x coordinate
     pub fn index_for_x(&self, x: Pixels) -> Option<usize> {
         if x >= self.width {
@@ -177,6 +192,7 @@ impl LineLayout {
             descent: self.descent,
             runs: left_runs,
             len: byte_index,
+            padded_runs: SmallVec::new(),
         };
 
         let right = LineLayout {
@@ -186,6 +202,7 @@ impl LineLayout {
             descent: self.descent,
             runs: right_runs,
             len: self.len - byte_index,
+            padded_runs: SmallVec::new(),
         };
 
         (left, right)
@@ -207,6 +224,8 @@ impl LineLayout {
             glyph_ix: 0,
         };
         let mut last_boundary_x = px(0.);
+        let mut last_candidate_index = 0;
+        let mut last_boundary_index = 0;
         // Shaping can combine characters across a line break opportunity, so we ignore those
         // break opportunities that would separate them.
         let WrapScratch {
@@ -256,6 +275,7 @@ impl LineLayout {
                 if current_segment.is_some() {
                     last_candidate_ix = Some(boundary);
                     last_candidate_x = x;
+                    last_candidate_index = index;
                 }
                 let start = segment
                     .checked_sub(1)
@@ -266,8 +286,11 @@ impl LineLayout {
                 current_segment = Some(start..end);
             }
 
-            let next_x = glyphs.peek().map_or(self.width, |(_, _, x)| *x);
-            let width = next_x - last_boundary_x;
+            let (next_index, next_x) =
+                glyphs.peek().map_or((self.len, self.width), |(_, index, x)| (*index, *x));
+            let width = next_x - last_boundary_x
+                + self.break_padding(last_boundary_index)
+                + self.break_padding(next_index);
 
             if width > wrap_width && boundary > last_boundary {
                 // When used line_clamp, we should limit the number of lines.
@@ -280,9 +303,11 @@ impl LineLayout {
                 if let Some(last_candidate_ix) = last_candidate_ix.take() {
                     last_boundary = last_candidate_ix;
                     last_boundary_x = last_candidate_x;
+                    last_boundary_index = last_candidate_index;
                 } else {
                     last_boundary = boundary;
                     last_boundary_x = x;
+                    last_boundary_index = index;
                 }
                 boundaries.push(last_boundary);
             }
@@ -402,7 +427,8 @@ impl WrappedLineLayout {
             let run = &self.unwrapped_layout.runs[line_start_boundary.run_ix];
             let glyph = &run.glyphs[line_start_boundary.glyph_ix];
             wrapped_line_start_index = glyph.index;
-            wrapped_line_start_x = glyph.position.x;
+            wrapped_line_start_x =
+                glyph.position.x - self.unwrapped_layout.break_padding(glyph.index);
         } else {
             wrapped_line_start_index = 0;
             wrapped_line_start_x = Pixels::ZERO;
@@ -464,13 +490,47 @@ impl WrappedLineLayout {
                 line_start_ix = line_end_ix;
                 continue;
             } else {
-                let line_start_x = self.unwrapped_layout.x_for_index(line_start_ix);
+                let line_start_x = self.unwrapped_layout.x_for_index(line_start_ix)
+                    - self.unwrapped_layout.break_padding(line_start_ix);
                 let x = self.unwrapped_layout.x_for_index(index) - line_start_x;
                 return Some(point(x, line_y));
             }
         }
 
         None
+    }
+
+    /// The box of each wrapped line's part of `range` in `text` (the line's text), as
+    /// (wrapped line, left, right) with x relative to the line's start. A part the line
+    /// breaks after ends at its last character that is not a space, plus the break's
+    /// padding (see [`LineLayout::break_padding`]).
+    pub fn fragments(&self, text: &str, range: Range<usize>) -> SmallVec<[(usize, Pixels, Pixels); 2]> {
+        let layout = &self.unwrapped_layout;
+        let mut fragments = SmallVec::new();
+        let ends = self
+            .wrap_boundaries
+            .iter()
+            .map(|boundary| layout.runs[boundary.run_ix].glyphs[boundary.glyph_ix].index)
+            .chain([self.len()]);
+        let mut line_start = 0;
+        for (line, line_end) in ends.enumerate() {
+            let (start, end) = (range.start.max(line_start), range.end.min(line_end));
+            if start < end {
+                let origin = layout.x_for_index(line_start) - layout.break_padding(line_start);
+                let right = if range.end <= line_end {
+                    layout.x_for_index(range.end)
+                } else {
+                    let content_end = start + text.get(start..line_end).map_or(0, |part| part.trim_end().len());
+                    layout.x_for_index(content_end) + layout.break_padding(line_end)
+                };
+                fragments.push((line, layout.x_for_index(start) - origin, right - origin));
+            }
+            if range.end <= line_end {
+                break;
+            }
+            line_start = line_end;
+        }
+        fragments
     }
 }
 
@@ -897,6 +957,7 @@ mod tests {
                 glyphs,
             }],
             len: 0,
+            padded_runs: Default::default(),
         }
     }
 

@@ -99,6 +99,7 @@ impl ShapedLine {
             descent: layout.descent,
             runs: layout.runs.clone(),
             len,
+            padded_runs: layout.padded_runs.clone(),
         });
         self
     }
@@ -369,6 +370,7 @@ impl<'a> ShapedLineCursor<'a> {
                 descent: self.line.layout.descent,
                 runs,
                 len: byte_index - previous_index,
+                padded_runs: Default::default(),
             }),
             text: SharedString::new(&self.line.text[previous_index..byte_index]),
             decoration_runs: decorations,
@@ -637,6 +639,8 @@ fn paint_line(
                         layout,
                         wraps.peek(),
                     );
+                    // A run padded on both sides is padded again where it wraps.
+                    glyph_origin.x += layout.break_padding(glyph.index);
                     line_ix += 1;
                     glyph_origin.y = line_top(line_ix);
                 }
@@ -1010,6 +1014,7 @@ mod tests {
                     glyphs: shaped_glyphs,
                 }],
                 len: text.len(),
+                padded_runs: Default::default(),
             }),
             text: SharedString::new(text),
             decoration_runs: SmallVec::from(decorations.to_vec()),
@@ -1438,6 +1443,7 @@ mod tests {
                     },
                 ],
                 len: 6,
+                padded_runs: Default::default(),
             }),
             text: "abcdef".into(),
             decoration_runs: SmallVec::new(),
@@ -1610,6 +1616,7 @@ mod tests {
             descent: layout.descent,
             runs,
             len: layout.len,
+            padded_runs: Default::default(),
         });
         line
     }
@@ -1678,6 +1685,7 @@ mod tests {
                     },
                 ],
                 len: 10,
+                padded_runs: Default::default(),
             }),
             text: "a😀bcdef".into(),
             decoration_runs: SmallVec::new(),

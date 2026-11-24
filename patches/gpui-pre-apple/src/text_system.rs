@@ -814,6 +814,7 @@ impl AppleTextSystemState {
             ascent: max_ascent.into(),
             descent: max_descent.into(),
             len: text.len(),
+            padded_runs: padded_runs.into_iter().map(|(range, padding)| (range, px(padding))).collect(),
         }
     }
 }

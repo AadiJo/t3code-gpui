@@ -903,6 +903,40 @@ impl TextLayout {
         None
     }
 
+    /// The box of each line's part of `range`, as painted: one per wrapped line it is on,
+    /// `line_height` tall. Where a line wraps inside a padded run (see
+    /// [`crate::LineLayout::break_padding`]) the part ends after its padding and the next
+    /// part starts after the same padding, so it can draw each fragment of an inline box.
+    pub fn fragment_bounds(&self, range: Range<usize>) -> Vec<Bounds<Pixels>> {
+        let element_state = self.0.borrow();
+        let element_state = element_state
+            .as_ref()
+            .expect("measurement has not been performed");
+        let bounds = element_state
+            .bounds
+            .expect("prepaint has not been performed");
+        let line_height = element_state.line_height;
+        let mut fragments = Vec::new();
+        let mut line_top = bounds.top();
+        let mut line_start_ix = 0;
+        for line in &element_state.lines {
+            let line_end_ix = line_start_ix + line.len();
+            if range.start <= line_end_ix && range.end > line_start_ix {
+                let local = range.start.saturating_sub(line_start_ix)..(range.end - line_start_ix).min(line.len());
+                for (wrapped, left, right) in line.layout.fragments(&line.text, local) {
+                    let top = line_top + line_height * wrapped as f32;
+                    fragments.push(Bounds::from_corners(
+                        crate::point(bounds.left() + left, top),
+                        crate::point(bounds.left() + right, top + line_height),
+                    ));
+                }
+            }
+            line_top += line.size(line_height).height;
+            line_start_ix = line_end_ix + 1;
+        }
+        fragments
+    }
+
     /// Retrieve the layout for the line containing the given byte index.
     pub fn line_layout_for_index(&self, index: usize) -> Option<Arc<WrappedLineLayout>> {
         let element_state = self.0.borrow();
