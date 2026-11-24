@@ -60,6 +60,9 @@
 //            the prompt (`live_check_setup.rs`)
 //   families-seed, families  older settled pages and thread families on two servers
 //            (`live_check_families.rs`)
+//   memory   heap and resident memory over a launch on two servers, ten threads opened in turn
+//            and the long thread scrolled end to end (`live_check_memory.rs`, after `seed`;
+//            `memory-seed` makes the long thread long first)
 //   lineage  the details card's subagent rows on server data from a scripted fx stand-in: two
 //            provider-native subagents with the driver mark, live elapsed time, per-second redraw
 //            and hover card; an app-owned child (the server's `delegate_task`) stopped from its
@@ -74,11 +77,13 @@
 //            advances with the wall clock
 //   breadcrumb  an unlisted subagent thread and a side chat shown in the main pane name their
 //            project in the header breadcrumb
-// Usage: live-check <draft-banner|setup|families-seed|families|seed|drive|restart|import|send|sidebar|notify|details|mentions|heic|wheel|workspace|banner|sidebardata|composer|composer-restart|sidechats|sidechats-ref|lineage|lineage-ref|sidepane|delete-thread|timer|breadcrumb|probe> <out-dir>
+// Usage: live-check <draft-banner|setup|families-seed|families|memory-seed|memory|seed|drive|restart|import|send|sidebar|notify|details|mentions|heic|wheel|workspace|banner|sidebardata|composer|composer-restart|sidechats|sidechats-ref|lineage|lineage-ref|sidepane|delete-thread|timer|breadcrumb|probe> <out-dir>
 #[allow(dead_code)]
 #[path = "import/mod.rs"]
 mod import;
 mod live_check_families;
+mod live_check_heap;
+mod live_check_memory;
 mod live_check_palette;
 mod live_check_setup;
 #[allow(dead_code)]
@@ -524,6 +529,7 @@ fn key_of(state: &Seeded, thread: &str) -> ThreadKey {
 }
 
 fn main() -> anyhow::Result<()> {
+    live_check_heap::heap_init();
     let mut args = std::env::args().skip(1);
     let usage = "usage: live-check <seed|drive|restart|import|send|sidebar|notify|details|mentions|heic|wheel|workspace|banner|sidebardata|composer|composer-restart|probe> <out-dir> | live-check timeline <projections-dir> <out-dir> | live-check commands <corpus.json> <out.json>";
     let phase = args.next().context(usage)?;
@@ -561,6 +567,8 @@ fn main() -> anyhow::Result<()> {
         "families-seed" => live_check_families::run_families_seed(&mut check),
         "families" => live_check_families::run_families(&mut check),
         "families-search" => live_check_families::run_families_search(&mut check),
+        "memory" => live_check_memory::run_memory(&mut check),
+        "memory-seed" => live_check_memory::run_memory_seed(&mut check),
         "palette" => live_check_palette::run_palette(&mut check),
         "setup" => live_check_setup::run_setup(&mut check),
         "draft-banner" => live_check_setup::run_draft_banner(&mut check),
