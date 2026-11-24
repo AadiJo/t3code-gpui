@@ -244,7 +244,9 @@ fn server_truth(check: &mut Check, environment_id: &t3code_contracts::Environmen
     })?
     .map_err(|e| anyhow::anyhow!(e))?;
     let sizes = pages.iter().map(Vec::len).collect();
-    rows.extend(pages.into_iter().flatten());
+    // A shell row below the cut (a visited old thread a delta brought in) is also on a page.
+    let held: std::collections::HashSet<ThreadKey> = rows.iter().map(|t| t.key.clone()).collect();
+    rows.extend(pages.into_iter().flatten().filter(|t| !held.contains(&t.key)));
     Ok((rows, sizes, counted))
 }
 
@@ -306,7 +308,11 @@ fn click_entry(check: &mut Check, which: impl Fn(&SidebarListEntry) -> bool + Co
             return Ok(elapsed);
         }
         // The list is virtualized: jump to the end (Show more) or the top (headers) and retry.
-        let down = label == "show more";
+        // Toward the entry when it has bounds, else to the end for Show more.
+        let down = match at {
+            Some(at) => at.y >= px(805.),
+            None => label == "show more",
+        };
         wheel_event(check, point(px(150.), px(400.)), ScrollDelta::Pixels(point(px(0.), px(if down { -400. } else { 400. }))), TouchPhase::Moved);
         check.frame();
     }
@@ -458,7 +464,7 @@ pub(super) fn run_families(check: &mut Check) -> anyhow::Result<()> {
     let mut total = 0usize;
     for id in &ids {
         let (rows, pages, counted) = server_truth(check, id)?;
-        let held = rows.len() - pages.iter().sum::<usize>();
+        let held = rows.len().saturating_sub(pages.iter().sum::<usize>());
         check.note(format!("{id}: server holds {held} settled shell rows and {} older in {} pages (count {counted})", pages.iter().sum::<usize>(), pages.len()));
         check.check("the server's older count equals its paged rows", counted as usize == pages.iter().sum::<usize>(), format!("{counted} counted"));
         total += rows.len();
@@ -477,6 +483,11 @@ pub(super) fn run_families(check: &mut Check) -> anyhow::Result<()> {
     let root = thread_key(env_a, &ThreadId::new(state.family_root.as_str()));
     let fork = thread_key(env_a, &ThreadId::new(state.family_fork.as_str()));
     let in_shell = |c: &mut Check, key: &ThreadKey| c.cx.update(|cx| StateBridge::shell(cx).read(cx).row(key).is_some());
+    // Only a profile whose shell still leaves the root out can show the mount: the web mounts a
+    // family only for a thread the shell does not have, and a visit makes the root a server row.
+    if in_shell(check, &root) {
+        check.note("the root is a server row since an earlier visit; the family section needs a fresh seed");
+    } else {
     let absent = !in_shell(check, &root) && !in_shell(check, &fork);
     check.check("the old family is not in the shell", absent, "root and fork absent");
     check.go(&root);
@@ -498,17 +509,25 @@ pub(super) fn run_families(check: &mut Check) -> anyhow::Result<()> {
     let root_shown = in_shell(check, &root);
     check.check("the visited root stays only as a server row", root_shown == root_in_source, format!("root in the server shell {root_in_source}"));
 
+    }
+
     // Before any page: frames and memory with the shelf open at its first count.
     let frames_before = wheel_frames(check);
     check.note(format!("wheel before pages: {}", frame_summary(&frames_before)));
     check.note(format!("resident memory before pages {rss_start:.1} MiB, {presented_start} presented rows"));
 
+    // `T3_FAMILY_CYCLES` repeats open, load every page and close, to tell retained allocator
+    // pages from growth.
+    let cycles: usize = std::env::var("T3_FAMILY_CYCLES").ok().and_then(|v| v.parse().ok()).unwrap_or(1);
+    let mut rss_cycles: Vec<(f64, f64)> = Vec::new();
+    let (mut rss_all, mut rss_closed, mut presented_all, mut frames_after, mut step, mut slow_clicks) = (0., 0., 0, Vec::new(), 0usize, Vec::new());
+    for cycle in 0..cycles {
     click_entry(check, |e| matches!(e, SidebarListEntry::ShelfHeader { shelf: Shelf::Settled, expanded: false, .. }), "settled header")?;
     settle_shelf(check)?;
     check.shot("fam-01-settled-open.png")?;
-    let mut step = 0usize;
+    step = 0;
     let (mut drawn, _) = compare_shelf(check, &truth, total, "open");
-    let mut slow_clicks = Vec::new();
+    slow_clicks.clear();
     while drawn < truth.len() {
         step += 1;
         anyhow::ensure!(step < 2000, "show more never reached the end");
@@ -522,7 +541,7 @@ pub(super) fn run_families(check: &mut Check) -> anyhow::Result<()> {
         }
         anyhow::ensure!(next > drawn, "show more {step} drew no new rows ({next})");
         drawn = next;
-        if step == 6 {
+        if step == 6 && cycle == 0 {
             check.shot("fam-02-pages.png")?;
             // Each environment's pages are the server's pages, in order.
             let pages = page_state(check, &ids);
@@ -564,12 +583,14 @@ pub(super) fn run_families(check: &mut Check) -> anyhow::Result<()> {
     let (_, _, more) = drawn_settled(check);
     check.check("Show more is gone once every row shows", more.is_none(), format!("{more:?}"));
     let mut clicks = slow_clicks.clone();
-    check.note(format!("{step} show more clicks: p50 {:.2} ms, worst {:.2} ms (event and draw)", percentile(&mut clicks, 0.5), clicks.last().copied().unwrap_or(0.)));
+    if !clicks.is_empty() {
+        check.note(format!("{step} show more clicks: p50 {:.2} ms, worst {:.2} ms (event and draw)", percentile(&mut clicks, 0.5), clicks.last().copied().unwrap_or(0.)));
+    }
     check.shot("fam-03-all-pages.png")?;
 
-    let rss_all = rss_mib();
-    let presented_all = check.cx.update(|cx| StateBridge::shell(cx).read(cx).presented().len());
-    let frames_after = wheel_frames(check);
+    rss_all = rss_mib();
+    presented_all = check.cx.update(|cx| StateBridge::shell(cx).read(cx).presented().len());
+    frames_after = wheel_frames(check);
     check.note(format!("wheel after every page: {}", frame_summary(&frames_after)));
     check.note(format!("resident memory after every page {rss_all:.1} MiB (+{:.1}), {presented_all} presented rows", rss_all - rss_start));
 
@@ -580,8 +601,10 @@ pub(super) fn run_families(check: &mut Check) -> anyhow::Result<()> {
     let presented_closed = check.cx.update(|cx| StateBridge::shell(cx).read(cx).presented().len());
     check.check("a closed shelf keeps no pages", closed.iter().all(|p| p.0 == 0), format!("{presented_closed} presented rows, was {presented_all}"));
     check.wait(Duration::from_secs(2));
-    let rss_closed = rss_mib();
-    check.note(format!("resident memory with the shelf closed {rss_closed:.1} MiB"));
+    rss_closed = rss_mib();
+    check.note(format!("cycle {cycle}: resident memory with the shelf closed {rss_closed:.1} MiB"));
+    rss_cycles.push((rss_all, rss_closed));
+    }
     let record = serde_json::json!({
         "launch_to_first_rows_ms": ms(first_rows),
         "launch_to_live_rows_ms": ms(live_rows),
@@ -597,6 +620,7 @@ pub(super) fn run_families(check: &mut Check) -> anyhow::Result<()> {
         "wheel_after_ms": frames_after,
         "show_more_clicks": step,
         "show_more_click_ms": slow_clicks,
+        "rss_cycles_all_closed_mib": rss_cycles,
     });
     std::fs::write(check.out.join("families-record.json"), serde_json::to_vec_pretty(&record)?)?;
     Ok(())
