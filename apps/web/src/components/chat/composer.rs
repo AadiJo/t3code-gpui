@@ -105,6 +105,8 @@ pub struct ComposerBanner {
     pub tone: BannerTone,
     pub icon: IconName,
     pub title: SharedString,
+    /// Muted text after the title, truncated first (`ComposerBannerStackItem.description`).
+    pub description: Option<SharedString>,
     pub action: Option<SharedString>,
 }
 
@@ -1040,7 +1042,21 @@ impl ChatComposer {
                 .rounded(px(12.))
                 .when_some(tint, |el, t| el.bg(t.opacity(0.08)))
                 .child(div().w(px(24.)).flex().justify_center().child(Icon::new(banner.icon).size(IconSize::Custom(px(14.))).color(ink).stroke(composer_icon_stroke(banner.icon))))
-                .child(div().flex_1().min_w_0().text_size(px(12.)).line_height(px(16.)).text_color(c.foreground).child(banner.title.clone()))
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .flex()
+                        .items_baseline()
+                        .gap(px(4.))
+                        .whitespace_nowrap()
+                        .text_size(px(12.))
+                        .line_height(px(16.))
+                        .child(div().min_w_0().truncate().font_weight(gpui_kit::FontWeight::MEDIUM).text_color(c.foreground).child(banner.title.clone()))
+                        .children(banner.description.clone().map(|description| {
+                            div().w(px(0.)).min_w_0().flex_grow(1.).truncate().text_color(c.muted_foreground).child(description)
+                        })),
+                )
                 .when_some(banner.action.clone(), |el, action| {
                     let id = banner.id.clone();
                     el.child(div().id(SharedString::from(format!("banner-action-{id}"))).px(px(8.)).h(px(24.)).flex().items_center().rounded(px(8.)).text_size(px(12.)).text_color(c.foreground).cursor_pointer().hover({

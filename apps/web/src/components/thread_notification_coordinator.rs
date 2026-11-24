@@ -116,6 +116,9 @@ pub enum NotificationInput {
     InboxItems(Arc<[DesktopNotification]>),
     /// Time passed: release completion graces that ended.
     Tick,
+    /// The threads the servers' tag filters hide, and while any environment hides tags, every
+    /// thread the shells list (`hiddenThreadKeysAtom`, `threadRefsAtom`).
+    TagFilter { hidden: Arc<HashSet<ThreadKey>>, live: Option<Arc<HashSet<ThreadKey>>> },
 }
 
 /// Why the gate did not notify a thread that needs attention or completed.
@@ -206,6 +209,8 @@ pub enum ToastFilter {
     Thread(ThreadKey),
     /// Toasts whose environment is not in the list.
     EnvironmentsOtherThan(Vec<EnvironmentId>),
+    /// Toasts of hidden threads, and while hiding, of threads not in `live`.
+    Hidden { hidden: Arc<HashSet<ThreadKey>>, live: Option<Arc<HashSet<ThreadKey>>> },
 }
 
 /// The gate's per-thread state (`NotificationState` in the TypeScript).
@@ -258,6 +263,10 @@ pub struct NotificationEngine {
     /// Entries a mark-unread made unread again; being on screen does not read them.
     marked_unread: HashSet<SharedString>,
     announcer: BackgroundThreadMemory,
+    /// Threads the tag filter hides: they never notify.
+    hidden: Arc<HashSet<ThreadKey>>,
+    /// Every listed thread while some environment hides tags.
+    live: Option<Arc<HashSet<ThreadKey>>>,
     effects: Vec<NotificationEffect>,
 }
 
@@ -279,6 +288,8 @@ impl NotificationEngine {
             last_sent: HashMap::new(),
             marked_unread: HashSet::new(),
             announcer: BackgroundThreadMemory::default(),
+            hidden: Arc::default(),
+            live: None,
             effects: Vec::new(),
         };
         engine.apply_mode();
@@ -362,6 +373,11 @@ impl NotificationEngine {
                 self.read_on_screen();
             }
             NotificationInput::InboxItems(items) => self.inbox_items(items, now),
+            NotificationInput::TagFilter { hidden, live } => {
+                self.hidden = hidden;
+                self.live = live;
+                self.close_hidden_pending();
+            }
             NotificationInput::Tick => {
                 for index in 0..self.watched.len() {
                     let due = self.watched[index].1.gate.due(now);
@@ -414,6 +430,23 @@ impl NotificationEngine {
             .partition(|(_, key)| ids.contains(&key.environment_id));
         self.pending = keep;
         for (tag, _) in close {
+            self.effects.push(NotificationEffect::CloseSystem(tag));
+        }
+        if before != self.pending.len() {
+            self.set_badge(self.pending.len());
+        }
+    }
+
+    /// Closes toasts and system notifications of threads the tag filter hides; while hiding,
+    /// also those whose thread left the shells, which cannot be judged (`closeHiddenPending`).
+    fn close_hidden_pending(&mut self) {
+        let (hidden, live) = (self.hidden.clone(), self.live.clone());
+        let close = |key: &ThreadKey| hidden.contains(key) || live.as_ref().is_some_and(|live| !live.contains(key));
+        self.effects.push(NotificationEffect::CloseToasts(ToastFilter::Hidden { hidden: hidden.clone(), live: live.clone() }));
+        let before = self.pending.len();
+        let (closed, kept): (Vec<_>, Vec<_>) = std::mem::take(&mut self.pending).into_iter().partition(|(_, key)| close(key));
+        self.pending = kept;
+        for (tag, _) in closed {
             self.effects.push(NotificationEffect::CloseSystem(tag));
         }
         if before != self.pending.len() {
@@ -512,6 +545,9 @@ impl NotificationEngine {
     /// Shows one notification (`present`).
     fn present(&mut self, env: &EnvironmentId, state: &ObservedThread, kind: ThreadNotificationKind) {
         let thread = &state.raw.row;
+        if self.hidden.contains(&ThreadKey { environment_id: env.clone(), thread_id: thread.key.thread_id.clone() }) {
+            return;
+        }
         let status = state.status;
         let tone = match kind {
             ThreadNotificationKind::Completion => ToastTone::Completion,
@@ -938,6 +974,9 @@ impl ThreadNotificationCoordinator {
                         ToastFilter::All => true,
                         ToastFilter::Thread(thread) => *key == thread,
                         ToastFilter::EnvironmentsOtherThan(ids) => !ids.contains(&key.environment_id),
+                        ToastFilter::Hidden { hidden, live } => {
+                            hidden.contains(*key) || live.as_ref().is_some_and(|live| !live.contains(*key))
+                        }
                     })
                     .cloned()
                     .collect();

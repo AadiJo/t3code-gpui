@@ -331,6 +331,7 @@ impl ThreadRouteView {
             ThreadDetailsEvent::Section(ThreadDetailsSectionEvent::ManageAutomations(_)) => {
                 return cx.emit(ThreadRouteEvent::Navigate("/settings/scheduled-tasks"));
             }
+            ThreadDetailsEvent::Section(ThreadDetailsSectionEvent::OpenUsage) => return cx.emit(ThreadRouteEvent::Navigate("/usage")),
             _ => {}
         }
         let Some(ThreadTarget::Server(key)) = self.target.clone() else { return };

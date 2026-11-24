@@ -1,7 +1,7 @@
 //! The thread details card's data sections. Ports `ThreadServersPanel.tsx`
 //! (dev servers the thread started), `ThreadAutomationsPanel.tsx` (scheduled
-//! tasks bound to the thread) and `ThreadDetailsContext` of
-//! `ThreadDetailsUsage.tsx` (the context window bar). Each renders from typed
+//! tasks bound to the thread) and `ThreadDetailsUsage.tsx` (the provider's limit
+//! windows and the context window bar). Each renders from typed
 //! rows its owner supplies and reports what a click asks for as
 //! [`ThreadDetailsSectionEvent`]; an empty input renders nothing.
 
@@ -84,6 +84,29 @@ pub enum ThreadDetailsSectionEvent {
     ManageAutomations(Option<SharedString>),
     RunAutomation(SharedString),
     SetAutomationEnabled { id: SharedString, enabled: bool },
+    /// A usage limit row: open the usage page.
+    OpenUsage,
+}
+
+/// The selected provider's limits (`ThreadDetailsUsage`).
+#[derive(Clone, Debug, PartialEq)]
+pub enum UsageLimitsInput {
+    /// `limitsNotice`: why there are no windows to show.
+    Notice(SharedString),
+    Windows(Vec<UsageWindowRow>),
+}
+
+/// One limit window (`LimitRow`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct UsageWindowRow {
+    pub id: SharedString,
+    pub label: SharedString,
+    /// Room left, 0 to 100.
+    pub left: u8,
+    /// The share of the window's time left, 0 to 100 (the pace tick).
+    pub tick: Option<f32>,
+    /// The tooltip's muted lines: pace, then the reset.
+    pub lines: Vec<SharedString>,
 }
 
 /// Emits a section event from a click.
@@ -408,6 +431,136 @@ pub fn format_context_window_tokens(value: u64) -> String {
     }
 }
 
+/// The 3px hairline under a usage row: `fill` from 0 to 100 (at least 6px
+/// when above 0) and a 9px tick at `tick` percent.
+fn usage_bar(theme: &AppTheme, fill: f32, tick: Option<f32>, color: Hsla) -> gpui_kit::Div {
+    let track = if theme.is_dark() { with_alpha(theme.colors.muted_foreground, 0.2) } else { with_alpha(theme.colors.muted_foreground, 0.3) };
+    div()
+        .relative()
+        .w_full()
+        .h(px(3.))
+        .rounded_full()
+        .bg(track)
+        .when(fill > 0., |b| b.child(div().absolute().top_0().bottom_0().left_0().w(relative(fill / 100.)).min_w(px(6.)).rounded_full().bg(color)))
+        .children(tick.map(|t| {
+            div().absolute().top(px(-3.)).left(relative((t / 100.).clamp(0., 1.))).h(px(9.)).w(px(1.)).bg(with_alpha(theme.colors.foreground(), 0.75))
+        }))
+}
+
+/// `ThreadDetailsUsage`: the selected provider's limit windows, as room left,
+/// each opening the usage page; or one "Limits · Unavailable" row with the
+/// reason. Labels, bars and values share columns (`grid-cols-[auto_minmax(3rem,1fr)_auto]`):
+/// the rows are hover and click targets laid behind three columns.
+pub fn usage_limits_section(theme: &AppTheme, input: &UsageLimitsInput, emit: SectionEmit) -> AnyElement {
+    struct Row {
+        label: SharedString,
+        bar: Option<(f32, Option<f32>, Hsla)>,
+        value: SharedString,
+        value_color: Hsla,
+        tip: crate::components::ui::tooltip::TooltipSurface,
+    }
+    use crate::components::ui::tooltip::TooltipSurface;
+    let rows: Vec<Row> = match input {
+        UsageLimitsInput::Notice(notice) => vec![Row {
+            label: t!("Limits", context = "usage limits row label"),
+            bar: None,
+            value: t!("Unavailable"),
+            value_color: theme.colors.muted_foreground,
+            tip: TooltipSurface::new(notice.clone()).line(t!("Open usage")),
+        }],
+        UsageLimitsInput::Windows(windows) => windows
+            .iter()
+            .map(|window| {
+                let left = window.left;
+                let (fill, value) = match left {
+                    l if l <= 10 => (theme.colors.destructive(), theme.colors.destructive()),
+                    l if l <= 20 => (theme.colors.warning, theme.colors.warning),
+                    _ => (with_alpha(theme.colors.foreground(), 0.8), with_alpha(theme.colors.foreground(), 0.8)),
+                };
+                let mut tip = TooltipSurface::new(t!("{label}: {left}% left", label = window.label.as_ref(), left = left as i64));
+                for line in &window.lines {
+                    tip = tip.line(line.clone());
+                }
+                Row {
+                    label: window.label.clone(),
+                    bar: Some((left as f32, window.tick, fill)),
+                    value: format!("{left}%").into(),
+                    value_color: value,
+                    tip: tip.line(t!("Open usage")),
+                }
+            })
+            .collect(),
+    };
+    if rows.is_empty() {
+        return div().into_any_element();
+    }
+    let row_h = theme.rem(1.5);
+    let hover = row_hover(theme);
+    let pressed = if theme.is_dark() { gpui_kit::hsla(0., 0., 1., 0.12) } else { gpui_kit::hsla(0., 0., 0., 0.06) };
+    let targets = rows.iter().enumerate().map(|(ix, row)| {
+        let emit = emit.clone();
+        div()
+            .id(("usage-limit-row", ix))
+            .absolute()
+            .left_0()
+            .right_0()
+            .top(row_h * ix as f32)
+            .h(row_h)
+            .rounded(theme.radii.lg)
+            .cursor_pointer()
+            .hover(move |s| s.bg(hover))
+            .active(move |s| s.bg(pressed))
+            .tooltip(tooltip(row.tip.clone()))
+            .on_click(move |_, window, cx| emit(ThreadDetailsSectionEvent::OpenUsage, window, cx))
+    });
+    let cell = || div().h(row_h).flex().items_center();
+    let labels = div().flex().flex_col().flex_none().children(rows.iter().map(|row| {
+        cell().child(div().max_w(theme.rem(7.)).truncate().text_color(theme.colors.muted_foreground).child(row.label.clone()))
+    }));
+    let any_bar = rows.iter().any(|row| row.bar.is_some());
+    let bars = any_bar.then(|| {
+        div().flex().flex_col().flex_1().min_w(theme.rem(3.)).children(
+            rows.iter().map(|row| cell().children(row.bar.map(|(fill, tick, color)| usage_bar(theme, fill, tick, color)))),
+        )
+    });
+    let values = div().flex().flex_col().flex_none().ml_auto().items_end().children(rows.iter().map(|row| {
+        cell().font_weight(weight::MEDIUM).text_color(row.value_color).child(row.value.clone())
+    }));
+    let grid = div()
+        .relative()
+        .flex()
+        .gap(theme.rem(0.75))
+        .px(row_inset(theme))
+        .ui_text(theme, TextSize::Xs, weight::NORMAL)
+        .children(targets)
+        .child(labels)
+        .children(bars)
+        .child(values);
+    div()
+        .flex()
+        .flex_col()
+        .px(theme.rem(0.5))
+        .pt(theme.rem(0.5))
+        .pb(theme.rem(0.625))
+        .border_t_1()
+        .border_color(with_alpha(theme.colors.border, 0.65))
+        .child(grid)
+        .into_any_element()
+}
+
+/// `toLocaleString` for an English locale: 12,345.
+fn group_thousands(value: u64) -> String {
+    let digits = value.to_string();
+    let mut out = String::with_capacity(digits.len() + digits.len() / 3);
+    for (ix, ch) in digits.chars().enumerate() {
+        if ix > 0 && (digits.len() - ix) % 3 == 0 {
+            out.push(',');
+        }
+        out.push(ch);
+    }
+    out
+}
+
 /// `ThreadDetailsContext`: one "Context" row with a 3px bar (warning at 80%,
 /// error at 90%), a tick at the auto-compact threshold and `used / max`.
 pub fn context_section(theme: &AppTheme, usage: &ContextWindowRow) -> AnyElement {
@@ -431,6 +584,10 @@ pub fn context_section(theme: &AppTheme, usage: &ContextWindowRow) -> AnyElement
         Some(u) => t!("Context: {used}% used", used = u as i64),
         None => t!("Context: {usedTokens} tokens used", usedTokens = used_tokens.as_str()),
     };
+    let mut tip = crate::components::ui::tooltip::TooltipSurface::new(tip);
+    if let Some(m) = max {
+        tip = tip.line(t!("{used} of {max} tokens", used = group_thousands(usage.used_tokens).as_str(), max = group_thousands(m).as_str()));
+    }
     let hover = row_hover(theme);
     let track = if theme.is_dark() { with_alpha(theme.colors.muted_foreground, 0.2) } else { with_alpha(theme.colors.muted_foreground, 0.3) };
     let bar = used.map(|u| {

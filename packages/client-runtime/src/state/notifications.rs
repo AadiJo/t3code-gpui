@@ -43,7 +43,7 @@ pub struct Observation {
 }
 
 /// A monitor wakes the agent per line, so a progress wake's completion waits for it to end.
-fn monitor_holds_wake_completion(thread: &OrchestrationV2ThreadShell) -> bool {
+pub fn monitor_holds_wake_completion(thread: &OrchestrationV2ThreadShell) -> bool {
     thread.latest_run_background_wake == Some(true)
         && thread
             .pending_background_tasks

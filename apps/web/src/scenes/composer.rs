@@ -299,6 +299,7 @@ pub fn build_composer(state: SceneState, store: Rc<RefCell<dyn ComposerDraftStor
                 tone: BannerTone::Error,
                 icon: IconName::CircleAlert,
                 title: "Environment disconnected. Messages send when it reconnects.".into(),
+                description: None,
                 action: Some("Retry".into()),
             }];
         }

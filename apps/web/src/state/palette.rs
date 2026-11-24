@@ -20,6 +20,7 @@ use crate::components::command_palette_lookups::{
 use crate::components::sidebar::SidebarEvent;
 use crate::components::sidebar::model::{EnvironmentId, ProjectRef, SidebarThread, ThreadKey};
 use crate::theme_palette::{Appearance, ThemeDocument};
+use t3code_client_runtime::state::models::ThreadRow;
 
 #[derive(Default)]
 struct PaletteData {
@@ -32,6 +33,35 @@ struct PaletteData {
     environments: Vec<PaletteEnvironment>,
     now_ms: i64,
     memo: HashMap<ThreadKey, (Arc<SidebarThread>, Arc<PaletteThread>)>,
+    mentions: Arc<[Arc<MentionCandidate>]>,
+    mention_memo: HashMap<ThreadKey, (Arc<ThreadRow>, Arc<MentionCandidate>)>,
+}
+
+/// A thread the composer's `@` menu may reference (`ComposerThreadCandidate`): every listed
+/// thread and every side chat, not archived. Side chats are offered only from their own parent.
+pub struct MentionCandidate {
+    pub key: ThreadKey,
+    pub title: SharedString,
+    /// The thread it is a side chat of, if it is one.
+    pub side_chat_of: Option<ThreadKey>,
+    /// The user wrote in it; an unused side chat is deleted on close, so it is not offered.
+    pub has_user_message: bool,
+    /// Searched without the project title, as the composer searches.
+    pub subject: t3code_shared::palette_search::ThreadSearchSubject,
+}
+
+impl MentionCandidate {
+    fn new(row: &ThreadRow) -> Self {
+        let source = &row.source;
+        let key = super::shell::thread_key(&row.environment_id, row.id());
+        let mut subject = t3code_shared::palette_search::ThreadSearchSubject::new(row.title()).with_branch(source.branch.as_deref());
+        subject.id = Some(Arc::clone(&source.id.0));
+        subject.activity_at = row.latest_user_message_at.or(row.updated_at).or(row.created_at);
+        let side_chat_of = (source.lineage.side_chat == Some(true))
+            .then(|| source.lineage.parent_thread_id.as_ref().map(|parent| super::shell::thread_key(&row.environment_id, parent)))
+            .flatten();
+        Self { key, title: SharedString::from(row.title().to_owned()), side_chat_of, has_user_message: row.latest_user_message_at.is_some(), subject }
+    }
 }
 
 /// Palette data from the live shell.
@@ -43,6 +73,11 @@ pub struct LivePaletteSource {
 impl LivePaletteSource {
     pub fn new() -> Rc<Self> {
         Rc::default()
+    }
+
+    /// The threads `@` may reference, as of the last refresh.
+    pub fn mention_candidates(&self) -> Arc<[Arc<MentionCandidate>]> {
+        self.data.borrow().mentions.clone()
     }
 
     /// Takes the shell's current rows if they changed since the last refresh.
@@ -83,6 +118,24 @@ impl LivePaletteSource {
             .collect();
         data.memo = next;
         data.threads = threads;
+        let mut memo = std::mem::take(&mut data.mention_memo);
+        let mut next = HashMap::with_capacity(memo.len());
+        let mentions: Arc<[Arc<MentionCandidate>]> = shell
+            .presented()
+            .iter()
+            .filter(|row| row.source.archived_at.is_none() && (row.source.lineage.is_listed() || row.source.lineage.side_chat == Some(true)))
+            .map(|row| {
+                let key = super::shell::thread_key(&row.environment_id, row.id());
+                let candidate = match memo.remove(&key) {
+                    Some((source, candidate)) if Arc::ptr_eq(&source, row) => candidate,
+                    _ => Arc::new(MentionCandidate::new(row)),
+                };
+                next.insert(key, (Arc::clone(row), Arc::clone(&candidate)));
+                candidate
+            })
+            .collect();
+        data.mention_memo = next;
+        data.mentions = mentions;
         data.projects = projects;
         data.active_thread = snapshot.active_thread.clone();
         data.active_has_links = snapshot.active_thread.as_ref().and_then(|key| shell.row(key)).is_some_and(|row| {
