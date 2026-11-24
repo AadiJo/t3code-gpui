@@ -77,6 +77,7 @@ impl Sidebar {
                 .py(colors.s(CARD_ROW_PADDING_Y))
                 .child(surface.child(self.card_body(ix, thread, &state, colors, cx)))
                 .into_any_element(),
+            RowVariant::SearchResult => self.search_result_row(ix, thread, &state, section, surface, colors),
             RowVariant::Slim | RowVariant::Folder | RowVariant::FolderMultiline => {
                 let action = match section {
                     SidebarSection::Settled => SlimAction::Unsettle,
@@ -88,6 +89,56 @@ impl Sidebar {
                     .into_any_element()
             }
         }
+    }
+
+    /// A search result: favicon, title and age; the highlighted result (the first until the
+    /// arrows move it) fills like the open thread (`SidebarSearchResultRow`).
+    fn search_result_row(
+        &self,
+        ix: usize,
+        thread: &SidebarThread,
+        state: &RowState,
+        section: SidebarSection,
+        surface: Stateful<Div>,
+        colors: &ShellColors,
+    ) -> AnyElement {
+        let first = self.list.entries.iter().position(|e| matches!(e, SidebarListEntry::Thread { .. }));
+        let highlighted = self.cursor.map_or(first == Some(ix), |cursor| cursor == ix);
+        let settled = section == SidebarSection::Settled;
+        let lit = highlighted || state.active;
+        let project_title = self.list.project_titles.get(&thread.project_ref()).cloned().unwrap_or_default();
+        let favicon = project_favicon(project_title, self.list.project_icons.get(&thread.project_ref()), colors);
+        surface
+            .when(lit, |d| d.bg(colors.sidebar_row_active))
+            .min_h(colors.s(SLIM_ROW_HEIGHT))
+            .flex()
+            .items_center()
+            .gap(colors.r(10.))
+            .px(colors.r(10.))
+            .py(colors.r(4.))
+            .text_sm()
+            .child(div().flex_none().when(settled && !lit && !state.hovered, |d| d.opacity(0.4)).child(favicon))
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .truncate()
+                    .font_weight(if settled { FontWeight::NORMAL } else { FontWeight::MEDIUM })
+                    .text_color(if settled && !lit && !state.hovered { colors.secondary_label.opacity(0.7) } else { colors.foreground })
+                    .child(thread.title.clone()),
+            )
+            .child(
+                div()
+                    .w(colors.r(32.))
+                    .flex_none()
+                    .flex()
+                    .justify_end()
+                    .text_xs()
+                    .font_features(super::style::tabular_figures())
+                    .text_color(colors.muted_foreground.opacity(0.55))
+                    .child(compact_relative_time(thread_activity_timestamp(thread), self.now)),
+            )
+            .into_any_element()
     }
 
     /// The clickable row box: fill by state, focus ring, pointer handlers.
