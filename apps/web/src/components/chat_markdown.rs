@@ -142,10 +142,12 @@ struct Renderer<'a> {
     link_handler: LinkHandler,
     /// Find matches drawn so far in this message.
     find_seen: usize,
+    /// Measures table cells for the auto table layout.
+    text_system: Rc<gpui_kit::WindowTextSystem>,
 }
 
 /// Renders a message's markdown as one column.
-pub fn render_markdown(view: &MarkdownView<'_>, _window: &mut Window, cx: &mut App) -> Div {
+pub fn render_markdown(view: &MarkdownView<'_>, window: &mut Window, cx: &mut App) -> Div {
     let actions = view.actions.clone();
     let mut renderer = Renderer {
         view,
@@ -156,6 +158,7 @@ pub fn render_markdown(view: &MarkdownView<'_>, _window: &mut Window, cx: &mut A
         text_color: if view.user { view.colors.theme.message_foreground } else { view.colors.prose() },
         link_handler: Rc::new(move |target, window, cx| actions(MarkdownAction::OpenLink(target.clone()), window, cx)),
         find_seen: 0,
+        text_system: window.text_system().clone(),
     };
     let mut rendered = Vec::new();
     let last_piece = view.pieces.len().saturating_sub(1);
@@ -324,6 +327,33 @@ impl Renderer<'_> {
                 Rendered { element: text.into_any_element(), top: self.view.colors.r(BLOCK_MARGIN), bottom: self.view.colors.r(BLOCK_MARGIN) }
             }
         }
+    }
+
+    /// A table cell's (longest word, whole text) width on one line, with its styles.
+    fn cell_widths(&self, cell: &Inlines, header: bool) -> (Pixels, Pixels) {
+        let base = InlineBase {
+            weight: if header { FontWeight::SEMIBOLD } else { FontWeight::NORMAL },
+            color: self.text_color,
+        };
+        let runs = style_inlines(cell, base, self.view.colors, self.view.user).runs;
+        let text = cell.text.as_ref();
+        if text.is_empty() {
+            return (px(0.), px(0.));
+        }
+        let line = self.text_system.layout_line(text, self.view.colors.r(px(14.)), &runs, None);
+        let mut longest = px(0.);
+        let mut start = 0;
+        for (index, c) in text.char_indices().chain([(text.len(), ' ')]) {
+            if c.is_whitespace() {
+                if index > start {
+                    // A word that opens the cell starts at 0, before any padding of its run.
+                    let from = if start == 0 { px(0.) } else { line.x_for_index(start) };
+                    longest = longest.max(line.x_for_index(index) - from);
+                }
+                start = index + c.len_utf8();
+            }
+        }
+        (longest, line.width)
     }
 
     /// A paragraph of inline content as one selectable text run.
@@ -570,16 +600,22 @@ impl Renderer<'_> {
     fn table(&mut self, table: &Table) -> AnyElement {
         let colors = self.view.colors;
         let columns = table.header.len().max(table.rows.iter().map(Vec::len).max().unwrap_or(0));
-        // Auto table layout, approximated: columns grow in proportion to their longest cell.
-        let weights: Vec<f32> = (0..columns)
+        let pad_x = colors.r(CELL_PAD_X);
+        let side_padding = |column: usize| match (column == 0, column + 1 == columns) {
+            (true, true) => px(0.),
+            (true, false) | (false, true) => pad_x,
+            (false, false) => pad_x * 2.,
+        };
+        // Each column's (min-content, max-content) width with its padding: the longest word
+        // and the whole cell on one line, the widest cell of the column for each.
+        let measured: Vec<(Pixels, Pixels)> = (0..columns)
             .map(|column| {
-                let longest = std::iter::once(&table.header)
-                    .chain(table.rows.iter())
-                    .filter_map(|row| row.get(column))
-                    .map(|cell| cell.text.chars().count())
-                    .max()
-                    .unwrap_or(1);
-                ((longest as f32 * 7.5 + 24.) * self.view.colors.rem).min(f32::from(self.view.colors.r(CELL_MAX_WIDTH)))
+                let (min, max) = std::iter::once((&table.header, true))
+                    .chain(table.rows.iter().map(|row| (row, false)))
+                    .filter_map(|(row, header)| row.get(column).map(|cell| self.cell_widths(cell, header)))
+                    .fold((px(0.), px(0.)), |(a, b), (min, max)| (a.max(min), b.max(max)));
+                let cap = colors.r(CELL_MAX_WIDTH);
+                (min.min(cap) + side_padding(column), max.min(cap) + side_padding(column))
             })
             .collect();
         let rule = alpha(colors.theme.border, 0.6);
@@ -600,16 +636,20 @@ impl Renderer<'_> {
                         .get(column)
                         .map(|cell| this.paragraph(cell, header.then_some(FontWeight::SEMIBOLD), None));
                     let align = table.align.get(column).copied().unwrap_or(TableAlign::None);
+                    // Auto table layout at `width: 100%`: columns start at their max-content
+                    // width and share spare or missing width in proportion to it, never
+                    // narrower than their min-content width.
+                    let (min, max) = measured[column];
                     let mut cell = div()
-                        .flex_grow(1.)
-                        .flex_basis(px(weights[column]))
-                        .min_w(px(weights[column] * 0.5))
-                        .max_w(self.view.colors.r(CELL_MAX_WIDTH))
+                        .flex_basis(max)
+                        .flex_grow(f32::from(max).max(1.))
+                        .flex_shrink(1.)
+                        .min_w(min)
                         .pt(pad_top)
                         .pb(pad_bottom)
                         .flex()
                         .children(content);
-                    cell = if column == 0 { cell.pr(self.view.colors.r(CELL_PAD_X)) } else if column + 1 == columns { cell.pl(self.view.colors.r(CELL_PAD_X)) } else { cell.px(self.view.colors.r(CELL_PAD_X)) };
+                    cell = if column == 0 { cell.pr(pad_x) } else if column + 1 == columns { cell.pl(pad_x) } else { cell.px(pad_x) };
                     match align {
                         TableAlign::Center => cell.text_center(),
                         TableAlign::Right => cell.text_right(),
