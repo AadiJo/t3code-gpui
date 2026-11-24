@@ -39,9 +39,9 @@ ssh "$host" "mkdir '$remote'"
 scp -q "$dl/t3code-gpui-tools-mac-arm64.tar.gz" "$host:$remote/"
 
 echo "== rendering on $host"
-ssh "$host" "bash -s" -- "$remote" "${PARITY_SHOT:-1}" "${PARITY_LOCAL_STORAGE:-}" <<'REMOTE' 2>&1 | tee "$out/render.log"
+ssh "$host" "bash -s -- $(printf '%q ' "$remote" "${PARITY_SHOT:-1}" "${PARITY_LOCAL_STORAGE:-}")" <<'REMOTE' 2>&1 | tee "$out/render.log"
 set -u
-remote=$1 shots=$2 storage=$3
+remote=$1 shots=${2:-1} storage=${3:-}
 cd "$remote"
 tar xzf t3code-gpui-tools-mac-arm64.tar.gz && rm t3code-gpui-tools-mac-arm64.tar.gz
 tools=$remote/t3code-gpui-tools-mac-arm64/bin
@@ -51,17 +51,16 @@ mkdir -p home tmp data out/mac out/shot
 # The tools see only the run directory; the install is named by path and read, never written.
 export HOME=$remote/home TMPDIR=$remote/tmp T3CODE_DATA_DIR=$remote/data
 export PARITY_CLIENT_SETTINGS=$settings PARITY_LAYOUT=$layout T3CODE_CLIENT_SETTINGS=$settings
-failed=0
 for scene in $("$tools/parity-shot" --list-mac); do
-  "$tools/parity-shot" --mac out/mac "$scene" 2>&1 | grep -v '^owner profile' || failed=$((failed + 1))
+  "$tools/parity-shot" --mac out/mac "$scene" 2>&1 | grep -v '^owner profile'
 done
-echo "mac scenes failed: $failed"
+echo "mac scenes rendered: $(ls out/mac | grep -c '\.png$')"
 if [ "$shots" = 1 ]; then
   for scene in $("$tools/shot" --list); do
     "$tools/shot" "$scene" "out/shot/$scene.png" 1710 1074 >/dev/null 2>&1 || echo "shot failed: $scene"
   done
 fi
-"$tools/parity-shot" --mac out/mac __none__ 2>&1 | head -1
+"$tools/parity-shot" --mac out/mac __none__ 2>&1 | head -1  # the layout values read
 du -sh "$remote"
 REMOTE
 
