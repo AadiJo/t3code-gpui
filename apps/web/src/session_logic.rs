@@ -38,11 +38,43 @@ use crate::components::chat::timeline_entries::{
 };
 use crate::i18n::t;
 use crate::work_entry_labels::{Lifecycle, SourceActivityKind, Tone, WorkFacts, WorkSource, format_read_tool_label, format_search_tool_label};
+use t3code_client_runtime::work_log::t3_tools::{read_t3_tool_result, t3_tool_id};
 use t3code_client_runtime::work_log::tool_activity::{ToolActivityAction, classify_tool_activity, collect_tool_file_paths};
 
 /// `WORKSPACE_PREPARATION_INPUT` and the failure code of `turnItemIsWorkspacePreparation`.
 const WORKSPACE_PREPARATION_INPUT: &str = "Preparing workspace";
 const WORKSPACE_PREPARATION_FAILURE_CODE: &str = "workspace_preparation_failed";
+
+/// The completed T3 tool output a row reads (`compactDynamicToolOutput`), for the tools whose
+/// output replaces their work row; OpenCode's code mode reports them as `execute`.
+fn tool_output_data(tool: &t3code_contracts::OrchestrationV2TurnItemDynamicTool, tool_id: &str) -> Option<serde_json::Map<String, Value>> {
+    let name = tool.tool_name.as_deref();
+    if name != Some("execute") && t3_tool_id(name) != Some(tool_id) {
+        return None;
+    }
+    let result = read_t3_tool_result(tool.output.as_ref()?);
+    if result.failed { None } else { result.data }
+}
+
+/// The text `send_to_user` showed the user (`sentMessageFromToolItem`).
+fn sent_message(tool: &t3code_contracts::OrchestrationV2TurnItemDynamicTool) -> Option<String> {
+    let data = tool_output_data(tool, "send_to_user")?;
+    let text = data.get("sentMessage")?.as_str()?;
+    (!text.trim().is_empty() && text.encode_utf16().count() <= 4_000).then(|| text.to_owned())
+}
+
+/// The title of the page `html_render` rendered (`htmlRenderFromToolItem`, `readHtmlRenderReference`).
+fn html_render_title(tool: &t3code_contracts::OrchestrationV2TurnItemDynamicTool) -> Option<String> {
+    let data = tool_output_data(tool, "html_render")?;
+    let reference = data.get("htmlRender")?.as_object()?;
+    let attachment = reference.get("attachmentId")?.as_str()?;
+    let title = reference.get("title")?.as_str()?;
+    if attachment.is_empty() || attachment.encode_utf16().count() > 256 || !reference.get("height")?.as_f64()?.is_finite() {
+        return None;
+    }
+    let title: String = title.trim().chars().take(200).collect();
+    Some(if title.is_empty() { "HTML".to_owned() } else { title })
+}
 
 /// Base fields every turn item variant has but the shared accessor trait does not expose.
 macro_rules! base {
@@ -127,19 +159,9 @@ fn attachments(list: &[ChatAttachment]) -> Arc<[Attachment]> {
         .collect()
 }
 
-/// The bare tool name of a t3 MCP tool (`t3-code.send_to_user`, `mcp__t3-code__send_to_user`).
-fn t3_tool(tool_name: Option<&str>) -> Option<&str> {
-    let name = tool_name?;
-    if !name.contains("t3") {
-        return None;
-    }
-    let tail = name.rsplit(['.', '/']).next()?;
-    Some(tail.rsplit("__").next().unwrap_or(tail))
-}
-
 fn dynamic_tool_kind(tool_name: Option<&str>) -> DynamicToolKind {
     let lower = tool_name.unwrap_or_default().to_lowercase();
-    let tool = t3_tool(Some(&lower)).unwrap_or(&lower).to_owned();
+    let tool = t3_tool_id(tool_name).map_or(lower, str::to_owned);
     if tool.starts_with("preview_") || tool.contains("browser") {
         DynamicToolKind::Browser
     } else if tool.starts_with("device_") {
@@ -735,12 +757,11 @@ fn map_row(row: &VisibleTurnItem, superseded_attempt: Option<AttemptId>, folded_
                 .unwrap_or_else(|| t!("Proposed plan")),
             markdown: shared(plan.markdown.clone()),
         }),
-        Item::DynamicTool(tool) if tool.status == Status::Completed && t3_tool(tool.tool_name.as_deref()) == Some("send_to_user") => {
-            let text = str_field(&tool.input, "message").or_else(|| str_field(&tool.input, "text")).unwrap_or_default();
-            EntryKind::SentMessage { run_id, text: shared(text) }
+        Item::DynamicTool(tool) if tool.status == Status::Completed && html_render_title(tool).is_some() => {
+            EntryKind::HtmlRender { run_id, title: shared(html_render_title(tool).unwrap_or_default()) }
         }
-        Item::DynamicTool(tool) if tool.status == Status::Completed && t3_tool(tool.tool_name.as_deref()) == Some("html_render") => {
-            EntryKind::HtmlRender { run_id, title: shared(str_field(&tool.input, "title").unwrap_or_default()) }
+        Item::DynamicTool(tool) if tool.status == Status::Completed && sent_message(tool).is_some() => {
+            EntryKind::SentMessage { run_id, text: shared(sent_message(tool).unwrap_or_default()) }
         }
         Item::Subagent(subagent) => EntryKind::Event(TimelineEvent::Subagent(Subagent {
             id: id_of(&subagent.subagent_id),
