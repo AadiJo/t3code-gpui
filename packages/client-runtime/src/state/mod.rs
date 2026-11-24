@@ -23,10 +23,14 @@ pub mod runtime;
 pub mod shell;
 pub mod shell_reducer;
 pub mod sidebar;
+pub mod subagent_runtime;
+#[cfg(test)]
+pub mod test_fixtures;
 pub mod thread_detail;
 pub mod thread_history_merge;
 pub mod thread_inbox;
 pub mod thread_lifecycle;
+pub mod thread_relationships;
 pub mod thread_runs;
 pub mod thread_search;
 pub mod thread_settled;
@@ -35,6 +39,7 @@ pub mod thread_sort;
 pub mod thread_tag_filter;
 pub mod thread_state;
 pub mod thread_visits;
+pub mod thread_workflows;
 pub mod threads;
 pub mod ui_state;
 
