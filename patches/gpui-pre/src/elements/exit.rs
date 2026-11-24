@@ -74,14 +74,6 @@ pub struct Exit {
     child: AnyElement,
 }
 
-impl IntoElement for Exit {
-    type Element = Self;
-
-    fn into_element(self) -> Self::Element {
-        self
-    }
-}
-
 impl Element for Exit {
     type RequestLayoutState = ();
     type PrepaintState = ();

@@ -211,6 +211,12 @@ impl PlatformTextSystem for AppleTextSystem {
         self.0.write().layout_line(text, font_size, font_runs)
     }
 
+    fn run_padding(&self, font_id: FontId, font_size: Pixels) -> Pixels {
+        self.0.read().scaled_faces.get(&font_id).map_or(Pixels::ZERO, |(_, layout)| {
+            px(layout.padding_em * f32::from(font_size) * layout.scale + layout.padding_px)
+        })
+    }
+
     fn recommended_rendering_mode(
         &self,
         _font_id: FontId,
@@ -814,7 +820,6 @@ impl AppleTextSystemState {
             ascent: max_ascent.into(),
             descent: max_descent.into(),
             len: text.len(),
-            padded_runs: padded_runs.into_iter().map(|(range, padding)| (range, px(padding))).collect(),
         }
     }
 }

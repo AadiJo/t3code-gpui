@@ -30,11 +30,21 @@ pub struct LineLayout {
     pub runs: Vec<ShapedRun>,
     /// The length of the line in utf-8 bytes
     pub len: usize,
-    /// Runs laid out with inline padding (see `RunLayout`): each one's byte range and the
-    /// padding on each side, already in the glyph positions. Where the line wraps inside
-    /// one, both fragments are padded again at the break, as CSS
-    /// `box-decoration-break: clone` pads every fragment of an inline box.
-    pub padded_runs: SmallVec<[(Range<usize>, Pixels); 1]>,
+}
+
+/// Runs laid out with inline padding (see `RunLayout`): each one's byte range and the
+/// padding on each side, which the text system already put in the glyph positions.
+pub type PaddedRuns = SmallVec<[(Range<usize>, Pixels); 1]>;
+
+/// The padding a wrap at byte `index` adds to each side of the break: that of every padded
+/// run the break falls strictly inside. CSS `box-decoration-break: clone` pads every
+/// fragment of an inline box this way.
+pub fn break_padding(padded_runs: &[(Range<usize>, Pixels)], index: usize) -> Pixels {
+    padded_runs
+        .iter()
+        .filter(|(range, _)| range.start < index && index < range.end)
+        .map(|(_, padding)| *padding)
+        .sum()
 }
 
 /// A run of text that has been shaped .
@@ -63,14 +73,22 @@ pub struct ShapedGlyph {
 }
 
 impl LineLayout {
-    /// The padding a wrap at byte `index` adds to each side of the break: that of every
-    /// padded run the break falls strictly inside.
-    pub fn break_padding(&self, index: usize) -> Pixels {
-        self.padded_runs
-            .iter()
-            .filter(|(range, _)| range.start < index && index < range.end)
-            .map(|(_, padding)| *padding)
-            .sum()
+    /// The runs of this line whose font `run_padding` pads (see [`PaddedRuns`]).
+    pub(crate) fn padded_runs(&self, run_padding: impl Fn(FontId) -> Pixels) -> PaddedRuns {
+        let mut padded = PaddedRuns::new();
+        for (ix, run) in self.runs.iter().enumerate() {
+            let padding = run_padding(run.font_id);
+            let Some(first) = run.glyphs.first() else { continue };
+            if padding <= Pixels::ZERO {
+                continue;
+            }
+            let end = self.runs[ix + 1..]
+                .iter()
+                .find_map(|run| run.glyphs.first())
+                .map_or(self.len, |glyph| glyph.index);
+            padded.push((first.index..end, padding));
+        }
+        padded
     }
 
     /// The index for the character at the given x coordinate
@@ -192,7 +210,6 @@ impl LineLayout {
             descent: self.descent,
             runs: left_runs,
             len: byte_index,
-            padded_runs: SmallVec::new(),
         };
 
         let right = LineLayout {
@@ -202,7 +219,6 @@ impl LineLayout {
             descent: self.descent,
             runs: right_runs,
             len: self.len - byte_index,
-            padded_runs: SmallVec::new(),
         };
 
         (left, right)
@@ -210,6 +226,7 @@ impl LineLayout {
 
     fn compute_wrap_boundaries(
         &self,
+        padded_runs: &[(Range<usize>, Pixels)],
         text: &str,
         wrap_width: Pixels,
         max_lines: Option<usize>,
@@ -289,8 +306,8 @@ impl LineLayout {
             let (next_index, next_x) =
                 glyphs.peek().map_or((self.len, self.width), |(_, index, x)| (*index, *x));
             let width = next_x - last_boundary_x
-                + self.break_padding(last_boundary_index)
-                + self.break_padding(next_index);
+                + break_padding(padded_runs, last_boundary_index)
+                + break_padding(padded_runs, next_index);
 
             if width > wrap_width && boundary > last_boundary {
                 // When used line_clamp, we should limit the number of lines.
@@ -328,6 +345,9 @@ pub struct WrappedLineLayout {
 
     /// The width of the line, if it was wrapped
     pub wrap_width: Option<Pixels>,
+
+    /// The runs padded at each wrap inside them (see [`break_padding`]).
+    pub padded_runs: PaddedRuns,
 }
 
 /// A boundary at which a line was wrapped
@@ -428,7 +448,7 @@ impl WrappedLineLayout {
             let glyph = &run.glyphs[line_start_boundary.glyph_ix];
             wrapped_line_start_index = glyph.index;
             wrapped_line_start_x =
-                glyph.position.x - self.unwrapped_layout.break_padding(glyph.index);
+                glyph.position.x - break_padding(&self.padded_runs, glyph.index);
         } else {
             wrapped_line_start_index = 0;
             wrapped_line_start_x = Pixels::ZERO;
@@ -491,7 +511,7 @@ impl WrappedLineLayout {
                 continue;
             } else {
                 let line_start_x = self.unwrapped_layout.x_for_index(line_start_ix)
-                    - self.unwrapped_layout.break_padding(line_start_ix);
+                    - break_padding(&self.padded_runs, line_start_ix);
                 let x = self.unwrapped_layout.x_for_index(index) - line_start_x;
                 return Some(point(x, line_y));
             }
@@ -503,7 +523,7 @@ impl WrappedLineLayout {
     /// The box of each wrapped line's part of `range` in `text` (the line's text), as
     /// (wrapped line, left, right) with x relative to the line's start. A part the line
     /// breaks after ends at its last character that is not a space, plus the break's
-    /// padding (see [`LineLayout::break_padding`]).
+    /// padding (see [`break_padding`]).
     pub fn fragments(&self, text: &str, range: Range<usize>) -> SmallVec<[(usize, Pixels, Pixels); 2]> {
         let layout = &self.unwrapped_layout;
         let mut fragments = SmallVec::new();
@@ -516,12 +536,12 @@ impl WrappedLineLayout {
         for (line, line_end) in ends.enumerate() {
             let (start, end) = (range.start.max(line_start), range.end.min(line_end));
             if start < end {
-                let origin = layout.x_for_index(line_start) - layout.break_padding(line_start);
+                let origin = layout.x_for_index(line_start) - break_padding(&self.padded_runs, line_start);
                 let right = if range.end <= line_end {
                     layout.x_for_index(range.end)
                 } else {
                     let content_end = start + text.get(start..line_end).map_or(0, |part| part.trim_end().len());
-                    layout.x_for_index(content_end) + layout.break_padding(line_end)
+                    layout.x_for_index(content_end) + break_padding(&self.padded_runs, line_end)
                 };
                 fragments.push((line, layout.x_for_index(start) - origin, right - origin));
             }
@@ -693,8 +713,11 @@ impl LineLayoutCache {
             drop(state);
             let text = SharedString::from(text);
             let unwrapped_layout = self.layout_line::<&SharedString>(&text, font_size, runs, None);
+            let padded_runs = unwrapped_layout
+                .padded_runs(|font_id| self.platform_text_system.run_padding(font_id, font_size));
             let wrap_boundaries = if let Some(wrap_width) = wrap_width {
                 unwrapped_layout.compute_wrap_boundaries(
+                    &padded_runs,
                     text.as_ref(),
                     wrap_width,
                     max_lines,
@@ -707,6 +730,7 @@ impl LineLayoutCache {
                 unwrapped_layout,
                 wrap_boundaries,
                 wrap_width,
+                padded_runs,
             });
             let key = Arc::new(CacheKey {
                 text,
@@ -957,7 +981,6 @@ mod tests {
                 glyphs,
             }],
             len: 0,
-            padded_runs: Default::default(),
         }
     }
 
@@ -981,7 +1004,7 @@ mod tests {
         layout.len = "你好".len();
         assert_eq!(
             layout
-                .compute_wrap_boundaries("你好", px(15.), None, &mut WrapScratch::default())
+                .compute_wrap_boundaries(&[], "你好", px(15.), None, &mut WrapScratch::default())
                 .as_slice(),
             &[WrapBoundary {
                 run_ix: 0,
@@ -994,7 +1017,7 @@ mod tests {
         layout.len = 1;
         assert!(
             layout
-                .compute_wrap_boundaries("a", px(10.), None, &mut WrapScratch::default())
+                .compute_wrap_boundaries(&[], "a", px(10.), None, &mut WrapScratch::default())
                 .is_empty()
         );
     }
@@ -1015,7 +1038,7 @@ mod tests {
             layout.width = px(indices.len() as f32 * 10.);
             layout.len = text.len();
             assert_eq!(
-                layout.compute_wrap_boundaries(text, px(40.), None, &mut WrapScratch::default()),
+                layout.compute_wrap_boundaries(&[], text, px(40.), None, &mut WrapScratch::default()),
                 expected_boundaries
                     .into_iter()
                     .map(|glyph_ix| WrapBoundary {
@@ -1041,7 +1064,7 @@ mod tests {
         layout.len = text.len();
         assert_eq!(
             layout
-                .compute_wrap_boundaries(text, px(60.), None, &mut WrapScratch::default())
+                .compute_wrap_boundaries(&[], text, px(60.), None, &mut WrapScratch::default())
                 .as_slice(),
             &[WrapBoundary {
                 run_ix: 0,

@@ -99,7 +99,6 @@ impl ShapedLine {
             descent: layout.descent,
             runs: layout.runs.clone(),
             len,
-            padded_runs: layout.padded_runs.clone(),
         });
         self
     }
@@ -149,6 +148,7 @@ impl ShapedLine {
             align,
             align_width,
             &self.decoration_runs,
+            &[],
             &[],
             window,
             cx,
@@ -370,7 +370,6 @@ impl<'a> ShapedLineCursor<'a> {
                 descent: self.line.layout.descent,
                 runs,
                 len: byte_index - previous_index,
-                padded_runs: Default::default(),
             }),
             text: SharedString::new(&self.line.text[previous_index..byte_index]),
             decoration_runs: decorations,
@@ -406,6 +405,7 @@ impl LineLayout {
             align,
             align_width,
             decoration_runs,
+            &[],
             &[],
             window,
             cx,
@@ -485,6 +485,7 @@ impl WrappedLine {
             align_width,
             &self.decoration_runs,
             &self.wrap_boundaries,
+            &self.layout.padded_runs,
             window,
             cx,
             &mut |_, origin, width, style, window| window.paint_underline(origin, width, style),
@@ -535,6 +536,7 @@ fn paint_line(
     align_width: Option<Pixels>,
     decoration_runs: &[DecorationRun],
     wrap_boundaries: &[WrapBoundary],
+    padded_runs: &[(Range<usize>, Pixels)],
     window: &mut Window,
     cx: &mut App,
     paint_underline: &mut dyn FnMut(
@@ -640,7 +642,7 @@ fn paint_line(
                         wraps.peek(),
                     );
                     // A run padded on both sides is padded again where it wraps.
-                    glyph_origin.x += layout.break_padding(glyph.index);
+                    glyph_origin.x += crate::break_padding(padded_runs, glyph.index);
                     line_ix += 1;
                     glyph_origin.y = line_top(line_ix);
                 }
@@ -1014,7 +1016,6 @@ mod tests {
                     glyphs: shaped_glyphs,
                 }],
                 len: text.len(),
-                padded_runs: Default::default(),
             }),
             text: SharedString::new(text),
             decoration_runs: SmallVec::from(decorations.to_vec()),
@@ -1286,6 +1287,7 @@ mod tests {
                             glyph_ix: 2,
                         }]),
                         wrap_width: Some(px(16.)),
+                        padded_runs: Default::default(),
                     }),
                     text: line.text,
                     decoration_runs: line.decoration_runs.into_vec(),
@@ -1305,6 +1307,7 @@ mod tests {
                     Some(px(16.)),
                     &wrapped.decoration_runs,
                     &wrapped.wrap_boundaries,
+                    &wrapped.padded_runs,
                     window,
                     cx,
                     &mut |range, origin, width, style, window| {
@@ -1443,7 +1446,6 @@ mod tests {
                     },
                 ],
                 len: 6,
-                padded_runs: Default::default(),
             }),
             text: "abcdef".into(),
             decoration_runs: SmallVec::new(),
@@ -1616,7 +1618,6 @@ mod tests {
             descent: layout.descent,
             runs,
             len: layout.len,
-            padded_runs: Default::default(),
         });
         line
     }
@@ -1685,7 +1686,6 @@ mod tests {
                     },
                 ],
                 len: 10,
-                padded_runs: Default::default(),
             }),
             text: "a😀bcdef".into(),
             decoration_runs: SmallVec::new(),

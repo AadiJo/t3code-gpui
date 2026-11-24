@@ -1656,6 +1656,11 @@ pub trait PlatformTextSystem: Send + Sync {
     ) -> Result<(Size<DevicePixels>, Vec<u8>)>;
     /// Layout a line of text with the given font runs.
     fn layout_line(&self, text: &str, font_size: Pixels, runs: &[FontRun]) -> LineLayout;
+    /// The inline padding on each side of a run in `font_id` on a line at `font_size`,
+    /// from the font's `RunLayout`, which `layout_line` already put in the glyph positions.
+    fn run_padding(&self, _font_id: FontId, _font_size: Pixels) -> Pixels {
+        Pixels::ZERO
+    }
     /// Returns the recommended text rendering mode for the given font and size.
     fn recommended_rendering_mode(&self, _font_id: FontId, _font_size: Pixels)
     -> TextRenderingMode;
@@ -1783,7 +1788,6 @@ impl PlatformTextSystem for NoopTextSystem {
             descent: font_size * (metrics.descent / metrics.units_per_em as f32),
             runs,
             len: text.len(),
-            padded_runs: Default::default(),
         }
     }
 

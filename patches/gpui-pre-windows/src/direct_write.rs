@@ -188,6 +188,12 @@ impl PlatformTextSystem for DirectWriteTextSystem {
             })
     }
 
+    fn run_padding(&self, font_id: FontId, font_size: Pixels) -> Pixels {
+        self.state.read().fonts[font_id.0].run_layout.map_or(Pixels::ZERO, |layout| {
+            px(layout.padding_em * font_size.as_f32() * layout.scale + layout.padding_px)
+        })
+    }
+
     fn recommended_rendering_mode(
         &self,
         _font_id: FontId,
@@ -474,9 +480,6 @@ impl DirectWriteState {
                     layout.runs.push(run);
                 }
             }
-            layout.padded_runs.extend(segment_layout.padded_runs.iter().map(|(range, padding)| {
-                (range.start + text_offset..range.end + text_offset, *padding)
-            }));
             layout.width += segment_layout.width;
             layout.ascent = layout.ascent.max(segment_layout.ascent);
             layout.descent = layout.descent.max(segment_layout.descent);
@@ -601,7 +604,7 @@ impl DirectWriteState {
                 0.0,
             )?;
             let mut width = px(renderer_context.width);
-            let padded_runs = self.apply_run_layouts(font_size, font_runs, &mut runs, &mut width);
+            self.apply_run_layouts(font_size, font_runs, &mut runs, &mut width);
 
             Ok(LineLayout {
                 font_size,
@@ -610,7 +613,6 @@ impl DirectWriteState {
                 descent,
                 runs,
                 len: text.len(),
-                padded_runs,
             })
         }
     }
@@ -646,15 +648,15 @@ impl DirectWriteState {
 
     /// Gives the glyphs of each run laid out with a run layout that run's font id (the
     /// renderer reports them under the face's), and moves glyphs by the runs' padding, as
-    /// CSS lays out an inline box. Returns each padded run's range and padding.
+    /// CSS lays out an inline box.
     fn apply_run_layouts(
         &self,
         font_size: Pixels,
         font_runs: &[FontRun],
         runs: &mut Vec<ShapedRun>,
         width: &mut Pixels,
-    ) -> SmallVec<[(std::ops::Range<usize>, Pixels); 1]> {
-        let mut padded_runs = SmallVec::new();
+    ) {
+        let mut padded_runs = SmallVec::<[(std::ops::Range<usize>, Pixels); 1]>::new();
         let mut start = 0;
         let mut scaled = SmallVec::<[(std::ops::Range<usize>, FontId); 1]>::new();
         for run in font_runs {
@@ -668,7 +670,7 @@ impl DirectWriteState {
             }
         }
         if scaled.is_empty() {
-            return padded_runs;
+            return;
         }
         let glyphs = std::mem::take(runs).into_iter().flat_map(|run| {
             let font_id = run.font_id;
@@ -695,7 +697,6 @@ impl DirectWriteState {
         for (_, padding) in &padded_runs {
             *width += *padding * 2.;
         }
-        padded_runs
     }
 
     /// The size `params` draws its glyph at: a run layout's scale applies.

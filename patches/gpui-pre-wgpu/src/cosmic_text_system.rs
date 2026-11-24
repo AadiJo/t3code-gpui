@@ -278,6 +278,12 @@ impl PlatformTextSystem for CosmicTextSystem {
         self.0.write().layout_line(text, font_size, runs)
     }
 
+    fn run_padding(&self, font_id: FontId, font_size: Pixels) -> Pixels {
+        self.0.read().loaded_font(font_id).run_layout.map_or(Pixels::ZERO, |layout| {
+            Pixels::from(layout.padding_em * f32::from(font_size) * layout.scale + layout.padding_px)
+        })
+    }
+
     fn recommended_rendering_mode(
         &self,
         _font_id: FontId,
@@ -574,7 +580,8 @@ impl CosmicTextSystemState {
         if let Some(ix) = self
             .loaded_fonts
             .iter()
-            .position(|loaded_font| loaded_font.font.id() == id)
+            // A face loaded with a run layout is drawn scaled, so it never stands for the face.
+            .position(|loaded_font| loaded_font.font.id() == id && loaded_font.run_layout.is_none())
         {
             Ok(FontId(ix))
         } else {
@@ -594,6 +601,7 @@ impl CosmicTextSystemState {
                 features: CosmicFontFeatures::new(),
                 is_known_emoji_font: check_is_known_emoji_font(&face.post_script_name),
                 user_fallback_chain: Arc::from(Vec::new()),
+                run_layout: None,
             });
 
             Ok(font_id)
@@ -691,9 +699,6 @@ impl CosmicTextSystemState {
             }
         }
 
-        layout.padded_runs.extend(segment.padded_runs.iter().map(|(padded, padding)| {
-            (padded.start + range.start..padded.end + range.start, *padding)
-        }));
         layout.width += segment.width;
         layout.ascent = layout.ascent.max(segment.ascent);
         layout.descent = layout.descent.max(segment.descent);
@@ -719,13 +724,15 @@ impl CosmicTextSystemState {
 
             let run_layout = self.loaded_font(run.font_id).run_layout;
             // A run layout shapes the run at its own size, as CSS does `font-size: 0.85em`.
-            let sized = |attrs: Attrs<'_>| match run_layout {
-                Some(run_layout) => {
-                    let run_size = f32::from(font_size) * run_layout.scale;
-                    attrs.metrics(Metrics::new(run_size, run_size))
+            fn sized<'a>(attrs: Attrs<'a>, font_size: Pixels, run_layout: Option<RunLayout>) -> Attrs<'a> {
+                match run_layout {
+                    Some(run_layout) => {
+                        let run_size = f32::from(font_size) * run_layout.scale;
+                        attrs.metrics(Metrics::new(run_size, run_size))
+                    }
+                    None => attrs,
                 }
-                None => attrs,
-            };
+            }
             if let Some(run_layout) = run_layout {
                 let padding = run_layout.padding_em * f32::from(font_size) * run_layout.scale
                     + run_layout.padding_px;
@@ -733,12 +740,17 @@ impl CosmicTextSystemState {
                     padded_runs.push((offs..run_end, Pixels::from(padding)));
                 }
             }
-            let primary_attrs =
-                sized(properties.attributes(run.font_id, &properties.primary_family_name));
+            let primary_attrs = sized(
+                properties.attributes(run.font_id, &properties.primary_family_name),
+                font_size,
+                run_layout,
+            );
             let fallback_attrs: SmallVec<[Attrs<'_>; 4]> = properties
                 .fallback_chain
                 .iter()
-                .map(|(font_id, family_name)| sized(properties.attributes(*font_id, family_name)))
+                .map(|(font_id, family_name)| {
+                    sized(properties.attributes(*font_id, family_name), font_size, run_layout)
+                })
                 .collect();
 
             let spans = if properties.fallback_chain.is_empty() {
@@ -801,7 +813,6 @@ impl CosmicTextSystemState {
                 descent: Pixels::ZERO,
                 runs: Vec::new(),
                 len: text.len(),
-                padded_runs: Default::default(),
             };
         };
 
@@ -892,7 +903,6 @@ impl CosmicTextSystemState {
             descent: layout.max_descent.into(),
             runs,
             len: text.len(),
-            padded_runs,
         }
     }
 
