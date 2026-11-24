@@ -2,6 +2,7 @@
 //! `shot` binary can screenshot one part of the UI at a time.
 
 mod app;
+mod backdrop;
 mod chat;
 mod command_palette;
 pub mod connections;
@@ -30,6 +31,7 @@ pub fn scenes() -> &'static [(&'static str, SceneBuilder)] {
         ("app", app::build),
         ("app-mac", app::build_mac),
         ("ui", ui::build),
+        ("backdrop", backdrop::build),
         ("sidebar", sidebar::build),
         ("chat", chat::build),
         ("chat-light", chat::build_light),

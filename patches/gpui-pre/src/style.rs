@@ -291,6 +291,10 @@ pub struct Style {
     /// Box shadow of the element
     pub box_shadow: Vec<BoxShadow>,
 
+    /// Blur and saturation applied to what is beneath the element, like CSS
+    /// `backdrop-filter`.
+    pub backdrop_blur: Option<BackdropBlur>,
+
     /// The text style of this element
     #[refineable]
     pub text: TextStyleRefinement,
@@ -708,6 +712,10 @@ impl Style {
             .to_pixels(rem_size)
             .clamp_radii_for_quad_size(bounds.size);
 
+        if let Some(backdrop) = self.backdrop_blur {
+            window.paint_backdrop(bounds, corner_radii, backdrop.radius, backdrop.saturation);
+        }
+
         window.paint_drop_shadows(bounds, corner_radii, &self.box_shadow);
 
         let background_color = self.background.as_ref().and_then(Fill::color);
@@ -806,6 +814,7 @@ impl Default for Style {
             border_style: BorderStyle::default(),
             corner_radii: Corners::default(),
             box_shadow: Default::default(),
+            backdrop_blur: None,
             text: TextStyleRefinement::default(),
             mouse_cursor: None,
             opacity: None,
@@ -819,6 +828,15 @@ impl Default for Style {
             debug_below: false,
         }
     }
+}
+
+/// CSS `backdrop-filter: blur(radius) saturate(saturation)`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct BackdropBlur {
+    /// The blur's standard deviation.
+    pub radius: Pixels,
+    /// The saturation factor: 1 leaves colors unchanged.
+    pub saturation: f32,
 }
 
 /// The properties that can be applied to an underline.

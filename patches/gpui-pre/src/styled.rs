@@ -1,7 +1,7 @@
 use crate::{
     self as gpui, AbsoluteLength, AlignContent, AlignItems, AlignSelf, BorderStyle, CursorStyle,
     DefiniteLength, Display, Fill, FlexDirection, FlexWrap, Font, FontFeatures, FontStyle,
-    FontWeight, GridPlacement, GridTemplate, GridTemplateMinSize, Hsla, JustifyContent, Length,
+    FontWeight, GridPlacement, GridTemplate, GridTemplateMinSize, Hsla, JustifyContent, Length, Pixels,
     SharedString, StrikethroughStyle, StyleRefinement, TextAlign, TextOverflow,
     TextStyleRefinement, UnderlineStyle, WhiteSpace, px, relative, rems,
 };
@@ -32,6 +32,16 @@ pub trait Styled: Sized {
     gpui_macros::cursor_style_methods!();
     gpui_macros::border_style_methods!();
     gpui_macros::box_shadow_style_methods!();
+
+    /// Blurs what is beneath the element by `radius` (a standard deviation, as in CSS)
+    /// and scales its saturation, like CSS `backdrop-filter: blur() saturate()`.
+    fn backdrop_blur(mut self, radius: impl Into<Pixels>, saturation: f32) -> Self {
+        self.style().backdrop_blur = Some(crate::BackdropBlur {
+            radius: radius.into(),
+            saturation,
+        });
+        self
+    }
 
     /// Sets the display type of the element to `block`.
     /// [Docs](https://tailwindcss.com/docs/display)

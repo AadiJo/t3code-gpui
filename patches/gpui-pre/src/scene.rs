@@ -43,9 +43,9 @@ struct Layer {
     bounds: Bounds<ScaledPixels>,
     max_kind: PrimitiveKind,
     max_shared_kind: PrimitiveKind,
-    /// Whether a native view was painted in the layer, which then can't be
-    /// drawn as one: what was painted after the view has to cover it.
-    has_native_view: bool,
+    /// Whether a native view or a backdrop was painted in the layer, which
+    /// then can't be drawn as one: what was painted after either has to cover it.
+    has_barrier: bool,
 }
 
 #[derive(Default)]
@@ -64,6 +64,7 @@ pub struct Scene {
     pub polychrome_sprites: Vec<PolychromeSprite>,
     pub surfaces: Vec<PaintSurface>,
     pub native_views: Vec<PaintNativeView>,
+    pub backdrops: Vec<Backdrop>,
     animations: Vec<SpriteAnimation>,
 }
 
@@ -83,6 +84,7 @@ impl Scene {
         self.polychrome_sprites.clear();
         self.surfaces.clear();
         self.native_views.clear();
+        self.backdrops.clear();
         self.animations.clear();
     }
 
@@ -138,8 +140,8 @@ impl Scene {
             primitives: SmallVec::new(),
             bounds: Bounds::default(),
             max_kind: PrimitiveKind::Shadow,
-            max_shared_kind: PrimitiveKind::NativeView,
-            has_native_view: false,
+            max_shared_kind: PrimitiveKind::Backdrop,
+            has_barrier: false,
         });
         self.paint_operations.push(PaintOperation::StartLayer);
     }
@@ -158,8 +160,8 @@ impl Scene {
         if layer.primitives.is_empty() {
             return;
         }
-        if layer.has_native_view {
-            self.insert_layer_around_native_views(layer);
+        if layer.has_barrier {
+            self.insert_layer_around_barriers(layer);
             return;
         }
         let order =
@@ -173,20 +175,21 @@ impl Scene {
         }
     }
 
-    /// Inserts a layer that a native view was painted in.
+    /// Inserts a layer that a native view or a backdrop was painted in.
     ///
     /// A layer's primitives share one place in the drawing order, where they
     /// are drawn by kind and not in the order they were painted. A native
-    /// view erases what is drawn before it, so the layer is inserted in parts:
-    /// what was painted before each view, the view, and what was painted after.
-    fn insert_layer_around_native_views(&mut self, layer: Layer) {
+    /// view erases what is drawn before it and a backdrop reads it, so the
+    /// layer is inserted in parts: what was painted before each barrier, the
+    /// barrier, and what was painted after.
+    fn insert_layer_around_barriers(&mut self, layer: Layer) {
         let mut part = Vec::new();
         for index in layer.primitives.into_iter().flatten() {
             let PaintOperation::Primitive(primitive) = &self.paint_operations[index] else {
                 continue;
             };
             let primitive = primitive.clone();
-            if primitive.kind() == PrimitiveKind::NativeView {
+            if primitive.kind().is_barrier() {
                 self.insert_layer_part(std::mem::take(&mut part));
                 self.insert_layer_part(vec![primitive]);
             } else {
@@ -200,12 +203,12 @@ impl Scene {
         let Some(first) = primitives.first() else {
             return;
         };
-        let mut bounds = first.clipped_bounds();
+        let mut bounds = first.order_bounds();
         let mut max_kind = PrimitiveKind::Shadow;
-        let mut max_shared_kind = PrimitiveKind::NativeView;
+        let mut max_shared_kind = PrimitiveKind::Backdrop;
         for primitive in &primitives {
             let kind = primitive.kind();
-            bounds = bounds.join(&primitive.clipped_bounds());
+            bounds = bounds.join(&primitive.order_bounds());
             max_kind = max_kind.max(kind);
             max_shared_kind = max_shared_kind.min(kind.max_shared_kind());
         }
@@ -223,10 +226,10 @@ impl Scene {
 
     /// Returns whether the primitive was kept, rather than clipped away.
     fn try_insert_primitive(&mut self, primitive: Primitive) -> bool {
-        let clipped_bounds = primitive.clipped_bounds();
-        if clipped_bounds.is_empty() {
+        if primitive.clipped_bounds().is_empty() {
             return false;
         }
+        let clipped_bounds = primitive.order_bounds();
 
         let kind = primitive.kind();
         if let Some(&layer) = self.layer_stack.last()
@@ -235,7 +238,7 @@ impl Scene {
             layer.bounds = layer.bounds.join(&clipped_bounds);
             layer.max_kind = layer.max_kind.max(kind);
             layer.max_shared_kind = layer.max_shared_kind.min(kind.max_shared_kind());
-            layer.has_native_view |= kind == PrimitiveKind::NativeView;
+            layer.has_barrier |= kind.is_barrier();
             let index = self.paint_operations.len();
             match layer.primitives.last_mut() {
                 Some(range) if range.end == index => range.end += 1,
@@ -280,6 +283,7 @@ impl Scene {
                 order,
                 ..native_view
             }),
+            Primitive::Backdrop(backdrop) => self.backdrops.push(Backdrop { order, ..backdrop }),
         }
     }
 
@@ -323,6 +327,7 @@ impl Scene {
         self.native_views
             .sort_by_key(|native_view| native_view.order);
         self.keep_first_painted_native_views();
+        sort_in_place(&mut self.backdrops, keys, |backdrop| (backdrop.order, 0));
 
         // Sorting moved the sprites, so animations learn where theirs ended up.
         if !self.animations.is_empty() {
@@ -389,6 +394,8 @@ impl Scene {
             surfaces_iter: self.surfaces.iter().peekable(),
             native_views_start: 0,
             native_views_iter: self.native_views.iter().peekable(),
+            backdrops_start: 0,
+            backdrops_iter: self.backdrops.iter().peekable(),
         }
     }
 }
@@ -463,6 +470,9 @@ pub(crate) enum PrimitiveKind {
     PolychromeSprite,
     Surface,
     NativeView,
+    /// Last, so that whatever overlaps a backdrop and is painted after it is
+    /// drawn after it.
+    Backdrop,
 }
 
 impl PrimitiveKind {
@@ -479,6 +489,12 @@ impl PrimitiveKind {
             Self::PolychromeSprite => Self::SubpixelSprite,
             kind => kind,
         }
+    }
+
+    /// Whether primitives painted after this one in a layer must be drawn
+    /// after it, rather than sorted by kind alongside it.
+    fn is_barrier(self) -> bool {
+        matches!(self, Self::NativeView | Self::Backdrop)
     }
 }
 
@@ -500,6 +516,7 @@ pub enum Primitive {
     PolychromeSprite(PolychromeSprite),
     Surface(PaintSurface),
     NativeView(PaintNativeView),
+    Backdrop(Backdrop),
 }
 
 #[expect(missing_docs)]
@@ -515,6 +532,7 @@ impl Primitive {
             Primitive::PolychromeSprite(_) => PrimitiveKind::PolychromeSprite,
             Primitive::Surface(_) => PrimitiveKind::Surface,
             Primitive::NativeView(_) => PrimitiveKind::NativeView,
+            Primitive::Backdrop(_) => PrimitiveKind::Backdrop,
         }
     }
 
@@ -529,6 +547,7 @@ impl Primitive {
             Primitive::PolychromeSprite(sprite) => &sprite.bounds,
             Primitive::Surface(surface) => &surface.bounds,
             Primitive::NativeView(native_view) => &native_view.bounds,
+            Primitive::Backdrop(backdrop) => &backdrop.bounds,
         }
     }
 
@@ -546,6 +565,15 @@ impl Primitive {
             .intersect(&self.content_mask().bounds)
     }
 
+    /// The area whose drawing order this primitive depends on. A backdrop
+    /// reads what is beneath it out to the reach of its blur.
+    fn order_bounds(&self) -> Bounds<ScaledPixels> {
+        match self {
+            Primitive::Backdrop(backdrop) => backdrop.sample_bounds(),
+            _ => self.clipped_bounds(),
+        }
+    }
+
     pub fn content_mask(&self) -> &ContentMask<ScaledPixels> {
         match self {
             Primitive::Shadow(shadow) => &shadow.content_mask,
@@ -557,6 +585,7 @@ impl Primitive {
             Primitive::PolychromeSprite(sprite) => &sprite.content_mask,
             Primitive::Surface(surface) => &surface.content_mask,
             Primitive::NativeView(native_view) => &native_view.content_mask,
+            Primitive::Backdrop(backdrop) => &backdrop.content_mask,
         }
     }
 }
@@ -587,6 +616,8 @@ struct BatchIterator<'a> {
     surfaces_iter: Peekable<slice::Iter<'a, PaintSurface>>,
     native_views_start: usize,
     native_views_iter: Peekable<slice::Iter<'a, PaintNativeView>>,
+    backdrops_start: usize,
+    backdrops_iter: Peekable<slice::Iter<'a, Backdrop>>,
 }
 
 impl<'a> Iterator for BatchIterator<'a> {
@@ -628,6 +659,10 @@ impl<'a> Iterator for BatchIterator<'a> {
                     .peek()
                     .map(|native_view| native_view.order),
                 PrimitiveKind::NativeView,
+            ),
+            (
+                self.backdrops_iter.peek().map(|backdrop| backdrop.order),
+                PrimitiveKind::Backdrop,
             ),
         ];
         orders_and_kinds.sort_by_key(|(order, kind)| (order.unwrap_or(u32::MAX), *kind));
@@ -790,6 +825,20 @@ impl<'a> Iterator for BatchIterator<'a> {
                     native_views_start..native_views_end,
                 ))
             }
+            PrimitiveKind::Backdrop => {
+                let backdrops_start = self.backdrops_start;
+                let mut backdrops_end = backdrops_start + 1;
+                self.backdrops_iter.next();
+                while self
+                    .backdrops_iter
+                    .next_if(|backdrop| (backdrop.order, batch_kind) < max_order_and_kind)
+                    .is_some()
+                {
+                    backdrops_end += 1;
+                }
+                self.backdrops_start = backdrops_end;
+                Some(PrimitiveBatch::Backdrops(backdrops_start..backdrops_end))
+            }
         }
     }
 }
@@ -823,6 +872,9 @@ pub enum PrimitiveBatch {
     },
     Surfaces(Range<usize>),
     NativeViews(Range<usize>),
+    /// Regions whose backdrop is blurred. The renderer draws everything
+    /// before this batch, then blurs and composites each region.
+    Backdrops(Range<usize>),
 }
 
 impl PrimitiveBatch {
@@ -856,6 +908,7 @@ impl PrimitiveBatch {
             }
             Self::Surfaces(range) => format!("surfaces ({})", range.len()),
             Self::NativeViews(range) => format!("native views ({})", range.len()),
+            Self::Backdrops(range) => format!("backdrops ({})", range.len()),
         }
     }
 }
@@ -1205,6 +1258,43 @@ pub struct PaintNativeView {
 impl From<PaintNativeView> for Primitive {
     fn from(native_view: PaintNativeView) -> Self {
         Primitive::NativeView(native_view)
+    }
+}
+
+/// A rounded rectangle whose backdrop, everything drawn beneath it, is
+/// blurred and saturated, like CSS `backdrop-filter: blur() saturate()`.
+///
+/// Only the backdrop within the border box is read, so nothing outside the
+/// box bleeds in, as in Chromium.
+#[derive(Clone, Copy, Debug)]
+pub struct Backdrop {
+    /// The backdrop's position among the scene's other primitives.
+    pub order: DrawOrder,
+    /// The border box whose backdrop is blurred.
+    pub bounds: Bounds<ScaledPixels>,
+    /// The clip applied to the blurred result.
+    pub content_mask: ContentMask<ScaledPixels>,
+    /// The border box's corner radii.
+    pub corner_radii: Corners<ScaledPixels>,
+    /// The blur's standard deviation, as in CSS `blur()`.
+    pub blur_radius: ScaledPixels,
+    /// The CSS `saturate()` factor: 1 leaves colors unchanged.
+    pub saturation: f32,
+    /// How opaque the blurred result is, from the element's opacity.
+    pub opacity: f32,
+}
+
+impl Backdrop {
+    /// The pixels the blur reads, which is the border box: Chromium reads
+    /// nothing beyond it.
+    pub fn sample_bounds(&self) -> Bounds<ScaledPixels> {
+        self.bounds
+    }
+}
+
+impl From<Backdrop> for Primitive {
+    fn from(backdrop: Backdrop) -> Self {
+        Primitive::Backdrop(backdrop)
     }
 }
 

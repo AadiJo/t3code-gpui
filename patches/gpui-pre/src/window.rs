@@ -8,7 +8,7 @@ use crate::subscription::SingleSubscriberSet;
 use crate::taffy::TaffyLayoutEngine;
 use crate::{
     Action, AnyDrag, AnyElement, AnyImageCache, AnyTooltip, AnyView, App, AppContext, Arena, Asset,
-    AsyncWindowContext, AtlasTile, AvailableSpace, Background, BorderStyle, Bounds, BoxShadow,
+    AsyncWindowContext, AtlasTile, AvailableSpace, Backdrop, Background, BorderStyle, Bounds, BoxShadow,
     Capslock, Context, Corners, CursorHideMode, CursorStyle, Decorations, DevicePixels,
     DispatchActionListener, DispatchNodeId, DispatchTree, DisplayId, Edges, Effect, Entity,
     EntityId, EventEmitter, FileDropEvent, FontId, Global, GlobalElementId, GlyphId, GpuSpecs,
@@ -5011,6 +5011,37 @@ impl Window {
                 pad: 0,
             });
         }
+    }
+
+    /// Blurs and saturates what is drawn beneath `bounds`, like CSS
+    /// `backdrop-filter: blur(blur_radius) saturate(saturation)`. Paint it before the
+    /// element's background, which is drawn over the blurred result.
+    ///
+    /// This method should only be called as part of the paint phase of element drawing.
+    pub fn paint_backdrop(
+        &mut self,
+        bounds: Bounds<Pixels>,
+        corner_radii: Corners<Pixels>,
+        blur_radius: Pixels,
+        saturation: f32,
+    ) {
+        self.invalidator.debug_assert_paint();
+
+        let opacity = self.element_opacity();
+        if blur_radius <= Pixels::ZERO && saturation == 1. || opacity <= 0. {
+            return;
+        }
+        let scale_factor = self.scale_factor();
+        let backdrop = Backdrop {
+            order: 0,
+            bounds: self.snap_bounds(bounds),
+            content_mask: self.snapped_content_mask(),
+            corner_radii: corner_radii.scale(scale_factor),
+            blur_radius: blur_radius.max(Pixels::ZERO).scale(scale_factor),
+            saturation,
+            opacity,
+        };
+        self.next_frame.scene.insert_primitive(backdrop);
     }
 
     /// Paint the inset shadows from `shadows` into the scene at the current z-index. Should

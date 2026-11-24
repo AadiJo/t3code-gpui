@@ -440,6 +440,8 @@ impl DirectXRenderer {
                 PrimitiveBatch::Surfaces(range) => self.draw_surfaces(&scene.surfaces[range]),
                 // Native views are only composited on macOS.
                 PrimitiveBatch::NativeViews(_) => Ok(()),
+                // Backdrop blur is not drawn here yet: glass shows its fill only.
+                PrimitiveBatch::Backdrops(_) => Ok(()),
             }
             .with_context(|| {
                 format!(

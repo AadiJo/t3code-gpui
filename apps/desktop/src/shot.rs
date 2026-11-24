@@ -1,7 +1,8 @@
 // Headless screenshot of one scene, for visual checks without a display.
 // Usage: shot <scene> <out.png> [width height]
 // `T3CODE_CONTRAST`, `T3CODE_GLASS_OPACITY`, `T3CODE_INTERFACE_SIZE` and
-// `T3CODE_PANEL_MS` render with those client settings.
+// `T3CODE_PANEL_MS` render with those client settings; `T3CODE_SCALE` sets the
+// device scale (2 by default).
 use std::sync::Arc;
 
 use anyhow::{Context as _, anyhow};
@@ -57,6 +58,9 @@ fn main() -> anyhow::Result<()> {
             cx.new(|_| SceneHost(view))
         })
     })?;
+    if let Some(scale) = std::env::var("T3CODE_SCALE").ok().and_then(|value| value.parse().ok()) {
+        cx.simulate_window_scale_factor_change(handle.into(), scale);
+    }
     cx.update(ThemeSettings::apply_env_overrides);
     cx.update_window(handle, |_, window, cx| window.render_frame(cx))?;
     cx.run_until_parked();
