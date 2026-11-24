@@ -63,14 +63,14 @@
    "top": 20.0,
    "left": 372.5,
    "bottom": 34.0,
-   "right": 491.5,
+   "right": 490.5,
    "color": "#f5f5f5",
    "bg": "#141415"
   },
   "dev badge": {
-   "top": 22.5,
+   "top": 22.0,
    "left": 8.5,
-   "bottom": 30.5,
+   "bottom": 30.0,
    "right": 26.5,
    "color": "#f5f5f5",
    "bg": "#212121"
@@ -87,7 +87,7 @@
    "top": 137.0,
    "left": 360.0,
    "bottom": 148.5,
-   "right": 433.5,
+   "right": 434.5,
    "color": "#8f8f8f",
    "bg": "#141415"
   },
@@ -95,7 +95,7 @@
    "top": 137.0,
    "left": 314.5,
    "bottom": 148.5,
-   "right": 433.5,
+   "right": 434.5,
    "color": "#8f8f8f",
    "bg": "#141415"
   },
@@ -130,45 +130,45 @@
    "bg": "#141415"
   },
   "inline code chip": {
-   "color": "#202021"
+   "color": "#2a2a2b"
   },
   "bullet 1": {
-   "top": 246.0,
-   "left": 318.0,
-   "bottom": 257.5,
-   "right": 488.5,
+   "top": 244.5,
+   "left": 321.5,
+   "bottom": 256.0,
+   "right": 491.0,
    "color": "#dfdfdf",
    "bg": "#141415"
   },
   "bullet 3": {
-   "top": 299.5,
-   "left": 318.0,
-   "bottom": 310.5,
-   "right": 495.5,
+   "top": 298.5,
+   "left": 321.5,
+   "bottom": 309.5,
+   "right": 500.5,
    "color": "#dfdfdf",
    "bg": "#141415"
   },
   "ordered 1": {
-   "top": 332.5,
+   "top": 331.5,
    "left": 318.5,
-   "bottom": 345.5,
-   "right": 455.0,
+   "bottom": 344.5,
+   "right": 454.5,
    "color": "#f5f5f5",
    "bg": "#141415"
   },
   "ordered 2 file chip": {
-   "top": 360.0,
+   "top": 358.5,
    "left": 318.0,
-   "bottom": 372.5,
-   "right": 429.0,
+   "bottom": 370.5,
+   "right": 430.0,
    "color": "#69b1ff",
    "bg": "#141415"
   },
   "ordered 3": {
-   "top": 387.5,
+   "top": 386.0,
    "left": 318.0,
-   "bottom": 400.5,
-   "right": 439.5,
+   "bottom": 398.5,
+   "right": 440.5,
    "color": "#f5f5f5",
    "bg": "#141415"
   },
@@ -176,60 +176,60 @@
    "start": "#141415",
    "edges": [
     {
-     "at": 417.0,
+     "at": 414.0,
      "color": "#1a1a1b"
     },
     {
-     "at": 418.0,
+     "at": 415.0,
      "color": "#1a1a1b"
     },
     {
-     "at": 424.0,
+     "at": 421.0,
      "color": "#212121"
     },
     {
-     "at": 432.0,
+     "at": 429.0,
      "color": "#212121"
     },
     {
-     "at": 435.5,
+     "at": 432.5,
      "color": "#272727"
     },
     {
-     "at": 439.0,
-     "color": "#b6b6b6"
+     "at": 436.0,
+     "color": "#212121"
     }
    ],
    "vertical": true
   },
   "code header badge": {
-   "top": 430.0,
+   "top": 427.0,
    "left": 328.0,
-   "bottom": 442.0,
+   "bottom": 439.0,
    "right": 340.0,
    "color": "#69b1ff",
    "bg": "#1a1a1b"
   },
   "code header buttons": {
-   "top": 430.5,
+   "top": 427.5,
    "left": 992.0,
-   "bottom": 441.5,
+   "bottom": 438.5,
    "right": 1028.5,
    "color": "#f5f5f5",
    "bg": "#1a1a1b"
   },
   "code line 1": {
-   "top": 462.5,
+   "top": 460.0,
    "left": 330.0,
-   "bottom": 475.0,
+   "bottom": 478.0,
    "right": 785.5,
    "color": "#ff678d",
    "bg": "#1a1a1b"
   },
   "code line 2": {
-   "top": 480.5,
-   "left": 345.0,
-   "bottom": 492.5,
+   "top": 478.0,
+   "left": 331.0,
+   "bottom": 496.0,
    "right": 648.5,
    "color": "#ffa359",
    "bg": "#1a1a1b"
@@ -242,12 +242,12 @@
    "edges": [
     {
      "at": 304.0,
-     "color": "#202021"
+     "color": "#1f1f20"
     }
    ]
   },
   "composer right edge": {
-   "start": "#1b1b1c",
+   "start": "#1b1b1b",
    "edges": [
     {
      "at": 1052.0,
@@ -259,24 +259,16 @@
    "start": "#141415",
    "edges": [
     {
-     "at": 633.0,
+     "at": 630.5,
      "color": "#141415"
     },
     {
-     "at": 634.0,
-     "color": "#141415"
+     "at": 646.0,
+     "color": "#1d1d1e"
     },
     {
-     "at": 649.0,
-     "color": "#222223"
-    },
-    {
-     "at": 731.0,
-     "color": "#252526"
-    },
-    {
-     "at": 753.5,
-     "color": "#1e1e1e"
+     "at": 648.5,
+     "color": "#212121"
     },
     {
      "at": 760.0,
@@ -289,10 +281,10 @@
    "color": "#1b1b1b"
   },
   "composer placeholder": {
-   "top": 670.5,
+   "top": 670.0,
    "left": 321.5,
-   "bottom": 685.0,
-   "right": 600.0,
+   "bottom": 684.5,
+   "right": 605.0,
    "color": "#6c6c6c",
    "bg": "#1b1b1b"
   },
@@ -302,23 +294,23 @@
    "bottom": 740.5,
    "right": 338.0,
    "color": "#a8a8a8",
-   "bg": "#202021"
+   "bg": "#1e1e1e"
   },
   "send icon": {
    "top": 728.0,
    "left": 1019.5,
    "bottom": 738.0,
    "right": 1030.0,
-   "color": "#4d4d4d",
+   "color": "#4c4c4d",
    "bg": "#1b1b1c"
   },
   "model control": {
    "top": 727.5,
    "left": 914.0,
-   "bottom": 740.0,
+   "bottom": 743.0,
    "right": 1005.0,
    "color": "#ffffff",
-   "bg": "#1b1b1c"
+   "bg": "#1b1b1b"
   }
  },
  "owner": {
@@ -385,14 +377,14 @@
    "top": 20.0,
    "left": 372.5,
    "bottom": 34.0,
-   "right": 491.5,
+   "right": 490.5,
    "color": "#e8e8e8",
    "bg": "#141415"
   },
   "dev badge": {
-   "top": 22.5,
+   "top": 22.0,
    "left": 8.5,
-   "bottom": 30.5,
+   "bottom": 30.0,
    "right": 26.5,
    "color": "#e9e9e9",
    "bg": "#212121"
@@ -409,7 +401,7 @@
    "top": 137.0,
    "left": 360.0,
    "bottom": 148.5,
-   "right": 433.5,
+   "right": 434.5,
    "color": "#888888",
    "bg": "#141415"
   },
@@ -417,7 +409,7 @@
    "top": 137.0,
    "left": 314.5,
    "bottom": 148.5,
-   "right": 433.5,
+   "right": 434.5,
    "color": "#888888",
    "bg": "#141415"
   },
@@ -452,45 +444,45 @@
    "bg": "#141415"
   },
   "inline code chip": {
-   "color": "#202021"
+   "color": "#29292a"
   },
   "bullet 1": {
-   "top": 246.0,
-   "left": 318.0,
-   "bottom": 257.5,
-   "right": 488.5,
+   "top": 244.5,
+   "left": 321.5,
+   "bottom": 256.0,
+   "right": 491.0,
    "color": "#d3d3d3",
    "bg": "#141415"
   },
   "bullet 3": {
-   "top": 299.5,
-   "left": 318.0,
-   "bottom": 310.5,
-   "right": 495.5,
+   "top": 298.5,
+   "left": 321.5,
+   "bottom": 309.5,
+   "right": 500.5,
    "color": "#d3d3d3",
    "bg": "#141415"
   },
   "ordered 1": {
-   "top": 332.5,
+   "top": 331.5,
    "left": 318.5,
-   "bottom": 345.5,
-   "right": 455.0,
+   "bottom": 344.5,
+   "right": 454.5,
    "color": "#e8e8e8",
    "bg": "#141415"
   },
   "ordered 2 file chip": {
-   "top": 360.0,
+   "top": 358.5,
    "left": 318.0,
-   "bottom": 372.5,
-   "right": 429.0,
+   "bottom": 370.5,
+   "right": 430.0,
    "color": "#69b1ff",
    "bg": "#141415"
   },
   "ordered 3": {
-   "top": 387.5,
+   "top": 386.0,
    "left": 318.0,
-   "bottom": 400.5,
-   "right": 439.5,
+   "bottom": 398.5,
+   "right": 440.5,
    "color": "#e8e8e8",
    "bg": "#141415"
   },
@@ -498,60 +490,60 @@
    "start": "#141415",
    "edges": [
     {
-     "at": 417.0,
+     "at": 414.0,
      "color": "#1a1a1b"
     },
     {
-     "at": 418.0,
+     "at": 415.0,
      "color": "#1a1a1b"
     },
     {
-     "at": 424.0,
+     "at": 421.0,
      "color": "#212121"
     },
     {
-     "at": 432.0,
+     "at": 429.0,
      "color": "#212121"
     },
     {
-     "at": 435.5,
+     "at": 432.5,
      "color": "#272727"
     },
     {
-     "at": 439.0,
-     "color": "#adadad"
+     "at": 436.0,
+     "color": "#212121"
     }
    ],
    "vertical": true
   },
   "code header badge": {
-   "top": 430.0,
+   "top": 427.0,
    "left": 328.0,
-   "bottom": 442.0,
+   "bottom": 439.0,
    "right": 340.0,
    "color": "#69b1ff",
    "bg": "#1a1a1b"
   },
   "code header buttons": {
-   "top": 430.5,
+   "top": 427.5,
    "left": 992.0,
-   "bottom": 441.5,
+   "bottom": 438.5,
    "right": 1028.5,
    "color": "#e9e9e9",
    "bg": "#1a1a1b"
   },
   "code line 1": {
-   "top": 462.5,
+   "top": 460.0,
    "left": 330.0,
-   "bottom": 475.0,
+   "bottom": 478.0,
    "right": 785.5,
    "color": "#ff678d",
    "bg": "#1a1a1b"
   },
   "code line 2": {
-   "top": 480.5,
-   "left": 345.0,
-   "bottom": 492.5,
+   "top": 478.0,
+   "left": 331.0,
+   "bottom": 496.0,
    "right": 648.5,
    "color": "#ffa359",
    "bg": "#1a1a1b"
@@ -569,31 +561,23 @@
    ]
   },
   "composer right edge": {
-   "start": "#1a1a1b",
+   "start": "#1a1a1a",
    "edges": []
   },
   "composer card top/bottom": {
    "start": "#141415",
    "edges": [
     {
-     "at": 633.0,
+     "at": 630.5,
      "color": "#141415"
     },
     {
-     "at": 634.0,
-     "color": "#141415"
-    },
-    {
-     "at": 649.0,
-     "color": "#222223"
-    },
-    {
-     "at": 731.0,
-     "color": "#242425"
-    },
-    {
-     "at": 753.5,
+     "at": 646.0,
      "color": "#1d1d1e"
+    },
+    {
+     "at": 648.5,
+     "color": "#202020"
     },
     {
      "at": 760.0,
@@ -606,10 +590,10 @@
    "color": "#1a1a1a"
   },
   "composer placeholder": {
-   "top": 670.5,
+   "top": 670.0,
    "left": 321.5,
-   "bottom": 685.0,
-   "right": 600.0,
+   "bottom": 684.5,
+   "right": 605.0,
    "color": "#676767",
    "bg": "#1a1a1a"
   },
@@ -619,23 +603,23 @@
    "bottom": 740.5,
    "right": 338.0,
    "color": "#a0a0a0",
-   "bg": "#1f1f20"
+   "bg": "#1d1d1d"
   },
   "send icon": {
    "top": 728.0,
    "left": 1020.0,
    "bottom": 738.0,
    "right": 1030.0,
-   "color": "#494949",
+   "color": "#484849",
    "bg": "#1a1a1b"
   },
   "model control": {
    "top": 727.5,
    "left": 914.0,
-   "bottom": 740.0,
+   "bottom": 739.5,
    "right": 1005.0,
    "color": "#ffffff",
-   "bg": "#1a1a1b"
+   "bg": "#1a1a1a"
   }
  }
 }

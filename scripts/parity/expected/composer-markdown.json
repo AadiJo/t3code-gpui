@@ -63,14 +63,14 @@
    "top": 20.0,
    "left": 372.5,
    "bottom": 34.0,
-   "right": 491.5,
+   "right": 490.5,
    "color": "#f5f5f5",
    "bg": "#141415"
   },
   "dev badge": {
-   "top": 22.5,
+   "top": 22.0,
    "left": 8.5,
-   "bottom": 30.5,
+   "bottom": 30.0,
    "right": 26.5,
    "color": "#f5f5f5",
    "bg": "#212121"
@@ -105,11 +105,11 @@
    "edges": [
     {
      "at": 1034.0,
-     "color": "#1b1b1c"
+     "color": "#1b1b1b"
     },
     {
      "at": 1035.0,
-     "color": "#1b1b1c"
+     "color": "#1b1b1b"
     },
     {
      "at": 1052.0,
@@ -151,26 +151,26 @@
    "bg": "#1a1a1b"
   },
   "code line 1": {
-   "top": 657.5,
+   "top": 658.0,
    "left": 335.0,
-   "bottom": 669.5,
+   "bottom": 670.0,
    "right": 474.5,
    "color": "#ff678d",
    "bg": "#1a1a1b"
   },
   "inline code chip": {
-   "top": 592.5,
+   "top": 593.5,
    "left": 345.0,
-   "bottom": 602.0,
-   "right": 440.0,
+   "bottom": 603.0,
+   "right": 431.5,
    "color": "#f5f5f5",
-   "bg": "#1b1b1b"
+   "bg": "#282828"
   },
   "prose line": {
-   "top": 591.5,
+   "top": 592.0,
    "left": 322.0,
-   "bottom": 602.5,
-   "right": 497.5,
+   "bottom": 603.0,
+   "right": 498.0,
    "color": "#f5f5f5",
    "bg": "#1b1b1b"
   }

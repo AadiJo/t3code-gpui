@@ -63,20 +63,20 @@
    "top": 20.0,
    "left": 372.5,
    "bottom": 34.0,
-   "right": 491.5,
+   "right": 490.5,
    "color": "#f5f5f5",
    "bg": "#141415"
   },
   "dev badge": {
-   "top": 22.5,
+   "top": 22.0,
    "left": 8.5,
-   "bottom": 30.5,
+   "bottom": 30.0,
    "right": 26.5,
    "color": "#f5f5f5",
    "bg": "#212121"
   },
   "inbox popover": {
-   "top": 440.0,
+   "top": 457.5,
    "left": 270.0,
    "bottom": 743.0,
    "right": 1000.0,
@@ -84,18 +84,22 @@
    "bg": "#141415"
   },
   "inbox fill": {
-   "color": "#18181a"
+   "color": "#181819"
   },
   "inbox title": {
    "top": 462.0,
-   "left": 314.5,
-   "bottom": 470.5,
-   "right": 450.0,
-   "color": "#ffffff",
+   "left": 317.5,
+   "bottom": 468.5,
+   "right": 342.0,
+   "color": "#dfdfdf",
    "bg": "#131314"
   },
   "mark all read": {
-   "empty": true,
+   "top": 462.0,
+   "left": 778.0,
+   "bottom": 471.0,
+   "right": 840.0,
+   "color": "#dfdfdf",
    "bg": "#141415"
   },
   "tabs": {
@@ -103,8 +107,8 @@
    "left": 300.0,
    "bottom": 499.0,
    "right": 450.0,
-   "color": "#454547",
-   "bg": "#19191a"
+   "color": "#3b3b3d",
+   "bg": "#131314"
   },
   "item 1 icon": {
    "empty": true,
@@ -112,19 +116,27 @@
   },
   "item 1 title": {
    "top": 520.0,
-   "left": 445.0,
-   "bottom": 527.5,
-   "right": 518.5,
-   "color": "#8f8f8f",
-   "bg": "#1a1a1b"
+   "left": 446.5,
+   "bottom": 543.0,
+   "right": 760.0,
+   "color": "#dfdfdf",
+   "bg": "#141415"
   },
   "item 1 subtitle": {
-   "empty": true,
-   "bg": "#1a1a1a"
+   "top": 543.0,
+   "left": 535.0,
+   "bottom": 562.0,
+   "right": 536.0,
+   "color": "#323233",
+   "bg": "#141415"
   },
   "item 1 meta": {
-   "empty": true,
-   "bg": "#1a1a1a"
+   "top": 562.0,
+   "left": 535.0,
+   "bottom": 582.0,
+   "right": 536.0,
+   "color": "#2f2f30",
+   "bg": "#141415"
   },
   "bell active fill": {
    "color": "#202022"
@@ -194,20 +206,20 @@
    "top": 20.0,
    "left": 372.5,
    "bottom": 34.0,
-   "right": 491.5,
+   "right": 490.5,
    "color": "#e8e8e8",
    "bg": "#141415"
   },
   "dev badge": {
-   "top": 22.5,
+   "top": 22.0,
    "left": 8.5,
-   "bottom": 30.5,
+   "bottom": 30.0,
    "right": 26.5,
    "color": "#e9e9e9",
    "bg": "#212121"
   },
   "inbox popover": {
-   "top": 440.0,
+   "top": 457.5,
    "left": 270.0,
    "bottom": 743.0,
    "right": 1000.0,
@@ -220,16 +232,16 @@
   "inbox title": {
    "top": 462.0,
    "left": 317.5,
-   "bottom": 467.5,
-   "right": 341.5,
+   "bottom": 468.5,
+   "right": 342.0,
    "color": "#d3d3d3",
    "bg": "#131314"
   },
   "mark all read": {
    "top": 462.0,
-   "left": 776.5,
-   "bottom": 470.0,
-   "right": 839.0,
+   "left": 778.0,
+   "bottom": 471.0,
+   "right": 840.0,
    "color": "#d3d3d3",
    "bg": "#141415"
   },
@@ -247,9 +259,9 @@
   },
   "item 1 title": {
    "top": 520.0,
-   "left": 445.0,
+   "left": 446.5,
    "bottom": 543.0,
-   "right": 758.0,
+   "right": 760.0,
    "color": "#d3d3d3",
    "bg": "#141415"
   },
@@ -258,7 +270,7 @@
    "left": 535.0,
    "bottom": 562.0,
    "right": 536.0,
-   "color": "#2f2f31",
+   "color": "#313132",
    "bg": "#141415"
   },
   "item 1 meta": {

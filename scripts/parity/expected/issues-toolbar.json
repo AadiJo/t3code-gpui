@@ -52,32 +52,32 @@
    "bg": "#1d1d1f"
   },
   "search placeholder": {
-   "top": 88.5,
+   "top": 87.5,
    "left": 319.0,
-   "bottom": 99.0,
-   "right": 408.0,
+   "bottom": 98.0,
+   "right": 411.0,
    "color": "#6c6c6c",
    "bg": "#1d1d1f"
   },
   "sort button": {
    "top": 77.0,
-   "left": 756.0,
+   "left": 757.0,
    "bottom": 99.0,
-   "right": 825.0,
+   "right": 826.0,
    "color": "#f5f5f5",
    "bg": "#1d1d1f"
   },
   "filters button": {
    "top": 77.0,
-   "left": 835.0,
+   "left": 837.0,
    "bottom": 98.5,
-   "right": 919.0,
+   "right": 920.0,
    "color": "#f5f5f5",
    "bg": "#1d1d1f"
   },
   "views button": {
    "top": 77.0,
-   "left": 929.0,
+   "left": 930.5,
    "bottom": 99.5,
    "right": 1029.0,
    "color": "#f5f5f5",

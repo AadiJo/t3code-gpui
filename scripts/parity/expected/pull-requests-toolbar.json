@@ -41,27 +41,11 @@
      "color": "#1d1d1f"
     },
     {
-     "at": 91.0,
-     "color": "#313132"
-    },
-    {
      "at": 92.5,
-     "color": "#323233"
+     "color": "#4e4e50"
     },
     {
-     "at": 94.5,
-     "color": "#323233"
-    },
-    {
-     "at": 95.5,
-     "color": "#3a3a3b"
-    },
-    {
-     "at": 97.5,
-     "color": "#1d1d1f"
-    },
-    {
-     "at": 99.0,
+     "at": 95.0,
      "color": "#1d1d1f"
     },
     {
@@ -88,32 +72,32 @@
    "bg": "#1d1d1f"
   },
   "search placeholder": {
-   "top": 88.5,
+   "top": 87.5,
    "left": 319.0,
-   "bottom": 102.0,
-   "right": 536.5,
+   "bottom": 101.0,
+   "right": 541.0,
    "color": "#6c6c6c",
    "bg": "#1d1d1f"
   },
   "sort button": {
    "top": 77.0,
-   "left": 686.0,
+   "left": 688.0,
    "bottom": 99.0,
-   "right": 755.0,
+   "right": 756.0,
    "color": "#f5f5f5",
    "bg": "#1d1d1f"
   },
   "views button": {
    "top": 77.0,
-   "left": 859.0,
+   "left": 861.5,
    "bottom": 99.5,
-   "right": 959.0,
+   "right": 960.0,
    "color": "#f5f5f5",
    "bg": "#1d1d1f"
   },
   "provider filter": {
    "top": 77.0,
-   "left": 969.0,
+   "left": 970.0,
    "bottom": 100.5,
    "right": 1029.0,
    "color": "#f5f5f5",

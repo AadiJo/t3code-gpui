@@ -1,42 +1,42 @@
 {
  "default": {
   "last card title": {
-   "top": 597.0,
-   "left": 18.5,
-   "bottom": 610.0,
-   "right": 195.5,
+   "top": 598.0,
+   "left": 18.0,
+   "bottom": 611.0,
+   "right": 193.5,
    "color": "#e8e8e8",
    "bg": "#181819"
   },
   "working label": {
-   "top": 649.5,
+   "top": 650.0,
    "left": 17.0,
-   "bottom": 660.5,
-   "right": 60.5,
+   "bottom": 661.0,
+   "right": 62.5,
    "color": "#838383",
    "bg": "#181819"
   },
   "snoozed label": {
-   "top": 680.5,
+   "top": 681.0,
    "left": 17.5,
-   "bottom": 689.5,
-   "right": 64.5,
+   "bottom": 690.0,
+   "right": 65.0,
    "color": "#838383",
    "bg": "#181819"
   },
   "settled label": {
-   "top": 711.5,
+   "top": 712.0,
    "left": 17.5,
-   "bottom": 720.5,
-   "right": 55.5,
+   "bottom": 721.0,
+   "right": 55.0,
    "color": "#838383",
    "bg": "#181819"
   },
   "shelf counts": {
-   "top": 649.5,
-   "left": 213.0,
-   "bottom": 720.5,
-   "right": 219.0,
+   "top": 650.0,
+   "left": 212.5,
+   "bottom": 721.0,
+   "right": 218.5,
    "color": "#838383",
    "bg": "#181819"
   },
@@ -51,42 +51,42 @@
  },
  "owner": {
   "last card title": {
-   "top": 597.0,
-   "left": 18.5,
-   "bottom": 610.0,
-   "right": 195.5,
+   "top": 598.0,
+   "left": 18.0,
+   "bottom": 611.0,
+   "right": 193.5,
    "color": "#e8e8e8",
    "bg": "#181819"
   },
   "working label": {
-   "top": 649.5,
+   "top": 650.0,
    "left": 17.0,
-   "bottom": 660.5,
-   "right": 60.5,
+   "bottom": 661.0,
+   "right": 62.5,
    "color": "#838383",
    "bg": "#181819"
   },
   "snoozed label": {
-   "top": 680.5,
+   "top": 681.0,
    "left": 17.5,
-   "bottom": 689.5,
-   "right": 64.5,
+   "bottom": 690.0,
+   "right": 65.0,
    "color": "#838383",
    "bg": "#181819"
   },
   "settled label": {
-   "top": 711.5,
+   "top": 712.0,
    "left": 17.5,
-   "bottom": 720.5,
-   "right": 55.5,
+   "bottom": 721.0,
+   "right": 55.0,
    "color": "#838383",
    "bg": "#181819"
   },
   "shelf counts": {
-   "top": 649.5,
-   "left": 213.0,
-   "bottom": 720.5,
-   "right": 219.0,
+   "top": 650.0,
+   "left": 212.5,
+   "bottom": 721.0,
+   "right": 218.5,
    "color": "#838383",
    "bg": "#181819"
   },

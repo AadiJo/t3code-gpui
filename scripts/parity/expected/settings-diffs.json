@@ -12,17 +12,17 @@
    "bg": "#141415"
   },
   "breadcrumb": {
-   "top": 59.0,
+   "top": 58.5,
    "left": 301.5,
-   "bottom": 73.0,
-   "right": 521.0,
+   "bottom": 72.5,
+   "right": 517.0,
    "color": "#f5f5f5",
    "bg": "#141415"
   },
   "close button": {
-   "top": 60.5,
+   "top": 60.0,
    "left": 1032.5,
-   "bottom": 69.5,
+   "bottom": 69.0,
    "right": 1041.5,
    "color": "#8f8f8f",
    "bg": "#141415"
@@ -54,10 +54,10 @@
    ]
   },
   "h2 Diffs": {
-   "top": 120.5,
+   "top": 120.0,
    "left": 328.0,
-   "bottom": 133.5,
-   "right": 362.5,
+   "bottom": 133.0,
+   "right": 362.0,
    "color": "#f5f5f5",
    "bg": "#141415"
   },
@@ -190,10 +190,10 @@
    "bg": "#202021"
   },
   "h2 Pull requests": {
-   "top": 460.0,
+   "top": 459.5,
    "left": 328.0,
-   "bottom": 475.5,
-   "right": 426.5,
+   "bottom": 475.0,
+   "right": 427.5,
    "color": "#f5f5f5",
    "bg": "#141415"
   },
@@ -201,7 +201,7 @@
    "top": 574.0,
    "left": 328.5,
    "bottom": 588.0,
-   "right": 533.0,
+   "right": 528.5,
    "color": "#f5f5f5",
    "bg": "#191919"
   }

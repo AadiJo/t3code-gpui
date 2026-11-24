@@ -12,17 +12,17 @@
    "bg": "#141415"
   },
   "breadcrumb": {
-   "top": 59.0,
+   "top": 58.5,
    "left": 301.5,
-   "bottom": 73.0,
+   "bottom": 72.5,
    "right": 416.5,
    "color": "#f5f5f5",
    "bg": "#141415"
   },
   "close button": {
-   "top": 60.5,
+   "top": 60.0,
    "left": 1032.5,
-   "bottom": 69.5,
+   "bottom": 69.0,
    "right": 1041.5,
    "color": "#8f8f8f",
    "bg": "#141415"
@@ -54,9 +54,9 @@
    ]
   },
   "h2 Composer": {
-   "top": 121.0,
+   "top": 120.5,
    "left": 327.5,
-   "bottom": 136.5,
+   "bottom": 136.0,
    "right": 407.5,
    "color": "#f5f5f5",
    "bg": "#141415"
@@ -65,7 +65,7 @@
    "top": 235.5,
    "left": 328.5,
    "bottom": 246.5,
-   "right": 420.5,
+   "right": 421.5,
    "color": "#f5f5f5",
    "bg": "#191919"
   },
@@ -118,10 +118,10 @@
    "bg": "#191919"
   },
   "h2 Follow-ups": {
-   "top": 367.0,
+   "top": 366.5,
    "left": 328.0,
-   "bottom": 382.5,
-   "right": 411.5,
+   "bottom": 382.0,
+   "right": 412.5,
    "color": "#f5f5f5",
    "bg": "#141415"
   },
@@ -166,9 +166,9 @@
    "vertical": true
   },
   "h2 Activity": {
-   "top": 522.5,
+   "top": 522.0,
    "left": 327.5,
-   "bottom": 538.5,
+   "bottom": 538.0,
    "right": 386.0,
    "color": "#f5f5f5",
    "bg": "#141415"
@@ -214,10 +214,10 @@
    "vertical": true
   },
   "h2 Screen reader": {
-   "top": 679.0,
+   "top": 678.5,
    "left": 327.5,
-   "bottom": 691.5,
-   "right": 433.5,
+   "bottom": 691.0,
+   "right": 436.5,
    "color": "#f5f5f5",
    "bg": "#141415"
   }

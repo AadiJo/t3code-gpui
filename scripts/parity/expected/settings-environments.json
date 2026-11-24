@@ -74,10 +74,10 @@
    "color": "#141415"
   },
   "breadcrumb": {
-   "top": 59.0,
+   "top": 58.5,
    "left": 301.5,
-   "bottom": 73.0,
-   "right": 475.0,
+   "bottom": 72.5,
+   "right": 476.5,
    "color": "#f5f5f5",
    "bg": "#141415"
   },
@@ -160,10 +160,10 @@
    "color": "#141415"
   },
   "breadcrumb": {
-   "top": 59.0,
+   "top": 58.5,
    "left": 301.5,
-   "bottom": 73.0,
-   "right": 475.0,
+   "bottom": 72.5,
+   "right": 476.5,
    "color": "#e8e8e8",
    "bg": "#141415"
   },

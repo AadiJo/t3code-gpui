@@ -14,7 +14,7 @@
    ]
   },
   "palette right edge": {
-   "start": "#161616",
+   "start": "#141414",
    "edges": [
     {
      "at": 1124.0,
@@ -27,43 +27,31 @@
    ]
   },
   "palette top edge": {
-   "start": "#191919",
+   "start": "#131313",
    "edges": [
     {
-     "at": 92.0,
-     "color": "#202020"
-    },
-    {
-     "at": 96.0,
-     "color": "#232323"
-    },
-    {
-     "at": 102.0,
-     "color": "#1a1a1a"
-    },
-    {
-     "at": 105.0,
-     "color": "#151516"
-    },
-    {
-     "at": 107.0,
+     "at": 107.5,
      "color": "#1c1c1c"
     },
     {
-     "at": 108.0,
+     "at": 108.5,
      "color": "#141414"
     },
     {
-     "at": 109.0,
+     "at": 109.5,
      "color": "#141414"
+    },
+    {
+     "at": 128.5,
+     "color": "#303030"
     }
    ],
    "vertical": true
   },
   "search icon": {
-   "top": 124.5,
+   "top": 125.0,
    "left": 604.0,
-   "bottom": 136.5,
+   "bottom": 137.0,
    "right": 616.5,
    "color": "#6c6c6c",
    "bg": "#141414"
@@ -72,15 +60,15 @@
    "top": 126.0,
    "left": 625.0,
    "bottom": 138.5,
-   "right": 889.5,
+   "right": 892.0,
    "color": "#676767",
    "bg": "#141414"
   },
   "section label": {
-   "top": 169.5,
-   "left": 601.5,
-   "bottom": 178.5,
-   "right": 643.0,
+   "top": 170.0,
+   "left": 601.0,
+   "bottom": 179.0,
+   "right": 642.0,
    "color": "#888888",
    "bg": "#141414"
   },
@@ -88,44 +76,44 @@
    "color": "#28282b"
   },
   "item 1 icon": {
-   "top": 195.5,
-   "left": 603.0,
-   "bottom": 208.5,
-   "right": 616.5,
+   "top": 196.5,
+   "left": 602.0,
+   "bottom": 209.5,
+   "right": 615.5,
    "color": "#838383",
    "bg": "#28282b"
   },
   "item 1 title": {
    "top": 197.0,
-   "left": 625.0,
+   "left": 624.5,
    "bottom": 207.5,
-   "right": 760.5,
+   "right": 757.5,
    "color": "#e8e8e8",
    "bg": "#28282b"
   },
   "item 1 shortcut": {
-   "top": 197.5,
+   "top": 198.0,
    "left": 1078.5,
-   "bottom": 206.0,
+   "bottom": 206.5,
    "right": 1107.5,
    "color": "#a0a0a0",
    "bg": "#28282b"
   },
   "item 2 title": {
    "top": 227.0,
-   "left": 625.0,
+   "left": 624.5,
    "bottom": 237.5,
-   "right": 723.0,
+   "right": 721.0,
    "color": "#e8e8e8",
-   "bg": "#141414"
+   "bg": "#171717"
   },
   "item 3 title": {
    "top": 257.0,
-   "left": 625.0,
+   "left": 624.5,
    "bottom": 270.0,
-   "right": 805.0,
+   "right": 803.0,
    "color": "#e8e8e8",
-   "bg": "#141414"
+   "bg": "#181818"
   }
  },
  "owner": {
@@ -143,7 +131,7 @@
    ]
   },
   "palette right edge": {
-   "start": "#161616",
+   "start": "#141414",
    "edges": [
     {
      "at": 1124.0,
@@ -156,43 +144,31 @@
    ]
   },
   "palette top edge": {
-   "start": "#191919",
+   "start": "#131313",
    "edges": [
     {
-     "at": 92.0,
-     "color": "#202020"
-    },
-    {
-     "at": 96.0,
-     "color": "#232323"
-    },
-    {
-     "at": 102.0,
-     "color": "#1a1a1a"
-    },
-    {
-     "at": 105.0,
-     "color": "#151516"
-    },
-    {
-     "at": 107.0,
+     "at": 107.5,
      "color": "#1c1c1c"
     },
     {
-     "at": 108.0,
+     "at": 108.5,
      "color": "#141414"
     },
     {
-     "at": 109.0,
+     "at": 109.5,
      "color": "#141414"
+    },
+    {
+     "at": 128.5,
+     "color": "#303030"
     }
    ],
    "vertical": true
   },
   "search icon": {
-   "top": 124.5,
+   "top": 125.0,
    "left": 604.0,
-   "bottom": 136.5,
+   "bottom": 137.0,
    "right": 616.5,
    "color": "#6c6c6c",
    "bg": "#141414"
@@ -201,15 +177,15 @@
    "top": 126.0,
    "left": 625.0,
    "bottom": 138.5,
-   "right": 889.5,
+   "right": 892.0,
    "color": "#676767",
    "bg": "#141414"
   },
   "section label": {
-   "top": 169.5,
-   "left": 601.5,
-   "bottom": 178.5,
-   "right": 643.0,
+   "top": 170.0,
+   "left": 601.0,
+   "bottom": 179.0,
+   "right": 642.0,
    "color": "#888888",
    "bg": "#141414"
   },
@@ -217,44 +193,44 @@
    "color": "#28282b"
   },
   "item 1 icon": {
-   "top": 195.5,
-   "left": 603.0,
-   "bottom": 208.5,
-   "right": 616.5,
+   "top": 196.5,
+   "left": 602.0,
+   "bottom": 209.5,
+   "right": 615.5,
    "color": "#838383",
    "bg": "#28282b"
   },
   "item 1 title": {
    "top": 197.0,
-   "left": 625.0,
+   "left": 624.5,
    "bottom": 207.5,
-   "right": 760.5,
+   "right": 757.5,
    "color": "#e8e8e8",
    "bg": "#28282b"
   },
   "item 1 shortcut": {
-   "top": 197.5,
+   "top": 198.0,
    "left": 1078.5,
-   "bottom": 206.0,
+   "bottom": 206.5,
    "right": 1107.5,
    "color": "#a0a0a0",
    "bg": "#28282b"
   },
   "item 2 title": {
    "top": 227.0,
-   "left": 625.0,
+   "left": 624.5,
    "bottom": 237.5,
-   "right": 723.0,
+   "right": 721.0,
    "color": "#e8e8e8",
-   "bg": "#141414"
+   "bg": "#171717"
   },
   "item 3 title": {
    "top": 257.0,
-   "left": 625.0,
+   "left": 624.5,
    "bottom": 270.0,
-   "right": 805.0,
+   "right": 803.0,
    "color": "#e8e8e8",
-   "bg": "#141414"
+   "bg": "#181818"
   }
  }
 }

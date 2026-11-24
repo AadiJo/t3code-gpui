@@ -12,17 +12,17 @@
    "bg": "#141415"
   },
   "breadcrumb": {
-   "top": 59.0,
+   "top": 58.5,
    "left": 301.5,
-   "bottom": 73.0,
-   "right": 435.5,
+   "bottom": 72.5,
+   "right": 436.0,
    "color": "#f5f5f5",
    "bg": "#141415"
   },
   "close button": {
-   "top": 60.5,
+   "top": 60.0,
    "left": 1032.5,
-   "bottom": 69.5,
+   "bottom": 69.0,
    "right": 1041.5,
    "color": "#8f8f8f",
    "bg": "#141415"
@@ -55,7 +55,12 @@
   },
   "restore defaults left edge": {
    "start": "#141415",
-   "edges": []
+   "edges": [
+    {
+     "at": 860.5,
+     "color": "#444444"
+    }
+   ]
   },
   "restore defaults right edge": {
    "start": "#141415",
@@ -67,10 +72,10 @@
    "vertical": true
   },
   "h2 Notifications": {
-   "top": 120.5,
+   "top": 120.0,
    "left": 328.0,
-   "bottom": 133.5,
-   "right": 425.5,
+   "bottom": 133.0,
+   "right": 424.0,
    "color": "#f5f5f5",
    "bg": "#141415"
   },
@@ -92,7 +97,7 @@
    "top": 168.0,
    "left": 328.5,
    "bottom": 179.5,
-   "right": 461.0,
+   "right": 461.5,
    "color": "#f5f5f5",
    "bg": "#191919"
   },
@@ -100,7 +105,7 @@
    "top": 191.5,
    "left": 328.0,
    "bottom": 221.5,
-   "right": 721.5,
+   "right": 727.0,
    "color": "#8f8f8f",
    "bg": "#191919"
   },
@@ -148,15 +153,15 @@
    "top": 253.0,
    "left": 329.0,
    "bottom": 267.0,
-   "right": 458.0,
+   "right": 458.5,
    "color": "#f5f5f5",
    "bg": "#191919"
   },
   "h2 Sidebar": {
-   "top": 477.5,
+   "top": 477.0,
    "left": 327.5,
-   "bottom": 490.5,
-   "right": 385.5,
+   "bottom": 490.0,
+   "right": 386.5,
    "color": "#f5f5f5",
    "bg": "#141415"
   },

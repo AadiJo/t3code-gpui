@@ -44,11 +44,11 @@
    "start": "#fcfcfc",
    "edges": [
     {
-     "at": 652.5,
+     "at": 652.0,
      "color": "#fcfcfc"
     },
     {
-     "at": 654.0,
+     "at": 653.5,
      "color": "#fcfcfc"
     },
     {
@@ -60,8 +60,8 @@
      "color": "#f8f8f8"
     },
     {
-     "at": 757.5,
-     "color": "#fcfcfc"
+     "at": 757.0,
+     "color": "#fbfbfb"
     }
    ],
    "vertical": true
@@ -70,10 +70,10 @@
    "color": "#fcfcfc"
   },
   "composer placeholder": {
-   "top": 670.5,
+   "top": 670.0,
    "left": 321.5,
-   "bottom": 685.0,
-   "right": 600.0,
+   "bottom": 684.5,
+   "right": 605.0,
    "color": "#a0a0a0",
    "bg": "#fcfcfc"
   },
@@ -81,7 +81,7 @@
    "top": 138.0,
    "left": 18.5,
    "bottom": 152.0,
-   "right": 137.5,
+   "right": 136.5,
    "color": "#141414",
    "bg": "#e0e0e0"
   },
@@ -117,15 +117,15 @@
      "color": "#e0e0e0"
     },
     {
-     "at": 130.0,
+     "at": 129.5,
      "color": "#e0e0e0"
     },
     {
-     "at": 134.0,
+     "at": 133.0,
      "color": "#e0e0e0"
     },
     {
-     "at": 135.5,
+     "at": 134.5,
      "color": "#e0e0e0"
     },
     {
@@ -184,11 +184,11 @@
    "start": "#fcfcfc",
    "edges": [
     {
-     "at": 652.5,
+     "at": 652.0,
      "color": "#fcfcfc"
     },
     {
-     "at": 654.0,
+     "at": 653.5,
      "color": "#fcfcfc"
     },
     {
@@ -210,10 +210,10 @@
    "color": "#fcfcfc"
   },
   "composer placeholder": {
-   "top": 670.5,
+   "top": 670.0,
    "left": 321.5,
-   "bottom": 685.0,
-   "right": 600.0,
+   "bottom": 684.5,
+   "right": 605.0,
    "color": "#a4a4a4",
    "bg": "#fcfcfc"
   },
@@ -221,7 +221,7 @@
    "top": 138.0,
    "left": 18.5,
    "bottom": 152.0,
-   "right": 137.5,
+   "right": 136.5,
    "color": "#1d1d1d",
    "bg": "#e0e0e0"
   },
@@ -257,15 +257,15 @@
      "color": "#e0e0e0"
     },
     {
-     "at": 130.0,
+     "at": 129.5,
      "color": "#e0e0e0"
     },
     {
-     "at": 134.0,
+     "at": 133.0,
      "color": "#e0e0e0"
     },
     {
-     "at": 135.5,
+     "at": 134.5,
      "color": "#e0e0e0"
     },
     {

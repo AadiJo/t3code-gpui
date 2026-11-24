@@ -18,28 +18,28 @@
    "edges": [
     {
      "at": 837.0,
-     "color": "#0e0e0e"
+     "color": "#101010"
     },
     {
      "at": 838.0,
-     "color": "#0e0e0e"
+     "color": "#101010"
     }
    ]
   },
   "palette top edge": {
-   "start": "#131314",
+   "start": "#131313",
    "edges": [
     {
      "at": 78.0,
-     "color": "#1f1e1f"
+     "color": "#1c1c1c"
     },
     {
      "at": 79.0,
-     "color": "#161517"
+     "color": "#141414"
     },
     {
      "at": 80.0,
-     "color": "#161517"
+     "color": "#141414"
     }
    ],
    "vertical": true
@@ -48,18 +48,34 @@
    "start": "#191919",
    "edges": [
     {
+     "at": 474.5,
+     "color": "#8f8f8f"
+    },
+    {
+     "at": 478.0,
+     "color": "#8f8f8f"
+    },
+    {
+     "at": 479.5,
+     "color": "#8f8f8f"
+    },
+    {
+     "at": 481.5,
+     "color": "#191919"
+    },
+    {
      "at": 497.0,
-     "color": "#0b0b0b"
+     "color": "#0a0a0a"
     },
     {
      "at": 498.0,
-     "color": "#0b0b0b"
+     "color": "#0a0a0a"
     }
    ],
    "vertical": true
   },
   "palette fill": {
-   "color": "#141414"
+   "color": "#161616"
   },
   "highlighted item": {
    "color": "#28282b"
@@ -68,9 +84,9 @@
    "top": 96.5,
    "left": 282.5,
    "bottom": 111.0,
-   "right": 585.0,
+   "right": 589.5,
    "color": "#727272",
-   "bg": "#171617"
+   "bg": "#141414"
   },
   "section label": {
    "top": 144.0,
@@ -138,6 +154,22 @@
    "start": "#181818",
    "edges": [
     {
+     "at": 474.5,
+     "color": "#888888"
+    },
+    {
+     "at": 478.0,
+     "color": "#888888"
+    },
+    {
+     "at": 479.5,
+     "color": "#888888"
+    },
+    {
+     "at": 481.5,
+     "color": "#181818"
+    },
+    {
      "at": 497.0,
      "color": "#0a0a0a"
     },
@@ -149,7 +181,7 @@
    "vertical": true
   },
   "palette fill": {
-   "color": "#171717"
+   "color": "#161616"
   },
   "highlighted item": {
    "color": "#28282b"
@@ -158,7 +190,7 @@
    "top": 96.5,
    "left": 282.5,
    "bottom": 111.0,
-   "right": 585.0,
+   "right": 589.5,
    "color": "#6c6c6c",
    "bg": "#141414"
   },
@@ -168,7 +200,7 @@
    "bottom": 153.5,
    "right": 322.0,
    "color": "#888888",
-   "bg": "#151515"
+   "bg": "#141414"
   },
   "item pitch": {
    "start": "#141414",

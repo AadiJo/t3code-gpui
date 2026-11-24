@@ -31,7 +31,7 @@
    "top": 19.0,
    "left": 1002.5,
    "bottom": 33.0,
-   "right": 1080.0,
+   "right": 1079.5,
    "color": "#8f8f8f",
    "bg": "#141415"
   },
@@ -63,14 +63,14 @@
    "top": 20.0,
    "left": 372.5,
    "bottom": 34.0,
-   "right": 491.5,
+   "right": 490.5,
    "color": "#f5f5f5",
    "bg": "#141415"
   },
   "dev badge": {
-   "top": 22.5,
+   "top": 22.0,
    "left": 8.5,
-   "bottom": 30.5,
+   "bottom": 30.0,
    "right": 26.5,
    "color": "#f5f5f5",
    "bg": "#212121"
@@ -92,9 +92,9 @@
    "color": "#141415"
   },
   "panel header": {
-   "top": 54.0,
+   "top": 53.5,
    "left": 633.5,
-   "bottom": 78.0,
+   "bottom": 77.5,
    "right": 1084.0,
    "color": "#ff6467",
    "bg": "#141415"
@@ -132,7 +132,7 @@
    "top": 19.0,
    "left": 1002.5,
    "bottom": 33.0,
-   "right": 1079.5,
+   "right": 1080.0,
    "color": "#888888",
    "bg": "#141415"
   },
@@ -164,14 +164,14 @@
    "top": 20.0,
    "left": 372.5,
    "bottom": 34.0,
-   "right": 491.5,
+   "right": 490.5,
    "color": "#e8e8e8",
    "bg": "#141415"
   },
   "dev badge": {
-   "top": 22.5,
+   "top": 22.0,
    "left": 8.5,
-   "bottom": 30.5,
+   "bottom": 30.0,
    "right": 26.5,
    "color": "#e9e9e9",
    "bg": "#212121"
@@ -193,9 +193,9 @@
    "color": "#141415"
   },
   "panel header": {
-   "top": 60.0,
+   "top": 59.5,
    "left": 633.5,
-   "bottom": 73.0,
+   "bottom": 72.5,
    "right": 1084.0,
    "color": "#ff6467",
    "bg": "#141415"
