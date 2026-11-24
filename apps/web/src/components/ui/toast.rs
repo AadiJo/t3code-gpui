@@ -126,7 +126,7 @@ impl RenderOnce for ToastSurface {
         toast_card(theme)
             .relative()
             .w_full()
-            .text_color(c.foreground())
+            .text_color(theme.foregrounds.popover)
             .child(
                 div()
                     .flex()

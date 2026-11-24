@@ -39,6 +39,7 @@ pub mod model_search;
 pub mod model_selection;
 pub mod markdown_pipeline;
 pub mod right_panel_store;
+pub mod panel_animations;
 pub mod router;
 pub mod keybindings;
 pub mod navigation_history;

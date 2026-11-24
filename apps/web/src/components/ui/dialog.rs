@@ -68,7 +68,7 @@ pub fn dialog_glass(theme: &AppTheme) -> Div {
         .border_color(theme.derived.dialog_glass_border)
         .bg(theme.derived.surface_glass_opaque)
         .shadow(theme.shadows.dialog.clone())
-        .text_color(theme.colors.foreground())
+        .text_color(theme.foregrounds.popover)
 }
 
 impl RenderOnce for DialogSurface {

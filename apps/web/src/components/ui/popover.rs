@@ -25,7 +25,7 @@ pub fn glass_surface(theme: &AppTheme) -> Div {
         .border_color(theme.derived.dropdown_glass_border)
         .bg(theme.derived.dropdown_glass_opaque)
         .shadow(theme.shadows.menu.clone())
-        .text_color(theme.colors.foreground())
+        .text_color(theme.foregrounds.popover)
 }
 
 /// Floats `content` over the window just below where this element is laid

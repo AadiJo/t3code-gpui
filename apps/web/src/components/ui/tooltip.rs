@@ -57,7 +57,7 @@ impl RenderOnce for TooltipSurface {
             .py(theme.sp(1.))
             .rounded(radius)
             .border_1()
-            .text_color(c.foreground())
+            .text_color(theme.foregrounds.popover)
             .ui_text(theme, TextSize::Xs, weight::NORMAL)
             .line_height(px(TextSize::Xs.size(theme.fonts.interface) * 1.375));
         let card = match self.variant {
