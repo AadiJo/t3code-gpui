@@ -154,10 +154,9 @@ impl LiveData {
     /// The open thread for `key`, opening it (and following its events) when another is open.
     fn open(&self, key: &ThreadKey, cx: &mut App) -> Option<Entity<LiveThread>> {
         let threads = StateBridge::threads(cx);
-        if let Some(side) = threads.read(cx).side()
-            && side.read(cx).key() == key
-        {
-            return Some(side.clone());
+        // The main pane takes over a side chat it navigates to; the panel's pane reopens its own.
+        if self.side_thread.borrow().as_ref().is_some_and(|(k, _)| k == key) {
+            *self.side_thread.borrow_mut() = None;
         }
         if let Some(active) = threads.read(cx).active()
             && active.read(cx).key() == key

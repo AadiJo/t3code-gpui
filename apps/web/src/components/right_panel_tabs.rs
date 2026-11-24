@@ -561,7 +561,7 @@ impl RightPanel {
                 Some(terminal) => div().flex_1().min_h_0().px_2().pb_2().child(terminal).into_any_element(),
                 None => self.render_empty(surface, cx),
             },
-            RightPanelSurface::SideChat { thread_id, .. } => match self.side_chat_pane(thread_id, window, cx) {
+            RightPanelSurface::SideChat { thread_id, .. } => match self.ensure_side_chat_pane(thread_id, window, cx) {
                 Some(pane) => div().flex_1().min_h_0().child(pane).into_any_element(),
                 None => self.render_empty(surface, cx),
             },
@@ -583,7 +583,7 @@ impl RightPanel {
     }
 
     /// The pane of the side chat tab on screen, built when it first shows (`SideChatPane`).
-    fn side_chat_pane(&mut self, thread_id: &str, window: &mut Window, cx: &mut Context<Self>) -> Option<Entity<SideChatPane>> {
+    fn ensure_side_chat_pane(&mut self, thread_id: &str, window: &mut Window, cx: &mut Context<Self>) -> Option<Entity<SideChatPane>> {
         let key = self.side_chat_key(thread_id)?;
         if let Some((shown, pane, _)) = &self.side_chat
             && shown == &key
@@ -602,6 +602,11 @@ impl RightPanel {
         Some(pane)
     }
 
+    /// The side chat tab's pane, while one is on screen.
+    pub fn side_chat_pane(&self) -> Option<&Entity<SideChatPane>> {
+        self.side_chat.as_ref().map(|(_, pane, _)| pane)
+    }
+
     /// Unmounts the side chat's stream when its tab leaves the screen.
     fn drop_side_chat(&mut self, cx: &mut Context<Self>) {
         if let Some((key, _, _)) = self.side_chat.take() {
@@ -611,7 +616,7 @@ impl RightPanel {
 
     /// Closes a tab (`useRightPanelSurfaceClose`): a side chat with no run or message is deleted
     /// with it, unless the shell already shows it gone.
-    fn close_surface(&mut self, surface_id: &str, cx: &mut Context<Self>) {
+    pub fn close_surface(&mut self, surface_id: &str, cx: &mut Context<Self>) {
         let thread = self.thread.clone();
         let side = thread
             .as_ref()

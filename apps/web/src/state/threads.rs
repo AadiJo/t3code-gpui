@@ -98,13 +98,18 @@ impl ThreadViews {
         let (environment_id, thread_id) = runtime_ids(&key);
         let environment = StateBridge::environment(&environment_id, cx)?;
         self.close(cx);
+        let promoted = self.side.take_if(|side| side.read(cx).key() == &key);
         let cached = self.cache.iter().position(|view| view.key == key).and_then(|ix| self.cache.remove(ix)).map(|view| view.mapped);
         let had_projection = cached.as_ref().and_then(|mapped| mapped.projection.clone());
-        let (handle, commands) = {
-            let env = environment.read(cx);
-            (env.store.open_thread(&thread_id), env.commands.clone())
+        let commands = environment.read(cx).commands.clone();
+        // A side chat the main pane navigates to keeps its stream and mapped rows.
+        let thread = match promoted {
+            Some(thread) => thread,
+            None => {
+                let handle = environment.read(cx).store.open_thread(&thread_id);
+                cx.new(|cx| LiveThread::new(key.clone(), handle, cached, cx))
+            }
         };
-        let thread = cx.new(|cx| LiveThread::new(key.clone(), handle, cached, cx));
         let source = match (&had_projection, thread.read(cx).projection()) {
             (Some(previous), Some(current)) if std::sync::Arc::ptr_eq(previous, current) => SwitchSource::MappedCache,
             (_, Some(_)) => SwitchSource::Mapped,
@@ -120,6 +125,11 @@ impl ThreadViews {
         StateBridge::shell(cx).update(cx, |shell, cx| shell.set_active_thread(Some(key), cx));
         cx.notify();
         Some(thread)
+    }
+
+    /// `key`'s open thread in either slot.
+    pub fn find(&self, key: &ThreadKey, cx: &App) -> Option<&Entity<LiveThread>> {
+        self.active.iter().chain(self.side.iter()).find(|t| t.read(cx).key() == key)
     }
 
     /// The side chat the right panel shows, if any.

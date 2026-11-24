@@ -264,7 +264,7 @@ fn relationships(key: &ThreadKey, config: Option<&t3code_contracts::ServerConfig
     let (environment_id, thread_id) = ids(key);
     let environment = StateBridge::environment(&environment_id, cx)?;
     let snapshot = environment.read(cx).shell.snapshot.clone()?;
-    let thread = StateBridge::threads(cx).read(cx).active().filter(|t| t.read(cx).key() == key).cloned();
+    let thread = StateBridge::threads(cx).read(cx).find(key, cx).cloned();
     let projection = thread.as_ref().and_then(|t| t.read(cx).projection().cloned());
     let shells = snapshot.threads.iter().chain(snapshot.archived_threads.iter()).collect();
     let providers: Vec<_> = config.map(|c| c.providers.iter().cloned().map(std::sync::Arc::new).collect()).unwrap_or_default();
@@ -331,7 +331,7 @@ fn relationship_event(feed: &Entity<DetailsFeed>, key: &ThreadKey, event: &crate
             }
             let Some(environment) = StateBridge::environment(&environment_id, cx) else { return Task::ready(DetailsOutcome::Done) };
             let commands = environment.read(cx).commands.clone();
-            let projection = StateBridge::threads(cx).read(cx).active().filter(|t| t.read(cx).key() == key).and_then(|t| t.read(cx).projection().cloned());
+            let projection = StateBridge::threads(cx).read(cx).find(key, cx).and_then(|t| t.read(cx).projection().cloned());
             let merging = matches!(event, RelationshipEvent::MergeBack);
             let (busy, failure) = if merging {
                 (RelationshipBusy::Merge, t!("Could not merge back"))
@@ -439,7 +439,7 @@ fn usage_limits(row: Option<&ThreadRow>, config: Option<&t3code_contracts::Serve
 /// `deriveLatestContextWindowSnapshot` without the compaction case: the active provider
 /// thread's latest turn usage, else the usage the provider thread reported.
 fn context_window(key: &ThreadKey, cx: &App) -> Option<ContextWindowRow> {
-    let thread = StateBridge::threads(cx).read(cx).active().filter(|t| t.read(cx).key() == key)?.clone();
+    let thread = StateBridge::threads(cx).read(cx).find(key, cx)?.clone();
     let projection = thread.read(cx).projection()?.clone();
     let provider = projection.thread.active_provider_thread_id.as_ref()?;
     let live = projection
