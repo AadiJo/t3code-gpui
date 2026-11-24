@@ -745,10 +745,16 @@ impl AppRoot {
                 let route = Route::Thread(key.clone());
                 self.router.update(cx, |router, _| router.retain_history(|r| *r != route));
             }
+            SidebarEvent::ActivateDraft(id) => self.navigate(Route::Draft(crate::router::DraftId(id.clone())), cx),
+            SidebarEvent::DiscardDraftSession(id) => {
+                self.store.update(cx, |store, _| store.discard_draft(&crate::router::DraftId(id.clone())));
+            }
             SidebarEvent::AddProject
             | SidebarEvent::OpenProjectFilter
             | SidebarEvent::ThreadCommand(..)
-            | SidebarEvent::ProjectCommand(..) => {}
+            | SidebarEvent::ProjectCommand(..)
+            | SidebarEvent::DraftCommand(..)
+            | SidebarEvent::RenameThread(..) => {}
         }
     }
 

@@ -13,12 +13,12 @@ use crate::components::sidebar_logic::{EmptyState, FolderDot, Shelf};
 use crate::components::thread_status_indicators::folder_dot;
 
 /// Expanded points down, collapsed points right (the -90deg rotation).
-fn chevron(expanded: bool, color: Hsla) -> Icon {
+fn chevron(expanded: bool, color: Hsla, colors: &ShellColors) -> Icon {
     Icon::new(if expanded {
             IconName::ChevronDown
         } else {
             IconName::ChevronRight
-        }).size(IconSize::Custom(px(12.))).color(color)
+        }).size(IconSize::Custom(colors.r(12.))).color(color)
 }
 
 impl Sidebar {
@@ -44,21 +44,21 @@ impl Sidebar {
         };
         let tone = colors.sidebar_muted_foreground;
         div()
-            .mx(px(2.))
-            .h(SECTION_HEADER_HEIGHT)
+            .mx(colors.r(2.))
+            .h(colors.s(SECTION_HEADER_HEIGHT))
             .child(
                 div()
                     .id(("shelf", ix))
                     .flex()
-                    .h(SECTION_HEADER_HEIGHT)
+                    .h(colors.s(SECTION_HEADER_HEIGHT))
                     .w_full()
                     .items_center()
                     .gap_2()
                     .px_2()
-                    .rounded(ROW_RADIUS)
+                    .rounded(colors.s(ROW_RADIUS))
                     .cursor_pointer()
                     .text_xs()
-                    .line_height(px(16.))
+                    .line_height(colors.r(16.))
                     .font_weight(FontWeight::MEDIUM)
                     .text_color(tone)
                     .when(self.entry_focused(ix, window), |d| {
@@ -66,13 +66,17 @@ impl Sidebar {
                     })
                     .child(div().min_w_0().truncate().child(label))
                     // The rule hides when a count follows, so it never reads as a leader.
-                    .child(div().h(px(1.)).min_w(px(8.)).flex_1())
+                    .child(div().h(px(1.)).min_w(colors.r(8.)).flex_1())
                     .child(
                         div()
                             .font_weight(FontWeight::NORMAL)
                             .child(count.to_string()),
                     )
-                    .child(chevron(expanded, tone))
+                    .child(chevron(expanded, tone, colors))
+                    .when(shelf == Shelf::Settled, |d| {
+                        let d = super::sidebar_drag::settled_header_drag_tone(d, self.options.dragging.is_some(), colors);
+                        self.drop_target(d, crate::components::sidebar_logic::SidebarSection::Settled, cx)
+                    })
                     .on_click(cx.listener(move |this, _, window, cx| {
                         window.focus(&this.focus_handle, cx);
                         this.cursor = Some(ix);
@@ -104,28 +108,28 @@ impl Sidebar {
         let new_thread_ref = project.member_refs.first().cloned();
         div()
             .relative()
-            .when(!first, |d| d.mt(FOLDER_HEADER_GAP))
+            .when(!first, |d| d.mt(colors.s(FOLDER_HEADER_GAP)))
             .child(
                 div()
                     .id(("folder", ix))
                     .flex()
-                    .h(SECTION_HEADER_HEIGHT)
+                    .h(colors.s(SECTION_HEADER_HEIGHT))
                     .w_full()
                     .items_center()
-                    .gap(px(10.))
-                    .px(ROW_CONTENT_INSET)
-                    .rounded(CONTROL_RADIUS)
+                    .gap(colors.r(10.))
+                    .px(colors.s(ROW_CONTENT_INSET))
+                    .rounded(colors.s(CONTROL_RADIUS))
                     .cursor_pointer()
                     .when(hovered, |d| d.bg(colors.sidebar_row_hover))
                     .when(self.entry_focused(ix, window), |d| d.border_2().border_color(colors.ring))
-                    .child(project_favicon(project.label.clone()))
+                    .child(project_favicon(project.label.clone(), colors))
                     .child(
                         div()
                             .flex_1()
                             .min_w_0()
                             .truncate()
                             .text_sm()
-                            .line_height(px(20.))
+                            .line_height(colors.r(20.))
                             .font_weight(FontWeight::MEDIUM)
                             .text_color(colors.sidebar_foreground.opacity(0.9))
                             .child(project.label.clone()),
@@ -140,7 +144,7 @@ impl Sidebar {
                                 .child(hidden_count.to_string()),
                         )
                     })
-                    .child(chevron(!collapsed, colors.sidebar_muted_foreground))
+                    .child(chevron(!collapsed, colors.sidebar_muted_foreground, colors))
                     .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
                         this.set_row_hover(ix, *hovered, cx);
                     }))
@@ -163,22 +167,22 @@ impl Sidebar {
                     div()
                         .absolute()
                         .bottom_0()
-                        .right(px(24.))
-                        .h(SECTION_HEADER_HEIGHT)
+                        .right(colors.r(24.))
+                        .h(colors.s(SECTION_HEADER_HEIGHT))
                         .flex()
                         .items_center()
                         .child(
                             div()
                                 .id(("folder-new-thread", ix))
                                 .occlude()
-                                .size(px(24.))
+                                .size(colors.r(24.))
                                 .flex()
                                 .items_center()
                                 .justify_center()
-                                .rounded(px(6.))
+                                .rounded(colors.r(6.))
                                 .cursor_pointer()
                                 .hover(|s| s.bg(colors.accent))
-                                .child(Icon::new(IconName::SquarePen).size(IconSize::Custom(px(14.))).color(colors.muted_foreground))
+                                .child(Icon::new(IconName::SquarePen).size(IconSize::Custom(colors.r(14.))).color(colors.muted_foreground))
                                 .tooltip(crate::components::ui::tooltip::tooltip(crate::i18n::t!("New thread in {project}", project = project.label.clone())))
                                 .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
                                     if *hovered {
@@ -213,18 +217,18 @@ impl Sidebar {
         div()
             .id(("show-more", ix))
             .flex()
-            .h(SLIM_ROW_HEIGHT)
+            .h(colors.s(SLIM_ROW_HEIGHT))
             .items_center()
-            .gap(px(10.))
-            .px(px(10.))
-            .rounded(ROW_RADIUS)
+            .gap(colors.r(10.))
+            .px(colors.r(10.))
+            .rounded(colors.s(ROW_RADIUS))
             .cursor_pointer()
             .text_sm()
-            .line_height(px(20.))
+            .line_height(colors.r(20.))
             .text_color(fg)
             .when(hovered, |d| d.bg(colors.sidebar_row_hover))
             .when(self.entry_focused(ix, window), |d| d.border_2().border_color(colors.ring))
-            .child(Icon::new(IconName::ChevronDown).size(IconSize::Custom(px(16.))).color(fg))
+            .child(Icon::new(IconName::ChevronDown).size(IconSize::Custom(colors.r(16.))).color(fg))
             .child(format!("Show {count} more"))
             .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
                 this.set_row_hover(ix, *hovered, cx);
@@ -248,33 +252,50 @@ impl Sidebar {
             .px_2()
             .py_6()
             .text_xs()
-            .line_height(px(16.))
+            .line_height(colors.r(16.))
             .text_color(colors.muted_foreground.opacity(0.6));
+        let pill = |id: &'static str| {
+            div()
+                .id(id)
+                .flex()
+                .items_center()
+                .gap(colors.r(6.))
+                .px(colors.r(10.))
+                .py_1()
+                .rounded(colors.s(ROW_RADIUS))
+                .border_1()
+                .border_color(colors.sidebar_border)
+                .cursor_pointer()
+                .text_size(colors.r(11.))
+                .line_height(colors.r(16.))
+                .font_weight(FontWeight::MEDIUM)
+                .text_color(colors.sidebar_muted_foreground)
+                .hover(|s| s.bg(colors.sidebar_row_hover).text_color(colors.sidebar_foreground))
+        };
         match state {
             EmptyState::NoThreads => column.child("No threads yet").into_any_element(),
+            EmptyState::Scoped { project, has_settled } => {
+                use crate::i18n::t;
+                let message = match (project, has_settled) {
+                    (Some(project), true) => t!("No active threads in {project}", project = project.clone()),
+                    (None, true) => t!("No active threads in these projects"),
+                    (Some(project), false) => t!("No threads in {project} yet", project = project.clone()),
+                    (None, false) => t!("No threads in these projects yet"),
+                };
+                column
+                    .child(message)
+                    .child(
+                        pill("empty-show-all-projects")
+                            .child(t!("Show all projects"))
+                            .on_click(cx.listener(|this, _, _, cx| this.set_project_scope(Vec::new(), cx))),
+                    )
+                    .into_any_element()
+            }
             EmptyState::NoProjects => column
                 .child("No projects yet")
                 .child(
-                    div()
-                        .id("empty-add-project")
-                        .flex()
-                        .items_center()
-                        .gap(px(6.))
-                        .px(px(10.))
-                        .py_1()
-                        .rounded(ROW_RADIUS)
-                        .border_1()
-                        .border_color(colors.sidebar_border)
-                        .cursor_pointer()
-                        .text_size(px(11.))
-                        .line_height(px(16.))
-                        .font_weight(FontWeight::MEDIUM)
-                        .text_color(colors.sidebar_muted_foreground)
-                        .hover(|s| {
-                            s.bg(colors.sidebar_row_hover)
-                                .text_color(colors.sidebar_foreground)
-                        })
-                        .child(Icon::new(IconName::Plus).size(IconSize::Custom(px(12.))).color(colors.sidebar_muted_foreground))
+                    pill("empty-add-project")
+                        .child(Icon::new(IconName::Plus).size(IconSize::Custom(colors.r(12.))).color(colors.sidebar_muted_foreground))
                         .child("Add project")
                         .on_click(cx.listener(|_, _, _, cx| cx.emit(SidebarEvent::AddProject))),
                 )
@@ -291,7 +312,7 @@ pub(crate) fn search_empty(colors: &ShellColors) -> AnyElement {
         .flex()
         .justify_center()
         .text_xs()
-        .line_height(px(16.))
+        .line_height(colors.r(16.))
         .text_color(colors.sidebar_muted_foreground)
         .child("No threads found")
         .into_any_element()

@@ -27,6 +27,9 @@ fn project(id: &str, title: &str, age_days: i64) -> SidebarProject {
         workspace_root: format!("/work/{id}").into(),
         repository_key: Some(format!("github.com/acme/{id}").into()),
         repository_relative_path: None,
+        repository_display_name: None,
+        repository_name: None,
+        has_custom_title: false,
         created_at: FIXTURE_NOW.minus(age_days * DAY),
         updated_at: FIXTURE_NOW.minus(DAY),
         pinned: false,
@@ -262,6 +265,8 @@ pub fn showcase_snapshot() -> SidebarSnapshot {
         environment_pill: None,
         auto_settle_disabled: Default::default(),
         hover_details: Default::default(),
+        drafts: Vec::new(),
+        active_draft: None,
         now: FIXTURE_NOW,
     }
 }
@@ -359,6 +364,8 @@ pub fn large_snapshot(thread_count: usize, project_count: usize) -> SidebarSnaps
         now: FIXTURE_NOW,
         auto_settle_disabled: Default::default(),
         hover_details: Default::default(),
+        drafts: Vec::new(),
+        active_draft: None,
     }
 }
 
@@ -421,6 +428,8 @@ pub fn reference_snapshot() -> SidebarSnapshot {
         now: FIXTURE_NOW,
         auto_settle_disabled: Default::default(),
         hover_details: reference_hover_details(),
+        drafts: Vec::new(),
+        active_draft: None,
     }
 }
 
@@ -445,4 +454,141 @@ fn reference_hover_details() -> std::collections::HashMap<ThreadKey, crate::comp
             (ThreadKey { environment_id: env(), thread_id: ThreadId(id.into()) }, details)
         })
         .collect()
+}
+
+/// The world of the owner-configuration sidebar captures: projects that share
+/// a repository (a checkout, its worktree and a subdirectory project), a
+/// second repository whose other clone the settings keep separate, projects
+/// without a remote, active cards, a Working shelf, snoozed and settled
+/// threads and two unsent drafts, all on the Replay agent.
+pub fn owner_snapshot() -> SidebarSnapshot {
+    let repo = |mut p: SidebarProject, key: &str, display: &str| {
+        p.repository_key = Some(key.to_string().into());
+        p.repository_display_name = Some(display.to_string().into());
+        p
+    };
+    let mut projects = vec![
+        repo(project("t3code", "t3code", 1), "github.com/example/t3code", "example/t3code"),
+        repo(project("t3code-review", "t3code-review", 1), "github.com/example/t3code", "example/t3code"),
+        repo(project("web", "web", 1), "github.com/example/t3code", "example/t3code"),
+        repo(project("relay", "relay", 1), "github.com/example/relay", "example/relay"),
+        repo(project("relay-ops", "relay-ops", 1), "github.com/example/relay", "example/relay"),
+        project("marketing", "marketing-site", 1),
+        project("infra", "infra", 1),
+    ];
+    for p in &mut projects {
+        p.repository_key = p.repository_key.take().filter(|_| p.title != "marketing-site" && p.title != "infra");
+    }
+    let replay = SidebarProvider { mark: SidebarProviderMark::AcpRegistry, initials: "RR".into(), show_badge: true };
+    let sec = |s: i64| s * 1000;
+    let finished = |id: &str, project: &str, title: &str, age: i64| {
+        // Sent `age` ago, finished a few seconds later, not yet visited.
+        let mut t = thread(id, project, title, age);
+        if let Some(run) = t.latest_run.as_mut() {
+            run.completed_at = Some(t.created_at.minus(-5_000));
+        }
+        let mut t = unread(t);
+        t.branch = Some("main".into());
+        t.provider = Some(replay.clone());
+        t
+    };
+    let mut threads = Vec::new();
+    for (ix, (id, project, title)) in [
+        ("o-terraform", "infra", "Pin terraform provider versions"),
+        ("o-video", "marketing", "Compress hero video"),
+        ("o-keys", "relay-ops", "Rotate staging keys"),
+        ("o-flags", "t3code", "Remove dead feature flags"),
+        ("o-bundle", "web", "Audit bundle size"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut t = finished(id, project, title, 10 * MIN - ix as i64 * sec(30));
+        t.last_visited_at = Some(FIXTURE_NOW);
+        t.settled_override = Some(SettledOverride::Settled);
+        t.settled_at = Some(FIXTURE_NOW.minus(MIN + sec(10) - ix as i64 * sec(2)));
+        threads.push(t);
+    }
+    for (ix, (id, project, title)) in
+        [("o-flaky", "relay", "Investigate flaky handshake test"), ("o-migration", "t3code-review", "Review the settings migration")]
+            .into_iter()
+            .enumerate()
+    {
+        let mut t = finished(id, project, title, 7 * MIN + sec(30) - ix as i64 * sec(30));
+        t.last_visited_at = Some(FIXTURE_NOW);
+        t.snoozed_until = Some(FIXTURE_NOW.minus(-14 * HOUR - 10 * MIN));
+        threads.push(t);
+    }
+    for (ix, (id, project, title)) in [
+        ("o-ci", "infra", "Migrate CI runners to arm64"),
+        ("o-handshake", "relay", "Explain the relay handshake"),
+        ("o-hero", "marketing", "Fix hero image layout shift"),
+        ("o-tls", "relay", "Rotate relay TLS certificates"),
+        ("o-launch", "marketing", "Draft launch copy for the changelog"),
+        ("o-toolbar", "web", "Polish the composer toolbar"),
+        ("o-sidebar", "t3code", "Port sidebar virtualization to GPUI"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut t = finished(id, project, title, 6 * MIN - ix as i64 * sec(30));
+        match id {
+            "o-launch" => {
+                t = running(t, RunStatus::Waiting, 4 * MIN);
+                t.has_pending_user_input = true;
+            }
+            "o-sidebar" => {
+                t.last_visited_at = Some(FIXTURE_NOW);
+                let started = FIXTURE_NOW.minus(MIN + sec(20));
+                t.latest_run = Some(LatestRun {
+                    status: RunStatus::Completed,
+                    requested_at: Some(started),
+                    started_at: Some(started),
+                    completed_at: Some(started.minus(-sec(2))),
+                });
+                t.created_at = started;
+                t.updated_at = started;
+                t.latest_user_message_at = Some(started);
+                t.latest_user_authored_message_at = Some(started);
+            }
+            _ => {}
+        }
+        threads.push(t);
+    }
+    for (id, project, title, branch, started) in [
+        ("o-profile", "t3code", "Profile the sync engine", "main", 2 * MIN + sec(20)),
+        ("o-deploy", "relay-ops", "Watch the relay deploy", "main", 2 * MIN + sec(10)),
+        ("o-rebase", "t3code-review", "Rebase the review branch", "review", 2 * MIN),
+        ("o-profile-2", "t3code", "Profile the sync engine", "main", MIN + sec(40)),
+    ] {
+        let mut t = running(thread(id, project, title, started), RunStatus::Running, started);
+        t.branch = Some(branch.into());
+        t.provider = Some(replay.clone());
+        threads.push(t);
+    }
+    let drafts = [
+        ("draft-onboarding", "t3code", "Sketch the onboarding checklist", 50),
+        ("draft-jitter", "relay", "Add retry jitter to the relay client", 40),
+    ]
+    .into_iter()
+    .map(|(id, project, preview, ago)| SidebarDraft {
+        id: id.into(),
+        project: ProjectRef { environment_id: env(), project_id: ProjectId(project.into()) },
+        preview: preview.into(),
+        created_at: FIXTURE_NOW.minus(sec(ago)),
+    })
+    .collect();
+    SidebarSnapshot {
+        projects,
+        threads: threads.into_iter().map(Arc::new).collect(),
+        notifications: Vec::new(),
+        settings: SidebarSettings::default(),
+        active_thread: Some(ThreadKey { environment_id: env(), thread_id: ThreadId("o-sidebar".into()) }),
+        environment_pill: None,
+        now: FIXTURE_NOW,
+        auto_settle_disabled: Default::default(),
+        hover_details: Default::default(),
+        drafts,
+        active_draft: None,
+    }
 }

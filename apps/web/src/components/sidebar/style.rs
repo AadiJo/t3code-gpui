@@ -40,6 +40,8 @@ pub const CARD_ROW_HEIGHT_NO_META: Pixels = px(60.);
 pub const CARD_ROW_PADDING_Y: Pixels = px(2.);
 /// Slim, folder and "show more" rows are `h-9`.
 pub const SLIM_ROW_HEIGHT: Pixels = px(36.);
+/// `folder-multiline` row with a meta line: `py-1.5`, an `h-6` title line and the meta line.
+pub const FOLDER_MULTILINE_ROW_HEIGHT: Pixels = px(54.);
 /// Shelf headers and folder headers are `h-8`.
 pub const SECTION_HEADER_HEIGHT: Pixels = px(32.);
 /// `mt-2` above every folder header but the first.
@@ -64,6 +66,8 @@ pub const GRAIN_OPACITY: f32 = 0.035;
 #[derive(Clone, Copy, Debug)]
 pub struct ShellColors {
     pub dark: bool,
+    /// Interface font size / 16: the web's rem-based sizes scale by this.
+    pub rem_scale: f32,
     pub chrome: Hsla,
     pub canvas: Hsla,
     pub foreground: Hsla,
@@ -115,6 +119,17 @@ pub struct ShellColors {
 }
 
 impl ShellColors {
+    /// A web size given in px at the default 16px rem, scaled to the
+    /// Interface font size (`rem`-based Tailwind sizes follow it).
+    pub fn r(&self, at16: f32) -> Pixels {
+        px(at16 * self.rem_scale)
+    }
+
+    /// [`Self::r`] for a size constant.
+    pub fn s(&self, at16: Pixels) -> Pixels {
+        at16 * self.rem_scale
+    }
+
     /// Resolves the shell palette for the active theme.
     pub fn from_theme(theme: &AppTheme) -> Self {
         let c = &theme.colors;
@@ -124,6 +139,7 @@ impl ShellColors {
         };
         Self {
             dark,
+            rem_scale: theme.fonts.clamped().interface / 16.,
             chrome: c.chrome,
             canvas: c.canvas,
             foreground: c.text,

@@ -73,10 +73,10 @@ impl Sidebar {
         let surface = self.row_surface(ix, thread, &state, colors, cx);
         match variant {
             RowVariant::Card => div()
-                .py(CARD_ROW_PADDING_Y)
+                .py(colors.s(CARD_ROW_PADDING_Y))
                 .child(surface.child(self.card_body(ix, thread, &state, colors, cx)))
                 .into_any_element(),
-            RowVariant::Slim | RowVariant::Folder => {
+            RowVariant::Slim | RowVariant::Folder | RowVariant::FolderMultiline => {
                 let action = match section {
                     SidebarSection::Settled => SlimAction::Unsettle,
                     SidebarSection::Snoozed => SlimAction::Wake,
@@ -118,7 +118,7 @@ impl Sidebar {
             .relative()
             .w_full()
             .overflow_hidden()
-            .rounded(ROW_RADIUS)
+            .rounded(colors.s(ROW_RADIUS))
             .cursor_pointer()
             .text_color(if state.recede && !state.hovered {
                 colors.sidebar_muted_foreground.opacity(0.75)
@@ -133,6 +133,17 @@ impl Sidebar {
                 this.set_row_hover(ix, *hovered, cx);
             }))
             .on_click(cx.listener(move |this, event: &ClickEvent, window, cx| {
+                // A plain double-click renames (`handleDoubleClick`).
+                if event.click_count() == 2 && event.modifiers() == Modifiers::default() {
+                    if let Some(SidebarListEntry::Thread { thread, .. }) = this.list.entries.get(ix) {
+                        let key = thread.key.clone();
+                        this.start_rename(key, window, cx);
+                    }
+                    return;
+                }
+                if this.renaming.is_some() {
+                    return;
+                }
                 window.focus(&this.focus_handle, cx);
                 this.click_thread(ix, event.modifiers(), cx);
             }))
@@ -142,6 +153,19 @@ impl Sidebar {
                     this.open_entry_menu(ix, event.position, cx);
                 }),
             )
+            .when_some(self.drag_value(ix, colors), |d, value| {
+                d.on_drag(value, super::sidebar_drag::drag_preview(cx.weak_entity()))
+            })
+            .when_some(self.list.entries.get(ix).and_then(|e| match e {
+                SidebarListEntry::Thread { section, .. } => Some(*section),
+                _ => None,
+            }), |d, section| {
+                let target = match section {
+                    SidebarSection::Working => SidebarSection::Active,
+                    other => other,
+                };
+                self.drop_target(d, target, cx)
+            })
             .when(self.hover_card == Some(ix), |d| {
                 let card = crate::components::thread_hover_card::thread_hover_card(
                     thread,
@@ -154,7 +178,7 @@ impl Sidebar {
                 // `side="right" align="start" sideOffset={4}`. The fixed-width flex
                 // wrapper gives the card room to size to its content up to `max-w-80`.
                 d.child(
-                    deferred(div().absolute().left_full().top_0().pl(px(4.)).w(px(324.)).flex().items_start().child(surface))
+                    deferred(div().absolute().left_full().top_0().pl(colors.r(4.)).w(colors.r(324.)).flex().items_start().child(surface))
                         .with_priority(1),
                 )
             })
@@ -169,6 +193,7 @@ impl Sidebar {
         cx: &mut Context<Self>,
     ) -> Div {
         let has_meta = card_has_meta(thread);
+        let project_title = self.list.project_titles.get(&thread.project_ref()).cloned().unwrap_or_default();
         let project_label = self
             .list
             .project_labels
@@ -184,14 +209,14 @@ impl Sidebar {
         };
         let line1 = div()
             .flex()
-            .h(px(20.))
+            .h(colors.r(20.))
             .min_w_0()
             .items_center()
-            .gap(px(6.))
+            .gap(colors.r(6.))
             .when(thread.has_unsent_draft, |d| {
-                d.child(Icon::new(IconName::SquarePen).size(IconSize::Custom(px(12.))).color(colors.warning_foreground))
+                d.child(Icon::new(IconName::SquarePen).size(IconSize::Custom(colors.r(12.))).color(colors.warning_foreground))
             })
-            .child(project_favicon(project_label.clone()))
+            .child(project_favicon(project_title, colors))
             .when(thread.pinned_at.is_some(), |d| d.child(self.pin_indicator(ix, thread, colors, cx)))
             .child(
                 div()
@@ -199,42 +224,42 @@ impl Sidebar {
                     .min_w_0()
                     .truncate()
                     .text_xs()
-                    .line_height(px(16.))
+                    .line_height(colors.r(16.))
                     .text_color(colors.secondary_label)
                     .child(project_label),
             )
             .child(self.card_status_slot(ix, thread, state, colors, cx));
-        let title = div()
-            .flex_1()
-            .min_w_0()
-            .truncate()
-            .text_sm()
-            .line_height(px(20.))
-            .font_weight(if state.recede {
-                FontWeight::NORMAL
-            } else {
-                FontWeight::MEDIUM
-            })
-            .text_color(title_color)
-            .child(thread.title.clone());
+        let title = match self.rename_field(thread, colors, cx) {
+            Some(field) => field,
+            None => div()
+                .flex_1()
+                .min_w_0()
+                .truncate()
+                .text_sm()
+                .line_height(colors.r(20.))
+                .font_weight(if state.recede {
+                    FontWeight::NORMAL
+                } else {
+                    FontWeight::MEDIUM
+                })
+                .text_color(title_color)
+                .child(thread.title.clone())
+                .into_any_element(),
+        };
         let line2 = div()
             .mt_1()
             .flex()
             .min_w_0()
             .items_center()
-            .gap(px(6.))
+            .gap(colors.r(6.))
             .child(title)
             .when(!has_meta && thread.remote_machine, |d| d.child(remote_icon(colors)))
             .when(!has_meta, |d| d.children(thread.provider.as_ref().map(|p| provider_stack(p, colors, cx))));
         div()
             .relative()
-            .h(if has_meta {
-                CARD_ROW_HEIGHT
-            } else {
-                CARD_ROW_HEIGHT_NO_META
-            })
-            .px(ROW_CONTENT_INSET)
-            .py(CONTENT_INSET)
+            .h(colors.s(if has_meta { CARD_ROW_HEIGHT } else { CARD_ROW_HEIGHT_NO_META }))
+            .px(colors.s(ROW_CONTENT_INSET))
+            .py(colors.s(CONTENT_INSET))
             .flex()
             .flex_col()
             .child(line1)
@@ -255,13 +280,13 @@ impl Sidebar {
         let slot = div()
             .ml_auto()
             .flex()
-            .h(px(20.))
-            .min_w(px(32.))
+            .h(colors.r(20.))
+            .min_w(colors.r(32.))
             .flex_none()
             .items_center()
             .justify_end()
             .text_xs()
-            .line_height(px(16.));
+            .line_height(colors.r(16.));
         let woke = state.top == Some(TopStatus::Woke);
         let label = match state.top {
             Some(top) => {
@@ -272,13 +297,16 @@ impl Sidebar {
                     }
                     _ => None,
                 };
-                status_indicator(top, px(16.), duration, colors).into_any_element()
+                status_indicator(top, colors.r(16.), duration, colors).into_any_element()
             }
             None => div()
                 .text_color(colors.secondary_label)
                 .child(compact_relative_time(thread_activity_timestamp(thread), self.now))
                 .into_any_element(),
         };
+        if let Some(hint) = self.jump_label(&thread.key, cx) {
+            return slot.child(crate::components::ui::kbd::Kbd::new(hint));
+        }
         if !state.hovered {
             return slot.child(label);
         }
@@ -288,7 +316,7 @@ impl Sidebar {
             let key = key.clone();
             cluster = cluster.child(
                 row_action(("discard-draft", ix), colors)
-                    .child(Icon::new(IconName::X).size(IconSize::Custom(px(14.))).color(colors.muted_foreground))
+                    .child(Icon::new(IconName::X).size(IconSize::Custom(colors.r(14.))).color(colors.muted_foreground))
                     .tooltip(crate::components::ui::tooltip::tooltip(crate::i18n::t!("Discard draft")))
                     .on_click(cx.listener(move |_, _, _, cx| {
                         cx.stop_propagation();
@@ -299,7 +327,7 @@ impl Sidebar {
         if settings.snooze_supported {
             cluster = cluster.child(
                 row_action(("snooze", ix), colors)
-                    .child(Icon::new(IconName::Clock).size(IconSize::Custom(px(12.))).color(colors.muted_foreground))
+                    .child(Icon::new(IconName::Clock).size(IconSize::Custom(colors.r(12.))).color(colors.muted_foreground))
                     .tooltip(crate::components::ui::tooltip::tooltip(crate::i18n::t!("Snooze thread")))
                     .on_click(cx.listener(move |this, event: &ClickEvent, _, cx| {
                         cx.stop_propagation();
@@ -310,10 +338,10 @@ impl Sidebar {
         if settings.settlement_supported {
             cluster = cluster.child(
                 row_action(("settle", ix), colors)
-                    .mr(px(-4.))
+                    .mr(colors.r(-4.))
                     .gap_1()
                     .text_color(colors.muted_foreground)
-                    .child(Icon::new(IconName::Check).size(IconSize::Custom(px(14.))).color(colors.muted_foreground))
+                    .child(Icon::new(IconName::Check).size(IconSize::Custom(colors.r(14.))).color(colors.muted_foreground))
                     .child("Settle")
                     .tooltip(crate::components::ui::tooltip::tooltip(crate::i18n::t!("Settle thread")))
                     .on_click(cx.listener(move |this, _, _, cx| {
@@ -329,18 +357,18 @@ impl Sidebar {
     /// Branch, terminals, PR, issue and diff (`SidebarThreadRow.tsx:1281-1322`).
     fn meta_line(&self, thread: &SidebarThread, colors: &ShellColors, cx: &App) -> Div {
         let mut line = div()
-            .mt(px(2.))
+            .mt(colors.r(2.))
             .flex()
             .min_w_0()
             .items_center()
-            .gap(px(6.))
+            .gap(colors.r(6.))
             .text_xs()
-            .line_height(px(16.))
+            .line_height(colors.r(16.))
             .text_color(colors.secondary_label);
         match &thread.branch {
             Some(branch) => {
                 if thread.in_worktree {
-                    line = line.child(Icon::new(IconName::FolderGit2).size(IconSize::Custom(px(14.))).color(colors.sidebar_icon));
+                    line = line.child(Icon::new(IconName::FolderGit2).size(IconSize::Custom(colors.r(14.))).color(colors.sidebar_icon));
                 }
                 line = line.child(middle_truncate(branch));
             }
@@ -361,7 +389,7 @@ impl Sidebar {
                     .flex_none()
                     .items_center()
                     .gap_1()
-                    .child(Icon::new(IconName::GitPullRequest).size(IconSize::Custom(px(12.))).color(color))
+                    .child(Icon::new(IconName::GitPullRequest).size(IconSize::Custom(colors.r(12.))).color(color))
                     .child(format!("#{}", pr.number)),
             );
         }
@@ -372,8 +400,8 @@ impl Sidebar {
                     .flex_none()
                     .items_center()
                     .gap_1()
-                    .child(Icon::new(IconName::CircleDot).size(IconSize::Custom(px(12.))).color(colors.secondary_label))
-                    .child(div().max_w(px(64.)).truncate().child(issue.clone())),
+                    .child(Icon::new(IconName::CircleDot).size(IconSize::Custom(colors.r(12.))).color(colors.secondary_label))
+                    .child(div().max_w(colors.r(64.)).truncate().child(issue.clone())),
             );
         }
         if let Some(diff) = thread.diff {
@@ -416,9 +444,9 @@ impl Sidebar {
             .flex_none()
             .cursor_pointer()
             .child(if hovered {
-                Icon::new(IconName::PinOff).size(IconSize::Custom(px(12.))).color(colors.foreground)
+                Icon::new(IconName::PinOff).size(IconSize::Custom(colors.r(12.))).color(colors.foreground)
             } else {
-                Icon::new(IconName::Pin).size(IconSize::Custom(px(12.))).color(colors.muted_foreground.opacity(0.65))
+                Icon::new(IconName::Pin).size(IconSize::Custom(colors.r(12.))).color(colors.muted_foreground.opacity(0.65))
             })
             .tooltip(crate::components::ui::tooltip::tooltip(crate::i18n::t!("Unpin thread")))
             .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
@@ -442,7 +470,8 @@ impl Sidebar {
         colors: &ShellColors,
         cx: &mut Context<Self>,
     ) -> Div {
-        let in_folder = variant == RowVariant::Folder;
+        let multiline = variant == RowVariant::FolderMultiline;
+        let in_folder = variant == RowVariant::Folder || multiline;
         let title_color = if state.hovered {
             colors.foreground
         } else if action == SlimAction::Unsettle && !state.active {
@@ -460,40 +489,102 @@ impl Sidebar {
             colors.secondary_label.opacity(0.7)
         };
         let favicon_full = state.active || state.hovered;
-        div()
+        let title = match self.rename_field(thread, colors, cx) {
+            Some(field) => field,
+            None => div()
+                .flex_1()
+                .min_w_0()
+                .truncate()
+                .text_sm()
+                .line_height(colors.r(20.))
+                .font_weight(if state.recede {
+                    FontWeight::NORMAL
+                } else {
+                    FontWeight::MEDIUM
+                })
+                .text_color(title_color)
+                .child(thread.title.clone())
+                .into_any_element(),
+        };
+        let has_meta = card_has_meta(thread);
+        let line = div()
             .flex()
-            .h(SLIM_ROW_HEIGHT)
+            .when(multiline, |d| d.h(colors.r(24.)).min_w_0())
+            .when(!multiline, |d| d.h(colors.s(SLIM_ROW_HEIGHT)).px(colors.r(10.)))
             .items_center()
-            .gap(px(10.))
-            .px(px(10.))
-            .when(in_folder, |d| d.pl(px(36.)))
+            .gap(colors.r(10.))
+            .when(in_folder && !multiline, |d| d.pl(colors.r(36.)))
             .when(!in_folder, |d| {
-                let label = self.list.project_labels.get(&thread.project_ref()).cloned().unwrap_or_default();
-                d.child(div().flex_none().opacity(if favicon_full { 1. } else { 0.4 }).child(project_favicon(label)))
+                let title = self.list.project_titles.get(&thread.project_ref()).cloned().unwrap_or_default();
+                d.child(div().flex_none().opacity(if favicon_full { 1. } else { 0.4 }).child(project_favicon(title, colors)))
             })
             .when(thread.has_unsent_draft, |d| {
-                d.child(Icon::new(IconName::SquarePen).size(IconSize::Custom(px(12.))).color(colors.warning_foreground))
+                d.child(Icon::new(IconName::SquarePen).size(IconSize::Custom(colors.r(12.))).color(colors.warning_foreground))
             })
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .truncate()
-                    .text_sm()
-                    .line_height(px(20.))
-                    .font_weight(if state.recede {
-                        FontWeight::NORMAL
-                    } else {
-                        FontWeight::MEDIUM
-                    })
-                    .text_color(title_color)
-                    .child(thread.title.clone()),
-            )
+            .child(title)
+            .when(multiline && !has_meta, |d| {
+                d.when(thread.remote_machine, |d| d.child(remote_icon(colors)))
+                    .children(thread.provider.as_ref().map(|p| provider_stack(p, colors, cx)))
+            })
             .when(thread.pinned_at.is_some(), |d| d.child(self.pin_indicator(ix, thread, colors, cx)))
-            .when(thread.running_terminal_count > 0, |d| {
+            .when(thread.running_terminal_count > 0 && !multiline, |d| {
                 d.child(terminal_status_icon(Some(self.pulse), colors))
             })
-            .child(self.slim_slot(ix, thread, state, in_folder, action, colors, cx))
+            .child(self.slim_slot(ix, thread, state, in_folder, action, colors, cx));
+        if !multiline {
+            return line;
+        }
+        // `flex flex-col justify-center px-2.5 py-1.5 ps-9`: the title line,
+        // then the card's meta line.
+        div()
+            .flex()
+            .flex_col()
+            .justify_center()
+            .px(colors.r(10.))
+            .pl(colors.r(36.))
+            .py(colors.r(6.))
+            .child(line)
+            .when(has_meta, |d| d.child(self.meta_line(thread, colors, cx)))
+    }
+
+    /// The rename field in place of the row's title while it renames
+    /// (`ThreadRenameInput`: `-mx-1 rounded-sm bg-card px-1`, focused `ring-foreground`).
+    fn rename_field(&self, thread: &SidebarThread, colors: &ShellColors, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let renaming = self.renaming.as_ref().filter(|r| r.key == thread.key)?;
+        let theme = cx.app_theme();
+        Some(
+            div()
+                .id("sidebar-rename")
+                .flex_1()
+                .min_w_0()
+                .mx(colors.r(-4.))
+                .px(colors.r(4.))
+                .rounded(colors.r(4.))
+                .bg(theme.colors.card())
+                .border_1()
+                // The field holds focus while it exists; blurring commits it.
+                .border_color(colors.foreground)
+                .text_sm()
+                .font_weight(FontWeight::MEDIUM)
+                .text_color(colors.foreground)
+                .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
+                    if event.keystroke.key == "escape" {
+                        cx.stop_propagation();
+                        this.cancel_rename(window, cx);
+                    }
+                }))
+                .on_click(|_, _, cx| cx.stop_propagation())
+                .child(
+                    gpui_kit::component::input::Input::new(&renaming.input)
+                        .appearance(false)
+                        .bordered(false)
+                        .focus_bordered(false)
+                        .p_0()
+                        .h(colors.r(18.))
+                        .text_sm(),
+                )
+                .into_any_element(),
+        )
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -511,12 +602,12 @@ impl Sidebar {
             .ml_auto()
             .flex()
             .flex_none()
-            .h(px(24.))
-            .min_w(px(32.))
+            .h(colors.r(24.))
+            .min_w(colors.r(32.))
             .items_center()
             .justify_end()
             .text_xs()
-            .line_height(px(16.));
+            .line_height(colors.r(16.));
         let content = if action == SlimAction::Wake
             && let Some(until) = thread.snoozed_until
         {
@@ -525,11 +616,11 @@ impl Sidebar {
                 .items_center()
                 .gap_1()
                 .text_color(colors.info_foreground)
-                .child(Icon::new(IconName::AlarmClock).size(IconSize::Custom(px(12.))).color(colors.info_foreground))
+                .child(Icon::new(IconName::AlarmClock).size(IconSize::Custom(colors.r(12.))).color(colors.info_foreground))
                 .child(compact_relative_time(self.now, until))
         } else if state.is_woke || (in_folder && state.top.is_some()) {
             let top = state.top.unwrap_or(TopStatus::Woke);
-            status_indicator(top, px(12.), None, colors)
+            status_indicator(top, colors.r(12.), None, colors)
         } else {
             let stamp = if action == SlimAction::Unsettle {
                 settled_timestamp(thread)
@@ -540,6 +631,9 @@ impl Sidebar {
                 .text_color(colors.secondary_label)
                 .child(compact_relative_time(stamp, self.now))
         };
+        if let Some(hint) = self.jump_label(&thread.key, cx) {
+            return slot.child(crate::components::ui::kbd::Kbd::new(hint));
+        }
         if !state.hovered {
             return slot.child(content);
         }
@@ -559,8 +653,8 @@ impl Sidebar {
         let key = thread.key.clone();
         slot.gap_1().when(state.is_woke, |d| d.child(content)).child(
             row_action(("slim-action", ix), colors)
-                .when(action == SlimAction::Settle, |d| d.px_2().mr(px(-8.)))
-                .when(action != SlimAction::Settle, |d| d.mr(px(-4.)))
+                .when(action == SlimAction::Settle, |d| d.px_2().mr(colors.r(-8.)))
+                .when(action != SlimAction::Settle, |d| d.mr(colors.r(-4.)))
                 .child(Icon::new(glyph).size(IconSize::Custom(px(size))).color(colors.muted_foreground))
                 .tooltip(crate::components::ui::tooltip::tooltip(label))
                 .on_click(cx.listener(move |this, _, _, cx| {
@@ -580,17 +674,17 @@ fn row_action(id: impl Into<ElementId>, colors: &ShellColors) -> Stateful<Div> {
         .flex()
         .items_center()
         .h_full()
-        .px(px(6.))
-        .rounded(px(6.))
+        .px(colors.r(6.))
+        .rounded(colors.r(6.))
         .cursor_pointer()
         .text_xs()
         .text_color(colors.muted_foreground)
         .hover(|s| s.text_color(colors.foreground))
 }
 
-/// The 16px project favicon: the monogram derived from the project's name.
-pub(crate) fn project_favicon(name: SharedString) -> ProjectFavicon {
-    ProjectFavicon::new(name)
+/// The `size-4` project favicon: the monogram derived from the project's name.
+pub(crate) fn project_favicon(name: SharedString, colors: &ShellColors) -> ProjectFavicon {
+    ProjectFavicon::new(name).size(colors.r(16.))
 }
 
 /// A provider instance's mark at `size`, without opacity or badge.
@@ -609,8 +703,8 @@ pub(crate) fn provider_mark(provider: &SidebarProvider, size: Pixels, colors: &S
 
 /// `SidebarProviderStack` for one instance: the compact (14px) provider mark
 /// at 60% opacity, with the instance-initials badge hanging off its corner.
-fn provider_stack(provider: &SidebarProvider, colors: &ShellColors, cx: &App) -> Div {
-    let size = px(14.);
+pub(crate) fn provider_stack(provider: &SidebarProvider, colors: &ShellColors, cx: &App) -> Div {
+    let size = colors.r(14.);
     let mark = provider_mark(provider, size, colors, cx);
     let card = cx.app_theme().colors.card();
     div()
@@ -625,12 +719,12 @@ fn provider_stack(provider: &SidebarProvider, colors: &ShellColors, cx: &App) ->
             d.child(
                 div()
                     .absolute()
-                    .right(px(-3.))
-                    .bottom(px(-3.))
+                    .right(colors.r(-3.))
+                    .bottom(colors.r(-3.))
                     .flex()
-                    .h(px(12.))
-                    .min_w(px(12.))
-                    .px(px(2.))
+                    .h(colors.r(12.))
+                    .min_w(colors.r(12.))
+                    .px(colors.r(2.))
                     .items_center()
                     .justify_center()
                     .rounded_full()
@@ -638,8 +732,8 @@ fn provider_stack(provider: &SidebarProvider, colors: &ShellColors, cx: &App) ->
                     .border_color(card)
                     .bg(card)
                     .shadow(cx.app_theme().shadows.sm5.clone())
-                    .text_size(px(7.))
-                    .line_height(px(7.))
+                    .text_size(colors.r(7.))
+                    .line_height(colors.r(7.))
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_color(colors.muted_foreground)
                     .child(provider.initials.clone()),
@@ -648,7 +742,7 @@ fn provider_stack(provider: &SidebarProvider, colors: &ShellColors, cx: &App) ->
 }
 
 fn remote_icon(colors: &ShellColors) -> Icon {
-    Icon::new(IconName::Monitor).size(IconSize::Custom(px(14.))).color(colors.sidebar_muted_foreground.opacity(0.7))
+    Icon::new(IconName::Monitor).size(IconSize::Custom(colors.r(14.))).color(colors.sidebar_muted_foreground.opacity(0.7))
 }
 
 /// `MiddleTruncate`: the head ellipsizes, the tail stays whole.

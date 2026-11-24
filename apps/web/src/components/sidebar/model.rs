@@ -233,6 +233,12 @@ pub struct SidebarProject {
     pub repository_key: Option<SharedString>,
     /// The project's root relative to its repository root, if known.
     pub repository_relative_path: Option<SharedString>,
+    /// `repositoryGroupingDisplayNameOf`: the origin's display name (or key), else the identity's.
+    pub repository_display_name: Option<SharedString>,
+    /// The repository identity's `name`.
+    pub repository_name: Option<SharedString>,
+    /// The user renamed the project, so a group keeps its title.
+    pub has_custom_title: bool,
     pub created_at: TimestampMs,
     pub updated_at: TimestampMs,
     pub pinned: bool,
@@ -244,6 +250,8 @@ pub struct SidebarProject {
 pub struct SidebarSettings {
     /// "Boring sidebar": active threads sit in project folders.
     pub project_folders: bool,
+    /// Folder rows add the card's branch and PR line (`boringSidebarMultilineRows`).
+    pub folder_rows_multiline: bool,
     /// Working threads move to a Working shelf at the bottom.
     pub working_shelf: bool,
     pub grouping_mode: ProjectGroupingMode,
@@ -262,6 +270,7 @@ impl Default for SidebarSettings {
     fn default() -> Self {
         Self {
             project_folders: false,
+            folder_rows_multiline: false,
             working_shelf: true,
             grouping_mode: ProjectGroupingMode::Repository,
             project_sort_order: ProjectSortOrder::UpdatedAt,
@@ -297,6 +306,16 @@ pub struct SidebarNotification {
     pub at: TimestampMs,
 }
 
+/// One unsent new-thread draft: a draft session whose composer has content.
+#[derive(Clone, Debug)]
+pub struct SidebarDraft {
+    pub id: SharedString,
+    pub project: ProjectRef,
+    /// First line of the prompt, or "N attachments".
+    pub preview: SharedString,
+    pub created_at: TimestampMs,
+}
+
 /// Everything the sidebar renders. Rebuild it when the shell changes; the
 /// sidebar derives rows from it once per change, not per frame.
 #[derive(Clone, Debug, Default)]
@@ -314,6 +333,10 @@ pub struct SidebarSnapshot {
     /// Threads whose auto-settle is off (`autoSettleDisabledAt` set), for the
     /// "Auto-settle behavior" menu. Empty means every thread follows the settings.
     pub auto_settle_disabled: std::collections::HashSet<ThreadKey>,
+    /// Unsent new-thread drafts (`SidebarDraftBlock`), newest first or in any order.
+    pub drafts: Vec<SidebarDraft>,
+    /// The draft the main pane shows.
+    pub active_draft: Option<SharedString>,
     /// Per-thread facts for the hover card (environment, model, hand-offs).
     /// A thread without an entry shows only what its row carries.
     pub hover_details: std::collections::HashMap<ThreadKey, crate::components::thread_hover_card::ThreadHoverDetails>,

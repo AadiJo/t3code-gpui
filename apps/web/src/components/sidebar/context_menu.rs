@@ -113,6 +113,8 @@ impl MenuItem {
 pub enum MenuTarget {
     Thread(ThreadKey),
     Project(ProjectRef),
+    /// A new-thread draft, by draft id.
+    Draft(SharedString),
 }
 
 /// An open context menu at a window position.
@@ -226,6 +228,21 @@ pub fn thread_menu_items(state: &ThreadMenuState<'_>) -> Vec<MenuItem> {
 }
 
 /// Snooze presets (`DEFAULT_SNOOZE_PRESETS`), for the row's snooze button.
+/// `buildDraftActionMenuItems` for a draft without a branch: Copy > Path,
+/// Project settings, then the destructive "Discard draft" (`Delete`).
+pub fn draft_menu_items() -> Vec<MenuItem> {
+    use MenuCommand as C;
+    let mut discard = MenuItem::new(C::Delete, "Discard draft").icon(IconName::Trash).separated();
+    discard.destructive = true;
+    vec![
+        MenuItem::new(C::CopyPath, "Copy")
+            .icon(IconName::Copy)
+            .submenu(vec![MenuItem::new(C::CopyPath, "Path").icon(IconName::Folder)]),
+        MenuItem::new(C::ProjectSettings, "Project settings").icon(IconName::Settings),
+        discard,
+    ]
+}
+
 pub fn snooze_items() -> Vec<MenuItem> {
     use MenuCommand as C;
     use SnoozePreset as P;
@@ -255,9 +272,9 @@ pub fn project_menu_items(pinned: bool) -> Vec<MenuItem> {
 }
 
 /// Estimated menu height, for clamping it inside the window.
-pub fn menu_height(items: &[MenuItem]) -> Pixels {
+pub fn menu_height(items: &[MenuItem], colors: &ShellColors) -> Pixels {
     let separators = items.iter().filter(|i| i.separator_before).count() as f32;
-    px(8. + items.len() as f32 * f32::from(MENU_ROW_HEIGHT) + separators * 9.)
+    colors.r(8. + items.len() as f32 * f32::from(MENU_ROW_HEIGHT) + separators * 9.)
 }
 
 /// One menu row's look (highlighted rows use `accent`; destructive ones a red tint).
@@ -279,18 +296,18 @@ pub fn menu_row(item: &MenuItem, highlighted: bool, colors: &ShellColors) -> Div
         .flex()
         .items_center()
         .gap_2()
-        .min_h(MENU_ROW_HEIGHT)
+        .min_h(colors.s(MENU_ROW_HEIGHT))
         .px_2()
         .py_1()
-        .rounded(px(4.))
+        .rounded(colors.r(4.))
         .text_sm()
-        .line_height(px(20.))
+        .line_height(colors.r(20.))
         .text_color(fg)
         .when_some(bg, |row, bg| row.bg(bg))
         .when(item.disabled, |row| row.opacity(0.64))
         .when_some(icon, |row, icon| match icon {
-            Some(icon) => row.child(Icon::new(icon).size(IconSize::Custom(px(16.))).color(icon_color).stroke(2.)),
-            None => row.child(div().size(px(16.)).flex_none()),
+            Some(icon) => row.child(Icon::new(icon).size(IconSize::Custom(colors.r(16.))).color(icon_color).stroke(2.)),
+            None => row.child(div().size(colors.r(16.)).flex_none()),
         })
         .child(div().flex_1().min_w_0().truncate().child(item.label.clone()))
         .when_some(item.detail.clone(), |row, detail| {
@@ -305,9 +322,9 @@ pub fn menu_row(item: &MenuItem, highlighted: bool, colors: &ShellColors) -> Div
         })
         .when(!item.children.is_empty(), |row| {
             row.child(
-                div().mr(px(-2.)).child(
+                div().mr(colors.r(-2.)).child(
                     Icon::new(IconName::ChevronRight)
-                        .size(IconSize::Custom(px(16.)))
+                        .size(IconSize::Custom(colors.r(16.)))
                         .color(colors.muted_foreground.opacity(0.8))
                         .stroke(2.),
                 ),
@@ -321,11 +338,11 @@ pub fn menu_surface(colors: &ShellColors) -> Div {
         .occlude()
         .flex()
         .flex_col()
-        .min_w(MENU_MIN_WIDTH)
-        .max_w(MENU_MAX_WIDTH)
+        .min_w(colors.s(MENU_MIN_WIDTH))
+        .max_w(colors.s(MENU_MAX_WIDTH))
         .p_1()
         .font_weight(FontWeight::NORMAL)
-        .rounded(px(8.))
+        .rounded(colors.r(8.))
         .border_1()
         .border_color(colors.glass_border)
         .bg(colors.glass)
@@ -408,7 +425,7 @@ pub fn menu_body<V: 'static>(
                 );
             }
             // `contextMenuFallback.ts`: the submenu opens at the trigger's right + 4px, at its top.
-            row = row.child(deferred(div().absolute().left_full().top_0().pl(px(4.)).child(sub)).with_priority(3));
+            row = row.child(deferred(div().absolute().left_full().top_0().pl(colors.r(4.)).child(sub)).with_priority(3));
         }
         surface = surface.child(row);
     }
@@ -435,10 +452,10 @@ impl super::Sidebar {
         let menu = self.context_menu.clone()?;
         let viewport = window.viewport_size();
         // Clamp 4px inside the window, like `contextMenuFallback.ts:202-214`.
-        let height = menu_height(&menu.items);
+        let height = menu_height(&menu.items, colors);
         let x = menu.position.x.min(viewport.width - MENU_MAX_WIDTH.min(px(240.)) - px(4.)).max(px(4.));
         let y = menu.position.y.min(viewport.height - height - px(4.)).max(px(4.));
-        let surface = menu_body(&menu, colors, |this: &mut Self| this.context_menu.as_mut(), |this, ix, child, _, cx| this.run_menu_item(ix, child, cx), cx)
+        let surface = menu_body(&menu, colors, |this: &mut Self| this.context_menu.as_mut(), |this, ix, child, window, cx| this.run_menu_item(ix, child, window, cx), cx)
             .on_mouse_down_out(cx.listener(|this, _, _, cx| {
                 this.context_menu = None;
                 cx.notify();

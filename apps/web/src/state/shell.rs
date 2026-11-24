@@ -170,8 +170,17 @@ fn map_project(environment_id: &t3code_contracts::EnvironmentId, project: &Orche
         },
         title: SharedString::from(project.title.clone()),
         workspace_root: SharedString::from(project.workspace_root.clone()),
-        repository_key: project.repository_identity.as_ref().map(|identity| SharedString::from(identity.canonical_key.clone())),
+        repository_key: project
+            .repository_identity
+            .as_ref()
+            .map(|identity| SharedString::from(identity.origin.as_ref().map_or(&identity.canonical_key, |o| &o.canonical_key).clone())),
         repository_relative_path: None,
+        repository_display_name: project.repository_identity.as_ref().and_then(|identity| match &identity.origin {
+            Some(origin) => Some(origin.display_name.clone().unwrap_or_else(|| origin.canonical_key.clone()).into()),
+            None => identity.display_name.clone().map(SharedString::from),
+        }),
+        repository_name: project.repository_identity.as_ref().and_then(|identity| identity.name.clone().map(SharedString::from)),
+        has_custom_title: project.has_custom_title.unwrap_or(false),
         created_at: TimestampMs(parse_ms(&project.created_at).unwrap_or_default()),
         updated_at: TimestampMs(parse_ms(&project.updated_at).unwrap_or_default()),
         pinned: project.pinned_at.is_some(),
@@ -335,6 +344,8 @@ impl LiveShell {
             now: TimestampMs(now),
             auto_settle_disabled: Default::default(),
             hover_details: Default::default(),
+            drafts: Vec::new(),
+            active_draft: None,
         };
         self.revision += 1;
         self.rebuilds += 1;

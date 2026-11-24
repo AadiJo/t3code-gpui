@@ -13,6 +13,7 @@ use gpui_kit::*;
 use t3code_client_runtime::platform::{ClientPresentation, FileSecretStore};
 use t3code_web::app_root::{AppRootOptions, WindowRoot, local_shell_backend, local_script_backend};
 use t3code_web::components::app_sidebar_layout::TitlebarPlatform;
+use t3code_web::components::sidebar::Sidebar;
 use t3code_web::connection::{ConnectionRuntime, RuntimeConfig};
 use t3code_web::desktop_notifications::{DesktopNotification, DesktopNotificationKind, NotificationInbox};
 use t3code_web::fixtures::FixtureStore;
@@ -43,6 +44,12 @@ enum Step {
     Navigate(&'static str),
     /// Lets background work (a shell) run before the next step.
     Wait(u64),
+    /// Puts the sidebar in a state no single input reaches (shelves open).
+    Sidebar(fn(&mut Sidebar, &mut Window, &mut Context<Sidebar>)),
+    /// Holds a modifier (`cmd` on macOS, `ctrl` elsewhere) without a key.
+    HoldModifier,
+    /// Presses the left button at a point and drags it to another in ten moves, without releasing.
+    Drag(f32, f32, f32, f32),
 }
 
 /// A reference view and how to reach it.
@@ -134,6 +141,37 @@ const SCENES: &[Scene] = &[
     Scene { name: "right-panel-diff", reference: "right-panel-diff", light: false, steps: &[Step::Action(|| Box::new(ToggleDiff)), Step::Wait(300)] },
 ];
 
+/// The owner-configuration sidebar views (`artifacts/fixchat2/cap`): the
+/// owner's client settings (`T3CODE_CLIENT_SETTINGS`, a path to their
+/// client-settings JSON; never in the repo) on `sidebar_fixtures::owner_snapshot`.
+const OWNER_THREAD: &str = "/env-local/o-sidebar";
+fn expand_shelves(sidebar: &mut Sidebar, _: &mut Window, cx: &mut Context<Sidebar>) {
+    sidebar.options_mut(cx, |o| {
+        o.working_expanded = true;
+        o.snoozed_expanded = true;
+        o.settled_expanded = true;
+    });
+}
+fn rename_tls(sidebar: &mut Sidebar, window: &mut Window, cx: &mut Context<Sidebar>) {
+    let key = sidebar.snapshot().threads.iter().find(|t| t.title.starts_with("Rotate relay TLS")).map(|t| t.key.clone());
+    if let Some(key) = key {
+        sidebar.start_rename(key, window, cx);
+    }
+}
+const OWNER_SCENES: &[Scene] = &[
+    Scene { name: "owner-sb-top", reference: "sb-top", light: false, steps: &[] },
+    Scene { name: "owner-sb-shelves-collapsed", reference: "sb-shelves-collapsed", light: false, steps: &[Step::Wheel(127., 400., -20_000.)] },
+    Scene { name: "owner-sb-shelves-expanded", reference: "sb-shelves-expanded", light: false, steps: &[Step::Sidebar(expand_shelves), Step::Wheel(127., 400., -20_000.), Step::Move(127., 715.)] },
+    Scene { name: "owner-sb-thread-menu", reference: "sb-thread-menu", light: false, steps: &[Step::RightClick(127., 520.)] },
+    Scene { name: "owner-sb-draft-menu", reference: "sb-draft-menu", light: false, steps: &[Step::RightClick(127., 213.)] },
+    Scene { name: "owner-sb-draft-hover", reference: "sb-draft-hover", light: false, steps: &[Step::Move(127.5, 213.), Step::Wait(100)] },
+    Scene { name: "owner-sb-rename", reference: "sb-rename", light: false, steps: &[Step::Move(127., 540.), Step::Sidebar(rename_tls), Step::Press("end"), Step::Type(" now")] },
+    Scene { name: "owner-sb-jump-hints", reference: "sb-jump-hints", light: false, steps: &[Step::HoldModifier, Step::Wait(1200)] },
+    Scene { name: "owner-sb-drag", reference: "sb-drag", light: false, steps: &[Step::Drag(107.5, 521.5, 107.5, 381.5), Step::Wait(300)] },
+    Scene { name: "owner-sb-drag-down", reference: "sb-drag-down", light: false, steps: &[Step::Drag(107.5, 521.5, 107.5, 381.5), Step::Drag(107.5, 381.5, 107.5, 779.), Step::Wait(300)] },
+    Scene { name: "owner-sb-filter", reference: "sb-filter", light: false, steps: &[Step::Click(182., 74.5)] },
+];
+
 /// The reference inbox: the approval and the question, both unread.
 fn reference_inbox() -> Arc<[DesktopNotification]> {
     let item = |thread: &str, title: &str, project: &str, kind| DesktopNotification {
@@ -183,7 +221,7 @@ fn mouse(cx: &mut HeadlessAppContext, window: AnyWindowHandle, at: Point<Pixels>
 }
 
 /// Opens a fresh window on the reference world, applies `scene`'s steps and saves the frame.
-fn render(scene: &Scene, out: &std::path::Path, data: &std::path::Path) -> anyhow::Result<()> {
+fn render(scene: &Scene, owner: bool, out: &std::path::Path, data: &std::path::Path) -> anyhow::Result<()> {
     let mut cx = headless();
     let config = RuntimeConfig {
         secrets: Some(Arc::new(FileSecretStore::new(data.join("secrets.json")))),
@@ -195,11 +233,26 @@ fn render(scene: &Scene, out: &std::path::Path, data: &std::path::Path) -> anyho
     cx.update(|cx| {
         t3code_web::init(cx);
         ThemeSettings::set_mode(if scene.light { ThemeMode::Light } else { ThemeMode::Dark }, cx);
-        ThemeSettings::set_glass_opacity(GlassOpacity::new(OWNER_GLASS_OPACITY), cx);
+        if owner {
+            t3code_web::scenes::settings::apply_client_settings_override(cx);
+            // The capture server's relay-ops project, kept separate by a per-project override.
+            t3code_web::hooks::use_settings::ClientSettingsStore::update(cx, |s| {
+                s.sidebar_project_grouping_overrides =
+                    [("env-local:/work/relay-ops".to_string(), t3code_contracts::SidebarProjectGroupingMode::Separate)].into();
+            });
+            // The owner's Mac is in dark appearance; headless has no system appearance.
+            t3code_web::hooks::use_theme::ThemeStore::set_appearance_mode(ThemeMode::Dark, cx);
+        } else {
+            ThemeSettings::set_glass_opacity(GlassOpacity::new(OWNER_GLASS_OPACITY), cx);
+        }
         ConnectionRuntime::init(config, cx)
     })?;
     let options = AppRootOptions {
-        store: FixtureStore::reference(),
+        store: if owner {
+            FixtureStore::from_sidebar(t3code_web::components::sidebar::fixtures::owner_snapshot())
+        } else {
+            FixtureStore::reference()
+        },
         platform: TitlebarPlatform::Mac,
         state_dir: StateDir(None),
         terminal_backend: local_shell_backend(),
@@ -218,7 +271,7 @@ fn render(scene: &Scene, out: &std::path::Path, data: &std::path::Path) -> anyho
     cx.update(|cx| {
         let timeline = root.read(cx).thread_view().read(cx).chat().read(cx).timeline().clone();
         timeline.update(cx, |t, _| t.set_now_millis(t3code_web::fixtures::timelines::NOW_MS));
-        root.update(cx, |root, cx| root.navigate(Route::parse(THREAD), cx));
+        root.update(cx, |root, cx| root.navigate(Route::parse(if owner { OWNER_THREAD } else { THREAD }), cx));
         NotificationInbox::set_items(reference_inbox(), cx);
         // Settings pages read a connected server's config, as the reference's had.
         if scene.name.starts_with("settings-") && scene.name != "settings-environments" {
@@ -261,6 +314,41 @@ fn render(scene: &Scene, out: &std::path::Path, data: &std::path::Path) -> anyho
             Step::Action(action) => {
                 cx.update_window(window, |_, w, cx| w.dispatch_action(action(), cx)).ok();
             }
+            Step::Sidebar(edit) => {
+                let sidebar = cx.update(|cx| root.read(cx).sidebar().clone());
+                cx.update_window(window, |_, w, cx| sidebar.update(cx, |s, cx| edit(s, w, cx))).ok();
+            }
+            Step::Drag(x0, y0, x1, y1) => {
+                cx.update_window(window, |_, w, cx| {
+                    let at = point(px(*x0), px(*y0));
+                    w.dispatch_event(MouseMoveEvent { position: at, pressed_button: None, modifiers: Modifiers::default() }.to_platform_input(), cx);
+                    w.dispatch_event(
+                        MouseDownEvent { button: MouseButton::Left, position: at, modifiers: Modifiers::default(), click_count: 1, first_mouse: false }
+                            .to_platform_input(),
+                        cx,
+                    );
+                })
+                .ok();
+                for i in 1..=10 {
+                    let t = i as f32 / 10.;
+                    let at = point(px(x0 + (x1 - x0) * t), px(y0 + (y1 - y0) * t));
+                    cx.update_window(window, |_, w, cx| {
+                        w.dispatch_event(
+                            MouseMoveEvent { position: at, pressed_button: Some(MouseButton::Left), modifiers: Modifiers::default() }.to_platform_input(),
+                            cx,
+                        );
+                    })
+                    .ok();
+                    frame(&mut cx, window);
+                }
+            }
+            Step::HoldModifier => {
+                let modifiers = if cfg!(target_os = "macos") { Modifiers::command() } else { Modifiers::control() };
+                cx.update_window(window, |_, w, cx| {
+                    w.dispatch_event(ModifiersChangedEvent { modifiers, capslock: Default::default() }.to_platform_input(), cx);
+                })
+                .ok();
+            }
             Step::Navigate(route) => cx.update(|cx| root.update(cx, |root, cx| root.navigate(Route::parse(route), cx))),
             Step::Wait(ms) => {
                 let until = Instant::now() + Duration::from_millis(*ms);
@@ -289,7 +377,17 @@ fn main() -> anyhow::Result<()> {
     let data = out.join(".runtime");
     std::fs::create_dir_all(&data)?;
     for scene in SCENES.iter().filter(|s| filter.as_deref().is_none_or(|f| s.name.contains(f))) {
-        if let Err(error) = render(scene, &out, &data) {
+        if let Err(error) = render(scene, false, &out, &data) {
+            eprintln!("FAILED {}: {error:#}", scene.name);
+        }
+    }
+    let owner_settings = std::env::var_os("T3CODE_CLIENT_SETTINGS").is_some();
+    for scene in OWNER_SCENES.iter().filter(|s| filter.as_deref().is_none_or(|f| s.name.contains(f))) {
+        if !owner_settings {
+            eprintln!("SKIPPED {}: set T3CODE_CLIENT_SETTINGS to the owner's client settings file", scene.name);
+            continue;
+        }
+        if let Err(error) = render(scene, true, &out, &data) {
             eprintln!("FAILED {}: {error:#}", scene.name);
         }
     }

@@ -10,9 +10,9 @@ use gpui_kit::SharedString;
 
 use super::sidebar::model::{
     ErrorClass, ProjectRef, ProjectSortOrder, RunStatus, RuntimeStatus, SettledOverride,
-    SidebarSnapshot, SidebarThread, SubagentRequest, ThreadKey, TimestampMs,
+    SidebarDraft, SidebarSnapshot, SidebarThread, SubagentRequest, ThreadKey, TimestampMs,
 };
-use super::sidebar::sidebar_project_grouping::{ProjectGroup, build_project_groups};
+use super::sidebar::sidebar_project_grouping::{GroupingOverrides, ProjectGroup, build_project_groups};
 
 /// `SidebarThreadStatus`, in precedence order.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -565,6 +565,8 @@ pub enum RowVariant {
     Slim,
     /// 36px row inside a project folder.
     Folder,
+    /// Two-line row inside a project folder (`folder-multiline`).
+    FolderMultiline,
 }
 
 /// A shelf at the bottom of the list.
@@ -575,9 +577,26 @@ pub enum Shelf {
     Settled,
 }
 
+/// A section boundary label shown while a row is dragged (`SidebarDragBoundary`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DragMarker {
+    /// "Pinned", above the pinned rows.
+    Pinned,
+    /// "Active", between the pinned and active rows.
+    Active,
+}
+
 /// One item of the flattened, virtualized sidebar list.
 #[derive(Clone, Debug)]
 pub enum SidebarListEntry {
+    /// An unsent new-thread draft (`SidebarDraftBlock`).
+    Draft(Arc<SidebarDraft>),
+    /// The rule under the drafts.
+    DraftDivider,
+    /// A section boundary label, while a row is dragged.
+    DragBoundary(DragMarker),
+    /// The dashed Settled drop box under a closed Settled shelf, while dragging.
+    DragPlaceholder,
     Thread {
         thread: Arc<SidebarThread>,
         variant: RowVariant,
@@ -611,6 +630,9 @@ pub enum SidebarListEntry {
 pub enum EmptyState {
     NoProjects,
     NoThreads,
+    /// The project filter hides every active thread: the one project's name
+    /// (none for several), and whether settled threads remain.
+    Scoped { project: Option<SharedString>, has_settled: bool },
 }
 
 /// Sidebar UI state that changes the list: shelves, folders, search.
@@ -622,17 +644,26 @@ pub struct SidebarListOptions {
     pub settled_visible: usize,
     pub collapsed_folders: HashSet<SharedString>,
     pub search: SharedString,
+    /// `sidebarProjectGroupingOverrides`.
+    pub grouping_overrides: GroupingOverrides,
+    /// Project filter: the logical group keys shown; empty shows all.
+    pub project_scope: Vec<SharedString>,
+    /// A row is being dragged from this section.
+    pub dragging: Option<SidebarSection>,
 }
 
 impl Default for SidebarListOptions {
     fn default() -> Self {
         Self {
-            working_expanded: true,
-            snoozed_expanded: true,
+            working_expanded: false,
+            snoozed_expanded: false,
             settled_expanded: false,
             settled_visible: 0,
             collapsed_folders: HashSet::new(),
             search: SharedString::default(),
+            grouping_overrides: GroupingOverrides::new(),
+            project_scope: Vec::new(),
+            dragging: None,
         }
     }
 }
@@ -644,6 +675,8 @@ pub struct SidebarList {
     pub groups: Vec<ProjectGroup>,
     /// Project display name by project ref, for card rows.
     pub project_labels: HashMap<ProjectRef, SharedString>,
+    /// Each project's own title, for its favicon monogram.
+    pub project_titles: HashMap<ProjectRef, SharedString>,
     /// Thread keys in visual order, for keyboard and shortcut traversal.
     pub thread_order: Vec<ThreadKey>,
 }
@@ -657,10 +690,27 @@ pub fn card_has_meta(thread: &SidebarThread) -> bool {
         || thread.running_terminal_count > 0
 }
 
-/// Fixed pixel height of an entry, without the 1px list gap.
-pub fn entry_height(entry: &SidebarListEntry) -> f32 {
+/// Height of an entry at the Interface font size, without the 1px list gap.
+pub fn entry_height(entry: &SidebarListEntry, rem_scale: f32) -> f32 {
+    match entry {
+        // `my-1.5` scales; the `h-px` rule does not.
+        SidebarListEntry::DraftDivider => 12. * rem_scale + 1.,
+        // `SIDEBAR_DRAG_LABEL_HEIGHT`, less the list gap that follows it.
+        SidebarListEntry::DragBoundary(_) => 24. * rem_scale - 1.,
+        _ => entry_height_at16(entry) * rem_scale,
+    }
+}
+
+fn entry_height_at16(entry: &SidebarListEntry) -> f32 {
     use super::sidebar::style as s;
     match entry {
+        SidebarListEntry::Draft(_) => f32::from(s::CARD_ROW_HEIGHT + s::CARD_ROW_PADDING_Y * 2.),
+        SidebarListEntry::DraftDivider => 13.,
+        SidebarListEntry::DragBoundary(_) => 23.,
+        SidebarListEntry::DragPlaceholder => f32::from(s::SLIM_ROW_HEIGHT),
+        SidebarListEntry::Thread { thread, variant: RowVariant::FolderMultiline, .. } => {
+            f32::from(if card_has_meta(thread) { s::FOLDER_MULTILINE_ROW_HEIGHT } else { s::SLIM_ROW_HEIGHT })
+        }
         SidebarListEntry::Thread {
             thread,
             variant: RowVariant::Card,
@@ -684,6 +734,7 @@ pub fn entry_height(entry: &SidebarListEntry) -> f32 {
         SidebarListEntry::ShelfSpacer => 0.,
         SidebarListEntry::Empty(EmptyState::NoProjects) => 98.,
         SidebarListEntry::Empty(EmptyState::NoThreads) => 64.,
+        SidebarListEntry::Empty(EmptyState::Scoped { .. }) => 98.,
         SidebarListEntry::SearchEmpty => 64.,
     }
 }
@@ -692,9 +743,11 @@ pub fn entry_height(entry: &SidebarListEntry) -> f32 {
 /// Working, Snoozed and Settled shelves (`Sidebar.tsx:3534-3717`).
 pub fn build_sidebar_list(snapshot: &SidebarSnapshot, options: &SidebarListOptions) -> SidebarList {
     let settings = snapshot.settings;
-    let mut groups = build_project_groups(&snapshot.projects, settings.grouping_mode);
+    let mut groups = build_project_groups(&snapshot.projects, settings.grouping_mode, &options.grouping_overrides);
     sort_project_groups(&mut groups, &snapshot.threads, settings.project_sort_order);
     groups.retain(|g| !g.archived);
+    // Folders already separate the work, so boring mode has no Working shelf.
+    let working_shelf = settings.working_shelf && !settings.project_folders;
 
     let mut group_of: HashMap<ProjectRef, usize> = HashMap::new();
     let mut project_labels = HashMap::new();
@@ -704,10 +757,19 @@ pub fn build_sidebar_list(snapshot: &SidebarSnapshot, options: &SidebarListOptio
             project_labels.insert(member.clone(), group.label.clone());
         }
     }
+    let project_titles = snapshot.projects.iter().map(|p| (p.project_ref.clone(), p.title.clone())).collect();
+    // The project filter keeps only scoped groups' threads and drafts.
+    let scoped: Vec<usize> = options
+        .project_scope
+        .iter()
+        .filter_map(|key| groups.iter().position(|g| &g.key == key))
+        .collect();
+    let in_scope = |project: &ProjectRef| scoped.is_empty() || group_of.get(project).is_some_and(|ix| scoped.contains(ix));
 
     let mut list = SidebarList {
         groups: Vec::new(),
         project_labels,
+        project_titles,
         ..Default::default()
     };
     let push_thread = |list: &mut SidebarList, thread: &Arc<SidebarThread>, variant, section| {
@@ -725,16 +787,26 @@ pub fn build_sidebar_list(snapshot: &SidebarSnapshot, options: &SidebarListOptio
             list.entries.push(SidebarListEntry::SearchEmpty);
         }
         for thread in &results {
-            let section = resolve_section(thread, snapshot.now, settings.working_shelf);
+            let section = resolve_section(thread, snapshot.now, working_shelf);
             push_thread(&mut list, thread, RowVariant::Card, section);
         }
         list.groups = groups;
         return list;
     }
 
+    // `SidebarDraftBlock`: newest first, then a divider.
+    let mut drafts: Vec<&SidebarDraft> = snapshot.drafts.iter().filter(|d| in_scope(&d.project)).collect();
+    drafts.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+    for draft in &drafts {
+        list.entries.push(SidebarListEntry::Draft(Arc::new((*draft).clone())));
+    }
+    if !drafts.is_empty() {
+        list.entries.push(SidebarListEntry::DraftDivider);
+    }
+
     let mut by_section: HashMap<SidebarSection, Vec<Arc<SidebarThread>>> = HashMap::new();
-    for thread in snapshot.threads.iter().filter(|t| !t.archived) {
-        let section = resolve_section(thread, snapshot.now, settings.working_shelf);
+    for thread in snapshot.threads.iter().filter(|t| !t.archived && in_scope(&t.project_ref())) {
+        let section = resolve_section(thread, snapshot.now, working_shelf);
         by_section.entry(section).or_default().push(thread.clone());
     }
     let mut take = |section| by_section.remove(&section).unwrap_or_default();
@@ -748,19 +820,32 @@ pub fn build_sidebar_list(snapshot: &SidebarSnapshot, options: &SidebarListOptio
     sort_settled(&mut settled);
     sort_desc_by(&mut working, send_timestamp);
 
+    let has_folders = settings.project_folders;
+    let dragging = options.dragging.is_some() && !has_folders;
+    if dragging {
+        list.entries.push(SidebarListEntry::DragBoundary(DragMarker::Pinned));
+    }
     for thread in &pinned {
         push_thread(&mut list, thread, RowVariant::Card, SidebarSection::Pinned);
     }
+    if dragging {
+        list.entries.push(SidebarListEntry::DragBoundary(DragMarker::Active));
+    }
 
-    if settings.project_folders {
+    if has_folders {
         sort_desc_by(&mut active, send_timestamp);
+        let folder_variant = if settings.folder_rows_multiline { RowVariant::FolderMultiline } else { RowVariant::Folder };
         let mut folders: Vec<Vec<Arc<SidebarThread>>> = vec![Vec::new(); groups.len()];
-        for thread in active {
+        for thread in &active {
             if let Some(&ix) = group_of.get(&thread.project_ref()) {
-                folders[ix].push(thread);
+                folders[ix].push(thread.clone());
             }
         }
+        let mut first = true;
         for (ix, threads) in folders.iter().enumerate() {
+            if threads.is_empty() && !scoped.contains(&ix) && !groups[ix].pinned {
+                continue;
+            }
             let collapsed = options.collapsed_folders.contains(&groups[ix].key);
             list.entries.push(SidebarListEntry::FolderHeader {
                 group: ix,
@@ -769,16 +854,17 @@ pub fn build_sidebar_list(snapshot: &SidebarSnapshot, options: &SidebarListOptio
                 dot: collapsed
                     .then(|| resolve_folder_dot(threads.iter().map(|t| t.as_ref())))
                     .flatten(),
-                first: ix == 0,
+                first,
             });
+            first = false;
             if !collapsed {
                 for thread in threads {
-                    push_thread(&mut list, thread, RowVariant::Folder, SidebarSection::Active);
+                    push_thread(&mut list, thread, folder_variant, SidebarSection::Active);
                 }
             }
         }
     } else {
-        if settings.working_shelf {
+        if working_shelf {
             sort_desc_by(&mut active, return_timestamp);
         } else {
             sort_active(&mut active);
@@ -788,18 +874,24 @@ pub fn build_sidebar_list(snapshot: &SidebarSnapshot, options: &SidebarListOptio
         }
     }
 
-    let nothing_listed = list.entries.is_empty()
-        && working.is_empty()
-        && snoozed.is_empty()
-        && settled.is_empty();
-    if nothing_listed {
+    // `Sidebar.tsx:3326-3373`: a scope can hide every active thread; say so
+    // even when its project still has settled ones.
+    let nothing_active = pinned.len() + active.len() + working.len() + snoozed.len() == 0;
+    let nothing_listed = nothing_active && settled.is_empty();
+    if !has_folders && drafts.is_empty() && nothing_active && (settled.is_empty() || !scoped.is_empty()) {
         list.entries.push(SidebarListEntry::Empty(if snapshot.projects.is_empty() {
             EmptyState::NoProjects
+        } else if !scoped.is_empty() {
+            EmptyState::Scoped {
+                project: (scoped.len() == 1).then(|| groups[scoped[0]].label.clone()),
+                has_settled: !settled.is_empty(),
+            }
         } else {
             EmptyState::NoThreads
         }));
     }
 
+    let active_key = snapshot.active_thread.as_ref();
     let mut spacer_placed = false;
     let mut shelf = |list: &mut SidebarList,
                      shelf: Shelf,
@@ -821,10 +913,19 @@ pub fn build_sidebar_list(snapshot: &SidebarSnapshot, options: &SidebarListOptio
             count: threads.len(),
             expanded,
         });
-        if expanded {
-            for thread in threads.iter().take(limit) {
+        // A collapsed shelf still lists the open thread (`routeThreadOnly`); an
+        // expanded one lists `limit` rows plus the open thread if it is past them.
+        let route = threads.iter().position(|t| Some(&t.key) == active_key);
+        let mut listed_any = false;
+        for (ix, thread) in threads.iter().enumerate() {
+            let listed = if expanded { ix < limit || route == Some(ix) } else { route == Some(ix) };
+            if listed {
+                listed_any = true;
                 push_thread(list, thread, variant, section);
             }
+        }
+        if shelf == Shelf::Settled && dragging && !listed_any {
+            list.entries.push(SidebarListEntry::DragPlaceholder);
         }
     };
     shelf(
