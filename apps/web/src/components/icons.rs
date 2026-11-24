@@ -264,6 +264,7 @@ lucide_icons! {
     Slash => "slash",
     SlidersHorizontal => "sliders-horizontal",
     Smartphone => "smartphone",
+    SnapShot => "snap-shot",
     SmilePlus => "smile-plus",
     Sparkles => "sparkles",
     Square => "square",

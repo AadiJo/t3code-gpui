@@ -3,7 +3,7 @@
 
 use std::rc::Rc;
 
-use gpui_kit::{App, ElementId, IntoElement, RenderOnce, SharedString, Window, div, prelude::*, px};
+use gpui_kit::{AnyElement, App, ElementId, IntoElement, RenderOnce, SharedString, Window, div, prelude::*, px};
 
 use super::menu::{MenuItem, MenuItemKind, MenuPopup};
 use super::popover::{Popover, PopupHandle};
@@ -40,6 +40,8 @@ impl SelectSize {
 pub struct SelectTrigger {
     label: SharedString,
     icon: Option<IconName>,
+    leading: Option<AnyElement>,
+    fit: bool,
     variant: SelectVariant,
     size: SelectSize,
     state: ControlState,
@@ -51,6 +53,8 @@ impl SelectTrigger {
         Self {
             label: label.into(),
             icon: None,
+            leading: None,
+            fit: false,
             variant: SelectVariant::Default,
             size: SelectSize::Default,
             state: ControlState::Idle,
@@ -70,6 +74,18 @@ impl SelectTrigger {
 
     pub fn size(mut self, size: SelectSize) -> Self {
         self.size = size;
+        self
+    }
+
+    /// Drawn before the value, such as the diff colour dots.
+    pub fn leading(mut self, leading: Option<AnyElement>) -> Self {
+        self.leading = leading;
+        self
+    }
+
+    /// `w-auto min-w-0`: as wide as the value instead of filling its parent.
+    pub fn fit(mut self, fit: bool) -> Self {
+        self.fit = fit;
         self
     }
 
@@ -109,7 +125,11 @@ impl RenderOnce for SelectTrigger {
             .flex()
             .items_center()
             .justify_between()
-            .gap(if matches!(self.size, SelectSize::Xs | SelectSize::Compact) { theme.sp(1.) } else { theme.sp(2.) })
+            .gap(match self.size {
+                SelectSize::Xs | SelectSize::Compact => theme.sp(1.),
+                SelectSize::Sm => theme.sp(1.5),
+                _ => theme.sp(2.),
+            })
             .min_h(height)
             .px(padding)
             .rounded(radius)
@@ -117,8 +137,9 @@ impl RenderOnce for SelectTrigger {
             .ui_text(theme, text, weight::NORMAL)
             .when(disabled, |t| t.opacity(DISABLED_OPACITY));
         let trigger = match self.variant {
+            // `w-full min-w-36`, or `w-auto min-w-0` when it fits its value.
             SelectVariant::Default => trigger
-                .min_w(theme.rem(9.))
+                .when(!self.fit, |t| t.w_full().min_w(theme.rem(9.)))
                 .border_color(if focused { c.ring() } else { c.input })
                 .bg(theme.derived.input_fill)
                 .text_color(c.foreground())
@@ -144,6 +165,7 @@ impl RenderOnce for SelectTrigger {
                     .gap(theme.sp(2.))
                     .min_w_0()
                     .children(self.icon.map(|icon| Icon::new(icon).size(IconSize::Md).color(c.icon_muted).opacity(0.8)))
+                    .children(self.leading)
                     .child(div().truncate().child(self.label)),
             )
             .child(
@@ -178,6 +200,9 @@ pub struct Select {
     selected: usize,
     variant: SelectVariant,
     size: SelectSize,
+    value_label: Option<SharedString>,
+    leading: Option<AnyElement>,
+    fit: bool,
     on_change: Rc<dyn Fn(usize, &mut Window, &mut App) + 'static>,
 }
 
@@ -194,6 +219,9 @@ impl Select {
             selected,
             variant: SelectVariant::Default,
             size: SelectSize::Default,
+            value_label: None,
+            leading: None,
+            fit: false,
             on_change: Rc::new(on_change),
         }
     }
@@ -209,10 +237,32 @@ impl Select {
     }
 }
 
+impl Select {
+    /// `SelectValue` children: the trigger's text when it differs from the
+    /// chosen item's, as "Comfortable" for "Comfortable (default)".
+    pub fn value_label(mut self, label: impl Into<SharedString>) -> Self {
+        self.value_label = Some(label.into());
+        self
+    }
+
+    /// Drawn before the trigger's value.
+    pub fn leading(mut self, leading: impl IntoElement) -> Self {
+        self.leading = Some(leading.into_any_element());
+        self
+    }
+
+    /// `w-auto min-w-0` on the trigger.
+    pub fn fit(mut self) -> Self {
+        self.fit = true;
+        self
+    }
+}
+
 impl RenderOnce for Select {
     fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
-        let label = self.options.get(self.selected).cloned().unwrap_or_default();
-        let trigger = SelectTrigger::new(label).variant(self.variant).size(self.size);
+        let label = self.value_label.unwrap_or_else(|| self.options.get(self.selected).cloned().unwrap_or_default());
+        let trigger =
+            SelectTrigger::new(label).variant(self.variant).size(self.size).leading(self.leading).fit(self.fit);
         let (options, selected, on_change) = (self.options, self.selected, self.on_change);
         Popover::new(self.id, trigger, move |handle: PopupHandle, _, _| {
             select_list(&options, selected, on_change.clone())

@@ -708,6 +708,15 @@ impl ServerSettingsStore {
         ServerSettings::deserialize(Value::Object(document)).ok().or_else(|| Some(config.settings.clone()))
     }
 
+    /// `DEFAULT_SERVER_SETTINGS`, for telling a built-in value from one set
+    /// on the environment.
+    pub fn defaults() -> &'static ServerSettings {
+        static DEFAULTS: LazyLock<ServerSettings> = LazyLock::new(|| {
+            ServerSettings::deserialize(Value::Object(SERVER_DEFAULTS_DOCUMENT.clone())).expect("server settings defaults decode")
+        });
+        &DEFAULTS
+    }
+
     /// An environment's config, once its first snapshot arrived.
     pub fn config(cx: &App, id: &EnvironmentId) -> Option<Arc<ServerConfig>> {
         cx.try_global::<Self>()?.environments.get(id).map(|env| env.config.clone())

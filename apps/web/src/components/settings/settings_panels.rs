@@ -13,7 +13,7 @@ use t3code_contracts::{
 };
 
 use super::settings_controls::{
-    SettingsScope, client_row, client_select, client_switch, reset_button, select_control, server_switch,
+    SelectWidth, SettingsScope, client_row, client_select, client_switch, reset_button, select_control, server_switch, sized_select,
 };
 use super::settings_layout::{SettingsRow, SettingsSection, page_container};
 use super::settings_search::setting_title;
@@ -53,6 +53,7 @@ pub fn general_panel(cx: &App) -> AnyElement {
         .child(client_select(
             "thread-notifications",
             t!("System alerts when a thread finishes, fails, or needs input or approval. Applies to this device while T3 Code is open."),
+            SelectWidth::Rem(14.),
             notification_mode_options(),
             |s| &s.notification_mode,
             |s, v| s.notification_mode = v,
@@ -107,6 +108,7 @@ pub fn general_panel(cx: &App) -> AnyElement {
         .child(client_select(
             "project-order",
             t!("Order of projects in the sidebar project picker and command palette."),
+            SelectWidth::Rem(11.),
             vec![
                 (SidebarProjectSortOrder::UpdatedAt, t!("Last user message")),
                 (SidebarProjectSortOrder::CreatedAt, t!("Created at")),
@@ -161,6 +163,7 @@ pub fn general_panel(cx: &App) -> AnyElement {
         .child(client_select(
             "quit-confirmation",
             t!("Hold mode also quits on two quick presses."),
+            SelectWidth::Rem(10.),
             quit_options,
             |s| &s.confirm_quit,
             |s, v| s.confirm_quit = v,
@@ -173,6 +176,7 @@ pub fn general_panel(cx: &App) -> AnyElement {
         .child(client_select(
             "language",
             t!("System default follows your browser or OS language."),
+            SelectWidth::Rem(10.),
             languages,
             |s| &s.language,
             |s, v| s.language = v,
@@ -181,6 +185,7 @@ pub fn general_panel(cx: &App) -> AnyElement {
         .child(client_select(
             "time-format",
             t!("System default follows your browser or OS clock preference."),
+            SelectWidth::Rem(10.),
             vec![
                 (TimestampFormat::Locale, t!("System default")),
                 (TimestampFormat::N12Hour, t!("12-hour")),
@@ -209,6 +214,7 @@ pub fn chat_panel(advanced_open: bool, toggle_advanced: Rc<dyn Fn(&mut Window, &
         .child(client_select(
             "send-shortcut",
             t!("Choose when Enter sends a prompt or inserts a new line"),
+            SelectWidth::Fit,
             vec![
                 (ClientSettingsSchemaSendShortcut::Enter, SharedString::new_static("Enter")),
                 (
@@ -246,6 +252,7 @@ pub fn chat_panel(advanced_open: bool, toggle_advanced: Rc<dyn Fn(&mut Window, &
     let follow_ups = SettingsSection::new(t!("Follow-ups")).child(client_select(
         "follow-up-behavior",
         follow_up_description,
+        SelectWidth::Fit,
         vec![
             (ClientSettingsSchemaFollowUpBehavior::Queue, t!("Queue")),
             (ClientSettingsSchemaFollowUpBehavior::Steer, t!("Steer")),
@@ -257,6 +264,7 @@ pub fn chat_panel(advanced_open: bool, toggle_advanced: Rc<dyn Fn(&mut Window, &
     let activity = SettingsSection::new(t!("Activity")).child(client_select(
         "tool-call-visibility",
         t!("Hide the commands, edits, and searches agents run. Hide successful keeps failures. Zen shows only final answers. Approvals, questions, and errors always show."),
+        SelectWidth::Rem(10.),
         vec![
             (ToolCallVisibility::ShowAll, t!("Show all")),
             (ToolCallVisibility::HideSuccessful, t!("Hide successful")),
@@ -271,6 +279,7 @@ pub fn chat_panel(advanced_open: bool, toggle_advanced: Rc<dyn Fn(&mut Window, &
         .child(client_select(
             "screen-reader-announcements",
             t!("What a screen reader hears from the open thread: a turn starting, needing you, and ending. Status and messages adds what the agent writes before its last message. Everything adds each step."),
+            SelectWidth::Rem(12.),
             vec![
                 (ScreenReaderAnnouncements::Status, t!("Status only")),
                 (ScreenReaderAnnouncements::Messages, t!("Status and messages")),
@@ -356,6 +365,7 @@ pub fn diffs_panel(cx: &App) -> AnyElement {
     let settings = ClientSettingsStore::get(cx).clone();
     let collapsed_select = select_control(
         "select-default-diff-file-state".into(),
+        SelectWidth::Rem(10.),
         Rc::from([t!("Expanded"), t!("Collapsed")]),
         usize::from(settings.diff_files_collapsed),
         |index, _, cx| ClientSettingsStore::update(cx, |s| s.diff_files_collapsed = index == 1),
@@ -364,6 +374,7 @@ pub fn diffs_panel(cx: &App) -> AnyElement {
         .child(client_select(
             "diff-layout",
             t!("Show diffs stacked or side by side. The toggle in the diff toolbar changes this too."),
+            SelectWidth::Rem(10.),
             vec![
                 (DiffLayout::Stacked, t!("Stacked", context = "diff layout")),
                 (DiffLayout::Split, t!("Split", context = "diff layout")),
@@ -387,17 +398,7 @@ pub fn diffs_panel(cx: &App) -> AnyElement {
             collapsed_select,
             cx,
         ))
-        .child(client_select(
-            "diff-color-scheme",
-            t!("Choose colors for additions and deletions, including change counts."),
-            vec![
-                (DiffColorScheme::RedGreen, t!("Red & green (default)")),
-                (DiffColorScheme::BlueOrange, t!("Blue & orange")),
-            ],
-            |s| &s.diff_color_scheme,
-            |s, v| s.diff_color_scheme = v,
-            cx,
-        ));
+        .child(diff_colors_row(&settings.diff_color_scheme, cx));
     let pull_requests = SettingsSection::new(t!("Pull requests"))
         .child(client_switch(
             "proactive-panels",
@@ -416,9 +417,58 @@ pub fn diffs_panel(cx: &App) -> AnyElement {
     page_container(cx).child(diffs).child(pull_requests).into_any_element()
 }
 
+/// `DiffColorsSettingsRow`: the trigger leads with the deletion and
+/// addition dots (addition first for blue & orange) and names the scheme
+/// without "(default)".
+fn diff_colors_row(scheme: &DiffColorScheme, cx: &App) -> SettingsRow {
+    use crate::ActiveAppTheme as _;
+    let theme = cx.app_theme();
+    let blue_orange = *scheme == DiffColorScheme::BlueOrange;
+    let dark = theme.is_dark();
+    let pick = |d: &str, l: &str| crate::syntax::hex(if dark { d } else { l }).unwrap_or_default();
+    let (deletion, addition) = if blue_orange {
+        (pick("#ff8904", "#f54900"), pick("#51a2ff", "#155dfc"))
+    } else {
+        (theme.colors.destructive(), theme.fixed.success)
+    };
+    let dot = |color| div().size(gpui_kit::px(8.)).rounded_full().bg(color);
+    let dots = div()
+        .flex()
+        .flex_none()
+        .gap(theme.sp(1.))
+        .when(blue_orange, |d| d.flex_row_reverse())
+        .child(dot(deletion))
+        .child(dot(addition));
+    let select = crate::components::ui::select::Select::new(
+        "select-diff-color-scheme",
+        Rc::from([t!("Red & green (default)"), t!("Blue & orange")]),
+        usize::from(blue_orange),
+        |index, _, cx| {
+            let value = if index == 1 { DiffColorScheme::BlueOrange } else { DiffColorScheme::RedGreen };
+            ClientSettingsStore::update(cx, |s| s.diff_color_scheme = value)
+        },
+    )
+    .size(crate::components::ui::select::SelectSize::Sm)
+    .value_label(if blue_orange { t!("Blue & orange") } else { t!("Red & green") })
+    .leading(dots);
+    client_row(
+        "diff-color-scheme",
+        t!("Choose colors for additions and deletions, including change counts."),
+        |s| &s.diff_color_scheme,
+        |s, v| s.diff_color_scheme = v,
+        sized_select(SelectWidth::Rem(10.), select),
+        cx,
+    )
+}
+
 /// `LabsSettingsPanel`. The client rows are this device's; the server rows
-/// follow the scope picker.
+/// follow the scope picker. Fast worktree checkout shows only when every
+/// environment in scope reports the capability (macOS servers).
 pub fn labs_panel(cx: &App) -> AnyElement {
+    use crate::ActiveAppTheme as _;
+    use super::settings_controls::{LinkTarget, linked_description};
+    use super::settings_search::SettingsPath;
+    let theme = cx.app_theme();
     let settings = ClientSettingsStore::get(cx).clone();
     let mut boring = client_switch(
         "boring-sidebar",
@@ -428,36 +478,61 @@ pub fn labs_panel(cx: &App) -> AnyElement {
         cx,
     );
     if settings.boring_sidebar_enabled {
+        // `mt-2 mb-2 border-l-2 border-border/60 ps-3` around a `px-0 py-2` row.
         boring = boring.child(
-            div().pl(gpui_kit::rems(1.)).child(client_switch(
-                "boring-sidebar-multiline",
-                t!("Show folder threads on two lines: the title, then the branch, pull request, and agent."),
-                |s| &s.boring_sidebar_multiline_rows,
-                |s, v| s.boring_sidebar_multiline_rows = v,
-                cx,
-            )),
+            div()
+                .mt(theme.sp(2.))
+                .mb(theme.sp(2.))
+                .border_l_2()
+                .border_color(crate::theme_color::with_alpha(theme.colors.border, 0.6))
+                .pl(theme.sp(3.))
+                .child(
+                    div().mx(-theme.sp(4.)).my(-theme.sp(1.)).child(client_switch(
+                        "boring-sidebar-multiline",
+                        t!("Show folder threads on two lines: the title, then the branch, pull request, and agent."),
+                        |s| &s.boring_sidebar_multiline_rows,
+                        |s, v| s.boring_sidebar_multiline_rows = v,
+                        cx,
+                    )),
+                ),
         );
     }
-    let fast_checkout_supported = SettingsScope::targets(cx).iter().all(|id| {
-        crate::hooks::use_settings::ServerSettingsStore::config(cx, id)
-            .is_some_and(|config| config.environment.capabilities.fast_worktree_checkout == Some(true))
-    }) && !SettingsScope::targets(cx).is_empty();
+    let targets = SettingsScope::targets(cx);
+    let fast_checkout_supported = !targets.is_empty()
+        && targets.iter().all(|id| {
+            crate::hooks::use_settings::ServerSettingsStore::config(cx, id)
+                .is_some_and(|config| config.environment.capabilities.fast_worktree_checkout == Some(true))
+        });
     let mut beta = SettingsSection::new(t!("Beta"))
         .child(boring)
-        .child(server_switch(
-            "guest-links",
-            rich_plain(t_rich!(r#"Share a thread with a guest who watches it live in a browser and sends messages you approve. Needs T3 Connect: sign in and link this machine in{" "}<Link>Sharing & access</Link>. Turning it off stops every guest link."#)),
-            |s| s.guest_sharing_enabled,
-            |v| ClientServerSettingsPatch { guest_sharing_enabled: Some(v), ..Default::default() },
-            cx,
-        ))
-        .child(server_switch(
-            "linked-environments-beta",
-            rich_plain(t_rich!(r#"Let agents here work on your other machines, and theirs here. Turn it on for each machine, then link them in{" "}<Link>Connections</Link>. While off, nothing new starts over a link; running tasks finish."#)),
-            |s| s.linked_environments_enabled,
-            |v| ClientServerSettingsPatch { linked_environments_enabled: Some(v), ..Default::default() },
-            cx,
-        ))
+        .child(
+            server_switch(
+                "guest-links",
+                SharedString::default(),
+                |s| s.guest_sharing_enabled,
+                |v| ClientServerSettingsPatch { guest_sharing_enabled: Some(v), ..Default::default() },
+                cx,
+            )
+            .description_element(linked_description(
+                "guest-links-description",
+                t_rich!(r#"Share a thread with a guest who watches it live in a browser and sends messages you approve. Needs T3 Connect: sign in and link this machine in{" "}<Link>Sharing & access</Link>. Turning it off stops every guest link."#),
+                vec![LinkTarget::Page(SettingsPath::Access)],
+            )),
+        )
+        .child(
+            server_switch(
+                "linked-environments-beta",
+                SharedString::default(),
+                |s| s.linked_environments_enabled,
+                |v| ClientServerSettingsPatch { linked_environments_enabled: Some(v), ..Default::default() },
+                cx,
+            )
+            .description_element(linked_description(
+                "linked-environments-description",
+                t_rich!(r#"Let agents here work on your other machines, and theirs here. Turn it on for each machine, then link them in{" "}<Link>Connections</Link>. While off, nothing new starts over a link; running tasks finish."#),
+                vec![LinkTarget::Page(SettingsPath::Connections)],
+            )),
+        )
         .child(server_switch(
             "prompt-suggestions-beta",
             t!("Show a predicted next message in the empty composer after a Claude or Codex turn. Tab uses it. Each is an extra cached request on your plan. Needs Codex 0.165+. Claude threads update on restart."),
@@ -465,13 +540,20 @@ pub fn labs_panel(cx: &App) -> AnyElement {
             |v| ClientServerSettingsPatch { prompt_suggestions_enabled: Some(v), ..Default::default() },
             cx,
         ))
-        .child(server_switch(
-            "simlock-hosts",
-            rich_plain(t_rich!(r#"Let the Device panel lease simulators and emulators from your own{" "}<a>Simlock</a>{" "}pool, added in{" "}<Link>Devices</Link>. An alpha that may change or break. T3 Code never installs Simlock."#)),
-            |s| s.simlock_device_hosts_enabled,
-            |v| ClientServerSettingsPatch { simlock_device_hosts_enabled: Some(v), ..Default::default() },
-            cx,
-        ));
+        .child(
+            server_switch(
+                "simlock-hosts",
+                SharedString::default(),
+                |s| s.simlock_device_hosts_enabled,
+                |v| ClientServerSettingsPatch { simlock_device_hosts_enabled: Some(v), ..Default::default() },
+                cx,
+            )
+            .description_element(linked_description(
+                "simlock-hosts-description",
+                t_rich!(r#"Let the Device panel lease simulators and emulators from your own{" "}<a>Simlock</a>{" "}pool, added in{" "}<Link>Devices</Link>. An alpha that may change or break. T3 Code never installs Simlock."#),
+                vec![LinkTarget::Url(SIMLOCK_URL), LinkTarget::Page(SettingsPath::Devices)],
+            )),
+        );
     if fast_checkout_supported {
         beta = beta.child(server_switch(
             "worktree-fast-checkout",
@@ -484,6 +566,7 @@ pub fn labs_panel(cx: &App) -> AnyElement {
     page_container(cx).child(beta).into_any_element()
 }
 
+const SIMLOCK_URL: &str = "https://incubator.callstack.com/simlock/";
 const PRIVACY_POLICY_URL: &str = "https://t3.codes/privacy-policy";
 const APP_STORE_URL: &str = "https://apps.apple.com/us/app/t3-code-remote-claude-more/id6787819824";
 const PLAY_STORE_URL: &str = "https://play.google.com/store/apps/details?id=com.t3tools.t3code";
@@ -494,6 +577,7 @@ pub fn about_panel(on_open_licenses: Rc<dyn Fn(&mut Window, &mut App)>, cx: &App
     let channel = DesktopSettingsStore::get(cx).update_channel;
     let track = select_control(
         "select-update-track".into(),
+        SelectWidth::Rem(10.),
         Rc::from([t!("Stable"), t!("Nightly")]),
         usize::from(channel == UpdateChannel::Nightly),
         |index, _, cx| {
