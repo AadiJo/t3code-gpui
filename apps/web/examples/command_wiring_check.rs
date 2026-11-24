@@ -66,7 +66,6 @@ fn place(command: StaticCommand) -> Place {
             Place::Usage
         }
         C::PreviewRefresh | C::PreviewFocusUrl | C::PreviewZoomIn | C::PreviewZoomOut | C::PreviewResetZoom | C::PreviewFind => Place::Preview,
-        C::PullRequestCopyNumber => Place::PullRequests,
         _ => Place::Composer,
     }
 }

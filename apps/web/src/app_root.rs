@@ -253,15 +253,9 @@ struct ListPage {
 }
 
 impl Render for ListPage {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
         div()
             .size_full()
-            // `PullRequestDetailPanel`'s copy-number shortcut: `#<number>` while a pull request is open.
-            .on_action(cx.listener(|this, _: &CopyPullRequestNumber, _, cx| {
-                if let Some(number) = this.pull_request_number {
-                    cx.write_to_clipboard(ClipboardItem::new_string(format!("#{number}")));
-                }
-            }))
             .flex()
             .child(div().flex_1().min_w_0().h_full().child(self.list.clone()))
             .children(self.detail.clone().map(|detail| div().flex_none().w(self.width).h_full().child(detail)))
@@ -1450,6 +1444,15 @@ impl AppRoot {
         }
     }
 
+    /// Edit → Paste as Text: the text goes into the composer of the shown thread.
+    pub fn paste_text(&mut self, text: &str, cx: &mut Context<Self>) {
+        if self.shown.is_none() {
+            return;
+        }
+        let editor = self.composer(cx).read(cx).editor().clone();
+        editor.update(cx, |editor, cx| editor.insert(text, cx));
+    }
+
     /// Writes every store now (quit).
     pub fn flush_state(&self, cx: &mut App) {
         let dir = cx.global::<UiStateStore>().dir.clone();
@@ -1554,6 +1557,14 @@ impl Render for AppRoot {
             .on_action(cx.listener(|this, _: &JumpToThread8, _, cx| this.step_thread(ThreadStep::Jump(7), cx)))
             .on_action(cx.listener(|this, _: &JumpToThread9, _, cx| this.step_thread(ThreadStep::Jump(8), cx)))
             .on_action(cx.listener(|this, _: &OpenSettings, _, cx| this.open_settings(cx)))
+            // `PullRequestDetailPanel`'s window-wide copy-number shortcut: `#<number>` while the
+            // pull requests page shows one.
+            .on_action(cx.listener(|this, _: &CopyPullRequestNumber, _, cx| {
+                let number = this.main.read(cx).page_view.as_ref().and_then(|(_, page)| page.read(cx).pull_request_number);
+                if let Some(number) = number {
+                    cx.write_to_clipboard(ClipboardItem::new_string(format!("#{number}")));
+                }
+            }))
             .on_action(|_: &UndoThreadAction, _, cx| {
                 crate::thread_undo::ThreadUndo::undo_latest(cx);
             })
