@@ -140,3 +140,13 @@ debug = false
 strip = "symbols"
 codegen-units = 16
 lto = "thin"
+
+# Patched GPUI crates (gpui-pre 0.3.14, Apache-2.0) adding a backdrop blur
+# primitive (`Window::paint_backdrop`, `Styled::backdrop_blur`) drawn by the
+# wgpu and Metal renderers; DirectX skips it. The first commit touching
+# patches/ is the unmodified crates.io source, so `git diff` from it is the patch.
+[patch.crates-io]
+gpui-pre = { path = "patches/gpui-pre" }
+gpui-pre-wgpu = { path = "patches/gpui-pre-wgpu" }
+gpui-pre-apple = { path = "patches/gpui-pre-apple" }
+gpui-pre-windows = { path = "patches/gpui-pre-windows" }
