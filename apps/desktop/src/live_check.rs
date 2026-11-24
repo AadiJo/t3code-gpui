@@ -58,7 +58,8 @@
 //            provider-native subagents with the driver mark, live elapsed time, per-second redraw
 //            and hover card; an app-owned child (the server's `delegate_task`) stopped from its
 //            row's hover stop button and read back as stopped; the fx subagents released
-//            (`T3_CONTROL_DIR`) and settled Done
+//            (`T3_CONTROL_DIR`) and settled Done; a fork whose source is then deleted drops the
+//            source's row once `orchestration.getThreadTitles` settles without it
 //   lineage-ref  shots of the states `capture-lineage.mjs` takes in the fork, same threads
 // Usage: live-check <seed|drive|restart|import|send|sidebar|notify|details|mentions|heic|wheel|workspace|banner|sidebardata|composer|composer-restart|sidechats|sidechats-ref|lineage|lineage-ref|probe> <out-dir>
 #[allow(dead_code)]
@@ -3693,6 +3694,48 @@ fn run_lineage(check: &mut Check) -> anyhow::Result<()> {
     let ticking = check.read(|root, cx| root.thread_view().read(cx).details().is_some_and(|d| d.read(cx).ticking()));
     check.check("the card stops its per-second redraw once nothing runs", !ticking, "");
     check.shot("l6-native-done.png")?;
+
+    // A fork whose source is deleted: the shell rebuilds the parent from lineage, the card asks
+    // the server for its title, and a settled lookup without it drops the row (the fork does not
+    // show a bare thread id).
+    let source = thread_titled(check, &environment_id, &format!("Fork source {tag}"), None).context("the fork source")?;
+    check.go(&source);
+    let k = source.clone();
+    check.pump(move |c| c.route() == Route::Thread(k.clone()) && !c.shown_input().entries.is_empty(), Duration::from_secs(20), "the fork source shows")?;
+    let reply = check.shown_input().entries.iter().rev().find_map(|e| match &e.kind {
+        EntryKind::Message(m) if m.role == t3code_web::components::chat::timeline_entries::MessageRole::Assistant => Some(m.id.clone()),
+        _ => None,
+    });
+    let reply = reply.context("a reply to fork from")?;
+    let root = check.root.clone();
+    check.cx.update(|cx| {
+        let timeline = root.read(cx).thread_view().read(cx).chat().read(cx).timeline().clone();
+        timeline.update(cx, |_, cx| cx.emit(TimelineAction::Fork(reply.clone())));
+    });
+    let original = source.clone();
+    check.pump(move |c| matches!(c.route(), Route::Thread(k) if k != original), Duration::from_secs(30), "the fork opens")?;
+    let fork = match check.route() {
+        Route::Thread(k) => k,
+        _ => anyhow::bail!("no fork route"),
+    };
+    open_details(check);
+    let parent = tid(&source);
+    let p = parent.clone();
+    check.pump(move |c| lineage_rows(c).iter().any(|r| r.thread_id == p), Duration::from_secs(15), "the fork lists its source")?;
+    let commands = commands_of(check, &environment_id)?;
+    let target = parent.clone();
+    check.block(async move { commands.delete(&target, false).await })?.map_err(|e| anyhow::anyhow!("{e}"))?;
+    let s = source.clone();
+    check.pump(move |c| shell_thread(c, &s).is_none(), Duration::from_secs(20), "the source leaves the shell")?;
+    check.go(&fork);
+    open_details(check);
+    let p = parent.clone();
+    let gone = check.pump(move |c| !lineage_rows(c).iter().any(|r| r.thread_id == p), Duration::from_secs(15), "the deleted source's row goes");
+    let rows: Vec<_> = lineage_rows(check).iter().map(|r| r.title.to_string()).collect();
+    let still_named = shell_thread(check, &fork).is_some_and(|t| t.lineage.parent_thread_id.as_ref() == Some(&parent));
+    check.check("the fork's shell still names the deleted source as its parent", still_named, "");
+    check.check("the fork's card drops its deleted source after the title lookup", gone.is_ok(), format!("{rows:?}"));
+    check.shot("l7-fork-of-deleted.png")?;
     Ok(())
 }
 
