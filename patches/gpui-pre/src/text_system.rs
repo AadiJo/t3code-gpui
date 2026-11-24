@@ -261,6 +261,9 @@ pub struct TextSystem {
     font_generation: Arc<AtomicUsize>,
     missing_glyph_reporter: Arc<MissingGlyphReporter>,
     missing_glyph_receiver: Mutex<Option<MissingGlyphReceiver>>,
+    /// CSS `-webkit-font-smoothing: antialiased`: glyphs draw without the platform's
+    /// font smoothing, which on macOS thickens light text (see [`Self::set_antialiased`]).
+    antialiased: std::sync::atomic::AtomicBool,
 }
 
 #[derive(Clone)]
@@ -304,6 +307,7 @@ impl TextSystem {
                 generation: missing_glyph_generation,
                 receiver,
             })),
+            antialiased: Default::default(),
         }
     }
 
@@ -577,7 +581,17 @@ impl TextSystem {
 
     /// Returns the dilation level to use for a glyph painted in the given color.
     pub(crate) fn glyph_dilation_for_color(&self, color: Hsla) -> u8 {
+        if self.antialiased.load(std::sync::atomic::Ordering::Relaxed) {
+            return 0;
+        }
         self.platform_text_system.glyph_dilation_for_color(color)
+    }
+
+    /// Draws glyphs as CSS `-webkit-font-smoothing: antialiased` does: plain grayscale
+    /// antialiasing, without the platform's font smoothing. Chromium on macOS then skips
+    /// CoreGraphics' smoothing, which otherwise thickens light text on dark backgrounds.
+    pub fn set_antialiased(&self, antialiased: bool) {
+        self.antialiased.store(antialiased, std::sync::atomic::Ordering::Relaxed);
     }
 
     /// Returns the text rendering mode recommended by the platform for the given font and size.

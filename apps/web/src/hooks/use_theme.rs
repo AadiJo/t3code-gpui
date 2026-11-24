@@ -382,6 +382,7 @@ impl ThemeStore {
     /// Pushes the theme and fonts into [`ThemeSettings`]. `force` rebuilds
     /// even when the fonts did not change (the theme choice did).
     fn apply(force: bool, cx: &mut App) {
+        cx.text_system().set_antialiased(ClientSettingsStore::get(cx).font_smoothing);
         let fonts = font_settings(ClientSettingsStore::get(cx), separate_fonts(cx));
         let families = family_overrides(ClientSettingsStore::get(cx), separate_fonts(cx));
         let look = LookSettings::from(&**ClientSettingsStore::get(cx));
