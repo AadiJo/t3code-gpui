@@ -10,7 +10,7 @@ use std::rc::Rc;
 
 use gpui_kit::*;
 
-use crate::components::app_sidebar_layout::{AppSidebarLayout, LayoutEvent, PanelToggle, TitlebarPlatform};
+use crate::components::app_sidebar_layout::{AppSidebarLayout, LayoutEvent, PanelToggle, TitlebarControls, TitlebarPlatform};
 use crate::components::chat::composer::ChatComposer;
 use crate::components::chat::thread_details_panel::ThreadDetailsMode;
 use crate::components::no_active_thread_state::NoActiveThreadState;
@@ -557,6 +557,7 @@ impl AppRoot {
             return self.persist_route(&route, cx);
         }
         let has_thread = self.shown.is_some();
+        self.layout.update(cx, |layout, cx| layout.set_titlebar_controls(TitlebarControls::for_route(&route), cx));
         let page_view = page.as_ref().and_then(|route| self.page_view(route, window, cx));
         self.sync_usage(&route, window, cx);
         self.main.update(cx, |main, cx| {

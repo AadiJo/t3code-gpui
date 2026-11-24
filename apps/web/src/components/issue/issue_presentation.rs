@@ -5,7 +5,7 @@ use gpui_kit::{Hsla, SharedString};
 use t3code_contracts::{IssueEvent, IssueEventKind, IssueState, IssueStateCategory};
 
 use crate::AppTheme;
-use crate::components::icons::IconName;
+use crate::components::icons::{BrandIcon, IconName, IconSource};
 use crate::components::pull_request::pull_request_presentation::{merged_tone, open_tone};
 use crate::i18n::t;
 
@@ -46,5 +46,18 @@ pub fn issue_state_presentation(theme: &AppTheme, state: &IssueState) -> (IconNa
     match state.category {
         IssueStateCategory::Open => (IconName::CircleDot, open_tone(theme)),
         IssueStateCategory::Closed => (IconName::CircleCheck, merged_tone(theme)),
+    }
+}
+
+/// A tracker's name and mark: a git host's tracker wears the host's, Linear its own, any other
+/// tracker its kind and a ticket (`issueTrackerPresentation`).
+pub fn issue_tracker_presentation(tracker: &str) -> (SharedString, IconSource) {
+    use crate::source_control_presentation::{SOURCE_CONTROL_DEFINITIONS, source_control_icon};
+    if let Some(definition) = SOURCE_CONTROL_DEFINITIONS.iter().find(|d| d.kind == tracker) {
+        return (definition.label.into(), source_control_icon(*definition));
+    }
+    match tracker {
+        "linear" => ("Linear".into(), BrandIcon::Linear.into()),
+        other => (SharedString::from(other.to_owned()), IconName::Ticket.into()),
     }
 }
