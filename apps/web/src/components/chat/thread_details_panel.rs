@@ -24,7 +24,7 @@ use super::thread_details_items::{ThreadDetailsItem, ThreadDetailsItemSettings};
 use super::thread_details_panel_styles::{row, row_icon, section};
 use super::thread_details_sections::{
     ContextWindowRow, SERVER_PAGE_COUNT, SectionEmit, ThreadAutomationRow, ThreadDetailsSectionEvent, ThreadServerRow,
-    automations_section, context_section, servers_section,
+    UsageLimitsInput, automations_section, context_section, servers_section, usage_limits_section,
 };
 use super::thread_details_pr_row::{
     PullRequestRowAction, PullRequestRowData, PullRequestRowHandlers, checks_popover, issue_row, merge_method_key,
@@ -91,6 +91,8 @@ pub struct ThreadDetailsInput {
     /// The task whose toggle or run is waiting.
     pub automation_busy: Option<SharedString>,
     pub context_window: Option<ContextWindowRow>,
+    /// The selected provider's limits; `None` hides the Usage limits section.
+    pub usage_limits: Option<UsageLimitsInput>,
     /// The card's height limit (`max-h-[min(100dvh-6.5rem, …)]`).
     pub max_height: Option<Pixels>,
 }
@@ -430,8 +432,13 @@ impl ThreadDetailsPanel {
                 self.input.automations_error.clone(),
                 self.input.can_operate_automations,
                 self.input.automation_busy.as_deref(),
-                emit,
+                emit.clone(),
             ));
+        }
+        if visible(ThreadDetailsItem::Usage)
+            && let Some(limits) = &self.input.usage_limits
+        {
+            out.push(usage_limits_section(theme, limits, emit));
         }
         if visible(ThreadDetailsItem::Context)
             && let Some(usage) = &self.input.context_window
