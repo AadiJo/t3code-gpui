@@ -222,7 +222,7 @@ impl PullRequestDetailSource for FixtureSource {
                 PullRequestAction::Merge => {
                     detail.state = PullRequestState::Merged;
                     detail.merged_at = Some("2026-11-23T10:00:00Z".into());
-                    detail.merged_by = Some(PullRequestDetailMergedBy { is_bot: None, login: "aadi".into(), name: None, avatar_url: None });
+                    detail.merged_by = Some(PullRequestDetailMergedBy { is_bot: None, login: "sam".into(), name: None, avatar_url: None });
                 }
                 PullRequestAction::Close => {
                     detail.state = PullRequestState::Closed;
@@ -261,7 +261,7 @@ impl PullRequestDetailSource for FixtureSource {
             s.data.activity.comments.push(PullRequestComment {
                 id,
                 kind: PullRequestCommentKind::IssueComment,
-                author: Some(PullRequestCommentAuthor { is_bot: None, login: "aadi".into(), name: None, avatar_url: None }),
+                author: Some(PullRequestCommentAuthor { is_bot: None, login: "sam".into(), name: None, avatar_url: None }),
                 body: input.body.clone(),
                 created_at: "2026-11-23T10:00:00Z".into(),
                 edited_at: None,
@@ -293,7 +293,7 @@ impl PullRequestDetailSource for FixtureSource {
             let id = format!("reply{}", thread.comments.len());
             thread.comments.push(PullRequestThreadComment {
                 id: id.clone(),
-                author: Some(PullRequestThreadCommentAuthor { is_bot: None, login: "aadi".into(), name: None, avatar_url: None }),
+                author: Some(PullRequestThreadCommentAuthor { is_bot: None, login: "sam".into(), name: None, avatar_url: None }),
                 body: input.body.clone(),
                 created_at: "2026-11-23T10:00:00Z".into(),
                 edited_at: None,
@@ -305,7 +305,7 @@ impl PullRequestDetailSource for FixtureSource {
             s.data.activity.comments.push(PullRequestComment {
                 id,
                 kind: PullRequestCommentKind::ReviewComment,
-                author: Some(PullRequestCommentAuthor { is_bot: None, login: "aadi".into(), name: None, avatar_url: None }),
+                author: Some(PullRequestCommentAuthor { is_bot: None, login: "sam".into(), name: None, avatar_url: None }),
                 body: input.body.clone(),
                 created_at: "2026-11-23T10:00:00Z".into(),
                 edited_at: None,
@@ -428,7 +428,7 @@ impl IssueSource for FixtureSource {
         self.answer("issues.comment", &input, |s| {
             s.data.issue_detail.comments.push(IssueComment {
                 id: format!("new{}", s.data.issue_detail.comments.len()),
-                author: Some(IssueCommentAuthor { is_bot: None, login: "aadi".into(), name: None, avatar_url: None }),
+                author: Some(IssueCommentAuthor { is_bot: None, login: "sam".into(), name: None, avatar_url: None }),
                 body: input.body.clone(),
                 created_at: "2026-11-23T10:00:00Z".into(),
                 url: None,

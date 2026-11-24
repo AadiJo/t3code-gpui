@@ -1,7 +1,7 @@
 {
  "listStudio": {
   "viewers": {
-   "github.com": "aadi"
+   "github.com": "sam"
   },
   "providers": [
    {
@@ -34,11 +34,11 @@
     "title": "Virtualize the pull request list and cache row search text",
     "url": "https://github.com/t3tools/t3code/pull/482",
     "author": {
-     "login": "aadi",
+     "login": "sam",
      "name": null,
      "avatarUrl": null
     },
-    "headBranch": "aadi/pr-list-virtual",
+    "headBranch": "sam/pr-list-virtual",
     "baseBranch": "main",
     "state": "open",
     "isDraft": false,
@@ -207,11 +207,11 @@
     "title": "Right panel tabs keep scroll position on switch",
     "url": "https://github.com/t3tools/t3code/pull/475",
     "author": {
-     "login": "aadi",
+     "login": "sam",
      "name": null,
      "avatarUrl": null
     },
-    "headBranch": "aadi/panel-scroll",
+    "headBranch": "sam/panel-scroll",
     "baseBranch": "main",
     "state": "open",
     "isDraft": false,
@@ -352,11 +352,11 @@
     "title": "Mobile: pull to refresh on the PR list",
     "url": "https://github.com/t3tools/t3code/pull/466",
     "author": {
-     "login": "aadi",
+     "login": "sam",
      "name": null,
      "avatarUrl": null
     },
-    "headBranch": "aadi/mobile-refresh",
+    "headBranch": "sam/mobile-refresh",
     "baseBranch": "main",
     "state": "open",
     "isDraft": false,
@@ -450,7 +450,7 @@
  },
  "listDevbox": {
   "viewers": {
-   "github.com": "aadi"
+   "github.com": "sam"
   },
   "providers": [
    {
@@ -614,8 +614,8 @@
   "url": "https://github.com/t3tools/t3code/pull/482",
   "body": "## What\n\nThe pull requests page filtered every row on each keystroke by lower-casing five fields. This builds the search text once per row when an answer arrives and virtualizes the list.\n\n- Rows keep a cached `haystack` and parsed timestamps\n- Grouping reuses `Arc` rows instead of cloning entries\n- The stack column reads membership from the row\n\n## Measured\n\n| rows | before | after |\n| --- | --- | --- |\n| 2,000 | 9.8 ms | 0.6 ms |\n\nCloses #455 :tada:",
   "author": {
-   "login": "aadi",
-   "name": "Aadi",
+   "login": "sam",
+   "name": "Sam",
    "avatarUrl": null
   },
   "state": "open",
@@ -625,7 +625,7 @@
   "additions": 412,
   "deletions": 96,
   "changedFiles": 9,
-  "headBranch": "aadi/pr-list-virtual",
+  "headBranch": "sam/pr-list-virtual",
   "headRepositoryNameWithOwner": "t3tools/t3code",
   "headSha": "9c1f2ab7e4d35f0aa1b2c3d4e5f60718293a4b5c",
   "baseBranch": "main",
@@ -699,7 +699,7 @@
    "squash": true,
    "rebase": true
   },
-  "viewer": "aadi",
+  "viewer": "sam",
   "baseComparison": "behind",
   "behindBy": 3,
   "autoMergeEnabled": false,
@@ -707,8 +707,8 @@
  },
  "activity": {
   "author": {
-   "login": "aadi",
-   "name": "Aadi",
+   "login": "sam",
+   "name": "Sam",
    "avatarUrl": null
   },
   "reviewers": [
@@ -759,7 +759,7 @@
     "id": "c2",
     "kind": "issue-comment",
     "author": {
-     "login": "aadi",
+     "login": "sam",
      "name": null,
      "avatarUrl": null
     },
@@ -803,7 +803,7 @@
     "id": "rc2",
     "kind": "review-comment",
     "author": {
-     "login": "aadi",
+     "login": "sam",
      "name": null,
      "avatarUrl": null
     },
@@ -869,7 +869,7 @@
      {
       "id": "rc2",
       "author": {
-       "login": "aadi",
+       "login": "sam",
        "name": null,
        "avatarUrl": null
       },
@@ -913,7 +913,7 @@
     "deletions": 40,
     "authors": [
      {
-      "login": "aadi",
+      "login": "sam",
       "name": null,
       "avatarUrl": null
      }
@@ -927,7 +927,7 @@
     "deletions": 50,
     "authors": [
      {
-      "login": "aadi",
+      "login": "sam",
       "name": null,
       "avatarUrl": null
      }
@@ -941,7 +941,7 @@
     "deletions": 6,
     "authors": [
      {
-      "login": "aadi",
+      "login": "sam",
       "name": null,
       "avatarUrl": null
      }
@@ -1068,21 +1068,21 @@
     "number": 475,
     "title": "Right panel tabs keep scroll position on switch",
     "isDraft": false,
-    "headBranch": "aadi/panel-scroll",
+    "headBranch": "sam/panel-scroll",
     "state": "open"
    },
    {
     "number": 482,
     "title": "Virtualize the pull request list and cache row search text",
     "isDraft": false,
-    "headBranch": "aadi/pr-list-virtual",
+    "headBranch": "sam/pr-list-virtual",
     "state": "open"
    },
    {
     "number": 466,
     "title": "Mobile: pull to refresh on the PR list",
     "isDraft": false,
-    "headBranch": "aadi/mobile-refresh",
+    "headBranch": "sam/mobile-refresh",
     "state": "open"
    }
   ]
@@ -1155,8 +1155,8 @@
  },
  "issueList": {
   "viewers": {
-   "github.com": "aadi",
-   "linear.app": "aadi"
+   "github.com": "sam",
+   "linear.app": "sam"
   },
   "trackers": [
    {
@@ -1219,7 +1219,7 @@
     "closedAt": null,
     "assignees": [
      {
-      "login": "aadi",
+      "login": "sam",
       "name": null,
       "avatarUrl": null
      }
@@ -1315,7 +1315,7 @@
     "title": "Crash opening a PR with 0 changed files",
     "url": "https://github.com/t3tools/t3code/issues/440",
     "author": {
-     "login": "aadi",
+     "login": "sam",
      "name": null,
      "avatarUrl": null
     },
@@ -1438,7 +1438,7 @@
   "closedAt": null,
   "assignees": [
    {
-    "login": "aadi",
+    "login": "sam",
     "name": null,
     "avatarUrl": null
    }
@@ -1492,7 +1492,7 @@
     "closeReason": "not_planned"
    }
   ],
-  "viewer": "aadi",
+  "viewer": "sam",
   "body": "Typing in the pull request search drops frames on a list of ~2,000 rows.\n\n**Steps**\n1. Open Pull requests with every project\n2. Type `label:perf sidebar`\n\nExpected: each keystroke filters within a frame.",
   "reactions": [
    {
@@ -1521,7 +1521,7 @@
    {
     "id": "ic2",
     "author": {
-     "login": "aadi",
+     "login": "sam",
      "name": null,
      "avatarUrl": null
     },
@@ -1563,13 +1563,13 @@
      "avatarUrl": null
     },
     "createdAt": "2026-11-20T09:01:00Z",
-    "detail": "aadi"
+    "detail": "sam"
    },
    {
     "id": "e3",
     "kind": "referenced",
     "actor": {
-     "login": "aadi",
+     "login": "sam",
      "name": null,
      "avatarUrl": null
     },
@@ -1654,8 +1654,8 @@
    },
    {
     "id": "u4",
-    "login": "aadi",
-    "name": "Aadi",
+    "login": "sam",
+    "name": "Sam",
     "avatarUrl": null
    }
   ],
@@ -1673,7 +1673,7 @@
      "helpUrl": null
     },
     "connected": true,
-    "account": "aadi",
+    "account": "sam",
     "detail": null,
     "workspace": null,
     "scopes": []
@@ -1688,7 +1688,7 @@
      "helpUrl": "https://linear.app/settings/api"
     },
     "connected": true,
-    "account": "aadi",
+    "account": "sam",
     "detail": null,
     "workspace": "T3",
     "scopes": [
