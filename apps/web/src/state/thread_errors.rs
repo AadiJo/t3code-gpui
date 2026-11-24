@@ -92,6 +92,10 @@ impl ThreadErrors {
         if let Some(local) = Self::entity(cx).read(cx).local.get(key).cloned() {
             return Some((local, None, false, None));
         }
+        // The fixture world has no live state.
+        if !cx.has_global::<StateBridge>() {
+            return None;
+        }
         let shell = StateBridge::shell(cx);
         let row = shell.read(cx).row(thread?)?;
         let error = row.source.last_error.clone().filter(|e| !e.trim().is_empty())?;
