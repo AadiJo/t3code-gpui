@@ -158,6 +158,8 @@ impl ThreadRouteView {
         let chat = cx.new(ChatView::new);
         let focus = composer.focus_handle(cx);
         chat.update(cx, |chat, cx| chat.set_composer(composer.clone().into(), focus, cx));
+        let timeline = chat.read(cx).timeline().downgrade();
+        composer.update(cx, |composer, _| composer.set_page_target(timeline));
         let banner = cx.new(|_| ThreadErrorBanner::new());
         let errors = ThreadErrors::entity(cx);
         let subscriptions = vec![

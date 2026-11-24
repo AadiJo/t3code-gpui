@@ -239,6 +239,8 @@ pub struct ChatComposer {
     held_command: Option<std::any::TypeId>,
     /// The last frame moved the permissions chip into the overflow button.
     chip_hidden: bool,
+    /// Pages the timeline when Page Up/Down reach the prompt's edge.
+    page_scroller: Option<super::composer_page_scroll::PageScroller>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -285,6 +287,7 @@ impl ChatComposer {
             permissions_menu: None,
             held_command: None,
             chip_hidden: false,
+            page_scroller: None,
             _subscriptions: vec![subscription, settings],
         };
         this.load_draft(cx);
@@ -425,7 +428,12 @@ impl ChatComposer {
                     self.dismiss_menu(cx);
                 }
             }
-            ComposerEditorEvent::PageScroll { down } => cx.emit(ComposerEvent::PageScroll { down: *down }),
+            ComposerEditorEvent::PageScroll { down } => {
+                let paged = self.page_scroller.as_mut().is_some_and(|s| s.press(*down, cx));
+                if !paged {
+                    cx.emit(ComposerEvent::PageScroll { down: *down });
+                }
+            }
             ComposerEditorEvent::Attach(content) => self.attach(content.clone(), cx),
         }
     }
@@ -802,6 +810,11 @@ impl ChatComposer {
         self.context_controls = strip;
     }
 
+    /// The timeline Page Up/Down scroll once the prompt cannot (`onPageScrollKeyDown`).
+    pub fn set_page_target(&mut self, timeline: gpui_kit::WeakEntity<super::messages_timeline::MessagesTimeline>) {
+        self.page_scroller = Some(super::composer_page_scroll::PageScroller::new(timeline));
+    }
+
     fn with_strip<R>(&self, cx: &mut Context<Self>, f: impl FnOnce(&mut crate::components::branch_toolbar::BranchToolbar, &mut Context<crate::components::branch_toolbar::BranchToolbar>) -> R) -> Option<R> {
         self.context_controls.as_ref()?.upgrade().map(|strip| strip.update(cx, f))
     }
@@ -944,7 +957,12 @@ impl ChatComposer {
             }))
             .on_action(cx.listener(|this, _: &k::ToggleDictation, _, cx| this.once::<k::ToggleDictation>(cx, |t, cx| t.toggle_dictation(cx))))
             // Any key release or modifier change ends the press that `once` remembered.
-            .on_key_up(cx.listener(|this, _: &gpui_kit::KeyUpEvent, _, _| this.held_command = None))
+            .on_key_up(cx.listener(|this, _: &gpui_kit::KeyUpEvent, _, _| {
+                this.held_command = None;
+                if let Some(scroller) = this.page_scroller.as_mut() {
+                    scroller.release();
+                }
+            }))
     }
 
     // ---- Captured keys ----
@@ -1440,7 +1458,17 @@ impl ChatComposer {
                 .hover(move |s| s.bg(hover).text_color(fg))
                 .child(Icon::new(glyph).size(IconSize::Custom(c.r(px(14.)))).color(c.muted_foreground).stroke(composer_icon_stroke(glyph)))
                 .child(label)
-                .on_click(cx.listener(move |_, _, _, cx| cx.emit(ComposerEvent::ContextStripClicked(control))))
+                .on_click(cx.listener(move |this, _, window, cx| {
+                    // The strip's controls open what the branch strip's would.
+                    let opened = match control {
+                        ContextStripControl::Environment => this.open_host(cx),
+                        ContextStripControl::Workspace => this.open_workspace(cx),
+                        ContextStripControl::Branch => this.open_branch(window, cx),
+                    };
+                    if !opened {
+                        cx.emit(ComposerEvent::ContextStripClicked(control));
+                    }
+                }))
         };
         Some(
             div()

@@ -42,6 +42,7 @@ fn close_strip(check: &mut Check) {
 pub(super) fn run_composer_actions(check: &mut Check) -> anyhow::Result<()> {
     let state = load_state(&check.out)?;
     check.pump(|c| c.connected(), Duration::from_secs(30), "connected")?;
+    page_keys(check, &state)?;
     let key = thread_with_turn(check, &state, "Composer actions")?;
     check.go(&key);
     check.pump(|c| c.shown_input().entries.len() >= 2, Duration::from_secs(20), "thread shown")?;
@@ -142,4 +143,37 @@ pub(super) fn run_composer_actions(check: &mut Check) -> anyhow::Result<()> {
 
 fn strip_ready(check: &mut Check) -> bool {
     check.read(|root, cx| root.thread_view().read(cx).branch_strip().is_some_and(|s| s.read(cx).props().show_git_controls))
+}
+
+/// The timeline's scroll top and the page the composer scrolls (viewport less 36px and its inset).
+fn timeline_metrics(check: &mut Check) -> (f32, f32) {
+    check.read(|root, cx| {
+        let timeline = root.thread_view().read(cx).chat().read(cx).timeline().clone();
+        let timeline = timeline.read(cx);
+        let (bounds, _, top, _) = timeline.list_state().viewport_metrics();
+        (f32::from(top), f32::from(bounds.size.height - gpui_kit::px(36.) - timeline.composer_bottom()))
+    })
+}
+
+/// Page Up / Page Down in an empty composer page the long thread's timeline by one page.
+fn page_keys(check: &mut Check, state: &super::Seeded) -> anyhow::Result<()> {
+    let long = super::key_of(state, &state.long_thread);
+    check.go(&long);
+    check.pump(|c| c.shown_input().entries.len() >= 6, Duration::from_secs(20), "long thread shown")?;
+    check.wait(Duration::from_millis(400));
+    check.focus_composer();
+    let (top, page) = timeline_metrics(check);
+    check.press("pageup");
+    check.wait(Duration::from_millis(300));
+    let (after_up, _) = timeline_metrics(check);
+    check.check("Page Up in the composer scrolls the timeline up", after_up < top - page * 0.9, format!("top {top:.1} -> {after_up:.1}, page {page:.1}"));
+    check.press("pagedown");
+    check.wait(Duration::from_millis(300));
+    let (after_down, _) = timeline_metrics(check);
+    check.check("Page Down scrolls down exactly one page", (after_down - after_up - page).abs() < 1., format!("{after_up:.1} -> {after_down:.1}, page {page:.1}"));
+    check.press("pageup");
+    check.wait(Duration::from_millis(300));
+    let (again, _) = timeline_metrics(check);
+    check.check("and Page Up exactly one page from a settled position", (after_down - again - page).abs() < 1., format!("{after_down:.1} -> {again:.1}"));
+    Ok(())
 }

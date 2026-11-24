@@ -11,6 +11,7 @@ pub mod chat_style;
 pub mod composer;
 pub mod composer_command_menu;
 pub mod composer_icons;
+pub mod composer_page_scroll;
 pub mod composer_permissions;
 pub mod composer_prompt_history;
 pub mod composer_theme;
