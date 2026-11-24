@@ -60,10 +60,9 @@ const HEADER_CELL_PAD_Y: Pixels = px(8.8);
 const CELL_PAD_X: Pixels = px(12.);
 const CELL_MAX_WIDTH: Pixels = px(384.);
 /// Inline code: `radius 0.25rem; padding 0.1em 0.35em` and a 1px transparent
-/// border at `0.85em`. Where the text system applies the run layout (macOS), the code is
-/// 0.85em with its padding and border spaced into the line, and the box is the code
-/// font's content area plus padding and border, as Blink draws it; elsewhere the code
-/// keeps the paragraph's size and the box is 16.4px tall at a 14px paragraph.
+/// border at `0.85em`. The text system applies the run layout: the code is 0.85em with
+/// its padding and border spaced into the line, and the box is the code font's content
+/// area plus padding and border, as Blink draws it.
 const INLINE_CODE_RADIUS: Pixels = px(4.);
 const INLINE_CODE_SIZE_EM: f32 = 0.85;
 const INLINE_CODE_PAD_X_EM: f32 = 0.35;
@@ -727,7 +726,7 @@ fn style_inlines(inlines: &Inlines, base: InlineBase, colors: &ChatColors, user:
                 pad_x: colors.r(INLINE_CODE_PAD_X),
                 radius: colors.r(INLINE_CODE_RADIUS),
                 height_em: Some(INLINE_CODE_HEIGHT_EM),
-                inline_font: cfg!(target_os = "macos").then(|| InlineFontBox {
+                inline_font: Some(InlineFontBox {
                     font: mono(),
                     size_em: INLINE_CODE_SIZE_EM,
                     pad_x_em: INLINE_CODE_PAD_X_EM,
