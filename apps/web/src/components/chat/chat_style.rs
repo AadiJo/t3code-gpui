@@ -5,19 +5,16 @@
 //!
 //! The shared UI primitives will own most of this once they exist.
 
-use gpui_kit::{AbsoluteLength, App, Font, FontFeatures, FontStyle, FontWeight, Hsla, Pixels, Rgba, SharedString, px, rems};
+use gpui_kit::{AbsoluteLength, App, Font, FontWeight, Hsla, Pixels, Rgba, SharedString, px, rems};
 
 use crate::{
-    ActiveAppTheme as _,
+    ActiveAppTheme as _, appearance_fonts,
     theme_palette::{Appearance, ThemePalette},
 };
 
-/// The interface font (`Inter`, bundled on Linux and Windows).
-pub const SANS_FAMILY: &str = "Inter";
-
-/// The code font family, as the Appearance settings resolve it (the owner's custom family included).
+/// The code font family, from the code font setting and the web's mono stack.
 pub fn mono_family() -> SharedString {
-    crate::appearance_fonts::mono_font(FontWeight::NORMAL).family
+    mono().family
 }
 
 /// A Tailwind type step: font size and line height. Rem steps resolve against the window's
@@ -45,14 +42,14 @@ pub fn text_code(cx: &App) -> TypeStep {
     TypeStep { size: px(size).into(), line_height: px(size * 1.375).into() }
 }
 
-/// The interface font at `weight`.
+/// The interface font at `weight`, as the font family setting resolves it.
 pub fn sans(weight: FontWeight) -> Font {
-    Font { family: SANS_FAMILY.into(), features: FontFeatures::default(), fallbacks: None, weight, style: FontStyle::Normal }
+    appearance_fonts::ui_font(weight)
 }
 
-/// The code font.
+/// The code font, as the code font setting resolves it.
 pub fn mono() -> Font {
-    crate::appearance_fonts::mono_font(FontWeight::NORMAL)
+    appearance_fonts::mono_font(FontWeight::NORMAL)
 }
 
 /// `0xRRGGBB` as a colour.

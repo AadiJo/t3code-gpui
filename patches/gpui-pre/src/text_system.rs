@@ -55,10 +55,19 @@ pub const SUBPIXEL_VARIANTS_Y: u8 = 1;
 // Leave enough room below the underline for its stroke while keeping it below the baseline.
 const UNDERLINE_DESCENT_OFFSET_FACTOR: f32 = 0.618;
 
+/// The baseline's offset from the top of a line box, as Blink places it: ascent and
+/// descent each round to whole pixels (`FontMetrics::AscentDescentWithHacks`), and the
+/// leading above the text is floored (`CalculateLeadingSpace`), so a baseline always sits
+/// a whole number of logical pixels below its line's top.
+pub fn line_baseline_offset(line_height: Pixels, ascent: Pixels, descent: Pixels) -> Pixels {
+    let ascent = ascent.0.round();
+    let descent = descent.0.round();
+    px(((line_height.0 - ascent - descent) / 2.).floor() + ascent)
+}
+
 /// Returns the vertical offset used to paint an underline within a line.
 pub fn underline_y_offset(line_height: Pixels, ascent: Pixels, descent: Pixels) -> Pixels {
-    let padding_top = (line_height - ascent - descent) / 2.;
-    padding_top + ascent + descent * UNDERLINE_DESCENT_OFFSET_FACTOR
+    line_baseline_offset(line_height, ascent, descent) + descent * UNDERLINE_DESCENT_OFFSET_FACTOR
 }
 
 const MAX_REPORTED_MISSING_GLYPHS: usize = 1024;
@@ -492,9 +501,9 @@ impl TextSystem {
         line_height: Pixels,
     ) -> Pixels {
         let ascent = self.ascent(font_id, font_size);
-        let descent = self.descent(font_id, font_size);
-        let padding_top = (line_height - ascent - descent) / 2.;
-        padding_top + ascent
+        // Font metrics give the descent as a negative offset below the baseline.
+        let descent = self.descent(font_id, font_size).abs();
+        line_baseline_offset(line_height, ascent, descent)
     }
 
     fn read_metrics<T>(&self, font_id: FontId, read: impl FnOnce(&FontMetrics) -> T) -> T {

@@ -2,7 +2,7 @@
 //! Sizes are the spec's numbers at the default 16px interface size and 14px
 //! prompt size (`06-ui-chat.md` sections 0, 6 and 7).
 
-use gpui_kit::{App, Hsla, Pixels, px, rgb};
+use gpui_kit::{App, FontWeight, Hsla, Pixels, SharedString, px, rgb};
 
 use crate::ActiveAppTheme as _;
 use crate::theme_tokens::Glass;
@@ -13,8 +13,6 @@ use crate::theme_palette::Appearance;
 pub const COMPOSER_MAX_WIDTH: Pixels = px(768.);
 /// `leading-relaxed` at 14px: the scroll step and a fallback row height.
 pub const PROMPT_LINE_HEIGHT: Pixels = px(22.75);
-/// Code font size (`--font-size-code`).
-pub const CODE_FONT_SIZE: Pixels = px(13.);
 /// Code line height inside composer code blocks.
 pub const CODE_LINE_HEIGHT: Pixels = px(20.);
 /// `max-h-52`.
@@ -53,8 +51,14 @@ pub const COMMAND_MENU_MAX_HEIGHT: Pixels = px(288.);
 /// Popup radius `rounded-lg`.
 pub const POPUP_RADIUS: Pixels = px(8.);
 
-/// UI font family. The shell owns fonts; these match its resolved stack.
-pub const UI_FONT_FAMILY: &str = if cfg!(target_os = "macos") { ".SystemUIFont" } else { "Inter" };
+/// The UI font family, as the font family setting resolves it.
+pub fn ui_font_family() -> SharedString {
+    crate::appearance_fonts::ui_font(FontWeight::NORMAL).family
+}
+/// The code font family, as the code font setting resolves it.
+pub fn mono_font_family() -> SharedString {
+    crate::appearance_fonts::mono_font(FontWeight::NORMAL).family
+}
 
 /// Mixes `color` over `base` at `amount` (0..1), in sRGB like `color-mix(in srgb, ...)`.
 pub fn mix(color: Hsla, base: Hsla, amount: f32) -> Hsla {

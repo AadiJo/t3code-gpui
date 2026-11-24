@@ -29,8 +29,6 @@ const DETAIL_INDENT: gpui_kit::Rems = gpui_kit::rems(1.75);
 /// Scroll caps: command output `max-h-80`, read output `max-h-64`, structured `max-h-80`.
 const OUTPUT_MAX_HEIGHT: gpui_kit::Rems = gpui_kit::rems(20.0);
 const READ_MAX_HEIGHT: gpui_kit::Rems = gpui_kit::rems(16.0);
-/// Monospace detail: `--font-size-code` with `leading-relaxed`.
-
 
 impl MessagesTimeline {
     /// A work-log entry, standalone or inside an expanded group.

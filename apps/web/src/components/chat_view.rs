@@ -729,7 +729,7 @@ impl Render for ChatView {
             .overflow_hidden()
             .bg(colors.theme.canvas)
             .text_color(colors.theme.text)
-            .font_family(super::chat::chat_style::SANS_FAMILY)
+            .font_family(super::chat::chat_style::sans(gpui_kit::FontWeight::NORMAL).family)
             .child(
                 div()
                     .flex()

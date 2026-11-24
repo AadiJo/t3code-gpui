@@ -15,7 +15,7 @@ use gpui_kit::{
     EntityInputHandler, EventEmitter, FocusHandle, Focusable, Font, FontStyle, FontWeight, GlobalElementId, Hitbox,
     HitboxBehavior, Hsla, InspectorElementId, IntoElement, KeyBinding, LayoutId, MouseButton, MouseDownEvent,
     MouseMoveEvent, MouseUpEvent, ParentElement as _, Pixels, Point, Render, ScrollEvent, ShapedLine, SharedString,
-    Style, Styled as _, TextAlign, TextRun, UTF16Selection, Window, actions, div, fill, font, point, prelude::*, px,
+    Style, Styled as _, TextAlign, TextRun, UTF16Selection, Window, actions, div, fill, point, prelude::*, px,
     relative, size,
 };
 use gpui_kit::{
@@ -39,8 +39,8 @@ use crate::{
 };
 
 const CONTEXT: &str = "FileEditor";
-/// Font size and line height of the code surface (Pierre's `--diffs-font-size` and row height).
-pub const EDITOR_FONT_SIZE: f32 = 13.;
+/// Row height of the code surface (Pierre's `--diffs-line-height`); the font size is the
+/// code size setting (`--diffs-font-size`).
 pub const EDITOR_LINE_HEIGHT: f32 = 20.;
 const TAB_WIDTH: usize = 4;
 /// Highlighting work allowed per frame before the rest is deferred to the next.
@@ -213,7 +213,6 @@ pub struct FileEditor {
     find: Option<Find>,
     dragging: bool,
     geometry: Rc<RefCell<FrameGeometry>>,
-    font_family: SharedString,
     wrap: bool,
     /// Row layout for the current wrap width; `None` when wrap is off or the text changed.
     wrap_layout: Option<WrapLayout>,
@@ -235,7 +234,7 @@ impl Focusable for FileEditor {
 }
 
 impl FileEditor {
-    pub fn new(path: SharedString, contents: &str, read_only: bool, window: &mut Window, cx: &mut Context<Self>) -> Self {
+    pub fn new(path: SharedString, contents: &str, read_only: bool, _window: &mut Window, cx: &mut Context<Self>) -> Self {
         let highlighter = language_for_path(&path).map(EditorHighlighter::new);
         Self {
             focus_handle: cx.focus_handle(),
@@ -255,7 +254,6 @@ impl FileEditor {
             find: None,
             dragging: false,
             geometry: Rc::default(),
-            font_family: mono_family(window),
             wrap: false,
             wrap_layout: None,
         }
@@ -1112,14 +1110,14 @@ impl Element for EditorElement {
         let appearance = theme.appearance;
         let foreground = theme.colors.code_foreground;
         let muted = theme.colors.muted_foreground;
+        let code_size = theme.fonts.code;
         let focused = self.editor.read(cx).focus_handle.is_focused(window);
         let entity = self.editor.clone();
         entity.update(cx, |editor, _| {
-            let family = editor.font_family.clone();
-            let regular = font(family.clone());
+            let regular = crate::appearance_fonts::mono_font(FontWeight::NORMAL);
             let bold = Font { weight: FontWeight::BOLD, ..regular.clone() };
             let italic = Font { style: FontStyle::Italic, ..regular.clone() };
-            let font_size = px(EDITOR_FONT_SIZE);
+            let font_size = px(code_size);
             let line_height = px(EDITOR_LINE_HEIGHT);
             let ch = window
                 .text_system()
@@ -1462,20 +1460,7 @@ fn shape_code_line(
     ShapedLineEntry { shaped, map, line: 0, start: 0, end: text.len(), last: true }
 }
 
-/// A monospace family that exists on this machine, preferring the web's stack
-/// (the same choice as the diff code view).
-pub fn mono_family(window: &Window) -> SharedString {
-    let names = window.text_system().all_font_names();
-    let candidates: &[&str] = if cfg!(target_os = "macos") {
-        &["SF Mono", "Menlo", "Monaco"]
-    } else if cfg!(target_os = "windows") {
-        &["Consolas", "Cascadia Mono", "Courier New"]
-    } else {
-        &["Liberation Mono", "DejaVu Sans Mono", "Ubuntu Mono", "Noto Sans Mono"]
-    };
-    candidates
-        .iter()
-        .find(|name| names.iter().any(|n| n == *name))
-        .map(|name| SharedString::new_static(name))
-        .unwrap_or_else(|| "monospace".into())
+/// The code font family, as the code font setting resolves it (Pierre's `--diffs-font-family`).
+pub fn mono_family() -> SharedString {
+    crate::appearance_fonts::mono_font(FontWeight::NORMAL).family
 }

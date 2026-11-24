@@ -21,7 +21,7 @@ use crate::components::chat::composer_icons::{composer_icon_stroke, provider_ico
 use crate::components::chat::composer_permissions::{RuntimeMode, runtime_mode_icon};
 use crate::components::chat::composer_theme::{
     ComposerColors, MODEL_PICKER_EFFORT_WIDTH, MODEL_PICKER_HEIGHT, MODEL_PICKER_LIST_WIDTH, MODEL_PICKER_RAIL_WIDTH,
-    POPUP_RADIUS, UI_FONT_FAMILY,
+    POPUP_RADIUS, ui_font_family,
 };
 use crate::model_ordering::{ProviderModelItem, order_claude_before_openai, sort_provider_model_items};
 use crate::model_search::{SearchableModel, rank_model_search};
@@ -904,7 +904,7 @@ impl Render for ModelPicker {
             .on_action(cx.listener(Self::on_previous_provider))
             .on_action(cx.listener(Self::on_next_provider))
             .on_mouse_down_out(cx.listener(|_, _, _, cx| cx.emit(ModelPickerEvent::Close)))
-            .font_family(UI_FONT_FAMILY)
+            .font_family(ui_font_family())
             .flex()
             .flex_col()
             .glass(c.popup_background)

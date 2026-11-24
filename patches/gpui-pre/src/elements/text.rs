@@ -608,11 +608,12 @@ impl TextLayout {
     ) -> LayoutId {
         let text_style = window.text_style();
         let font_size = text_style.font_size.to_pixels(window.rem_size());
-        let line_height = window.pixel_snap(
-            text_style
-                .line_height
-                .to_pixels(font_size.into(), window.rem_size()),
-        );
+        // Unsnapped, as Blink lays out line boxes: snapping 16.875 to 17 moves the baseline
+        // (see `line_baseline_offset`) and adds up over a paragraph. Glyphs still land on
+        // device pixels when painted.
+        let line_height = text_style
+            .line_height
+            .to_pixels(font_size.into(), window.rem_size());
 
         let runs = if let Some(runs) = runs {
             runs

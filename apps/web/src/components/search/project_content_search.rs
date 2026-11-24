@@ -312,7 +312,7 @@ impl ProjectContentSearch {
         )
     }
 
-    fn render_row(rows: &Arc<Vec<Row>>, matches: &Arc<Vec<ProjectContentMatch>>, selected: usize, entity: &gpui_kit::WeakEntity<Self>, index: usize, window: &mut Window, cx: &mut App) -> AnyElement {
+    fn render_row(rows: &Arc<Vec<Row>>, matches: &Arc<Vec<ProjectContentMatch>>, selected: usize, entity: &gpui_kit::WeakEntity<Self>, index: usize, _window: &mut Window, cx: &mut App) -> AnyElement {
         let theme = cx.app_theme().clone();
         let colors = theme.colors;
         match &rows[index] {
@@ -330,7 +330,7 @@ impl ProjectContentSearch {
                     .items_center()
                     .gap(px(12.))
                     .px(px(12.))
-                    .font_family(crate::components::files::file_editor::mono_family(window))
+                    .font_family(crate::components::files::file_editor::mono_family())
                     .text_size(px(12.))
                     .cursor_pointer()
                     .when(active, |el| el.bg(colors.accent_surface).text_color(colors.accent_surface_foreground))
@@ -360,10 +360,10 @@ impl ProjectContentSearch {
 }
 
 impl Render for ProjectContentSearch {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.app_theme().clone();
         let colors = theme.colors;
-        let mono = crate::components::files::file_editor::mono_family(window);
+        let mono = crate::components::files::file_editor::mono_family();
         let has_query = !self.query.trim().is_empty();
         let accessory = div()
             .flex_none()

@@ -22,7 +22,7 @@ use gpui_kit::{
 
 use crate::components::chat::composer_theme::{
     ComposerColors, EDITOR_MAX_HEIGHT,
-    PROMPT_LINE_HEIGHT, UI_FONT_FAMILY,
+    PROMPT_LINE_HEIGHT, ui_font_family,
 };
 use crate::components::composer_prompt_editor::{ComposerPromptEditor, Doc, DocLine, LineParse};
 use crate::composer_code_languages::{CodeSpan, HighlightCache};
@@ -160,8 +160,8 @@ impl Builder {
         if len == 0 {
             return;
         }
-        // The code font follows the Appearance settings (the owner's custom family included).
-        let mut f = if style.mono { crate::appearance_fonts::mono_font(style.weight) } else { font(UI_FONT_FAMILY) };
+        // Both fonts follow the Appearance settings (the owner's custom families included).
+        let mut f = if style.mono { crate::appearance_fonts::mono_font(style.weight) } else { font(ui_font_family()) };
         f.weight = style.weight;
         f.style = if style.italic { FontStyle::Italic } else { FontStyle::Normal };
         let strikethrough = style.strike.then_some(StrikethroughStyle { thickness: px(1.), color: Some(style.color) });
@@ -881,7 +881,7 @@ impl Element for PromptEditorElement {
             let (shaped, height) = shape(&state.lines, &state.space, width, window);
             let mut height = height;
             if show_placeholder {
-                let run = TextRun { len: placeholder.len(), font: font(UI_FONT_FAMILY), color: colors.placeholder, background_color: None, underline: None, strikethrough: None };
+                let run = TextRun { len: placeholder.len(), font: font(ui_font_family()), color: colors.placeholder, background_color: None, underline: None, strikethrough: None };
                 let wrapped = window
                     .text_system()
                     .shape_text(placeholder.clone(), colors.prompt_font_size, &[run], Some(width), None)
