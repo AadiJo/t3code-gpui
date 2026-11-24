@@ -12,7 +12,7 @@ use std::sync::Arc;
 use gpui_kit::{
     AnyElement, App, AppContext as _, Context, Anchor, Entity, EventEmitter, Focusable as _, Hsla, IntoElement,
     ParentElement as _, Pixels, Render, SharedString, Styled as _, Subscription, Window, anchored, deferred, div,
-    point, prelude::*, px, TestSupportExt as _,
+    canvas, point, prelude::*, px, relative, TestSupportExt as _,
 };
 use t3code_contracts::{EnvironmentId, VcsCreateRefInput, VcsListRefsResult, VcsRef, VcsSwitchRefInput};
 
@@ -21,7 +21,8 @@ use super::branch_toolbar_logic::{
     EnvMode, EnvironmentOption, MachineKind, PreviousWorktreeSeed, derive_local_branch_name_from_remote_ref,
     is_worktree_change_blocked, resolve_branch_selection_target, resolve_branch_toolbar_value,
     resolve_branch_trigger_label, resolve_current_workspace_label, resolve_env_mode_label,
-    resolve_locked_workspace_label, sanitize_new_ref_name, should_show_environment_indicator,
+    resolve_context_strip_labels_compact, resolve_locked_workspace_label, sanitize_new_ref_name,
+    should_show_environment_indicator,
 };
 use super::chat::thread_details_panel_styles::{DismissPress, below_row, locked_row, row_width, row_icon, select_row};
 use super::git_actions_control_source::SourceControlModel;
@@ -33,7 +34,7 @@ use super::ui::tooltip::tooltip;
 use super::ui::{DISABLED_OPACITY, TextStyleExt as _};
 use crate::ActiveAppTheme as _;
 use crate::AppTheme;
-use crate::appearance_fonts::{TextSize, weight};
+use crate::appearance_fonts::{TextSize, mono_font, weight};
 use crate::i18n::t;
 use crate::source_control_presentation::source_control_presentation;
 use crate::theme_color::with_alpha;
@@ -77,9 +78,67 @@ pub struct BranchToolbarProps {
     pub can_change_thread_branch: bool,
     pub can_checkout_pull_request: bool,
     pub show_git_controls: bool,
+    /// The branch's (or thread's) pull request, shown before the branch in the composer strip.
+    pub pull_request_badge: Option<StripPullRequestBadge>,
 }
 
-/// What the toolbar asks its owner to do.
+/// The badge's glass tooltip: one mini-list row (`ThreadPullRequestMiniListItem`).
+#[derive(Clone)]
+struct BadgeTooltip {
+    icon: IconName,
+    tone: Hsla,
+    number: u64,
+    title: SharedString,
+}
+
+impl Render for BadgeTooltip {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = cx.app_theme();
+        let d = &theme.derived;
+        div().pb(px(4.)).child(
+            div()
+                .w(theme.rem(20.))
+                .px(theme.sp(1.))
+                .py(theme.sp(1.))
+                .rounded(theme.radii.md)
+                .border_1()
+                .bg(d.dropdown_glass_opaque)
+                .border_color(d.dropdown_glass_border)
+                .shadow(theme.shadows.xl25.clone())
+                .child(
+                    div()
+                        .flex()
+                        .min_w_0()
+                        .items_center()
+                        .gap(theme.rem(0.5))
+                        .px(theme.rem(0.25))
+                        .py(theme.rem(0.25))
+                        .rounded(theme.radii.sm)
+                        .ui_text(theme, TextSize::Xs, weight::NORMAL)
+                        .text_color(theme.colors.foreground())
+                        .child(Icon::new(self.icon).size(IconSize::Custom(theme.rem(0.75))).color(self.tone))
+                        .child(div().flex_none().font(mono_font(weight::NORMAL)).child(format!("#{}", self.number)))
+                        .child(div().min_w_0().truncate().text_color(with_alpha(theme.colors.foreground(), 0.75)).child(self.title.clone())),
+                ),
+        )
+    }
+}
+
+/// The composer strip's pull request badge (`ThreadPullRequestBadgeControl`):
+/// the state icon and `#N` (or `+N` when more are linked), with a tooltip that
+/// lists it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct StripPullRequestBadge {
+    pub number: u64,
+    pub url: SharedString,
+    pub title: SharedString,
+    pub state: t3code_contracts::PullRequestState,
+    pub is_draft: bool,
+    /// Other linked pull requests: the badge reads `+N` and opens the list.
+    pub others: u64,
+    /// The status tooltip (`PrStatusIndicator.tooltip`).
+    pub label: SharedString,
+}
 #[derive(Clone, Debug, PartialEq)]
 pub enum BranchToolbarEvent {
     EnvironmentChanged(EnvironmentId),
@@ -91,6 +150,10 @@ pub enum BranchToolbarEvent {
     ThreadBranchChanged { branch: String, worktree_path: Option<String> },
     /// Check this pull request out into a thread.
     CheckoutPullRequest(String),
+    /// The badge of a single pull request: open it.
+    OpenPullRequest(SharedString),
+    /// The badge of several: open the Pull requests tab.
+    OpenPullRequestList,
 }
 
 /// The open popup.
@@ -109,6 +172,10 @@ pub struct BranchToolbar {
     model: Entity<SourceControlModel>,
     /// The model's shared ref list, mirrored so render can borrow it.
     refs: Option<Arc<VcsListRefsResult>>,
+    /// The composer strip's measured width.
+    strip_width: Option<Pixels>,
+    /// The strip's labels collapsed to icons (`data-compact`).
+    compact: bool,
     open: Option<Popup>,
     picker: Option<(Entity<BranchPicker>, Subscription)>,
     /// A checkout or create is in flight.
@@ -162,7 +229,18 @@ impl BranchToolbar {
         })
         .detach();
         let refs = model.read(cx).refs.clone();
-        let mut toolbar = Self { layout, props, model, refs, open: None, picker: None, pending: false, dismissed: DismissPress::default() };
+        let mut toolbar = Self {
+            layout,
+            props,
+            model,
+            refs,
+            open: None,
+            picker: None,
+            pending: false,
+            dismissed: DismissPress::default(),
+            strip_width: None,
+            compact: false,
+        };
         if toolbar.refs.is_none() {
             toolbar.load_refs(cx);
         }
@@ -677,12 +755,82 @@ impl BranchToolbar {
             .when(!disabled, |c| c.cursor_pointer().hover(move |s| s.bg(hover)))
     }
 
+    /// A strip label: hidden while the strip is compact (`ComposerContextLabel`).
+    fn strip_label(&self, label: SharedString) -> impl IntoElement {
+        div().min_w_0().max_w(px(240.)).truncate().when(self.compact, |l| l.max_w(px(0.)).invisible()).child(label)
+    }
+
+    /// `run-context` in the strip below the `@xl` composer width: one control
+    /// for the machine and workspace.
+    fn render_run_context_control(&mut self, theme: &AppTheme, text: Hsla, show_indicator: bool, cx: &mut Context<Self>) -> AnyElement {
+        let label = self
+            .props
+            .auto_environment_label
+            .clone()
+            .unwrap_or_else(|| if show_indicator { self.environment_label() } else { self.workspace_label() });
+        let icon = if self.props.auto_environment_label.is_some() {
+            IconName::Scale
+        } else if show_indicator {
+            machine_icon(self.active_environment().map_or(MachineKind::Server, |e| e.machine))
+        } else {
+            self.workspace_icon()
+        };
+        let locked = self.props.env_locked && (self.env_mode_locked() || self.props.force_new_worktree);
+        let open = self.open == Some(Popup::RunContext);
+        let control = Self::xs_control("strip-run-context", theme, text, open, false)
+            .flex_initial()
+            .max_w(relative(0.48))
+            .child(Icon::new(icon).size(IconSize::Custom(theme.rem(0.75))))
+            .child(self.strip_label(label));
+        let control = if locked {
+            control.cursor_default()
+        } else {
+            control.on_click(cx.listener(|this, e, _, cx| this.toggle_from(Popup::RunContext, e, cx)))
+        };
+        let menu = open.then(|| {
+            let mut rows = Vec::new();
+            if self.can_pick_environment() && !self.props.environments.is_empty() {
+                rows.extend(self.environment_rows(theme, cx));
+                rows.push(div().mx(theme.sp(2.)).my(theme.sp(1.)).h(px(1.)).bg(theme.colors.border).into_any_element());
+            }
+            rows.extend(self.workspace_rows(theme, cx));
+            div().absolute().top_0().left_0().child(above(Anchor::BottomLeft, Self::popup_surface(theme, None, rows, cx)))
+        });
+        div().relative().min_w_0().child(control.test_support()).children(menu).into_any_element()
+    }
+
+    /// The pull request badge before the branch (`ThreadPullRequestBadgeControl`).
+    fn render_pull_request_badge(&self, theme: &AppTheme, text: Hsla, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let badge = self.props.pull_request_badge.clone()?;
+        let (icon, tone) =
+            crate::components::chat::thread_details_pr_row::pull_request_state_tone(theme, badge.state, badge.is_draft);
+        let opens_list = badge.others > 0;
+        let label: SharedString = if opens_list { format!("+{}", badge.others + 1).into() } else { format!("#{}", badge.number).into() };
+        let url = badge.url.clone();
+        let tip_title = badge.title.clone();
+        let number = badge.number;
+        let tip = BadgeTooltip { icon, tone, number, title: tip_title };
+        let tip = move |_: &mut Window, cx: &mut App| cx.new(|_| tip.clone()).into();
+        let control = Self::xs_control("strip-pull-request", theme, text, false, false)
+            .tooltip(tip)
+            .child(Icon::new(icon).size(IconSize::Custom(theme.rem(0.75))).color(tone))
+            .child(div().text_color(with_alpha(theme.colors.foreground(), 0.6)).child(label))
+            .on_click(cx.listener(move |_, _, _, cx| {
+                cx.emit(if opens_list { BranchToolbarEvent::OpenPullRequestList } else { BranchToolbarEvent::OpenPullRequest(url.clone()) })
+            }));
+        Some(control.test_support().into_any_element())
+    }
+
     fn render_composer(&mut self, theme: &AppTheme, cx: &mut Context<Self>) -> AnyElement {
         // `text-foreground/70 dark:text-muted-foreground`.
         let text = if theme.is_dark() { theme.colors.muted_foreground } else { with_alpha(theme.colors.foreground(), 0.7) };
         let show_indicator = should_show_environment_indicator(self.active_environment().map(|e| e.is_primary), self.can_pick_environment());
+        // `@xl/composer-surface`: below 36rem the machine and workspace share one control.
+        let narrow = self.strip_width.is_some_and(|w| w < theme.rem(36.));
         let mut left = div().flex().flex_1().min_w_0().items_center().gap(theme.rem(0.25)).min_h(theme.rem(1.5));
-        if show_indicator {
+        if narrow && self.props.show_git_controls {
+            left = left.child(self.render_run_context_control(theme, text, show_indicator, cx));
+        } else if show_indicator {
             let locked = self.props.env_locked;
             let icon = if self.props.auto_environment_label.is_some() {
                 IconName::Scale
@@ -692,7 +840,7 @@ impl BranchToolbar {
             let control = Self::xs_control("strip-environment", theme, text, self.open == Some(Popup::Environment), false)
                 .tooltip(tooltip(self.environment_label()))
                 .child(Icon::new(icon).size(IconSize::Custom(theme.rem(0.75))))
-                .child(div().min_w_0().truncate().child(self.environment_label()));
+                .child(self.strip_label(self.environment_label()));
             let control = if locked || !self.can_pick_environment() {
                 control.cursor_default()
             } else {
@@ -707,7 +855,7 @@ impl BranchToolbar {
                 left = left.child(div().mx(theme.rem(0.125)).w(px(1.)).h(theme.rem(0.875)).bg(theme.colors.border));
             }
         }
-        if self.props.show_git_controls {
+        if self.props.show_git_controls && !narrow {
             let locked = self.env_mode_locked() || self.props.force_new_worktree;
             let tip = if self.props.force_new_worktree {
                 t!("Each model starts in its own worktree.")
@@ -717,7 +865,7 @@ impl BranchToolbar {
             let mode = Self::xs_control("strip-workspace", theme, text, self.open == Some(Popup::Workspace), false)
                 .tooltip(tooltip(tip))
                 .child(Icon::new(self.workspace_icon()).size(IconSize::Custom(theme.rem(0.75))))
-                .child(div().min_w_0().truncate().child(self.workspace_label()))
+                .child(self.strip_label(self.workspace_label()))
                 .when(!locked, |c| c.child(Icon::new(IconName::ChevronsUpDown).size(IconSize::Custom(theme.rem(0.75))).opacity(0.7)));
             let mode = if locked {
                 mode.cursor_default().text_color(with_alpha(theme.colors.muted_foreground, 0.7))
@@ -747,7 +895,7 @@ impl BranchToolbar {
                 .max_w(theme.rem(16.25))
                 .tooltip(tooltip(t!("Branch: {branch}", branch = self.trigger_label(cx))))
                 .child(Icon::new(IconName::GitBranch).size(IconSize::Custom(theme.rem(0.75))))
-                .child(div().min_w_0().truncate().child(self.trigger_label(cx)))
+                .child(self.strip_label(self.trigger_label(cx)))
                 .when(!disabled, |c| {
                     c.on_click(cx.listener(|this, e, window, cx| {
                         if this.dismissed.consumes(e) {
@@ -760,9 +908,78 @@ impl BranchToolbar {
             let picker = self.picker.as_ref().filter(|_| self.open == Some(Popup::Branch)).map(|(picker, _)| {
                 div().absolute().top_0().right_0().child(above(Anchor::BottomRight, picker.clone()))
             });
-            strip = strip.child(div().relative().ml_auto().min_w_0().child(branch.test_support()).children(picker));
+            let badge = self.render_pull_request_badge(theme, text, cx);
+            strip = strip.child(
+                div()
+                    .flex()
+                    .min_w_0()
+                    .items_center()
+                    .gap(theme.rem(0.25))
+                    .when(!narrow, |d| d.ml_auto())
+                    .children(badge)
+                    .child(div().relative().min_w_0().child(branch.test_support()).children(picker)),
+            );
         }
-        strip.into_any_element()
+        let labels = self.strip_labels(cx);
+        let this = cx.entity();
+        strip
+            .child(
+                // Measures the strip after layout: its width picks the narrow layout, and
+                // the labels' natural widths decide whether they collapse to icons.
+                canvas(
+                    move |bounds, window, cx| {
+                        let theme = cx.app_theme();
+                        let size = px(TextSize::Xs.size(theme.fonts.interface));
+                        let font = crate::appearance_fonts::ui_font(weight::NORMAL);
+                        let text_width: Pixels = labels
+                            .iter()
+                            .map(|label| {
+                                let run = gpui_kit::TextRun { len: label.len(), font: font.clone(), color: Hsla::default(), background_color: None, underline: None, strikethrough: None };
+                                window.text_system().shape_line(label.clone(), size, &[run], None).width.min(px(240.))
+                            })
+                            .fold(px(0.), |a, b| a + b);
+                        (bounds.size.width, text_width)
+                    },
+                    move |_, (width, text_width), _, cx| {
+                        this.update(cx, |this, cx| this.measure_strip(width, text_width, cx));
+                    },
+                )
+                .absolute()
+                .size_full(),
+            )
+            .relative()
+            .into_any_element()
+    }
+
+    /// The strip's labels as drawn, for the overflow measure.
+    fn strip_labels(&self, cx: &App) -> Vec<SharedString> {
+        let mut labels = Vec::new();
+        let show_indicator = should_show_environment_indicator(self.active_environment().map(|e| e.is_primary), self.can_pick_environment());
+        if show_indicator {
+            labels.push(self.environment_label());
+        }
+        if self.props.show_git_controls {
+            labels.push(self.workspace_label());
+            labels.push(self.trigger_label(cx));
+        }
+        labels
+    }
+
+    /// `useLabelsOverflow` and the `@xl` container query, from the measured strip.
+    /// Each control's chrome (padding, icon, gap) is counted with the labels'
+    /// natural widths; once compact, labels return only with 16px to spare.
+    fn measure_strip(&mut self, width: Pixels, text_width: Pixels, cx: &mut Context<Self>) {
+        let theme = cx.app_theme();
+        let controls = self.strip_labels(cx).len() as f32;
+        let chrome = (px(14.) + theme.rem(0.75) + theme.rem(0.25)) * controls + theme.rem(0.25) * (controls - 1.).max(0.);
+        let available = width - theme.rem(1.);
+        let needed = text_width + chrome;
+        let compact = resolve_context_strip_labels_compact(self.compact, needed.into(), available.into());
+        if self.strip_width != Some(width) || self.compact != compact {
+            self.strip_width = Some(width);
+            self.compact = compact;
+            cx.notify();
+        }
     }
 
     fn render_panel_workspace(&mut self, theme: &AppTheme, cx: &mut Context<Self>) -> AnyElement {

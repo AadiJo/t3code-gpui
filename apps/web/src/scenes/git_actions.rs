@@ -84,6 +84,7 @@ pub fn fixture_toolbar_props(branch: Option<&str>) -> BranchToolbarProps {
         can_change_thread_branch: true,
         can_checkout_pull_request: true,
         show_git_controls: true,
+        pull_request_badge: None,
     }
 }
 
