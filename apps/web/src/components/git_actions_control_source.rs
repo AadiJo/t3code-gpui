@@ -163,6 +163,9 @@ pub struct SourceControlModel {
     pub status_error: Option<SharedString>,
     pub action: VcsActionState,
     pub inline_success: Option<InlineSuccess>,
+    /// The first page of refs, shared by every branch control of the thread.
+    pub refs: Option<Arc<VcsListRefsResult>>,
+    refs_loading: bool,
     /// The next action id the client hands the server.
     next_action_id: u64,
     _subscription: Option<Task<()>>,
@@ -205,9 +208,41 @@ impl SourceControlModel {
             status_error: None,
             action: VcsActionState::default(),
             inline_success: None,
+            refs: None,
+            refs_loading: false,
             next_action_id: 0,
             _subscription: Some(subscription),
         }
+    }
+
+    /// `vcs.listRefs` for the first `limit` refs. Calls made while one is in
+    /// flight join it, so the thread's toolbars send one request between them.
+    pub fn load_refs(&mut self, limit: u64, cx: &mut Context<Self>) {
+        if self.refs_loading {
+            return;
+        }
+        self.refs_loading = true;
+        let request = self.source.list_refs(VcsListRefsInput {
+            cwd: self.cwd.to_string(),
+            query: None,
+            cursor: None,
+            include_matching_remote_refs: None,
+            ref_kind: None,
+            refresh: None,
+            limit: Some(limit),
+        });
+        cx.spawn(async move |this, cx| {
+            let result = request.await;
+            this.update(cx, |model, cx| {
+                model.refs_loading = false;
+                if let Ok(refs) = result {
+                    model.refs = Some(Arc::new(refs));
+                    cx.notify();
+                }
+            })
+            .ok();
+        })
+        .detach();
     }
 
     /// Whether a commit, push, pull or publish is running (`useSourceControlActionRunning`).

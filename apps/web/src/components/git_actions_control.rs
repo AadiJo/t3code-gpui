@@ -17,7 +17,7 @@ use t3code_contracts::{
 };
 
 use super::chat::thread_details_panel_styles::{
-    DismissPress, ROW_HEIGHT, below_row, observed, row, row_base, row_busy_fill, row_icon, split_row, split_secondary,
+    DismissPress, row_height, below_row, observed, row, row_base, row_busy_fill, row_icon, split_row, split_secondary,
 };
 use super::git_actions_control_logic::{
     GitActionIcon, GitActionMenuItem, GitDialogAction, GitQuickAction, GitQuickActionKind, ToastOutcome,
@@ -470,7 +470,7 @@ impl GitActionsControl {
                     .py(theme.sp(1.))
                     .rounded(theme.radii.sm)
                     .ui_text(theme, TextSize::Sm, weight::NORMAL)
-                    .child(div().mx(px(-2.)).child(Icon::new(action_icon(item.icon)).size(IconSize::Md).color(c.muted_foreground).opacity(0.8)))
+                    .child(div().mx(px(-2.)).child(Icon::new(action_icon(item.icon)).size(IconSize::Custom(theme.rem(1.))).color(c.muted_foreground).opacity(0.8)))
                     .child(div().flex_1().min_w_0().truncate().child(item.label.clone()))
                     .when(disabled, |r| r.opacity(DISABLED_OPACITY))
                     .when_some(reason.filter(|_| item.disabled), |r, reason| r.tooltip(tooltip(reason)))
@@ -495,7 +495,7 @@ impl GitActionsControl {
                     .px(theme.sp(2.))
                     .rounded(theme.radii.sm)
                     .ui_text(theme, TextSize::Sm, weight::NORMAL)
-                    .child(Icon::new(IconName::CloudUpload).size(IconSize::Md).color(c.muted_foreground).opacity(0.8))
+                    .child(Icon::new(IconName::CloudUpload).size(IconSize::Custom(theme.rem(1.))).color(c.muted_foreground).opacity(0.8))
                     .child(t!("Publish repository..."))
                     .when(is_busy, |r| r.opacity(DISABLED_OPACITY))
                     .when(!is_busy, |r| {
@@ -560,7 +560,7 @@ impl GitActionsControl {
                     .flex_1()
                     .min_w_0()
                     .items_baseline()
-                    .gap(px(6.))
+                    .gap(theme.rem(0.375))
                     .child(div().flex_none().child(t!("Changes")))
                     .children(base_label.map(|label| {
                         div().min_w_0().truncate().font_weight(weight::NORMAL).text_color(muted).child(label)
@@ -571,8 +571,8 @@ impl GitActionsControl {
                             .flex()
                             .flex_none()
                             .items_baseline()
-                            .gap(px(8.))
-                            .pl(px(8.))
+                            .gap(theme.rem(0.5))
+                            .pl(theme.rem(0.5))
                             .font(mono_font(weight::MEDIUM))
                             .child(div().text_color(if insertions > 0 { f.diff_addition_foreground } else { muted }).child(format!("+{}", format_diff_count(insertions))))
                             .child(div().text_color(if deletions > 0 { f.diff_deletion_foreground } else { muted }).child(format!("-{}", format_diff_count(deletions)))),
@@ -602,10 +602,10 @@ impl GitActionsControl {
                 .flex()
                 .w_full()
                 .items_center()
-                .gap(px(8.))
+                .gap(theme.rem(0.5))
                 .rounded(theme.radii.md)
-                .px(px(8.))
-                .py(px(4.))
+                .px(theme.rem(0.5))
+                .py(theme.rem(0.25))
                 .font(mono_font(weight::NORMAL))
                 .hover(|s| s.bg(with_alpha(c.highlight(), 0.5)))
                 .when(dialog.editing_files, |r| {
@@ -634,7 +634,7 @@ impl GitActionsControl {
                         .flex_1()
                         .min_w_0()
                         .justify_between()
-                        .gap(px(12.))
+                        .gap(theme.rem(0.75))
                         .child(div().flex_1().min_w_0().truncate().when(excluded, |d| d.text_color(muted)).child(file.path.clone()))
                         .child(if excluded {
                             div().flex_none().text_color(muted).child(t!("Excluded"))
@@ -651,17 +651,17 @@ impl GitActionsControl {
         let summary = div()
             .flex()
             .flex_col()
-            .gap(px(12.))
+            .gap(theme.rem(0.75))
             .rounded(theme.radii.xl)
             .bg(card_fill)
             .border_1()
             .border_color(ring)
-            .p(px(12.))
+            .p(theme.rem(0.75))
             .child(
                 div()
                     .flex()
                     .items_center()
-                    .gap(px(8.))
+                    .gap(theme.rem(0.5))
                     .child(div().text_color(muted).child(t!("Branch", context = "git branch")))
                     .child(
                         div()
@@ -685,7 +685,7 @@ impl GitActionsControl {
                         div()
                             .flex()
                             .items_center()
-                            .gap(px(8.))
+                            .gap(theme.rem(0.5))
                             .when(dialog.editing_files && !files.is_empty(), |d| {
                                 let all_paths: Vec<String> = files.iter().map(|f| f.path.clone()).collect();
                                 let state = if all_selected {
@@ -740,20 +740,20 @@ impl GitActionsControl {
                 div()
                     .flex()
                     .flex_col()
-                    .gap(px(8.))
+                    .gap(theme.rem(0.5))
                     .child(
                         div()
                             .id("commit-files")
-                            .h(px(176.))
+                            .h(theme.rem(11.))
                             .overflow_y_scroll()
                             .rounded(theme.radii.lg)
                             .bg(if theme.is_dark() { gpui_kit::hsla(0., 0., 1., 0.025) } else { c.card() })
                             .border_1()
                             .border_color(ring)
-                            .p(px(4.))
+                            .p(theme.rem(0.25))
                             .flex()
                             .flex_col()
-                            .gap(px(4.))
+                            .gap(theme.rem(0.25))
                             .children(file_rows),
                     )
                     .child(
@@ -774,7 +774,7 @@ impl GitActionsControl {
                 div()
                     .flex()
                     .flex_col()
-                    .gap(px(4.))
+                    .gap(theme.rem(0.25))
                     .child(div().font_weight(weight::MEDIUM).child(t!("Commit message (optional)")))
                     .child(TextArea::new(&dialog.message)),
             )
@@ -911,7 +911,7 @@ impl Render for GitActionsControl {
             can_publish,
             detached || clean_behind || status_error.is_some(),
         );
-        let row_width = theme.spacing.thread_details_panel_width - px(16.);
+        let row_width = theme.spacing.thread_details_panel_width - theme.rem(1.);
 
         let mut root = div().flex().flex_col().w_full();
         if self.props.show_actions {
@@ -933,11 +933,11 @@ impl Render for GitActionsControl {
                     let elapsed = format_git_action_elapsed(progress.started_at_ms, now);
                     row_base("git-primary", &theme, false, false)
                         .h_auto()
-                        .min_h(ROW_HEIGHT)
-                        .py(px(6.))
+                        .min_h(row_height(&theme))
+                        .py(theme.rem(0.375))
                         .items_start()
-                        .gap(px(12.))
-                        .child(div().h(px(18.)).flex().items_center().child(Spinner::new(SpinnerSize::Sm)))
+                        .gap(theme.rem(0.75))
+                        .child(div().h(theme.rem(1.125)).flex().items_center().child(Spinner::new(SpinnerSize::Sm)))
                         .child(
                             div()
                                 .flex()
@@ -948,7 +948,7 @@ impl Render for GitActionsControl {
                                 .children(progress.output.clone().map(|output| {
                                     div()
                                         .id("git-progress-output")
-                                        .pt(px(2.))
+                                        .pt(theme.rem(0.125))
                                         .truncate()
                                         .ui_text(&theme, TextSize::Xs2, weight::NORMAL)
                                         .text_color(theme.colors.muted_foreground)
@@ -959,7 +959,7 @@ impl Render for GitActionsControl {
                         .children(elapsed.map(|elapsed| {
                             div()
                                 .flex_none()
-                                .h(px(18.))
+                                .h(theme.rem(1.125))
                                 .flex()
                                 .items_center()
                                 .ui_text(&theme, TextSize::Xs2, weight::NORMAL)
@@ -969,16 +969,16 @@ impl Render for GitActionsControl {
                 } else if let Some(success) = &success {
                     row_base("git-primary", &theme, false, false)
                         .h_auto()
-                        .min_h(ROW_HEIGHT)
-                        .py(px(6.))
+                        .min_h(row_height(&theme))
+                        .py(theme.rem(0.375))
                         .items_start()
-                        .gap(px(12.))
+                        .gap(theme.rem(0.75))
                         .child(
                             div()
-                                .h(px(18.))
+                                .h(theme.rem(1.125))
                                 .flex()
                                 .items_center()
-                                .child(Icon::new(IconName::Check).size(IconSize::Sm).color(theme.fixed.success)),
+                                .child(Icon::new(IconName::Check).size(IconSize::Custom(theme.rem(0.875))).color(theme.fixed.success)),
                         )
                         .child(
                             div()
@@ -989,7 +989,7 @@ impl Render for GitActionsControl {
                                 .child(div().truncate().child(success.title.clone()))
                                 .children(success.description.clone().map(|d| {
                                     div()
-                                        .pt(px(2.))
+                                        .pt(theme.rem(0.125))
                                         .truncate()
                                         .ui_text(&theme, TextSize::Xs2, weight::NORMAL)
                                         .text_color(theme.colors.muted_foreground)

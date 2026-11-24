@@ -267,12 +267,12 @@ impl ProjectScriptsControl {
                         this.menu_open = false;
                         this.run(run.clone(), cx);
                     }))
-                    .child(Icon::new(script_icon(script.icon)).size(IconSize::Md).color(c.muted_foreground).opacity(0.8))
+                    .child(Icon::new(script_icon(script.icon)).size(IconSize::Custom(theme.rem(1.))).color(c.muted_foreground).opacity(0.8))
                     .child(div().flex_1().min_w_0().truncate().child(project_script_menu_label(script)))
                     .child(
                         div()
                             .id(("script-edit", index))
-                            .size(px(24.))
+                            .size(theme.rem(1.5))
                             .flex()
                             .items_center()
                             .justify_center()
@@ -281,7 +281,7 @@ impl ProjectScriptsControl {
                             .group_hover(group, |s| s.opacity(1.))
                             .hover(|s| s.bg(theme.colors.sidebar_row_hover))
                             .tooltip(tooltip(t!("Edit {name}", name = script.name.as_str())))
-                            .child(Icon::new(IconName::Settings).size(IconSize::Sm).color(c.muted_foreground))
+                            .child(Icon::new(IconName::Settings).size(IconSize::Custom(theme.rem(0.875))).color(c.muted_foreground))
                             .on_click(cx.listener(move |this, _, window, cx| {
                                 cx.stop_propagation();
                                 this.open_editor(Some(&edit), window, cx);
@@ -304,7 +304,7 @@ impl ProjectScriptsControl {
                 .ui_text(theme, TextSize::Sm, weight::NORMAL)
                 .cursor_pointer()
                 .hover(move |s| s.bg(highlight))
-                .child(Icon::new(IconName::Plus).size(IconSize::Md).color(c.muted_foreground).opacity(0.8))
+                .child(Icon::new(IconName::Plus).size(IconSize::Custom(theme.rem(1.))).color(c.muted_foreground).opacity(0.8))
                 .child(t!("Add project script"))
                 .on_click(cx.listener(|this, _, window, cx| this.open_editor(None, window, cx)))
                 .into_any_element(),
@@ -313,7 +313,7 @@ impl ProjectScriptsControl {
             glass_surface(theme)
                 .id("scripts-menu")
                 .occlude()
-                .w(theme.spacing.thread_details_panel_width - px(16.))
+                .w(theme.spacing.thread_details_panel_width - theme.rem(1.))
                 .p(theme.sp(1.))
                 .on_mouse_down_out(cx.listener(|this, event: &gpui_kit::MouseDownEvent, _, cx| {
                     this.dismissed.record(event.position);
@@ -335,11 +335,11 @@ impl ProjectScriptsControl {
             ProjectScriptIcon::Build,
             ProjectScriptIcon::Debug,
         ];
-        let icon_picker = div().flex().gap(px(4.)).children(icons.into_iter().map(|icon| {
+        let icon_picker = div().flex().gap(theme.rem(0.25)).children(icons.into_iter().map(|icon| {
             let selected = editor.icon == icon;
             div()
                 .id(SharedString::from(format!("script-icon-{}", icon.as_str())))
-                .size(px(30.))
+                .size(theme.rem(1.875))
                 .flex()
                 .items_center()
                 .justify_center()
@@ -348,7 +348,7 @@ impl ProjectScriptsControl {
                 .border_color(if selected { c.ring() } else { c.border })
                 .cursor_pointer()
                 .hover(|s| s.bg(c.sidebar_row_hover))
-                .child(Icon::new(script_icon(icon)).size(IconSize::Sm))
+                .child(Icon::new(script_icon(icon)).size(IconSize::Custom(theme.rem(0.875))))
                 .on_click(cx.listener(move |this, _, _, cx| {
                     if let Some(editor) = &mut this.editor {
                         editor.icon = icon;
@@ -362,7 +362,7 @@ impl ProjectScriptsControl {
                 .flex()
                 .items_center()
                 .justify_between()
-                .gap(px(12.))
+                .gap(theme.rem(0.75))
                 .child(div().ui_text(theme, TextSize::Sm, weight::NORMAL).child(text))
                 .child(Switch::new(id, on).on_change(move |value, _, cx| {
                     this.update(cx, |this, cx| {
@@ -376,13 +376,13 @@ impl ProjectScriptsControl {
         let editing = editor.script_id.is_some();
         let mut surface = DialogSurface::new(if editing { t!("Edit Action") } else { t!("Add Action") })
             .description(t!("Actions are project-scoped commands you can run from the top bar or keybindings."))
-            .child(div().flex().flex_col().gap(px(6.)).child(label(t!("Name"))).child(icon_picker).child(TextInput::new(&editor.name)))
-            .child(div().flex().flex_col().gap(px(6.)).child(label(t!("Command"))).child(TextInput::new(&editor.command).mono()))
+            .child(div().flex().flex_col().gap(theme.rem(0.375)).child(label(t!("Name"))).child(icon_picker).child(TextInput::new(&editor.name)))
+            .child(div().flex().flex_col().gap(theme.rem(0.375)).child(label(t!("Command"))).child(TextInput::new(&editor.command).mono()))
             .child(
                 div()
                     .flex()
                     .flex_col()
-                    .gap(px(6.))
+                    .gap(theme.rem(0.375))
                     .child(label(t!("Preview URL (optional)")))
                     .child(TextInput::new(&editor.preview_url))
                     .child(hint(t!("Open this URL in the in-app preview when this action runs."))),

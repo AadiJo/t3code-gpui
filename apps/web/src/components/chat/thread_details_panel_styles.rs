@@ -1,7 +1,8 @@
 //! The row styles every control in the thread details card shares. Ports
-//! `threadDetailsPanelStyles.ts` and `ThreadDetailsControl.tsx`: 32px rows with
-//! a 16px muted icon, 13px medium label at 80%, a faint hover fill, and split
-//! rows whose hairline shows only while the pair is in use.
+//! `threadDetailsPanelStyles.ts` and `ThreadDetailsControl.tsx`: 2rem rows with
+//! a 1rem muted icon, 13px medium label at 80%, a faint hover fill, and split
+//! rows whose hairline shows only while the pair is in use. Sizes the web gives
+//! in rem follow the interface font size through [`AppTheme::rem`].
 
 use gpui_kit::{
     AnyElement, Div, ElementId, Hsla, IntoElement, ParentElement as _, Pixels, SharedString, Stateful, Styled as _,
@@ -16,13 +17,28 @@ use crate::components::ui::DISABLED_OPACITY;
 use crate::theme_color::with_alpha;
 
 /// Row height (`h-8`).
-pub const ROW_HEIGHT: Pixels = px(32.);
+pub fn row_height(theme: &AppTheme) -> Pixels {
+    theme.rem(2.)
+}
+
+/// Row gap and side padding (`gap-2.5 px-2.5`).
+pub fn row_inset(theme: &AppTheme) -> Pixels {
+    theme.rem(0.625)
+}
+
 /// Label size: `text-[13px]`, a pixel literal that does not scale.
 pub const ROW_TEXT: Pixels = px(13.);
 /// Label line height: the cap-trimmed label sits in an 18px box.
 pub const ROW_LINE_HEIGHT: Pixels = px(18.);
 /// The secondary half of a split row (`w-8`).
-pub const SPLIT_SECONDARY_WIDTH: Pixels = px(32.);
+pub fn split_secondary_width(theme: &AppTheme) -> Pixels {
+    theme.rem(2.)
+}
+
+/// `size-4` icons.
+pub fn row_icon_size(theme: &AppTheme) -> IconSize {
+    IconSize::Custom(theme.rem(1.))
+}
 
 /// `hover:bg-black/[0.035] dark:hover:bg-white/[0.08]`.
 pub fn row_hover(theme: &AppTheme) -> Hsla {
@@ -44,12 +60,12 @@ pub fn row_font(el: Div) -> Div {
     el.font(ui_font(weight::MEDIUM)).text_size(ROW_TEXT).line_height(ROW_LINE_HEIGHT)
 }
 
-/// `THREAD_DETAILS_PANEL_ICON_CLASS`: 16px, muted.
+/// `THREAD_DETAILS_PANEL_ICON_CLASS`: 1rem, muted.
 pub fn row_icon(theme: &AppTheme, name: IconName) -> Icon {
-    Icon::new(name).size(IconSize::Md).color(theme.colors.muted_foreground)
+    Icon::new(name).size(row_icon_size(theme)).color(theme.colors.muted_foreground)
 }
 
-/// The base of every row control: 32px tall, 8px radius, 10px gaps and padding.
+/// The base of every row control: 2rem tall, `rounded-lg`, 0.625rem gaps and padding.
 /// `open` keeps the hover fill while its popup is open.
 pub fn row_base(id: impl Into<ElementId>, theme: &AppTheme, disabled: bool, open: bool) -> Stateful<Div> {
     let hover = row_hover(theme);
@@ -59,9 +75,9 @@ pub fn row_base(id: impl Into<ElementId>, theme: &AppTheme, disabled: bool, open
         .flex()
         .items_center()
         .min_w_0()
-        .h(ROW_HEIGHT)
-        .gap(px(10.))
-        .px(px(10.))
+        .h(row_height(theme))
+        .gap(row_inset(theme))
+        .px(row_inset(theme))
         .rounded(theme.radii.lg)
         .text_color(row_text(theme))
         .when(open, |r| r.bg(hover))
@@ -77,8 +93,8 @@ pub fn row(id: impl Into<ElementId>, theme: &AppTheme, icon: Option<Icon>, label
         .child(div().flex_1().min_w_0().truncate().child(label.into()))
 }
 
-/// A split row: the primary half grows, the 32px secondary half holds a
-/// chevron, and a 16px hairline between them shows while the pair is hovered
+/// A split row: the primary half grows, the 2rem secondary half holds a
+/// chevron, and a 1rem hairline between them shows while the pair is hovered
 /// or its popup is open (`group/details-split`).
 pub fn split_row(
     group: &'static str,
@@ -103,7 +119,7 @@ pub fn split_row(
         .child(primary.flex_1().rounded_r(px(0.)).test_support())
         .child(
             div()
-                .h(px(16.))
+                .h(theme.rem(1.))
                 .w(px(1.))
                 .flex_none()
                 .when(open, |h| h.bg(hairline))
@@ -116,14 +132,14 @@ pub fn split_row(
 pub fn split_secondary(id: impl Into<ElementId>, theme: &AppTheme, disabled: bool, open: bool) -> Stateful<Div> {
     row_base(id, theme, disabled, open)
         .flex_none()
-        .w(SPLIT_SECONDARY_WIDTH)
+        .w(split_secondary_width(theme))
         .px(px(0.))
         .justify_center()
         .rounded_l(px(0.))
         .child(row_icon(theme, IconName::ChevronDown))
 }
 
-/// A select-style row (`part="select"`): the label half and a 32px chevron
+/// A select-style row (`part="select"`): the label half and a 2rem chevron
 /// half, each with its own hover fill, as one control.
 pub fn select_row(id: impl Into<ElementId>, theme: &AppTheme, content: impl IntoElement, disabled: bool, open: bool) -> Stateful<Div> {
     let hover = row_hover(theme);
@@ -142,8 +158,8 @@ pub fn select_row(id: impl Into<ElementId>, theme: &AppTheme, content: impl Into
                 .min_w_0()
                 .h_full()
                 .items_center()
-                .gap(px(10.))
-                .px(px(10.))
+                .gap(row_inset(theme))
+                .px(row_inset(theme))
                 .rounded_l(theme.radii.lg)
                 .when(!disabled, |d| d.hover(move |s| s.bg(hover)))
                 .child(content),
@@ -154,7 +170,7 @@ pub fn select_row(id: impl Into<ElementId>, theme: &AppTheme, content: impl Into
                 .flex()
                 .flex_none()
                 .h_full()
-                .w(SPLIT_SECONDARY_WIDTH)
+                .w(split_secondary_width(theme))
                 .items_center()
                 .justify_center()
                 .rounded_r(theme.radii.lg)
@@ -163,8 +179,8 @@ pub fn select_row(id: impl Into<ElementId>, theme: &AppTheme, content: impl Into
                     div()
                         .absolute()
                         .left(px(-1.))
-                        .top(px(8.))
-                        .h(px(16.))
+                        .top(theme.rem(0.5))
+                        .h(theme.rem(1.))
                         .w(px(1.))
                         .when(open, |h| h.bg(hairline))
                         .group_hover(group, move |h| h.bg(hairline)),
@@ -180,9 +196,9 @@ pub fn locked_row(theme: &AppTheme, content: impl IntoElement) -> Div {
         .items_center()
         .w_full()
         .min_w_0()
-        .h(ROW_HEIGHT)
-        .gap(px(10.))
-        .px(px(10.))
+        .h(row_height(theme))
+        .gap(row_inset(theme))
+        .px(row_inset(theme))
         .text_color(row_text(theme))
         .child(content)
 }
@@ -197,9 +213,9 @@ pub fn section(theme: &AppTheme, separated: bool, rows: Vec<AnyElement>) -> Opti
         div()
             .flex()
             .flex_col()
-            .px(px(8.))
-            .pt(px(8.))
-            .pb(px(10.))
+            .px(theme.rem(0.5))
+            .pt(theme.rem(0.5))
+            .pb(theme.rem(0.625))
             .when(separated, |s| s.border_t_1().border_color(with_alpha(theme.colors.border, 0.65)))
             .children(rows)
             .into_any_element(),

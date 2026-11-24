@@ -56,8 +56,9 @@ const HERO_HEADLINE_LINE: Pixels = px(36.);
 const HERO_MIN_HEIGHT: Pixels = px(544.);
 /// A picked option moves to the next question after this (`ComposerPendingUserInputPanel`).
 const QUESTION_ADVANCE_DELAY: Duration = Duration::from_millis(200);
-/// The details popover's inset from the pane's right edge, under the header.
-const DETAILS_POPOVER_INSET: Pixels = px(12.);
+/// The details popover's `alignOffset` from the pane's right edge
+/// (`THREAD_DETAILS_CARD_GAP - 8`); the popup's 0.5rem padding adds to it.
+const DETAILS_POPOVER_ALIGN_OFFSET: Pixels = px(4.);
 
 /// What the chat view asks the app to do.
 #[derive(Clone, Debug)]
@@ -496,13 +497,15 @@ impl Render for ChatView {
             ));
 
         let header_height = self.header_height;
+        let details_padding = cx.app_theme().rem(0.5);
         let details = self.details.clone().map(|details| {
             div()
                 .id("thread-details-popover")
                 .occlude()
                 .absolute()
                 .top(header_height)
-                .right(DETAILS_POPOVER_INSET)
+                .right(DETAILS_POPOVER_ALIGN_OFFSET)
+                .p(details_padding)
                 .on_mouse_down_out(cx.listener(move |_, event: &gpui_kit::MouseDownEvent, _, cx| {
                     // The titlebar toggle closes it itself.
                     if event.position.y > header_height {

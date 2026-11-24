@@ -249,7 +249,7 @@ impl Render for ThreadDetailsPanel {
         let sections = self.sections(&theme, cx);
         // Shown only when no section has content, so an emptied card can be refilled.
         let empty = sections.is_empty().then(|| {
-            div().p(px(8.)).child(
+            div().p(theme.rem(0.5)).child(
                 row("choose-items", &theme, Some(row_icon(&theme, IconName::SlidersHorizontal)), t!("Choose what to show"), false)
                     .on_click(cx.listener(|this, event: &gpui_kit::ClickEvent, _, cx| {
                         this.open_items_menu(event.position(), cx)

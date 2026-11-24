@@ -144,7 +144,7 @@ pub fn pull_request_row(
     let tooltip_text: SharedString = format!("#{}: {}", data.number, data.title).into();
     let open = std::rc::Rc::new(on_open);
     let open_click = open.clone();
-    let title_icon = Icon::new(icon).size(IconSize::Md).color(tone);
+    let title_icon = Icon::new(icon).size(IconSize::Custom(theme.rem(1.))).color(tone);
     if detail.is_none() || (rollup.is_none() && action.is_none() && !data.watching) {
         let label: SharedString =
             if data.title.trim().is_empty() { format!("#{}", data.number).into() } else { format!("#{}: {}", data.number, data.title).into() };
@@ -173,12 +173,12 @@ pub fn pull_request_row(
         div()
             .flex()
             .items_center()
-            .gap(px(4.))
-            .h(px(24.))
-            .px(px(6.))
+            .gap(theme.rem(0.25))
+            .h(theme.rem(1.5))
+            .px(theme.rem(0.375))
             .rounded(theme.radii.md)
             .text_color(muted)
-            .child(Icon::new(icon).size(IconSize::Sm).color(color))
+            .child(Icon::new(icon).size(IconSize::Custom(theme.rem(0.875))).color(color))
             .children(text)
     });
     let pill = action.map(|action| {
@@ -200,9 +200,9 @@ pub fn pull_request_row(
             .id(("pr-action", index))
             .flex()
             .items_center()
-            .gap(px(4.))
-            .h(px(20.))
-            .px(px(6.))
+            .gap(theme.rem(0.25))
+            .h(theme.rem(1.25))
+            .px(theme.rem(0.375))
             .rounded(theme.radii.md)
             .bg(bg)
             .text_color(fg)
@@ -210,23 +210,23 @@ pub fn pull_request_row(
             .cursor_pointer()
             .hover(move |s| s.bg(hover))
             .child(label)
-            .when(destructive, |p| p.child(Icon::new(IconName::ArrowUpRight).size(IconSize::Xs)))
+            .when(destructive, |p| p.child(Icon::new(IconName::ArrowUpRight).size(IconSize::Custom(theme.rem(0.75)))))
             .on_click(move |_, window, cx| on_action(action, window, cx))
     });
     let hover = row_hover(theme);
     div()
         .flex()
         .flex_col()
-        .pb(px(6.))
+        .pb(theme.rem(0.375))
         .child(
             row_font(div())
                 .id(("pr-title", index))
                 .flex()
                 .items_start()
-                .gap(px(10.))
-                .min_h(px(32.))
-                .pt(px(6.))
-                .px(px(10.))
+                .gap(theme.rem(0.625))
+                .min_h(theme.rem(2.))
+                .pt(theme.rem(0.375))
+                .px(theme.rem(0.625))
                 .rounded(theme.radii.lg)
                 .text_color(with_alpha(theme.colors.foreground(), 0.8))
                 .cursor_pointer()
@@ -234,20 +234,20 @@ pub fn pull_request_row(
                 .tooltip(tooltip(tooltip_text))
                 .on_click(move |_, window, cx| open(window, cx))
                 .child(div().mt(px(1.)).child(title_icon))
-                .child(div().flex_1().min_w_0().overflow_hidden().text_ellipsis().line_clamp(2).line_height(px(18.)).child(data.title.clone())),
+                .child(div().flex_1().min_w_0().overflow_hidden().text_ellipsis().line_clamp(2).line_height(theme.rem(1.125)).child(data.title.clone())),
         )
         .child(
             div()
                 .flex()
-                .h(px(20.))
+                .h(theme.rem(1.25))
                 .min_w_0()
                 .items_center()
-                .gap(px(2.))
-                .pl(px(36.))
-                .pr(px(10.))
+                .gap(theme.rem(0.125))
+                .pl(theme.rem(2.25))
+                .pr(theme.rem(0.625))
                 .ui_text(theme, TextSize::Xs, weight::NORMAL)
                 .text_color(muted)
-                .child(div().mr(px(4.)).flex_none().child(format!("#{}", data.number)))
+                .child(div().mr(theme.rem(0.25)).flex_none().child(format!("#{}", data.number)))
                 .children(checks)
                 .child(div().flex_1())
                 .children(pill),
@@ -260,7 +260,7 @@ pub fn issue_row(index: usize, theme: &AppTheme, link: &ThreadIssueLink, on_open
     let title: SharedString = link.title.clone().into();
     row_base(("issue-row", index), theme, false, false)
         .w_full()
-        .child(Icon::new(IconName::CircleDot).size(IconSize::Md).color(theme.colors.muted_foreground))
+        .child(Icon::new(IconName::CircleDot).size(IconSize::Custom(theme.rem(1.))).color(theme.colors.muted_foreground))
         .child(div().flex_none().text_color(theme.colors.muted_foreground).child(link.display_key.clone()))
         .child(div().flex_1().min_w_0().truncate().line_height(ROW_LINE_HEIGHT).child(title.clone()))
         .tooltip(tooltip(t!("Issue {key}: {title}", key = link.display_key.as_str(), title = title.as_ref())))

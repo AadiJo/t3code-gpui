@@ -3,6 +3,9 @@
 // titlebar, Graphite, glass opacity 45%), driven into each reference view by
 // real input events, then captured at 1100x780 @2x.
 // Usage: parity-shot <out-dir> [scene-filter]
+// The owner scenes read the owner's client settings from the JSON file named
+// by PARITY_CLIENT_SETTINGS (an Electron `client-settings.json`) and render at
+// the size in their table; without that variable they are skipped.
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -16,8 +19,10 @@ use t3code_web::components::app_sidebar_layout::TitlebarPlatform;
 use t3code_web::connection::{ConnectionRuntime, RuntimeConfig};
 use t3code_web::desktop_notifications::{DesktopNotification, DesktopNotificationKind, NotificationInbox};
 use t3code_web::fixtures::FixtureStore;
+use t3code_web::hooks::use_settings::ClientSettingsStore;
+use t3code_web::hooks::use_theme::ThemeStore;
 use t3code_web::router::Route;
-use t3code_web::shortcuts::commands::{ToggleCommandPalette, ToggleDiff, ToggleTerminal};
+use t3code_web::shortcuts::commands::{ToggleCommandPalette, ToggleDiff, ToggleTerminal, ToggleThreadPanel};
 use t3code_web::theme_palette::{ThemeMode, ThemeSettings};
 use t3code_web::theme_tokens::GlassOpacity;
 use t3code_web::ui_state_store::StateDir;
@@ -34,6 +39,8 @@ enum Step {
     RightClick(f32, f32),
     /// Clicks an element by id.
     ClickId(&'static str),
+    /// Right-clicks an element by id.
+    RightClickId(&'static str),
     /// Scroll wheel at a point, in pixels (positive scrolls content down, toward the top).
     Wheel(f32, f32, f32),
     Type(&'static str),
@@ -108,6 +115,29 @@ const SCENES: &[Scene] = &[
     Scene { name: "right-panel-diff", reference: "right-panel-diff", light: false, steps: &[Step::Action(|| Box::new(ToggleDiff)), Step::Wait(300)] },
 ];
 
+/// How a scene's window is set up.
+#[derive(Clone, Copy)]
+struct Profile {
+    size: (f32, f32),
+    /// The owner's settings file, applied instead of the fixed 45% glass.
+    owner: Option<&'static std::path::Path>,
+}
+
+const SHARED: Profile = Profile { size: (1100., 780.), owner: None };
+
+/// Scenes captured with the owner's real settings (interface 15, glass 40,
+/// contrast 95). Each is rendered at 1100x780 and at the owner's 1710x1074
+/// (`-wide`); the wide one's steps are the same, so they find their targets by id.
+const OWNER_SCENES: &[Scene] = &[
+    Scene { name: "details", reference: "details", light: false, steps: DETAILS },
+    Scene { name: "details-open-in-menu", reference: "open-in-editor-menu", light: false, steps: &[Step::Action(|| Box::new(ToggleThreadPanel)), Step::Wait(300), Step::ClickId("open-in-menu-trigger")] },
+    Scene { name: "details-git-menu", reference: "git-menu", light: false, steps: &[Step::Action(|| Box::new(ToggleThreadPanel)), Step::Wait(300), Step::ClickId("git-menu-trigger")] },
+    Scene { name: "details-branch-picker", reference: "branch-picker", light: false, steps: &[Step::Action(|| Box::new(ToggleThreadPanel)), Step::Wait(300), Step::ClickId("branch-select")] },
+    Scene { name: "details-items-menu", reference: "details-items-menu", light: false, steps: &[Step::Action(|| Box::new(ToggleThreadPanel)), Step::Wait(300), Step::RightClickId("thread-details-card")] },
+];
+
+const DETAILS: &[Step] = &[Step::Action(|| Box::new(ToggleThreadPanel)), Step::Wait(300)];
+
 /// The reference inbox: the approval and the question, both unread.
 fn reference_inbox() -> Arc<[DesktopNotification]> {
     let item = |thread: &str, title: &str, project: &str, kind| DesktopNotification {
@@ -157,7 +187,7 @@ fn mouse(cx: &mut HeadlessAppContext, window: AnyWindowHandle, at: Point<Pixels>
 }
 
 /// Opens a fresh window on the reference world, applies `scene`'s steps and saves the frame.
-fn render(scene: &Scene, out: &std::path::Path, data: &std::path::Path) -> anyhow::Result<()> {
+fn render(scene: &Scene, profile: Profile, file_name: &str, out: &std::path::Path, data: &std::path::Path) -> anyhow::Result<()> {
     let mut cx = headless();
     let config = RuntimeConfig {
         secrets: Some(Arc::new(FileSecretStore::new(data.join("secrets.json")))),
@@ -169,7 +199,17 @@ fn render(scene: &Scene, out: &std::path::Path, data: &std::path::Path) -> anyho
     cx.update(|cx| {
         t3code_web::init(cx);
         ThemeSettings::set_mode(if scene.light { ThemeMode::Light } else { ThemeMode::Dark }, cx);
-        ThemeSettings::set_glass_opacity(GlassOpacity::new(OWNER_GLASS_OPACITY), cx);
+        match profile.owner {
+            Some(path) => {
+                ClientSettingsStore::import_electron(path, cx)?;
+                // The owner's Mac runs in dark appearance; "system" would follow this machine.
+                ThemeStore::set_appearance_mode(if scene.light { ThemeMode::Light } else { ThemeMode::Dark }, cx);
+            }
+            None => ThemeSettings::set_glass_opacity(GlassOpacity::new(OWNER_GLASS_OPACITY), cx),
+        }
+        anyhow::Ok(())
+    })?;
+    cx.update(|cx| {
         ConnectionRuntime::init(config, cx)
     })?;
     let options = AppRootOptions {
@@ -181,7 +221,7 @@ fn render(scene: &Scene, out: &std::path::Path, data: &std::path::Path) -> anyho
     };
     let (window, parts) = cx.update(|cx| {
         let window_options = WindowOptions {
-            window_bounds: Some(WindowBounds::centered(None, size(px(1100.), px(780.)), cx)),
+            window_bounds: Some(WindowBounds::centered(None, size(px(profile.size.0), px(profile.size.1)), cx)),
             show: false,
             focus: true,
             ..component::TitleBar::window_options()
@@ -206,6 +246,9 @@ fn render(scene: &Scene, out: &std::path::Path, data: &std::path::Path) -> anyho
             Step::RightClick(x, y) => mouse(&mut cx, window, point(px(*x), px(*y)), Some(MouseButton::Right)),
             Step::ClickId(id) => {
                 cx.update_window(window, |_, w, cx| w.click(*id, cx)).ok();
+            }
+            Step::RightClickId(id) => {
+                cx.update_window(window, |_, w, cx| w.right_click(*id, cx)).ok();
             }
             Step::Wheel(x, y, dy) => {
                 cx.update_window(window, |_, w, cx| {
@@ -243,7 +286,7 @@ fn render(scene: &Scene, out: &std::path::Path, data: &std::path::Path) -> anyho
         frame(&mut cx, window);
     }
     frame(&mut cx, window);
-    let file = out.join(format!("{}.png", scene.name));
+    let file = out.join(format!("{file_name}.png"));
     cx.capture_screenshot(window)?.save(&file)?;
     println!("{} <- ref/{}.png", file.display(), scene.reference);
     Ok(())
@@ -256,9 +299,27 @@ fn main() -> anyhow::Result<()> {
     std::fs::create_dir_all(&out)?;
     let data = out.join(".runtime");
     std::fs::create_dir_all(&data)?;
-    for scene in SCENES.iter().filter(|s| filter.as_deref().is_none_or(|f| s.name.contains(f))) {
-        if let Err(error) = render(scene, &out, &data) {
+    let wanted = |name: &str| filter.as_deref().is_none_or(|f| name.contains(f));
+    for scene in SCENES.iter().filter(|s| wanted(s.name)) {
+        if let Err(error) = render(scene, SHARED, scene.name, &out, &data) {
             eprintln!("FAILED {}: {error:#}", scene.name);
+        }
+    }
+    let owner = std::env::var_os("PARITY_CLIENT_SETTINGS").map(|p| &*Box::leak(PathBuf::from(p).into_boxed_path()));
+    match owner {
+        None => eprintln!("PARITY_CLIENT_SETTINGS unset: skipping {} owner scenes", OWNER_SCENES.len()),
+        Some(path) => {
+            for scene in OWNER_SCENES {
+                for (suffix, size) in [("", (1100., 780.)), ("-wide", (1710., 1074.))] {
+                    let name = format!("{}{suffix}", scene.name);
+                    if !wanted(&name) {
+                        continue;
+                    }
+                    if let Err(error) = render(scene, Profile { size, owner: Some(path) }, &name, &out, &data) {
+                        eprintln!("FAILED {name}: {error:#}");
+                    }
+                }
+            }
         }
     }
     std::fs::remove_dir_all(&data).ok();
