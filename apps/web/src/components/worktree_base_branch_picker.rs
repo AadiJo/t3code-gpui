@@ -125,7 +125,7 @@ impl Render for WorktreeBaseBranchPicker {
             .flex()
             .w_full()
             .items_center()
-            .gap(px(6.))
+            .gap(theme.rem(0.375))
             .h(theme.sp(8.))
             .px(theme.sp(3.))
             .rounded(theme.radii.lg)
@@ -133,9 +133,9 @@ impl Render for WorktreeBaseBranchPicker {
             .border_color(c.input)
             .bg(theme.derived.outline_fill)
             .ui_text(&theme, TextSize::Sm, weight::MEDIUM)
-            .child(Icon::new(IconName::GitBranch).size(IconSize::Sm).color(c.muted_foreground))
+            .child(Icon::new(IconName::GitBranch).size(IconSize::Custom(theme.rem(0.875))).color(c.muted_foreground))
             .child(div().flex_1().min_w_0().truncate().child(label))
-            .child(Icon::new(IconName::ChevronDown).size(IconSize::Sm).color(c.muted_foreground))
+            .child(Icon::new(IconName::ChevronDown).size(IconSize::Custom(theme.rem(0.875))).color(c.muted_foreground))
             .when(disabled, |t| t.opacity(DISABLED_OPACITY))
             .when(!disabled, |t| {
                 let hover = theme.derived.outline_hover;

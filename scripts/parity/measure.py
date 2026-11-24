@@ -1,7 +1,7 @@
 """Pixel measurements shared by record and compare. Coordinates are logical px;
 images are 2x, so one device pixel is 0.5 logical px.
 
-Kinds (one per element in spec.json):
+Kinds (one per element in the spec, gen_spec.py):
   fill  [x, y]                 colour at a point (median of the 2x2 device pixels)
   ink   [x0, y0, x1, y1]       bounding box of pixels that differ from the box's
                                background (its most common colour) by more than

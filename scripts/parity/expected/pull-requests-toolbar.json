@@ -1,0 +1,131 @@
+{
+ "default": {
+  "search box left edge": {
+   "start": "#141415",
+   "edges": [
+    {
+     "at": 286.0,
+     "color": "#2c3b54"
+    },
+    {
+     "at": 287.0,
+     "color": "#2c3b54"
+    },
+    {
+     "at": 290.0,
+     "color": "#1d1d1f"
+    },
+    {
+     "at": 297.5,
+     "color": "#717172"
+    },
+    {
+     "at": 298.5,
+     "color": "#1d1d1f"
+    }
+   ]
+  },
+  "search box top/bottom": {
+   "start": "#141415",
+   "edges": [
+    {
+     "at": 76.0,
+     "color": "#2c3b54"
+    },
+    {
+     "at": 77.0,
+     "color": "#2c3b54"
+    },
+    {
+     "at": 80.0,
+     "color": "#1d1d1f"
+    },
+    {
+     "at": 91.0,
+     "color": "#313132"
+    },
+    {
+     "at": 92.5,
+     "color": "#323233"
+    },
+    {
+     "at": 94.5,
+     "color": "#323233"
+    },
+    {
+     "at": 95.5,
+     "color": "#3a3a3b"
+    },
+    {
+     "at": 97.5,
+     "color": "#1d1d1f"
+    },
+    {
+     "at": 99.0,
+     "color": "#1d1d1f"
+    },
+    {
+     "at": 106.0,
+     "color": "#2c3b54"
+    },
+    {
+     "at": 109.0,
+     "color": "#141415"
+    },
+    {
+     "at": 110.0,
+     "color": "#141415"
+    }
+   ],
+   "vertical": true
+  },
+  "search icon": {
+   "top": 86.0,
+   "left": 297.5,
+   "bottom": 99.5,
+   "right": 310.5,
+   "color": "#c9c9c9",
+   "bg": "#1d1d1f"
+  },
+  "search placeholder": {
+   "top": 88.5,
+   "left": 319.0,
+   "bottom": 102.0,
+   "right": 536.5,
+   "color": "#6c6c6c",
+   "bg": "#1d1d1f"
+  },
+  "sort button": {
+   "top": 77.0,
+   "left": 686.0,
+   "bottom": 99.0,
+   "right": 755.0,
+   "color": "#f5f5f5",
+   "bg": "#1d1d1f"
+  },
+  "views button": {
+   "top": 77.0,
+   "left": 859.0,
+   "bottom": 99.5,
+   "right": 959.0,
+   "color": "#f5f5f5",
+   "bg": "#1d1d1f"
+  },
+  "provider filter": {
+   "top": 77.0,
+   "left": 969.0,
+   "bottom": 100.5,
+   "right": 1029.0,
+   "color": "#f5f5f5",
+   "bg": "#1d1d1f"
+  },
+  "refresh button": {
+   "top": 77.0,
+   "left": 1039.0,
+   "bottom": 99.5,
+   "right": 1069.0,
+   "color": "#8f8f8f",
+   "bg": "#1d1d1f"
+  }
+ }
+}

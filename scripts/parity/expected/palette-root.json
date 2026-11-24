@@ -1,0 +1,228 @@
+{
+ "default": {
+  "palette left edge": {
+   "start": "#111111",
+   "edges": [
+    {
+     "at": 280.0,
+     "color": "#141414"
+    },
+    {
+     "at": 281.0,
+     "color": "#141414"
+    }
+   ]
+  },
+  "palette right edge": {
+   "start": "#151515",
+   "edges": [
+    {
+     "at": 819.0,
+     "color": "#101010"
+    },
+    {
+     "at": 820.0,
+     "color": "#101010"
+    }
+   ]
+  },
+  "palette top edge": {
+   "start": "#131313",
+   "edges": [
+    {
+     "at": 78.0,
+     "color": "#1c1c1c"
+    },
+    {
+     "at": 79.0,
+     "color": "#141414"
+    },
+    {
+     "at": 80.0,
+     "color": "#141414"
+    }
+   ],
+   "vertical": true
+  },
+  "search icon": {
+   "top": 95.5,
+   "left": 299.0,
+   "bottom": 107.5,
+   "right": 311.5,
+   "color": "#6c6c6c",
+   "bg": "#141414"
+  },
+  "search placeholder": {
+   "top": 97.0,
+   "left": 320.0,
+   "bottom": 109.5,
+   "right": 584.5,
+   "color": "#676767",
+   "bg": "#141414"
+  },
+  "section label": {
+   "top": 140.5,
+   "left": 296.5,
+   "bottom": 149.5,
+   "right": 338.0,
+   "color": "#888888",
+   "bg": "#141414"
+  },
+  "highlighted item": {
+   "color": "#28282b"
+  },
+  "item 1 icon": {
+   "top": 166.5,
+   "left": 298.0,
+   "bottom": 179.5,
+   "right": 311.5,
+   "color": "#838383",
+   "bg": "#28282b"
+  },
+  "item 1 title": {
+   "top": 168.0,
+   "left": 320.0,
+   "bottom": 178.5,
+   "right": 455.5,
+   "color": "#e8e8e8",
+   "bg": "#28282b"
+  },
+  "item 1 shortcut": {
+   "top": 168.5,
+   "left": 773.5,
+   "bottom": 177.0,
+   "right": 802.5,
+   "color": "#a0a0a0",
+   "bg": "#28282b"
+  },
+  "item 2 title": {
+   "top": 198.0,
+   "left": 320.0,
+   "bottom": 208.5,
+   "right": 418.0,
+   "color": "#e8e8e8",
+   "bg": "#141414"
+  },
+  "item 3 title": {
+   "top": 228.0,
+   "left": 320.0,
+   "bottom": 241.0,
+   "right": 500.0,
+   "color": "#e8e8e8",
+   "bg": "#151515"
+  }
+ },
+ "owner": {
+  "palette left edge": {
+   "start": "#111111",
+   "edges": [
+    {
+     "at": 280.0,
+     "color": "#141414"
+    },
+    {
+     "at": 281.0,
+     "color": "#141414"
+    }
+   ]
+  },
+  "palette right edge": {
+   "start": "#151515",
+   "edges": [
+    {
+     "at": 819.0,
+     "color": "#101010"
+    },
+    {
+     "at": 820.0,
+     "color": "#101010"
+    }
+   ]
+  },
+  "palette top edge": {
+   "start": "#131313",
+   "edges": [
+    {
+     "at": 78.0,
+     "color": "#1c1c1c"
+    },
+    {
+     "at": 79.0,
+     "color": "#141414"
+    },
+    {
+     "at": 80.0,
+     "color": "#141414"
+    }
+   ],
+   "vertical": true
+  },
+  "search icon": {
+   "top": 95.5,
+   "left": 299.0,
+   "bottom": 107.5,
+   "right": 311.5,
+   "color": "#6c6c6c",
+   "bg": "#141414"
+  },
+  "search placeholder": {
+   "top": 97.0,
+   "left": 320.0,
+   "bottom": 109.5,
+   "right": 584.5,
+   "color": "#676767",
+   "bg": "#141414"
+  },
+  "section label": {
+   "top": 140.5,
+   "left": 296.5,
+   "bottom": 149.5,
+   "right": 338.0,
+   "color": "#888888",
+   "bg": "#141414"
+  },
+  "highlighted item": {
+   "color": "#28282b"
+  },
+  "item 1 icon": {
+   "top": 166.5,
+   "left": 298.0,
+   "bottom": 179.5,
+   "right": 311.5,
+   "color": "#838383",
+   "bg": "#28282b"
+  },
+  "item 1 title": {
+   "top": 168.0,
+   "left": 320.0,
+   "bottom": 178.5,
+   "right": 455.5,
+   "color": "#e8e8e8",
+   "bg": "#28282b"
+  },
+  "item 1 shortcut": {
+   "top": 168.5,
+   "left": 773.5,
+   "bottom": 177.0,
+   "right": 802.5,
+   "color": "#a0a0a0",
+   "bg": "#28282b"
+  },
+  "item 2 title": {
+   "top": 198.0,
+   "left": 320.0,
+   "bottom": 208.5,
+   "right": 418.0,
+   "color": "#e8e8e8",
+   "bg": "#141414"
+  },
+  "item 3 title": {
+   "top": 228.0,
+   "left": 320.0,
+   "bottom": 241.0,
+   "right": 500.0,
+   "color": "#e8e8e8",
+   "bg": "#151515"
+  }
+ }
+}

@@ -62,6 +62,8 @@ pub fn build_thread_items(
                     run: PaletteRun::Event(PaletteEvent::OpenThread { thread: thread.key.clone(), query: Default::default() }),
                     keep_open: false,
                 },
+                hide_chevron: false,
+                project: None,
             })
         })
         .collect()

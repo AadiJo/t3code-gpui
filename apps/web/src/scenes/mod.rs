@@ -56,6 +56,7 @@ pub fn scenes() -> &'static [(&'static str, SceneBuilder)] {
         ("git-actions", git_actions::build),
         ("git-actions-light", git_actions::build_light),
         ("git-actions-panel", git_actions::build_panel),
+        ("thread-details-all", git_actions::build_panel_all),
         ("git-actions-panel-light", git_actions::build_panel_light),
         ("files", files::build),
         ("files-light", files::build_light),

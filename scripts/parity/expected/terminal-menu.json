@@ -1,0 +1,229 @@
+{
+ "default": {
+  "titlebar fill": {
+   "color": "#141415"
+  },
+  "sidebar fill (top)": {
+   "color": "#181819"
+  },
+  "sidebar edge": {
+   "start": "#171818",
+   "edges": [
+    {
+     "at": 255.0,
+     "color": "#141415"
+    },
+    {
+     "at": 256.0,
+     "color": "#141415"
+    }
+   ]
+  },
+  "sidebar toggle": {
+   "top": 19.0,
+   "left": 90.5,
+   "bottom": 33.0,
+   "right": 103.5,
+   "color": "#8f8f8f",
+   "bg": "#181819"
+  },
+  "right toggles": {
+   "top": 19.0,
+   "left": 1002.5,
+   "bottom": 33.0,
+   "right": 1079.5,
+   "color": "#8f8f8f",
+   "bg": "#141415"
+  },
+  "breadcrumb monogram": {
+   "top": 19.0,
+   "left": 276.0,
+   "bottom": 33.0,
+   "right": 290.0,
+   "color": "#00d5be",
+   "bg": "#141415"
+  },
+  "breadcrumb project": {
+   "top": 20.5,
+   "left": 296.0,
+   "bottom": 31.5,
+   "right": 342.5,
+   "color": "#8f8f8f",
+   "bg": "#141415"
+  },
+  "breadcrumb slash": {
+   "top": 20.0,
+   "left": 355.0,
+   "bottom": 32.5,
+   "right": 360.0,
+   "color": "#8a8a8a",
+   "bg": "#141415"
+  },
+  "breadcrumb title": {
+   "top": 20.0,
+   "left": 372.5,
+   "bottom": 34.0,
+   "right": 491.5,
+   "color": "#f5f5f5",
+   "bg": "#141415"
+  },
+  "dev badge": {
+   "top": 22.5,
+   "left": 8.5,
+   "bottom": 30.5,
+   "right": 26.5,
+   "color": "#f5f5f5",
+   "bg": "#212121"
+  },
+  "menu left/right edges": {
+   "start": "#141415",
+   "edges": [
+    {
+     "at": 400.0,
+     "color": "#181819"
+    },
+    {
+     "at": 401.0,
+     "color": "#181819"
+    },
+    {
+     "at": 414.0,
+     "color": "#2d2d2e"
+    },
+    {
+     "at": 415.5,
+     "color": "#181819"
+    },
+    {
+     "at": 419.0,
+     "color": "#767677"
+    },
+    {
+     "at": 422.5,
+     "color": "#181819"
+    },
+    {
+     "at": 427.0,
+     "color": "#808082"
+    },
+    {
+     "at": 428.5,
+     "color": "#1a1a1c"
+    },
+    {
+     "at": 431.0,
+     "color": "#959596"
+    },
+    {
+     "at": 432.0,
+     "color": "#181819"
+    },
+    {
+     "at": 435.0,
+     "color": "#828283"
+    },
+    {
+     "at": 438.0,
+     "color": "#242426"
+    },
+    {
+     "at": 439.5,
+     "color": "#181819"
+    },
+    {
+     "at": 443.0,
+     "color": "#181819"
+    },
+    {
+     "at": 447.5,
+     "color": "#707070"
+    },
+    {
+     "at": 449.0,
+     "color": "#181819"
+    },
+    {
+     "at": 527.0,
+     "color": "#141415"
+    },
+    {
+     "at": 528.0,
+     "color": "#141415"
+    }
+   ]
+  },
+  "menu top/bottom": {
+   "start": "#141415",
+   "edges": [
+    {
+     "at": 626.0,
+     "color": "#181819"
+    },
+    {
+     "at": 627.0,
+     "color": "#181819"
+    },
+    {
+     "at": 723.5,
+     "color": "#d7d7d7"
+    },
+    {
+     "at": 734.0,
+     "color": "#181819"
+    },
+    {
+     "at": 775.0,
+     "color": "#141415"
+    },
+    {
+     "at": 776.0,
+     "color": "#141415"
+    }
+   ],
+   "vertical": true
+  },
+  "menu fill": {
+   "color": "#181819"
+  },
+  "menu add to chat (disabled)": {
+   "top": 640.0,
+   "left": 413.5,
+   "bottom": 650.0,
+   "right": 490.5,
+   "color": "#646464",
+   "bg": "#181819"
+  },
+  "menu copy (disabled)": {
+   "top": 667.5,
+   "left": 414.0,
+   "bottom": 681.0,
+   "right": 447.5,
+   "color": "#646464",
+   "bg": "#181819"
+  },
+  "menu paste": {
+   "top": 695.5,
+   "left": 414.0,
+   "bottom": 706.5,
+   "right": 449.5,
+   "color": "#f5f5f5",
+   "bg": "#181819"
+  },
+  "menu select all": {
+   "top": 723.5,
+   "left": 413.5,
+   "bottom": 734.5,
+   "right": 471.5,
+   "color": "#f5f5f5",
+   "bg": "#181819"
+  },
+  "menu jump to latest": {
+   "top": 751.5,
+   "left": 413.5,
+   "bottom": 765.0,
+   "right": 506.5,
+   "color": "#f5f5f5",
+   "bg": "#181819"
+  }
+ }
+}

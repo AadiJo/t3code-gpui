@@ -1,0 +1,134 @@
+{
+ "default": {
+  "back arrow": {
+   "top": 96.5,
+   "left": 298.5,
+   "bottom": 106.5,
+   "right": 308.5,
+   "color": "#bdbdbd",
+   "bg": "#141414"
+  },
+  "search placeholder": {
+   "top": 97.5,
+   "left": 320.0,
+   "bottom": 107.0,
+   "right": 373.5,
+   "color": "#676767",
+   "bg": "#141414"
+  },
+  "section label": {
+   "top": 140.5,
+   "left": 297.5,
+   "bottom": 151.5,
+   "right": 341.0,
+   "color": "#888888",
+   "bg": "#141414"
+  },
+  "project 1 favicon": {
+   "top": 166.0,
+   "left": 297.0,
+   "bottom": 181.0,
+   "right": 312.0,
+   "color": "#00d5be",
+   "bg": "#141414"
+  },
+  "project 1 title": {
+   "top": 168.0,
+   "left": 319.0,
+   "bottom": 178.5,
+   "right": 361.0,
+   "color": "#e8e8e8",
+   "bg": "#141414"
+  },
+  "project 1 location": {
+   "top": 184.5,
+   "left": 319.5,
+   "bottom": 195.5,
+   "right": 739.0,
+   "color": "#656565",
+   "bg": "#141414"
+  },
+  "no project row": {
+   "top": 214.0,
+   "left": 297.5,
+   "bottom": 226.0,
+   "right": 384.0,
+   "color": "#e8e8e8",
+   "bg": "#151515"
+  },
+  "project 2 favicon": {
+   "top": 241.0,
+   "left": 297.0,
+   "bottom": 256.0,
+   "right": 312.0,
+   "color": "#a684ff",
+   "bg": "#141414"
+  }
+ },
+ "owner": {
+  "back arrow": {
+   "top": 96.5,
+   "left": 298.5,
+   "bottom": 106.5,
+   "right": 308.5,
+   "color": "#bdbdbd",
+   "bg": "#141414"
+  },
+  "search placeholder": {
+   "top": 97.5,
+   "left": 320.0,
+   "bottom": 107.0,
+   "right": 373.5,
+   "color": "#676767",
+   "bg": "#141414"
+  },
+  "section label": {
+   "top": 140.5,
+   "left": 297.5,
+   "bottom": 151.5,
+   "right": 341.0,
+   "color": "#888888",
+   "bg": "#141414"
+  },
+  "project 1 favicon": {
+   "top": 166.0,
+   "left": 297.0,
+   "bottom": 181.0,
+   "right": 312.0,
+   "color": "#00d5be",
+   "bg": "#141414"
+  },
+  "project 1 title": {
+   "top": 168.0,
+   "left": 319.0,
+   "bottom": 178.5,
+   "right": 361.0,
+   "color": "#e8e8e8",
+   "bg": "#141414"
+  },
+  "project 1 location": {
+   "top": 184.5,
+   "left": 319.5,
+   "bottom": 195.5,
+   "right": 739.0,
+   "color": "#656565",
+   "bg": "#141414"
+  },
+  "no project row": {
+   "top": 214.0,
+   "left": 297.5,
+   "bottom": 226.0,
+   "right": 384.0,
+   "color": "#e8e8e8",
+   "bg": "#151515"
+  },
+  "project 2 favicon": {
+   "top": 241.0,
+   "left": 297.0,
+   "bottom": 256.0,
+   "right": 312.0,
+   "color": "#a684ff",
+   "bg": "#141414"
+  }
+ }
+}

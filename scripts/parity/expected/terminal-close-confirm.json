@@ -1,0 +1,100 @@
+{
+ "default": {
+  "dialog left/right edges": {
+   "start": "#111111",
+   "edges": [
+    {
+     "at": 294.0,
+     "color": "#141414"
+    },
+    {
+     "at": 295.0,
+     "color": "#141414"
+    },
+    {
+     "at": 805.0,
+     "color": "#111111"
+    },
+    {
+     "at": 806.0,
+     "color": "#111111"
+    }
+   ]
+  },
+  "dialog top/bottom": {
+   "start": "#151515",
+   "edges": [
+    {
+     "at": 305.0,
+     "color": "#1c1c1c"
+    },
+    {
+     "at": 306.0,
+     "color": "#141414"
+    },
+    {
+     "at": 307.0,
+     "color": "#141414"
+    },
+    {
+     "at": 335.0,
+     "color": "#666666"
+    },
+    {
+     "at": 350.0,
+     "color": "#141414"
+    },
+    {
+     "at": 410.0,
+     "color": "#1d1d1d"
+    },
+    {
+     "at": 411.0,
+     "color": "#1d1d1d"
+    },
+    {
+     "at": 475.0,
+     "color": "#0c0c0c"
+    },
+    {
+     "at": 476.0,
+     "color": "#0c0c0c"
+    }
+   ],
+   "vertical": true
+  },
+  "dialog body fill": {
+   "color": "#151515"
+  },
+  "dialog footer fill": {
+   "color": "#1d1d1d"
+  },
+  "dialog title": {
+   "top": 334.5,
+   "left": 320.0,
+   "bottom": 350.5,
+   "right": 591.0,
+   "color": "#f5f5f5",
+   "bg": "#141414"
+  },
+  "dialog description": {
+   "top": 370.5,
+   "left": 319.5,
+   "bottom": 384.0,
+   "right": 661.0,
+   "color": "#8f8f8f",
+   "bg": "#151515"
+  },
+  "cancel and confirm": {
+   "top": 427.0,
+   "left": 628.0,
+   "bottom": 460.0,
+   "right": 781.0,
+   "color": "#ff6b66",
+   "bg": "#1d1d1d"
+  },
+  "backdrop": {
+   "color": "#151516"
+  }
+ }
+}

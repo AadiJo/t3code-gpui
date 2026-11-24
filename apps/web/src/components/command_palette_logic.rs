@@ -126,6 +126,23 @@ pub struct PaletteItem {
     pub thread: Option<Arc<PaletteThread>>,
     pub trailing: Option<PaletteTrailing>,
     pub kind: PaletteItemKind,
+    /// A page row that draws no chevron ("Add project" opens its flow in place).
+    pub hide_chevron: bool,
+    /// A project row: favicon, location line and pin button.
+    pub project: Option<PaletteProjectRow>,
+}
+
+/// What a project row shows besides its title (`buildProjectActionItems`).
+#[derive(Clone, Debug)]
+pub struct PaletteProjectRow {
+    pub project_ref: ProjectRef,
+    pub name: SharedString,
+    /// The environment's location label ("Local", or the machine's name).
+    pub location: Option<SharedString>,
+    pub workspace_root: SharedString,
+    /// The project new threads go to now ("Current ·").
+    pub current: bool,
+    pub pinned: bool,
 }
 
 impl PaletteItem {
@@ -146,6 +163,8 @@ impl PaletteItem {
             thread: None,
             trailing: None,
             kind: PaletteItemKind::Action { run, keep_open: false },
+            hide_chevron: false,
+            project: None,
         };
         item.set_terms(search_terms.iter().map(|t| SharedString::from(t.to_string())));
         item
@@ -200,6 +219,12 @@ impl PaletteItem {
 
     pub fn trailing(mut self, trailing: PaletteTrailing) -> Self {
         self.trailing = Some(trailing);
+        self
+    }
+
+    /// Leaves the page chevron off.
+    pub fn without_chevron(mut self) -> Self {
+        self.hide_chevron = true;
         self
     }
 

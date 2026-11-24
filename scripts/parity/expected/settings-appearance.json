@@ -1,0 +1,198 @@
+{
+ "default": {
+  "modal fill (content)": {
+   "color": "#1c1c1c"
+  },
+  "nav search kbd": {
+   "top": 59.5,
+   "left": 252.0,
+   "bottom": 70.5,
+   "right": 256.5,
+   "color": "#8f8f8f",
+   "bg": "#141415"
+  },
+  "breadcrumb": {
+   "top": 59.0,
+   "left": 301.5,
+   "bottom": 73.0,
+   "right": 467.0,
+   "color": "#f5f5f5",
+   "bg": "#141415"
+  },
+  "close button": {
+   "top": 60.5,
+   "left": 1032.5,
+   "bottom": 69.5,
+   "right": 1041.5,
+   "color": "#8f8f8f",
+   "bg": "#141415"
+  },
+  "h3 Color scheme": {
+   "top": 121.0,
+   "left": 327.5,
+   "bottom": 133.5,
+   "right": 433.0,
+   "color": "#f5f5f5",
+   "bg": "#141415"
+  },
+  "system tile": {
+   "top": 154.0,
+   "left": 312.0,
+   "bottom": 332.0,
+   "right": 541.0,
+   "color": "#ffffff",
+   "bg": "#141415"
+  },
+  "dark tile": {
+   "top": 163.0,
+   "left": 814.0,
+   "bottom": 320.5,
+   "right": 1008.0,
+   "color": "#f5f5f5",
+   "bg": "#141415"
+  },
+  "h3 Themes": {
+   "top": 371.0,
+   "left": 327.5,
+   "bottom": 383.5,
+   "right": 388.5,
+   "color": "#f5f5f5",
+   "bg": "#141415"
+  },
+  "create theme left edge": {
+   "start": "#141415",
+   "edges": [
+    {
+     "at": 805.0,
+     "color": "#1d1d1f"
+    },
+    {
+     "at": 806.0,
+     "color": "#1d1d1f"
+    }
+   ]
+  },
+  "create theme right edge": {
+   "start": "#1d1d1f",
+   "edges": [
+    {
+     "at": 912.0,
+     "color": "#141415"
+    },
+    {
+     "at": 913.0,
+     "color": "#141415"
+    }
+   ]
+  },
+  "create theme top/bottom": {
+   "start": "#141415",
+   "edges": [
+    {
+     "at": 366.5,
+     "color": "#1d1d1f"
+    },
+    {
+     "at": 386.0,
+     "color": "#131314"
+    }
+   ],
+   "vertical": true
+  },
+  "add theme left edge": {
+   "start": "#141415",
+   "edges": [
+    {
+     "at": 921.0,
+     "color": "#1d1d1f"
+    },
+    {
+     "at": 922.0,
+     "color": "#1d1d1f"
+    }
+   ]
+  },
+  "add theme right edge": {
+   "start": "#1d1d1f",
+   "edges": [
+    {
+     "at": 1012.0,
+     "color": "#141415"
+    },
+    {
+     "at": 1013.0,
+     "color": "#141415"
+    }
+   ]
+  },
+  "add theme top/bottom": {
+   "start": "#141415",
+   "edges": [
+    {
+     "at": 366.5,
+     "color": "#1d1d1f"
+    },
+    {
+     "at": 386.0,
+     "color": "#131314"
+    }
+   ],
+   "vertical": true
+  },
+  "T3 Code light sphere": {
+   "top": 422.0,
+   "left": 424.0,
+   "bottom": 474.0,
+   "right": 476.0,
+   "color": "#f8f8fa",
+   "bg": "#1c1c1c"
+  },
+  "T3 Code name": {
+   "top": 496.5,
+   "left": 324.5,
+   "bottom": 507.5,
+   "right": 381.0,
+   "color": "#f5f5f5",
+   "bg": "#1c1c1c"
+  },
+  "T3 Code duplicate left edge": {
+   "start": "#1c1c1c",
+   "edges": [
+    {
+     "at": 634.5,
+     "color": "#6a6a6a"
+    }
+   ]
+  },
+  "T3 Code duplicate right edge": {
+   "start": "#1c1c1c",
+   "edges": [
+    {
+     "at": 647.5,
+     "color": "#1c1c1c"
+    }
+   ]
+  },
+  "T3 Code duplicate top/bottom": {
+   "start": "#1c1c1c",
+   "edges": [],
+   "vertical": true
+  },
+  "T3 Chat light sphere": {
+   "top": 422.0,
+   "left": 787.0,
+   "bottom": 474.0,
+   "right": 839.0,
+   "color": "#f7d3e5",
+   "bg": "#1c1c1c"
+  },
+  "Grove light sphere": {
+   "top": 556.0,
+   "left": 424.0,
+   "bottom": 608.0,
+   "right": 476.0,
+   "color": "#dbe3d7",
+   "bg": "#1c1c1c"
+  }
+ }
+}

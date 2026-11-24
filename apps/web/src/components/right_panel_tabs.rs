@@ -633,6 +633,17 @@ impl RightPanel {
         cx.emit(RightPanelEvent::Changed);
     }
 
+    /// Opens the Linked items tab (`open(threadRef, "pull-requests")`).
+    pub fn open_linked_items(&mut self, cx: &mut Context<Self>) {
+        self.launch(Launch::Surface(SingletonKind::PullRequests), cx);
+    }
+
+    /// Opens a server browser tab (`openBrowser(threadRef, tabId)`).
+    pub fn open_browser_tab(&mut self, tab: &str, cx: &mut Context<Self>) {
+        let surface = RightPanelSurface::Preview { id: format!("browser:{tab}"), resource_id: Some(tab.to_owned()) };
+        self.edit(cx, |store, thread| store.open_surface(thread, surface));
+    }
+
     fn launch(&mut self, launch: Launch, cx: &mut Context<Self>) {
         match launch {
             Launch::Surface(kind) => self.edit(cx, |store, thread| store.open(thread, kind)),

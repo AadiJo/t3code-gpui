@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use gpui_kit::{
     AnyElement, App, AppContext as _, Context, Entity, EventEmitter, IntoElement, ParentElement as _, Render,
-    SharedString, Styled as _, Task, TestSupportExt as _, Window, component::input::TextareaState, div, prelude::*, px,
+    SharedString, Styled as _, Subscription, Task, TestSupportExt as _, Window, component::input::TextareaState, div, prelude::*, px,
 };
 use t3code_contracts::{
     GitRunStackedActionInput, GitRunStackedActionResultPrStatus, GitStackedAction, ProjectId, ThreadId,
@@ -17,7 +17,7 @@ use t3code_contracts::{
 };
 
 use super::chat::thread_details_panel_styles::{
-    DismissPress, ROW_HEIGHT, below_row, observed, row, row_base, row_busy_fill, row_icon, split_row, split_secondary,
+    DismissPress, row_height, row_icon_size, row_width, below_row, observed, row, row_base, row_busy_fill, row_icon, split_row, split_secondary,
 };
 use super::git_actions_control_logic::{
     GitActionIcon, GitActionMenuItem, GitDialogAction, GitQuickAction, GitQuickActionKind, ToastOutcome,
@@ -27,8 +27,9 @@ use super::git_actions_control_logic::{
     resolve_git_action_progress_presentation, resolve_git_action_result_toast_timing, resolve_quick_action,
     resolve_thread_branch_update, GIT_ACTION_SUCCESS_VISIBLE_MS,
 };
+use super::git_actions_control_publish::{PublishRepositoryDialog, PublishRepositoryEvent};
 use super::git_actions_control_source::{InlineSuccess, SourceControlError, SourceControlModel, now_ms};
-use super::icons::{Icon, IconName, IconSize};
+use super::icons::{Icon, IconName, IconSize, IconSource};
 use super::ui::button::{Button, ButtonSize, ButtonVariant};
 use super::ui::checkbox::{CheckState, Checkbox};
 use super::ui::dialog::{DialogSurface, Modal};
@@ -40,6 +41,7 @@ use super::ui::tooltip::tooltip;
 use super::ui::{DISABLED_OPACITY, TextStyleExt as _};
 use crate::appearance_fonts::{TextSize, mono_font, weight};
 use crate::i18n::t;
+use crate::source_control_presentation::source_control_presentation;
 use crate::theme_color::with_alpha;
 use crate::{ActiveAppTheme as _, AppTheme};
 
@@ -58,6 +60,8 @@ pub struct GitActionsProps {
     pub show_changes: bool,
     pub thread_id: Option<ThreadId>,
     pub project_id: Option<ProjectId>,
+    /// The server's `offeredSourceControlProviders`; unset offers GitHub only.
+    pub offered_source_control_providers: Option<std::collections::BTreeMap<String, bool>>,
 }
 
 /// What the rows ask their owner to do.
@@ -67,8 +71,10 @@ pub enum GitActionsEvent {
     OpenChanges,
     /// An action created a branch; the thread adopts it.
     ThreadBranchChanged(String),
-    /// "Publish repository" was chosen; the owner opens its dialog.
-    OpenPublish,
+    /// Open a link (the published repository's "Open on" button).
+    OpenUrl(String),
+    /// Open Settings > Source control & issues ("Setup Required").
+    OpenSourceControlSettings,
 }
 
 /// One action waiting on the default-branch confirmation (`PendingDefaultBranchAction`).
@@ -109,6 +115,8 @@ pub struct GitActionsControl {
     restore_message: Option<String>,
     /// Re-renders once a second while an action runs, for the elapsed time.
     ticker: Option<Task<()>>,
+    /// The Publish repository dialog while it is open.
+    publish: Option<(Entity<PublishRepositoryDialog>, Subscription)>,
 }
 
 impl EventEmitter<GitActionsEvent> for GitActionsControl {}
@@ -126,17 +134,24 @@ pub fn format_diff_count(count: u64) -> String {
     out
 }
 
-fn action_icon(icon: GitActionIcon) -> IconName {
+/// `GitActionItemIcon`: the pull request item draws the host's mark.
+fn action_icon(icon: GitActionIcon, host: IconSource) -> IconSource {
     match icon {
-        GitActionIcon::Commit => IconName::GitCommitHorizontal,
-        GitActionIcon::Push => IconName::CloudUpload,
-        GitActionIcon::Pr => IconName::GitPullRequestArrow,
+        GitActionIcon::Commit => IconName::GitCommitHorizontal.into(),
+        GitActionIcon::Push => IconName::CloudUpload.into(),
+        GitActionIcon::Pr => host,
     }
 }
 
-/// `GitQuickActionIcon`: a hint has no action, so it matches the label.
-fn quick_action_icon(quick: &GitQuickAction) -> IconName {
-    match &quick.kind {
+/// `GitQuickActionIcon`: a hint has no action, so it matches the label; a pull
+/// request action draws the host's mark.
+fn quick_action_icon(quick: &GitQuickAction, host: IconSource) -> IconSource {
+    if let GitQuickActionKind::RunAction(action) = &quick.kind
+        && !matches!(action, GitStackedAction::Commit | GitStackedAction::Push | GitStackedAction::CommitPush)
+    {
+        return host;
+    }
+    let name = match &quick.kind {
         GitQuickActionKind::OpenPublish => IconName::CloudUpload,
         GitQuickActionKind::RunPull => IconName::CloudDownload,
         GitQuickActionKind::RunAction(GitStackedAction::Commit) => IconName::GitCommitHorizontal,
@@ -147,20 +162,26 @@ fn quick_action_icon(quick: &GitQuickAction) -> IconName {
         }
         GitQuickActionKind::ShowHint(_) if quick.label == t!("Push", context = "verb, git action") => IconName::CloudUpload,
         GitQuickActionKind::ShowHint(_) => IconName::Info,
-    }
+    };
+    name.into()
 }
 
+/// A failed action's toast; it stays until dismissed (`timeout: 0`).
 fn error_toast(title: SharedString, error: &SourceControlError, cx: &mut App) {
-    // Errors stay until dismissed in the original; the toaster expires every toast.
-    let _ = resolve_git_action_result_toast_timing(ToastOutcome::Error);
+    let timing = resolve_git_action_result_toast_timing(ToastOutcome::Error);
     let description = if error.0.is_empty() { t!("An error occurred.") } else { error.0.clone() };
-    Toaster::push(ToastData::new(ToastKind::Error, title).description(description), cx);
+    let toast = ToastData::new(ToastKind::Error, title).description(description);
+    let toast = match timing.dismiss_after_visible_ms {
+        None => toast.persistent(),
+        Some(ms) => toast.timeout(Duration::from_millis(ms as u64)),
+    };
+    Toaster::push(toast, cx);
 }
 
 impl GitActionsControl {
     pub fn new(model: Entity<SourceControlModel>, props: GitActionsProps, cx: &mut Context<Self>) -> Self {
         cx.observe(&model, |_, _, cx| cx.notify()).detach();
-        Self { model, props, menu_open: false, commit_dialog: None, pending_default: None, dismissed: DismissPress::default(), restore_message: None, ticker: None }
+        Self { model, props, menu_open: false, commit_dialog: None, pending_default: None, dismissed: DismissPress::default(), restore_message: None, ticker: None, publish: None }
     }
 
     pub fn model(&self) -> &Entity<SourceControlModel> {
@@ -352,16 +373,42 @@ impl GitActionsControl {
             cx.update(|cx| {
                 model.update(cx, |m, cx| m.finish(None, cx));
                 if let Err(error) = result {
-                    error_toast(t!("Git initialization failed"), &error, cx);
+                    let description = if error.0.is_empty() { t!("An error occurred.") } else { error.0.clone() };
+                    Toaster::push(ToastData::new(ToastKind::Error, t!("Git initialization failed")).description(description), cx);
                 }
             })
         })
         .detach();
     }
 
-    fn run_quick_action(&mut self, quick: GitQuickAction, cx: &mut Context<Self>) {
+    /// Opens the Publish repository dialog (the quick action and the menu item).
+    pub fn open_publish(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.menu_open = false;
+        let (source, cwd) = {
+            let model = self.model.read(cx);
+            (model.source.clone(), model.cwd.clone())
+        };
+        let offered = self.props.offered_source_control_providers.clone();
+        let dialog = cx.new(|cx| PublishRepositoryDialog::new(source, cwd, offered, window, cx));
+        let subscription = cx.subscribe(&dialog, |this, _, event: &PublishRepositoryEvent, cx| {
+            match event {
+                PublishRepositoryEvent::Close => this.publish = None,
+                PublishRepositoryEvent::OpenSourceControlSettings => {
+                    this.publish = None;
+                    cx.emit(GitActionsEvent::OpenSourceControlSettings);
+                }
+                PublishRepositoryEvent::OpenUrl(url) => cx.emit(GitActionsEvent::OpenUrl(url.clone())),
+                PublishRepositoryEvent::Published => this.refresh_status(cx),
+            }
+            cx.notify();
+        });
+        self.publish = Some((dialog, subscription));
+        cx.notify();
+    }
+
+    fn run_quick_action(&mut self, quick: GitQuickAction, window: &mut Window, cx: &mut Context<Self>) {
         match quick.kind {
-            GitQuickActionKind::OpenPublish => cx.emit(GitActionsEvent::OpenPublish),
+            GitQuickActionKind::OpenPublish => self.open_publish(window, cx),
             GitQuickActionKind::RunPull => self.run_pull(cx),
             GitQuickActionKind::ShowHint(hint) => {
                 Toaster::push(ToastData::new(ToastKind::Info, quick.label).description(hint), cx);
@@ -452,6 +499,7 @@ impl GitActionsControl {
         let c = &theme.colors;
         let has_primary_remote = status.is_some_and(|s| s.has_primary_remote);
         let term = change_request_terminology_for(status).term_kind().as_str();
+        let host_icon = source_control_presentation(status.and_then(|s| s.source_control_provider.as_ref())).icon;
         let mut rows: Vec<AnyElement> = items
             .iter()
             .enumerate()
@@ -470,7 +518,7 @@ impl GitActionsControl {
                     .py(theme.sp(1.))
                     .rounded(theme.radii.sm)
                     .ui_text(theme, TextSize::Sm, weight::NORMAL)
-                    .child(div().mx(px(-2.)).child(Icon::new(action_icon(item.icon)).size(IconSize::Md).color(c.muted_foreground).opacity(0.8)))
+                    .child(div().mx(px(-2.)).child(Icon::new(action_icon(item.icon, host_icon)).size(IconSize::Custom(theme.rem(1.))).color(c.muted_foreground).opacity(0.8)))
                     .child(div().flex_1().min_w_0().truncate().child(item.label.clone()))
                     .when(disabled, |r| r.opacity(DISABLED_OPACITY))
                     .when_some(reason.filter(|_| item.disabled), |r, reason| r.tooltip(tooltip(reason)))
@@ -495,13 +543,12 @@ impl GitActionsControl {
                     .px(theme.sp(2.))
                     .rounded(theme.radii.sm)
                     .ui_text(theme, TextSize::Sm, weight::NORMAL)
-                    .child(Icon::new(IconName::CloudUpload).size(IconSize::Md).color(c.muted_foreground).opacity(0.8))
+                    .child(Icon::new(IconName::CloudUpload).size(IconSize::Custom(theme.rem(1.))).color(c.muted_foreground).opacity(0.8))
                     .child(t!("Publish repository..."))
                     .when(is_busy, |r| r.opacity(DISABLED_OPACITY))
                     .when(!is_busy, |r| {
-                        r.cursor_pointer().hover(move |s| s.bg(highlight)).on_click(cx.listener(|this, _, _, cx| {
-                            this.menu_open = false;
-                            cx.emit(GitActionsEvent::OpenPublish);
+                        r.cursor_pointer().hover(move |s| s.bg(highlight)).on_click(cx.listener(|this, _, window, cx| {
+                            this.open_publish(window, cx);
                         }))
                     })
                     .into_any_element(),
@@ -560,7 +607,7 @@ impl GitActionsControl {
                     .flex_1()
                     .min_w_0()
                     .items_baseline()
-                    .gap(px(6.))
+                    .gap(theme.rem(0.375))
                     .child(div().flex_none().child(t!("Changes")))
                     .children(base_label.map(|label| {
                         div().min_w_0().truncate().font_weight(weight::NORMAL).text_color(muted).child(label)
@@ -571,8 +618,8 @@ impl GitActionsControl {
                             .flex()
                             .flex_none()
                             .items_baseline()
-                            .gap(px(8.))
-                            .pl(px(8.))
+                            .gap(theme.rem(0.5))
+                            .pl(theme.rem(0.5))
                             .font(mono_font(weight::MEDIUM))
                             .child(div().text_color(if insertions > 0 { f.diff_addition_foreground } else { muted }).child(format!("+{}", format_diff_count(insertions))))
                             .child(div().text_color(if deletions > 0 { f.diff_deletion_foreground } else { muted }).child(format!("-{}", format_diff_count(deletions)))),
@@ -602,10 +649,10 @@ impl GitActionsControl {
                 .flex()
                 .w_full()
                 .items_center()
-                .gap(px(8.))
+                .gap(theme.rem(0.5))
                 .rounded(theme.radii.md)
-                .px(px(8.))
-                .py(px(4.))
+                .px(theme.rem(0.5))
+                .py(theme.rem(0.25))
                 .font(mono_font(weight::NORMAL))
                 .hover(|s| s.bg(with_alpha(c.highlight(), 0.5)))
                 .when(dialog.editing_files, |r| {
@@ -634,7 +681,7 @@ impl GitActionsControl {
                         .flex_1()
                         .min_w_0()
                         .justify_between()
-                        .gap(px(12.))
+                        .gap(theme.rem(0.75))
                         .child(div().flex_1().min_w_0().truncate().when(excluded, |d| d.text_color(muted)).child(file.path.clone()))
                         .child(if excluded {
                             div().flex_none().text_color(muted).child(t!("Excluded"))
@@ -651,17 +698,17 @@ impl GitActionsControl {
         let summary = div()
             .flex()
             .flex_col()
-            .gap(px(12.))
+            .gap(theme.rem(0.75))
             .rounded(theme.radii.xl)
             .bg(card_fill)
             .border_1()
             .border_color(ring)
-            .p(px(12.))
+            .p(theme.rem(0.75))
             .child(
                 div()
                     .flex()
                     .items_center()
-                    .gap(px(8.))
+                    .gap(theme.rem(0.5))
                     .child(div().text_color(muted).child(t!("Branch", context = "git branch")))
                     .child(
                         div()
@@ -685,7 +732,7 @@ impl GitActionsControl {
                         div()
                             .flex()
                             .items_center()
-                            .gap(px(8.))
+                            .gap(theme.rem(0.5))
                             .when(dialog.editing_files && !files.is_empty(), |d| {
                                 let all_paths: Vec<String> = files.iter().map(|f| f.path.clone()).collect();
                                 let state = if all_selected {
@@ -740,20 +787,20 @@ impl GitActionsControl {
                 div()
                     .flex()
                     .flex_col()
-                    .gap(px(8.))
+                    .gap(theme.rem(0.5))
                     .child(
                         div()
                             .id("commit-files")
-                            .h(px(176.))
+                            .h(theme.rem(11.))
                             .overflow_y_scroll()
                             .rounded(theme.radii.lg)
                             .bg(if theme.is_dark() { gpui_kit::hsla(0., 0., 1., 0.025) } else { c.card() })
                             .border_1()
                             .border_color(ring)
-                            .p(px(4.))
+                            .p(theme.rem(0.25))
                             .flex()
                             .flex_col()
-                            .gap(px(4.))
+                            .gap(theme.rem(0.25))
                             .children(file_rows),
                     )
                     .child(
@@ -761,20 +808,32 @@ impl GitActionsControl {
                             .flex()
                             .justify_end()
                             .font(mono_font(weight::NORMAL))
+                            // The total reads `+N/-N`; the per-file counts keep their spaces.
                             .child(div().text_color(f.diff_addition_foreground).child(format!("+{}", format_diff_count(selected.iter().map(|f| f.insertions).sum()))))
-                            .child(div().text_color(muted).child(" / "))
+                            .child(div().text_color(muted).child("/"))
                             .child(div().text_color(f.diff_deletion_foreground).child(format!("-{}", format_diff_count(selected.iter().map(|f| f.deletions).sum())))),
                     )
                     .into_any_element()
             });
         let surface = DialogSurface::new(t!("Commit changes"))
+            .bare_footer()
+            .on_close({
+                let this = cx.weak_entity();
+                move |_, cx| {
+                    this.update(cx, |this, cx| {
+                        this.commit_dialog = None;
+                        cx.notify();
+                    })
+                    .ok();
+                }
+            })
             .description(t!("Review and confirm your commit. Leave the message blank to auto-generate one."))
             .child(summary)
             .child(
                 div()
                     .flex()
                     .flex_col()
-                    .gap(px(4.))
+                    .gap(theme.rem(0.25))
                     .child(div().font_weight(weight::MEDIUM).child(t!("Commit message (optional)")))
                     .child(TextArea::new(&dialog.message)),
             )
@@ -890,6 +949,7 @@ impl Render for GitActionsControl {
         let is_default = status_ref.is_some_and(|s| s.is_default_ref);
         let items = build_menu_items(status_ref, is_busy, has_primary_remote);
         let quick = resolve_quick_action(status_ref, is_busy, is_default, has_primary_remote);
+        let host_icon = source_control_presentation(status_ref.and_then(|s| s.source_control_provider.as_ref())).icon;
         let disabled_reason = if !self.props.can_write_source_control {
             Some(t!("This connection cannot change source control."))
         } else if quick.disabled {
@@ -911,7 +971,7 @@ impl Render for GitActionsControl {
             can_publish,
             detached || clean_behind || status_error.is_some(),
         );
-        let row_width = theme.spacing.thread_details_panel_width - px(16.);
+        let row_width = self::row_width(&theme);
 
         let mut root = div().flex().flex_col().w_full();
         if self.props.show_actions {
@@ -933,11 +993,11 @@ impl Render for GitActionsControl {
                     let elapsed = format_git_action_elapsed(progress.started_at_ms, now);
                     row_base("git-primary", &theme, false, false)
                         .h_auto()
-                        .min_h(ROW_HEIGHT)
-                        .py(px(6.))
+                        .min_h(row_height(&theme))
+                        .py(theme.rem(0.375))
                         .items_start()
-                        .gap(px(12.))
-                        .child(div().h(px(18.)).flex().items_center().child(Spinner::new(SpinnerSize::Sm)))
+                        .gap(theme.rem(0.75))
+                        .child(div().h(theme.rem(1.125)).flex().items_center().child(Spinner::new(SpinnerSize::Sm)))
                         .child(
                             div()
                                 .flex()
@@ -948,7 +1008,7 @@ impl Render for GitActionsControl {
                                 .children(progress.output.clone().map(|output| {
                                     div()
                                         .id("git-progress-output")
-                                        .pt(px(2.))
+                                        .pt(theme.rem(0.125))
                                         .truncate()
                                         .ui_text(&theme, TextSize::Xs2, weight::NORMAL)
                                         .text_color(theme.colors.muted_foreground)
@@ -959,7 +1019,7 @@ impl Render for GitActionsControl {
                         .children(elapsed.map(|elapsed| {
                             div()
                                 .flex_none()
-                                .h(px(18.))
+                                .h(theme.rem(1.125))
                                 .flex()
                                 .items_center()
                                 .ui_text(&theme, TextSize::Xs2, weight::NORMAL)
@@ -969,16 +1029,16 @@ impl Render for GitActionsControl {
                 } else if let Some(success) = &success {
                     row_base("git-primary", &theme, false, false)
                         .h_auto()
-                        .min_h(ROW_HEIGHT)
-                        .py(px(6.))
+                        .min_h(row_height(&theme))
+                        .py(theme.rem(0.375))
                         .items_start()
-                        .gap(px(12.))
+                        .gap(theme.rem(0.75))
                         .child(
                             div()
-                                .h(px(18.))
+                                .h(theme.rem(1.125))
                                 .flex()
                                 .items_center()
-                                .child(Icon::new(IconName::Check).size(IconSize::Sm).color(theme.fixed.success)),
+                                .child(Icon::new(IconName::Check).size(IconSize::Custom(theme.rem(0.875))).color(theme.fixed.success)),
                         )
                         .child(
                             div()
@@ -989,7 +1049,7 @@ impl Render for GitActionsControl {
                                 .child(div().truncate().child(success.title.clone()))
                                 .children(success.description.clone().map(|d| {
                                     div()
-                                        .pt(px(2.))
+                                        .pt(theme.rem(0.125))
                                         .truncate()
                                         .ui_text(&theme, TextSize::Xs2, weight::NORMAL)
                                         .text_color(theme.colors.muted_foreground)
@@ -1000,11 +1060,11 @@ impl Render for GitActionsControl {
                     let enabled = self.props.can_write_source_control && !is_busy && !quick.disabled;
                     let quick_for_click = quick.clone();
                     let primary = row_base("git-primary", &theme, false, false)
-                        .child(row_icon(&theme, quick_action_icon(&quick)))
+                        .child(Icon::new(quick_action_icon(&quick, host_icon)).size(row_icon_size(&theme)).color(theme.colors.muted_foreground))
                         .child(div().flex_1().min_w_0().truncate().child(quick.label.clone()))
                         .tooltip(tooltip(disabled_reason.clone().unwrap_or_else(|| quick.label.clone())));
                     if enabled {
-                        primary.on_click(cx.listener(move |this, _, _, cx| this.run_quick_action(quick_for_click.clone(), cx)))
+                        primary.on_click(cx.listener(move |this, _, window, cx| this.run_quick_action(quick_for_click.clone(), window, cx)))
                     } else {
                         // `aria-disabled`: dimmed, and the reason shows on hover.
                         primary.opacity(DISABLED_OPACITY).cursor_not_allowed()
@@ -1043,6 +1103,9 @@ impl Render for GitActionsControl {
         }
         if let Some(pending) = self.pending_default.clone() {
             root = root.child(self.render_default_branch_dialog(&pending, status_ref, cx));
+        }
+        if let Some((dialog, _)) = &self.publish {
+            root = root.child(dialog.clone());
         }
         root
     }

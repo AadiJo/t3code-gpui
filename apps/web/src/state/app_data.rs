@@ -19,6 +19,7 @@ use crate::components::settings::server_settings_data::ServerPanelsModel;
 use crate::components::usage::usage_source::UsageSource;
 
 use crate::components::chat::composer::{ChatComposer, ComposerEvent, ComposerState};
+use crate::components::chat::thread_details_panel::{ThreadDetailsEvent, ThreadDetailsInput};
 use crate::components::chat::composer_command_menu::ComposerMenuSource;
 use crate::components::chat::messages_timeline::TimelineAction;
 use crate::components::chat::timeline_entries::{MessageId, PendingQuestion, TimelineInput};
@@ -83,6 +84,16 @@ pub enum ActionOutcome {
     /// Show this thread (a fork was created).
     OpenThread(ThreadKey),
     /// Put this text in the composer (edit from here, edit a queued message).
+    LoadComposer(SharedString),
+}
+
+/// What the route view does after a thread details card event ran.
+#[derive(Clone, Debug)]
+pub enum DetailsOutcome {
+    Done,
+    /// Show this browser tab (a server opened in the preview).
+    OpenBrowser(SharedString),
+    /// Put this task in the composer (Resolve, Fix).
     LoadComposer(SharedString),
 }
 
@@ -178,6 +189,17 @@ pub trait AppData: 'static {
 
     /// The branch toolbar's props for `view`; re-read whenever the thread changes.
     fn toolbar_props(&self, view: &ThreadView, cx: &mut App) -> BranchToolbarProps;
+
+    /// The details card's server facts for `view` (pull request, issues, servers, automations,
+    /// context window) on top of `base`; re-read whenever the thread changes.
+    fn thread_details(&self, _view: &ThreadView, base: ThreadDetailsInput, _cx: &mut App) -> ThreadDetailsInput {
+        base
+    }
+
+    /// Runs a details card event on `key` that needs the server. Navigation stays with the view.
+    fn thread_details_event(&self, _key: &ThreadKey, _event: &ThreadDetailsEvent, _cx: &mut App) -> Task<DetailsOutcome> {
+        Task::ready(DetailsOutcome::Done)
+    }
 
     /// How terminal tabs and the drawer start sessions.
     fn terminal_backends(&self, cx: &mut App) -> TerminalBackends;

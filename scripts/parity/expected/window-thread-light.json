@@ -1,0 +1,282 @@
+{
+ "default": {
+  "titlebar fill": {
+   "color": "#fcfcfc"
+  },
+  "sidebar fill": {
+   "color": "#f2f2f2"
+  },
+  "sidebar edge": {
+   "start": "#f2f2f2",
+   "edges": [
+    {
+     "at": 255.0,
+     "color": "#fcfcfc"
+    },
+    {
+     "at": 256.0,
+     "color": "#fcfcfc"
+    }
+   ]
+  },
+  "composer card sides": {
+   "start": "#fcfcfc",
+   "edges": [
+    {
+     "at": 304.0,
+     "color": "#fcfcfc"
+    },
+    {
+     "at": 305.0,
+     "color": "#fcfcfc"
+    },
+    {
+     "at": 1051.0,
+     "color": "#f9f9f9"
+    },
+    {
+     "at": 1052.0,
+     "color": "#fcfcfc"
+    }
+   ]
+  },
+  "composer card top/bottom": {
+   "start": "#fcfcfc",
+   "edges": [
+    {
+     "at": 652.5,
+     "color": "#fcfcfc"
+    },
+    {
+     "at": 654.0,
+     "color": "#fcfcfc"
+    },
+    {
+     "at": 755.0,
+     "color": "#f4f4f4"
+    },
+    {
+     "at": 756.0,
+     "color": "#f8f8f8"
+    },
+    {
+     "at": 757.5,
+     "color": "#fcfcfc"
+    }
+   ],
+   "vertical": true
+  },
+  "composer fill": {
+   "color": "#fcfcfc"
+  },
+  "composer placeholder": {
+   "top": 670.5,
+   "left": 321.5,
+   "bottom": 685.0,
+   "right": 600.0,
+   "color": "#a0a0a0",
+   "bg": "#fcfcfc"
+  },
+  "row 1 title": {
+   "top": 138.0,
+   "left": 18.5,
+   "bottom": 152.0,
+   "right": 137.5,
+   "color": "#141414",
+   "bg": "#e0e0e0"
+  },
+  "row 1 card edges": {
+   "start": "#f2f2f2",
+   "edges": [
+    {
+     "at": 8.0,
+     "color": "#e0e0e0"
+    },
+    {
+     "at": 19.0,
+     "color": "#3e3e3e"
+    },
+    {
+     "at": 21.0,
+     "color": "#e0e0e0"
+    },
+    {
+     "at": 25.5,
+     "color": "#e0e0e0"
+    },
+    {
+     "at": 81.0,
+     "color": "#e0e0e0"
+    },
+    {
+     "at": 126.0,
+     "color": "#e0e0e0"
+    },
+    {
+     "at": 127.5,
+     "color": "#e0e0e0"
+    },
+    {
+     "at": 130.0,
+     "color": "#e0e0e0"
+    },
+    {
+     "at": 134.0,
+     "color": "#e0e0e0"
+    },
+    {
+     "at": 135.5,
+     "color": "#e0e0e0"
+    },
+    {
+     "at": 247.0,
+     "color": "#f2f2f2"
+    },
+    {
+     "at": 255.0,
+     "color": "#e2e3e3"
+    }
+   ]
+  }
+ },
+ "owner": {
+  "titlebar fill": {
+   "color": "#fcfcfc"
+  },
+  "sidebar fill": {
+   "color": "#f2f2f2"
+  },
+  "sidebar edge": {
+   "start": "#f2f2f2",
+   "edges": [
+    {
+     "at": 255.0,
+     "color": "#fcfcfc"
+    },
+    {
+     "at": 256.0,
+     "color": "#fcfcfc"
+    }
+   ]
+  },
+  "composer card sides": {
+   "start": "#fcfcfc",
+   "edges": [
+    {
+     "at": 304.0,
+     "color": "#fcfcfc"
+    },
+    {
+     "at": 305.0,
+     "color": "#fcfcfc"
+    },
+    {
+     "at": 1051.0,
+     "color": "#f9f9f9"
+    },
+    {
+     "at": 1052.0,
+     "color": "#fcfcfc"
+    }
+   ]
+  },
+  "composer card top/bottom": {
+   "start": "#fcfcfc",
+   "edges": [
+    {
+     "at": 652.5,
+     "color": "#fcfcfc"
+    },
+    {
+     "at": 654.0,
+     "color": "#fcfcfc"
+    },
+    {
+     "at": 755.0,
+     "color": "#f4f4f4"
+    },
+    {
+     "at": 756.0,
+     "color": "#f8f8f8"
+    },
+    {
+     "at": 757.5,
+     "color": "#fcfcfc"
+    }
+   ],
+   "vertical": true
+  },
+  "composer fill": {
+   "color": "#fcfcfc"
+  },
+  "composer placeholder": {
+   "top": 670.5,
+   "left": 321.5,
+   "bottom": 685.0,
+   "right": 600.0,
+   "color": "#a4a4a4",
+   "bg": "#fcfcfc"
+  },
+  "row 1 title": {
+   "top": 138.0,
+   "left": 18.5,
+   "bottom": 152.0,
+   "right": 137.5,
+   "color": "#1d1d1d",
+   "bg": "#e0e0e0"
+  },
+  "row 1 card edges": {
+   "start": "#f2f2f2",
+   "edges": [
+    {
+     "at": 8.0,
+     "color": "#e0e0e0"
+    },
+    {
+     "at": 19.0,
+     "color": "#454545"
+    },
+    {
+     "at": 21.0,
+     "color": "#e0e0e0"
+    },
+    {
+     "at": 25.5,
+     "color": "#e0e0e0"
+    },
+    {
+     "at": 81.0,
+     "color": "#e0e0e0"
+    },
+    {
+     "at": 126.0,
+     "color": "#e0e0e0"
+    },
+    {
+     "at": 127.5,
+     "color": "#e0e0e0"
+    },
+    {
+     "at": 130.0,
+     "color": "#e0e0e0"
+    },
+    {
+     "at": 134.0,
+     "color": "#e0e0e0"
+    },
+    {
+     "at": 135.5,
+     "color": "#e0e0e0"
+    },
+    {
+     "at": 247.0,
+     "color": "#f2f2f2"
+    },
+    {
+     "at": 255.0,
+     "color": "#e3e4e4"
+    }
+   ]
+  }
+ }
+}

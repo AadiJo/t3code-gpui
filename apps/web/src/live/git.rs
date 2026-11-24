@@ -7,8 +7,8 @@ use std::sync::Arc;
 use futures::{FutureExt as _, StreamExt as _};
 use gpui_kit::{App, SharedString};
 use t3code_contracts::rpc::methods::{
-    GitPreparePullRequestThread, GitResolvePullRequest, GitRunStackedAction, ProjectsMutate, PullRequestsDetail, ShellOpenInEditor,
-    SubscribeVcsStatus, VcsCreateRef, VcsInit, VcsListRefs, VcsPull, VcsRefreshStatus, VcsRemoveWorktree, VcsSwitchRef,
+    GitPreparePullRequestThread, GitResolvePullRequest, GitRunStackedAction, ProjectsMutate, PullRequestsDetail, ServerDiscoverSourceControl,
+    ShellOpenInEditor, SourceControlPublishRepository, SubscribeVcsStatus, VcsCreateRef, VcsInit, VcsListRefs, VcsPull, VcsRefreshStatus, VcsRemoveWorktree, VcsSwitchRef,
 };
 use t3code_contracts::*;
 
@@ -78,6 +78,12 @@ impl GitActionsSource for LiveGitSource {
     fn mutate_project(&self, input: ProjectMutation) -> RpcFuture<()> {
         unary(self.link.call::<ProjectsMutate>(input).map(|r| r.map(|_| ())).boxed())
     }
+    fn source_control_discovery(&self) -> RpcFuture<SourceControlDiscoveryResult> {
+        unary(self.link.call::<ServerDiscoverSourceControl>(Default::default()))
+    }
+    fn publish_repository(&self, input: SourceControlPublishRepositoryInput) -> RpcFuture<SourceControlPublishRepositoryResult> {
+        unary(self.link.call::<SourceControlPublishRepository>(input))
+    }
 }
 
 /// A source whose calls all fail: the thread's environment is not saved.
@@ -145,12 +151,16 @@ fn view_environment(data: &LiveData, view: &ThreadView, cx: &App) -> Option<Envi
     }
 }
 
+/// The environment's server runs on this machine (or no session says otherwise).
+pub fn is_loopback(link: Option<&RpcLink>) -> bool {
+    let host = link.and_then(|l| l.link.current_session()).and_then(|s| s.prepared.http_base_url.host_str().map(str::to_owned));
+    host.as_deref().is_none_or(|h| matches!(h, "localhost" | "127.0.0.1" | "[::1]" | "::1"))
+}
+
 /// `resolveRemoteOpenTarget`: a loopback server opens editors itself; another machine opens
 /// them here through the server's advertised SSH targets.
 fn remote_open_state(link: Option<&RpcLink>, config: Option<&ServerConfig>) -> RemoteOpenState {
-    let host = link.and_then(|l| l.link.current_session()).and_then(|s| s.prepared.http_base_url.host_str().map(str::to_owned));
-    let loopback = host.as_deref().is_some_and(|h| matches!(h, "localhost" | "127.0.0.1" | "[::1]" | "::1"));
-    if loopback || host.is_none() {
+    if is_loopback(link) {
         return resolve_remote_open_state(Some(&RemoteOpenTarget::Local));
     }
     let advertised = config
@@ -198,6 +208,7 @@ pub fn controls(data: &LiveData, view: &ThreadView, cx: &mut App) -> GitControls
             show_changes: true,
             thread_id,
             project_id: view.project_id.as_ref().map(|p| ProjectId::new(p.0.as_ref())),
+            offered_source_control_providers: config.as_ref().and_then(|c| c.settings.offered_source_control_providers.clone()),
         },
         scripts,
         editors,
@@ -262,5 +273,6 @@ pub fn toolbar_props(data: &LiveData, view: &ThreadView, cx: &mut App) -> Branch
         can_change_thread_branch: true,
         can_checkout_pull_request: true,
         show_git_controls: true,
+        pull_request_badge: row.as_ref().and_then(|row| crate::thread_pull_requests::strip_badge(row.source.pull_requests.as_deref()?)),
     }
 }
