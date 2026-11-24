@@ -144,13 +144,82 @@ pub fn interval_seconds_field(
         )
 }
 
+/// What a draft field commits to: the saved value and the commit callback,
+/// both replaced on every render so the callback sees current data.
+type Commit = Rc<dyn Fn(SharedString, &mut Window, &mut App)>;
+
+struct DraftBinding {
+    value: SharedString,
+    focused_value: SharedString,
+    on_commit: Commit,
+}
+
 /// Text fields a panel creates on first render, keyed by a stable name.
 #[derive(Default)]
 pub struct Fields {
     fields: HashMap<SharedString, Entity<InputState>>,
+    drafts: HashMap<SharedString, (Rc<std::cell::RefCell<DraftBinding>>, gpui_kit::Subscription)>,
 }
 
 impl Fields {
+    /// `DraftInput` / `useCommitOnBlur`: a field showing `value` that commits
+    /// its text on blur or Enter when it differs from both the value it had on
+    /// focus and the current value. While unfocused it follows `value`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn draft<V: 'static>(
+        &mut self,
+        key: impl Into<SharedString>,
+        value: impl Into<SharedString>,
+        placeholder: impl Into<SharedString>,
+        masked: bool,
+        window: &mut Window,
+        cx: &mut Context<V>,
+        on_commit: impl Fn(SharedString, &mut Window, &mut App) + 'static,
+    ) -> Entity<InputState> {
+        use gpui_kit::Focusable as _;
+        use gpui_kit::component::input::InputEvent;
+        let key = key.into();
+        let value = value.into();
+        let field = self.get(key.clone(), value.clone(), placeholder, masked, window, cx);
+        let on_commit: Commit = Rc::new(on_commit);
+        match self.drafts.get(&key) {
+            Some((binding, _)) => {
+                let mut binding = binding.borrow_mut();
+                binding.on_commit = on_commit;
+                if binding.value != value {
+                    binding.value = value.clone();
+                    if !field.read(cx).focus_handle(cx).is_focused(window) {
+                        field.update(cx, |state, cx| state.set_value(value, window, cx));
+                    }
+                }
+            }
+            None => {
+                let binding = Rc::new(std::cell::RefCell::new(DraftBinding { value: value.clone(), focused_value: value, on_commit }));
+                let shared = binding.clone();
+                let sub = cx.subscribe_in(&field, window, move |_, state, event: &InputEvent, window, cx| match event {
+                    InputEvent::Focus => {
+                        let mut b = shared.borrow_mut();
+                        b.focused_value = b.value.clone();
+                    }
+                    InputEvent::PressEnter { .. } => window.blur(cx),
+                    InputEvent::Blur => {
+                        let next = state.read(cx).value();
+                        let (changed, commit) = {
+                            let b = shared.borrow();
+                            (next != b.focused_value && next != b.value, b.on_commit.clone())
+                        };
+                        if changed {
+                            commit(next, window, cx);
+                        }
+                    }
+                    _ => {}
+                });
+                self.drafts.insert(key, (binding, sub));
+            }
+        }
+        field
+    }
+
     /// The field for `key`, created with `initial` and `placeholder` the first time.
     pub fn get<V: 'static>(
         &mut self,
@@ -192,11 +261,13 @@ impl Fields {
     /// Forgets a field so the next `get` recreates it from a new initial value.
     pub fn reset(&mut self, key: &str) {
         self.fields.remove(key);
+        self.drafts.remove(key);
     }
 
     /// Forgets every field whose key starts with `prefix`.
     pub fn reset_prefix(&mut self, prefix: &str) {
         self.fields.retain(|key, _| !key.starts_with(prefix));
+        self.drafts.retain(|key, _| !key.starts_with(prefix));
     }
 }
 

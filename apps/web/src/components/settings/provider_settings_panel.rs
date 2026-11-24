@@ -21,6 +21,7 @@ use t3code_contracts::{
 };
 
 use super::add_provider_instance_dialog::{AddProviderInstanceDialog, AddProviderInstanceEvent};
+use super::provider_accent_color_picker::ProviderAccentColorPicker;
 use super::provider_driver_meta::{DRIVERS, DriverMeta, FieldControl, driver_meta, local_acp_fields};
 use super::provider_status::{
     AdvisoryEmphasis, ProviderStatusKey, get_provider_status_key, get_provider_summary,
@@ -228,6 +229,10 @@ pub struct ProviderSettingsPanel {
     updating: BTreeSet<String>,
     /// Per-instance sign-in UI state (chosen method, last error).
     pub(super) auth_ui: HashMap<String, super::provider_authentication_section::AuthUi>,
+    /// One accent picker per instance, created on first render of its editor.
+    accent_pickers: HashMap<String, Entity<ProviderAccentColorPicker>>,
+    /// The page's content width, for the web's `@min-[48rem]/providers` query.
+    width: f32,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -244,6 +249,8 @@ impl ProviderSettingsPanel {
             confirm: None,
             updating: BTreeSet::new(),
             auth_ui: HashMap::new(),
+            accent_pickers: HashMap::new(),
+            width: 0.,
             _subscriptions: vec![observe],
         }
     }
@@ -806,53 +813,59 @@ impl ProviderSettingsPanel {
                 })),
         );
 
-        // Display name and accent.
-        let name_field = self.fields.get(
+        // Display name and accent: both save as soon as they change (no Save button).
+        let name_instance = instance.clone();
+        let name_id = row.instance_id.clone();
+        let this = cx.entity().downgrade();
+        let name_field = self.fields.draft(
             format!("{iid}:displayName"),
             instance.display_name.clone().unwrap_or_default(),
             meta.as_ref().map_or_else(|| t!("Instance label"), |m| SharedString::from(m.label)),
             false,
             window,
             cx,
+            move |text, _, cx| {
+                let name = text.trim().to_owned();
+                let mut next = name_instance.clone();
+                next.display_name = (!name.is_empty()).then_some(name);
+                let id = name_id.clone();
+                this.update(cx, |this, cx| this.persist_instance(&id, next, cx)).ok();
+            },
         );
-        let accent_field = self.fields.get(format!("{iid}:accent"), accent.clone().unwrap_or_default(), "#2563eb", false, window, cx);
-        let commit_instance = instance.clone();
-        let commit_id = row.instance_id.clone();
-        let fields_name = name_field.clone();
-        let fields_accent = accent_field.clone();
+        let picker = self
+            .accent_pickers
+            .entry(row.instance_id.clone())
+            .or_insert_with(|| cx.new(|cx| ProviderAccentColorPicker::new(window, cx)))
+            .clone();
+        let accent_instance = instance.clone();
+        let accent_id = row.instance_id.clone();
+        let this = cx.entity().downgrade();
+        picker.update(cx, |picker, cx| {
+            picker.sync(name.clone().into(), accent.as_deref(), move |color, _, cx| {
+                let mut next = accent_instance.clone();
+                next.accent_color = (!color.is_empty()).then_some(color);
+                let id = accent_id.clone();
+                this.update(cx, |this, cx| this.persist_instance(&id, next, cx)).ok();
+            }, window, cx)
+        });
         let display_row = SettingsRow::new(t!("Display name")).control(
             div()
                 .flex()
                 .items_center()
+                .justify_end()
                 .gap(theme.sp(2.))
                 .when(read_only, |d| d.opacity(0.5))
-                .child(div().w(theme.sp(24.)).child(field_input(&accent_field, true, false, read_only)))
-                .child(div().w(theme.sp(56.)).child(field_input(&name_field, false, false, read_only)))
-                .when(!read_only, |d| {
-                    d.child(
-                        Button::new(SharedString::from(format!("provider-save-name-{iid}")))
-                            .variant(ButtonVariant::Outline)
-                            .size(ButtonSize::Xs)
-                            .label(t!("Save"))
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                let name = fields_name.read(cx).value().trim().to_owned();
-                                let accent = normalize_provider_accent_color(Some(fields_accent.read(cx).value().as_ref()));
-                                let mut next = commit_instance.clone();
-                                next.display_name = (!name.is_empty()).then_some(name);
-                                next.accent_color = accent;
-                                this.persist_instance(&commit_id, next, cx);
-                            })),
-                    )
-                }),
+                .child(picker)
+                .child(div().w(theme.sp(56.)).child(field_input(&name_field, false, false, read_only))),
         );
 
-        let mut sections: Vec<AnyElement> = vec![
-            SettingsSection::new(name.clone())
-                .header_action(header_action)
-                .child(status_row)
-                .child(display_row)
-                .into_any_element(),
-        ];
+        let mut sections: Vec<AnyElement> = vec![detail_section(
+            name.clone().into(),
+            Some(provider_instance_icon(&row.driver, &name, accent.as_deref(), cx)),
+            Some(header_action.into_any_element()),
+            vec![status_row.into_any_element(), display_row.into_any_element()],
+            cx,
+        )];
 
         // Setup: sign-in and dedicated environment fields.
         let mut setup: Vec<AnyElement> = Vec::new();
@@ -877,13 +890,22 @@ impl ProviderSettingsPanel {
                     .find(|v| v.name == field.name)
                     .and_then(|v| v.value.clone())
                     .unwrap_or_default();
-                let input = self.fields.get(
+                let commit_instance = instance.clone();
+                let commit_id = row.instance_id.clone();
+                let (var_name, sensitive) = (field.name, field.sensitive);
+                let this = cx.entity().downgrade();
+                let input = self.fields.draft(
                     format!("{iid}:env:{}", field.name),
                     value,
                     field.placeholder.clone().unwrap_or_default(),
                     field.sensitive,
                     window,
                     cx,
+                    move |text, _, cx| {
+                        let next = with_environment_value(&commit_instance, var_name, None, text.trim(), sensitive);
+                        let id = commit_id.clone();
+                        this.update(cx, |this, cx| this.persist_instance(&id, next, cx)).ok();
+                    },
                 );
                 let locked = locks.as_ref().filter(|l| l.whole_environment || l.environment_names.contains(field.name)).map(|l| l.reason.clone());
                 let mut row_el = SettingsRow::new(field.label.clone())
@@ -895,7 +917,7 @@ impl ProviderSettingsPanel {
             }
         }
         if !setup.is_empty() {
-            let mut section = SettingsSection::new(t!("Setup"));
+            let mut section = FlatSection::new(t!("Setup"));
             section.extend(setup);
             sections.push(section.into_any_element());
         }
@@ -908,7 +930,7 @@ impl ProviderSettingsPanel {
         };
         match &meta {
             Some(meta) if !form_fields.is_empty() => {
-                let mut section = SettingsSection::new(t!("Runtime"));
+                let mut section = FlatSection::new(t!("Runtime"));
                 for field in &form_fields {
                     section.extend([self.render_form_field(row, &instance, meta, field, locks.as_ref(), read_only, window, cx)]);
                 }
@@ -916,7 +938,7 @@ impl ProviderSettingsPanel {
             }
             None => {
                 sections.push(
-                    SettingsSection::new(t!("Runtime"))
+                    FlatSection::new(t!("Runtime"))
                         .child(SettingsRow::new(t!("Driver")).description(t!(
                             "This instance uses {driver}, which is not available in this build. Its configuration is preserved.",
                             driver = row.driver.clone()
@@ -995,32 +1017,17 @@ impl ProviderSettingsPanel {
                 let masked = field.control == FieldControl::Password;
                 let shown = if field.secret { String::new() } else { current.as_ref().and_then(|v| v.as_str()).unwrap_or_default().to_owned() };
                 let placeholder = if field.secret && current.is_some() { t!("Saved") } else { field.placeholder.clone().unwrap_or_default() };
-                let input = self.fields.get(format!("{iid}:cfg:{key}"), shown, placeholder, masked, window, cx);
-                let read = input.clone();
                 let clear_persist = field.clear_when_empty == super::provider_driver_meta::ClearWhenEmpty::Persist;
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(theme.sp(2.))
-                    .child(div().w(theme.sp(56.)).child(field_input(&input, true, false, read_only || lock.is_some())))
-                    .when(!read_only && lock.is_none(), |d| {
-                        d.child(
-                            Button::new(SharedString::from(format!("{iid}-cfg-save-{key}")))
-                                .variant(ButtonVariant::Outline)
-                                .size(ButtonSize::Xs)
-                                .label(t!("Save"))
-                                .on_click(move |_, _, cx| {
-                                    let text = read.read(cx).value().trim().to_owned();
-                                    let value = if text.is_empty() {
-                                        clear_persist.then(|| serde_json::Value::String(String::new()))
-                                    } else {
-                                        Some(serde_json::Value::String(text))
-                                    };
-                                    set_value(value, cx);
-                                }),
-                        )
-                    })
-                    .into_any_element()
+                let input = self.fields.draft(format!("{iid}:cfg:{key}"), shown, placeholder, masked, window, cx, move |text, _, cx| {
+                    let text = text.trim().to_owned();
+                    let value = if text.is_empty() {
+                        clear_persist.then(|| serde_json::Value::String(String::new()))
+                    } else {
+                        Some(serde_json::Value::String(text))
+                    };
+                    set_value(value, cx);
+                });
+                div().w(theme.sp(56.)).child(field_input(&input, true, false, read_only || lock.is_some())).into_any_element()
             }
         };
         let _ = meta;
@@ -1048,20 +1055,43 @@ impl ProviderSettingsPanel {
         let dedicated: BTreeSet<&str> = meta.map(|m| m.environment_fields.iter().map(|f| f.name).collect()).unwrap_or_default();
         let variables: Vec<_> = instance.environment.iter().flatten().filter(|v| !dedicated.contains(v.name.as_str())).cloned().collect();
         let whole = locks.is_some_and(|l| l.whole_environment);
-        let mut section = SettingsSection::new(t!("Environment"));
+        let mut section = FlatSection::new(t!("Environment"));
         if let Some(l) = locks.filter(|l| l.whole_environment) {
             section.extend([div().px(theme.sp(4.)).py(theme.sp(3.)).child(managed_notice(l.reason.clone(), cx)).into_any_element()]);
         }
         let mut body = div().flex().flex_col().gap(theme.sp(2.)).when(whole || read_only, |d| d.opacity(0.5));
         for (ix, variable) in variables.iter().enumerate() {
-            let name = self.fields.get(format!("{iid}:var:{ix}:name"), variable.name.clone(), "VARIABLE_NAME", false, window, cx);
-            let value = self.fields.get(
+            let sensitive = variable.sensitive == Some(true);
+            let (rename_instance, rename_id, old_name) = (instance.clone(), iid.clone(), variable.name.clone());
+            let this = cx.entity().downgrade();
+            let name = self.fields.draft(format!("{iid}:var:{ix}:name"), variable.name.clone(), "VARIABLE_NAME", false, window, cx, move |text, _, cx| {
+                let new_name = text.trim().to_owned();
+                if new_name.is_empty() {
+                    return;
+                }
+                let mut next = rename_instance.clone();
+                if let Some(vars) = next.environment.as_mut() {
+                    for v in vars.iter_mut().filter(|v| v.name == old_name) {
+                        v.name = new_name.clone();
+                    }
+                }
+                let id = rename_id.clone();
+                this.update(cx, |this, cx| this.persist_instance(&id, next, cx)).ok();
+            });
+            let (value_instance, value_id, var_name) = (instance.clone(), iid.clone(), variable.name.clone());
+            let this = cx.entity().downgrade();
+            let value = self.fields.draft(
                 format!("{iid}:var:{ix}:value"),
-                if variable.sensitive == Some(true) { String::new() } else { variable.value.clone().unwrap_or_default() },
-                if variable.sensitive == Some(true) { t!("Sensitive, stored separately") } else { t!("value", context = "placeholder for an environment variable value") },
-                variable.sensitive == Some(true),
+                if sensitive { String::new() } else { variable.value.clone().unwrap_or_default() },
+                if sensitive { t!("Sensitive, stored separately") } else { t!("value", context = "placeholder for an environment variable value") },
+                sensitive,
                 window,
                 cx,
+                move |text, _, cx| {
+                    let next = with_environment_value(&value_instance, &var_name, Some(&var_name), &text, sensitive);
+                    let id = value_id.clone();
+                    this.update(cx, |this, cx| this.persist_instance(&id, next, cx)).ok();
+                },
             );
             let remove_instance = instance.clone();
             let remove_name = variable.name.clone();
@@ -1196,7 +1226,7 @@ impl ProviderSettingsPanel {
                         .on_click(cx.listener(move |this, _, _, cx| this.set_model_hidden(&hide_id, &hide_slug, !is_hidden, cx))),
                 )
         }));
-        SettingsSection::new(t!("Models"))
+        FlatSection::new(t!("Models"))
             .child(
                 div()
                     .px(theme.sp(4.))
@@ -1374,6 +1404,123 @@ impl ProviderSettingsPanel {
     }
 }
 
+/// A `SettingsSection` inside the provider detail pane. The web flattens
+/// these (`[data-provider-detail] [data-slot=settings-group]` in `index.css`):
+/// no border, fill or shadow, only the heading and the row dividers.
+#[derive(IntoElement)]
+pub struct FlatSection {
+    title: SharedString,
+    icon: Option<AnyElement>,
+    header_action: Option<AnyElement>,
+    children: Vec<AnyElement>,
+}
+
+impl FlatSection {
+    pub fn new(title: impl Into<SharedString>) -> Self {
+        Self { title: title.into(), icon: None, header_action: None, children: Vec::new() }
+    }
+
+    pub fn icon(mut self, icon: AnyElement) -> Self {
+        self.icon = Some(icon);
+        self
+    }
+
+    pub fn header_action(mut self, action: impl IntoElement) -> Self {
+        self.header_action = Some(action.into_any_element());
+        self
+    }
+}
+
+impl ParentElement for FlatSection {
+    fn extend(&mut self, elements: impl IntoIterator<Item = AnyElement>) {
+        self.children.extend(elements);
+    }
+}
+
+impl gpui_kit::RenderOnce for FlatSection {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let theme = cx.app_theme();
+        let c = &theme.colors;
+        let divider = with_alpha(c.border, 0.5);
+        div()
+            .flex()
+            .flex_col()
+            .gap(theme.sp(2.5))
+            .child(
+                div()
+                    .flex()
+                    .items_start()
+                    .justify_between()
+                    .gap(theme.sp(4.))
+                    .min_h(theme.sp(7.))
+                    .px(theme.sp(4.))
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(theme.sp(2.))
+                            .min_h(theme.sp(7.))
+                            .ui_text(theme, TextSize::Base, weight::SEMIBOLD)
+                            .text_color(c.foreground())
+                            .children(self.icon)
+                            .child(self.title),
+                    )
+                    .children(self.header_action.map(|action| {
+                        div().flex().items_center().justify_end().min_h(theme.sp(7.)).min_w(theme.sp(7.)).child(action)
+                    })),
+            )
+            .child(div().flex().flex_col().text_color(c.foreground()).children(self.children.into_iter().enumerate().map(|(ix, child)| {
+                div().when(ix > 0, |d| d.border_t_1().border_color(divider)).child(child).into_any_element()
+            })))
+    }
+}
+
+fn detail_section(
+    title: SharedString,
+    icon: Option<AnyElement>,
+    header_action: Option<AnyElement>,
+    children: Vec<AnyElement>,
+    _cx: &App,
+) -> AnyElement {
+    let mut section = FlatSection::new(title);
+    if let Some(icon) = icon {
+        section = section.icon(icon);
+    }
+    if let Some(action) = header_action {
+        section = section.header_action(action);
+    }
+    section.extend(children);
+    section.into_any_element()
+}
+
+/// The instance with variable `name` set to `value`; an empty value removes
+/// a dedicated field's variable (`nextProviderEnvironmentWithFieldValue`).
+fn with_environment_value(instance: &StoredInstance, name: &str, existing: Option<&str>, value: &str, sensitive: bool) -> StoredInstance {
+    let mut next = instance.clone();
+    let mut vars = next.environment.clone().unwrap_or_default();
+    let target = existing.unwrap_or(name);
+    match vars.iter_mut().find(|v| v.name == target) {
+        Some(v) if existing.is_none() && value.is_empty() => {
+            let _ = v;
+            vars.retain(|v| v.name != target);
+        }
+        Some(v) => {
+            v.value = Some(value.to_owned());
+            v.value_redacted = None;
+        }
+        None if value.is_empty() => {}
+        None => vars.push(t3code_contracts::ProviderInstanceEnvironmentInnerItem {
+            name: name.to_owned(),
+            value: Some(value.to_owned()),
+            sensitive: Some(sensitive),
+            secret: None,
+            value_redacted: None,
+        }),
+    }
+    next.environment = (!vars.is_empty()).then_some(vars);
+    next
+}
+
 /// The provider health interval in effect, in seconds.
 pub fn health_interval_seconds(settings: &t3code_contracts::ServerSettings) -> u64 {
     let value = settings
@@ -1417,17 +1564,12 @@ impl Render for ProviderSettingsPanel {
         }
         let can_add = !snapshot.read_only && !allows_no_provider(snapshot.managed_policy.as_deref());
         let selected_row = rows.iter().find(|r| Some(&r.instance_id) == self.selected.as_ref()).cloned();
-        let list = div()
-            .id("provider-list")
+        // `@min-[48rem]/providers`: list and detail side by side once the page is
+        // 48rem wide, otherwise the detail sits under the list.
+        let wide = self.width >= f32::from(theme.rem(48.));
+        let list_rows = div()
             .flex()
             .flex_col()
-            .flex_none()
-            .w(theme.rem(17.))
-            .h_full()
-            .overflow_y_scroll()
-            .border_r_1()
-            .border_color(with_alpha(c.border, 0.6))
-            .bg(with_alpha(c.muted, 0.1))
             .children(rows.iter().enumerate().map(|(ix, row)| {
                 div().when(ix > 0, |d| d.border_t_1().border_color(with_alpha(c.border, 0.5))).child(self.render_list_row(row, cx))
             }))
@@ -1461,16 +1603,51 @@ impl Render for ProviderSettingsPanel {
                 .into_any_element(),
         };
         let card = div()
-            .flex()
-            .h(theme.rem(44.))
-            .min_h(theme.rem(32.))
             .overflow_hidden()
             .rounded(theme.radii.xl)
             .border_1()
             .border_color(with_alpha(c.border, 0.6))
             .bg(with_alpha(c.card(), 0.4))
-            .child(list)
-            .child(div().id("provider-detail").flex_1().min_w_0().h_full().overflow_y_scroll().child(editor));
+            .shadow(theme.shadows.xs5.clone());
+        let card = if wide {
+            // `h-[min(44rem,calc(100dvh-11rem))] min-h-[32rem]`.
+            let height = theme.rem(44.).min(window.viewport_size().height - theme.rem(11.)).max(theme.rem(32.));
+            card.flex()
+                .h(height)
+                .child(
+                    div()
+                        .id("provider-list")
+                        .flex_none()
+                        .w(theme.rem(17.))
+                        .h_full()
+                        .overflow_y_scroll()
+                        .border_r_1()
+                        .border_color(with_alpha(c.border, 0.6))
+                        .bg(with_alpha(c.muted, 0.1))
+                        .child(list_rows),
+                )
+                .child(div().id("provider-detail").flex_1().min_w_0().h_full().overflow_y_scroll().child(editor))
+        } else {
+            card.flex()
+                .flex_col()
+                .child(div().border_b_1().border_color(with_alpha(c.border, 0.6)).bg(with_alpha(c.muted, 0.1)).child(list_rows))
+                .child(div().min_w_0().child(editor))
+        };
+        let panel = cx.entity();
+        let measure = gpui_kit::canvas(
+            move |bounds, _, cx| {
+                let width = f32::from(bounds.size.width);
+                panel.update(cx, |panel, cx| {
+                    if (panel.width - width).abs() > 0.5 {
+                        panel.width = width;
+                        cx.notify();
+                    }
+                });
+            },
+            |_, _, _, _| {},
+        )
+        .absolute()
+        .size_full();
         let title_row = div()
             .flex()
             .items_center()
@@ -1504,7 +1681,7 @@ impl Render for ProviderSettingsPanel {
         });
         let mut page = page_container(cx)
             .gap(theme.sp(8.))
-            .child(div().flex().flex_col().gap(theme.sp(2.5)).child(title_row).children(read_only_note).child(card))
+            .child(div().relative().flex().flex_col().gap(theme.sp(2.5)).child(measure).child(title_row).children(read_only_note).child(card))
             .child(self.render_usage_sources(cx));
         let allowed_drivers_policy = snapshot
             .managed_policy
