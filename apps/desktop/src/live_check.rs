@@ -31,11 +31,15 @@
 //   heic     a HEIC photo attaches as a JPEG fitted to 2000px and uploads; an unreadable one is
 //            refused. Linux has no HEIC decoder here, so run it with a stand-in `heif-convert`
 //            on PATH (the macOS build decodes with `sips`)
+//   wheel    scrolls an overflowing sidebar by wheel (event and draw in one update, trackpad
+//            gestures, mouse-wheel lines) down and back to the top; makes rows until it overflows.
+//            `drive` also reaches below-the-fold rows by wheel. A watchdog ends any phase that
+//            stops making progress for three minutes and names the last step
 //   import   a fresh data directory and a stand-in install (`T3CODE_IMPORT_HOME`, made by
 //            `import-check`, encrypted with the fixture macOS key): the launch import runs,
 //            the window explains the Keychain read, environments and settings arrive
 //
-// Usage: live-check <seed|drive|restart|import|send|sidebar|notify|details|mentions|heic> <out-dir>
+// Usage: live-check <seed|drive|restart|import|send|sidebar|notify|details|mentions|heic|wheel|probe> <out-dir>
 #[allow(dead_code)]
 #[path = "import/mod.rs"]
 mod import;
@@ -80,6 +84,23 @@ use t3code_web::state::shell::thread_key;
 use t3code_web::ui_state_store::StateDir;
 
 const STATE_FILE: &str = "live-state.json";
+
+/// The last transcript line and when it was written, for the watchdog.
+static LAST_NOTE: std::sync::Mutex<Option<(Instant, String)>> = std::sync::Mutex::new(None);
+
+/// Ends the process when no step has been noted for three minutes, naming the last one, so a
+/// call that never returns (a hang inside an event dispatch or a draw) fails instead of spinning.
+fn start_watchdog() {
+    std::thread::spawn(|| loop {
+        std::thread::sleep(Duration::from_secs(5));
+        if let Some((at, line)) = LAST_NOTE.lock().unwrap().as_ref()
+            && at.elapsed() > Duration::from_secs(180)
+        {
+            eprintln!("FAIL watchdog: no progress for {:.0}s after: {line}", at.elapsed().as_secs_f64());
+            std::process::exit(3);
+        }
+    });
+}
 
 /// What `seed` made, for the later phases.
 #[derive(Serialize, Deserialize, Default)]
@@ -191,6 +212,7 @@ impl Check {
 
     fn note(&mut self, text: impl AsRef<str>) {
         let line = format!("{:>8.3}s  {}", self.started.elapsed().as_secs_f64(), text.as_ref());
+        *LAST_NOTE.lock().unwrap() = Some((Instant::now(), line.clone()));
         println!("{line}");
         writeln!(self.log, "{line}").ok();
     }
@@ -285,6 +307,7 @@ impl Check {
     /// helpers of the test kit draw a whole frame before each event, so they are not used here.
     fn click_row(&mut self, key: &ThreadKey, label: &str) -> anyhow::Result<Duration> {
         self.frame();
+        self.reveal_row(key);
         let at = self.row_center(key).with_context(|| format!("no row for {label}"))?;
         self.cx.update_window(self.window, |_, w, cx| {
             w.dispatch_event(MouseMoveEvent { position: at, pressed_button: None, modifiers: Modifiers::default() }.to_platform_input(), cx);
@@ -305,6 +328,43 @@ impl Check {
         self.cx.run_until_parked();
         self.note(format!("click {label}: handler {:.2} ms, click-to-frame {:.2} ms", ms(handler), ms(to_frame)));
         Ok(to_frame)
+    }
+
+    /// Scrolls the sidebar with the wheel, as a user would, until a listed row is in view. The
+    /// list is virtualized, so a row below the fold has no bounds until it scrolls in.
+    fn reveal_row(&mut self, key: &ThreadKey) {
+        for _ in 0..60 {
+            let Some((ix, first)) = self.read(|root, cx| {
+                let sidebar = root.sidebar().read(cx);
+                let entries = &sidebar.list().entries;
+                let ix = entries.iter().position(|e| matches!(e, SidebarListEntry::Thread { thread, .. } if &thread.key == key))?;
+                Some((ix, (0..entries.len()).find(|i| sidebar.entry_bounds(*i).is_some())))
+            }) else {
+                return;
+            };
+            let center = self.row_center(key);
+            if center.is_some_and(|at| at.y > px(60.) && at.y < px(780.)) {
+                return;
+            }
+            let down = match center {
+                Some(at) => at.y >= px(780.),
+                None => first.is_none_or(|first| ix > first),
+            };
+            let delta = if down { px(-120.) } else { px(120.) };
+            let at = point(px(150.), px(400.));
+            self.cx
+                .update_window(self.window, |_, w, cx| {
+                    w.dispatch_event(
+                        ScrollEvent { position: at, delta: ScrollDelta::Pixels(point(px(0.), delta)), modifiers: Modifiers::default(), touch_phase: TouchPhase::Moved, source: ScrollSource::Pointer }
+                            .to_platform_input(),
+                        cx,
+                    );
+                    w.draw(cx).clear(cx);
+                })
+                .ok();
+            self.cx.advance_clock(Duration::from_millis(16));
+            self.frame();
+        }
     }
 
     /// `app-check`'s switch measure: navigate, then layout and paint.
@@ -419,7 +479,7 @@ fn key_of(state: &Seeded, thread: &str) -> ThreadKey {
 
 fn main() -> anyhow::Result<()> {
     let mut args = std::env::args().skip(1);
-    let usage = "usage: live-check <seed|drive|restart|import|send|sidebar|notify|details|mentions|heic> <out-dir> | live-check timeline <projections-dir> <out-dir> | live-check commands <corpus.json> <out.json>";
+    let usage = "usage: live-check <seed|drive|restart|import|send|sidebar|notify|details|mentions|heic|wheel|probe> <out-dir> | live-check timeline <projections-dir> <out-dir> | live-check commands <corpus.json> <out.json>";
     let phase = args.next().context(usage)?;
     let out = PathBuf::from(args.next().context(usage)?);
     if phase == "timeline" {
@@ -429,6 +489,7 @@ fn main() -> anyhow::Result<()> {
         return timeline_dump::commands(&out, &PathBuf::from(args.next().context(usage)?));
     }
     let key = (phase == "import").then(|| SafeStorageKey::from_mac_password(b"fixture keychain password"));
+    start_watchdog();
     let mut check = Check::open(&out, key)?;
     check.note(format!("phase {phase}, data dir {}", data_dir()?.display()));
     let result = match phase.as_str() {
@@ -443,6 +504,7 @@ fn main() -> anyhow::Result<()> {
         "mentions" => run_mentions(&mut check),
         "heic" => run_heic(&mut check),
         "probe" => run_probe(&mut check),
+        "wheel" => run_wheel(&mut check),
         other => Err(anyhow::anyhow!("unknown phase {other}")),
     };
     check.finish(&phase, result)
@@ -610,20 +672,6 @@ fn run_drive(check: &mut Check) -> anyhow::Result<()> {
     let rows = check.sidebar_threads();
     check.check("sidebar paints rows from cache at launch", rows >= 5, format!("{rows} rows"));
     check.pump(|c| c.connected(), Duration::from_secs(30), "connected")?;
-    // Later phases add threads that sort above these, and the list is virtualized: a row below
-    // the fold has no bounds to click. Pinning keeps the two clicked rows at the top.
-    let environment_id = t3code_contracts::EnvironmentId::new(state.environment_id.as_str());
-    let commands = commands_of(check, &environment_id)?;
-    for key in [&long, &edit] {
-        if check.row_center(key).is_some_and(|at| at.y < px(780.)) {
-            continue;
-        }
-        let (_, thread_id) = t3code_web::state::shell::runtime_ids(key);
-        let c = commands.clone();
-        check.block(async move { c.pin(&thread_id, None).await })?.map_err(|e| anyhow::anyhow!("{e}"))?;
-        let k = key.clone();
-        check.pump(move |c| c.row_center(&k).is_some_and(|at| at.y < px(780.)), Duration::from_secs(10), "pinned row in view")?;
-    }
     check.shot("01-sidebar.png")?;
 
     // Cold open, then cached switches between two threads.
@@ -789,7 +837,8 @@ fn run_drive(check: &mut Check) -> anyhow::Result<()> {
     check.pump(|c| c.cx.update(|cx| terminal.read(cx).core().screen_text().contains("golive-42")), Duration::from_secs(20), "terminal ran a command on the server")?;
     check.shot("10-terminal.png")?;
 
-    // Thread details: switch the branch from the details card.
+    // Thread details: switch the branch from the details card. The terminal keeps its keys.
+    check.focus_composer();
     check.action(t3code_web::shortcuts::commands::ToggleThreadPanel);
     check.pump(|c| c.read(|root, cx| root.thread_view().read(cx).details().is_some()), Duration::from_secs(5), "thread details open")?;
     check.shot("11-details.png")?;
@@ -817,6 +866,9 @@ fn run_drive(check: &mut Check) -> anyhow::Result<()> {
     )?;
     check.shot("12-branch-switched.png")?;
     check.action(t3code_web::shortcuts::commands::ToggleThreadPanel);
+    // Back to the seeded branch, so the phase can run again on this checkout.
+    let back = std::process::Command::new("git").arg("-C").arg(&repo).args(["checkout", "-q", "feature/clamp"]).status()?;
+    check.note(format!("checkout back on feature/clamp: {back}"));
 
     // Settings: change a server setting and read it back from the server.
     let shell = check.shell.clone();
@@ -2381,4 +2433,134 @@ fn run_probe(check: &mut Check) -> anyhow::Result<()> {
         check.wait(Duration::from_millis(400));
     }
     Ok(())
+}
+
+fn wheel_step(check: &mut Check, step: String) {
+    check.note(step);
+}
+
+/// One wheel event at `at`, as a trackpad sends it (pixel deltas) or a mouse wheel (lines).
+fn wheel_event(check: &mut Check, at: Point<Pixels>, delta: ScrollDelta, touch: TouchPhase) {
+    check
+        .cx
+        .update_window(check.window, |_, w, cx| {
+            w.dispatch_event(ScrollEvent { position: at, delta, modifiers: Modifiers::default(), touch_phase: touch, source: ScrollSource::Pointer }.to_platform_input(), cx);
+        })
+        .ok();
+}
+
+/// Where the sidebar draws its first row (None once it scrolls out of view).
+fn sidebar_scroll_offset(check: &mut Check) -> Option<f32> {
+    check.read(|root, cx| root.sidebar().read(cx).entry_bounds(0).map(|b| f32::from(b.origin.y)))
+}
+
+/// Scrolls an overflowing sidebar with the wheel, as two-finger scrolling does all day: makes
+/// threads until the list overflows, then sends trackpad gestures (began, moved, ended) and
+/// mouse-wheel lines down to the end and back up, drawing a frame after each event. A watchdog
+/// fails the phase if any step does not return.
+fn run_wheel(check: &mut Check) -> anyhow::Result<()> {
+    check.wait(Duration::from_millis(500));
+    if check.sidebar_threads() < 24 {
+        let state = load_state(&check.out)?;
+        check.pump(|c| c.connected(), Duration::from_secs(30), "connected")?;
+        let environment_id = t3code_contracts::EnvironmentId::new(state.environment_id.as_str());
+        let commands = commands_of(check, &environment_id)?;
+        let project = check
+            .cx
+            .update(|cx| {
+                let shell = StateBridge::environment(&environment_id, cx)?.read(cx).shell.clone();
+                shell.snapshot.as_ref()?.projects.iter().find(|p| p.workspace_root == state.project_root).map(|p| p.id.clone())
+            })
+            .context("seeded project")?;
+        for n in check.sidebar_threads()..24 {
+            let input = CreateThread {
+                thread_id: ThreadId::new(uuid::Uuid::new_v4().to_string()),
+                project_id: project.clone(),
+                title: format!("Wheel filler {n}"),
+                model_selection: ModelSelection { instance_id: "devReplay".into(), model: "multi-turn".into(), options: None },
+                runtime_mode: RuntimeMode::ApprovalRequired,
+                interaction_mode: ProviderInteractionMode::Default,
+                branch: None,
+                worktree_path: None,
+            };
+            let commands = commands.clone();
+            check.block(async move { commands.create_thread(input).await })?.map_err(|e| anyhow::anyhow!("{e}"))?;
+        }
+        check.pump(|c| c.sidebar_threads() >= 24, Duration::from_secs(20), "24 sidebar rows")?;
+        check.go(&key_of(&state, &state.long_thread));
+        check.wait(Duration::from_millis(500));
+    }
+    let rows = check.sidebar_threads();
+    check.note(format!("{rows} sidebar rows"));
+    // A streaming turn rebuilds the list while it is scrolled, as live updates do.
+    if let Ok(state) = load_state(&check.out)
+        && check.connected()
+    {
+        let environment_id = t3code_contracts::EnvironmentId::new(state.environment_id.as_str());
+        let commands = commands_of(check, &environment_id)?;
+        let message = SendMessage::text(ThreadId::new(state.stream_thread.as_str()), "Stream while the sidebar scrolls.");
+        check.block(async move { commands.send_message(message).await })?.map_err(|e| anyhow::anyhow!("{e}"))?;
+        check.note("streaming a turn during the wheel steps");
+    }
+    let at = check.read(|root, cx| root.sidebar().read(cx).entry_bounds(2).map(|b| b.center())).context("sidebar row bounds")?;
+    // Before any pointer move: the event and the next draw in one window update, as a platform
+    // frame handles them.
+    for step in 0..6 {
+        wheel_step(check, format!("wheel with draw in the same update {step}"));
+        let window = check.window;
+        check.cx.advance_clock(Duration::from_millis(16));
+        check
+            .cx
+            .update_window(window, |_, w, cx| {
+                w.dispatch_event(
+                    ScrollEvent { position: point(px(150.), px(400.)), delta: ScrollDelta::Pixels(point(px(0.), px(-120.))), modifiers: Modifiers::default(), touch_phase: TouchPhase::Moved, source: ScrollSource::Pointer }
+                        .to_platform_input(),
+                    cx,
+                );
+                w.draw(cx).clear(cx);
+            })
+            .ok();
+    }
+    check.frame();
+    check.cx.update_window(check.window, |_, w, cx| {
+        w.dispatch_event(MouseMoveEvent { position: at, pressed_button: None, modifiers: Modifiers::default() }.to_platform_input(), cx);
+    })?;
+    check.frame();
+    wheel_event(check, at, ScrollDelta::Pixels(point(px(0.), px(100_000.))), TouchPhase::Moved);
+    check.frame();
+    let started = sidebar_scroll_offset(check);
+    let mut frames = Vec::new();
+    for (gesture, dy) in [(0, -40.), (1, -40.), (2, 40.)] {
+        wheel_step(check, format!("trackpad gesture {gesture} began"));
+        wheel_event(check, at, ScrollDelta::Pixels(point(px(0.), px(0.))), TouchPhase::Started);
+        check.frame();
+        for step in 0..40 {
+            wheel_step(check, format!("trackpad gesture {gesture} moved {step}"));
+            wheel_event(check, at, ScrollDelta::Pixels(point(px(0.), px(dy))), TouchPhase::Moved);
+            check.cx.advance_clock(Duration::from_millis(16));
+            frames.push(ms(check.frame()));
+            std::thread::sleep(Duration::from_millis(16));
+        }
+        wheel_step(check, format!("trackpad gesture {gesture} ended"));
+        wheel_event(check, at, ScrollDelta::Pixels(point(px(0.), px(0.))), TouchPhase::Ended);
+        check.frame();
+        if gesture == 0 {
+            let moved = sidebar_scroll_offset(check);
+            check.check("trackpad scroll moves the sidebar list", moved != started, format!("first row top {started:?} -> {moved:?}"));
+            check.shot("wheel-00-scrolled.png")?;
+        }
+    }
+    for step in 0..30 {
+        wheel_step(check, format!("mouse wheel lines {step}"));
+        wheel_event(check, at, ScrollDelta::Lines(point(0., if step < 15 { -3. } else { 3. })), TouchPhase::Moved);
+        frames.push(ms(check.frame()));
+    }
+    wheel_step(check, "back to the top".into());
+    wheel_event(check, at, ScrollDelta::Pixels(point(px(0.), px(100_000.))), TouchPhase::Moved);
+    check.frame();
+    let top = sidebar_scroll_offset(check);
+    check.check("scrolling up returns the list to its top", top == started, format!("first row top {top:?}, at start {started:?}"));
+    let worst = frames.iter().cloned().fold(0., f64::max);
+    check.check("every wheel event returns and draws its frame", true, format!("{} events, slowest frame {worst:.2} ms", frames.len()));
+    check.shot("wheel-01-top.png")
 }
