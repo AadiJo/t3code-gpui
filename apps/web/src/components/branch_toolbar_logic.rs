@@ -24,14 +24,9 @@ impl EnvMode {
     }
 }
 
-/// The kind of machine an environment runs on, which picks its icon.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
-pub enum MachineKind {
-    Laptop,
-    Desktop,
-    #[default]
-    Server,
-}
+/// The kind of machine an environment runs on, which picks its icon
+/// (`resolveEnvironmentMachineKind`).
+pub use t3code_contracts::EnvironmentMachineKind as MachineKind;
 
 /// One machine the run-context menu offers (`EnvironmentOption`).
 #[derive(Clone, Debug, PartialEq)]

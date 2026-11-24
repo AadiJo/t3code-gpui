@@ -67,7 +67,7 @@ pub fn row_font(el: Div) -> Div {
 }
 
 /// `THREAD_DETAILS_PANEL_ICON_CLASS`: 1rem, muted.
-pub fn row_icon(theme: &AppTheme, name: IconName) -> Icon {
+pub fn row_icon(theme: &AppTheme, name: impl Into<crate::components::icons::IconSource>) -> Icon {
     Icon::new(name).size(row_icon_size(theme)).color(theme.colors.muted_foreground)
 }
 

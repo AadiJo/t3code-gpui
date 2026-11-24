@@ -884,7 +884,20 @@ impl GitActionsControl {
             status.is_none_or(|s| s.has_working_tree_changes),
         );
         let theme = cx.app_theme();
-        let mut surface = DialogSurface::new(copy.title).description(copy.description);
+        let close = cx.weak_entity();
+        // `DialogPopup className="max-w-xl"` with its close button; `DialogFooter variant="bare"`.
+        let mut surface = DialogSurface::new(copy.title)
+            .description(copy.description)
+            .max_width_rem(36.)
+            .bare_footer()
+            .on_close(move |_, cx| {
+                close
+                    .update(cx, |this, cx| {
+                        this.pending_default = None;
+                        cx.notify();
+                    })
+                    .ok();
+            });
         if let Some(reason) = &unavailable {
             surface = surface.child(
                 div().ui_text(theme, TextSize::Xs, weight::NORMAL).text_color(theme.colors.muted_foreground).child(reason.clone()),
@@ -923,7 +936,7 @@ impl GitActionsControl {
             this.pending_default = None;
             cx.notify();
         }));
-        Modal::dialog("default-branch-dialog", div().id("dialog-content").occlude().w_full().max_w(cx.app_theme().rem(32.)).child(surface), move |window, cx| abort(&(), window, cx)).into_any_element()
+        Modal::dialog("default-branch-dialog", div().id("dialog-content").occlude().w_full().max_w(cx.app_theme().rem(36.)).child(surface), move |window, cx| abort(&(), window, cx)).into_any_element()
     }
 }
 

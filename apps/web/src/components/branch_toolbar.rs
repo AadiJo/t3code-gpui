@@ -28,7 +28,7 @@ use super::branch_toolbar_logic::{
 };
 use super::chat::thread_details_panel_styles::{DismissPress, below_row, locked_row, row_width, row_icon, select_row};
 use super::git_actions_control_source::SourceControlModel;
-use super::icons::{Icon, IconName, IconSize};
+use super::icons::{BrandIcon, Icon, IconName, IconSize, IconSource};
 use super::previous_worktree_item_content::previous_worktree_item_content;
 use super::ui::popover::glass_surface;
 use super::ui::toast::{ToastData, ToastKind, Toaster};
@@ -200,11 +200,15 @@ fn worktree_change_blocked() -> SharedString {
     t!("Stop the current turn to switch worktrees.")
 }
 
-fn machine_icon(kind: MachineKind) -> IconName {
+/// `ICON_BY_KIND` (`EnvironmentMachineIcon.tsx`). The Mac mini and Mac Studio glyphs are custom
+/// SVGs in the web; this control draws the monitor for them.
+fn machine_icon(kind: MachineKind) -> IconSource {
     match kind {
-        MachineKind::Laptop => IconName::Laptop,
-        MachineKind::Desktop => IconName::Monitor,
-        MachineKind::Server => IconName::Server,
+        MachineKind::Laptop => IconName::Laptop.into(),
+        MachineKind::Server => IconName::Server.into(),
+        MachineKind::Cloud => IconName::Cloud.into(),
+        MachineKind::Linux => BrandIcon::Linux.into(),
+        _ => IconName::Monitor.into(),
     }
 }
 
@@ -628,7 +632,7 @@ impl BranchToolbar {
         &self,
         id: impl Into<gpui_kit::ElementId>,
         theme: &AppTheme,
-        icon: Option<IconName>,
+        icon: Option<IconSource>,
         content: AnyElement,
         selected: bool,
         disabled: bool,
@@ -678,7 +682,7 @@ impl BranchToolbar {
             rows.push(self.menu_row(
                 "env-auto",
                 theme,
-                Some(IconName::Scale),
+                Some(IconName::Scale.into()),
                 div().min_w_0().truncate().child(label).into_any_element(),
                 self.props.auto_environment_label.is_some(),
                 locked,
@@ -711,7 +715,7 @@ impl BranchToolbar {
         rows.push(self.menu_row(
             "workspace-local",
             theme,
-            Some(if self.active_worktree_path().is_some() { IconName::FolderGit } else { IconName::Folder }),
+            Some(if self.active_worktree_path().is_some() { IconName::FolderGit } else { IconName::Folder }.into()),
             div().min_w_0().truncate().child(resolve_current_workspace_label(self.active_worktree_path())).into_any_element(),
             mode == EnvMode::Local,
             locked || self.props.force_new_worktree,
@@ -721,7 +725,7 @@ impl BranchToolbar {
         rows.push(self.menu_row(
             "workspace-worktree",
             theme,
-            Some(IconName::FolderGit2),
+            Some(IconName::FolderGit2.into()),
             div().min_w_0().truncate().child(resolve_env_mode_label(EnvMode::Worktree)).into_any_element(),
             mode == EnvMode::Worktree,
             locked,
@@ -795,11 +799,11 @@ impl BranchToolbar {
             .clone()
             .unwrap_or_else(|| if show_indicator { self.environment_label() } else { self.workspace_label() });
         let icon = if self.props.auto_environment_label.is_some() {
-            IconName::Scale
+            IconName::Scale.into()
         } else if show_indicator {
             machine_icon(self.active_environment().map_or(MachineKind::Server, |e| e.machine))
         } else {
-            self.workspace_icon()
+            self.workspace_icon().into()
         };
         let locked = self.props.env_locked && (self.env_mode_locked() || self.props.force_new_worktree);
         let open = self.open == Some(Popup::RunContext);
@@ -859,7 +863,7 @@ impl BranchToolbar {
         } else if show_indicator {
             let locked = self.props.env_locked;
             let icon = if self.props.auto_environment_label.is_some() {
-                IconName::Scale
+                IconName::Scale.into()
             } else {
                 machine_icon(self.active_environment().map_or(MachineKind::Server, |e| e.machine))
             };
@@ -1033,12 +1037,12 @@ impl BranchToolbar {
         let label = if show_indicator { self.environment_label() } else { self.workspace_label() };
         let icon = if show_indicator {
             if self.props.auto_environment_label.is_some() {
-                IconName::Scale
+                IconName::Scale.into()
             } else {
                 machine_icon(self.active_environment().map_or(MachineKind::Server, |e| e.machine))
             }
         } else {
-            self.workspace_icon()
+            self.workspace_icon().into()
         };
         let workspace_path = if self.props.force_new_worktree || (self.effective_env_mode() == EnvMode::Worktree && self.active_worktree_path().is_none()) {
             None
