@@ -3,7 +3,7 @@
 //! Events that need more UI (rename, new thread, settings) come back as a [`SidebarOutcome`].
 
 use gpui_kit::{App, ClipboardItem, SharedString};
-use jiff::{ToSpan as _, ZonedDateTime as Zoned, civil::Time};
+use jiff::ZonedDateTime as Zoned;
 use t3code_client_runtime::operations::{CommandError, EnvironmentCommands};
 use t3code_client_runtime::state::models::{format_ms, now_ms};
 use t3code_contracts::ThreadId;
@@ -11,7 +11,7 @@ use t3code_contracts::ThreadId;
 use super::StateBridge;
 use super::shell::runtime_ids;
 use crate::components::sidebar::SidebarEvent;
-use crate::components::sidebar::context_menu::{MenuCommand, SnoozePreset};
+use crate::components::sidebar::context_menu::MenuCommand;
 use crate::components::sidebar::model::{ProjectRef, ThreadKey};
 use crate::components::ui::toast::{ToastData, ToastKind, Toaster};
 use crate::i18n::t;
@@ -31,25 +31,6 @@ pub enum SidebarOutcome {
     SnoozeCustom(Vec<ThreadKey>),
     /// An app-level destination (settings, pull requests, project filter…).
     Navigate(SidebarEvent),
-}
-
-/// When a preset snooze ends (`DEFAULT_SNOOZE_PRESETS`): in one or three hours, this evening
-/// at 18:00 (or tomorrow's if past), tomorrow at 09:00, or next Monday at 09:00.
-pub fn snooze_until(preset: SnoozePreset, now: &Zoned) -> Zoned {
-    let at = |day: &Zoned, hour: i8| day.with().time(Time::constant(hour, 0, 0, 0)).build().unwrap_or_else(|_| day.clone());
-    match preset {
-        SnoozePreset::OneHour => now.checked_add(1.hour()).unwrap_or_else(|_| now.clone()),
-        SnoozePreset::ThreeHours => now.checked_add(3.hours()).unwrap_or_else(|_| now.clone()),
-        SnoozePreset::ThisEvening => {
-            let evening = at(now, 18);
-            if evening > *now { evening } else { at(&now.checked_add(1.day()).unwrap_or_else(|_| now.clone()), 18) }
-        }
-        SnoozePreset::Tomorrow => at(&now.checked_add(1.day()).unwrap_or_else(|_| now.clone()), 9),
-        SnoozePreset::NextWeek => {
-            let days = 7 - i64::from(now.weekday().to_monday_zero_offset());
-            at(&now.checked_add(days.days()).unwrap_or_else(|_| now.clone()), 9)
-        }
-    }
 }
 
 fn commands_for(key: &ThreadKey, cx: &App) -> Option<(EnvironmentCommands, ThreadId)> {
@@ -110,7 +91,11 @@ fn thread_command(keys: Vec<ThreadKey>, command: MenuCommand, cx: &mut App) -> S
         MenuCommand::Unpin => run_each(&keys, cx, |c, id| async move { c.unpin(&id).await }),
         MenuCommand::Settle => run_each(&keys, cx, |c, id| async move { c.settle(&id).await }),
         MenuCommand::Unsettle => run_each(&keys, cx, |c, id| async move { c.unsettle(&id, None).await }),
-        MenuCommand::Snooze(preset) => snooze(&keys, &snooze_until(preset, &Zoned::now()), cx),
+        MenuCommand::Snooze(until) => {
+            if let Ok(until) = jiff::Timestamp::from_millisecond(until.0).map(|t| t.to_zoned_datetime(jiff::tz::TimeZone::UTC)) {
+                snooze(&keys, &until, cx)
+            }
+        }
         MenuCommand::SnoozeCustom => return SidebarOutcome::SnoozeCustom(keys),
         MenuCommand::Wake => run_each(&keys, cx, |c, id| async move { c.unsnooze(&id).await }),
         MenuCommand::Rename => return keys.into_iter().next().map_or(SidebarOutcome::Done, SidebarOutcome::Rename),

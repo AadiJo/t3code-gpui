@@ -8,7 +8,8 @@ use crate::components::icons::{Icon, IconName, IconSize};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
-use super::model::{ProjectRef, ThreadKey};
+use super::model::{ProjectRef, ThreadKey, TimestampMs};
+use crate::state::sidebar_actions::ResolvedSnoozePreset;
 use super::style::{MENU_MAX_WIDTH, MENU_MIN_WIDTH, MENU_ROW_HEIGHT, ShellColors};
 
 /// What a menu row does when picked.
@@ -21,7 +22,8 @@ pub enum MenuCommand {
     Unpin,
     Settle,
     Unsettle,
-    Snooze(SnoozePreset),
+    /// Snooze until this wake time (a resolved preset).
+    Snooze(TimestampMs),
     SnoozeCustom,
     Wake,
     Rename,
@@ -40,16 +42,6 @@ pub enum MenuCommand {
     NewThread,
     PinProject,
     UnpinProject,
-}
-
-/// `DEFAULT_SNOOZE_PRESETS`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum SnoozePreset {
-    OneHour,
-    ThreeHours,
-    ThisEvening,
-    Tomorrow,
-    NextWeek,
 }
 
 /// One menu row; `children` makes it a submenu trigger.
@@ -144,6 +136,8 @@ pub struct ThreadMenuState<'a> {
     pub can_find: bool,
     /// The thread follows the auto-settle setting (no `autoSettleDisabledAt`).
     pub auto_settle_enabled: bool,
+    /// The thread's environment snooze menu (`resolveSnoozePresets`).
+    pub snooze_presets: &'a [ResolvedSnoozePreset],
 }
 
 /// `buildThreadActionMenuItems` for a sidebar row.
@@ -174,7 +168,7 @@ pub fn thread_menu_items(state: &ThreadMenuState<'_>) -> Vec<MenuItem> {
     } else {
         MenuItem::new(C::SnoozeCustom, "Snooze")
             .icon(IconName::Clock)
-            .submenu(snooze_items())
+            .submenu(snooze_items(state.snooze_presets))
     });
     items.push(
         MenuItem::new(C::Rename, "Rename thread")
@@ -228,7 +222,6 @@ pub fn thread_menu_items(state: &ThreadMenuState<'_>) -> Vec<MenuItem> {
     items
 }
 
-/// Snooze presets (`DEFAULT_SNOOZE_PRESETS`), for the row's snooze button.
 /// `buildDraftActionMenuItems` for a draft without a branch: Copy > Path,
 /// Project settings, then the destructive "Discard draft" (`Delete`).
 pub fn draft_menu_items() -> Vec<MenuItem> {
@@ -244,17 +237,18 @@ pub fn draft_menu_items() -> Vec<MenuItem> {
     ]
 }
 
-pub fn snooze_items() -> Vec<MenuItem> {
-    use MenuCommand as C;
-    use SnoozePreset as P;
-    vec![
-        MenuItem::new(C::Snooze(P::OneHour), "1 hour"),
-        MenuItem::new(C::Snooze(P::ThreeHours), "3 hours"),
-        MenuItem::new(C::Snooze(P::ThisEvening), "This evening").detail("6:00 PM"),
-        MenuItem::new(C::Snooze(P::Tomorrow), "Tomorrow").detail("9:00 AM"),
-        MenuItem::new(C::Snooze(P::NextWeek), "Next week").detail("Mon 9:00 AM"),
-        MenuItem::new(C::SnoozeCustom, "Custom…").separated(),
-    ]
+/// The snooze menu: each resolved preset with its wake time, then "Custom…".
+pub fn snooze_items(presets: &[ResolvedSnoozePreset]) -> Vec<MenuItem> {
+    let mut items: Vec<MenuItem> = presets
+        .iter()
+        .map(|preset| {
+            MenuItem::new(MenuCommand::Snooze(TimestampMs(preset.wake.timestamp().as_millisecond())), preset.label.clone())
+                .detail(preset.when.clone())
+        })
+        .collect();
+    let custom = MenuItem::new(MenuCommand::SnoozeCustom, "Custom…");
+    items.push(if presets.is_empty() { custom } else { custom.separated() });
+    items
 }
 
 /// The project folder menu (`Sidebar.tsx:1263-1300`).

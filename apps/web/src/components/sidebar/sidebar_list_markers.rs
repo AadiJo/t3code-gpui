@@ -121,7 +121,7 @@ impl Sidebar {
                     .when(hovered, |d| d.bg(colors.sidebar_row_hover))
                     .when(self.entry_focused(ix, window), |d| d.border_2().border_color(colors.ring))
                     .child(project_favicon(
-                        project.label.clone(),
+                        project.title.clone(),
                         Some(&crate::components::project_favicon::ProjectIconSource { icon: project.icon.clone(), favicon: project.favicon.clone() }),
                         colors,
                     ))

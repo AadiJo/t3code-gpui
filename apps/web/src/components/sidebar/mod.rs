@@ -808,6 +808,7 @@ impl Sidebar {
                     show_project_filter: true,
                     can_find: false,
                     auto_settle_enabled: !self.snapshot.auto_settle_disabled.contains(&thread.key),
+                    snooze_presets: &self.snooze_presets(&thread.key),
                 });
                 ContextMenu {
                     target: MenuTarget::Thread(thread.key.clone()),
@@ -841,6 +842,15 @@ impl Sidebar {
         cx.notify();
     }
 
+    /// The snooze menu for a thread, from its environment's presets at the sidebar's clock.
+    fn snooze_presets(&self, key: &ThreadKey) -> Vec<crate::state::sidebar_actions::ResolvedSnoozePreset> {
+        let now = jiff::Timestamp::from_millisecond(self.now.0)
+            .map(|t| t.to_zoned_datetime(jiff::tz::TimeZone::system()))
+            .unwrap_or_else(|_| jiff::ZonedDateTime::now());
+        let settings = self.snapshot.snooze_presets.get(&key.environment_id);
+        crate::state::sidebar_actions::resolve_snooze_presets(settings.map(|s| &s[..]), &now)
+    }
+
     /// Opens the snooze presets for a thread row (its Snooze button).
     pub(crate) fn open_snooze_menu(&mut self, entry: usize, position: Point<Pixels>, cx: &mut Context<Self>) {
         let Some(SidebarListEntry::Thread { thread, .. }) = self.list.entries.get(entry) else {
@@ -849,7 +859,7 @@ impl Sidebar {
         self.context_menu = Some(ContextMenu {
             target: MenuTarget::Thread(thread.key.clone()),
             position,
-            items: context_menu::snooze_items(),
+            items: context_menu::snooze_items(&self.snooze_presets(&thread.key)),
             highlighted: None,
             submenu: None,
         });

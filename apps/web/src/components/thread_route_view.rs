@@ -222,7 +222,12 @@ impl ThreadRouteView {
         let ThreadTarget::Server(key) = target else { return None };
         let snapshot = self.data.snapshot(None, cx);
         let row = snapshot.threads.iter().find(|row| &row.key == key)?;
-        Some(HeaderThreadMenu::from_row(row, snapshot.now, !snapshot.auto_settle_disabled.contains(key)))
+        Some(HeaderThreadMenu::from_row(
+            row,
+            snapshot.now,
+            !snapshot.auto_settle_disabled.contains(key),
+            snapshot.snooze_presets.get(&key.environment_id).map(|s| &s[..]),
+        ))
     }
 
     /// Re-reads the shown thread after the store changed it.

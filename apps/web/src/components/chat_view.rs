@@ -97,11 +97,18 @@ pub struct HeaderThreadMenu {
     pub is_snoozed: bool,
     pub is_running: bool,
     pub auto_settle_enabled: bool,
+    /// The snooze submenu, resolved when the row was read.
+    pub snooze_presets: Vec<crate::state::sidebar_actions::ResolvedSnoozePreset>,
 }
 
 impl HeaderThreadMenu {
     /// The facts for a sidebar row, as the row's own context menu reads them.
-    pub fn from_row(row: &SidebarThread, now: TimestampMs, auto_settle_enabled: bool) -> Self {
+    pub fn from_row(
+        row: &SidebarThread,
+        now: TimestampMs,
+        auto_settle_enabled: bool,
+        snooze_presets: Option<&[t3code_contracts::SnoozePresetSetting]>,
+    ) -> Self {
         use crate::components::sidebar_logic::{ThreadStatus, effectively_snoozed, resolve_thread_status};
         Self {
             key: row.key.clone(),
@@ -111,6 +118,12 @@ impl HeaderThreadMenu {
             is_snoozed: effectively_snoozed(row, now),
             is_running: matches!(resolve_thread_status(row), ThreadStatus::Working | ThreadStatus::Preparing),
             auto_settle_enabled,
+            snooze_presets: crate::state::sidebar_actions::resolve_snooze_presets(
+                snooze_presets,
+                &jiff::Timestamp::from_millisecond(now.0)
+                    .map(|t| t.to_zoned_datetime(jiff::tz::TimeZone::system()))
+                    .unwrap_or_else(|_| jiff::ZonedDateTime::now()),
+            ),
         }
     }
 }
@@ -350,6 +363,7 @@ impl ChatView {
             show_project_filter: false,
             can_find: true,
             auto_settle_enabled: facts.auto_settle_enabled,
+            snooze_presets: &facts.snooze_presets,
         });
         self.header_menu = Some(ContextMenu {
             target: MenuTarget::Thread(facts.key.clone()),

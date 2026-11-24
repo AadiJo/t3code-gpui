@@ -146,8 +146,7 @@ impl Sidebar {
             .filter_map(|key| self.list.groups.iter().find(|g| &g.key == key))
             .collect();
         let favicon = |group: &ProjectGroup, size: f32| {
-            let title = group.member_refs.first().and_then(|r| self.list.project_titles.get(r)).cloned().unwrap_or_else(|| group.label.clone());
-            ProjectFavicon::new(title).size(colors.r(size))
+            ProjectFavicon::new(group.title.clone()).size(colors.r(size))
         };
         match scoped[..] {
             [] => Icon::new(IconName::ListFilter)
@@ -227,11 +226,7 @@ impl Sidebar {
             let selected = self.scope_selected(item);
             let group = item.and_then(|ix| self.list.groups.get(ix)).cloned();
             let icon = match &group {
-                Some(group) => {
-                    let title =
-                        group.member_refs.first().and_then(|r| self.list.project_titles.get(r)).cloned().unwrap_or_else(|| group.label.clone());
-                    ProjectFavicon::new(title).size(colors.r(16.)).into_any_element()
-                }
+                Some(group) => ProjectFavicon::new(group.title.clone()).size(colors.r(16.)).into_any_element(),
                 None => Icon::new(IconName::Folder).size(IconSize::Custom(colors.r(16.))).color(colors.muted_foreground).into_any_element(),
             };
             let icon = div().relative().flex().flex_none().child(icon).when(selected, |d| {
