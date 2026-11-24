@@ -1250,8 +1250,8 @@ impl Render for ChatComposer {
             .border_1()
             .border_color(c.outline)
             .when(!c.is_dark(), |el| {
-                // `shadow-xs` (0 1px 2px): GPUI's blur radius is the Gaussian sigma, half the CSS blur.
-                el.shadow(vec![BoxShadow { color: hsla(0., 0., 0., 0.05), offset: point(px(0.), px(1.)), blur_radius: px(1.), spread_radius: px(0.), inset: false }])
+                // `shadow-xs` (0 1px 2px).
+                el.shadow(vec![BoxShadow { color: hsla(0., 0., 0., 0.05), offset: point(px(0.), px(1.)), blur_radius: px(2.), spread_radius: px(0.), inset: false }])
             })
             .when(c.is_dark(), |el| {
                 el.shadow(vec![BoxShadow { color: c.highlight, offset: point(px(0.), px(1.)), blur_radius: px(0.), spread_radius: px(0.), inset: true }])
