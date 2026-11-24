@@ -6,12 +6,13 @@
 
 use std::sync::Arc;
 
-use futures::{StreamExt as _, future::BoxFuture, stream::BoxStream};
+use futures::{FutureExt as _, StreamExt as _, future::BoxFuture, stream::BoxStream};
 use gpui_kit::{Context, SharedString, Task};
 use t3code_contracts::{
     GitActionProgressEvent, GitPreparePullRequestThreadInput, GitPreparePullRequestThreadResult,
     GitPullRequestRefInput, GitResolvePullRequestResult, GitRunStackedActionInput, GitRunStackedActionResult,
-    LaunchEditorInput, ProjectMutation, PullRequestDetail, PullRequestRef, VcsCreateRefInput, VcsCreateRefResult,
+    LaunchEditorInput, ProjectMutation, PullRequestDetail, PullRequestRef, SourceControlDiscoveryResult,
+    SourceControlPublishRepositoryInput, SourceControlPublishRepositoryResult, VcsCreateRefInput, VcsCreateRefResult,
     VcsInitInput, VcsListRefsInput, VcsListRefsResult, VcsPullInput, VcsPullResult, VcsRefreshStatusPayload,
     VcsRemoveWorktreeInput, VcsStatusLocalResult, VcsStatusLocalResultWorkingTree, VcsStatusRemoteResult,
     VcsStatusResult, VcsStatusStreamEvent, VcsStatusSubscriptionInput, VcsSwitchRefInput, VcsSwitchRefResult,
@@ -64,6 +65,17 @@ pub trait GitActionsSource: 'static {
     fn open_in_editor(&self, input: LaunchEditorInput) -> RpcFuture<()>;
     /// `projects.mutate` (scripts are saved as a `project.update`).
     fn mutate_project(&self, input: ProjectMutation) -> RpcFuture<()>;
+    /// `server.discoverSourceControl`: which hosts are installed and signed in, for
+    /// the Publish repository dialog. Defaults to a failure, which the dialog
+    /// shows as "Provider status unavailable" on every host.
+    fn source_control_discovery(&self) -> RpcFuture<SourceControlDiscoveryResult> {
+        futures::future::ready(Err(SourceControlError("server.discoverSourceControl is not available".into()))).boxed()
+    }
+    /// `sourceControl.publishRepository`.
+    fn publish_repository(&self, input: SourceControlPublishRepositoryInput) -> RpcFuture<SourceControlPublishRepositoryResult> {
+        let _ = input;
+        futures::future::ready(Err(SourceControlError("sourceControl.publishRepository is not available".into()))).boxed()
+    }
 }
 
 /// `applyGitStatusStreamEvent`: folds a status stream event into the snapshot.

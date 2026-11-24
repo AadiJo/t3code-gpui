@@ -56,23 +56,39 @@ pub struct SourceControlDefinition {
     pub kind: &'static str,
     pub label: &'static str,
     pub terminology: ChangeRequestTerminology,
+    /// The Publish repository card's name (`pickerLabel`).
+    pub picker_label: &'static str,
+    /// The repository field's placeholder (`repositoryPathHint`).
+    pub path_hint: &'static str,
+    /// The host the repository field shows before the path (`publishHost`);
+    /// `None` means the signed-in server, "your server" before sign-in.
+    pub publish_host: Option<&'static str>,
 }
+
+/// Cursor Origin's git host (`CURSOR_ORIGIN_GIT_HOST`).
+const CURSOR_ORIGIN_GIT_HOST: &str = "origin.cursor.com";
 
 /// The built-in hosts, in registry order. GitHub is first: a repository with
 /// no recognised host reads as GitHub.
 pub const SOURCE_CONTROL_DEFINITIONS: &[SourceControlDefinition] = &[
-    SourceControlDefinition { kind: "github", label: "GitHub", terminology: PULL_REQUEST },
-    SourceControlDefinition { kind: "cursor-origin", label: "Cursor Origin", terminology: PULL_REQUEST },
-    SourceControlDefinition { kind: "gitlab", label: "GitLab", terminology: MERGE_REQUEST },
-    SourceControlDefinition { kind: "gitcafe", label: "GitCafe", terminology: PULL_REQUEST },
-    SourceControlDefinition { kind: "forgejo", label: "Forgejo", terminology: PULL_REQUEST },
-    SourceControlDefinition { kind: "bitbucket", label: "Bitbucket", terminology: PULL_REQUEST },
-    SourceControlDefinition { kind: "azure-devops", label: "Azure DevOps", terminology: PULL_REQUEST },
+    SourceControlDefinition { kind: "github", label: "GitHub", terminology: PULL_REQUEST, picker_label: "GitHub", path_hint: "owner/repo", publish_host: Some("github.com") },
+    SourceControlDefinition { kind: "cursor-origin", label: "Cursor Origin", terminology: PULL_REQUEST, picker_label: "Cursor Origin", path_hint: "owner/repo", publish_host: Some(CURSOR_ORIGIN_GIT_HOST) },
+    SourceControlDefinition { kind: "gitlab", label: "GitLab", terminology: MERGE_REQUEST, picker_label: "GitLab", path_hint: "group/project", publish_host: Some("gitlab.com") },
+    SourceControlDefinition { kind: "gitcafe", label: "GitCafe", terminology: PULL_REQUEST, picker_label: "GitCafe", path_hint: "owner/repo", publish_host: Some("git.cafe") },
+    SourceControlDefinition { kind: "forgejo", label: "Forgejo", terminology: PULL_REQUEST, picker_label: "Forgejo / Gitea", path_hint: "owner/repo", publish_host: None },
+    SourceControlDefinition { kind: "bitbucket", label: "Bitbucket", terminology: PULL_REQUEST, picker_label: "Bitbucket", path_hint: "workspace/repository", publish_host: Some("bitbucket.org") },
+    SourceControlDefinition { kind: "azure-devops", label: "Azure DevOps", terminology: PULL_REQUEST, picker_label: "Azure DevOps", path_hint: "project/repository", publish_host: Some("dev.azure.com") },
 ];
 
 /// `UNKNOWN_SOURCE_CONTROL_CLIENT`.
-pub const UNKNOWN_SOURCE_CONTROL: SourceControlDefinition =
-    SourceControlDefinition { kind: "unknown", label: "source control", terminology: UNKNOWN };
+pub const UNKNOWN_SOURCE_CONTROL: SourceControlDefinition = SourceControlDefinition {
+    kind: "unknown",
+    label: "source control",
+    terminology: UNKNOWN,
+    picker_label: "source control",
+    path_hint: "owner/repo",
+    publish_host: None,
+};
 
 /// `sourceControlClients.get(kind)`: no kind is the first host; an unrecognised
 /// kind is the unknown host.

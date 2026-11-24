@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use gpui_kit::{
     AnyElement, App, AppContext as _, Context, Entity, EventEmitter, IntoElement, ParentElement as _, Render,
-    SharedString, Styled as _, Task, TestSupportExt as _, Window, component::input::TextareaState, div, prelude::*, px,
+    SharedString, Styled as _, Subscription, Task, TestSupportExt as _, Window, component::input::TextareaState, div, prelude::*, px,
 };
 use t3code_contracts::{
     GitRunStackedActionInput, GitRunStackedActionResultPrStatus, GitStackedAction, ProjectId, ThreadId,
@@ -27,6 +27,7 @@ use super::git_actions_control_logic::{
     resolve_git_action_progress_presentation, resolve_git_action_result_toast_timing, resolve_quick_action,
     resolve_thread_branch_update, GIT_ACTION_SUCCESS_VISIBLE_MS,
 };
+use super::git_actions_control_publish::{PublishRepositoryDialog, PublishRepositoryEvent};
 use super::git_actions_control_source::{InlineSuccess, SourceControlError, SourceControlModel, now_ms};
 use super::icons::{Icon, IconName, IconSize};
 use super::ui::button::{Button, ButtonSize, ButtonVariant};
@@ -58,6 +59,8 @@ pub struct GitActionsProps {
     pub show_changes: bool,
     pub thread_id: Option<ThreadId>,
     pub project_id: Option<ProjectId>,
+    /// The server's `offeredSourceControlProviders`; unset offers GitHub only.
+    pub offered_source_control_providers: Option<std::collections::BTreeMap<String, bool>>,
 }
 
 /// What the rows ask their owner to do.
@@ -67,8 +70,10 @@ pub enum GitActionsEvent {
     OpenChanges,
     /// An action created a branch; the thread adopts it.
     ThreadBranchChanged(String),
-    /// "Publish repository" was chosen; the owner opens its dialog.
-    OpenPublish,
+    /// Open a link (the published repository's "Open on" button).
+    OpenUrl(String),
+    /// Open Settings > Source control & issues ("Setup Required").
+    OpenSourceControlSettings,
 }
 
 /// One action waiting on the default-branch confirmation (`PendingDefaultBranchAction`).
@@ -109,6 +114,8 @@ pub struct GitActionsControl {
     restore_message: Option<String>,
     /// Re-renders once a second while an action runs, for the elapsed time.
     ticker: Option<Task<()>>,
+    /// The Publish repository dialog while it is open.
+    publish: Option<(Entity<PublishRepositoryDialog>, Subscription)>,
 }
 
 impl EventEmitter<GitActionsEvent> for GitActionsControl {}
@@ -165,7 +172,7 @@ fn error_toast(title: SharedString, error: &SourceControlError, cx: &mut App) {
 impl GitActionsControl {
     pub fn new(model: Entity<SourceControlModel>, props: GitActionsProps, cx: &mut Context<Self>) -> Self {
         cx.observe(&model, |_, _, cx| cx.notify()).detach();
-        Self { model, props, menu_open: false, commit_dialog: None, pending_default: None, dismissed: DismissPress::default(), restore_message: None, ticker: None }
+        Self { model, props, menu_open: false, commit_dialog: None, pending_default: None, dismissed: DismissPress::default(), restore_message: None, ticker: None, publish: None }
     }
 
     pub fn model(&self) -> &Entity<SourceControlModel> {
@@ -365,9 +372,34 @@ impl GitActionsControl {
         .detach();
     }
 
-    fn run_quick_action(&mut self, quick: GitQuickAction, cx: &mut Context<Self>) {
+    /// Opens the Publish repository dialog (the quick action and the menu item).
+    pub fn open_publish(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.menu_open = false;
+        let (source, cwd) = {
+            let model = self.model.read(cx);
+            (model.source.clone(), model.cwd.clone())
+        };
+        let offered = self.props.offered_source_control_providers.clone();
+        let dialog = cx.new(|cx| PublishRepositoryDialog::new(source, cwd, offered, window, cx));
+        let subscription = cx.subscribe(&dialog, |this, _, event: &PublishRepositoryEvent, cx| {
+            match event {
+                PublishRepositoryEvent::Close => this.publish = None,
+                PublishRepositoryEvent::OpenSourceControlSettings => {
+                    this.publish = None;
+                    cx.emit(GitActionsEvent::OpenSourceControlSettings);
+                }
+                PublishRepositoryEvent::OpenUrl(url) => cx.emit(GitActionsEvent::OpenUrl(url.clone())),
+                PublishRepositoryEvent::Published => this.refresh_status(cx),
+            }
+            cx.notify();
+        });
+        self.publish = Some((dialog, subscription));
+        cx.notify();
+    }
+
+    fn run_quick_action(&mut self, quick: GitQuickAction, window: &mut Window, cx: &mut Context<Self>) {
         match quick.kind {
-            GitQuickActionKind::OpenPublish => cx.emit(GitActionsEvent::OpenPublish),
+            GitQuickActionKind::OpenPublish => self.open_publish(window, cx),
             GitQuickActionKind::RunPull => self.run_pull(cx),
             GitQuickActionKind::ShowHint(hint) => {
                 Toaster::push(ToastData::new(ToastKind::Info, quick.label).description(hint), cx);
@@ -505,9 +537,8 @@ impl GitActionsControl {
                     .child(t!("Publish repository..."))
                     .when(is_busy, |r| r.opacity(DISABLED_OPACITY))
                     .when(!is_busy, |r| {
-                        r.cursor_pointer().hover(move |s| s.bg(highlight)).on_click(cx.listener(|this, _, _, cx| {
-                            this.menu_open = false;
-                            cx.emit(GitActionsEvent::OpenPublish);
+                        r.cursor_pointer().hover(move |s| s.bg(highlight)).on_click(cx.listener(|this, _, window, cx| {
+                            this.open_publish(window, cx);
                         }))
                     })
                     .into_any_element(),
@@ -1010,7 +1041,7 @@ impl Render for GitActionsControl {
                         .child(div().flex_1().min_w_0().truncate().child(quick.label.clone()))
                         .tooltip(tooltip(disabled_reason.clone().unwrap_or_else(|| quick.label.clone())));
                     if enabled {
-                        primary.on_click(cx.listener(move |this, _, _, cx| this.run_quick_action(quick_for_click.clone(), cx)))
+                        primary.on_click(cx.listener(move |this, _, window, cx| this.run_quick_action(quick_for_click.clone(), window, cx)))
                     } else {
                         // `aria-disabled`: dimmed, and the reason shows on hover.
                         primary.opacity(DISABLED_OPACITY).cursor_not_allowed()
@@ -1049,6 +1080,9 @@ impl Render for GitActionsControl {
         }
         if let Some(pending) = self.pending_default.clone() {
             root = root.child(self.render_default_branch_dialog(&pending, status_ref, cx));
+        }
+        if let Some((dialog, _)) = &self.publish {
+            root = root.child(dialog.clone());
         }
         root
     }

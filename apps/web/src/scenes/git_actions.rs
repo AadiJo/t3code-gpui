@@ -98,6 +98,7 @@ pub fn fixture_git_props() -> GitActionsProps {
         show_changes: true,
         thread_id: None,
         project_id: Some(ProjectId::new("project-t3code")),
+        offered_source_control_providers: None,
     }
 }
 

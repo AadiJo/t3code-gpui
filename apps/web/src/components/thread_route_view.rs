@@ -263,7 +263,7 @@ impl ThreadRouteView {
             move |this, _, event: &GitActionsEvent, cx| match event {
                 GitActionsEvent::OpenChanges => cx.emit(ThreadRouteEvent::OpenDiff { turn: None, file: None }),
                 GitActionsEvent::ThreadBranchChanged(branch) => this.set_branch(&key, branch.clone().into(), cx),
-                GitActionsEvent::OpenPublish => {}
+                GitActionsEvent::OpenUrl(_) | GitActionsEvent::OpenSourceControlSettings => {}
             }
         }));
         subscriptions.push(cx.subscribe(&scripts, |_, _, event: &ProjectScriptsEvent, cx| {
