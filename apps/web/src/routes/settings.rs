@@ -435,7 +435,8 @@ impl SettingsRoute {
 }
 
 /// `ScrollBar` (vertical) of `scroll-area.tsx`, as drawn while the pointer is over the page:
-/// `my-1 mr-px w-1.5`, a rounded `--app-scrollbar-thumb` thumb at least 16px long.
+/// `my-1 w-1.5`, a rounded `--app-scrollbar-thumb` thumb at least 16px long. Its `mr-px` lands
+/// on the modal's border in the fork's capture, so the thumb meets the border here.
 fn scroll_thumb(scroll: &ScrollHandle, cx: &App) -> Option<gpui_kit::Div> {
     let theme = cx.app_theme();
     let viewport = scroll.bounds().size.height;
@@ -450,7 +451,7 @@ fn scroll_thumb(scroll: &ScrollHandle, cx: &App) -> Option<gpui_kit::Div> {
     Some(
         div()
             .absolute()
-            .right(px(1.))
+            .right_0()
             .top(theme.sp(1.) + (track - length) * progress)
             .w(theme.sp(1.5))
             .h(length)
