@@ -3654,77 +3654,6 @@
   }
  },
  "details": {
-  "titlebar fill": {
-   "color": "#141415"
-  },
-  "sidebar fill (top)": {
-   "color": "#181819"
-  },
-  "sidebar edge": {
-   "start": "#171818",
-   "edges": [
-    {
-     "at": 255.0,
-     "color": "#141415"
-    },
-    {
-     "at": 256.0,
-     "color": "#141415"
-    }
-   ]
-  },
-  "sidebar toggle": {
-   "top": 20.0,
-   "left": 89.0,
-   "bottom": 33.0,
-   "right": 102.0,
-   "color": "#888888",
-   "bg": "#181819"
-  },
-  "right toggles": {
-   "top": 20.0,
-   "left": 1008.0,
-   "bottom": 33.0,
-   "right": 1082.0,
-   "color": "#888888",
-   "bg": "#141415"
-  },
-  "breadcrumb monogram": {
-   "top": 19.0,
-   "left": 275.0,
-   "bottom": 33.0,
-   "right": 288.0,
-   "color": "#00d5be",
-   "bg": "#141415"
-  },
-  "breadcrumb project": {
-   "top": 21.0,
-   "left": 294.0,
-   "bottom": 32.5,
-   "right": 350.0,
-   "color": "#888888",
-   "bg": "#141415"
-  },
-  "breadcrumb slash": {
-   "top": 21.0,
-   "left": 350.0,
-   "bottom": 32.5,
-   "right": 366.0,
-   "color": "#8d8d8e",
-   "bg": "#141415"
-  },
-  "breadcrumb title": {
-   "top": 21.0,
-   "left": 368.0,
-   "bottom": 34.0,
-   "right": 478.0,
-   "color": "#e8e8e8",
-   "bg": "#141415"
-  },
-  "dev badge": {
-   "empty": true,
-   "bg": "#181819"
-  },
   "card left edge": {
    "start": "#141415",
    "edges": [
@@ -3838,50 +3767,105 @@
  },
  "details-wide": {
   "card left edge": {
-   "start": "#141415",
+   "start": "#171719",
    "edges": []
   },
   "card right edge": {
-   "start": "#141415",
-   "edges": []
+   "start": "#181819",
+   "edges": [
+    {
+     "at": 1697.0,
+     "color": "#141415"
+    },
+    {
+     "at": 1698.0,
+     "color": "#141415"
+    }
+   ]
   },
   "card top edge": {
    "start": "#141415",
-   "edges": [],
+   "edges": [
+    {
+     "at": 64.0,
+     "color": "#171719"
+    },
+    {
+     "at": 65.0,
+     "color": "#171719"
+    }
+   ],
    "vertical": true
   },
   "workspace rows": {
-   "empty": true,
-   "bg": "#141415"
+   "top": 81.0,
+   "left": 1450.0,
+   "bottom": 156.0,
+   "right": 1679.0,
+   "color": "#edecec",
+   "bg": "#171719"
   },
   "section rule": {
-   "start": "#141415",
-   "edges": [],
+   "start": "#171719",
+   "edges": [
+    {
+     "at": 172.0,
+     "color": "#171719"
+    },
+    {
+     "at": 173.0,
+     "color": "#171719"
+    }
+   ],
    "vertical": true
   },
   "branch icon": {
-   "empty": true,
-   "bg": "#141415"
+   "top": 190.0,
+   "left": 1450.0,
+   "bottom": 200.0,
+   "right": 1472.5,
+   "color": "#bebebf",
+   "bg": "#171719"
   },
   "branch label": {
-   "empty": true,
-   "bg": "#141415"
+   "top": 190.0,
+   "left": 1476.0,
+   "bottom": 200.5,
+   "right": 1490.5,
+   "color": "#bebebf",
+   "bg": "#171719"
   },
   "branch chevron": {
-   "empty": true,
-   "bg": "#141415"
+   "top": 193.0,
+   "left": 1670.0,
+   "bottom": 198.0,
+   "right": 1679.0,
+   "color": "#888888",
+   "bg": "#181819"
   },
   "git action row": {
-   "empty": true,
-   "bg": "#141415"
+   "top": 220.0,
+   "left": 1450.0,
+   "bottom": 230.5,
+   "right": 1511.0,
+   "color": "#bebebf",
+   "bg": "#171719"
   },
   "changes label": {
-   "empty": true,
-   "bg": "#141415"
+   "top": 250.5,
+   "left": 1476.0,
+   "bottom": 261.0,
+   "right": 1537.0,
+   "color": "#bebebf",
+   "bg": "#181819"
   },
   "changes counts": {
-   "empty": true,
-   "bg": "#141415"
+   "top": 248.0,
+   "left": 1570.0,
+   "bottom": 259.5,
+   "right": 1679.0,
+   "color": "#ff6467",
+   "bg": "#181819"
   }
  },
  "palette-root": {
@@ -4012,7 +3996,7 @@
    ]
   },
   "palette right edge": {
-   "start": "#171717",
+   "start": "#161616",
    "edges": [
     {
      "at": 1124.0,

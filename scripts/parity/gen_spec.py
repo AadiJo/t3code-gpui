@@ -277,7 +277,7 @@ def details(dx=0, dy=0):
 def palette(dx=0, dy=0):
     return [
         hscan("palette left edge", 300 + dy, 260 + dx, 300 + dx, **BL),
-        hscan("palette right edge", 300 + dy, 800 + dx, 840 + dx, **BL),
+        hscan("palette right edge", 300 + dy, 812 + dx, 840 + dx, **BL),
         vscan("palette top edge", 550 + dx, 60 + dy, 100 + dy, **BL),
         ink("search icon", 292 + dx, 88 + dy, 316 + dx, 116 + dy),
         ink("search placeholder", 318 + dx, 88 + dy, 640 + dx, 116 + dy, **T),
@@ -290,8 +290,8 @@ def palette(dx=0, dy=0):
         ink("item 3 title", 318 + dx, 220 + dy, 560 + dx, 246 + dy, **T),
     ]
 
-scene("details", chrome(), details())
-scene("details-wide", details(dx=610), reference="details-wide")
+scene("details", details())
+scene("details-wide", details(dx=610, dy=4.5), reference="details-wide")
 scene("palette-root", palette())
 scene("palette-root-wide", palette(dx=305, dy=29.4), reference="palette-root-wide")
 scene("palette-query-sync", [

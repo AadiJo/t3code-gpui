@@ -26,12 +26,22 @@ pub fn row_height(row: &PaletteRow, theme: &AppTheme) -> Pixels {
     let xs = px(TextSize::Xs.line_height(rem));
     match row {
         PaletteRow::Label { first, .. } => theme.sp(3.) + xs + if *first { px(0.) } else { theme.sp(1.5) },
-        PaletteRow::Item { shown, .. } => {
-            let title = px(TextSize::Sm.line_height(rem));
-            let second = if has_second_line(shown) { xs } else { px(0.) };
-            (theme.sp(3.) + title + second).max(theme.sp(7.))
-        }
+        PaletteRow::Item { shown, .. } => item_height(shown, theme),
     }
+}
+
+/// An item row's height: `py-1.5` around the title and second line. A thread
+/// subtitle is an inline-flex line, which the fork's line box makes 2px taller.
+fn item_height(shown: &ShownItem, theme: &AppTheme) -> Pixels {
+    let rem = theme.fonts.interface;
+    let title = px(TextSize::Sm.line_height(rem));
+    let second = if has_second_line(shown) { px(TextSize::Xs.line_height(rem)) } else { px(0.) };
+    let inline_flex = if shown.hint.is_none() && (shown.item.thread.is_some() || shown.item.project.is_some()) && has_second_line(shown) {
+        px(2.)
+    } else {
+        px(0.)
+    };
+    (theme.sp(3.) + title + second + inline_flex).max(theme.sp(7.))
 }
 
 fn has_second_line(shown: &ShownItem) -> bool {
@@ -202,7 +212,8 @@ pub fn render_item(
         .flex()
         .items_center()
         .gap(theme.sp(2.))
-        .min_h(theme.sp(7.))
+        // A fixed height keeps the 30px pitch where the line height rounds.
+        .h(item_height(shown, theme))
         .px(theme.sp(2.))
         .py(theme.sp(1.5))
         .rounded(theme.radii.sm)

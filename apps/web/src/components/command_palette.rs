@@ -767,13 +767,14 @@ impl CommandPalette {
             div()
                 .id("command-palette-back")
                 .cursor_pointer()
-                .child(Icon::new(IconName::ArrowLeft).size(IconSize::Md).color(c.icon_muted))
+                // The back arrow takes the text colour; the addon's 80% opacity dims it.
+                .child(Icon::new(IconName::ArrowLeft).size(IconSize::Custom(theme.rem(1.))).color(c.foreground()))
                 .on_click(cx.listener(|this, _, window, cx| {
                     this.pop_view(window, cx);
                 }))
                 .into_any_element()
         } else {
-            Icon::new(IconName::Search).size(IconSize::Md).color(c.icon_muted).into_any_element()
+            Icon::new(IconName::Search).size(IconSize::Custom(theme.rem(1.))).color(c.icon_muted).into_any_element()
         };
         let field = gpui_kit::component::input::Input::new(&session.input).appearance(false);
         let field = gpui_kit::Styled::h(field, theme.sp(8.5))
@@ -797,7 +798,8 @@ impl CommandPalette {
                         .absolute()
                         .top_0()
                         .bottom_0()
-                        .left(px(1.) + theme.sp(3.) - px(1.))
+                        // `[&_svg]:-mx-0.5` pulls the icon back by 0.125rem.
+                        .left(px(1.) + theme.sp(3.) - px(1.) - theme.rem(0.125))
                         .flex()
                         .items_center()
                         .opacity(0.8)

@@ -4214,105 +4214,6 @@
   "details": {
    "elements": [
     {
-     "name": "titlebar fill",
-     "kind": "fill",
-     "at": [
-      600,
-      30
-     ]
-    },
-    {
-     "name": "sidebar fill (top)",
-     "kind": "fill",
-     "at": [
-      240,
-      40
-     ]
-    },
-    {
-     "name": "sidebar edge",
-     "kind": "hscan",
-     "at": [
-      400,
-      250,
-      262
-     ]
-    },
-    {
-     "name": "sidebar toggle",
-     "kind": "ink",
-     "at": [
-      84,
-      14,
-      112,
-      40
-     ]
-    },
-    {
-     "name": "right toggles",
-     "kind": "ink",
-     "at": [
-      995,
-      14,
-      1090,
-      40
-     ]
-    },
-    {
-     "name": "breadcrumb monogram",
-     "kind": "ink",
-     "at": [
-      272,
-      16,
-      293,
-      37
-     ]
-    },
-    {
-     "name": "breadcrumb project",
-     "kind": "ink",
-     "at": [
-      294,
-      14,
-      350,
-      40
-     ],
-     "text": true
-    },
-    {
-     "name": "breadcrumb slash",
-     "kind": "ink",
-     "at": [
-      350,
-      14,
-      366,
-      40
-     ],
-     "text": true
-    },
-    {
-     "name": "breadcrumb title",
-     "kind": "ink",
-     "at": [
-      368,
-      14,
-      520,
-      40
-     ],
-     "text": true
-    },
-    {
-     "name": "dev badge",
-     "kind": "ink",
-     "at": [
-      2,
-      15,
-      34,
-      37
-     ],
-     "exclude": "dev builds only; never on the owner's build"
-    },
-    {
      "name": "card left edge",
      "kind": "hscan",
      "at": [
@@ -4434,7 +4335,7 @@
      "name": "card left edge",
      "kind": "hscan",
      "at": [
-      150,
+      154.5,
       1425,
       1450
      ],
@@ -4444,7 +4345,7 @@
      "name": "card right edge",
      "kind": "hscan",
      "at": [
-      150,
+      154.5,
       1685,
       1710
      ],
@@ -4455,8 +4356,8 @@
      "kind": "vscan",
      "at": [
       1560,
-      50,
-      70
+      54.5,
+      74.5
      ],
      "blur": true
     },
@@ -4465,9 +4366,9 @@
      "kind": "ink",
      "at": [
       1450,
-      66,
+      70.5,
       1690,
-      160
+      164.5
      ],
      "exclude": "fixture: the thread's git state, editor, machine and scripts are fixture content"
     },
@@ -4476,8 +4377,8 @@
      "kind": "vscan",
      "at": [
       1610,
-      160,
-      175
+      164.5,
+      179.5
      ]
     },
     {
@@ -4485,9 +4386,9 @@
      "kind": "ink",
      "at": [
       1450,
-      178,
+      182.5,
       1474,
-      204
+      208.5
      ]
     },
     {
@@ -4495,9 +4396,9 @@
      "kind": "ink",
      "at": [
       1476,
-      178,
+      182.5,
       1650,
-      204
+      208.5
      ],
      "text": true
     },
@@ -4506,9 +4407,9 @@
      "kind": "ink",
      "at": [
       1660,
-      178,
+      182.5,
       1690,
-      204
+      208.5
      ]
     },
     {
@@ -4516,9 +4417,9 @@
      "kind": "ink",
      "at": [
       1450,
-      208,
+      212.5,
       1650,
-      234
+      238.5
      ],
      "exclude": "fixture: the thread's git state, editor, machine and scripts are fixture content"
     },
@@ -4527,9 +4428,9 @@
      "kind": "ink",
      "at": [
       1476,
-      238,
+      242.5,
       1538,
-      264
+      268.5
      ],
      "text": true
     },
@@ -4538,9 +4439,9 @@
      "kind": "ink",
      "at": [
       1570,
-      238,
+      242.5,
       1690,
-      264
+      268.5
      ],
      "exclude": "fixture: the thread's git state, editor, machine and scripts are fixture content"
     }
@@ -4564,7 +4465,7 @@
      "kind": "hscan",
      "at": [
       300,
-      800,
+      812,
       840
      ],
      "blur": true
@@ -4692,7 +4593,7 @@
      "kind": "hscan",
      "at": [
       329.4,
-      1105,
+      1117,
       1145
      ],
      "blur": true
