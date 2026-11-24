@@ -1279,6 +1279,9 @@ impl Render for AppRoot {
             .on_action(cx.listener(|this, _: &NewLocalChat, window, cx| this.new_thread(None, window, cx)))
             .on_action(cx.listener(|this, _: &NewChatWithoutProject, window, cx| this.new_thread(None, window, cx)))
             .on_action(cx.listener(|this, _: &OpenUsage, _, cx| this.navigate(Route::Usage, cx)))
+            .on_action(cx.listener(|this, _: &crate::components::pull_request::thread_pull_requests_panel::OpenLinkPullRequestDialog, window, cx| {
+                this.open_link_pull_request(window, cx)
+            }))
             .on_action(cx.listener(|this, _: &PreviousThread, _, cx| this.step_thread(ThreadStep::Previous, cx)))
             .on_action(cx.listener(|this, _: &NextThread, _, cx| this.step_thread(ThreadStep::Next, cx)))
             .on_action(cx.listener(|this, _: &JumpToThread1, _, cx| this.step_thread(ThreadStep::Jump(0), cx)))

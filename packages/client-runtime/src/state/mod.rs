@@ -32,6 +32,7 @@ pub mod thread_families;
 pub mod thread_history_merge;
 pub mod thread_inbox;
 pub mod thread_lifecycle;
+pub mod thread_pull_requests;
 pub mod thread_relationships;
 pub mod thread_runs;
 pub mod thread_search;

@@ -66,6 +66,8 @@
 //   usage-limits  the `/usage-limits` banner against a stand-in usage-limit hub: offered in the
 //            `/` menu, picked or sent, accounts and windows, dismiss, a redeemed reset credit and
 //            a send closing it (`live_check_usage.rs`)
+//   linked-items  the Linked items tab on linked pull requests and an issue: order and depths,
+//            watch and unlink read back, the empty state (`live_check_linked.rs`)
 //   lineage  the details card's subagent rows on server data from a scripted fx stand-in: two
 //            provider-native subagents with the driver mark, live elapsed time, per-second redraw
 //            and hover card; an app-owned child (the server's `delegate_task`) stopped from its
@@ -80,12 +82,13 @@
 //            advances with the wall clock
 //   breadcrumb  an unlisted subagent thread and a side chat shown in the main pane name their
 //            project in the header breadcrumb
-// Usage: live-check <draft-banner|setup|families-seed|families|memory-seed|memory|usage-limits|seed|drive|restart|import|send|sidebar|notify|details|mentions|heic|wheel|workspace|banner|sidebardata|composer|composer-restart|sidechats|sidechats-ref|lineage|lineage-ref|sidepane|delete-thread|timer|breadcrumb|probe> <out-dir>
+// Usage: live-check <draft-banner|setup|families-seed|families|memory-seed|memory|usage-limits|linked-items|seed|drive|restart|import|send|sidebar|notify|details|mentions|heic|wheel|workspace|banner|sidebardata|composer|composer-restart|sidechats|sidechats-ref|lineage|lineage-ref|sidepane|delete-thread|timer|breadcrumb|probe> <out-dir>
 #[allow(dead_code)]
 #[path = "import/mod.rs"]
 mod import;
 mod live_check_families;
 mod live_check_heap;
+mod live_check_linked;
 mod live_check_memory;
 mod live_check_palette;
 mod live_check_setup;
@@ -574,6 +577,7 @@ fn main() -> anyhow::Result<()> {
         "memory" => live_check_memory::run_memory(&mut check),
         "memory-seed" => live_check_memory::run_memory_seed(&mut check),
         "usage-limits" => live_check_usage::run_usage_limits(&mut check),
+        "linked-items" => live_check_linked::run_linked_items(&mut check),
         "palette" => live_check_palette::run_palette(&mut check),
         "setup" => live_check_setup::run_setup(&mut check),
         "draft-banner" => live_check_setup::run_draft_banner(&mut check),

@@ -16,3 +16,4 @@ pub mod pull_requests_page;
 pub fn init(cx: &mut gpui_kit::App) {
     pull_requests_page::init(cx);
 }
+pub mod thread_pull_requests_panel;
