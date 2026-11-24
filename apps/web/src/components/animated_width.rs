@@ -22,12 +22,14 @@ impl AnimatedWidth {
 impl RenderOnce for AnimatedWidth {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let state = window.use_keyed_state(self.id.clone(), cx, |_, _| SizeTween::default());
-        let current = state.update(cx, |tween, _| tween.current(Transition::WIDTH, window));
+        let now = cx.background_executor().now();
+        let current = state.update(cx, |tween, _| tween.current(Transition::WIDTH, window, now));
         let animate = !prefers_reduced_motion(cx);
         let probe = canvas(
             move |bounds, window, cx| {
+                let now = cx.background_executor().now();
                 let width = f32::from(bounds.size.width);
-                if width > 0. && state.update(cx, |tween, _| tween.measure(width, animate, Transition::WIDTH)) {
+                if width > 0. && state.update(cx, |tween, _| tween.measure(width, animate, Transition::WIDTH, now)) {
                     window.refresh();
                 }
             },

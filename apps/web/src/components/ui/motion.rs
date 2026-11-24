@@ -206,12 +206,11 @@ pub struct SizeTween {
 
 impl SizeTween {
     /// Records a measurement. Returns whether it changed the target.
-    pub fn measure(&mut self, size: f32, animate: bool, transition: Transition) -> bool {
+    pub fn measure(&mut self, size: f32, animate: bool, transition: Transition, now: Instant) -> bool {
         let size = size.ceil();
         if self.target == Some(size) {
             return false;
         }
-        let now = Instant::now();
         self.from = self.value_at(now, transition).unwrap_or(size);
         self.started = (animate && self.target.is_some()).then_some(now);
         self.target = Some(size);
@@ -227,14 +226,14 @@ impl SizeTween {
 
     /// The size to draw now, or `None` before the first measurement. While
     /// easing it requests the next frame and reports `true` (clip the content).
-    pub fn current(&mut self, transition: Transition, window: &mut Window) -> Option<(f32, bool)> {
+    pub fn current(&mut self, transition: Transition, window: &mut Window, now: Instant) -> Option<(f32, bool)> {
         let target = self.target?;
         let Some(started) = self.started else { return Some((target, false)) };
-        if started.elapsed() >= transition.duration {
+        if now.duration_since(started) >= transition.duration {
             self.started = None;
             return Some((target, false));
         }
         window.request_animation_frame();
-        self.value_at(Instant::now(), transition).map(|value| (value, true))
+        self.value_at(now, transition).map(|value| (value, true))
     }
 }

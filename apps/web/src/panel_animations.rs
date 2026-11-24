@@ -4,7 +4,8 @@
 //! 0 ms or the OS reduced-motion preference makes every change instant.
 //!
 //! A transition repaints only while it runs: [`PanelTransition::fraction`]
-//! asks for the next frame until the end, then stops.
+//! asks for the next frame until the end, then stops. Time is GPUI's
+//! executor clock, so headless checks can step it.
 
 use std::time::{Duration, Instant};
 
@@ -36,11 +37,10 @@ impl PanelTransition {
 
     /// Moves toward `open`, starting from wherever a running transition is,
     /// as a CSS transition reverses. Instant when `animate` is false.
-    pub fn set(&mut self, open: bool, animate: bool, duration: Duration) {
+    pub fn set(&mut self, open: bool, animate: bool, duration: Duration, now: Instant) {
         if open == self.open {
             return;
         }
-        let now = Instant::now();
         self.from = self.linear_at(now);
         self.open = open;
         self.duration = duration;
@@ -51,7 +51,7 @@ impl PanelTransition {
     /// reduced-motion preference (`usePanelAnimationSettings`).
     pub fn follow(&mut self, open: bool, cx: &App) {
         let duration = cx.app_theme().motion.panel;
-        self.set(open, !prefers_reduced_motion(cx), duration);
+        self.set(open, !prefers_reduced_motion(cx), duration, cx.background_executor().now());
     }
 
     /// Jumps to `open` with no transition (restoring saved state).
@@ -72,19 +72,20 @@ impl PanelTransition {
 
     /// Whether the panel must be drawn: open, or still closing (`usePanelPresence`).
     pub fn present(&self) -> bool {
-        self.open || self.started.is_some_and(|started| started.elapsed() < self.duration)
+        self.open || self.started.is_some()
     }
 
     /// The open fraction to draw now, 0 to 1. While a transition runs it
     /// requests the next frame; once it ends it settles and requests nothing.
-    pub fn fraction(&mut self, window: &mut Window) -> f32 {
+    pub fn fraction(&mut self, window: &mut Window, cx: &App) -> f32 {
         let Some(started) = self.started else { return self.target() };
-        if started.elapsed() >= self.duration {
+        let now = cx.background_executor().now();
+        if now.duration_since(started) >= self.duration {
             self.started = None;
             self.from = self.target();
             return self.target();
         }
         window.request_animation_frame();
-        self.linear_at(Instant::now())
+        self.linear_at(now)
     }
 }

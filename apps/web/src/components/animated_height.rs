@@ -29,17 +29,19 @@ impl AnimatedHeight {
 impl RenderOnce for AnimatedHeight {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let state = window.use_keyed_state(self.id.clone(), cx, |_, _| SizeTween::default());
-        let current = state.update(cx, |tween, _| tween.current(Transition::HEIGHT, window));
+        let now = cx.background_executor().now();
+        let current = state.update(cx, |tween, _| tween.current(Transition::HEIGHT, window, now));
         let hold = self.hold_height;
         let measure = state.clone();
         let animate = !prefers_reduced_motion(cx);
         let probe = canvas(
             move |bounds, window, cx| {
+                let now = cx.background_executor().now();
                 if hold {
                     return;
                 }
                 let height = f32::from(bounds.size.height);
-                if measure.update(cx, |tween, _| tween.measure(height, animate, Transition::HEIGHT)) {
+                if measure.update(cx, |tween, _| tween.measure(height, animate, Transition::HEIGHT, now)) {
                     window.refresh();
                 }
             },

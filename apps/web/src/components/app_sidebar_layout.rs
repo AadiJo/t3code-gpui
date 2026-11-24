@@ -527,10 +527,10 @@ impl Render for AppSidebarLayout {
         }
         let sidebar_visible = if sheet_mode { self.sheet_open } else { self.sidebar_open };
         self.sidebar_motion.follow(self.sidebar_open && !sheet_mode, cx);
-        self.sidebar_fraction = self.sidebar_motion.fraction(window);
+        self.sidebar_fraction = self.sidebar_motion.fraction(window, cx);
         let sidebar_present = !sheet_mode && self.sidebar_motion.present();
         self.right_motion.follow(self.right_open, cx);
-        let right_fraction = if self.right_maximized { 1. } else { self.right_motion.fraction(window) };
+        let right_fraction = if self.right_maximized { 1. } else { self.right_motion.fraction(window, cx) };
         self.sidebar_width = clamp_sidebar_width(self.sidebar_width, viewport.width);
         let row_width = viewport.width - self.sidebar_gap();
         self.right_width = clamp_right_width(self.right_width, viewport.width, row_width);

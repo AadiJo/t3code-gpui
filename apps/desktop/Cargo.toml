@@ -105,6 +105,13 @@ required-features = ["headless"]
 name = "app-check"
 path = "src/app_check.rs"
 required-features = ["headless"]
+
+# Drives panel, toast and popup transitions and checks the window stops
+# asking for frames once each ends. Usage: motion-check <out-dir>
+[[bin]]
+name = "motion-check"
+path = "src/motion_check.rs"
+required-features = ["headless"]
 # Runs a scripted notification sequence through the engine and inbox and logs
 # every decision. Usage: notification-check <fixture.json> <out.jsonl> <darwin|linux> [--notify]
 [[bin]]
