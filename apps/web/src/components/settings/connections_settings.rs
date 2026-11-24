@@ -10,7 +10,6 @@
 use std::collections::HashSet;
 use std::time::{Duration, SystemTime};
 
-use gpui_kit::component::input::{InputEvent, InputState};
 use gpui_kit::{
     TestSupportExt as _,
     AnyElement, App, ClipboardItem, Context, Entity, IntoElement, Render, SharedString, Subscription, Task, WeakEntity,
@@ -90,7 +89,6 @@ pub struct ConnectionsSettings {
     routes_open: HashSet<EnvironmentId>,
     diagnosis_open: HashSet<EnvironmentId>,
     removing: HashSet<EnvironmentId>,
-    renaming: Option<(EnvironmentId, Entity<InputState>)>,
     dialog: Option<PageDialog>,
     /// Ticks once a second while a row shows a retry countdown.
     ticker: Option<Task<()>>,
@@ -115,7 +113,6 @@ impl ConnectionsSettings {
             routes_open: HashSet::new(),
             diagnosis_open: HashSet::new(),
             removing: HashSet::new(),
-            renaming: None,
             dialog: None,
             ticker: None,
             _subscriptions: vec![observe],
@@ -278,35 +275,6 @@ impl ConnectionsSettings {
         .detach();
     }
 
-    fn start_rename(&mut self, env: &EnvironmentState, window: &mut Window, cx: &mut Context<Self>) {
-        let label = env.entry.label.clone();
-        let input = cx.new(|cx| InputState::new(window, cx).default_value(label));
-        let id = env.id().clone();
-        let subscription = cx.subscribe_in(&input, window, move |this, _, event: &InputEvent, _, cx| {
-            if let InputEvent::PressEnter { .. } = event {
-                this.commit_rename(cx);
-            }
-        });
-        self._subscriptions.push(subscription);
-        input.update(cx, |state, cx| state.focus(window, cx));
-        self.renaming = Some((id, input));
-        cx.notify();
-    }
-
-    fn commit_rename(&mut self, cx: &mut Context<Self>) {
-        let Some((id, input)) = self.renaming.take() else { return };
-        let label = input.read(cx).value().to_string();
-        cx.notify();
-        let Some(runtime) = cx.try_global::<ConnectionRuntime>() else { return };
-        let task = runtime.rename(id, label, cx);
-        cx.spawn(async move |_, cx| {
-            if let Err(error) = task.await {
-                cx.update(|cx| Toaster::push(ToastData::new(ToastKind::Error, t!("Rename")).description(error.0), cx));
-            }
-        })
-        .detach();
-    }
-
     fn retry(&self, id: &EnvironmentId, cx: &App) {
         if let Some(runtime) = cx.try_global::<ConnectionRuntime>() {
             runtime.retry(id);
@@ -425,31 +393,7 @@ impl ConnectionsSettings {
                     .text_color(c.muted_foreground)
                     .children(subtitle),
             );
-        let identity = match &self.renaming {
-            Some((renaming, input)) if *renaming == id => div()
-                .flex()
-                .items_center()
-                .gap(sp(2.))
-                .child(div().flex_1().child(crate::components::ui::input::TextInput::new(input)))
-                .child(
-                    Button::new(SharedString::from(format!("env-rename-save-{key}")))
-                        .label(t!("Save"))
-                        .size(ButtonSize::Xs)
-                        .on_click(cx.listener(|this, _, _, cx| this.commit_rename(cx))),
-                )
-                .child(
-                    Button::new(SharedString::from(format!("env-rename-cancel-{key}")))
-                        .label(t!("Cancel"))
-                        .variant(ButtonVariant::GhostMuted)
-                        .size(ButtonSize::Xs)
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            this.renaming = None;
-                            cx.notify();
-                        })),
-                )
-                .into_any_element(),
-            _ => identity.into_any_element(),
-        };
+        let identity = identity.into_any_element();
         let below = diagnosis.as_ref().map(|diagnosis| {
             let status = env.status.as_ref();
             let retry_at = status.and_then(|s| s.retry_at);
