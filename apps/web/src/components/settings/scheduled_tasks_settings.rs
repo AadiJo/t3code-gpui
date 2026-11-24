@@ -5,12 +5,12 @@
 //! workspace, model and permissions. Validation and the saved schedule come
 //! from `scheduled_tasks_settings_logic`.
 
-use gpui_kit::component::input::InputState;
+use gpui_kit::component::input::{InputState, TextareaState};
 use gpui_kit::{AnyElement, AppContext as _, Context, Entity, EventEmitter, IntoElement, Render, SharedString, Subscription, Window, div, prelude::*, px};
 use t3code_contracts::{
     ModelSelection, OrchestrationV2ThreadLaunchWorkspaceStrategy as Strategy, OrchestrationV2ThreadLaunchWorkspaceStrategyRoot,
     OrchestrationV2ThreadLaunchWorkspaceStrategyWorktree, ProjectId, RuntimeMode, ScheduledTaskDeleteInput, ScheduledTaskId,
-    ScheduledTaskRunNowInput, ScheduledTaskSetEnabledInput, ScheduledTaskUpsertInput,
+    ScheduledTaskRunNowInput, ScheduledTaskSetEnabledInput, ScheduledTaskThreadMode, ScheduledTaskUpsertInput,
     ScheduledTaskUpsertScheduleWebhookSignatureEncoding as Encoding,
 };
 
@@ -31,6 +31,7 @@ use crate::components::ui::TextStyleExt as _;
 use crate::components::ui::button::{Button, ButtonSize, ButtonVariant};
 use crate::components::ui::dialog::{Modal, dialog_glass};
 use crate::components::ui::select::{Select, SelectSize};
+use crate::components::ui::input::TextArea;
 use crate::components::ui::switch::Switch;
 use crate::components::ui::toggle::{Toggle, ToggleSize, ToggleVariant};
 use crate::i18n::t;
@@ -47,6 +48,11 @@ pub struct ScheduledTaskEditor {
     model: Entity<ServerPanelsModel>,
     pub draft: DraftState,
     fields: Fields,
+    /// The Prompt textarea, created on first render.
+    prompt: Option<Entity<TextareaState>>,
+    scroll: gpui_kit::ScrollHandle,
+    /// Where the Schedule row sits among the form's rows, for [`Self::reveal_schedule`].
+    schedule_row: usize,
     errors: Vec<SharedString>,
     saving: bool,
 }
@@ -55,7 +61,17 @@ impl EventEmitter<ScheduledTaskEditorEvent> for ScheduledTaskEditor {}
 
 impl ScheduledTaskEditor {
     pub fn new(model: Entity<ServerPanelsModel>, draft: DraftState) -> Self {
-        Self { model, draft, fields: Fields::default(), errors: Vec::new(), saving: false }
+        Self { model, draft, fields: Fields::default(), prompt: None, scroll: gpui_kit::ScrollHandle::new(), schedule_row: 0, errors: Vec::new(), saving: false }
+    }
+
+    /// Scrolls the form so the Schedule row is in view.
+    pub fn reveal_schedule(&self) {
+        self.scroll.scroll_to_item(self.schedule_row);
+    }
+
+    /// Scrolls the form to its last row (the Enabled switch).
+    pub fn reveal_end(&self) {
+        self.scroll.scroll_to_item(self.schedule_row + 1);
     }
 
     /// Switches the schedule kind.
@@ -71,7 +87,8 @@ impl ScheduledTaskEditor {
         let d = &mut self.draft;
         let f = &self.fields;
         if let Some(v) = text("title", cx, f) { d.title = v; }
-        if let Some(v) = text("prompt", cx, f) { d.prompt = v; }
+        if let Some(v) = self.prompt.as_ref().map(|p| p.read(cx).value().to_string()) { d.prompt = v; }
+        if let Some(v) = text("checkoutPath", cx, f) { d.existing_worktree_path = v; }
         if let Some(v) = text("time", cx, f) { d.time_of_day = v; }
         if let Some(v) = text("runAt", cx, f) { d.run_at = v; }
         if let Some(v) = text("interval", cx, f) { d.interval_minutes = v; }
@@ -167,7 +184,7 @@ impl ScheduledTaskEditor {
 
     fn labeled(&self, label: SharedString, control: impl IntoElement, cx: &Context<Self>) -> AnyElement {
         let theme = cx.app_theme();
-        div().flex().flex_col().gap(theme.sp(1.5)).child(div().ui_text(theme, TextSize::Xs, weight::MEDIUM).child(label)).child(control).into_any_element()
+        div().flex().flex_col().gap(theme.sp(2.)).child(div().ui_text(theme, TextSize::Sm, weight::MEDIUM).child(label)).child(control).into_any_element()
     }
 
     fn input(&mut self, key: &str, value: String, placeholder: impl Into<SharedString>, window: &mut Window, cx: &mut Context<Self>) -> Entity<InputState> {
@@ -180,7 +197,9 @@ impl ScheduledTaskEditor {
         match d.schedule_mode {
             ScheduleMode::Fixed => {
                 let time = self.input("time", d.time_of_day.clone(), "09:00", window, cx);
-                let days = div().flex().gap(theme.sp(1.)).children((0..7u64).map(|day| {
+                let zone = self.model.read(cx).snapshot().scheduled_task_time_zone.clone();
+                let zone = super::scheduled_tasks_settings_logic::schedule_time_zone_label(zone.as_deref(), None).unwrap_or_default();
+                let days = div().flex().children([1u64, 2, 3, 4, 5, 6, 0].into_iter().map(|day| {
                     let on = d.weekdays.contains(&day);
                     Toggle::new(SharedString::from(format!("weekday-{day}")))
                         .label(weekday_short_label(day))
@@ -199,19 +218,42 @@ impl ScheduledTaskEditor {
                 }));
                 div()
                     .flex()
-                    .flex_col()
+                    .flex_wrap()
+                    .items_center()
                     .gap(theme.sp(3.))
-                    .child(self.labeled(t!("Time"), div().w(theme.sp(28.)).child(field_input(&time, true, false, false)), cx))
-                    .child(self.labeled(t!("Days"), days, cx))
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(theme.sp(2.))
+                            .child(div().ui_text(theme, TextSize::Sm, weight::MEDIUM).child(t!("Run at")))
+                            .child(div().w(theme.sp(32.)).child(field_input(&time, false, false, false)))
+                            .child(hint(zone, cx))
+                            .child(hint(t!("on"), cx)),
+                    )
+                    .child(days)
                     .into_any_element()
             }
             ScheduleMode::Once => {
                 let run_at = self.input("runAt", d.run_at.clone(), "2026-11-24T09:00", window, cx);
-                self.labeled(t!("Run at"), div().w(theme.sp(56.)).child(field_input(&run_at, true, false, false)), cx)
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(theme.sp(2.))
+                    .child(div().ui_text(theme, TextSize::Sm, weight::MEDIUM).child(t!("Run at")))
+                    .child(div().w(theme.sp(56.)).child(field_input(&run_at, false, false, false)))
+                    .into_any_element()
             }
             ScheduleMode::Interval => {
                 let interval = self.input("interval", d.interval_minutes.clone(), "15", window, cx);
-                self.labeled(t!("Every (minutes)"), div().w(theme.sp(28.)).child(field_input(&interval, true, false, false)), cx)
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(theme.sp(2.))
+                    .child(div().ui_text(theme, TextSize::Sm, weight::MEDIUM).child(t!("Run every")))
+                    .child(div().w(theme.sp(24.)).child(field_input(&interval, false, false, false)))
+                    .child(hint(t!("minutes"), cx))
+                    .into_any_element()
             }
             ScheduleMode::Webhook => {
                 let header = self.input("sigHeader", d.signature_header.clone(), "x-hub-signature-256", window, cx);
@@ -299,18 +341,25 @@ impl Render for ScheduledTaskEditor {
         let theme = &cx.app_theme().clone();
         let c = &theme.colors;
         let d = self.draft.clone();
-        let title = self.input("title", d.title.clone(), t!("Nightly dependency check"), window, cx);
-        let prompt = self.input("prompt", d.prompt.clone(), t!("What should the agent do?"), window, cx);
-        let webhook_denied = managed_capability_denial(self.model.read(cx).snapshot().managed_policy.as_deref(), ManagedCapability::WebhookTasks);
-        let modes = [(ScheduleMode::Fixed, t!("Daily or weekly")), (ScheduleMode::Once, t!("Once")), (ScheduleMode::Interval, t!("Interval")), (ScheduleMode::Webhook, t!("Webhook"))];
-        let kinds = div().flex().gap(theme.sp(1.)).children(modes.iter().map(|(mode, label)| {
+        let snapshot = self.model.read(cx).snapshot().clone();
+        let title = self.input("title", d.title.clone(), t!("e.g. Check for Sentry issues"), window, cx);
+        let prompt = self
+            .prompt
+            .get_or_insert_with(|| {
+                let initial = d.prompt.clone();
+                cx.new(|cx| TextareaState::new(window, cx).auto_grow(3, 12).placeholder(t!("What should the agent do each time this runs?")).default_value(initial))
+            })
+            .clone();
+        let webhook_denied = managed_capability_denial(snapshot.managed_policy.as_deref(), ManagedCapability::WebhookTasks);
+        let modes = [(ScheduleMode::Fixed, t!("At a time")), (ScheduleMode::Once, t!("Once")), (ScheduleMode::Interval, t!("Every interval")), (ScheduleMode::Webhook, t!("On webhook"))];
+        let kinds = div().flex().p(px(2.)).rounded(theme.radii.lg).bg(c.muted).children(modes.iter().map(|(mode, label)| {
             let mode = *mode;
             Toggle::new(SharedString::from(format!("schedule-kind-{mode:?}")))
                 .label(label.clone())
                 .variant(ToggleVariant::Segmented)
                 .size(ToggleSize::Segmented)
                 .pressed(d.schedule_mode == mode)
-                .disabled(mode == ScheduleMode::Webhook && webhook_denied.is_some())
+                .disabled(mode == ScheduleMode::Webhook && webhook_denied.is_some() && d.schedule_mode != ScheduleMode::Webhook)
                 .on_toggle({
                     let this = cx.entity().downgrade();
                     move |_, _, cx| {
@@ -318,7 +367,20 @@ impl Render for ScheduledTaskEditor {
                     }
                 })
         }));
-        let snapshot = self.model.read(cx).snapshot().clone();
+        let runs_on = Select::new("task-environment", vec![SharedString::from(snapshot.environment_label.clone())], 0, |_, _, _| {}).size(SelectSize::Sm);
+        let thread_modes = [
+            (ScheduledTaskThreadMode::NewThread, t!("New thread each run"), t!("Each run starts a new thread with the workspace and model below.")),
+            (ScheduledTaskThreadMode::Continue, t!("One thread, continuing the conversation"), t!("Each run continues this conversation, in its workspace and with its current model.")),
+            (ScheduledTaskThreadMode::FreshSession, t!("One thread, fresh session each run"), t!("Each run starts a fresh session in this thread, without earlier runs' context.")),
+        ];
+        let thread_ix = thread_modes.iter().position(|(m, _, _)| *m == d.thread_mode).unwrap_or(0);
+        let this = cx.entity().downgrade();
+        let destination = Select::new("task-destination", thread_modes.iter().map(|(_, l, _)| l.clone()).collect::<Vec<_>>(), thread_ix, move |ix, _, cx| {
+            this.update(cx, |this, cx| {
+                this.draft.thread_mode = [ScheduledTaskThreadMode::NewThread, ScheduledTaskThreadMode::Continue, ScheduledTaskThreadMode::FreshSession][ix];
+                cx.notify();
+            }).ok();
+        }).size(SelectSize::Sm);
         let projects: Vec<_> = snapshot.projects.iter().filter(|p| p.archived_at.is_none()).cloned().collect();
         let project_ix = projects.iter().position(|p| p.id.to_string() == d.project_id).unwrap_or(0);
         let project_ids: Vec<String> = projects.iter().map(|p| p.id.to_string()).collect();
@@ -330,57 +392,131 @@ impl Render for ScheduledTaskEditor {
                 cx.notify();
             }).ok();
         }).size(SelectSize::Sm);
+        let workspaces = [WorkspaceMode::Worktree, WorkspaceMode::Root, WorkspaceMode::ExistingWorktree];
+        let workspace_ix = workspaces.iter().position(|w| *w == d.workspace_mode).unwrap_or(0);
+        let this = cx.entity().downgrade();
+        let workspace = Select::new("task-workspace", vec![t!("Create a new worktree"), t!("Use the project checkout"), t!("Use a specific checkout")], workspace_ix, move |ix, _, cx| {
+            this.update(cx, |this, cx| {
+                this.draft.workspace_mode = workspaces[ix];
+                cx.notify();
+            }).ok();
+        }).size(SelectSize::Sm);
         let options = model_options(self.model.read(cx));
         let model_ix = options.iter().position(|(s, _)| format!("{}:{}", s.instance_id, s.model) == d.model_key).unwrap_or(0);
         let this = cx.entity().downgrade();
         let opts = options.clone();
-        let model_select = Select::new("task-model", options.iter().map(|(_, l)| l.clone()).collect::<Vec<_>>(), model_ix, move |ix, _, cx| {
+        let model_select = div().w(theme.sp(56.)).child(Select::new("task-model", options.iter().map(|(_, l)| l.clone()).collect::<Vec<_>>(), model_ix, move |ix, _, cx| {
             let selection = opts[ix].0.clone();
             this.update(cx, |this, cx| {
                 this.draft.model_key = format!("{}:{}", selection.instance_id, selection.model);
                 this.draft.base_model_selection = Some(selection);
                 cx.notify();
             }).ok();
-        }).size(SelectSize::Sm);
-        let workspace_ix = match d.workspace_mode { WorkspaceMode::Root => 0, _ => 1 };
-        let this = cx.entity().downgrade();
-        let workspace = Select::new("task-workspace", vec![t!("Project folder"), t!("New worktree")], workspace_ix, move |ix, _, cx| {
-            this.update(cx, |this, cx| {
-                this.draft.workspace_mode = if ix == 0 { WorkspaceMode::Root } else { WorkspaceMode::Worktree };
-                cx.notify();
-            }).ok();
-        }).size(SelectSize::Sm);
-        let runtime_ix = RuntimeMode::ALL.iter().position(|m| *m == d.runtime_mode).unwrap_or(3);
-        let this = cx.entity().downgrade();
-        let runtime = Select::new("task-runtime", vec![t!("Supervised"), t!("Auto-accept edits"), t!("Auto"), t!("Full access")], runtime_ix, move |ix, _, cx| {
-            this.update(cx, |this, cx| {
-                this.draft.runtime_mode = RuntimeMode::ALL[ix];
-                cx.notify();
-            }).ok();
-        }).size(SelectSize::Sm);
+        }).size(SelectSize::Sm));
         let schedule = self.render_schedule(window, cx);
+        let new_thread = d.thread_mode == ScheduledTaskThreadMode::NewThread;
+        let mut body: Vec<AnyElement> = vec![
+            self.labeled(t!("Runs on"), runs_on, cx),
+            self.labeled(t!("Name"), field_input(&title, false, false, false), cx),
+            self.labeled(t!("Destination"), div().flex().flex_col().gap(theme.sp(2.)).child(destination).child(div().ui_text(theme, TextSize::Sm, weight::NORMAL).text_color(c.muted_foreground).child(thread_modes[thread_ix].2.clone())), cx),
+        ];
+        if new_thread {
+            body.push(
+                div()
+                    .flex()
+                    .gap(theme.sp(3.))
+                    .child(div().flex_1().min_w_0().child(self.labeled(t!("Project"), project_select, cx)))
+                    .child(div().flex_1().min_w_0().child(self.labeled(t!("Workspace"), workspace, cx)))
+                    .into_any_element(),
+            );
+            match d.workspace_mode {
+                WorkspaceMode::Worktree => {
+                    let base = self.input("baseRef", d.base_ref.clone(), "main", window, cx);
+                    body.push(self.labeled(t!("Base branch"), field_input(&base, false, false, false), cx));
+                }
+                WorkspaceMode::ExistingWorktree => {
+                    let path = self.input("checkoutPath", d.existing_worktree_path.clone(), "", window, cx);
+                    body.push(self.labeled(t!("Checkout path"), field_input(&path, false, false, false), cx));
+                }
+                WorkspaceMode::Root => {}
+            }
+        }
+        body.push(self.labeled(t!("Prompt"), TextArea::new(&prompt), cx));
+        if new_thread {
+            body.push(self.labeled(t!("Model"), model_select, cx));
+        }
+        let enabled = d.enabled;
+        self.schedule_row = body.len();
+        body.push(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(theme.sp(3.))
+                    .child(div().flex().flex_wrap().items_center().justify_between().gap(theme.sp(2.)).child(div().ui_text(theme, TextSize::Sm, weight::MEDIUM).child(t!("Schedule"))).child(kinds))
+                    .children(webhook_denied.map(|r| hint(r, cx)))
+                    .child(schedule)
+                    .into_any_element(),
+        );
+        body.push(
+                div()
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .gap(theme.sp(4.))
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap(theme.sp(1.))
+                            .child(div().ui_text(theme, TextSize::Sm, weight::MEDIUM).child(t!("Enabled")))
+                            .child(div().ui_text(theme, TextSize::Sm, weight::NORMAL).text_color(c.muted_foreground).child(t!("Disabled tasks stay saved but do not run."))),
+                    )
+                    .child(Switch::new("task-enabled", enabled).on_change({
+                        let this = cx.entity().downgrade();
+                        move |v, _, cx| {
+                            this.update(cx, |this, cx| {
+                                this.draft.enabled = v;
+                                cx.notify();
+                            }).ok();
+                        }
+                    }))
+                    .into_any_element(),
+        );
+        body.extend(self.errors.iter().map(|e| tinted(e.clone(), c.destructive(), cx)));
+        let editing = d.editing_id.is_some();
         dialog_glass(theme)
             .id("scheduled-task-editor")
-            .w(theme.rem(40.))
-            .child(div().p(theme.sp(6.)).pb(theme.sp(3.)).ui_text(theme, TextSize::Xl, weight::SEMIBOLD).child(if d.editing_id.is_some() { t!("Edit scheduled task") } else { t!("New scheduled task") }))
+            .relative()
+            .w(theme.rem(36.))
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(theme.sp(2.))
+                    .p(theme.sp(6.))
+                    .pb(theme.sp(4.))
+                    .child(div().ui_text(theme, TextSize::Xl, weight::SEMIBOLD).child(if editing { t!("Edit task") } else { t!("New task") }))
+                    .child(div().ui_text(theme, TextSize::Sm, weight::NORMAL).text_color(c.muted_foreground).child(t!("Run a prompt automatically on an interval, at a fixed time, once at a set date, or when a webhook is called."))),
+            )
+            .child(
+                div()
+                    .absolute()
+                    .top(theme.sp(2.))
+                    .right(theme.sp(2.))
+                    .child(Button::new("task-close").variant(ButtonVariant::Ghost).size(ButtonSize::IconSm).icon(IconName::X).on_click(cx.listener(|_, _, _, cx| cx.emit(ScheduledTaskEditorEvent::Close)))),
+            )
             .child(
                 div()
                     .id("scheduled-task-editor-body")
                     .max_h(px(560.))
                     .overflow_y_scroll()
+                    .track_scroll(&self.scroll)
                     .flex()
                     .flex_col()
-                    .gap(theme.sp(4.))
+                    .gap(theme.sp(5.))
                     .px(theme.sp(6.))
                     .pb(theme.sp(6.))
-                    .child(self.labeled(t!("Title"), field_input(&title, false, false, false), cx))
-                    .child(self.labeled(t!("Prompt"), field_input(&prompt, false, false, false), cx))
-                    .child(self.labeled(t!("Schedule"), kinds, cx))
-                    .children(webhook_denied.map(|r| hint(r, cx)))
-                    .child(schedule)
-                    .child(div().flex().gap(theme.sp(3.)).child(div().flex_1().child(self.labeled(t!("Project"), project_select, cx))).child(div().flex_1().child(self.labeled(t!("Workspace"), workspace, cx))))
-                    .child(div().flex().gap(theme.sp(3.)).child(div().flex_1().child(self.labeled(t!("Model"), model_select, cx))).child(div().flex_1().child(self.labeled(t!("Permissions"), runtime, cx))))
-                    .children(self.errors.iter().map(|e| tinted(e.clone(), c.destructive(), cx))),
+                    .children(body),
             )
             .child(
                 div()
@@ -393,8 +529,8 @@ impl Render for ScheduledTaskEditor {
                     .border_color(c.border)
                     .bg(theme.derived.dialog_footer)
                     .rounded_b(theme.radii.xxl - px(1.))
-                    .child(Button::new("task-cancel").variant(ButtonVariant::Ghost).size(ButtonSize::Sm).label(t!("Cancel")).on_click(cx.listener(|_, _, _, cx| cx.emit(ScheduledTaskEditorEvent::Close))))
-                    .child(Button::new("task-save").size(ButtonSize::Sm).label(if self.saving { t!("Saving…") } else { t!("Save") }).disabled(self.saving).on_click(cx.listener(|this, _, _, cx| this.save(cx)))),
+                    .child(Button::new("task-cancel").variant(ButtonVariant::Outline).size(ButtonSize::Sm).label(t!("Cancel")).on_click(cx.listener(|_, _, _, cx| cx.emit(ScheduledTaskEditorEvent::Close))))
+                    .child(Button::new("task-save").size(ButtonSize::Sm).label(if editing { t!("Save task") } else { t!("Create task") }).disabled(self.saving).on_click(cx.listener(|this, _, _, cx| this.save(cx)))),
             )
     }
 }

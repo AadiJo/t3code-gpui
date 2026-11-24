@@ -125,17 +125,27 @@ pub fn fixture_snapshot() -> ServerPanelsSnapshot {
         "message": null, "interaction": { "type": "deviceCode", "id": "i-1", "url": "https://claude.ai/oauth/device", "userCode": "QFXK-7RMB" }
     }));
     let codex_auth: ProviderAuthState = decode(json!({ "instanceId": "codex", "phase": "succeeded", "flowId": null, "authorizationUrl": null, "expiresAt": null, "message": null }));
+    let none = json!({ "_tag": "None" });
+    let some = |v: &str| json!({ "_tag": "Some", "value": v });
+    let host = |kind: &str, label: &str, exe: Option<&str>, status: &str, version: serde_json::Value, hint: &str, auth: &str, app: bool| json!({
+        "kind": kind, "label": label, "executable": exe, "status": status, "version": version, "installHint": hint,
+        "detail": { "_tag": "None" }, "appSignIn": app,
+        "auth": { "status": auth, "account": { "_tag": "None" }, "host": { "_tag": "Some", "value": "github.com" }, "detail": { "_tag": "None" } }
+    });
     let source_control = decode(json!({
-        "versionControlSystems": [],
-        "sourceControlProviders": [{
-            "kind": "github", "label": "GitHub", "executable": "gh", "status": "available", "version": "2.62.0",
-            "installHint": "Install the GitHub CLI.", "detail": null, "appSignIn": true,
-            "auth": { "status": "unauthenticated", "account": null, "host": "github.com", "detail": null }
-        }]
+        "versionControlSystems": [
+            { "kind": "git", "implemented": true, "label": "Git", "executable": "git", "status": "available", "version": some("git version 2.43.0"), "installHint": "Install Git.", "detail": none },
+            { "kind": "jj", "implemented": false, "label": "Jujutsu", "executable": "jj", "status": "missing", "version": none, "installHint": "Install Jujutsu.", "detail": none }
+        ],
+        "sourceControlProviders": [
+            host("github", "GitHub", Some("gh"), "available", some("gh version 2.62.0"), "Install the GitHub CLI.", "unauthenticated", true),
+            host("gitlab", "GitLab", Some("glab"), "missing", none.clone(), "Install the GitLab command-line tool (`glab`).", "unknown", false),
+            host("bitbucket", "Bitbucket", None, "available", none.clone(), "Add a Bitbucket token in Settings → Source control & issues.", "unauthenticated", false)
+        ]
     }));
     let trackers = decode(json!({ "trackers": [
         { "tracker": "linear", "displayName": "Linear", "host": "linear.app", "scopeNoun": "team",
-          "credential": { "label": "API key", "placeholder": "lin_api_…", "helpUrl": null }, "connected": true, "account": "dev@example.com", "detail": null, "scopes": [] }
+          "credential": { "label": "Personal API key", "helpUrl": "https://linear.app/settings/api" }, "connected": false, "account": null, "detail": null, "scopes": [] }
     ], "bindings": {} }));
     ServerPanelsSnapshot {
         environment_id: "env-studio".into(),
@@ -173,11 +183,30 @@ pub struct ServerSettingsScene {
     pub settings: Entity<SettingsRoute>,
     pub pages: Entity<ServerSettingsPages>,
     pub source: Arc<FixtureServerSettings>,
+    pub path: SettingsPath,
 }
 
 impl Render for ServerSettingsScene {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        div().size_full().child(self.app.clone()).child(Modal::dialog("settings-route", self.settings.clone(), |_, _| {}))
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // `T3_SCENE_OFFSET=<px>` draws the page alone, scrolled down by that
+        // much, in a column `T3_SCENE_PAGE_WIDTH` wide (default 768), to
+        // inspect what lies below the dialog's fold.
+        let env = |name: &str| std::env::var(name).ok().and_then(|v| v.parse::<f32>().ok());
+        if let Some(offset) = env("T3_SCENE_OFFSET") {
+            use crate::ActiveAppTheme as _;
+            let width = env("T3_SCENE_PAGE_WIDTH").unwrap_or(768.);
+            let path = self.path;
+            let view = self.pages.update(cx, |pages, cx| pages.page(path, window, cx));
+            let theme = cx.app_theme();
+            return div()
+                .size_full()
+                .overflow_hidden()
+                .bg(theme.colors.background())
+                .text_color(theme.colors.foreground())
+                .child(div().w(gpui_kit::px(width)).mx_auto().mt(gpui_kit::px(-offset)).children(view))
+                .into_any_element();
+        }
+        div().size_full().child(self.app.clone()).child(Modal::dialog("settings-route", self.settings.clone(), |_, _| {})).into_any_element()
     }
 }
 
@@ -187,6 +216,8 @@ pub enum Variant {
     Providers,
     ProvidersAdd,
     ProvidersClaude,
+    /// Claude signing in through a login running in a terminal.
+    ProvidersTerminal,
     Threads,
     SourceControl,
     TaskEditor,
@@ -195,9 +226,23 @@ pub enum Variant {
 
 /// Builds the scene entity (also used by the scripted check).
 pub fn build_scene(variant: Variant, window: &mut Window, cx: &mut App) -> Entity<ServerSettingsScene> {
-    let (model, source) = fixture_model(cx);
+    let (model, source) = if variant == Variant::ProvidersTerminal {
+        let mut snapshot = fixture_snapshot();
+        let state: ProviderAuthState = decode(json!({
+            "instanceId": "claudeAgent", "phase": "waiting", "flowId": "flow-2", "authorizationUrl": null, "expiresAt": null, "message": null,
+            "interaction": { "type": "terminal", "id": "t-1", "outputOffset": 0,
+                "output": "\u{1b}[1mWelcome to Claude Code\u{1b}[0m\r\n\r\nSelect login method:\r\n\r\n \u{1b}[36m\u{276f} 1. Claude account with subscription\u{1b}[0m\r\n   2. Anthropic Console account\r\n\r\n" }
+        }));
+        let mut auth = (*snapshot.provider_auth).clone();
+        auth.insert("claudeAgent".into(), state);
+        snapshot.provider_auth = Arc::new(auth);
+        let source = Arc::new(FixtureServerSettings::new(snapshot));
+        (cx.new(|_| ServerPanelsModel::new(source.clone())), source)
+    } else {
+        fixture_model(cx)
+    };
     let path = match variant {
-        Variant::Providers | Variant::ProvidersAdd | Variant::ProvidersClaude => SettingsPath::Providers,
+        Variant::Providers | Variant::ProvidersAdd | Variant::ProvidersClaude | Variant::ProvidersTerminal => SettingsPath::Providers,
         Variant::Threads => SettingsPath::Threads,
         Variant::SourceControl => SettingsPath::SourceControl,
         Variant::TaskEditor => SettingsPath::ScheduledTasks,
@@ -222,7 +267,7 @@ pub fn build_scene(variant: Variant, window: &mut Window, cx: &mut App) -> Entit
                 panel.update(cx, |panel, cx| panel.open_add_dialog(window, cx));
             }
         }
-        Variant::ProvidersClaude => {
+        Variant::ProvidersClaude | Variant::ProvidersTerminal => {
             if let Some(panel) = pages.read(cx).typed::<ProviderSettingsPanel>(SettingsPath::Providers) {
                 panel.update(cx, |panel, cx| panel.select("claudeAgent", cx));
             }
@@ -241,7 +286,7 @@ pub fn build_scene(variant: Variant, window: &mut Window, cx: &mut App) -> Entit
         }
         _ => {}
     }
-    cx.new(|_| ServerSettingsScene { app, settings, pages, source })
+    cx.new(|_| ServerSettingsScene { app, settings, pages, source, path })
 }
 
 fn scene(variant: Variant, light: bool, window: &mut Window, cx: &mut App) -> AnyView {
@@ -259,6 +304,9 @@ pub fn build_light(window: &mut Window, cx: &mut App) -> AnyView {
 }
 pub fn build_claude(window: &mut Window, cx: &mut App) -> AnyView {
     scene(Variant::ProvidersClaude, false, window, cx)
+}
+pub fn build_signin_terminal(window: &mut Window, cx: &mut App) -> AnyView {
+    scene(Variant::ProvidersTerminal, false, window, cx)
 }
 pub fn build_claude_light(window: &mut Window, cx: &mut App) -> AnyView {
     scene(Variant::ProvidersClaude, true, window, cx)
@@ -301,6 +349,9 @@ pub fn build_devices(window: &mut Window, cx: &mut App) -> AnyView {
 }
 pub fn build_projects(window: &mut Window, cx: &mut App) -> AnyView {
     scene(Variant::Page(SettingsPath::Projects), false, window, cx)
+}
+pub fn build_browser(window: &mut Window, cx: &mut App) -> AnyView {
+    scene(Variant::Page(SettingsPath::Browser), false, window, cx)
 }
 pub fn build_access(window: &mut Window, cx: &mut App) -> AnyView {
     scene(Variant::Page(SettingsPath::Access), false, window, cx)

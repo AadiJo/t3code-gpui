@@ -7,7 +7,9 @@
 // Input is the dialect effect's toJsonSchemaMultiDocument emits (see dump.mts). Output is one Rust
 // file per TypeScript source module plus `rpc_methods.rs` and `http_endpoints.rs`. Mapping rules:
 // - Required key -> `T`; required `NullOr` -> `Option<T>` (always written, null when None);
-//   optional key -> `Option<T>` omitted when None (an optional key that arrived as null decodes to None).
+//   optional key -> `Option<T>` omitted when None (an optional key that arrived as null decodes to None);
+//   an optional `NullOr` key of a `*Patch` struct or one nested in it -> `Option<Option<T>>`, so `Some(None)` writes null
+//   (a patch clears a setting with null).
 // - A named string definition is a branded id -> `Arc<str>` newtype. Named integers are aliases.
 // - Unions decode by what the wire carries: a discriminator field (`_tag`, `type`, `kind`, ...), the
 //   JSON kind of the value, or a key only one branch has. Tag-dispatched unions get an `Unknown`
@@ -587,7 +589,14 @@ function emitStruct(name, s, ctx, tagKeyOverride) {
     if (camelOfSnake(field) !== key) attrs.push(`rename = ${JSON.stringify(key)}`);
     const forwardCompat = isForwardCompatible(prop);
     const lenientItems = !forwardCompat && hasForwardCompatibleItems(prop);
-    if (!required.has(key)) {
+    // A patch's optional nullable key has three states: absent (keep), null (clear), a value (set).
+    const clearable = !required.has(key) && /Patch/.test(name) && (altsOf(prop) ?? []).some(isNull);
+    if (clearable) {
+      if (!ty.startsWith("Option<")) ty = `Option<${ty}>`;
+      ty = `Option<${ty}>`;
+      attrs.push("default", `skip_serializing_if = "Option::is_none"`, `deserialize_with = "crate::wire::double_option"`);
+      stats.clearableFields = (stats.clearableFields ?? 0) + 1;
+    } else if (!required.has(key)) {
       if (!ty.startsWith("Option<")) ty = `Option<${ty}>`;
       attrs.push("default", `skip_serializing_if = "Option::is_none"`);
     }

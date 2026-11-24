@@ -364,7 +364,7 @@ impl Render for AccessSettingsPanel {
                         super::server_settings_controls::save_patch(
                             &model,
                             "environmentIcon",
-                            ClientServerSettingsPatch { environment_icon: Some(option), ..Default::default() },
+                            ClientServerSettingsPatch { environment_icon: Some(Some(option)), ..Default::default() },
                             cx,
                         );
                     }))

@@ -6343,6 +6343,636 @@
      ]
     }
    ]
+  },
+  "settings-providers": {
+   "elements": [
+    {
+     "name": "refresh icon",
+     "kind": "ink",
+     "at": [
+      903,
+      100,
+      921,
+      215
+     ],
+     "exclude": "locator: a control right of the scope row, so the page is judged apart from the shell above it"
+    },
+    {
+     "name": "heading",
+     "kind": "ink",
+     "at": [
+      325,
+      165,
+      402,
+      206
+     ],
+     "text": true,
+     "anchor": "refresh icon"
+    },
+    {
+     "name": "add button",
+     "kind": "ink",
+     "at": [
+      405,
+      175,
+      428,
+      199
+     ],
+     "anchor": "refresh icon"
+    },
+    {
+     "name": "card left edge",
+     "kind": "hscan",
+     "at": [
+      300,
+      300,
+      330
+     ],
+     "anchor": "refresh icon"
+    },
+    {
+     "name": "card right edge",
+     "kind": "hscan",
+     "at": [
+      300,
+      1010,
+      1040
+     ],
+     "anchor": "refresh icon"
+    },
+    {
+     "name": "row 1 mark",
+     "kind": "ink",
+     "at": [
+      328,
+      226,
+      348,
+      250
+     ],
+     "anchor": "refresh icon"
+    },
+    {
+     "name": "row 1 title",
+     "kind": "ink",
+     "at": [
+      358,
+      226,
+      420,
+      250
+     ],
+     "text": true,
+     "anchor": "refresh icon"
+    },
+    {
+     "name": "row 1 switch",
+     "kind": "ink",
+     "at": [
+      978,
+      236,
+      1016,
+      260
+     ],
+     "anchor": "refresh icon"
+    }
+   ]
+  },
+  "settings-source-control": {
+   "elements": [
+    {
+     "name": "first switch",
+     "kind": "ink",
+     "at": [
+      978,
+      100,
+      1016,
+      300
+     ],
+     "exclude": "locator: a control right of the scope row, so the page is judged apart from the shell above it"
+    },
+    {
+     "name": "heading",
+     "kind": "ink",
+     "at": [
+      325,
+      165,
+      425,
+      206
+     ],
+     "text": true,
+     "anchor": "first switch"
+    },
+    {
+     "name": "row 1 title",
+     "kind": "ink",
+     "at": [
+      326,
+      220,
+      452,
+      246
+     ],
+     "text": true,
+     "anchor": "first switch"
+    },
+    {
+     "name": "row 2 title",
+     "kind": "ink",
+     "at": [
+      326,
+      305,
+      575,
+      331
+     ],
+     "text": true,
+     "anchor": "first switch"
+    },
+    {
+     "name": "row 2 switch",
+     "kind": "ink",
+     "at": [
+      978,
+      326,
+      1016,
+      352
+     ],
+     "anchor": "first switch"
+    },
+    {
+     "name": "merge method select",
+     "kind": "hscan",
+     "at": [
+      424,
+      840,
+      1020
+     ],
+     "anchor": "first switch"
+    }
+   ]
+  },
+  "settings-worktrees": {
+   "elements": [
+    {
+     "name": "start from remote switch",
+     "kind": "ink",
+     "at": [
+      978,
+      285,
+      1016,
+      420
+     ],
+     "exclude": "locator: a control right of the scope row, so the page is judged apart from the shell above it"
+    },
+    {
+     "name": "heading",
+     "kind": "ink",
+     "at": [
+      325,
+      165,
+      395,
+      206
+     ],
+     "text": true,
+     "anchor": "start from remote switch"
+    },
+    {
+     "name": "row 1 title",
+     "kind": "ink",
+     "at": [
+      326,
+      220,
+      447,
+      246
+     ],
+     "text": true,
+     "anchor": "start from remote switch"
+    },
+    {
+     "name": "location input",
+     "kind": "hscan",
+     "at": [
+      263,
+      765,
+      1020
+     ],
+     "anchor": "start from remote switch"
+    },
+    {
+     "name": "advanced chevron",
+     "kind": "ink",
+     "at": [
+      326,
+      409,
+      344,
+      431
+     ],
+     "anchor": "start from remote switch"
+    },
+    {
+     "name": "advanced label",
+     "kind": "ink",
+     "at": [
+      344,
+      409,
+      400,
+      431
+     ],
+     "text": true,
+     "anchor": "start from remote switch"
+    },
+    {
+     "name": "branches heading",
+     "kind": "ink",
+     "at": [
+      325,
+      465,
+      402,
+      506
+     ],
+     "text": true,
+     "anchor": "start from remote switch"
+    }
+   ]
+  },
+  "settings-maintenance": {
+   "elements": [
+    {
+     "name": "first switch",
+     "kind": "ink",
+     "at": [
+      978,
+      100,
+      1016,
+      300
+     ],
+     "exclude": "locator: a control right of the scope row, so the page is judged apart from the shell above it"
+    },
+    {
+     "name": "heading",
+     "kind": "ink",
+     "at": [
+      325,
+      165,
+      395,
+      206
+     ],
+     "text": true,
+     "anchor": "first switch"
+    },
+    {
+     "name": "row 1 title",
+     "kind": "ink",
+     "at": [
+      326,
+      220,
+      489,
+      246
+     ],
+     "text": true,
+     "anchor": "first switch"
+    },
+    {
+     "name": "row 2 switch",
+     "kind": "ink",
+     "at": [
+      978,
+      326,
+      1016,
+      352
+     ],
+     "anchor": "first switch"
+    },
+    {
+     "name": "background heading",
+     "kind": "ink",
+     "at": [
+      325,
+      406,
+      483,
+      447
+     ],
+     "text": true,
+     "anchor": "first switch"
+    },
+    {
+     "name": "profile select",
+     "kind": "hscan",
+     "at": [
+      486,
+      840,
+      1020
+     ],
+     "anchor": "first switch"
+    },
+    {
+     "name": "artifacts heading",
+     "kind": "ink",
+     "at": [
+      325,
+      629,
+      466,
+      670
+     ],
+     "text": true,
+     "anchor": "first switch"
+    },
+    {
+     "name": "artifacts off label",
+     "kind": "ink",
+     "at": [
+      948,
+      698,
+      974,
+      720
+     ],
+     "text": "right",
+     "anchor": "first switch"
+    }
+   ]
+  },
+  "settings-threads": {
+   "elements": [
+    {
+     "name": "clone switch",
+     "kind": "ink",
+     "at": [
+      978,
+      262,
+      1016,
+      360
+     ],
+     "exclude": "locator: a control right of the scope row, so the page is judged apart from the shell above it"
+    },
+    {
+     "name": "heading",
+     "kind": "ink",
+     "at": [
+      325,
+      165,
+      430,
+      206
+     ],
+     "text": true,
+     "anchor": "clone switch"
+    },
+    {
+     "name": "row 1 title",
+     "kind": "ink",
+     "at": [
+      326,
+      220,
+      468,
+      246
+     ],
+     "text": true,
+     "anchor": "clone switch"
+    },
+    {
+     "name": "starts-in input",
+     "kind": "hscan",
+     "at": [
+      245,
+      715,
+      1020
+     ],
+     "anchor": "clone switch"
+    },
+    {
+     "name": "new threads heading",
+     "kind": "ink",
+     "at": [
+      325,
+      370,
+      426,
+      411
+     ],
+     "text": true,
+     "anchor": "clone switch"
+    }
+   ]
+  },
+  "settings-projects": {
+   "elements": [
+    {
+     "name": "row 1 chevron",
+     "kind": "ink",
+     "at": [
+      990,
+      100,
+      1016,
+      300
+     ],
+     "exclude": "locator: a control right of the scope row, so the page is judged apart from the shell above it"
+    },
+    {
+     "name": "intro",
+     "kind": "ink",
+     "at": [
+      309,
+      170,
+      800,
+      196
+     ],
+     "text": true,
+     "anchor": "row 1 chevron"
+    },
+    {
+     "name": "card left edge",
+     "kind": "hscan",
+     "at": [
+      236,
+      300,
+      330
+     ],
+     "anchor": "row 1 chevron"
+    },
+    {
+     "name": "card right edge",
+     "kind": "hscan",
+     "at": [
+      236,
+      1010,
+      1040
+     ],
+     "anchor": "row 1 chevron"
+    },
+    {
+     "name": "row 1 icon",
+     "kind": "ink",
+     "at": [
+      326,
+      226,
+      346,
+      246
+     ],
+     "anchor": "row 1 chevron"
+    },
+    {
+     "name": "row 1 title",
+     "kind": "ink",
+     "at": [
+      354,
+      216,
+      420,
+      240
+     ],
+     "text": true,
+     "anchor": "row 1 chevron"
+    },
+    {
+     "name": "row 2 icon",
+     "kind": "ink",
+     "at": [
+      326,
+      287,
+      346,
+      307
+     ],
+     "anchor": "row 1 chevron"
+    }
+   ]
+  },
+  "settings-browser": {
+   "elements": [
+    {
+     "name": "first switch",
+     "kind": "ink",
+     "at": [
+      978,
+      100,
+      1016,
+      290
+     ],
+     "exclude": "locator: a control right of the scope row, so the page is judged apart from the shell above it"
+    },
+    {
+     "name": "heading",
+     "kind": "ink",
+     "at": [
+      325,
+      165,
+      436,
+      206
+     ],
+     "text": true,
+     "anchor": "first switch"
+    },
+    {
+     "name": "row 1 title",
+     "kind": "ink",
+     "at": [
+      326,
+      220,
+      481,
+      246
+     ],
+     "text": true,
+     "anchor": "first switch"
+    },
+    {
+     "name": "browsing heading",
+     "kind": "ink",
+     "at": [
+      325,
+      303,
+      402,
+      344
+     ],
+     "text": true,
+     "anchor": "first switch"
+    },
+    {
+     "name": "add profile button",
+     "kind": "hscan",
+     "at": [
+      383,
+      890,
+      1020
+     ],
+     "anchor": "first switch"
+    },
+    {
+     "name": "profile list edge",
+     "kind": "hscan",
+     "at": [
+      433,
+      320,
+      340
+     ],
+     "anchor": "first switch"
+    }
+   ]
+  },
+  "settings-devices": {
+   "elements": [
+    {
+     "name": "first switch",
+     "kind": "ink",
+     "at": [
+      978,
+      100,
+      1016,
+      290
+     ],
+     "exclude": "locator: a control right of the scope row, so the page is judged apart from the shell above it"
+    },
+    {
+     "name": "heading",
+     "kind": "ink",
+     "at": [
+      325,
+      165,
+      390,
+      206
+     ],
+     "text": true,
+     "anchor": "first switch"
+    },
+    {
+     "name": "row 1 title",
+     "kind": "ink",
+     "at": [
+      326,
+      220,
+      413,
+      246
+     ],
+     "text": true,
+     "anchor": "first switch"
+    },
+    {
+     "name": "sources heading",
+     "kind": "ink",
+     "at": [
+      325,
+      370,
+      447,
+      411
+     ],
+     "text": true,
+     "anchor": "first switch"
+    },
+    {
+     "name": "add source button",
+     "kind": "hscan",
+     "at": [
+      392,
+      870,
+      1020
+     ],
+     "anchor": "first switch"
+    },
+    {
+     "name": "local simulators",
+     "kind": "ink",
+     "at": [
+      326,
+      425,
+      440,
+      451
+     ],
+     "text": true,
+     "anchor": "first switch"
+    }
+   ]
   }
  }
 }

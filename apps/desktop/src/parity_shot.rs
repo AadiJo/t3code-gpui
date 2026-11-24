@@ -41,6 +41,9 @@ enum Step {
     Press(&'static str),
     Action(fn() -> Box<dyn Action>),
     Navigate(&'static str),
+    /// Gives the open settings modal the server pages over the fixture environment
+    /// (`scenes::settings_server`), as the live bridge will over a real one.
+    ServerPages,
     /// Lets background work (a shell) run before the next step.
     Wait(u64),
 }
@@ -128,6 +131,14 @@ const SCENES: &[Scene] = &[
     Scene { name: "settings-labs", reference: "settings-labs", light: false, steps: &[Step::Navigate("/settings/labs")] },
     Scene { name: "settings-archived", reference: "settings-archived", light: false, steps: &[Step::Navigate("/settings/archived")] },
     Scene { name: "settings-about", reference: "settings-about", light: false, steps: &[Step::Navigate("/settings/about")] },
+    Scene { name: "settings-providers", reference: "settings-providers", light: false, steps: &[Step::Navigate("/settings/providers"), Step::ServerPages] },
+    Scene { name: "settings-source-control", reference: "settings-source-control", light: false, steps: &[Step::Navigate("/settings/source-control"), Step::ServerPages] },
+    Scene { name: "settings-worktrees", reference: "settings-worktrees", light: false, steps: &[Step::Navigate("/settings/worktrees"), Step::ServerPages] },
+    Scene { name: "settings-maintenance", reference: "settings-maintenance", light: false, steps: &[Step::Navigate("/settings/maintenance"), Step::ServerPages] },
+    Scene { name: "settings-threads", reference: "settings-threads", light: false, steps: &[Step::Navigate("/settings/threads"), Step::ServerPages] },
+    Scene { name: "settings-projects", reference: "settings-projects", light: false, steps: &[Step::Navigate("/settings/projects"), Step::ServerPages] },
+    Scene { name: "settings-browser", reference: "settings-browser", light: false, steps: &[Step::Navigate("/settings/browser"), Step::ServerPages] },
+    Scene { name: "settings-devices", reference: "settings-devices", light: false, steps: &[Step::Navigate("/settings/devices"), Step::ServerPages] },
     Scene { name: "terminal-drawer", reference: "terminal-drawer", light: false, steps: TERMINAL_STEPS },
     Scene { name: "terminal-menu", reference: "terminal-menu", light: false, steps: &[Step::Action(|| Box::new(ToggleTerminal)), Step::Wait(1500), Step::Press("mod-n"), Step::Wait(1200), Step::RightClick(400.5, 626.)] },
     Scene { name: "terminal-close-confirm", reference: "terminal-close-confirm", light: false, steps: &[Step::Action(|| Box::new(ToggleTerminal)), Step::Wait(1500), Step::Press("mod-n"), Step::Wait(1200), Step::Click(1088., 512.5)] },
@@ -215,6 +226,7 @@ fn render(scene: &Scene, out: &std::path::Path, data: &std::path::Path) -> anyho
         WindowRoot::open_window(window_options, options, cx)
     })?;
     let root = parts.app.clone();
+    let shell = parts.shell.clone();
     cx.update(|cx| {
         ThemeSettings::apply_env_overrides(cx);
         let timeline = root.read(cx).thread_view().read(cx).chat().read(cx).timeline().clone();
@@ -263,6 +275,13 @@ fn render(scene: &Scene, out: &std::path::Path, data: &std::path::Path) -> anyho
                 cx.update_window(window, |_, w, cx| w.dispatch_action(action(), cx)).ok();
             }
             Step::Navigate(route) => cx.update(|cx| root.update(cx, |root, cx| root.navigate(Route::parse(route), cx))),
+            Step::ServerPages => cx.update(|cx| {
+                if let Some(settings) = shell.read(cx).settings().cloned() {
+                    let (model, _) = t3code_web::scenes::settings_server::fixture_model(cx);
+                    let pages = cx.new(|_| t3code_web::components::settings::server_settings_pages::ServerSettingsPages::new(model));
+                    settings.update(cx, |s, cx| s.set_server_pages(pages, cx));
+                }
+            }),
             Step::Wait(ms) => {
                 let until = Instant::now() + Duration::from_millis(*ms);
                 while Instant::now() < until {
