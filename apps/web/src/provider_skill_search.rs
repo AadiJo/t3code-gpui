@@ -59,16 +59,17 @@ fn score_subsequence_match(value: &[u16], query: &[u16]) -> Option<i64> {
 }
 
 /// The bases one field scores with (`scoreQueryMatch` input).
-struct Bases {
-    exact: i64,
-    prefix: Option<i64>,
-    boundary: Option<i64>,
-    includes: Option<i64>,
-    fuzzy: Option<i64>,
-    markers: &'static [&'static str],
+pub struct Bases {
+    pub exact: i64,
+    pub prefix: Option<i64>,
+    pub boundary: Option<i64>,
+    pub includes: Option<i64>,
+    pub fuzzy: Option<i64>,
+    pub markers: &'static [&'static str],
 }
 
-fn score_query_match(value: &str, query: &str, bases: &Bases) -> Option<i64> {
+/// `scoreQueryMatch`: lower is better; `value` and `query` are trimmed and lowercased.
+pub fn score_query_match(value: &str, query: &str, bases: &Bases) -> Option<i64> {
     if value.is_empty() || query.is_empty() {
         return None;
     }
@@ -104,7 +105,7 @@ fn score_query_match(value: &str, query: &str, bases: &Bases) -> Option<i64> {
     bases.fuzzy.and_then(|fuzzy| score_subsequence_match(&v, &q).map(|s| fuzzy + s))
 }
 
-const DEFAULT_MARKERS: &[&str] = &[" ", "-", "_", "/"];
+pub const DEFAULT_MARKERS: &[&str] = &[" ", "-", "_", "/"];
 
 /// `scoreProviderSkill`: the best score over name, label, descriptions and scope (lower is better).
 pub fn score_provider_skill(skill: &ServerProviderSkill, query: &str) -> Option<i64> {

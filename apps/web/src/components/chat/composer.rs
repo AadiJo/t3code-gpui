@@ -24,7 +24,7 @@ use gpui_kit::{
 };
 
 use crate::components::chat::composer_command_menu::{
-    ComposerCommandAction, ComposerMenuSource, ComposerMenuState, SlashCommand, builtin_slash_items, render_menu,
+    ComposerCommandAction, ComposerMenuSource, ComposerMenuState, SlashCommand, SlashMenuContext, builtin_slash_items, render_menu,
 };
 use crate::components::chat::composer_icons::{composer_icon_stroke, provider_icon};
 use crate::components::chat::composer_permissions::{RuntimeMode, runtime_mode_icon};
@@ -172,6 +172,8 @@ pub enum ComposerEvent {
     /// The attach button: open the file picker.
     AttachRequested,
     AttachmentsAdded(Vec<ComposerAttachment>),
+    /// A loaded draft holds attachments that are not uploaded (restored after a restart).
+    AttachmentsRestored(Vec<ComposerAttachment>),
     AttachmentRemoved(SharedString),
     ModelChanged(ModelSelection),
     RuntimeModeChanged(RuntimeMode),
@@ -197,6 +199,8 @@ pub struct ChatComposer {
     editor: Entity<ComposerPromptEditor>,
     state: ComposerState,
     attachments: Vec<ComposerAttachment>,
+    /// HEIC photos converting off the UI thread, by draft; each holds an attachment slot.
+    converting: Vec<ComposerDraftKey>,
     picker: Option<(Entity<ModelPicker>, Subscription)>,
     menu: Option<ComposerMenuState>,
     dismissed_trigger: Option<Range<usize>>,
@@ -236,6 +240,7 @@ impl ChatComposer {
             editor,
             state,
             attachments: Vec::new(),
+            converting: Vec::new(),
             picker: None,
             menu: None,
             dismissed_trigger: None,
@@ -337,6 +342,10 @@ impl ChatComposer {
     fn load_draft(&mut self, cx: &mut Context<Self>) {
         let draft = self.draft_store.borrow().load(&self.state.draft_key).unwrap_or_default();
         self.attachments = draft.attachments;
+        let waiting: Vec<ComposerAttachment> = self.attachments.iter().filter(|a| a.upload == UploadState::Uploading).cloned().collect();
+        if !waiting.is_empty() {
+            cx.emit(ComposerEvent::AttachmentsRestored(waiting));
+        }
         self.history_position = None;
         self.menu = None;
         self.editor.update(cx, |editor, cx| editor.set_text(draft.prompt, cx));
@@ -405,14 +414,24 @@ impl ChatComposer {
             }
             return;
         };
-        let (mut items, loading) = self.menu_source.items(&trigger);
-        if trigger.kind == ComposerTriggerKind::SlashCommand {
-            let mut builtins = builtin_slash_items(&trigger.query);
-            builtins.append(&mut items);
-            items = builtins;
-        }
+        let slash = (trigger.kind == ComposerTriggerKind::SlashCommand)
+            .then(|| {
+                let context = SlashMenuContext { prompt: editor.text(), instance_id: &self.state.selection.instance_id, has_attachments: !self.attachments.is_empty() };
+                self.menu_source.slash_items(&trigger, &context)
+            })
+            .flatten();
+        let (items, loading) = slash.unwrap_or_else(|| {
+            let (mut items, loading) = self.menu_source.items(&trigger);
+            if trigger.kind == ComposerTriggerKind::SlashCommand {
+                let mut builtins = builtin_slash_items(&trigger.query);
+                builtins.append(&mut items);
+                items = builtins;
+            }
+            (items, loading)
+        });
         let active = self.menu.as_ref().filter(|m| m.trigger.range.start == trigger.range.start).map_or(0, |m| m.active);
-        self.menu = Some(ComposerMenuState { active: active.min(items.len().saturating_sub(1)), trigger, items: Arc::new(items), loading });
+        let empty = self.menu_source.empty_text(&trigger);
+        self.menu = Some(ComposerMenuState { active: active.min(items.len().saturating_sub(1)), trigger, items: Arc::new(items), loading, empty });
         cx.notify();
     }
 
@@ -439,12 +458,12 @@ impl ChatComposer {
                 replace(self, String::new(), cx);
                 self.open_picker(window, cx);
             }
+            ComposerCommandAction::Slash(SlashCommand::Clear) => {
+                replace(self, String::new(), cx);
+                cx.emit(ComposerEvent::ClearSession);
+            }
             ComposerCommandAction::Slash(command) => {
-                let word = match command {
-                    SlashCommand::Side => "/side ",
-                    SlashCommand::Btw => "/btw ",
-                    _ => "/clear ",
-                };
+                let word = if command == SlashCommand::Btw { "/btw " } else { "/side " };
                 replace(self, word.to_owned(), cx);
             }
             ComposerCommandAction::Model { instance_id, model, insert } => {
@@ -515,7 +534,7 @@ impl ChatComposer {
     }
 
     fn uploads_pending(&self) -> bool {
-        self.attachments.iter().any(|a| a.upload != UploadState::Uploaded)
+        self.converting.contains(&self.state.draft_key) || self.attachments.iter().any(|a| a.upload != UploadState::Uploaded)
     }
 
     /// The follow-up action a send takes now, with Cmd/Ctrl held flipping it.
@@ -619,7 +638,8 @@ impl ChatComposer {
                 vec![Candidate { name, mime: PASTED_TEXT_MIME.into(), size_bytes: text.len() as u64, kind: ComposerAttachmentKind::PastedText { text } }]
             }
         };
-        let result = intake(candidates, self.attachments.len(), self.state.file_attachment_limit);
+        let held = self.attachments.len() + self.converting.iter().filter(|k| **k == self.state.draft_key).count();
+        let result = intake(candidates, held, self.state.file_attachment_limit);
         if let Some(error) = result.error {
             crate::components::ui::toast::Toaster::push(
                 crate::components::ui::toast::ToastData::new(crate::components::ui::toast::ToastKind::Error, error),
@@ -627,6 +647,53 @@ impl ChatComposer {
             );
         }
         self.add_attachments(result.accepted, cx);
+        for job in result.converting {
+            self.convert_heic(job, cx);
+        }
+    }
+
+    /// Converts a HEIC photo on a background thread, then adds it to the draft it was dropped on
+    /// (saved into that draft when the composer has moved to another thread).
+    fn convert_heic(&mut self, job: crate::state::attachments::HeicJob, cx: &mut Context<Self>) {
+        let key = self.state.draft_key.clone();
+        self.converting.push(key.clone());
+        let converted = cx.background_spawn(async move { job.convert() });
+        cx.spawn(async move |this, cx| {
+            let result = converted.await;
+            _ = this.update(cx, |this, cx| {
+                if let Some(at) = this.converting.iter().position(|k| *k == key) {
+                    this.converting.remove(at);
+                }
+                match result {
+                    Ok(attachment) if key == this.state.draft_key => this.add_attachments(vec![attachment], cx),
+                    Ok(attachment) => {
+                        let mut draft = this.draft_store.borrow().load(&key).unwrap_or_default();
+                        draft.attachments.push(attachment.clone());
+                        this.draft_store.borrow_mut().save(&key, &draft);
+                        cx.emit(ComposerEvent::AttachmentsAdded(vec![attachment]));
+                    }
+                    Err(error) => {
+                        crate::components::ui::toast::Toaster::push(
+                            crate::components::ui::toast::ToastData::new(crate::components::ui::toast::ToastKind::Error, error),
+                            cx,
+                        );
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    /// Adds attachments whose chips the text already has (a rewound message), starting uploads.
+    pub fn restore_attachments(&mut self, attachments: Vec<ComposerAttachment>, cx: &mut Context<Self>) {
+        if attachments.is_empty() {
+            return;
+        }
+        self.attachments.extend(attachments.iter().cloned());
+        cx.emit(ComposerEvent::AttachmentsAdded(attachments));
+        self.schedule_save(cx);
+        cx.notify();
     }
 
     /// Adds attachments and inserts their chips at the caret.

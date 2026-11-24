@@ -42,6 +42,8 @@ pub enum ComposerCommandIcon {
     None,
     Icon(IconName),
     Provider(ProviderIcon),
+    /// A pull request's state glyph in its tone (`resolvePullRequestState`).
+    PullRequest { state: t3code_contracts::PullRequestState, is_draft: bool },
 }
 
 /// One menu row.
@@ -58,9 +60,28 @@ pub struct ComposerCommandItem {
     pub action: ComposerCommandAction,
 }
 
+/// What the slash list reads from the composer itself (`compactSlashCommandAvailable`).
+pub struct SlashMenuContext<'a> {
+    pub prompt: &'a str,
+    /// The instance the composer sends with; its commands and skills are listed.
+    pub instance_id: &'a ProviderInstanceId,
+    pub has_attachments: bool,
+}
+
 /// Supplies menu items for a trigger. Returns the items and whether a search is still running.
 pub trait ComposerMenuSource {
     fn items(&self, trigger: &ComposerTrigger) -> (Vec<ComposerCommandItem>, bool);
+
+    /// The whole `/` list, built-ins included; `None` shows [`builtin_slash_items`] before `items`.
+    fn slash_items(&self, _trigger: &ComposerTrigger, _context: &SlashMenuContext) -> Option<(Vec<ComposerCommandItem>, bool)> {
+        None
+    }
+
+    /// The empty text when it depends on the source (`#` without a repository); `None` uses
+    /// [`empty_state_text`].
+    fn empty_text(&self, _trigger: &ComposerTrigger) -> Option<SharedString> {
+        None
+    }
 }
 
 /// The built-in slash commands, filtered by the query.
@@ -105,6 +126,8 @@ pub struct ComposerMenuState {
     pub items: Arc<Vec<ComposerCommandItem>>,
     pub loading: bool,
     pub active: usize,
+    /// The source's empty text, when it has its own.
+    pub empty: Option<SharedString>,
 }
 
 impl ComposerMenuState {
@@ -142,7 +165,10 @@ pub fn render_menu(
                 .text_size(px(12.))
                 .line_height(px(16.))
                 .text_color(c.secondary_label)
-                .child(empty_state_text(state.trigger.kind, state.loading)),
+                .child(match (&state.empty, state.loading) {
+                    (Some(text), false) => text.clone(),
+                    _ => SharedString::from(empty_state_text(state.trigger.kind, state.loading)),
+                }),
         ).into_any_element();
     }
     let rows: Vec<AnyElement> = state
@@ -157,6 +183,10 @@ pub fn render_menu(
                 ComposerCommandIcon::None => None,
                 ComposerCommandIcon::Icon(i) => Some(Icon::new(*i).size(IconSize::Custom(px(16.))).color(c.secondary_label).stroke(composer_icon_stroke(*i)).into_any_element()),
                 ComposerCommandIcon::Provider(p) => Some(provider_icon(*p, px(16.), &item.label, &c, cx)),
+                ComposerCommandIcon::PullRequest { state, is_draft } => {
+                    let (icon, tone, _) = crate::components::pull_request::pull_request_presentation::pull_request_state_presentation(crate::theme_palette::ActiveAppTheme::app_theme(cx), *state, *is_draft);
+                    Some(Icon::new(icon).size(IconSize::Custom(px(16.))).color(tone).into_any_element())
+                }
             };
             let text_color: Hsla = if active { c.accent_foreground } else { c.foreground };
             div()

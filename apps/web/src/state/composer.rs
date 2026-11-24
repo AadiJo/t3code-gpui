@@ -27,7 +27,7 @@ use super::thread_errors::ThreadErrors;
 use super::shell::{runtime_ids, thread_key};
 use super::{LiveEnvironment, StateBridge};
 use crate::components::chat::composer::{BannerTone, ChatComposer, ComposerBanner, ComposerContextStrip, ComposerEvent, ComposerState, FollowUpBehavior};
-use crate::components::chat::composer_command_menu::{ComposerCommandAction, ComposerCommandIcon, ComposerCommandItem, ComposerMenuSource};
+use crate::components::chat::composer_command_menu::{ComposerCommandAction, ComposerCommandIcon, ComposerCommandItem, ComposerMenuSource, SlashCommand, SlashMenuContext};
 use crate::components::icons::IconName;
 use crate::components::chat::composer_permissions::RuntimeMode;
 use crate::components::chat::composer_prompt_history::PromptHistoryEntry;
@@ -189,6 +189,46 @@ pub fn composer_state(key: &ThreadKey, row: Option<&ThreadRow>, thread: &LiveThr
         voice_available: false,
         validation: None,
         file_attachment_limit: super::attachments::file_limit(environment.config.as_deref()),
+    }
+}
+
+/// What the `/` and `$` lists may offer on this thread (`ChatView.tsx`: `sideChatDisabledReason`,
+/// `freshSessionCommandAvailable`, `compactThreadUnavailable`).
+pub fn slash_facts(row: Option<&ThreadRow>, thread: &LiveThread, environment: &LiveEnvironment, instance_id: &str, show_skills: bool) -> SlashFacts {
+    // `supportsPullRequests` needs the config; the repository is the project's on its host.
+    let pull_requests = row.filter(|_| environment.config.is_some()).and_then(|row| {
+        let project = environment.shell.snapshot.as_ref()?.projects.iter().find(|p| p.id == row.source.project_id)?;
+        Some(super::pull_request_mentions::PullRequestScope {
+            project_id: project.id.clone(),
+            repository: super::pull_request_mentions::repository_selector(project.repository_identity.as_ref()),
+            links: Arc::new(row.source.pull_requests.clone().unwrap_or_default()),
+        })
+    });
+    let input = thread.input();
+    let config = environment.config.as_deref();
+    let connected = environment.store.session().is_some();
+    let lineage = row.map(|r| &r.source.lineage);
+    let side_chat = lineage.is_some_and(|l| l.side_chat == Some(true));
+    let subagent = lineage.is_some_and(|l| l.relationship_to_parent == Some(t3code_contracts::OrchestrationV2AppThreadLineageRelationshipToParent::Subagent));
+    let sides_capable = config.is_some_and(|c| c.environment.capabilities.side_chats == Some(true));
+    let worktree_pending = thread.projection().is_some_and(|p| {
+        let worktree = row.and_then(|r| r.source.worktree_path.as_deref()).or(p.thread.worktree_path.as_deref());
+        t3code_client_runtime::state::thread_runs::worktree_pending(worktree, p.runs.iter().map(|r| &**r))
+    });
+    let side_chat = (connected && !side_chat && !subagent && sides_capable && row.is_some())
+        .then(|| worktree_pending.then(|| t!("Available once the thread's worktree is set up.")));
+    let pending = !input.pending_approval_ids.is_empty() || input.pending_question.is_some();
+    let compactable = input.entries.iter().any(|entry| match &entry.kind {
+        EntryKind::Message(m) => m.role == MessageRole::User && (m.text.trim().to_lowercase() != "/compact" || !m.attachments.is_empty()),
+        _ => false,
+    }) || (thread.state().history.has_more_history && row.is_some_and(|r| r.latest_user_message_at.is_some()));
+    SlashFacts {
+        instance_id: Some(instance_id.to_owned()),
+        side_chat,
+        fresh_session: fresh_session_available(input, environment) && !pending,
+        compact: connected && row.is_some() && compactable && !input.is_working && !worktree_pending && !pending,
+        show_skills,
+        pull_requests,
     }
 }
 
@@ -375,6 +415,10 @@ pub fn handle_event(event: &ComposerEvent, thread: &Entity<LiveThread>, composer
             drafts.update(|d| d.drafts_by_thread_key.entry(draft_key_text).or_default().runtime_mode = Some(mode));
         }
         ComposerEvent::AttachmentsAdded(attachments) => super::attachments::start_uploads(&environment_id, attachments, composer, cx),
+        ComposerEvent::AttachmentsRestored(attachments) => {
+            let fresh: Vec<ComposerAttachment> = attachments.iter().filter(|a| !super::attachments::AttachmentUploads::known(&a.context_id)).cloned().collect();
+            super::attachments::start_uploads(&environment_id, &fresh, composer, cx);
+        }
         ComposerEvent::AttachmentRemoved(context_id) => super::attachments::AttachmentUploads::release(context_id, cx),
         ComposerEvent::FavoriteToggled { instance_id, model } => super::favorites::toggle(&environment_id, instance_id, model, cx),
         ComposerEvent::AttachRequested => pick_files(composer, cx),
@@ -424,7 +468,7 @@ fn send_turn(input: SendInput<'_>, commands: EnvironmentCommands, config: Option
     let mut message = SendMessage::text(thread_id.clone(), text);
     message.mode = input.mode;
     message.attachments = turn.attachments;
-    message.context = with_thread_records(turn.context, input.prompt, &environment_id);
+    message.context = with_review_records(with_thread_records(turn.context, input.prompt, &environment_id), input.prompt);
     message.title_seed = Some(title_seed(input.prompt.trim(), input.attachments));
     message.fresh_context = input.fresh;
     let catalog = config.as_ref().map(|c| model_catalog(c)).unwrap_or_default();
@@ -503,6 +547,18 @@ pub fn with_thread_records(
     }
     let mut context = context.unwrap_or(t3code_contracts::OrchestrationMessageContext { version: 1.0, guest: None, records: Vec::new() });
     context.records.splice(0..0, threads);
+    Some(context)
+}
+
+/// Puts a `reviewCommentContextRecord` for each pull request chip in `prompt` first, as
+/// `buildMessageContext` orders review comments before thread records.
+pub fn with_review_records(context: Option<t3code_contracts::OrchestrationMessageContext>, prompt: &str) -> Option<t3code_contracts::OrchestrationMessageContext> {
+    let records = super::pull_request_mentions::records(prompt);
+    if records.is_empty() {
+        return context;
+    }
+    let mut context = context.unwrap_or(t3code_contracts::OrchestrationMessageContext { version: 1.0, guest: None, records: Vec::new() });
+    context.records.splice(0..0, records);
     Some(context)
 }
 
@@ -594,28 +650,115 @@ pub fn answer_question(key: &ThreadKey, request_id: &str, answers: ProviderUserI
 }
 
 /// Drafts in the runtime's persisted document (`t3code:composer-drafts:v1`): the prompt, the
-/// model and mode picks persist across restarts; attachments stay in memory with their uploads.
+/// model and mode picks and the attachments persist across restarts. Attachments are also held
+/// in memory with their bytes, so a keystroke does not re-encode them.
 pub struct LiveDraftStore {
     drafts: Rc<ClientStore<Drafts>>,
-    attachments: HashMap<ComposerDraftKey, Vec<crate::composer_draft_store::ComposerAttachment>>,
+    attachments: RefCell<HashMap<ComposerDraftKey, Vec<ComposerAttachment>>>,
 }
 
 impl LiveDraftStore {
     pub fn new(drafts: Rc<ClientStore<Drafts>>) -> Self {
-        Self { drafts, attachments: HashMap::new() }
+        Self { drafts, attachments: RefCell::default() }
     }
+}
+
+/// A persisted image or file back as a composer attachment; a finished upload is registered
+/// again so the send references it. `None` when its bytes are gone.
+fn hydrate_image(image: &t3code_client_runtime::state::drafts::DraftImageAttachment) -> Option<ComposerAttachment> {
+    use base64::Engine as _;
+    let (_, data) = image.data_url.split_once(";base64,")?;
+    let bytes = base64::engine::general_purpose::STANDARD.decode(data).ok()?;
+    let upload = super::attachments::AttachmentUploads::restore(&image.id, image.upload.as_ref(), &image.mime_type, image.size_bytes);
+    Some(ComposerAttachment {
+        context_id: image.id.clone().into(),
+        name: image.name.clone().into(),
+        size_bytes: image.size_bytes,
+        kind: ComposerAttachmentKind::Image { bytes: Arc::from(bytes), mime: image.mime_type.clone().into() },
+        upload,
+    })
+}
+
+fn hydrate_file(file: &t3code_client_runtime::state::drafts::DraftFileAttachment) -> Option<ComposerAttachment> {
+    let kind = match (&file.text, &file.path) {
+        (Some(text), _) => ComposerAttachmentKind::PastedText { text: Arc::from(text.as_str()) },
+        (None, Some(path)) => ComposerAttachmentKind::File { path: path.clone().into() },
+        (None, None) => return None,
+    };
+    let upload = super::attachments::AttachmentUploads::restore(&file.id, file.upload.as_ref(), &file.mime_type, file.size_bytes);
+    Some(ComposerAttachment { context_id: file.id.clone().into(), name: file.name.clone().into(), size_bytes: file.size_bytes, kind, upload })
+}
+
+/// The persisted form of a draft's attachments; images already persisted keep their encoded
+/// bytes, so only new ones are encoded.
+fn persist_attachments(
+    attachments: &[ComposerAttachment],
+    previous: &t3code_client_runtime::state::drafts::ThreadDraft,
+) -> (Vec<t3code_client_runtime::state::drafts::DraftImageAttachment>, Vec<t3code_client_runtime::state::drafts::DraftFileAttachment>) {
+    use base64::Engine as _;
+    use t3code_client_runtime::state::drafts::{DraftFileAttachment, DraftImageAttachment};
+    let mut images = Vec::new();
+    let mut files = Vec::new();
+    for attachment in attachments {
+        let id = attachment.context_id.to_string();
+        let upload = super::attachments::AttachmentUploads::persisted(&attachment.context_id);
+        match &attachment.kind {
+            ComposerAttachmentKind::Image { bytes, mime } => {
+                let data_url = previous
+                    .attachments
+                    .iter()
+                    .find(|image| image.id == id)
+                    .map(|image| image.data_url.clone())
+                    .unwrap_or_else(|| format!("data:{mime};base64,{}", base64::engine::general_purpose::STANDARD.encode(bytes)));
+                images.push(DraftImageAttachment { id, name: attachment.name.to_string(), mime_type: mime.to_string(), size_bytes: attachment.size_bytes, data_url, upload });
+            }
+            ComposerAttachmentKind::File { path } => files.push(DraftFileAttachment {
+                id,
+                name: attachment.name.to_string(),
+                mime_type: super::attachments::mime_from_name(&attachment.name).unwrap_or("application/octet-stream").to_owned(),
+                size_bytes: attachment.size_bytes,
+                upload,
+                source: None,
+                path: Some(path.to_string()),
+                text: None,
+            }),
+            ComposerAttachmentKind::PastedText { text } => files.push(DraftFileAttachment {
+                id,
+                name: attachment.name.to_string(),
+                mime_type: super::attachments::PASTED_TEXT_MIME.to_owned(),
+                size_bytes: attachment.size_bytes,
+                upload,
+                source: Some(t3code_contracts::PastedTextAttachmentSource {}),
+                path: None,
+                text: Some(text.to_string()),
+            }),
+        }
+    }
+    (images, files)
 }
 
 impl ComposerDraftStore for LiveDraftStore {
     fn load(&self, key: &ComposerDraftKey) -> Option<ComposerDraft> {
-        let mut attachments = self.attachments.get(key).cloned().unwrap_or_default();
+        let drafts = self.drafts.current();
+        let draft = drafts.drafts_by_thread_key.get(key.0.as_ref());
+        if let Some(draft) = draft {
+            super::pull_request_mentions::restore(&draft.review_comments);
+        }
+        let held = self.attachments.borrow().get(key).cloned();
+        let mut attachments = held.unwrap_or_else(|| {
+            let restored: Vec<ComposerAttachment> = draft
+                .map(|d| d.attachments.iter().filter_map(hydrate_image).chain(d.files.iter().filter_map(hydrate_file)).collect())
+                .unwrap_or_default();
+            if !restored.is_empty() {
+                self.attachments.borrow_mut().insert(key.clone(), restored.clone());
+            }
+            restored
+        });
         for attachment in &mut attachments {
             if let Some(state) = super::attachments::AttachmentUploads::state(&attachment.context_id) {
                 attachment.upload = state;
             }
         }
-        let drafts = self.drafts.current();
-        let draft = drafts.drafts_by_thread_key.get(key.0.as_ref());
         let model = draft
             .filter(|d| d.model_selection_explicit)
             .and_then(|d| d.active_provider.as_ref().and_then(|provider| d.model_selection_by_provider.get(provider)))
@@ -628,16 +771,26 @@ impl ComposerDraftStore for LiveDraftStore {
 
     fn save(&mut self, key: &ComposerDraftKey, draft: &ComposerDraft) {
         if draft.attachments.is_empty() {
-            self.attachments.remove(key);
+            self.attachments.borrow_mut().remove(key);
         } else {
-            self.attachments.insert(key.clone(), draft.attachments.clone());
+            self.attachments.borrow_mut().insert(key.clone(), draft.attachments.clone());
         }
         let key = key.0.to_string();
         let prompt = draft.prompt.clone();
+        let attachments = &draft.attachments;
         self.drafts.update(|drafts| {
             let entry = drafts.drafts_by_thread_key.entry(key.clone()).or_default();
             entry.prompt = prompt;
-            let empty = entry.prompt.trim().is_empty() && entry.runtime_mode.is_none() && !entry.model_selection_explicit && entry.attachments.is_empty();
+            let (images, files) = persist_attachments(attachments, entry);
+            entry.attachments = images;
+            entry.files = files;
+            entry.review_comments = super::pull_request_mentions::comments_in(&entry.prompt);
+            let empty = entry.prompt.trim().is_empty()
+                && entry.runtime_mode.is_none()
+                && !entry.model_selection_explicit
+                && entry.attachments.is_empty()
+                && entry.files.is_empty()
+                && entry.review_comments.is_empty();
             if empty {
                 drafts.drafts_by_thread_key.remove(&key);
             }
@@ -647,13 +800,32 @@ impl ComposerDraftStore for LiveDraftStore {
 
 type SearchKey = (ComposerTriggerKind, String);
 
-/// A provider skill as the menu lists it.
-#[derive(Clone)]
-struct Skill {
-    name: String,
-    label: SharedString,
-    description: SharedString,
-    path: String,
+/// A search that finished on tokio.
+enum Landed {
+    Files(SearchKey, Vec<ComposerCommandItem>),
+    /// A `#` list by its text query; `None` when it failed.
+    PullRequests(String, Option<t3code_contracts::PullRequestListResult>),
+    Exact(u64, Option<super::pull_request_mentions::PullRequestMatch>),
+}
+
+/// What the shown thread allows in the `/` and `$` lists; `LiveData::composer_state` keeps it
+/// current, since `items` runs inside the composer's update and cannot read the app.
+#[derive(Clone, Default)]
+pub struct SlashFacts {
+    /// The instance the composer sends with.
+    pub instance_id: Option<String>,
+    /// `Some(reason)` when side chats are offered (`sideChat.available`); the reason shows while
+    /// they cannot start yet.
+    pub side_chat: Option<Option<SharedString>>,
+    /// `/clear` is offered (`freshSessionCommandAvailable`).
+    pub fresh_session: bool,
+    /// The thread itself could compact now (`!compactThreadUnavailable` without the provider
+    /// check, which the `/` list makes against the composer's current pick).
+    pub compact: bool,
+    /// `showSkillsInSlashMenu`.
+    pub show_skills: bool,
+    /// Where `#` searches; `None` without a server config.
+    pub pull_requests: Option<super::pull_request_mentions::PullRequestScope>,
 }
 
 /// Menu items for `@` (workspace files) and `$` / `/` (provider skills). File results arrive
@@ -664,10 +836,17 @@ pub struct LiveMenuSource {
     store: EnvironmentStore,
     tokio: tokio::runtime::Handle,
     cwd: Option<String>,
-    skills: RefCell<Arc<Vec<Skill>>>,
+    config: RefCell<Option<Arc<ServerConfig>>>,
+    facts: RefCell<SlashFacts>,
     results: RefCell<HashMap<SearchKey, Arc<Vec<ComposerCommandItem>>>>,
     pending: RefCell<Option<SearchKey>>,
-    landed: futures::channel::mpsc::UnboundedSender<(SearchKey, Vec<ComposerCommandItem>)>,
+    landed: futures::channel::mpsc::UnboundedSender<Landed>,
+    /// `#` lists by text query ("" for a number or nothing), and the queries that failed.
+    pull_request_lists: RefCell<HashMap<String, Option<Arc<t3code_contracts::PullRequestListResult>>>>,
+    /// Exact `#<number>` lookups (`pullRequests.detail`) for numbers the list lacks.
+    pull_request_exact: RefCell<HashMap<u64, Option<super::pull_request_mentions::PullRequestMatch>>>,
+    /// Bumped per `#` text query; a debounced fetch whose query is stale does not run.
+    pull_request_generation: Arc<std::sync::atomic::AtomicU64>,
     composer: RefCell<Option<WeakEntity<ChatComposer>>>,
     /// The shell's threads for `@` mentions, and the thread the composer is on.
     threads: Rc<crate::state::palette::LivePaletteSource>,
@@ -684,22 +863,32 @@ impl LiveMenuSource {
         threads: Rc<crate::state::palette::LivePaletteSource>,
         cx: &mut App,
     ) -> Rc<Self> {
-        let (landed, mut receiver) = futures::channel::mpsc::unbounded::<(SearchKey, Vec<ComposerCommandItem>)>();
+        let (landed, mut receiver) = futures::channel::mpsc::unbounded::<Landed>();
         let env = environment.read(cx);
         let environment_id = env.environment_id().clone();
         let store = env.store.clone();
-        let skills = Arc::new(skills_of(env.config.as_deref()));
+        let config = env.config.clone();
         let tokio = StateBridge::global(cx).tokio.clone();
         Rc::new_cyclic(|weak: &std::rc::Weak<Self>| {
             let weak = weak.clone();
             let receive = cx.spawn(async move |cx| {
                 use futures::StreamExt as _;
-                while let Some((key, items)) = receiver.next().await {
+                while let Some(landed) = receiver.next().await {
                     let Some(this) = weak.upgrade() else { return };
-                    if this.pending.borrow().as_ref() == Some(&key) {
-                        *this.pending.borrow_mut() = None;
+                    match landed {
+                        Landed::Files(key, items) => {
+                            if this.pending.borrow().as_ref() == Some(&key) {
+                                *this.pending.borrow_mut() = None;
+                            }
+                            this.results.borrow_mut().insert(key, Arc::new(items));
+                        }
+                        Landed::PullRequests(query, list) => {
+                            this.pull_request_lists.borrow_mut().insert(query, list.map(Arc::new));
+                        }
+                        Landed::Exact(number, found) => {
+                            this.pull_request_exact.borrow_mut().insert(number, found);
+                        }
                     }
-                    this.results.borrow_mut().insert(key, Arc::new(items));
                     let Some(composer) = this.composer.borrow().clone() else { continue };
                     cx.update(|cx| {
                         _ = composer.update(cx, |composer, cx| composer.refresh_menu(cx));
@@ -710,10 +899,14 @@ impl LiveMenuSource {
                 store,
                 tokio,
                 cwd,
-                skills: RefCell::new(skills),
+                config: RefCell::new(config),
+                facts: RefCell::default(),
                 results: RefCell::default(),
                 pending: RefCell::default(),
                 landed,
+                pull_request_lists: RefCell::default(),
+                pull_request_exact: RefCell::default(),
+                pull_request_generation: Arc::default(),
                 composer: RefCell::default(),
                 threads,
                 environment_id,
@@ -785,9 +978,14 @@ impl LiveMenuSource {
             .collect()
     }
 
-    /// Takes the skills of a new server config.
-    pub fn set_config(&self, config: Option<&ServerConfig>) {
-        *self.skills.borrow_mut() = Arc::new(skills_of(config));
+    /// Takes a new server config (the providers' commands and skills).
+    pub fn set_config(&self, config: Option<&Arc<ServerConfig>>) {
+        *self.config.borrow_mut() = config.cloned();
+    }
+
+    /// Takes what the shown thread allows now.
+    pub fn set_facts(&self, facts: SlashFacts) {
+        *self.facts.borrow_mut() = facts;
     }
 
     fn file_item(path: &str, kind: ProjectEntryKind) -> ComposerCommandItem {
@@ -804,22 +1002,15 @@ impl LiveMenuSource {
         }
     }
 
-    fn skill_items(&self, query: &str, slash: bool) -> Vec<ComposerCommandItem> {
-        let query = query.to_lowercase();
-        self.skills
-            .borrow()
-            .iter()
-            .filter(|skill| skill.name.to_lowercase().contains(&query))
-            .take(40)
-            .map(|skill| ComposerCommandItem {
-                id: SharedString::from(format!("skill:{}", skill.path)),
-                icon: ComposerCommandIcon::None,
-                label: skill.label.clone(),
-                label_prefix: slash.then(|| SharedString::from("/skill:")),
-                description: skill.description.clone(),
-                badge: None,
-                action: ComposerCommandAction::Insert(SharedString::from(format!("${} ", skill.name))),
-            })
+    /// `$` matches: the sending provider's user-invocable skills for this workspace, ranked.
+    fn skill_items(&self, query: &str) -> Vec<ComposerCommandItem> {
+        let config = self.config.borrow();
+        let instance = self.facts.borrow().instance_id.clone();
+        let Some(provider) = selected_provider(config.as_deref(), instance.as_deref()) else { return Vec::new() };
+        let skills = provider_skills_for_cwd(provider, self.cwd.as_deref());
+        crate::provider_skill_search::search_provider_skills(skills, query, usize::MAX)
+            .into_iter()
+            .map(|skill| skill_item(skill, false))
             .collect()
     }
 
@@ -834,32 +1025,338 @@ impl LiveMenuSource {
             let input = ProjectSearchEntriesInput { cwd, query: key.1.clone(), limit: FILE_SEARCH_LIMIT, kind: None, image_only: None };
             let entries = session.client.call::<ProjectsSearchEntries>(input).await.map(|r| r.entries).unwrap_or_default();
             let items = entries.iter().map(|entry| Self::file_item(&entry.path, entry.kind)).collect();
-            _ = landed.unbounded_send((key, items));
+            _ = landed.unbounded_send(Landed::Files(key, items));
         });
     }
 }
 
-fn skills_of(config: Option<&ServerConfig>) -> Vec<Skill> {
-    config
-        .iter()
-        .flat_map(|config| config.providers.iter())
-        .flat_map(|provider| provider.skills.iter().flatten())
-        .filter(|skill| skill.enabled)
-        .map(|skill| Skill {
-            name: skill.name.clone(),
-            label: SharedString::from(skill.display_name.clone().unwrap_or_else(|| skill.name.clone())),
-            description: SharedString::from(skill.short_description.clone().or_else(|| skill.description.clone()).unwrap_or_default()),
-            path: skill.path.clone(),
-        })
-        .collect()
+type ProviderItem = t3code_contracts::ServerConfigProvidersItem;
+type ProviderSkill = t3code_contracts::ServerConfigProvidersItemSkillsItem;
+
+/// The provider the composer sends with.
+fn selected_provider<'a>(config: Option<&'a ServerConfig>, instance_id: Option<&str>) -> Option<&'a ProviderItem> {
+    config?.providers.iter().find(|p| Some(p.instance_id.as_str()) == instance_id)
+}
+
+/// `resolveProviderSkillsForCwd`: the workspace snapshot's skills, else the provider's.
+fn provider_skills_for_cwd<'a>(provider: &'a ProviderItem, cwd: Option<&str>) -> &'a [ProviderSkill] {
+    let snapshot = cwd.and_then(|cwd| provider.workspace_snapshots.iter().flatten().find(|s| s.cwd == cwd));
+    match snapshot {
+        Some(snapshot) => &snapshot.skills,
+        None => provider.skills.as_deref().unwrap_or_default(),
+    }
+}
+
+/// A provider command as the `/` list shows it.
+struct ProviderCommand {
+    name: String,
+    description: Option<String>,
+    hint: Option<String>,
+}
+
+/// `resolveProviderSlashCommandsForCwd`: the workspace snapshot's commands, else the provider's.
+fn provider_commands_for_cwd(provider: &ProviderItem, cwd: Option<&str>) -> Vec<ProviderCommand> {
+    let snapshot = cwd.and_then(|cwd| provider.workspace_snapshots.iter().flatten().find(|s| s.cwd == cwd));
+    match snapshot {
+        Some(snapshot) => snapshot
+            .slash_commands
+            .iter()
+            .map(|c| ProviderCommand { name: c.name.clone(), description: c.description.clone(), hint: c.input.as_ref().map(|i| i.hint.clone()) })
+            .collect(),
+        None => provider
+            .slash_commands
+            .iter()
+            .flatten()
+            .map(|c| ProviderCommand { name: c.name.clone(), description: c.description.clone(), hint: c.input.as_ref().map(|i| i.hint.clone()) })
+            .collect(),
+    }
+}
+
+/// `resolveProviderSkillSourceKind` as the badge's text; `$` lists say "Repo Skill", `/` lists "Repo".
+fn skill_source_badge(skill: &ProviderSkill, skill_suffix: bool) -> SharedString {
+    let path = skill.path.replace('\\', "/");
+    let scope = skill.scope.as_deref().map(|s| s.trim().to_lowercase());
+    let kind = if path.contains("/.codex/plugins/") || path.contains("/.agents/plugins/") {
+        "app"
+    } else {
+        match scope.as_deref() {
+            Some("repo" | "repository") => "repo",
+            Some("project" | "workspace" | "local") => "project",
+            Some("user" | "personal") => "personal",
+            Some("system") => "system",
+            _ => "other",
+        }
+    };
+    match (kind, skill_suffix) {
+        ("app", false) => t!("App", context = "skill source badge"),
+        ("app", true) => t!("App Skill"),
+        ("repo", false) => t!("Repo", context = "skill source badge"),
+        ("repo", true) => t!("Repo Skill"),
+        ("project", false) => t!("Project", context = "skill source badge"),
+        ("project", true) => t!("Project Skill"),
+        ("personal", false) => t!("Personal", context = "skill source badge"),
+        ("personal", true) => t!("Personal Skill"),
+        ("system", false) => t!("System", context = "skill source badge"),
+        ("system", true) => t!("System Skill"),
+        (_, false) => t!("Provider", context = "skill source badge"),
+        (_, true) => t!("Provider Skill"),
+    }
+}
+
+/// A skill row: `$` lists show its display name, `/` lists `/skill:` before it; picking inserts `$name`.
+fn skill_item(skill: &ProviderSkill, slash: bool) -> ComposerCommandItem {
+    let fallback = || match (&skill.scope, slash) {
+        (Some(scope), _) => t!("{scope} skill", scope = scope),
+        (None, true) => SharedString::default(),
+        (None, false) => t!("Run provider skill"),
+    };
+    ComposerCommandItem {
+        id: SharedString::from(format!("skill:{}", skill.name)),
+        icon: ComposerCommandIcon::None,
+        label: SharedString::from(crate::provider_skill_search::format_provider_skill_display_name(skill).to_owned()),
+        label_prefix: slash.then(|| SharedString::from("/skill:")),
+        description: skill.short_description.clone().or_else(|| skill.description.clone()).map(SharedString::from).unwrap_or_else(fallback),
+        badge: Some(skill_source_badge(skill, !slash)),
+        action: ComposerCommandAction::Insert(SharedString::from(format!("${}", skill.name))),
+    }
+}
+
+/// The usage limits command opens a popover this client does not have, so it is not listed.
+const USAGE_LIMITS_COMMAND: &str = "usage-limits";
+
+/// One row of the `/` list before ranking, with what `searchSlashCommandItems` scores it by.
+struct SlashCandidate<'a> {
+    item: ComposerCommandItem,
+    rank: SlashRank<'a>,
+}
+
+enum SlashRank<'a> {
+    BuiltIn(&'static str),
+    Provider(String),
+    Skill(&'a ProviderSkill),
+}
+
+impl SlashCandidate<'_> {
+    /// `scoreSlashCommandItem`.
+    fn score(&self, query: &str) -> Option<i64> {
+        use crate::provider_skill_search::{Bases, DEFAULT_MARKERS, score_provider_skill, score_query_match};
+        let primary = match &self.rank {
+            SlashRank::Skill(skill) => {
+                if query == "skill" {
+                    return Some(0);
+                }
+                let skill_query = query.strip_prefix("skill:").unwrap_or(query);
+                let score = if skill_query.is_empty() { Some(0) } else { score_provider_skill(skill, skill_query) };
+                return score.or_else(|| "skill".starts_with(query).then_some(i64::MAX));
+            }
+            SlashRank::BuiltIn(command) => command.to_lowercase(),
+            SlashRank::Provider(name) => name.to_lowercase(),
+        };
+        let description = self.item.description.to_lowercase();
+        let name = Bases { exact: 0, prefix: Some(2), boundary: Some(4), includes: Some(6), fuzzy: Some(100), markers: &["-", "_", "/"] };
+        let text = Bases { exact: 20, prefix: Some(22), boundary: Some(24), includes: Some(26), fuzzy: None, markers: DEFAULT_MARKERS };
+        [score_query_match(&primary, query, &name), score_query_match(&description, query, &text)].into_iter().flatten().min()
+    }
+
+    fn tie_breaker(&self) -> String {
+        match &self.rank {
+            SlashRank::BuiltIn(command) => format!("0\u{0}{command}"),
+            SlashRank::Provider(name) => format!("1\u{0}{name}"),
+            SlashRank::Skill(skill) => format!("2\u{0}{}", skill.name),
+        }
+    }
+}
+
+/// The list query a `#` query asks for: a number or nothing lists recent pull requests.
+fn pull_request_text_query(query: &str) -> String {
+    if query.chars().all(|c| c.is_ascii_digit()) { String::new() } else { query.to_owned() }
+}
+
+impl LiveMenuSource {
+    /// `#` matches: the project's pull requests listed (text queries searched on the host after
+    /// 180 ms), an exact lookup for a typed number the list lacks, linked ones first.
+    fn pull_request_items(&self, query: &str) -> (Vec<ComposerCommandItem>, bool) {
+        use super::pull_request_mentions as mentions;
+        let Some(scope) = self.facts.borrow().pull_requests.clone() else { return (Vec::new(), false) };
+        let Some(repository) = scope.repository.clone() else { return (Vec::new(), false) };
+        let text = pull_request_text_query(query);
+        let list = self.pull_request_lists.borrow().get(&text).cloned();
+        let mut loading = list.is_none();
+        if list.is_none() {
+            self.fetch_pull_requests(&scope, &text);
+        }
+        let list = list.flatten();
+        let number = (!query.is_empty()).then(|| query.parse::<u64>().ok()).flatten().filter(|n| *n > 0);
+        let listed = |n: u64| list.as_ref().is_some_and(|l| l.entries.iter().any(|e| e.project_id == scope.project_id && e.repository.trim().eq_ignore_ascii_case(repository.trim()) && e.number == n));
+        let exact = match number.filter(|n| list.is_some() && !listed(*n)) {
+            Some(n) => match self.pull_request_exact.borrow().get(&n).cloned() {
+                Some(found) => found,
+                None => {
+                    loading = true;
+                    self.fetch_exact(&scope, &repository, n);
+                    None
+                }
+            },
+            None => None,
+        };
+        (mentions::items(&scope, &repository, query, list.as_deref(), exact.as_ref()), loading)
+    }
+
+    fn fetch_pull_requests(&self, scope: &super::pull_request_mentions::PullRequestScope, text: &str) {
+        use std::sync::atomic::Ordering;
+        let Some(session) = self.store.session() else { return };
+        let generation = self.pull_request_generation.fetch_add(1, Ordering::SeqCst) + 1;
+        let current = Arc::clone(&self.pull_request_generation);
+        let (landed, text, project_id) = (self.landed.clone(), text.to_owned(), scope.project_id.clone());
+        self.tokio.spawn(async move {
+            if !text.is_empty() {
+                tokio::time::sleep(std::time::Duration::from_millis(180)).await;
+                if current.load(Ordering::SeqCst) != generation {
+                    return;
+                }
+            }
+            let input = t3code_contracts::PullRequestListInput {
+                state: t3code_contracts::PullRequestListState::All,
+                project_id: Some(project_id),
+                limit: Some(super::pull_request_mentions::LIST_LIMIT),
+                query: (!text.is_empty()).then(|| text.clone()),
+                involvement: None,
+                filters: None,
+                project_ids: None,
+                host: None,
+                cursors: None,
+            };
+            let result = session.client.call::<t3code_contracts::rpc::methods::PullRequestsList>(input).await.ok();
+            _ = landed.unbounded_send(Landed::PullRequests(text, result));
+        });
+    }
+
+    fn fetch_exact(&self, scope: &super::pull_request_mentions::PullRequestScope, repository: &str, number: u64) {
+        let Some(session) = self.store.session() else { return };
+        self.pull_request_exact.borrow_mut().insert(number, None);
+        let (landed, repository) = (self.landed.clone(), repository.to_owned());
+        let reference = t3code_contracts::PullRequestRef {
+            project_id: scope.project_id.clone(),
+            host: None,
+            expected_account_id: None,
+            allow_stale: None,
+            repository: repository.clone(),
+            number,
+        };
+        self.tokio.spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(180)).await;
+            let detail = session.client.call::<t3code_contracts::rpc::methods::PullRequestsDetail>(reference).await.ok();
+            let found = detail.map(|d| super::pull_request_mentions::PullRequestMatch::of_detail(&d, &repository));
+            _ = landed.unbounded_send(Landed::Exact(number, found));
+        });
+    }
+
+    /// The `/` list (`useComposerMenuItems` slash branch): built-ins, then the sending provider's
+    /// commands and, when the setting is on, its skills; only `/model` and skills mid-prompt;
+    /// ranked by `searchSlashCommandItems` when there is a query.
+    fn slash_list(&self, trigger: &ComposerTrigger, context: &SlashMenuContext) -> Vec<ComposerCommandItem> {
+        let facts = self.facts.borrow();
+        let config = self.config.borrow();
+        let at_start = trigger.range.start == 0;
+        let prompt = context.prompt;
+        let provider = selected_provider(config.as_deref(), Some(context.instance_id.0.as_ref()));
+        // `providerSupportsManualCompaction`: the sending provider lists `compact`.
+        let compacts = provider.is_some_and(|p| p.slash_commands.iter().flatten().any(|c| c.name == "compact"));
+        let compact_available = prompt.get(..trigger.range.start).is_some_and(|s| s.trim().is_empty())
+            && facts.compact
+            && compacts
+            && prompt.get(trigger.range.end..).is_some_and(|s| s.trim().is_empty())
+            && !context.has_attachments;
+        let builtin = |command: SlashCommand, word: &'static str, description: SharedString| SlashCandidate {
+            item: ComposerCommandItem {
+                id: SharedString::from(format!("slash:{word}")),
+                icon: ComposerCommandIcon::None,
+                label: SharedString::from(format!("/{word}")),
+                label_prefix: None,
+                description,
+                badge: None,
+                action: ComposerCommandAction::Slash(command),
+            },
+            rank: SlashRank::BuiltIn(word),
+        };
+        let mut candidates = vec![builtin(SlashCommand::Model, "model", t!("Switch response model for this thread"))];
+        if let Some(reason) = &facts.side_chat {
+            candidates.push(builtin(SlashCommand::Side, "side", reason.clone().unwrap_or_else(|| t!("Ask a side question in a new side chat"))));
+            candidates.push(builtin(SlashCommand::Btw, "btw", reason.clone().unwrap_or_else(|| t!("Same as /side"))));
+        }
+        if facts.fresh_session {
+            candidates.push(builtin(SlashCommand::Clear, "clear", t!("Start a fresh session; earlier messages stay visible")));
+        }
+        let skills: Vec<&ProviderSkill> = match provider.filter(|_| facts.show_skills) {
+            Some(provider) => crate::provider_skill_search::dedupe_provider_skills_by_name(
+                provider_skills_for_cwd(provider, self.cwd.as_deref()).iter().filter(|s| crate::provider_skill_search::is_provider_skill_user_invocable(s)),
+            ),
+            None => Vec::new(),
+        };
+        let skill_names: std::collections::HashSet<String> = skills.iter().map(|s| s.name.trim().to_lowercase()).collect();
+        for command in provider.map(|p| provider_commands_for_cwd(p, self.cwd.as_deref())).unwrap_or_default() {
+            let hidden = skill_names.contains(&command.name.trim().to_lowercase())
+                || command.name == USAGE_LIMITS_COMMAND
+                || (command.name == "compact" && !compact_available)
+                || (command.name == "clear" && facts.fresh_session);
+            if hidden {
+                continue;
+            }
+            let description = command.description.clone().or(command.hint.clone()).map(SharedString::from).unwrap_or_else(|| t!("Run provider command"));
+            candidates.push(SlashCandidate {
+                item: ComposerCommandItem {
+                    id: SharedString::from(format!("provider-slash-command:{}", command.name)),
+                    icon: ComposerCommandIcon::None,
+                    label: SharedString::from(format!("/{}", command.name)),
+                    label_prefix: None,
+                    description,
+                    badge: None,
+                    action: ComposerCommandAction::Insert(SharedString::from(format!("/{}", command.name))),
+                },
+                rank: SlashRank::Provider(command.name),
+            });
+        }
+        candidates.extend(skills.iter().map(|skill| SlashCandidate { item: skill_item(skill, true), rank: SlashRank::Skill(skill) }));
+        if !at_start {
+            candidates.retain(|c| match c.rank {
+                SlashRank::Skill(_) => true,
+                SlashRank::BuiltIn(word) => !matches!(word, "side" | "btw" | "clear"),
+                SlashRank::Provider(_) => false,
+            });
+        }
+        let query = trigger.query.trim().trim_start_matches('/').to_lowercase();
+        if query.is_empty() {
+            return candidates.into_iter().map(|c| c.item).collect();
+        }
+        let mut ranked: Vec<(i64, String, ComposerCommandItem)> = Vec::new();
+        for candidate in candidates {
+            let Some(score) = candidate.score(&query) else { continue };
+            let tie = candidate.tie_breaker();
+            let at = ranked.partition_point(|(s, t, _)| (*s, t.as_str()) <= (score, tie.as_str()));
+            ranked.insert(at, (score, tie, candidate.item));
+        }
+        ranked.into_iter().map(|(_, _, item)| item).collect()
+    }
 }
 
 impl ComposerMenuSource for LiveMenuSource {
+    fn slash_items(&self, trigger: &ComposerTrigger, context: &SlashMenuContext) -> Option<(Vec<ComposerCommandItem>, bool)> {
+        Some((self.slash_list(trigger, context), false))
+    }
+
+    fn empty_text(&self, trigger: &ComposerTrigger) -> Option<SharedString> {
+        (trigger.kind == ComposerTriggerKind::PullRequest).then(|| {
+            let scope = self.facts.borrow().pull_requests.clone();
+            let failed = matches!(self.pull_request_lists.borrow().get(&pull_request_text_query(&trigger.query)), Some(None));
+            super::pull_request_mentions::empty_text(scope.as_ref(), failed, &trigger.query)
+        })
+    }
+
     fn items(&self, trigger: &ComposerTrigger) -> (Vec<ComposerCommandItem>, bool) {
         match trigger.kind {
-            ComposerTriggerKind::Skill => (self.skill_items(&trigger.query, false), false),
-            ComposerTriggerKind::SlashCommand => (self.skill_items(&trigger.query, true), false),
-            ComposerTriggerKind::PullRequest => (Vec::new(), false),
+            ComposerTriggerKind::Skill => (self.skill_items(&trigger.query), false),
+            ComposerTriggerKind::SlashCommand => (Vec::new(), false),
+            ComposerTriggerKind::PullRequest => self.pull_request_items(&trigger.query),
             ComposerTriggerKind::Path => {
                 let key = (trigger.kind, trigger.query.clone());
                 let mut threads = self.thread_items(&trigger.query);

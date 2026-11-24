@@ -244,6 +244,7 @@ pub fn toolbar_props(data: &LiveData, view: &ThreadView, cx: &mut App) -> Branch
         Some(draft) => draft.worktree_path.clone(),
         None => row.as_ref().and_then(|row| row.source.worktree_path.clone()),
     };
+    let worktree_path_for_seed = worktree_path.clone();
     let project_root = view
         .project_id
         .as_ref()
@@ -275,7 +276,11 @@ pub fn toolbar_props(data: &LiveData, view: &ThreadView, cx: &mut App) -> Branch
         env_locked: !view.is_draft,
         thread_branch: view.branch.as_ref().map(|b| b.to_string()),
         start_from_origin: draft.as_ref().is_some_and(|d| d.start_from_origin),
-        previous_worktree: None,
+        previous_worktree: draft
+            .as_ref()
+            .and(view.project_id.as_ref())
+            .zip(view_environment(data, view, cx))
+            .and_then(|(project, environment)| previous_worktree(&environment, project.0.as_ref(), worktree_path_for_seed.as_deref(), cx)),
         turn_running: view.running,
         can_write_source_control: true,
         can_change_thread_branch: true,
@@ -283,4 +288,32 @@ pub fn toolbar_props(data: &LiveData, view: &ThreadView, cx: &mut App) -> Branch
         show_git_controls: true,
         pull_request_badge: row.as_ref().and_then(|row| crate::thread_pull_requests::strip_badge(row.source.pull_requests.as_deref()?)),
     }
+}
+
+/// The worktree of the project's most recently updated other thread, offered to a draft as
+/// "Previous worktree" (`resolvePreviousWorktreeSeed` over the project's thread shells).
+pub fn previous_worktree(
+    environment_id: &EnvironmentId,
+    project: &str,
+    current: Option<&str>,
+    cx: &App,
+) -> Option<crate::components::branch_toolbar_logic::PreviousWorktreeSeed> {
+    use crate::components::branch_toolbar_logic::{WorktreeThread, resolve_previous_worktree_seed};
+    let environment = StateBridge::environment(environment_id, cx)?;
+    let environment = environment.read(cx);
+    let threads: Vec<WorktreeThread> = environment
+        .shell
+        .snapshot
+        .as_ref()?
+        .threads
+        .iter()
+        .filter(|t| t.project_id.as_str() == project)
+        .map(|t| WorktreeThread {
+            branch: t.branch.clone(),
+            worktree_path: t.worktree_path.clone(),
+            updated_at_ms: t3code_client_runtime::state::models::parse_ms(&t.updated_at),
+            archived: t.archived_at.is_some(),
+        })
+        .collect();
+    resolve_previous_worktree_seed(&threads, current)
 }

@@ -21,6 +21,7 @@ pub mod favicons;
 pub mod favorites;
 pub mod notifications;
 pub mod palette;
+pub mod pull_request_mentions;
 pub mod shell;
 pub mod sidebar_actions;
 pub mod thread_errors;

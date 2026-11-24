@@ -57,7 +57,7 @@ pub fn current_link(links: &[ThreadPullRequestLink]) -> Option<&ThreadPullReques
 
 /// The host's words for a change request from its URL (`findByChangeRequestUrl`); a URL no
 /// host claims reads as the default host.
-fn terminology_for_url(url: &str) -> ChangeRequestTerminology {
+pub fn terminology_for_url(url: &str) -> ChangeRequestTerminology {
     let kind = if url.contains("/-/merge_requests/") {
         Some("gitlab")
     } else if url.contains("/pull-requests/") {
@@ -131,7 +131,7 @@ const FINDING_LIMIT: usize = 20;
 const FINDING_BODY_MAX_LENGTH: usize = 1_000;
 
 /// `boundedField`: whitespace collapsed, at most 1,000 characters.
-fn bounded_field(value: &str) -> String {
+pub fn bounded_field(value: &str) -> String {
     let collapsed = value.split_whitespace().collect::<Vec<_>>().join(" ");
     if collapsed.chars().count() <= FINDING_BODY_MAX_LENGTH {
         return collapsed;

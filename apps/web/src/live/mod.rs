@@ -43,7 +43,7 @@ use crate::provider_models_live::{model_catalog, to_wire};
 use crate::router::{DraftId, ThreadTarget};
 use crate::components::chat::thread_details_panel::{ThreadDetailsEvent, ThreadDetailsInput};
 use crate::state::thread_errors::ThreadErrors;
-use crate::state::app_data::{ActionOutcome, AppData, CommandOutcome, DataEvent, DataEvents, DetailsOutcome, GitControlsSetup, ThreadView};
+use crate::state::app_data::{ActionOutcome, AppData, CommandOutcome, DataEvent, DataEvents, DetailsOutcome, GitControlsSetup, RevertedDraft, ThreadView};
 use crate::state::composer::{self as live_composer, CatalogCache, LiveDraftStore, LiveMenuSource, composer_state};
 use crate::state::palette::LivePaletteSource;
 use crate::state::shell::{runtime_ids, thread_key};
@@ -67,7 +67,7 @@ struct Draft {
 pub struct LiveData {
     events: Entity<DataEvents>,
     palette: Rc<LivePaletteSource>,
-    drafts: RefCell<HashMap<DraftId, Draft>>,
+    drafts: Rc<RefCell<HashMap<DraftId, Draft>>>,
     next_draft: std::cell::Cell<usize>,
     draft_store: Rc<RefCell<dyn ComposerDraftStore>>,
     catalogs: RefCell<HashMap<t3code_contracts::EnvironmentId, CatalogCache>>,
@@ -122,7 +122,7 @@ impl LiveData {
         Rc::new(Self {
             events,
             palette,
-            drafts: RefCell::default(),
+            drafts: Rc::default(),
             next_draft: std::cell::Cell::new(0),
             draft_store: Rc::new(RefCell::new(LiveDraftStore::new(StateBridge::drafts(cx)))),
             catalogs: RefCell::default(),
@@ -320,7 +320,10 @@ impl AppData for LiveData {
                 draft_workspace::DraftWorkspace::new(&environment_id, &project_id, cx)
             })
             .unwrap_or_default();
-        self.drafts.borrow_mut().insert(id.clone(), Draft { project, workspace });
+        self.drafts.borrow_mut().insert(id.clone(), Draft { project: project.clone(), workspace: workspace.clone() });
+        if let Some(project) = project {
+            self.read_project_file(&id, &project, workspace, cx);
+        }
         id
     }
 
@@ -339,7 +342,8 @@ impl AppData for LiveData {
             let Some(project) = entry.project.clone() else { return };
             let (environment_id, project_id) = draft_ids(&project);
             let before = entry.workspace.clone();
-            entry.workspace.apply(event, &environment_id, &project_id, cx);
+            let seed = git::previous_worktree(&environment_id, project_id.as_str(), entry.workspace.worktree_path.as_deref(), cx);
+            entry.workspace.apply(event, &environment_id, &project_id, seed, cx);
             entry.workspace != before
         };
         if changed {
@@ -364,7 +368,14 @@ impl AppData for LiveData {
                 let drafts = StateBridge::drafts(cx).current();
                 let draft = drafts.drafts_by_thread_key.get(live_composer::draft_key(&key).0.as_ref());
                 let armed = live_composer::FreshSessionArms::armed(&key, cx);
-                composer_state(&key, row.as_deref(), thread.read(cx), environment.read(cx), catalog, draft, armed)
+                let state = composer_state(&key, row.as_deref(), thread.read(cx), environment.read(cx), catalog, draft, armed);
+                let show_skills = crate::hooks::use_settings::ClientSettingsStore::get(cx).show_skills_in_slash_menu;
+                let facts = live_composer::slash_facts(row.as_deref(), thread.read(cx), environment.read(cx), &state.selection.instance_id.0, show_skills);
+                let cwd = (!view.cwd.is_empty()).then(|| view.cwd.to_string());
+                if let Some(source) = self.menus.borrow().get(&(environment_id.clone(), cwd)) {
+                    source.set_facts(facts);
+                }
+                state
             }
             None => {
                 let environment = view
@@ -416,7 +427,7 @@ impl AppData for LiveData {
             .entry(key)
             .or_insert_with(|| LiveMenuSource::new(&environment, cwd, self.palette.clone(), cx))
             .clone();
-        source.set_config(environment.read(cx).config.as_deref());
+        source.set_config(environment.read(cx).config.as_ref());
         source.set_shown(view_target(view));
         source.attach(composer);
         source
@@ -442,6 +453,13 @@ impl AppData for LiveData {
                     ComposerEvent::AttachmentsAdded(attachments) => {
                         if let Some(environment_id) = draft_environment {
                             crate::state::attachments::start_uploads(&environment_id, attachments, composer, cx);
+                        }
+                        return None;
+                    }
+                    ComposerEvent::AttachmentsRestored(attachments) => {
+                        let fresh: Vec<_> = attachments.iter().filter(|a| !crate::state::attachments::AttachmentUploads::known(&a.context_id)).cloned().collect();
+                        if let Some(environment_id) = draft_environment {
+                            crate::state::attachments::start_uploads(&environment_id, &fresh, composer, cx);
                         }
                         return None;
                     }
@@ -565,7 +583,7 @@ impl AppData for LiveData {
         ActionOutcome::Done
     }
 
-    fn revert(&self, key: &ThreadKey, message: &crate::components::chat::timeline_entries::MessageId, turn_count: usize, restore_files: bool, cx: &mut App) -> Task<Option<SharedString>> {
+    fn revert(&self, key: &ThreadKey, message: &crate::components::chat::timeline_entries::MessageId, turn_count: usize, restore_files: bool, cx: &mut App) -> Task<Option<RevertedDraft>> {
         self.revert_to(key, message, turn_count, restore_files, cx)
     }
 
@@ -928,6 +946,39 @@ impl LiveData {
     }
 
     /// The checkpoint "Edit from here" rewinds to (`findRevertCheckpoint`).
+    /// Reads the project's `t3.json` when it decides a new draft's mode, and applies the mode
+    /// unless the draft's workspace was changed meanwhile. The web waits for the file before it
+    /// opens the draft; here the draft opens at once and its mode follows the file.
+    fn read_project_file(&self, draft: &DraftId, project: &ProjectRef, initial: draft_workspace::DraftWorkspace, cx: &mut App) {
+        let (environment_id, project_id) = draft_ids(project);
+        let Some(root) = draft_workspace::project_file_root(&environment_id, &project_id, cx) else { return };
+        let Some(link) = crate::live::rpc::RpcLink::new(&environment_id, cx) else { return };
+        let input = t3code_contracts::ProjectReadFileInput { cwd: root, relative_path: draft_workspace::PROJECT_FILE.into(), allow_missing: Some(true) };
+        let read = link.call::<t3code_contracts::rpc::methods::ProjectsReadFile>(input);
+        let (drafts, draft, events) = (Rc::downgrade(&self.drafts), draft.clone(), self.events.downgrade());
+        cx.spawn(async move |cx| {
+            let Ok(file) = read.await else { return };
+            if file.exists == Some(false) || file.truncated {
+                return;
+            }
+            let Some(mode) = draft_workspace::project_file_env_mode(&file.contents) else { return };
+            cx.update(|cx| {
+                let Some(drafts) = drafts.upgrade() else { return };
+                let workspace = draft_workspace::DraftWorkspace::from_project_file(mode, &environment_id, &project_id, cx);
+                {
+                    let mut drafts = drafts.borrow_mut();
+                    let Some(entry) = drafts.get_mut(&draft) else { return };
+                    if entry.workspace != initial || entry.workspace == workspace {
+                        return;
+                    }
+                    entry.workspace = workspace;
+                }
+                _ = events.update(cx, |_, cx| cx.emit(DataEvent::ThreadChanged(ThreadTarget::Draft(draft))));
+            });
+        })
+        .detach();
+    }
+
     fn revert_checkpoint(projection: &t3code_shared::thread_projection::ThreadProjection, turn_count: usize) -> Option<Arc<t3code_contracts::OrchestrationV2Checkpoint>> {
         use t3code_contracts::OrchestrationV2CheckpointStatus as Status;
         projection
@@ -961,33 +1012,40 @@ impl LiveData {
     }
 
     /// Rolls back to the checkpoint and resolves with the message's text for the composer.
-    fn revert_to(&self, key: &ThreadKey, message: &crate::components::chat::timeline_entries::MessageId, turn_count: usize, restore_files: bool, cx: &mut App) -> Task<Option<SharedString>> {
+    fn revert_to(&self, key: &ThreadKey, message: &crate::components::chat::timeline_entries::MessageId, turn_count: usize, restore_files: bool, cx: &mut App) -> Task<Option<RevertedDraft>> {
         use crate::components::chat::timeline_entries::EntryKind;
         let (environment_id, thread_id) = runtime_ids(key);
-        let (Some(environment), Some(thread)) = (self.environment(&environment_id, cx), self.active(key, cx)) else { return Task::ready(None) };
+        let (Some(environment), Some(thread), Some(link)) = (self.environment(&environment_id, cx), self.active(key, cx), crate::live::rpc::RpcLink::new(&environment_id, cx)) else {
+            return Task::ready(None);
+        };
         let thread = thread.read(cx);
         let text = thread.input().entries.iter().find_map(|e| match &e.kind {
             EntryKind::Message(m) if m.id == *message => Some(m.text.clone()),
             _ => None,
         });
+        // The sent message's attachments and the records binding its chips to them.
+        let (attachments, context) = match thread.input().item_sources.get(&message.0).map(|item| &**item) {
+            Some(t3code_contracts::OrchestrationV2TurnItem::UserMessage(item)) => (item.attachments.clone(), item.context.clone()),
+            _ => (Vec::new(), None),
+        };
         let checkpoint = thread.projection().and_then(|p| Self::revert_checkpoint(p, turn_count));
         let commands = environment.read(cx).commands.clone();
-        let task = StateBridge::spawn(
-            async move {
-                match checkpoint {
-                    Some(c) => commands.rollback_to_checkpoint(&thread_id, c.scope_id.clone(), c.id.clone(), Some(restore_files)).await,
-                    None => commands.rollback_to_run(&thread_id, turn_count as u64, restore_files).await,
-                }
-            },
-            cx,
-        );
+        let runner = link.clone();
+        let task = runner.run(async move {
+            let restored = crate::state::attachments::fetch_message_attachments(link, attachments, context).await?;
+            let rolled = match checkpoint {
+                Some(c) => commands.rollback_to_checkpoint(&thread_id, c.scope_id.clone(), c.id.clone(), Some(restore_files)).await,
+                None => commands.rollback_to_run(&thread_id, turn_count as u64, restore_files).await,
+            };
+            rolled.map_err(|error| SharedString::from(error.to_string()))?;
+            Ok(restored)
+        });
         cx.spawn(async move |cx| match task.await {
-            Some(Ok(_)) => Some(text.unwrap_or_default()),
-            Some(Err(error)) => {
+            Ok(attachments) => Some(RevertedDraft { prompt: text.unwrap_or_default(), attachments }),
+            Err(error) => {
                 cx.update(|cx| toast_error(t!("Failed to revert thread state."), error, cx));
                 None
             }
-            None => None,
         })
     }
 }
