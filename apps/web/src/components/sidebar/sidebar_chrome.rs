@@ -12,6 +12,15 @@ use super::sidebar_thread_header::{HeaderControl, sidebar_icon_button};
 use super::style::*;
 use super::{Sidebar, SidebarEvent};
 
+actions!(
+    sidebar,
+    [
+        /// "Check for updates" in the sidebar footer (`SidebarUpdatePill`): the
+        /// desktop shell checks the app and its providers for updates.
+        CheckForUpdates
+    ]
+);
+
 impl Sidebar {
     /// Topbar-height row; part of the window drag strip.
     pub(crate) fn render_header_row(
@@ -43,6 +52,19 @@ impl Sidebar {
                     .text_color(colors.foreground)
                     .child(label)
             }))
+    }
+
+    /// The idle update control: a round 32px button with `RefreshCw`, pushed to
+    /// the footer's end. Downloading and install states belong to the native updater.
+    fn render_update_button(&self, colors: &ShellColors, cx: &mut Context<Self>) -> impl IntoElement {
+        let hovered = self.hovered_control == Some(HeaderControl::CheckForUpdates);
+        sidebar_icon_button("sidebar-check-updates", IconName::RefreshCw, px(32.), hovered, colors)
+            .ml_auto()
+            .rounded_full()
+            .tooltip(crate::components::ui::tooltip::tooltip(crate::i18n::t!("Check for updates")))
+            .on_hover(self.control_hover_listener(HeaderControl::CheckForUpdates, cx))
+            .on_click(|_, window, cx| window.dispatch_action(Box::new(CheckForUpdates), cx))
+            .test_support()
     }
 
     /// Settings, pull requests, issues, usage and (fork) notifications.
@@ -109,7 +131,8 @@ impl Sidebar {
             ))
             .when(settings.notification_inbox, |row| {
                 row.child(self.render_notification_bell(colors, window, cx))
-            });
+            })
+            .child(self.render_update_button(colors, cx));
         div()
             .flex()
             .flex_none()

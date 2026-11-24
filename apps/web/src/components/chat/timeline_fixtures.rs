@@ -51,6 +51,7 @@ impl Builder {
                 input_intent: intent,
                 sent_by_app: false,
                 guest: None,
+                from_agent: None,
             }),
         });
         self
@@ -73,6 +74,7 @@ impl Builder {
                 input_intent: InputIntent::Prompt,
                 sent_by_app: false,
                 guest: None,
+                from_agent: None,
             }),
         });
         MessageId::new(id)
@@ -475,6 +477,7 @@ pub fn streaming_thread(history: TimelineInput, reply: &str) -> TimelineInput {
             input_intent: InputIntent::Prompt,
             sent_by_app: false,
             guest: None,
+            from_agent: None,
         }),
     });
     entries.push(TimelineEntry {
@@ -492,6 +495,7 @@ pub fn streaming_thread(history: TimelineInput, reply: &str) -> TimelineInput {
             input_intent: InputIntent::Prompt,
             sent_by_app: false,
             guest: None,
+            from_agent: None,
         }),
     });
     TimelineInput {

@@ -46,7 +46,7 @@ def sidebar(active=True):
         ink("settled label", 14, 700, 80, 724, **T),
         ink("settled count", 200, 700, 245, 724),
         ink("footer icons", 8, 735, 200, 772),
-        ink("update button", 210, 740, 245, 772, exclude="Check for updates: the native shell has its own updater, so the port leaves it out"),
+        ink("update button", 210, 740, 245, 772),
     ]
     return e
 
@@ -216,6 +216,30 @@ scene("right-panel-diff", chrome(), [
     hscan("panel left edge", 400, 600, 640),
     fill("panel fill", 900, 600),
     ink("panel header", 620, 52, 1100, 90),
+])
+
+# Captured by the audit (artifacts/audit/ref): the title's "Thread actions" menu.
+scene("thread-actions-menu", chrome(), [
+    hscan("menu left edge", 120, 360, 380, **BL),
+    vscan("menu top edge", 450, 30, 60, **BL),
+    vscan("menu bottom edge", 450, 405, 440, **BL),
+    ink("item 1 icon", 380, 66, 400, 86),
+    ink("item 1 label", 405, 64, 520, 88, **T),
+    ink("snooze chevron", 545, 166, 570, 186),
+    ink("delete label", 405, 402, 470, 426, **T),
+])
+
+# Captured by the audit: "Use `inline code` and **bold** here" then a TypeScript block.
+scene("composer-markdown", chrome(), [
+    hscan("code block left edge", 640, 300, 340, **BL),
+    hscan("code block right edge", 640, 1020, 1060, **BL),
+    vscan("code block top", 600, 600, 640, **BL),
+    fill("code block fill", 700, 660),
+    ink("language icon", 330, 630, 352, 652),
+    ink("language label", 348, 628, 425, 650, **T),
+    ink("code line 1", 330, 652, 500, 672, **T),
+    ink("inline code chip", 345, 588, 440, 610),
+    ink("prose line", 318, 582, 500, 612, **T),
 ])
 
 scene("window-thread-light", [

@@ -75,9 +75,7 @@ const SCENES: &[Scene] = &[
         name: "timeline-tools-expanded",
         reference: "timeline-tools-expanded",
         light: false,
-        // The port's turn sits 39px lower than the fork's: its first prompt is a
-        // bubble, not the fork's one-line Agent pill.
-        steps: &[Step::Wheel(700., 400., 20_000.), Step::Click(340., 181.)],
+        steps: &[Step::Wheel(700., 400., 20_000.), Step::Click(340., 142.)],
     },
     Scene { name: "timeline-bottom", reference: "timeline-bottom", light: false, steps: &[] },
     Scene { name: "timeline-user-message", reference: "timeline-user-message", light: false, steps: &[Step::Wheel(700., 400., 600.)] },
@@ -109,6 +107,10 @@ const SCENES: &[Scene] = &[
             Step::Type("```ts"),
             Step::Press("shift-enter"),
             Step::Type("const x = sum(1, 2);"),
+            // The capture typed a closing fence, which the web keeps as code; the
+            // port shows its closing fence while the caret is on it.
+            Step::Press("shift-enter"),
+            Step::Type("```"),
         ],
     },
     Scene { name: "thread-actions-menu", reference: "thread-actions-menu", light: false, steps: &[Step::Click(430., 26.)] },

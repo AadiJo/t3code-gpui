@@ -39,6 +39,83 @@ const INLINE_MEDIA_WIDTH: gpui_kit::Pixels = px(210.);
 const LONE_IMAGE_HEIGHT: gpui_kit::Pixels = px(192.);
 
 impl MessagesTimeline {
+    /// A message from another agent (`FoldedMessageHeader`): a bubble holding one
+    /// `px-3 py-2` line (messages icon, sender, first line, chevron) that toggles
+    /// the full message below it (`px-3 pb-3`, at most `max-h-96`).
+    fn render_agent_message(
+        &mut self,
+        row: &TimelineRow,
+        message: &super::timeline_entries::ChatMessage,
+        sender: &super::timeline_entries::AgentSender,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let colors = self.colors;
+        let key = row.key;
+        let expanded = self.unfolded_messages.contains(&message.id.0);
+        let muted = colors.theme.muted_foreground;
+        let label = sender.title.clone().unwrap_or_else(|| crate::i18n::t!("Agent"));
+        let summary: gpui_kit::SharedString =
+            message.text.lines().map(str::trim).find(|l| !l.is_empty()).unwrap_or_default().to_owned().into();
+        let id = message.id.0.clone();
+        let header = div()
+            .id(("agent-fold", key))
+            .flex()
+            .w_full()
+            .min_w_0()
+            .items_center()
+            .gap(px(6.))
+            .px(px(12.))
+            .py(px(8.))
+            .rounded(BUBBLE_RADIUS)
+            .cursor_pointer()
+            .text_size(px(14.))
+            .line_height(px(20.))
+            .child(Icon::new(IconName::MessagesSquare).size(IconSize::Custom(px(16.))).color(muted).stroke(2.))
+            .child({
+                let label = div().flex_none().text_color(muted).child(label);
+                // A thread title truncates at half the row; the generic label never does.
+                if sender.title.is_some() { label.max_w(relative(0.5)).truncate() } else { label }
+            })
+            .child(div().flex_1().min_w_0().truncate().child(summary))
+            .child(
+                Icon::new(if expanded { IconName::ChevronDown } else { IconName::ChevronRight })
+                    .size(IconSize::Custom(px(14.)))
+                    .color(muted),
+            )
+            .on_click(cx.listener(move |this, _, _, cx| this.toggle_message_fold(id.clone(), cx)))
+            .test_support();
+        let mut bubble = div()
+            .relative()
+            .min_w_0()
+            .max_w(relative(BUBBLE_MAX_WIDTH))
+            .rounded(BUBBLE_RADIUS)
+            .bg(colors.theme.message_surface)
+            .text_color(colors.theme.message_foreground)
+            .child(header);
+        if expanded {
+            let actions = self.markdown_actions();
+            let parsed = self.message_markdown(&message.id.0, &message.text, false, MarkdownFlavor::USER);
+            let pieces = parsed.pieces.clone();
+            let view = MarkdownView {
+                key,
+                pieces: &pieces,
+                colors: &colors,
+                user: true,
+                streaming: false,
+                piece_opacity: None,
+                state: &self.markdown_state,
+                actions,
+                find: self.find_highlight(),
+            };
+            let markdown = render_markdown(&view, window, cx);
+            bubble = bubble.w(relative(BUBBLE_MAX_WIDTH)).child(
+                div().id(("agent-body", key)).px(px(12.)).pb(px(12.)).max_h(px(384.)).overflow_y_scroll().child(markdown),
+            );
+        }
+        bubble.into_any_element()
+    }
+
     pub(super) fn render_user_message(
         &mut self,
         row: &TimelineRow,
@@ -88,7 +165,9 @@ impl MessagesTimeline {
             );
         }
 
-        if !has_text && files.is_empty() && images.len() == 1 {
+        if let Some(sender) = &message.from_agent {
+            column = column.child(self.render_agent_message(row, message, sender, window, cx));
+        } else if !has_text && files.is_empty() && images.len() == 1 {
             // Media-only messages drop the bubble.
             column = column.child(
                 div().id(("image", key)).cursor_pointer().on_click(open_image(0)).test_support().child(img(images[0].source.clone())
@@ -201,6 +280,10 @@ impl MessagesTimeline {
             column = column.child(bubble);
         }
 
+        // A folded agent message shows no actions until it is opened.
+        if message.from_agent.is_some() && !self.unfolded_messages.contains(&message.id.0) {
+            return column.into_any_element();
+        }
         // Actions: timestamp, Edit from here, Copy; revealed on hover.
         let copy_key = key.wrapping_add(1);
         let copied = self.markdown_state.copied == Some(copy_key);

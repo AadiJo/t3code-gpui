@@ -99,6 +99,16 @@ pub struct ChatMessage {
     pub sent_by_app: bool,
     /// A guest author's name; their messages do not group with yours.
     pub guest: Option<SharedString>,
+    /// Sent by another agent (`createdBy: "agent"` from a thread, not the
+    /// server): the message folds to one "Agent" line.
+    pub from_agent: Option<AgentSender>,
+}
+
+/// The agent behind a message it sent into this thread.
+#[derive(Clone, Debug, PartialEq)]
+pub struct AgentSender {
+    /// The sending thread's title (`linkedSender.title`); `None` shows "Agent".
+    pub title: Option<SharedString>,
 }
 
 /// Lifecycle of a tool call (`toolLifecycleStatus`).

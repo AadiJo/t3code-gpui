@@ -734,8 +734,8 @@ enum MarginGroup {
 
 /// The web composer's block spacing (`index.css` `.composer-tiptap`): lists,
 /// quotes, rules and code blocks have 0.65rem margins, headings 1.25rem above
-/// and 0.5rem below, adjacent margins collapse, and the draft's first and last
-/// blocks have none. A code block adds its border and padding: 1px + 0.375rem
+/// and 0.5rem below, adjacent margins collapse, and the draft's first block
+/// has none above; only a code block keeps its margin below at the end. A code block adds its border and padding: 1px + 0.375rem
 /// above the header, 0.25rem above the code, 0.5rem + 1px below it.
 fn line_spacing(doc: &Doc, lines: &[Rc<DisplayLine>], rich: bool, rem: Pixels) -> Vec<LineSpace> {
     let mut space = vec![LineSpace::default(); lines.len()];
@@ -776,6 +776,11 @@ fn line_spacing(doc: &Doc, lines: &[Rc<DisplayLine>], rich: bool, rem: Pixels) -
             let last = visible(i) && next_visible.is_none_or(|j| group(j) != MarginGroup::Code(block));
             if last {
                 space[i].below += rem * 0.5 + px(1.);
+                // The node view keeps its bottom margin when it ends the draft
+                // (the capture's textbox ends 0.65rem + 4px below the box).
+                if next_visible.is_none() {
+                    space[i].below += rem * 0.65;
+                }
             }
         }
     }
