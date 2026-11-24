@@ -657,8 +657,9 @@ impl AppData for LiveData {
                         if let Some(draft) = removed {
                             drafts.borrow_mut().insert(draft_id.clone(), draft);
                         }
-                        ThreadErrors::send_failed(&draft_key, crate::state::composer::send_error(&error), restore, cx);
-                        events.update(cx, |_, cx| cx.emit(DataEvent::DraftLaunchFailed { draft: draft_id, thread: failed_thread }));
+                        let error = crate::state::composer::send_error(&error);
+                        ThreadErrors::send_failed(&draft_key, error.clone(), restore, cx);
+                        events.update(cx, |_, cx| cx.emit(DataEvent::DraftLaunchFailed { draft: draft_id, thread: failed_thread, error }));
                     }),
                     Some(Ok(_)) => crate::state::attachments::AttachmentUploads::forget_sent(sent),
                     None => {}

@@ -739,7 +739,7 @@ impl ThreadRouteView {
                     cx.emit(ThreadRouteEvent::Promoted(target));
                 }
             }
-            DataEvent::DraftLaunchFailed { draft, thread } => {
+            DataEvent::DraftLaunchFailed { draft, thread, .. } => {
                 if self.target.as_ref() == Some(&ThreadTarget::Server(thread.clone())) {
                     let target = ThreadTarget::Draft(draft.clone());
                     self.target = Some(target.clone());

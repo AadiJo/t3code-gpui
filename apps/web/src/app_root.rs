@@ -745,7 +745,10 @@ impl AppRoot {
                     ThreadTarget::Server(key) => Route::Thread(key.clone()),
                     ThreadTarget::Draft(draft) => Route::Draft(draft.clone()),
                 };
-                self.router.update(cx, |router, cx| router.replace(route, cx));
+                // The route follows only while it shows the thread; a page the user went to stays.
+                if self.router.read(cx).current().thread_target().is_some() {
+                    self.router.update(cx, |router, cx| router.replace(route, cx));
+                }
             }
             ThreadRouteEvent::OpenThread(key) => self.navigate(Route::Thread(key.clone()), cx),
             ThreadRouteEvent::OpenDiff { turn, file } => {
@@ -1188,6 +1191,19 @@ impl AppRoot {
     fn on_data_event(&mut self, _: &Entity<DataEvents>, event: &DataEvent, window: &mut Window, cx: &mut Context<Self>) {
         if let DataEvent::OpenThread(key) = event {
             return self.navigate(Route::Thread(key.clone()), cx);
+        }
+        // A draft launch refused after the user went elsewhere (`stackedThreadToast`); on its own
+        // route the draft simply comes back.
+        if let DataEvent::DraftLaunchFailed { draft, thread, error } = event {
+            let route = self.router.read(cx).current().clone();
+            if route != Route::Thread(thread.clone()) && route != Route::Draft(draft.clone()) {
+                let (router, draft) = (self.router.clone(), draft.clone());
+                let toast = ToastData::new(ToastKind::Error, t!("Could not start thread"))
+                    .description(if error.is_empty() { t!("Failed to send message.") } else { error.clone() })
+                    .action(t!("Open draft"), move |_, cx| router.update(cx, |router, cx| router.navigate(Route::Draft(draft.clone()), cx)));
+                Toaster::push(toast, cx);
+            }
+            return;
         }
         if let DataEvent::OpenSideChat { parent, side_chat } = event {
             let side_chat_id = side_chat.thread_id.0.to_string();
