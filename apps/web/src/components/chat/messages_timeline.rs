@@ -143,7 +143,8 @@ pub struct MessagesTimeline {
     pub(super) markdown: HashMap<SharedString, MessageMarkdown>,
     pub(super) colors: ChatColors,
     /// The message column's width at the Chat width setting.
-    lane: super::chat_style::ChatLane,
+    pub(super) lane: super::chat_style::ChatLane,
+    pub(super) minimap: super::timeline_minimap::MinimapState,
     /// Advances every [`ANIMATION_STEP`] while something animates on screen.
     pub(super) animation_step: u64,
     animation_task: Option<Task<()>>,
@@ -201,6 +202,7 @@ impl MessagesTimeline {
             markdown: HashMap::new(),
             colors: ChatColors::get(cx),
             lane: super::chat_style::ChatLane::get(cx),
+            minimap: Default::default(),
             animation_step: 0,
             animation_task: None,
             copied_task: None,
@@ -854,12 +856,12 @@ impl Render for MessagesTimeline {
                 .child("Send a message to start the conversation.")
                 .into_any_element();
         }
-        virtual_list("messages-timeline", self.list.clone(), move |index, window, cx| {
+        let list = virtual_list("messages-timeline", self.list.clone(), move |index, window, cx| {
             weak.update(cx, |this, cx| this.render_row(index, window, cx))
                 .unwrap_or_else(|_| div().into_any_element())
         })
-        .scrollbar_colors(colors.scrollbar, colors.scrollbar_hover)
-        .into_any_element()
+        .scrollbar_colors(colors.scrollbar, colors.scrollbar_hover);
+        div().relative().size_full().child(list).children(self.render_minimap(cx)).into_any_element()
     }
 }
 
