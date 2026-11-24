@@ -131,7 +131,6 @@ pub fn render_menu(
     colors: &ComposerColors,
     on_pick: impl Fn(usize, &mut gpui_kit::Window, &mut App) + 'static,
     on_hover: impl Fn(usize, &mut gpui_kit::Window, &mut App) + 'static,
-    window: &gpui_kit::Window,
     cx: &App,
 ) -> AnyElement {
     let on_pick = std::rc::Rc::new(on_pick);
@@ -146,14 +145,13 @@ pub fn render_menu(
                 .child(empty_state_text(state.trigger.kind, state.loading)),
         ).into_any_element();
     }
-    // Rows walk one grid (`pixel_grid`): `min-h-7` around one line.
-    let mut grid = crate::pixel_grid::PixelGrid::new(window);
+    // `min-h-7` around one line.
     let rows: Vec<AnyElement> = state
         .items
         .iter()
         .enumerate()
         .map(|(index, item)| {
-            let height = grid.next(c.r(MENU_ITEM_HEIGHT));
+            let height = c.r(MENU_ITEM_HEIGHT);
             let active = index == state.active;
             let pick = on_pick.clone();
             let hover = on_hover.clone();

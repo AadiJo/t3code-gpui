@@ -245,7 +245,7 @@ fn render_item(theme: &AppTheme, index: usize, item: MenuItem, height: Pixels, d
         .flex()
         .items_center()
         .gap(theme.sp(2.))
-        // `min-h-7 py-1` around one line: the row's snapped slot (`pixel_grid`).
+        // `min-h-7 py-1` around one line.
         .h(height)
         .flex_none()
         .px(theme.sp(2.))
@@ -326,38 +326,36 @@ fn render_item(theme: &AppTheme, index: usize, item: MenuItem, height: Pixels, d
 }
 
 impl RenderOnce for MenuPopup {
-    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.app_theme();
         let c = &theme.colors;
         let dismiss = self.dismiss.clone();
-        // Padding, rows, labels and separators walk one grid (`pixel_grid`).
-        let mut grid = crate::pixel_grid::PixelGrid::new(window);
-        let top = grid.next(theme.sp(1.));
+        let top = theme.sp(1.);
         let rows: Vec<AnyElement> = self
             .entries
             .into_iter()
             .enumerate()
             .map(|(index, entry)| match entry {
-                MenuEntry::Item(item) => render_item(theme, index, item, grid.next(theme.sp(7.)), dismiss.clone(), self.context),
+                MenuEntry::Item(item) => render_item(theme, index, item, theme.sp(7.), dismiss.clone(), self.context),
                 // `px-2 py-1.5` around a 1rem line.
                 MenuEntry::Label(label) => div()
                     .flex()
                     .items_center()
                     .flex_none()
-                    .h(grid.next(theme.sp(1.5) * 2. + theme.rem(1.)))
+                    .h(theme.sp(1.5) * 2. + theme.rem(1.))
                     .px(theme.sp(2.))
                     .ui_text(theme, TextSize::Xs, weight::MEDIUM)
                     .text_color(c.muted_foreground)
                     .child(label)
                     .into_any_element(),
                 MenuEntry::Separator => {
-                    let above = grid.next(theme.sp(1.));
-                    let below = grid.next(theme.sp(1.));
+                    let above = theme.sp(1.);
+                    let below = theme.sp(1.);
                     div().mx(theme.sp(2.)).mt(above).mb(below).h(px(1.)).flex_none().bg(c.border).into_any_element()
                 }
             })
             .collect();
-        let bottom = grid.next(theme.sp(1.));
+        let bottom = theme.sp(1.);
         glass_surface(theme)
             .min_w(self.min_width.unwrap_or(theme.rem(if self.context { 8. } else { 10. }).into()))
             .px(theme.sp(1.))

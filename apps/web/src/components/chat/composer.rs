@@ -1296,7 +1296,6 @@ impl Render for ChatComposer {
                             }
                         })
                     },
-                    window,
                     cx,
                 ))
         });

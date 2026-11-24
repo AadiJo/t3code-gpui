@@ -122,13 +122,12 @@ impl ParentElement for SettingsSection {
 }
 
 impl RenderOnce for SettingsSection {
-    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.app_theme();
         let c = &theme.colors;
         let divider = with_alpha(c.border, 0.5);
-        let mut grid = crate::pixel_grid::PixelGrid::new(window);
-        let header_height = grid.next(theme.sp(7.));
-        let header_gap = grid.next(theme.sp(2.5));
+        let header_height = theme.sp(7.);
+        let header_gap = theme.sp(2.5);
         let header = (!self.hide_title).then(|| {
             div()
                 .flex()
@@ -299,7 +298,7 @@ impl ParentElement for SettingsRow {
     }
 }
 
-/// A settings row's vertical lengths on the device-pixel grid (`pixel_grid`): `pt-3`, one
+/// A settings row's vertical lengths: `pt-3`, one
 /// line of title (`min-h-5`, 2px taller with an inline icon), `gap-1`, then `pb-3` (`pb-1`
 /// above nested content). A wrapped description keeps its measured height.
 pub struct RowMetrics {
@@ -310,24 +309,23 @@ pub struct RowMetrics {
 }
 
 impl RowMetrics {
-    pub fn new(window: &Window, theme: &crate::AppTheme, title_icon: bool, nested: bool) -> Self {
-        let mut grid = crate::pixel_grid::PixelGrid::new(window);
+    pub fn new(theme: &crate::AppTheme, title_icon: bool, nested: bool) -> Self {
         Self {
-            top: grid.next(theme.sp(3.)),
-            title_height: grid.next(theme.sp(5.) + if title_icon { px(2.) } else { px(0.) }),
-            gap: grid.next(theme.sp(1.)),
-            bottom: grid.next(if nested { theme.sp(1.) } else { theme.sp(3.) }),
+            top: theme.sp(3.),
+            title_height: theme.sp(5.) + if title_icon { px(2.) } else { px(0.) },
+            gap: theme.sp(1.),
+            bottom: if nested { theme.sp(1.) } else { theme.sp(3.) },
         }
     }
 }
 
 impl RenderOnce for SettingsRow {
-    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.app_theme();
         let c = &theme.colors;
         let has_children = !self.children.is_empty();
         let RowMetrics { top, title_height, gap, bottom } =
-            RowMetrics::new(window, theme, self.title_icon.is_some(), has_children);
+            RowMetrics::new(theme, self.title_icon.is_some(), has_children);
         div()
             .group(SETTINGS_ROW_GROUP)
             .px(theme.sp(4.))

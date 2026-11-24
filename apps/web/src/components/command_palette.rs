@@ -678,9 +678,7 @@ impl CommandPalette {
         let actions_only = session.search.query.starts_with('>');
         let weak = self.this.clone();
         let theme_for_rows = theme.clone();
-        // Each row sits in its grid slot (`pixel_grid`), so the list keeps the web's pitch.
-        let mut grid = crate::pixel_grid::PixelGrid::new(window);
-        let slots: Rc<Vec<gpui_kit::Pixels>> = Rc::new(rows.rows.iter().map(|row| grid.next(row_height(row, &theme))).collect());
+        let slots: Rc<Vec<gpui_kit::Pixels>> = Rc::new(rows.rows.iter().map(|row| row_height(row, &theme)).collect());
         let list_element = list(session.list.clone(), move |ix, _window, cx| {
             let theme = &theme_for_rows;
             let slot = slots[ix];

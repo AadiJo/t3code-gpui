@@ -368,7 +368,7 @@ impl KeybindingsSettings {
         }
     }
 
-    fn render_row(&self, row: KeybindingRow, can_edit: bool, conditions: &[String], window: &Window, cx: &mut Context<Self>) -> AnyElement {
+    fn render_row(&self, row: KeybindingRow, can_edit: bool, conditions: &[String], _window: &Window, cx: &mut Context<Self>) -> AnyElement {
         let theme = cx.app_theme();
         let c = &theme.colors;
         let platform = Self::platform(cx);
@@ -467,7 +467,7 @@ impl KeybindingsSettings {
         }
         // `SettingsRow` with the condition as its description and the
         // conflict warning, the hover-only actions and the shortcut as its control.
-        let metrics = super::settings_layout::RowMetrics::new(window, theme, false, false);
+        let metrics = super::settings_layout::RowMetrics::new(theme, false, false);
         div()
             .id(SharedString::from(format!("kb-row-{}", row.id)))
             .group("kb-row")

@@ -135,12 +135,10 @@ struct Renderer<'a> {
     link_handler: LinkHandler,
     /// Find matches drawn so far in this message.
     find_seen: usize,
-    /// Device pixels per pixel, for the stacks' grids (`pixel_grid`).
-    scale: f32,
 }
 
 /// Renders a message's markdown as one column.
-pub fn render_markdown(view: &MarkdownView<'_>, window: &mut Window, cx: &mut App) -> Div {
+pub fn render_markdown(view: &MarkdownView<'_>, _window: &mut Window, cx: &mut App) -> Div {
     let actions = view.actions.clone();
     let mut renderer = Renderer {
         view,
@@ -151,7 +149,6 @@ pub fn render_markdown(view: &MarkdownView<'_>, window: &mut Window, cx: &mut Ap
         text_color: if view.user { view.colors.theme.message_foreground } else { view.colors.prose() },
         link_handler: Rc::new(move |target, window, cx| actions(MarkdownAction::OpenLink(target.clone()), window, cx)),
         find_seen: 0,
-        scale: window.scale_factor(),
     };
     let mut rendered = Vec::new();
     let last_piece = view.pieces.len().saturating_sub(1);
@@ -166,7 +163,7 @@ pub fn render_markdown(view: &MarkdownView<'_>, window: &mut Window, cx: &mut Ap
             rendered.push(block);
         }
     }
-    let stacked = stack(rendered, renderer.scale);
+    let stacked = stack(rendered);
     div()
         .w_full()
         .min_w_0()
@@ -180,16 +177,14 @@ pub fn render_markdown(view: &MarkdownView<'_>, window: &mut Window, cx: &mut Ap
 
 /// Lays out siblings with collapsed margins. Returns the children (each
 /// carrying its top gap) and the outer margins of the first and last child.
-/// The gaps walk one grid (`pixel_grid`); the blocks between them are measured, whole device pixels.
-fn stack(blocks: Vec<Rendered>, scale: f32) -> (Vec<AnyElement>, Pixels, Pixels) {
+fn stack(blocks: Vec<Rendered>) -> (Vec<AnyElement>, Pixels, Pixels) {
     let first_top = blocks.first().map_or(px(0.), |b| b.top);
     let last_bottom = blocks.last().map_or(px(0.), |b| b.bottom);
     let mut previous_bottom: Option<Pixels> = None;
-    let mut grid = crate::pixel_grid::PixelGrid::at_scale(scale);
     let children = blocks
         .into_iter()
         .map(|block| {
-            let gap = grid.next(previous_bottom.map_or(px(0.), |bottom| bottom.max(block.top)));
+            let gap = previous_bottom.map_or(px(0.), |bottom| bottom.max(block.top));
             previous_bottom = Some(block.bottom);
             if gap > px(0.) {
                 div().pt(gap).child(block.element).into_any_element()
@@ -246,7 +241,7 @@ impl Renderer<'_> {
             }
             Block::List(list) => self.list(list, depth),
             Block::Blockquote(blocks) => {
-                let (children, top, bottom) = stack(blocks.iter().map(|b| self.block(b, depth, true)).collect(), self.scale);
+                let (children, top, bottom) = stack(blocks.iter().map(|b| self.block(b, depth, true)).collect());
                 let element = div()
                     .border_l_2()
                     .border_color(alpha(self.text_color, 0.35))
@@ -291,7 +286,7 @@ impl Renderer<'_> {
                 let items = notes
                     .iter()
                     .map(|(label, blocks)| {
-                        let (children, ..) = stack(blocks.iter().map(|b| self.block(b, depth, false)).collect(), self.scale);
+                        let (children, ..) = stack(blocks.iter().map(|b| self.block(b, depth, false)).collect());
                         div()
                             .flex()
                             .gap_1()
@@ -385,7 +380,7 @@ impl Renderer<'_> {
                     }
                 };
                 let (children, top, bottom) =
-                    stack(item.blocks.iter().map(|b| self.block(b, depth + 1, list.spread)).collect(), self.scale);
+                    stack(item.blocks.iter().map(|b| self.block(b, depth + 1, list.spread)).collect());
                 let row = div()
                     .flex()
                     .w_full()
@@ -403,7 +398,7 @@ impl Renderer<'_> {
                 Rendered { element: row.into_any_element(), top: item_top, bottom }
             })
             .collect::<Vec<_>>();
-        let (children, top, bottom) = stack(items, self.scale);
+        let (children, top, bottom) = stack(items);
         Rendered {
             element: div().flex().flex_col().children(children).into_any_element(),
             top: self.view.colors.r(BLOCK_MARGIN).max(top),
@@ -431,7 +426,7 @@ impl Renderer<'_> {
             .child(kind.label());
         let mut children = vec![Rendered { element: title.into_any_element(), top: self.view.colors.r(BLOCK_MARGIN), bottom: self.view.colors.r(BLOCK_MARGIN) }];
         children.extend(blocks.iter().map(|b| self.block(b, depth, true)));
-        let (children, top, bottom) = stack(children, self.scale);
+        let (children, top, bottom) = stack(children);
         let element = div().border_l_2().border_color(border).pl(self.view.colors.r(px(12.))).flex().flex_col().children(children);
         Rendered { element: element.into_any_element(), top: self.view.colors.r(px(4.)).max(top), bottom: self.view.colors.r(px(4.)).max(bottom) }
     }
@@ -455,7 +450,7 @@ impl Renderer<'_> {
             .on_click(move |_, window, cx| actions(MarkdownAction::ToggleDetails(key), window, cx));
         let mut element = div().border_y_1().border_color(alpha(colors.theme.border, 0.6)).child(trigger);
         if open {
-            let (children, ..) = stack(blocks.iter().map(|b| self.block(b, depth, true)).collect(), self.scale);
+            let (children, ..) = stack(blocks.iter().map(|b| self.block(b, depth, true)).collect());
             element = element.child(
                 div().pb_3().pl_6().text_color(alpha(colors.theme.text, 0.9)).flex().flex_col().children(children),
             );
@@ -581,17 +576,9 @@ impl Renderer<'_> {
             })
             .collect();
         let rule = alpha(colors.theme.border, 0.6);
-        // Rows walk one grid (`pixel_grid`): paddings and a one-line cell's line, with the
-        // bottom padding taking up the difference GPUI's rounded-up line height leaves.
-        let mut grid = crate::pixel_grid::PixelGrid::at_scale(self.scale);
-        let line = colors.r(px(22.75));
-        let measured_line = px((f32::from(line) * self.scale).ceil() / self.scale);
-        let mut padding = |header: bool| {
+        let padding = |header: bool| {
             let pad = colors.r(if header { HEADER_CELL_PAD_Y } else { CELL_PAD_Y });
-            let top = grid.next(pad);
-            let line_slot = grid.next(line);
-            let bottom = grid.next(pad) + line_slot - measured_line;
-            (top, bottom.max(px(0.)))
+            (pad, pad)
         };
         let header_padding = padding(true);
         let row_padding: Vec<_> = table.rows.iter().map(|_| padding(false)).collect();

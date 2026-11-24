@@ -366,13 +366,12 @@ impl ChatView {
     }
 
     /// The open header menu, below the title (`DropdownMenu` align start, 4px offset).
-    fn render_header_menu(&mut self, window: &Window, cx: &mut Context<Self>) -> Option<gpui_kit::AnyElement> {
+    fn render_header_menu(&mut self, _window: &Window, cx: &mut Context<Self>) -> Option<gpui_kit::AnyElement> {
         let menu = self.header_menu.clone()?;
         let colors = ShellColors::from_theme(cx.app_theme());
         let body = context_menu::menu_body(
             &menu,
             &colors,
-            window,
             |this: &mut Self| this.header_menu.as_mut(),
             |this, ix, child, window, cx| this.run_header_menu_item(ix, child, window, cx),
             cx,

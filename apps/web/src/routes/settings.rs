@@ -276,8 +276,6 @@ impl SettingsRoute {
                 .flex_col()
                 .gap(sp(4.))
                 .children({
-                    // Rows and their gaps walk one grid (`pixel_grid`) so the list keeps the web's pitch.
-                    let mut grid = crate::pixel_grid::PixelGrid::new(window);
                     nav_groups()
                         .into_iter()
                         .map(|group| {
@@ -294,9 +292,9 @@ impl SettingsRoute {
                                 first = false;
                             }
                             for path in group.paths.iter().copied() {
-                                let gap = if first { px(0.) } else { grid.next(sp(1.)) };
+                                let gap = if first { px(0.) } else { sp(1.) };
                                 first = false;
-                                let height = grid.next(sp(8.));
+                                let height = sp(8.);
                                 column = column.child(
                                     row(
                                         SharedString::from(format!("settings-nav-{}", path.slug())),
