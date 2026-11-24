@@ -284,7 +284,8 @@ fn main() -> anyhow::Result<()> {
 fn run_states(check: &mut Check) -> anyhow::Result<()> {
     let direct = std::env::var("T3_DIRECT_URL").context("T3_DIRECT_URL")?;
     let other_port = std::env::var("T3_OTHER_PORT").context("T3_OTHER_PORT")?;
-    check.control("POST", "/direct/up?port=39410")?;
+    let port = std::env::var("T3_SERVER_PORT").unwrap_or_else(|_| "39410".into());
+    check.control("POST", &format!("/direct/up?port={port}"))?;
     check.open_environments()?;
     check.pair(&direct)?;
     check.wait("the paired environment appears", Duration::from_secs(20), |s| !s.environments.is_empty())?;
@@ -333,7 +334,7 @@ fn run_states(check: &mut Check) -> anyhow::Result<()> {
         s.environments[0].status.as_ref().and_then(|st| st.last_failure.as_ref()).is_some_and(|f| f.detail.contains("does not match"))
     })?;
     check.shot("s06-descriptor-mismatch.png")?;
-    check.control("POST", "/direct/up?port=39410")?;
+    check.control("POST", &format!("/direct/up?port={port}"))?;
     check.retry();
     check.wait("reconnected to the right host", Duration::from_secs(20), connected)?;
 
