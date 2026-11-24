@@ -55,7 +55,7 @@ pub struct FixtureData {
 
 impl FixtureData {
     pub fn new(store: FixtureStore, cx: &mut App) -> Rc<Self> {
-        let palette = Rc::new(FixturePaletteSource::new(store.snapshot(None)));
+        let palette = Rc::new(FixturePaletteSource::new(store.snapshot(None), store.is_reference_world()));
         let store = cx.new(|_| store);
         let events = cx.new(|_| DataEvents::default());
         let subscription = {

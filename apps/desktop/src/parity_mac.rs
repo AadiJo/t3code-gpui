@@ -7,7 +7,7 @@
 //! - `PARITY_LAYOUT=<file|dir>`: the saved layout the app imports from the install's
 //!   localStorage: a JSON object of localStorage keys, or a Chromium `Local Storage/leveldb`
 //!   directory, read from a copy as the first-launch import reads it. It gives the sidebar width
-//!   and open state and the Working, Snoozed and Settled shelf states.
+//!   and open state, the Working, Snoozed and Settled shelf states, and the theme and its halves.
 //! - `PARITY_SIZE=<w>x<h>` (default 1710x1074, the owner's maximized window), device scale 2,
 //!   the macOS titlebar, dark appearance.
 //!
@@ -412,7 +412,12 @@ struct Layout {
     working: Option<bool>,
     snoozed: Option<bool>,
     settled: Option<bool>,
+    /// The web app's own values of the theme keys, as the first-launch import copies them.
+    theme: Vec<(&'static str, Value)>,
 }
+
+/// The localStorage theme keys the app reads (`hooks::use_theme`).
+const THEME_KEYS: [&str; 2] = [t3code_web::hooks::use_theme::THEME_STORAGE_KEY, t3code_web::hooks::use_theme::THEME_HALVES_STORAGE_KEY];
 
 impl Layout {
     /// Reads `PARITY_LAYOUT`: a JSON object of localStorage keys (or `{ origin: { key: value } }`),
@@ -438,6 +443,13 @@ impl Layout {
             working: flag("t3code:sidebar:working-expanded"),
             snoozed: flag("t3code:sidebar:snoozed-expanded"),
             settled: flag("t3code:sidebar:settled-expanded"),
+            theme: THEME_KEYS
+                .into_iter()
+                .filter_map(|key| {
+                    let raw = text(key)?;
+                    Some((key, serde_json::from_str(&raw).unwrap_or(Value::String(raw))))
+                })
+                .collect(),
         })
     }
 }
@@ -527,6 +539,10 @@ fn render(name: &str, steps: &[Step], profile: &Profile, out: &Path, data: &Path
     cx.update(|cx| {
         t3code_web::init(cx);
         ClientSettingsStore::import_electron(&profile.settings, cx)?;
+        for (key, value) in &profile.layout.theme {
+            t3code_web::client_persistence_storage::LocalStorage::set(cx, key, Some(value));
+        }
+        ThemeStore::init(cx);
         // The owner's Mac runs in dark appearance; "system" would follow the headless platform.
         ThemeStore::set_appearance_mode(ThemeMode::Dark, cx);
         anyhow::Ok(())
@@ -603,8 +619,8 @@ fn render(name: &str, steps: &[Step], profile: &Profile, out: &Path, data: &Path
         ServerSettingsStore::insert_fixture(EnvironmentId::from(env.0.as_ref()), t3code_web::fixtures::reference_server::config(&env), cx);
     });
     frame(&mut cx, window);
-    // The capture leaves the mouse over empty space near the bottom right before each view.
-    let rest = point(px(width - 150.), px(height - 40.));
+    // The capture rests the mouse at 64% across and halfway down before each view (`fresh()`).
+    let rest = point(px(width * 0.64), px(height * 0.5));
     mouse(&mut cx, window, rest, None);
     frame(&mut cx, window);
 
@@ -707,8 +723,9 @@ pub fn main(mut args: impl Iterator<Item = String>) -> anyhow::Result<()> {
         Err(_) => (1710., 1074.),
     };
     eprintln!(
-        "owner profile: {}x{}, sidebar width {:?}, open {:?}, shelves working {:?} snoozed {:?} settled {:?}",
-        size.0, size.1, layout.sidebar_width, layout.sidebar_open, layout.working, layout.snoozed, layout.settled
+        "owner profile: {}x{}, sidebar width {:?}, open {:?}, shelves working {:?} snoozed {:?} settled {:?}, theme keys {:?}",
+        size.0, size.1, layout.sidebar_width, layout.sidebar_open, layout.working, layout.snoozed, layout.settled,
+        layout.theme.iter().map(|(k, _)| *k).collect::<Vec<_>>()
     );
     let profile = Profile { size, settings, layout };
     std::fs::create_dir_all(&out)?;
