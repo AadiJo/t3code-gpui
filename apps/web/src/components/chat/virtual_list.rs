@@ -211,12 +211,21 @@ impl VirtualListState {
         inner.position = Position::Row { index, offset: -offset };
     }
 
-    /// Scrolls by a pixel distance as a navigation input would.
+    /// Scrolls by a pixel distance as a navigation input would. The offset
+    /// stays relative to the current anchor row, so rows that measure
+    /// differently from their estimates do not change how far it moved.
     pub fn scroll_by(&self, delta: Pixels, navigation: TimelineNavigation) {
         let mut inner = self.0.borrow_mut();
         inner.navigate(navigation);
-        let target = inner.scroll_top() + delta;
-        inner.set_scroll_top(target);
+        let current = inner.scroll_top();
+        let max = inner.max_scroll();
+        let target = (current + delta).clamp(px(0.), max);
+        match inner.position {
+            Position::Row { index, offset } if !(inner.follow.is_following() && target >= max) => {
+                inner.position = Position::Row { index, offset: offset + (target - current) };
+            }
+            _ => inner.set_scroll_top(target),
+        }
     }
 
     /// The position to remember for this thread.
