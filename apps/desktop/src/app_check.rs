@@ -108,6 +108,7 @@ impl Run {
         })?;
         let WindowRoot { shortcuts, shell, app: root } = parts;
         cx.update(|cx| {
+            ThemeSettings::apply_env_overrides(cx);
             let layout = root.read(cx).layout().clone();
             layout.update(cx, |l, _| {
                 l.force_caption_buttons(true);

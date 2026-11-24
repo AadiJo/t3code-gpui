@@ -216,6 +216,21 @@ fn fixed_swatches(theme: &AppTheme) -> Vec<Hsla> {
     ]
 }
 
+/// First cell of the contrast swatches, after the fixed colours on the same row.
+pub const CONTRAST_INDEX: usize = 10;
+
+/// The 18 `--contrast-*` variables in `index.css` order, each over the canvas.
+fn contrast_swatches(theme: &AppTheme) -> Vec<Hsla> {
+    let c = &theme.colors;
+    let f = &theme.foregrounds;
+    vec![
+        c.toolbar_foreground, c.toolbar_border, c.toolbar_control_foreground, c.input, c.border, c.text,
+        c.muted_foreground, c.placeholder, c.secondary_label, c.icon_muted, f.card, f.popover,
+        c.accent_surface_foreground, c.secondary_foreground, c.message_foreground, c.sidebar_foreground,
+        c.sidebar_muted_foreground, c.sidebar_border,
+    ]
+}
+
 fn strip(y: f32, swatches: Vec<(Hsla, Option<Hsla>)>) -> impl Iterator<Item = AnyElement> {
     swatches.into_iter().enumerate().map(move |(i, (color, surface))| {
         let x = SWATCH_X + (i % SWATCH_COLUMNS) as f32 * SWATCH_PITCH;
@@ -233,7 +248,9 @@ fn strip(y: f32, swatches: Vec<(Hsla, Option<Hsla>)>) -> impl Iterator<Item = An
 
 fn swatch_strips(theme: &AppTheme) -> impl IntoElement {
     let roles = role_swatches(theme).into_iter().map(|c| (c, None)).collect();
-    let fixed = fixed_swatches(theme).into_iter().map(|c| (c, None)).collect();
+    let mut fixed: Vec<_> = fixed_swatches(theme).into_iter().map(|c| (c, None)).collect();
+    fixed.resize(CONTRAST_INDEX, (Hsla::transparent_black(), None));
+    fixed.extend(contrast_swatches(theme).into_iter().map(|c| (c, Some(theme.colors.canvas))));
     div()
         .relative()
         .w_full()

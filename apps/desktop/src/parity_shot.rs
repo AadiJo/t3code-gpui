@@ -188,6 +188,7 @@ fn render(scene: &Scene, out: &std::path::Path, data: &std::path::Path) -> anyho
     })?;
     let root = parts.app.clone();
     cx.update(|cx| {
+        ThemeSettings::apply_env_overrides(cx);
         let timeline = root.read(cx).thread_view().read(cx).chat().read(cx).timeline().clone();
         timeline.update(cx, |t, _| t.set_now_millis(t3code_web::fixtures::timelines::NOW_MS));
         root.update(cx, |root, cx| root.navigate(Route::parse(THREAD), cx));

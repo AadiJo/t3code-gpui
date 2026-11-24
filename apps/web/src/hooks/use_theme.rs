@@ -5,12 +5,15 @@
 //! settings in [`ClientSettingsStore`], into [`ThemeSettings`].
 
 use std::sync::{Arc, LazyLock};
+use std::time::Duration;
 
-use gpui_kit::{App, Global, SharedString, px};
+use gpui_kit::{App, Global, SharedString};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::Assets;
+use crate::appearance_contrast::AppearanceContrast;
+use crate::theme_tokens::GlassOpacity;
 use crate::appearance_fonts::{FamilyOverrides, FontSettings, set_family_overrides};
 use crate::client_persistence_storage::LocalStorage;
 use crate::hooks::use_settings::{ClientSettings, ClientSettingsStore, ServerSettingsStore};
@@ -139,7 +142,7 @@ pub struct ThemeStore {
     custom: Vec<CustomTheme>,
     /// What [`Self::apply`] last pushed, to skip rebuilding the theme when
     /// an unrelated client setting changes.
-    applied: Option<(FontSettings, FamilyOverrides)>,
+    applied: Option<(FontSettings, FamilyOverrides, LookSettings)>,
 }
 
 impl Global for ThemeStore {}
@@ -355,12 +358,12 @@ impl ThemeStore {
     fn apply(force: bool, cx: &mut App) {
         let fonts = font_settings(ClientSettingsStore::get(cx), separate_fonts(cx));
         let families = family_overrides(ClientSettingsStore::get(cx), separate_fonts(cx));
-        let unchanged = cx.global::<Self>().applied.as_ref() == Some(&(fonts, families.clone()));
+        let look = LookSettings::from(&**ClientSettingsStore::get(cx));
+        let unchanged = cx.global::<Self>().applied.as_ref() == Some(&(fonts, families.clone(), look));
         if unchanged && !force {
             return;
         }
-        let rem_changed = cx.global::<Self>().applied.as_ref().is_none_or(|(old, _)| old.interface != fonts.interface);
-        cx.global_mut::<Self>().applied = Some((fonts, families.clone()));
+        cx.global_mut::<Self>().applied = Some((fonts, families.clone(), look));
         set_family_overrides(families);
         let document = Arc::new(Self::effective_document(cx));
         let mode = cx.global::<Self>().appearance_mode;
@@ -368,12 +371,27 @@ impl ThemeStore {
             settings.document = document;
             settings.mode = mode;
             settings.fonts = fonts;
+            settings.glass_opacity = look.glass_opacity;
+            settings.contrast = look.contrast;
+            settings.panel_animation = look.panel_animation;
         });
-        if rem_changed {
-            let rem = px(fonts.clamped().interface);
-            for window in cx.windows() {
-                _ = window.update(cx, |_, window, _| window.set_rem_size(rem));
-            }
+    }
+}
+
+/// The client settings besides fonts that change how the theme draws.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct LookSettings {
+    glass_opacity: GlassOpacity,
+    contrast: AppearanceContrast,
+    panel_animation: Duration,
+}
+
+impl From<&ClientSettings> for LookSettings {
+    fn from(settings: &ClientSettings) -> Self {
+        Self {
+            glass_opacity: GlassOpacity::new(settings.glass_opacity.min(u64::from(u8::MAX)) as u8),
+            contrast: AppearanceContrast::new(settings.appearance_contrast.min(u64::from(u32::MAX)) as u32),
+            panel_animation: Duration::from_millis(settings.panel_animation_duration_ms.min(400)),
         }
     }
 }
