@@ -176,6 +176,8 @@ pub struct BranchToolbar {
     refs: Option<Arc<VcsListRefsResult>>,
     /// The composer strip's measured width.
     strip_width: Option<Pixels>,
+    /// The details panel row's measured width: its popups match it (`w-(--anchor-width)`).
+    row_width: Option<Pixels>,
     /// The strip's labels collapsed to icons (`data-compact`).
     compact: bool,
     open: Option<Popup>,
@@ -244,6 +246,7 @@ impl BranchToolbar {
             pending: false,
             dismissed: DismissPress::default(),
             strip_width: None,
+            row_width: None,
             compact: false,
             focus: cx.focus_handle(),
         };
@@ -393,7 +396,7 @@ impl BranchToolbar {
             project_cwd: Some(self.props.project_cwd.clone()),
             width: Some(match self.layout {
                 BranchToolbarLayout::Composer => cx.app_theme().rem(20.),
-                _ => row_width(cx.app_theme()),
+                _ => self.row_width.unwrap_or_else(|| row_width(cx.app_theme())),
             }),
         }
     }
@@ -1006,6 +1009,24 @@ impl BranchToolbar {
         }
     }
 
+    /// Records the details row's width after layout, for its popups.
+    fn row_measure(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let this = cx.entity();
+        canvas(
+            |bounds, _, _| bounds.size.width,
+            move |_, width, _, cx| {
+                this.update(cx, |this, cx| {
+                    if this.row_width != Some(width) {
+                        this.row_width = Some(width);
+                        cx.notify();
+                    }
+                })
+            },
+        )
+        .absolute()
+        .inset_0()
+    }
+
     fn render_panel_workspace(&mut self, theme: &AppTheme, cx: &mut Context<Self>) -> AnyElement {
         let show_indicator = self.active_environment().is_some();
         let locked = self.props.env_locked || (self.env_mode_locked() && !self.can_pick_environment());
@@ -1058,9 +1079,9 @@ impl BranchToolbar {
                 rows.push(div().mx(theme.sp(2.)).my(theme.sp(1.)).h(px(1.)).bg(theme.colors.border).into_any_element());
             }
             rows.extend(self.workspace_rows(theme, cx));
-            below_row(Self::popup_surface(theme, Some(row_width(&theme)), rows, cx))
+            below_row(Self::popup_surface(theme, Some(self.row_width.unwrap_or_else(|| row_width(theme))), rows, cx))
         });
-        div().flex().flex_col().w_full().child(trigger.test_support()).children(menu).into_any_element()
+        div().relative().flex().flex_col().w_full().child(self.row_measure(cx)).child(trigger.test_support()).children(menu).into_any_element()
     }
 
     fn render_panel_branch(&mut self, theme: &AppTheme, cx: &mut Context<Self>) -> AnyElement {
@@ -1085,7 +1106,16 @@ impl BranchToolbar {
             }))
         });
         let picker = self.picker.as_ref().filter(|_| open).map(|(picker, _)| below_row(picker.clone()));
-        div().track_focus(&self.focus).flex().flex_col().w_full().child(trigger.test_support()).children(picker).into_any_element()
+        div()
+            .track_focus(&self.focus)
+            .relative()
+            .flex()
+            .flex_col()
+            .w_full()
+            .child(self.row_measure(cx))
+            .child(trigger.test_support())
+            .children(picker)
+            .into_any_element()
     }
 }
 

@@ -2,7 +2,7 @@
 //! icons, label chips, author avatars, diff counts and relative times. Ports
 //! `pullRequestPresentation.tsx` and `pullRequestIcons.tsx`.
 
-use gpui_kit::{AnyElement, App, Div, Hsla, IntoElement, ParentElement as _, SharedString, Styled as _, div, px, rgb};
+use gpui_kit::{rems, AnyElement, App, Div, Hsla, IntoElement, ParentElement as _, SharedString, Styled as _, div, px, rgb};
 use t3code_contracts::{PullRequestCheckStatus, PullRequestMergeability, PullRequestReviewDecision, PullRequestState};
 
 use crate::appearance_fonts::{TextSize, weight};
@@ -85,8 +85,8 @@ impl ConflictBadge for Div {
         self.child(
             div()
                 .absolute()
-                .right(px(-4.))
-                .bottom(px(-4.))
+                .right(rems(-0.25))
+                .bottom(rems(-0.25))
                 .rounded_full()
                 .bg(theme.colors.background())
                 .child(Icon::new(IconName::TriangleAlert).size(IconSize::Xs).stroke(2.5).color(theme.colors.destructive())),
@@ -139,9 +139,9 @@ pub fn label_chip(theme: &AppTheme, name: &str, color: Option<&str>) -> Div {
         .flex()
         .flex_none()
         .items_center()
-        .gap(px(4.))
-        .h(px(16.))
-        .px(px(6.))
+        .gap(rems(0.25))
+        .h(rems(1.))
+        .px(rems(0.375))
         .rounded_full()
         .border_1()
         .border_color(dot.opacity(0.45))
@@ -149,7 +149,7 @@ pub fn label_chip(theme: &AppTheme, name: &str, color: Option<&str>) -> Div {
         .ui_text(theme, TextSize::Xs3, weight::MEDIUM)
         .text_color(theme.colors.text)
         .child(div().size(px(6.)).rounded_full().bg(dot))
-        .child(div().max_w(px(140.)).overflow_hidden().whitespace_nowrap().text_ellipsis().child(SharedString::from(name.to_owned())))
+        .child(div().max_w(rems(8.75)).overflow_hidden().whitespace_nowrap().text_ellipsis().child(SharedString::from(name.to_owned())))
 }
 
 /// A round avatar with the login's initial, coloured from the login.
@@ -181,8 +181,8 @@ pub fn diff_stat(theme: &AppTheme, additions: u64, deletions: u64) -> Option<Any
         div()
             .flex()
             .flex_none()
-            .gap(px(4.))
-            .mono_text(px(11.), weight::NORMAL)
+            .gap(rems(0.25))
+            .mono_text(theme.rem(0.6875), weight::NORMAL)
             .child(div().text_color(theme.fixed.diff_addition_foreground).child(format!("+{}", format_diff_count(additions))))
             .child(div().text_color(theme.fixed.diff_deletion_foreground).child(format!("−{}", format_diff_count(deletions))))
             .into_any_element(),

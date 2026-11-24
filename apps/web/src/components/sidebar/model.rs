@@ -197,6 +197,12 @@ pub enum SidebarProviderMark {
 }
 
 impl SidebarThread {
+    /// Whether the row offers Snooze (`canSnooze`). The row does not carry the pending
+    /// runtime request kind or a queued turn start, so those two gates are not applied.
+    pub fn can_snooze(&self) -> bool {
+        !self.has_pending_approvals && self.pending_subagent_request.is_none() && self.pending_guest_message_count == 0
+    }
+
     pub fn project_ref(&self) -> ProjectRef {
         ProjectRef {
             environment_id: self.key.environment_id.clone(),

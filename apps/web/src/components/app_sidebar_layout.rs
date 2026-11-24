@@ -265,9 +265,9 @@ impl AppSidebarLayout {
         cx.notify();
     }
 
-    /// Width the right panel's tab row leaves for the fixed titlebar toggles.
+    /// Width the right panel's tab row leaves for the fixed titlebar toggles (`pr-28`).
     pub fn right_panel_trailing_inset(&self, window: &Window) -> Pixels {
-        px(112.) + self.caption_width(window)
+        self.rem * 7. + self.caption_width(window)
     }
 
     /// Leading inset of the right panel's tab row: it clears the floating
@@ -745,7 +745,7 @@ impl Render for AppSidebarLayout {
                     None => d
                         .child(
                             // Tab bar row: topbar tall, clears the fixed toggles.
-                            div().flex_none().h(topbar).pl_2().pr(px(112.) + caption_width),
+                            div().flex_none().h(topbar).pl_2().pr(self.rem * 7. + caption_width),
                         )
                         .child(div().flex_1().child(placeholder("Right panel", &colors))),
                 })
@@ -815,11 +815,11 @@ impl Render for AppSidebarLayout {
         let right_controls = div()
             .absolute()
             .top_0()
-            .right(CONTROLS_RIGHT + caption_width)
+            .right(colors.s(CONTROLS_RIGHT - px(1.)) + px(1.) + caption_width)
             .h(topbar)
             .flex()
             .items_center()
-            .gap(TITLEBAR_CONTROL_GAP)
+            .gap(colors.s(TITLEBAR_CONTROL_GAP))
             .when(self.right_open, |d| {
                 d.child(
                     self.titlebar_toggle(

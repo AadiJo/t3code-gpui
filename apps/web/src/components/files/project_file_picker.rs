@@ -9,7 +9,7 @@
 
 use std::sync::Arc;
 
-use gpui_kit::{
+use gpui_kit::{rems, 
     AnyElement, App, AppContext as _, Context, Entity, EventEmitter, FocusHandle, Focusable, IntoElement,
     KeyDownEvent, ParentElement as _, Render, ScrollStrategy, SharedString, Styled as _, Subscription, Task,
     UniformListScrollHandle, Window, component::input::{InputEvent, InputState}, div, prelude::*, px, uniform_list,
@@ -256,10 +256,10 @@ impl ProjectFilePicker {
                     .id(("file-picker-row", index))
                     .w_full()
                     .h(px(ROW_HEIGHT))
-                    .px(px(8.))
+                    .px(rems(0.5))
                     .flex()
                     .items_center()
-                    .gap(px(10.))
+                    .gap(rems(0.625))
                     .rounded(theme.radii.lg)
                     .cursor_pointer()
                     .when(active, |el| el.bg(colors.accent_surface))
@@ -273,7 +273,7 @@ impl ProjectFilePicker {
                         this.selected = index;
                         this.open_selected(cx);
                     }))
-                    .child(file_icon(&found.path, px(16.), cx))
+                    .child(file_icon(&found.path, theme.rem(1.), cx))
                     .child(
                         div()
                             .flex_1()
@@ -291,7 +291,7 @@ impl ProjectFilePicker {
                                     .child(highlighted_text(&found.path, &path_indices, colors.text)),
                             ),
                     );
-                div().w_full().px(px(8.)).child(row).into_any_element()
+                div().w_full().px(rems(0.5)).child(row).into_any_element()
             })
             .collect()
     }
@@ -320,15 +320,15 @@ impl Render for ProjectFilePicker {
                 .flex_col()
                 .child(
                     div()
-                        .px(px(16.))
-                        .pt(px(8.))
-                        .pb(px(4.))
+                        .px(rems(1.))
+                        .pt(rems(0.5))
+                        .pb(rems(0.25))
                         .text_size(px(11.))
                         .font_weight(gpui_kit::FontWeight::MEDIUM)
                         .text_color(colors.muted_foreground)
                         .child(self.project_name.clone()),
                 )
-                .child(uniform_list("file-picker-rows", self.matches.len(), cx.processor(Self::render_rows)).track_scroll(&self.scroll).flex_1().pb(px(8.)))
+                .child(uniform_list("file-picker-rows", self.matches.len(), cx.processor(Self::render_rows)).track_scroll(&self.scroll).flex_1().pb(rems(0.5)))
                 .into_any_element()
         };
         palette_frame(&theme, px(PALETTE_WIDTH), None)

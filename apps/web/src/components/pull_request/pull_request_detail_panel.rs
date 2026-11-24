@@ -11,7 +11,7 @@ use std::time::Instant;
 
 use gpui_kit::component::input::{InputEvent, InputState, TextareaState};
 use gpui_kit::base::TestSupportExt as _;
-use gpui_kit::{
+use gpui_kit::{rems, 
     AnyElement, App, AppContext as _, Context, Div, Entity, EventEmitter, InteractiveElement as _, IntoElement,
     ParentElement as _, Render, SharedString, StatefulInteractiveElement as _, Styled as _, Subscription, WeakEntity,
     Window, div, prelude::FluentBuilder as _, px,
@@ -863,8 +863,8 @@ impl PullRequestDetailPanel {
                 };
                 div()
                     .flex()
-                    .p(px(2.))
-                    .gap(px(2.))
+                    .p(rems(0.125))
+                    .gap(rems(0.125))
                     .rounded(theme.radii.md)
                     .bg(c.muted)
                     .child(segment("pr-composer-comment", t!("Comment", context = "noun, composer mode"), ComposerMode::Comment))
@@ -998,7 +998,7 @@ impl PullRequestDetailPanel {
                 .flex()
                 .flex_col()
                 .items_end()
-                .gap(px(8.))
+                .gap(rems(0.5))
                 .children(popover)
                 .child(button)
                 .into_any_element(),
@@ -1266,8 +1266,8 @@ impl CodeViewDecorations for DetailDecorations {
                     let resolved = thread.is_resolved;
                     let panel = self.panel.clone();
                     div()
-                        .mx(px(12.))
-                        .my(px(4.))
+                        .mx(rems(0.75))
+                        .my(rems(0.25))
                         .rounded(theme.radii.md)
                         .border_1()
                         .border_color(theme.colors.border)
@@ -1276,9 +1276,9 @@ impl CodeViewDecorations for DetailDecorations {
                             div()
                                 .flex()
                                 .items_center()
-                                .gap(px(6.))
-                                .h(px(24.))
-                                .px(px(10.))
+                                .gap(rems(0.375))
+                                .h(rems(1.5))
+                                .px(rems(0.625))
                                 .ui_text(&theme, TextSize::Xs3, weight::MEDIUM)
                                 .text_color(theme.colors.muted_foreground)
                                 .child(Icon::new(IconName::MessageSquare).size(IconSize::Xs))
@@ -1299,12 +1299,12 @@ impl CodeViewDecorations for DetailDecorations {
                         .children(thread.comments.iter().map(|c| {
                             div()
                                 .h(px(THREAD_COMMENT_HEIGHT))
-                                .px(px(10.))
+                                .px(rems(0.625))
                                 .flex()
-                                .gap(px(8.))
+                                .gap(rems(0.5))
                                 .border_t_1()
                                 .border_color(theme.colors.border.opacity(0.6))
-                                .pt(px(6.))
+                                .pt(rems(0.375))
                                 .child(avatar(&theme, c.author.as_ref().map(|a| a.login.as_str()), 18.))
                                 .child(
                                     div()
@@ -1331,10 +1331,10 @@ impl CodeViewDecorations for DetailDecorations {
                 .test_support()
                 .flex()
                 .items_center()
-                .gap(px(4.))
-                .h(px(20.))
-                .px(px(6.))
-                .rounded(px(4.))
+                .gap(rems(0.25))
+                .h(rems(1.25))
+                .px(rems(0.375))
+                .rounded(rems(0.25))
                 .border_1()
                 .border_color(if viewed { theme.colors.border } else { theme.colors.border.opacity(0.6) })
                 .when(viewed, |el| el.bg(theme.colors.accent_surface))
@@ -1419,7 +1419,7 @@ impl Render for BreakdownTooltip {
                 .child(div().w(theme.sp(12.)).flex().justify_end().text_color(theme.fixed.diff_addition_foreground).child(format!("+{}", crate::diff_count::format_diff_count(add))))
                 .child(div().w(theme.sp(12.)).flex().justify_end().text_color(theme.fixed.diff_deletion_foreground).child(format!("-{}", crate::diff_count::format_diff_count(del))))
         };
-        div().pb(px(4.)).child(
+        div().pb(rems(0.25)).child(
             div()
                 .flex()
                 .flex_col()
@@ -1479,14 +1479,14 @@ fn section(theme: &AppTheme, title: SharedString) -> Div {
     div()
         .flex()
         .flex_col()
-        .gap(px(8.))
+        .gap(rems(0.5))
         .child(div().ui_text(theme, TextSize::Xs, weight::SEMIBOLD).text_color(theme.colors.muted_foreground).child(title))
 }
 
 impl PullRequestDetailPanel {
     fn render_header(&mut self, theme: &AppTheme, cx: &mut Context<Self>) -> AnyElement {
         let Some(detail) = self.detail.clone() else {
-            return div().p(px(16.)).text_color(theme.colors.muted_foreground).child(t!("Loading...")).into_any_element();
+            return div().p(rems(1.)).text_color(theme.colors.muted_foreground).child(t!("Loading...")).into_any_element();
         };
         let (icon, tone, label) = pull_request_state_presentation(theme, detail.state, detail.is_draft);
         let allowed = allowed_pull_request_merge_methods(&detail);
@@ -1510,7 +1510,7 @@ impl PullRequestDetailPanel {
         let method = self.current_merge_method();
         let busy = self.busy.is_some();
         let this = cx.entity();
-        let mut actions = div().flex().flex_wrap().items_center().gap(px(6.));
+        let mut actions = div().flex().flex_wrap().items_center().gap(rems(0.375));
         match primary {
             Some(PullRequestPrimaryControl::Merge) | Some(PullRequestPrimaryControl::EnableAutoMerge) => {
                 let method_label = method.map(merge_method_label).unwrap_or_else(|| t!("Merge"));
@@ -1686,9 +1686,9 @@ impl PullRequestDetailPanel {
             div()
                 .flex()
                 .items_center()
-                .gap(px(8.))
-                .px(px(10.))
-                .py(px(8.))
+                .gap(rems(0.5))
+                .px(rems(0.625))
+                .py(rems(0.5))
                 .rounded(theme.radii.md)
                 .border_1()
                 .border_color(merged_tone(theme).opacity(0.4))
@@ -1705,16 +1705,16 @@ impl PullRequestDetailPanel {
         div()
             .flex()
             .flex_col()
-            .gap(px(10.))
-            .px(px(20.))
-            .pt(px(16.))
-            .pb(px(12.))
+            .gap(rems(0.625))
+            .px(rems(1.25))
+            .pt(rems(1.))
+            .pb(rems(0.75))
             .child(
                 div()
                     .flex()
                     .items_start()
-                    .gap(px(8.))
-                    .child(div().pt(px(3.)).child(Icon::new(icon).size(IconSize::Lg).color(tone)))
+                    .gap(rems(0.5))
+                    .child(div().pt(rems(0.1875)).child(Icon::new(icon).size(IconSize::Lg).color(tone)))
                     .child(match &self.title_edit {
                         // `PullRequestTitleEditor` while editing: the field, then Cancel and Save.
                         Some(input) => div()
@@ -1770,16 +1770,16 @@ impl PullRequestDetailPanel {
                     .flex()
                     .flex_wrap()
                     .items_center()
-                    .gap(px(8.))
+                    .gap(rems(0.5))
                     .ui_text(theme, TextSize::Xs, weight::NORMAL)
                     .text_color(theme.colors.muted_foreground)
                     .child(
                         div()
                             .flex()
                             .items_center()
-                            .gap(px(4.))
-                            .h(px(20.))
-                            .px(px(8.))
+                            .gap(rems(0.25))
+                            .h(rems(1.25))
+                            .px(rems(0.5))
                             .rounded_full()
                             .bg(tone.opacity(0.14))
                             .text_color(tone)
@@ -1793,11 +1793,11 @@ impl PullRequestDetailPanel {
                         div()
                             .flex()
                             .items_center()
-                            .gap(px(4.))
-                            .mono_text(px(11.), weight::NORMAL)
-                            .child(div().px(px(4.)).rounded(px(4.)).bg(theme.colors.muted).child(SharedString::from(detail.head_branch.clone())))
+                            .gap(rems(0.25))
+                            .mono_text(theme.rem(0.6875), weight::NORMAL)
+                            .child(div().px(rems(0.25)).rounded(rems(0.25)).bg(theme.colors.muted).child(SharedString::from(detail.head_branch.clone())))
                             .child("→")
-                            .child(div().px(px(4.)).rounded(px(4.)).bg(theme.colors.muted).child(SharedString::from(detail.base_branch.clone()))),
+                            .child(div().px(rems(0.25)).rounded(rems(0.25)).bg(theme.colors.muted).child(SharedString::from(detail.base_branch.clone()))),
                     )
                     .children(diff_stat(theme, detail.additions, detail.deletions).map(|stat| {
                         // `PullRequestChangeBreakdownStat`: the split shows on hover once read.
@@ -1811,7 +1811,7 @@ impl PullRequestDetailPanel {
                     }))
                     .when_some(self.stack.as_ref(), |el, stack| {
                         let pos = stack.layers.iter().position(|l| l.number == detail.number).map_or(0, |p| p + 1);
-                        el.child(div().flex().items_center().gap(px(3.)).child(Icon::new(IconName::Layers).size(IconSize::Xs)).child(format!("{pos}/{}", stack.layers.len())))
+                        el.child(div().flex().items_center().gap(rems(0.1875)).child(Icon::new(IconName::Layers).size(IconSize::Xs)).child(format!("{pos}/{}", stack.layers.len())))
                     }),
             )
             .child(actions)
@@ -1848,7 +1848,7 @@ impl PullRequestDetailPanel {
                         _ => None,
                     };
                     div()
-                        .when(i > 0, |el| el.ml(px(-4.)))
+                        .when(i > 0, |el| el.ml(rems(-0.25)))
                         .rounded_full()
                         .when_some(ring, |el, ring| el.border_1().border_color(if *stale { ring.opacity(0.5) } else { ring }))
                         .child(avatar(theme, Some(login), 20.))
@@ -1887,8 +1887,8 @@ impl PullRequestDetailPanel {
         div()
             .flex()
             .items_end()
-            .gap(px(4.))
-            .px(px(16.))
+            .gap(rems(0.25))
+            .px(rems(1.))
             .border_b_1()
             .border_color(theme.colors.border)
             .children(DetailTab::ALL.into_iter().map(|tab| {
@@ -1903,9 +1903,9 @@ impl PullRequestDetailPanel {
                     .test_support()
                     .flex()
                     .items_center()
-                    .gap(px(6.))
-                    .h(px(36.))
-                    .px(px(8.))
+                    .gap(rems(0.375))
+                    .h(rems(2.25))
+                    .px(rems(0.5))
                     .border_b_2()
                     .border_color(if active { theme.colors.text } else { gpui_kit::transparent_black() })
                     .ui_text(theme, TextSize::Sm, weight::MEDIUM)
@@ -1913,7 +1913,7 @@ impl PullRequestDetailPanel {
                     .cursor_pointer()
                     .hover(|s| s.text_color(theme.colors.text))
                     .child(tab.label())
-                    .when_some(count, |el, n| el.child(div().ui_text(theme, TextSize::Xs3, weight::MEDIUM).px(px(5.)).rounded_full().bg(theme.colors.muted).child(n.to_string())))
+                    .when_some(count, |el, n| el.child(div().ui_text(theme, TextSize::Xs3, weight::MEDIUM).px(rems(0.3125)).rounded_full().bg(theme.colors.muted).child(n.to_string())))
                     .on_click(cx.listener(move |this, _, window, cx| this.set_tab(tab, window, cx)))
             }))
             .into_any_element()
@@ -1943,8 +1943,8 @@ impl PullRequestDetailPanel {
         div()
             .flex()
             .flex_col()
-            .gap(px(20.))
-            .p(px(20.))
+            .gap(rems(1.25))
+            .p(rems(1.25))
             .child(self.render_meta_rows(&detail, &reviewers, theme))
             .child(match &self.body_edit {
                 Some(input) => div()
@@ -1995,9 +1995,9 @@ impl PullRequestDetailPanel {
                             .test_support()
                             .flex()
                             .items_center()
-                            .gap(px(8.))
-                            .h(px(28.))
-                            .px(px(8.))
+                            .gap(rems(0.5))
+                            .h(rems(1.75))
+                            .px(rems(0.5))
                             .rounded(theme.radii.md)
                             .hover(|s| s.bg(theme.colors.accent_surface.opacity(0.6)))
                             .child(Icon::new(icon).size(IconSize::Sm).color(color))
@@ -2015,7 +2015,7 @@ impl PullRequestDetailPanel {
             )
             .when(!closes.is_empty(), |el| {
                 el.child(section(theme, t!("Linked issues")).children(closes.into_iter().map(|r| {
-                    div().flex().items_center().gap(px(6.)).ui_text(theme, TextSize::Xs, weight::NORMAL).text_color(theme.colors.text).child(Icon::new(IconName::CircleDot).size(IconSize::Xs).color(open_tone(theme))).child(SharedString::from(r))
+                    div().flex().items_center().gap(rems(0.375)).ui_text(theme, TextSize::Xs, weight::NORMAL).text_color(theme.colors.text).child(Icon::new(IconName::CircleDot).size(IconSize::Xs).color(open_tone(theme))).child(SharedString::from(r))
                 })))
             })
             .into_any_element()
@@ -2033,7 +2033,7 @@ impl PullRequestDetailPanel {
         let reactions = self.reactions_of(&subject);
         let key = subject.clone().unwrap_or_else(|| "pr".into());
         let picker = self.picker_open == Some(subject.clone());
-        let mut row = div().flex().flex_wrap().items_center().gap(px(4.));
+        let mut row = div().flex().flex_wrap().items_center().gap(rems(0.25));
         for reaction in reactions {
             let s = subject.clone();
             let content = reaction.content;
@@ -2043,9 +2043,9 @@ impl PullRequestDetailPanel {
                     .test_support()
                     .flex()
                     .items_center()
-                    .gap(px(4.))
-                    .h(px(22.))
-                    .px(px(7.))
+                    .gap(rems(0.25))
+                    .h(rems(1.375))
+                    .px(rems(0.4375))
                     .rounded_full()
                     .border_1()
                     .border_color(if reaction.viewer_has_reacted { theme.colors.primary().opacity(0.5) } else { theme.colors.border })
@@ -2113,12 +2113,12 @@ impl PullRequestDetailPanel {
             (Some(input), _) => div()
                 .flex()
                 .flex_col()
-                .gap(px(6.))
+                .gap(rems(0.375))
                 .child(TextInput::new(input))
                 .child(
                     div()
                         .flex()
-                        .gap(px(6.))
+                        .gap(rems(0.375))
                         .child(Button::new(SharedString::from(format!("edit-save-{}", comment.id))).size(ButtonSize::Xs).label(t!("Save")).on_click(cx.listener(|this, _, _, cx| this.save_edit(cx))))
                         .child(Button::new(SharedString::from(format!("edit-cancel-{}", comment.id))).size(ButtonSize::Xs).variant(ButtonVariant::Ghost).label(t!("Cancel")).on_click(cx.listener(|this, _, _, cx| {
                             this.edit = None;
@@ -2136,7 +2136,7 @@ impl PullRequestDetailPanel {
             .id(SharedString::from(format!("comment-{}", comment.id)))
             .test_support()
             .flex()
-            .gap(px(10.))
+            .gap(rems(0.625))
             .child(avatar(theme, Some(&login), 24.))
             .child(
                 div()
@@ -2144,19 +2144,19 @@ impl PullRequestDetailPanel {
                     .flex_col()
                     .flex_1()
                     .min_w_0()
-                    .gap(px(4.))
+                    .gap(rems(0.25))
                     .child(
                         div()
                             .flex()
                             .items_center()
-                            .gap(px(6.))
+                            .gap(rems(0.375))
                             .ui_text(theme, TextSize::Xs, weight::NORMAL)
                             .text_color(theme.colors.muted_foreground)
                             .child(div().text_color(theme.colors.text).font_weight(weight::SEMIBOLD).child(SharedString::from(login.clone())))
                             .child(verb)
                             .child(relative_label(&comment.created_at, now))
                             .when(comment.edited_at.is_some(), |el| el.child("edited"))
-                            .when_some(comment.path.clone().filter(|_| thread.is_none()), |el, p| el.child(div().mono_text(px(11.), weight::NORMAL).child(SharedString::from(p))))
+                            .when_some(comment.path.clone().filter(|_| thread.is_none()), |el, p| el.child(div().mono_text(theme.rem(0.6875), weight::NORMAL).child(SharedString::from(p))))
                             .when(can_edit && editing.is_none(), |el| {
                                 el.child(
                                     div()
@@ -2177,7 +2177,7 @@ impl PullRequestDetailPanel {
 
     fn render_timeline(&mut self, theme: &AppTheme, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let (Some(detail), Some(activity)) = (self.detail.clone(), self.activity.clone()) else {
-            return div().p(px(20.)).text_color(theme.colors.muted_foreground).child(t!("Loading timeline")).into_any_element();
+            return div().p(rems(1.25)).text_color(theme.colors.muted_foreground).child(t!("Loading timeline")).into_any_element();
         };
         let threads: Vec<ConversationThread> = activity.review_threads.iter().map(Into::into).collect();
         let author = detail.author.as_ref().map(|a| PullRequestCommentAuthor { is_bot: a.is_bot, login: a.login.clone(), name: a.name.clone(), avatar_url: a.avatar_url.clone() });
@@ -2202,11 +2202,11 @@ impl PullRequestDetailPanel {
             .count();
         let hidden = conversations.saturating_sub(self.shown_conversations);
         let mut skipped = 0;
-        let mut column = div().flex().flex_col().gap(px(16.)).p(px(20.));
+        let mut column = div().flex().flex_col().gap(rems(1.)).p(rems(1.25));
         column = column.child(
             div()
                 .flex()
-                .gap(px(6.))
+                .gap(rems(0.375))
                 .child(Button::new("tl-bots").size(ButtonSize::Xs).variant(if self.show_bots { ButtonVariant::Secondary } else { ButtonVariant::Outline }).label(t!("Bot comments")).on_click(cx.listener(|this, _, _, cx| {
                     this.show_bots = !this.show_bots;
                     cx.notify();
@@ -2243,7 +2243,7 @@ impl PullRequestDetailPanel {
                         }
                         continue;
                     }
-                    let mut card = div().flex().flex_col().gap(px(10.)).child(self.render_comment(&comment, event.thread.as_ref(), theme, window, cx));
+                    let mut card = div().flex().flex_col().gap(rems(0.625)).child(self.render_comment(&comment, event.thread.as_ref(), theme, window, cx));
                     if let Some(thread) = &event.thread {
                         let t = &thread.thread;
                         let id = t.id.clone();
@@ -2263,13 +2263,13 @@ impl PullRequestDetailPanel {
                         let header = div()
                             .flex()
                             .items_center()
-                            .gap(px(6.))
-                            .mono_text(px(11.), weight::NORMAL)
+                            .gap(rems(0.375))
+                            .mono_text(theme.rem(0.6875), weight::NORMAL)
                             .text_color(theme.colors.muted_foreground)
                             .child(Icon::new(IconName::FileCodeCorner).size(IconSize::Xs))
                             .child(SharedString::from(format!("{}{}", t.path.clone().unwrap_or_default(), t.line.map(|l| format!(":{l}")).unwrap_or_default())))
-                            .when(resolved, |el| el.child(div().ui_text(theme, TextSize::Xs3, weight::MEDIUM).px(px(6.)).rounded_full().bg(theme.colors.muted).child(t!("Resolved", context = "review thread state"))));
-                        let mut replies = div().flex().flex_col().gap(px(10.)).pl(px(34.));
+                            .when(resolved, |el| el.child(div().ui_text(theme, TextSize::Xs3, weight::MEDIUM).px(rems(0.375)).rounded_full().bg(theme.colors.muted).child(t!("Resolved", context = "review thread state"))));
+                        let mut replies = div().flex().flex_col().gap(rems(0.625)).pl(rems(2.125));
                         for reply in &thread.replies {
                             if let Some(c) = &reply.comment {
                                 replies = replies.child(self.render_comment(c, Some(thread), theme, window, cx));
@@ -2278,7 +2278,7 @@ impl PullRequestDetailPanel {
                         let reply_box = match self.reply.as_ref().filter(|(tid, _)| *tid == id) {
                             Some((_, input)) => div()
                                 .flex()
-                                .gap(px(6.))
+                                .gap(rems(0.375))
                                 .child(div().flex_1().child(TextInput::new(input)))
                                 .child(Button::new(SharedString::from(format!("reply-send-{id}"))).size(ButtonSize::Sm).label(t!("Comment", context = "verb, submit button")).on_click(cx.listener(|this, _, _, cx| this.send_reply(cx))))
                                 .into_any_element(),
@@ -2287,7 +2287,7 @@ impl PullRequestDetailPanel {
                                 let sid = id.clone();
                                 div()
                                     .flex()
-                                    .gap(px(6.))
+                                    .gap(rems(0.375))
                                     .child(Button::new(SharedString::from(format!("reply-{id}"))).size(ButtonSize::Xs).variant(ButtonVariant::Outline).icon(IconName::Reply).label(t!("Reply to this conversation")).on_click(cx.listener(move |this, _, window, cx| this.begin_reply(&rid, window, cx))))
                                     .when(can_resolve, |el| {
                                         el.child(
@@ -2304,8 +2304,8 @@ impl PullRequestDetailPanel {
                         card = div()
                             .flex()
                             .flex_col()
-                            .gap(px(10.))
-                            .p(px(12.))
+                            .gap(rems(0.625))
+                            .p(rems(0.75))
                             .rounded(theme.radii.lg)
                             .border_1()
                             .border_color(theme.colors.border)
@@ -2317,7 +2317,7 @@ impl PullRequestDetailPanel {
                                 let url = thread.url.clone();
                                 el.child(
                                     div()
-                                        .pl(px(34.))
+                                        .pl(rems(2.125))
                                         .flex()
                                         .flex_wrap()
                                         .items_baseline()
@@ -2346,7 +2346,7 @@ impl PullRequestDetailPanel {
                                         }),
                                 )
                             })
-                            .child(div().pl(px(34.)).child(reply_box));
+                            .child(div().pl(rems(2.125)).child(reply_box));
                     }
                     column = column.child(card);
                 }
@@ -2364,8 +2364,8 @@ impl PullRequestDetailPanel {
                         div()
                             .flex()
                             .items_center()
-                            .gap(px(8.))
-                            .pl(px(4.))
+                            .gap(rems(0.5))
+                            .pl(rems(0.25))
                             .ui_text(theme, TextSize::Xs, weight::NORMAL)
                             .text_color(theme.colors.muted_foreground)
                             .child(Icon::new(icon).size(IconSize::Sm))
@@ -2405,9 +2405,9 @@ impl PullRequestDetailPanel {
                 div()
                     .flex()
                     .items_center()
-                    .gap(px(8.))
-                    .h(px(36.))
-                    .px(px(16.))
+                    .gap(rems(0.5))
+                    .h(rems(2.25))
+                    .px(rems(1.))
                     .border_b_1()
                     .border_color(theme.colors.border)
                     .ui_text(theme, TextSize::Xs, weight::NORMAL)
@@ -2428,8 +2428,8 @@ impl PullRequestDetailPanel {
                 .flex()
                 .flex_col()
                 .items_center()
-                .gap(px(10.))
-                .py(px(48.))
+                .gap(rems(0.625))
+                .py(rems(3.))
                 .text_color(theme.colors.muted_foreground)
                 .child(Icon::new(IconName::BookOpen).size(IconSize::Xl))
                 .child(t!("No review guide yet"))
@@ -2441,7 +2441,7 @@ impl PullRequestDetailPanel {
         let letters = tour::letter_stop_notes(&stop);
         let files: Vec<String> = tour::stop_file_paths(&stop).into_iter().map(str::to_owned).collect();
         let parsed: Vec<std::sync::Arc<FileDiff>> = self.code.as_ref().map(|c| c.files.clone()).unwrap_or_default();
-        let mut excerpts = div().flex().flex_col().gap(px(12.));
+        let mut excerpts = div().flex().flex_col().gap(rems(0.75));
         for (i, excerpt) in stop.excerpts.iter().enumerate() {
             let file = parsed.iter().find(|f| f.path.as_ref() == excerpt.path);
             let rows = file.map(|f| tour::file_diff_rows(&tour_file(f))).unwrap_or_default();
@@ -2455,8 +2455,8 @@ impl PullRequestDetailPanel {
                     .border_1()
                     .border_color(theme.colors.border)
                     .overflow_hidden()
-                    .child(div().px(px(10.)).py(px(6.)).bg(theme.colors.muted).mono_text(px(11.), weight::NORMAL).text_color(theme.colors.muted_foreground).child(SharedString::from(format!("{} · {}", excerpt.path, excerpt.caption))))
-                    .when(cut.is_empty(), |el| el.child(div().p(px(10.)).ui_text(theme, TextSize::Xs, weight::NORMAL).text_color(theme.colors.muted_foreground).child(t!("This file is not in the loaded diff."))))
+                    .child(div().px(theme.rem(0.625)).py(theme.rem(0.375)).bg(theme.colors.muted).mono_text(theme.rem(0.6875), weight::NORMAL).text_color(theme.colors.muted_foreground).child(SharedString::from(format!("{} · {}", excerpt.path, excerpt.caption))))
+                    .when(cut.is_empty(), |el| el.child(div().p(rems(0.625)).ui_text(theme, TextSize::Xs, weight::NORMAL).text_color(theme.colors.muted_foreground).child(t!("This file is not in the loaded diff."))))
                     .children(cut.into_iter().map(|row| {
                         let (bg, sign) = match row.kind {
                             tour::DiffRowKind::Addition => (theme.fixed.diff_addition_foreground.opacity(0.12), "+"),
@@ -2468,12 +2468,12 @@ impl PullRequestDetailPanel {
                         div()
                             .flex()
                             .bg(bg)
-                            .mono_text(px(12.), weight::NORMAL)
+                            .mono_text(theme.rem(0.75), weight::NORMAL)
                             .text_color(theme.colors.text)
-                            .child(div().w(px(40.)).pr(px(6.)).flex().justify_end().text_color(theme.colors.muted_foreground).child(line.to_string()))
-                            .child(div().w(px(14.)).child(sign))
+                            .child(div().w(rems(2.5)).pr(rems(0.375)).flex().justify_end().text_color(theme.colors.muted_foreground).child(line.to_string()))
+                            .child(div().w(rems(0.875)).child(sign))
                             .child(div().flex_1().whitespace_nowrap().overflow_hidden().child(SharedString::from(row.text.trim_end_matches('\n').to_owned())))
-                            .children((!marks.is_empty()).then(|| div().px(px(6.)).mr(px(6.)).rounded_full().bg(theme.colors.primary().opacity(0.2)).ui_text(theme, TextSize::Xs3, weight::SEMIBOLD).child(marks.join(" "))))
+                            .children((!marks.is_empty()).then(|| div().px(rems(0.375)).mr(rems(0.375)).rounded_full().bg(theme.colors.primary().opacity(0.2)).ui_text(theme, TextSize::Xs3, weight::SEMIBOLD).child(marks.join(" "))))
                     })),
             );
         }
@@ -2481,13 +2481,13 @@ impl PullRequestDetailPanel {
         div()
             .flex()
             .flex_col()
-            .gap(px(16.))
-            .p(px(20.))
+            .gap(rems(1.))
+            .p(rems(1.25))
             .child(
                 div()
                     .flex()
                     .items_center()
-                    .gap(px(8.))
+                    .gap(rems(0.5))
                     .child(div().ui_text(theme, TextSize::Xs, weight::MEDIUM).text_color(theme.colors.muted_foreground).child(t!("Review tour")))
                     .child(div().flex_1())
                     .child(Button::new("guide-prev").size(ButtonSize::Xs).variant(ButtonVariant::Outline).label(t!("Previous stop")).disabled(position == 0).on_click(cx.listener(|this, _, _, cx| this.step_tour(false, cx))))
@@ -2496,13 +2496,13 @@ impl PullRequestDetailPanel {
             .child(
                 div()
                     .flex()
-                    .gap(px(6.))
+                    .gap(rems(0.375))
                     .children(guide.stops.iter().enumerate().map(|(i, s)| {
                         div()
                             .id(("guide-stop", i))
                             .test_support()
                             .flex_1()
-                            .h(px(4.))
+                            .h(rems(0.25))
                             .rounded_full()
                             .bg(if i == position { theme.colors.text } else { theme.colors.muted })
                             .cursor_pointer()
@@ -2520,8 +2520,8 @@ impl PullRequestDetailPanel {
                 el.child(
                     div()
                         .flex()
-                        .gap(px(8.))
-                        .p(px(10.))
+                        .gap(rems(0.5))
+                        .p(rems(0.625))
                         .rounded(theme.radii.md)
                         .bg(theme.colors.warning_surface)
                         .ui_text(theme, TextSize::Xs, weight::NORMAL)
@@ -2535,7 +2535,7 @@ impl PullRequestDetailPanel {
                 el.child(section(theme, t!("Notes on this stop")).children(letters.lettered.iter().map(|(m, note)| {
                     div()
                         .flex()
-                        .gap(px(8.))
+                        .gap(rems(0.5))
                         .ui_text(theme, TextSize::Xs, weight::NORMAL)
                         .text_color(theme.colors.text)
                         .child(div().flex_none().size(px(18.)).rounded_full().flex().items_center().justify_center().bg(theme.colors.primary().opacity(0.2)).font_weight(weight::SEMIBOLD).child(m.clone()))

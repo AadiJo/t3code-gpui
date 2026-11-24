@@ -18,6 +18,8 @@ pub struct ProjectGroup {
     /// The logical project key.
     pub key: SharedString,
     pub label: SharedString,
+    /// The representative project's title, which its monogram is drawn from.
+    pub title: SharedString,
     pub workspace_root: SharedString,
     pub member_refs: Vec<ProjectRef>,
     pub pinned: bool,
@@ -147,6 +149,7 @@ pub fn build_project_groups(
                 groups.push(ProjectGroup {
                     key: key.into(),
                     label: SharedString::default(),
+                    title: winner.title.clone(),
                     workspace_root: winner.workspace_root.clone(),
                     member_refs: Vec::new(),
                     pinned: winner.pinned,

@@ -74,8 +74,7 @@ fn spec(mode: Appearance) -> Spec {
 const BASE_WEIGHT: f32 = 0.8;
 const SCALE: f32 = 1.1;
 const BLUR: f32 = 3.;
-/// The sphere's border box (`size-14`) and border, in CSS px.
-const SIZE: f32 = 56.;
+/// The sphere's border (`border-2`), in CSS px. Its box is `size-14`, which follows the rem.
 const BORDER: f32 = 2.;
 /// Samples per CSS px.
 const DENSITY: f32 = 2.;
@@ -146,7 +145,7 @@ fn over(dst: [f32; 4], src: [f32; 3], alpha: f32) -> [f32; 4] {
 
 /// Rasterises one sphere at 2x, composited over `backdrop` (the card),
 /// with its border in `ring` (the page background).
-fn render(colors: SphereColors, mode: Appearance, ring: Hsla, backdrop: Hsla) -> RgbaImage {
+fn render(colors: SphereColors, mode: Appearance, ring: Hsla, backdrop: Hsla, size: f32) -> RgbaImage {
     let spec = spec(mode);
     let canvas = oklab(srgb(colors.canvas));
     let target = oklab(spec.base_target);
@@ -154,7 +153,7 @@ fn render(colors: SphereColors, mode: Appearance, ring: Hsla, backdrop: Hsla) ->
     let accent = srgb(colors.accent);
     let action = srgb(colors.message_action);
     // The inner layer is the padding box, blurred with a transparent margin.
-    let inner = SIZE - 2. * BORDER;
+    let inner = size - 2. * BORDER;
     let margin = 4. * BLUR;
     let n = ((inner + 2. * margin) * DENSITY).round() as usize;
     let at = |i: usize| i as f32 / DENSITY - margin + 0.5 / DENSITY;
@@ -224,8 +223,8 @@ fn render(colors: SphereColors, mode: Appearance, ring: Hsla, backdrop: Hsla) ->
     let ring = srgb(ring);
     let backdrop = srgb(backdrop);
     let edge = if mode.is_dark() { ([1., 1., 1.], 0.14) } else { ([0., 0., 0.], 0.10) };
-    let out = (SIZE * DENSITY) as u32;
-    let center = SIZE / 2.;
+    let out = (size * DENSITY).round() as u32;
+    let center = out as f32 / DENSITY / 2.;
     let mut image = RgbaImage::new(out, out);
     for (i, j, pixel) in image.enumerate_pixels_mut() {
         let (x, y) = ((i as f32 + 0.5) / DENSITY, (j as f32 + 0.5) / DENSITY);
@@ -260,7 +259,7 @@ fn render(colors: SphereColors, mode: Appearance, ring: Hsla, backdrop: Hsla) ->
     image
 }
 
-type Key = ([u32; 4], [u32; 4], [u32; 4], [u32; 4], [u32; 4], bool);
+type Key = ([u32; 4], [u32; 4], [u32; 4], [u32; 4], [u32; 4], bool, u32);
 
 thread_local! {
     static CACHE: RefCell<HashMap<Key, Arc<RenderImage>>> = RefCell::new(HashMap::new());
@@ -270,16 +269,17 @@ fn key_of(color: Hsla) -> [u32; 4] {
     [color.h.to_bits(), color.s.to_bits(), color.l.to_bits(), color.a.to_bits()]
 }
 
-/// The sphere as a 56px image. Rendered once per palette, mode and page
-/// colours, then reused.
-pub fn theme_sphere(colors: SphereColors, mode: Appearance, ring: Hsla, backdrop: Hsla) -> impl IntoElement {
-    let key = (key_of(colors.canvas), key_of(colors.accent), key_of(colors.message_action), key_of(ring), key_of(backdrop), mode.is_dark());
+/// The sphere as a `size`-px image (`size-14`). Rendered once per palette, mode, page
+/// colours and size, then reused.
+pub fn theme_sphere(colors: SphereColors, mode: Appearance, ring: Hsla, backdrop: Hsla, size: gpui_kit::Pixels) -> impl IntoElement {
+    let size = f32::from(size);
+    let key = (key_of(colors.canvas), key_of(colors.accent), key_of(colors.message_action), key_of(ring), key_of(backdrop), mode.is_dark(), size.to_bits());
     let image = CACHE.with(|cache| {
         cache
             .borrow_mut()
             .entry(key)
-            .or_insert_with(|| Arc::new(RenderImage::new([Frame::new(render(colors, mode, ring, backdrop))])))
+            .or_insert_with(|| Arc::new(RenderImage::new([Frame::new(render(colors, mode, ring, backdrop, size))])))
             .clone()
     });
-    img(ImageSource::Render(image)).size(px(SIZE)).flex_none()
+    img(ImageSource::Render(image)).size(px(size)).flex_none()
 }

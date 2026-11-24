@@ -1709,7 +1709,7 @@ fn sidebar_row(check: &mut Check, key: &ThreadKey) -> Option<Arc<t3code_web::com
 /// visit on open, server message search, snooze, archive and the Archive list, and the composer
 /// draft on disk.
 fn run_sidebar(check: &mut Check) -> anyhow::Result<()> {
-    use t3code_web::components::sidebar::context_menu::{MenuCommand, SnoozePreset};
+    use t3code_web::components::sidebar::context_menu::MenuCommand;
     let state = load_state(&check.out)?;
     check.pump(|c| c.connected(), Duration::from_secs(30), "server A connected")?;
     let environments = check.cx.update(|cx| ConnectionRuntime::state(cx).read(cx).environments.len());
@@ -1868,7 +1868,7 @@ fn run_sidebar(check: &mut Check) -> anyhow::Result<()> {
 
     // Snooze with a preset, then wake.
     let root = check.root.clone();
-    check.cx.update_window(check.window, |_, w, cx| sidebar_command(&root, &key_b, MenuCommand::Snooze(SnoozePreset::OneHour), w, cx))?;
+    check.cx.update_window(check.window, |_, w, cx| sidebar_command(&root, &key_b, MenuCommand::Snooze(t3code_web::components::sidebar::model::TimestampMs(now_ms() + 3_600_000)), w, cx))?;
     let kb = key_b.clone();
     check.pump(move |c| sidebar_row(c, &kb).is_some_and(|t| t.snoozed_until.is_some()), Duration::from_secs(10), "snoozed for an hour")?;
     check.shot("44-snoozed.png")?;

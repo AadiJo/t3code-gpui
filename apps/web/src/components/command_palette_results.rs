@@ -183,7 +183,7 @@ pub fn render_item(
                 .collect();
             (!parts.is_empty()).then(|| parts.join(" · "))
         }), |d, context| {
-            d.child(div().flex_none().max_w(px(220.)).truncate().ui_text(theme, TextSize::Xs, weight::NORMAL).text_color(muted_70).child(context))
+            d.child(div().flex_none().max_w(gpui_kit::relative(0.45)).truncate().ui_text(theme, TextSize::Xs, weight::NORMAL).text_color(muted_70).child(context))
         });
     let content = if has_second_line(shown) {
         let second = match (&shown.hint, &item.description) {

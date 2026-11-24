@@ -13,7 +13,7 @@ use std::{
 };
 
 use gpui_kit::base::TestSupportExt as _;
-use gpui_kit::{
+use gpui_kit::{rems, 
     AnyElement, App, ClipboardItem, Context, Entity, EventEmitter, FocusHandle, Focusable, KeyBinding, MouseButton, MouseDownEvent, Pixels, Point, Render, ScrollStrategy, SharedString, Subscription, Task,
     UniformListScrollHandle, Window, actions, anchored, deferred,
     component::input::{Input, InputEvent, InputState},
@@ -734,7 +734,7 @@ impl FileTree {
                     .items_center()
                     .gap(px(ROW_GAP))
                     .rounded(radius)
-                    .text_size(px(12.))
+                    .text_size(rems(0.75))
                     .text_color(text_color)
                     .cursor_pointer()
                     .when(selected, |el| el.bg(fg.opacity(0.12)))
@@ -927,12 +927,12 @@ impl Render for FileTree {
             .bg(colors.canvas)
             .child(
                 div()
-                    .h(px(40.))
+                    .h(rems(2.5))
                     .flex_none()
                     .flex()
                     .items_center()
-                    .gap(px(4.))
-                    .px(px(8.))
+                    .gap(rems(0.25))
+                    .px(rems(0.5))
                     .border_b_1()
                     .border_color(colors.border.opacity(0.6))
                     .child(
@@ -952,8 +952,8 @@ impl Render for FileTree {
                             .on_action(cx.listener(Self::select_next))
                             .flex_1()
                             .min_w_0()
-                            .h(px(28.))
-                            .px(px(10.))
+                            .h(rems(1.75))
+                            .px(rems(0.625))
                             .flex()
                             .items_center()
                             .rounded(theme.radii.lg)
@@ -982,8 +982,8 @@ impl Render for FileTree {
                 el.child(
                     div()
                         .id("file-tree-error")
-                        .p(px(16.))
-                        .text_size(px(12.))
+                        .p(rems(1.))
+                        .text_size(rems(0.75))
                         .text_color(colors.destructive())
                         .cursor_pointer()
                         .on_click(cx.listener(|this, _, _, cx| this.refresh(cx)))
@@ -993,18 +993,18 @@ impl Render for FileTree {
             .when(truncated, |el| {
                 el.child(
                     div()
-                        .px(px(12.))
-                        .py(px(4.))
-                        .text_size(px(12.))
+                        .px(rems(0.75))
+                        .py(rems(0.25))
+                        .text_size(rems(0.75))
                         .text_color(colors.muted_foreground)
                         .child(t!("More matches available. Refine your search.")),
                 )
             })
             .when(pending && self.rows.is_empty(), |el| {
-                el.child(div().px(px(12.)).py(px(4.)).text_size(px(12.)).text_color(colors.muted_foreground).child(t!("Loading files…")))
+                el.child(div().px(rems(0.75)).py(rems(0.25)).text_size(rems(0.75)).text_color(colors.muted_foreground).child(t!("Loading files…")))
             })
             .when(no_matches, |el| {
-                el.child(div().px(px(12.)).py(px(16.)).text_size(px(12.)).text_color(colors.muted_foreground).child(t!("No matching files.")))
+                el.child(div().px(rems(0.75)).py(rems(1.)).text_size(rems(0.75)).text_color(colors.muted_foreground).child(t!("No matching files.")))
             })
             .when(!no_matches, |el| {
                 el.child(

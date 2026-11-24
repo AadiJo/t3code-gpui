@@ -316,7 +316,7 @@ impl Sidebar {
                     })),
             );
         }
-        if settings.snooze_supported {
+        if settings.snooze_supported && thread.can_snooze() {
             cluster = cluster.child(
                 row_action(("snooze", ix), colors)
                     .child(Icon::new(IconName::Clock).size(IconSize::Custom(colors.r(12.))).color(colors.muted_foreground))
