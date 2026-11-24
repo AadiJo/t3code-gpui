@@ -18,6 +18,7 @@ use t3code_contracts::{EnvironmentId, OrchestrationV2ShellThreadStatus as ShellS
 use tokio::sync::{broadcast, mpsc, oneshot, watch};
 
 use super::cache_store::CacheStore;
+use super::older_settled_threads::{OlderSettledSync, OlderSettledThreads};
 use super::shell::{ShellStore, ShellSync, shell_persister};
 use super::thread_history_merge::HistoryMeta;
 use super::thread_state::{ThreadState, ThreadStatus, has_missing_pending_question_card};
@@ -120,6 +121,7 @@ struct Inner {
     config: watch::Sender<Option<Arc<ServerConfig>>>,
     config_events: broadcast::Sender<Arc<ServerConfigStreamEvent>>,
     shell: ShellStore,
+    older_settled: OlderSettledThreads,
     threads: Mutex<ThreadTable>,
     tasks: Mutex<Vec<tokio::task::AbortHandle>>,
 }
@@ -148,7 +150,9 @@ impl EnvironmentStore {
         let _runtime = context.runtime.enter();
         let shell = ShellStore::load(&context);
         let cached_config = context.cache.load_config(&context.environment_id).map(Arc::new);
+        let (older_settled_sync, older_settled) = OlderSettledSync::new(Arc::clone(&context), shell.clone());
         let inner = Arc::new(Inner {
+            older_settled,
             config: watch::Sender::new(cached_config),
             config_events: broadcast::channel(64).0,
             shell: shell.clone(),
@@ -163,6 +167,7 @@ impl EnvironmentStore {
         };
         let tasks = vec![
             tokio::spawn(sync.run()).abort_handle(),
+            tokio::spawn(older_settled_sync.run()).abort_handle(),
             tokio::spawn(ShellSync::track_connection(shell, context.supervisor.status.clone())).abort_handle(),
             tokio::spawn(follow_config(Arc::downgrade(&inner))).abort_handle(),
             tokio::spawn(keep_running_threads(Arc::downgrade(&inner))).abort_handle(),
@@ -182,6 +187,11 @@ impl EnvironmentStore {
     /// The shell store: rows and projects with optimistic updates applied.
     pub fn shell(&self) -> &ShellStore {
         &self.inner.shell
+    }
+
+    /// Older settled pages for the Settled shelf and the families of mounted threads.
+    pub fn older_settled(&self) -> &OlderSettledThreads {
+        &self.inner.older_settled
     }
 
     /// The server config of the live session, or the last one seen.

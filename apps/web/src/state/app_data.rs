@@ -198,6 +198,11 @@ pub trait AppData: 'static {
     /// The sidebar search changed; a live source asks the servers for message matches.
     fn search_threads(&self, _query: SharedString, _cx: &mut App) {}
 
+    /// The Settled shelf's state: a live source reads older settled pages from servers that
+    /// leave them out of the shell until the shelf lists `visible_count` rows, and retries a
+    /// failed page when asked. The snapshot's `older_settled` reports where it stands.
+    fn show_older_settled(&self, _request: crate::components::sidebar::model::SettledShelfRequest, _cx: &mut App) {}
+
     /// Renames a thread.
     fn rename_thread(&self, key: &ThreadKey, title: String, cx: &mut App);
 

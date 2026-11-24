@@ -36,6 +36,7 @@ use gpui_kit::{App, AppContext as _, AsyncApp, Context, Entity, Global, Task};
 use t3code_client_runtime::operations::EnvironmentCommands;
 use t3code_client_runtime::state::client_store::ClientStore;
 use t3code_client_runtime::state::drafts::Drafts;
+use t3code_client_runtime::state::older_settled_threads::OlderSettledView;
 use t3code_client_runtime::state::orchestration::Bodies;
 use t3code_client_runtime::state::ui_state::UiState;
 use t3code_client_runtime::state::{EnvironmentStore, ShellState, StateRuntime};
@@ -77,6 +78,8 @@ pub struct LiveEnvironment {
     pub bodies: Bodies,
     pub shell: Arc<ShellState>,
     pub config: Option<Arc<ServerConfig>>,
+    /// The older settled cut, counts, requested pages and family reads.
+    pub older: Arc<OlderSettledView>,
     _tasks: Vec<Task<()>>,
 }
 
@@ -84,7 +87,20 @@ impl LiveEnvironment {
     fn new(store: EnvironmentStore, cx: &mut Context<Self>) -> Self {
         let shell = store.shell().current();
         let config = store.config().borrow().clone();
+        let older = store.older_settled().subscribe().borrow().clone();
         let weak = cx.weak_entity();
+        let older_task = follow_watch(store.older_settled().subscribe(), cx, {
+            let weak = weak.clone();
+            move |older, cx| {
+                weak.update(cx, |this, cx| {
+                    if !Arc::ptr_eq(&this.older, &older) {
+                        this.older = older;
+                        cx.notify();
+                    }
+                })
+                .is_ok()
+            }
+        });
         let shell_task = follow_watch(store.shell().subscribe(), cx, {
             let weak = weak.clone();
             move |shell, cx| {
@@ -117,7 +133,8 @@ impl LiveEnvironment {
             store,
             shell,
             config,
-            _tasks: vec![shell_task, config_task],
+            older,
+            _tasks: vec![shell_task, config_task, older_task],
         }
     }
 

@@ -48,10 +48,14 @@
 //            `import-check`, encrypted with the fixture macOS key): the launch import runs,
 //            the window explains the Keychain read, environments and settings arrive
 //
-// Usage: live-check <seed|drive|restart|import|send|sidebar|notify|details|mentions|heic|wheel|workspace|banner|sidebardata|composer|composer-restart|probe> <out-dir>
+//   families-seed, families  older settled pages and thread families on two servers
+//            (`live_check_families.rs`)
+//
+// Usage: live-check <families-seed|families|seed|drive|restart|import|send|sidebar|notify|details|mentions|heic|wheel|workspace|banner|sidebardata|composer|composer-restart|probe> <out-dir>
 #[allow(dead_code)]
 #[path = "import/mod.rs"]
 mod import;
+mod live_check_families;
 #[allow(dead_code)]
 #[path = "notifications/mod.rs"]
 mod notifications;
@@ -519,6 +523,8 @@ fn main() -> anyhow::Result<()> {
         "sidebardata" => run_sidebar_data(&mut check),
         "composer" => run_composer(&mut check),
         "composer-restart" => run_composer_restart(&mut check),
+        "families-seed" => live_check_families::run_families_seed(&mut check),
+        "families" => live_check_families::run_families(&mut check),
         other => Err(anyhow::anyhow!("unknown phase {other}")),
     };
     check.finish(&phase, result)

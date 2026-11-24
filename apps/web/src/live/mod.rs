@@ -617,6 +617,10 @@ impl AppData for LiveData {
         }
     }
 
+    fn show_older_settled(&self, request: crate::components::sidebar::model::SettledShelfRequest, cx: &mut App) {
+        StateBridge::shell(cx).update(cx, |shell, cx| shell.set_settled_request(request, cx));
+    }
+
     fn search_threads(&self, query: SharedString, cx: &mut App) {
         // `useThreadSearch`: a pasted wall of text searches by its start; messages need a word
         // of three or more letters; answers land 120 ms after the typing stops.
@@ -730,7 +734,10 @@ impl AppData for LiveData {
 
     fn set_active_thread(&self, active: Option<&ThreadKey>, cx: &mut App) {
         *self.shown_environment.borrow_mut() = active.map(|key| runtime_ids(key).0);
-        self.details.update(cx, |details, cx| details.follow(active.cloned(), cx));
+        // The route owns the open thread's family mount (`useOpenThreadFamily`).
+        let active = active.cloned();
+        StateBridge::shell(cx).update(cx, |shell, cx| shell.set_active_thread(active.clone(), cx));
+        self.details.update(cx, |details, cx| details.follow(active, cx));
     }
 
     fn thread_details(&self, view: &ThreadView, base: ThreadDetailsInput, cx: &mut App) -> ThreadDetailsInput {

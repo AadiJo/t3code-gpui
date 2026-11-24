@@ -893,6 +893,7 @@ impl AppRoot {
             SidebarEvent::ThreadCommand(keys, command) => self.thread_command(keys, *command, window, cx),
             SidebarEvent::RenameThread(key, title) => self.data.rename_thread(key, title.clone(), cx),
             SidebarEvent::SearchChanged(query) => self.data.search_threads(query.clone(), cx),
+            SidebarEvent::SettledShelf(request) => self.data.show_older_settled(request.clone(), cx),
             SidebarEvent::AddProject | SidebarEvent::OpenProjectFilter | SidebarEvent::ProjectCommand(..) => {}
         }
     }

@@ -85,6 +85,8 @@ pub enum SidebarEvent {
     RenameThread(ThreadKey, String),
     /// The search field's text changed; the data source may add server matches.
     SearchChanged(SharedString),
+    /// The Settled shelf opened, closed, showed more or retried; older pages load to fill it.
+    SettledShelf(model::SettledShelfRequest),
 }
 
 /// The row whose title is being edited (`ThreadRenameInput`).
@@ -129,6 +131,8 @@ pub struct Sidebar {
     /// Six-step phase of the terminal pulse.
     pub(crate) pulse: u8,
     pub(crate) renaming: Option<Renaming>,
+    /// The Settled shelf state last reported with [`SidebarEvent::SettledShelf`].
+    settled_request: model::SettledShelfRequest,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -176,9 +180,12 @@ impl Sidebar {
             now,
             pulse: 0,
             renaming: None,
+            settled_request: Default::default(),
             _subscriptions: vec![subscription],
         };
         this.rebuild(cx);
+        // Nobody listens yet; the first snapshot reports the shelf.
+        this.settled_request = Default::default();
         this
     }
 
@@ -344,6 +351,7 @@ impl Sidebar {
 
     pub(crate) fn rebuild(&mut self, cx: &mut Context<Self>) {
         self.list = build_sidebar_list(&self.snapshot, &self.options);
+        self.report_settled_shelf(false, cx);
         self.heights = self
             .list
             .entries
@@ -441,8 +449,26 @@ impl Sidebar {
     }
 
     pub(crate) fn show_more_settled(&mut self, cx: &mut Context<Self>) {
+        if self.snapshot.older_settled.loading {
+            return;
+        }
+        self.report_settled_shelf(true, cx);
         self.options.settled_visible += self.snapshot.settings.settled_page_size;
         self.rebuild(cx);
+    }
+
+    /// Tells the data what the Settled shelf shows when that changed, or to retry.
+    fn report_settled_shelf(&mut self, retry: bool, cx: &mut Context<Self>) {
+        let request = model::SettledShelfRequest {
+            expanded: self.options.settled_expanded,
+            visible_count: self.snapshot.settings.settled_page_size + self.options.settled_visible,
+            projects: None,
+            retry,
+        };
+        if retry || request != self.settled_request {
+            self.settled_request = model::SettledShelfRequest { retry: false, ..request.clone() };
+            cx.emit(SidebarEvent::SettledShelf(request));
+        }
     }
 
     /// Keys a thread command acts on: the selection when the row is in it.

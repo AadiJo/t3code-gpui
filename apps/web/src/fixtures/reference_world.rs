@@ -310,6 +310,7 @@ pub fn build(env: &EnvironmentId) -> ReferenceWorld {
         hover_details,
         search_content_matches: None,
         snooze_presets: Default::default(),
+        older_settled: Default::default(),
     };
     ReferenceWorld { snapshot, threads, checkout: Arc::new(world.workspace) }
 }

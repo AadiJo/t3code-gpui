@@ -329,6 +329,56 @@ pub struct SidebarSnapshot {
     /// without an entry uses the defaults. Resolve a menu with
     /// `state::sidebar_actions::resolve_snooze_presets` when it opens.
     pub snooze_presets: Arc<std::collections::HashMap<EnvironmentId, Arc<[t3code_contracts::SnoozePresetSetting]>>>,
+    /// Older settled threads the servers leave out of the shell (`useOlderSettledShelf`).
+    pub older_settled: OlderSettledShelf,
+}
+
+/// Where the Settled shelf stands when servers leave older settled threads out: the shelf lists
+/// a row only at or above `frontier` (rows below it could sort under rows not loaded yet), and
+/// its header counts what is not loaded on top of the listed rows.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct OlderSettledShelf {
+    pub frontier: Option<SettledFrontier>,
+    /// Per project: the server's count of older settled threads minus the older rows held.
+    pub unloaded: std::collections::HashMap<ProjectRef, i64>,
+    /// A requested page is loading ("Loading").
+    pub loading: bool,
+    /// A requested page failed ("Could not load older threads. Retry").
+    pub failed: bool,
+}
+
+/// A position in the servers' order of settled threads (settle time desc, id asc).
+#[derive(Clone, Debug, PartialEq)]
+pub struct SettledFrontier {
+    pub settled_at: TimestampMs,
+    pub thread_id: Option<SharedString>,
+}
+
+impl OlderSettledShelf {
+    /// Whether the shelf may list `thread` (`isListedSettledThread`).
+    pub fn is_listed(&self, thread: &SidebarThread) -> bool {
+        let Some(frontier) = &self.frontier else { return true };
+        let Some(settled_at) = thread.settled_at else { return true };
+        !(settled_at < frontier.settled_at
+            || frontier.thread_id.as_ref().is_some_and(|id| settled_at == frontier.settled_at && thread.key.thread_id.0.as_ref() > id.as_ref()))
+    }
+
+    /// Older settled threads not held, in `projects` (all when `None`) (`unloadedOlderSettledCount`).
+    pub fn unloaded_count(&self, projects: Option<&std::collections::HashSet<ProjectRef>>) -> usize {
+        let total: i64 = self.unloaded.iter().filter(|(project, _)| projects.is_none_or(|set| set.contains(*project))).map(|(_, n)| n).sum();
+        total.max(0) as usize
+    }
+}
+
+/// What the Settled shelf shows, so the data reads older pages until it lists `visible_count`
+/// rows (`useOlderSettledShelf` inputs). `retry` reads a failed page again.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct SettledShelfRequest {
+    pub expanded: bool,
+    pub visible_count: usize,
+    /// The project filter's projects; `None` for all.
+    pub projects: Option<Vec<ProjectRef>>,
+    pub retry: bool,
 }
 
 /// Server message matches for one search query.

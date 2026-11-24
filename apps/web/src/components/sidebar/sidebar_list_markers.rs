@@ -228,7 +228,13 @@ impl Sidebar {
             .when(hovered, |d| d.bg(colors.sidebar_row_hover))
             .when(self.entry_focused(ix, window), |d| d.border_2().border_color(colors.ring))
             .child(Icon::new(IconName::ChevronDown).size(IconSize::Custom(px(16.))).color(fg))
-            .child(format!("Show {count} more"))
+            .child(if self.snapshot.older_settled.loading {
+                crate::i18n::t!("Loading").to_string()
+            } else if self.snapshot.older_settled.failed {
+                crate::i18n::t!("Could not load older threads. Retry").to_string()
+            } else {
+                format!("Show {count} more")
+            })
             .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
                 this.set_row_hover(ix, *hovered, cx);
             }))

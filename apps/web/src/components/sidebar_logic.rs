@@ -765,6 +765,9 @@ pub fn build_sidebar_list(snapshot: &SidebarSnapshot, options: &SidebarListOptio
     sort_pinned(&mut pinned);
     sort_snoozed(&mut snoozed);
     sort_settled(&mut settled);
+    // Older settled threads load in pages; the shelf lists them only as far as they are loaded.
+    let settled_count = settled.len() + snapshot.older_settled.unloaded_count(None);
+    settled.retain(|thread| snapshot.older_settled.is_listed(thread));
     sort_desc_by(&mut working, send_timestamp);
 
     for thread in &pinned {
@@ -810,7 +813,7 @@ pub fn build_sidebar_list(snapshot: &SidebarSnapshot, options: &SidebarListOptio
     let nothing_listed = list.entries.is_empty()
         && working.is_empty()
         && snoozed.is_empty()
-        && settled.is_empty();
+        && settled_count == 0;
     if nothing_listed {
         list.entries.push(SidebarListEntry::Empty(if snapshot.projects.is_empty() {
             EmptyState::NoProjects
@@ -874,9 +877,15 @@ pub fn build_sidebar_list(snapshot: &SidebarSnapshot, options: &SidebarListOptio
         SidebarSection::Settled,
         settled_limit,
     );
-    if options.settled_expanded && settled.len() > settled_limit {
+    if let Some(SidebarListEntry::ShelfHeader { count, .. }) =
+        list.entries.iter_mut().rev().find(|entry| matches!(entry, SidebarListEntry::ShelfHeader { shelf: Shelf::Settled, .. }))
+    {
+        *count = settled_count;
+    }
+    let hidden_settled = settled_count.saturating_sub(settled.len().min(settled_limit));
+    if options.settled_expanded && hidden_settled > 0 {
         list.entries.push(SidebarListEntry::ShowMore {
-            count: (settled.len() - settled_limit).min(settings.settled_page_size),
+            count: hidden_settled.min(settings.settled_page_size),
         });
     }
     list.groups = groups;
