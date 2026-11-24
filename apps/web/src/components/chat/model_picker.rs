@@ -36,15 +36,21 @@ const MODEL_OPTION_HEIGHT: Pixels = px(32.);
 const PICKER_CONTEXT: &str = "ModelPicker";
 /// Footer: `py-2` around a 28px control, plus its 1px top border.
 const FOOTER_HEIGHT: Pixels = px(45.);
-/// The plain popup's outer size (`ModelPickerContent` alone, as settings
-/// open it): the list and the 1px border.
-pub const PLAIN_MODEL_PICKER_SIZE: gpui_kit::Size<Pixels> = gpui_kit::Size { width: px(360. + 2.), height: px(320. + 2.) };
-/// The popup's outer size: list, effort column, footer and the 1px border.
-/// Fixed, so the composer can cache the picker's subtree with a known layout.
-pub const MODEL_PICKER_SIZE: gpui_kit::Size<Pixels> = gpui_kit::Size {
-    width: px(360. + 192. + 2.),
-    height: px(320. + 45. + 2.),
-};
+/// The popup's outer size: list, effort column, footer and the 1px border, in rem
+/// (`h-80`, `w-48`, ...) at the interface size; `plain` drops the effort column and
+/// footer (`ModelPickerContent` alone, as settings open it). Fixed per interface size, so
+/// the composer can cache the picker's subtree with a known layout.
+pub fn model_picker_size(plain: bool, c: &ComposerColors) -> gpui_kit::Size<Pixels> {
+    let border = px(2.);
+    if plain {
+        gpui_kit::Size { width: c.r(MODEL_PICKER_LIST_WIDTH) + border, height: c.r(MODEL_PICKER_HEIGHT) + border }
+    } else {
+        gpui_kit::Size {
+            width: c.r(MODEL_PICKER_LIST_WIDTH) + c.r(MODEL_PICKER_EFFORT_WIDTH) + border,
+            height: c.r(MODEL_PICKER_HEIGHT) + c.r(FOOTER_HEIGHT) + border,
+        }
+    }
+}
 
 actions!(model_picker, [PickerUp, PickerDown, PickerConfirm, PickerClose, PickerBackspace, PreviousProvider, NextProvider]);
 
@@ -427,7 +433,7 @@ impl ModelPicker {
             );
         }
         div()
-            .w(MODEL_PICKER_RAIL_WIDTH)
+            .w(c.r(MODEL_PICKER_RAIL_WIDTH))
             .flex_none()
             .h_full()
             .bg(c.muted.opacity(0.3))
@@ -612,7 +618,7 @@ impl ModelPicker {
                 .collect(),
         };
         div()
-            .w(MODEL_PICKER_EFFORT_WIDTH)
+            .w(c.r(MODEL_PICKER_EFFORT_WIDTH))
             .flex_none()
             .h_full()
             .flex()
@@ -943,18 +949,18 @@ impl Render for ModelPicker {
             .glass(c.popup_background)
             .border_1()
             .border_color(c.popup_border)
-            .w(if self.plain { PLAIN_MODEL_PICKER_SIZE.width } else { MODEL_PICKER_SIZE.width })
-            .h(if self.plain { PLAIN_MODEL_PICKER_SIZE.height } else { MODEL_PICKER_SIZE.height })
+            .w(model_picker_size(self.plain, &c).width)
+            .h(model_picker_size(self.plain, &c).height)
             .rounded(POPUP_RADIUS)
             .shadow(popup_shadow(&c))
             .overflow_hidden()
             .child(
                 div()
-                    .h(MODEL_PICKER_HEIGHT)
+                    .h(c.r(MODEL_PICKER_HEIGHT))
                     .flex()
                     .child(
                         div()
-                            .w(MODEL_PICKER_LIST_WIDTH)
+                            .w(c.r(MODEL_PICKER_LIST_WIDTH))
                             .h_full()
                             .flex()
                             .when(show_rail, |el| el.child(self.render_rail(&c, cx)))
