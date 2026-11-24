@@ -44,6 +44,7 @@ pub mod files;
 pub mod side_chat_pane;
 pub mod sidebar;
 pub mod thread_route_view;
+pub mod thread_undo_notice;
 pub mod thread_notification_coordinator;
 pub mod thread_notification_coordinator_logic;
 pub mod thread_terminal_drawer;

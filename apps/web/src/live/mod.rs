@@ -119,8 +119,14 @@ impl LiveData {
         if !cx.has_global::<crate::port_discovery_state::PortForwards>() {
             crate::port_discovery_state::PortForwards::init(cx);
         }
+        // The palette's Forwarded ports page follows forwards that start and stop.
+        let ports = {
+            let palette = palette.clone();
+            cx.observe_global::<crate::port_discovery_state::PortForwards>(move |cx| palette.refresh_ports(cx))
+        };
         let details = cx.new(|_| thread_details::DetailsFeed::default());
         let followed = thread_details::follow_changes(&details, &events, cx);
+        events.update(cx, |events, _| events._subscriptions.push(ports));
         events.update(cx, |events, _| {
             events._subscriptions.push(subscription);
             events._subscriptions.extend(followed);
@@ -590,7 +596,8 @@ impl AppData for LiveData {
                     }
                     _ => {}
                 }
-                let ComposerEvent::Submit { prompt, model, attachments, .. } = event else { return None };
+                let ComposerEvent::Submit { prompt, model, attachments, intent, .. } = event else { return None };
+                let background = *intent == crate::composer_logic::ComposerSubmissionIntent::Background;
                 let (project, workspace) = {
                     let drafts = self.drafts.borrow();
                     let draft = drafts.get(id)?;
@@ -668,6 +675,16 @@ impl AppData for LiveData {
                     None => {}
                 })
                 .detach();
+                if background {
+                    // `useComposerSend` background intent: the thread starts without the route
+                    // moving to it, and a fresh draft with the same workspace takes the screen.
+                    let next = self.create_draft(Some(project), cx);
+                    if let Some(draft) = self.drafts.borrow_mut().get_mut(&next) {
+                        draft.workspace = workspace;
+                    }
+                    self.emit(DataEvent::DraftStartedInBackground { draft: id.clone(), thread: key, next }, cx);
+                    return None;
+                }
                 self.emit(DataEvent::DraftPromoted { draft: id.clone(), thread: key.clone() }, cx);
                 Some(key)
             }
@@ -733,6 +750,10 @@ impl AppData for LiveData {
         let worktree = StateBridge::shell(cx).read(cx).row(key).and_then(|row| row.source.worktree_path.clone());
         let branch = branch.to_string();
         StateBridge::spawn(async move { commands.set_workspace(&thread_id, Some(branch), worktree).await }, cx).detach();
+    }
+
+    fn set_window_active(&self, active: bool, cx: &mut App) {
+        StateBridge::threads(cx).update(cx, |threads, cx| threads.set_window_active(active, cx));
     }
 
     fn thread_command(&self, keys: &[ThreadKey], command: MenuCommand, cx: &mut App) -> CommandOutcome {

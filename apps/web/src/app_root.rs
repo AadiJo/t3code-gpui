@@ -23,6 +23,7 @@ use crate::components::right_panel_tabs::{RightPanel, RightPanelEvent, ScriptBac
 use crate::components::ui::toast::{ToastData, ToastKind, Toaster};
 use crate::components::pull_request::link_pull_request_dialog::{LinkPullRequest, LinkPullRequestClosed, LinkPullRequestDialog};
 use crate::components::ui::dialog::Modal;
+use crate::command_palette_store::OpenIntent;
 use crate::state::StateBridge;
 use crate::components::issue::issue_detail_panel::IssueDetailPanel;
 use crate::components::issue::issues_page::{IssuesPage, IssuesPageEvent};
@@ -40,7 +41,7 @@ use crate::components::thread_route_view::{ThreadRouteEvent, ThreadRouteView};
 use crate::components::thread_terminal_drawer::{BackendFactory, TerminalLaunch};
 use crate::components::sidebar::context_menu::MenuCommand;
 use crate::components::command_palette::CommandPalette;
-use crate::components::command_palette_logic::PaletteEvent;
+use crate::components::command_palette_logic::{AddProjectStep, PaletteEvent};
 use crate::components::command_palette_lookups::CommandPaletteSource;
 use crate::components::sidebar_logic::SidebarListEntry;
 use crate::components::thread_notification_coordinator::{NotificationInput, ThreadNotificationCoordinator};
@@ -48,6 +49,8 @@ use crate::connection::shell::EnvironmentShell;
 use crate::desktop_notifications::{InboxEvent, NotificationInbox};
 use crate::router::SettingsPanel;
 use crate::shortcuts::ShortcutRoot;
+use t3code_shared::keybindings::StaticCommand;
+use crate::shortcuts::commands::{CopyPullRequestNumber, RunProjectScript, UndoThreadAction, on_commands};
 use crate::shortcuts::commands::{
     CloseRightPanelTab, CopyThreadReference, FindInThread, FocusNextWorkspaceArea, FocusPreviousWorkspaceArea,
     OpenFavoriteEditor, ToggleFilePicker, ToggleProjectSearch, ToggleThreadPanel, JumpToThread1, JumpToThread2, JumpToThread3, JumpToThread4, JumpToThread5, JumpToThread6,
@@ -82,6 +85,18 @@ actions!(
         ZoomWindow,
     ]
 );
+
+/// What an app-level event or menu row did. The command wiring check reads it, so an arm that
+/// does nothing says so instead of passing silently.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Wiring {
+    /// It ran.
+    Ran,
+    /// Another part of the app owns it and is not built yet; the user is told so.
+    Unavailable(&'static str),
+    /// Nothing handles it.
+    Dropped,
+}
 
 /// The right panel's width for a thread with none saved (`PREVIEW_PANEL_DEFAULT_WIDTH`).
 const RIGHT_PANEL_DEFAULT_WIDTH: f32 = 540.;
@@ -231,6 +246,8 @@ struct MainPane {
 struct ListPage {
     list: AnyView,
     detail: Option<AnyView>,
+    /// The open pull request's number, for `pullRequest.copyNumber`.
+    pull_request_number: Option<u64>,
     width: Pixels,
     _subscription: Subscription,
 }
@@ -292,6 +309,11 @@ pub struct AppRoot {
     details: DetailsVisibility,
     /// The thread under the main pane; it stays shown under modal routes.
     shown: Option<ThreadTarget>,
+    /// The window's command palette, for commands that open one of its pages.
+    palette: Option<WeakEntity<CommandPalette>>,
+    /// The window is in front; a background window records no visits (`ThreadVisitWatermark`).
+    /// Until the platform says otherwise a new window counts as in front.
+    window_active: bool,
     focus: FocusHandle,
     _subscriptions: Vec<Subscription>,
 }
@@ -372,7 +394,9 @@ impl AppRoot {
             cx.subscribe_in(&router, window, |this, _, event: &RouteChanged, window, cx| {
                 this.apply_route(event.route.clone(), window, cx)
             }),
-            cx.subscribe_in(&sidebar, window, Self::on_sidebar_event),
+            cx.subscribe_in(&sidebar, window, |this, _, event: &SidebarEvent, window, cx| {
+                this.run_sidebar_event(event, window, cx);
+            }),
             cx.subscribe_in(&layout, window, Self::on_layout_event),
             // Drags end wherever the pointer is released, so widths are saved as they change.
             cx.observe(&layout, |_, layout, cx| Self::persist_layout(&layout, cx)),
@@ -388,6 +412,14 @@ impl AppRoot {
                 }
             }),
             cx.observe_global_in::<TerminalUiStateStore>(window, |this, window, cx| this.panels_changed(window, cx)),
+            cx.observe_window_activation(window, |this, window, cx| {
+                let active = window.is_window_active();
+                this.window_active = active;
+                this.data.set_window_active(active, cx);
+                if active {
+                    this.mark_shown_visited(cx);
+                }
+            }),
             // A native notification or an inbox row opened a thread.
             cx.subscribe(&NotificationInbox::global(cx), |this, _, event: &InboxEvent, cx| {
                 let InboxEvent::OpenThread(key) = event;
@@ -411,6 +443,8 @@ impl AppRoot {
             usage: None,
             details: DetailsVisibility { mode: ThreadDetailsMode::Popover, inline_open: true, popover_open: false },
             shown: None,
+            palette: None,
+            window_active: true,
             focus: cx.focus_handle(),
             _subscriptions: subscriptions,
         };
@@ -462,6 +496,11 @@ impl AppRoot {
         &self.right_panel
     }
 
+    /// The Usage page, while its route shows.
+    pub fn usage_route(&self) -> Option<&Entity<UsageRoute>> {
+        self.usage.as_ref().map(|(usage, _)| usage)
+    }
+
     /// The media viewer, while open.
     pub fn expanded_image(&self) -> Option<&Entity<ExpandedImageDialog>> {
         self.expanded.as_ref().map(|(dialog, _)| dialog)
@@ -490,7 +529,10 @@ impl AppRoot {
 
     /// Handles what the window's command palette asks for.
     pub fn attach_palette(&mut self, palette: &Entity<CommandPalette>, window: &mut Window, cx: &mut Context<Self>) {
-        let subscription = cx.subscribe_in(palette, window, Self::on_palette_event);
+        self.palette = Some(palette.downgrade());
+        let subscription = cx.subscribe_in(palette, window, |this, _, event: &PaletteEvent, window, cx| {
+            this.run_palette_event(event, window, cx);
+        });
         self._subscriptions.push(subscription);
     }
 
@@ -576,11 +618,7 @@ impl AppRoot {
         self.sync_sidebar_drafts(cx);
         self.data.set_active_thread(active.as_ref(), cx);
         ThreadNotificationCoordinator::apply(NotificationInput::Route(active.clone()), cx);
-        if let Some(key) = &active {
-            let visited = jiff::Timestamp::now().to_string();
-            let key = scoped_key(key);
-            UiStateStore::update_ui(cx, |ui| ui.mark_thread_visited(&key, visited));
-        }
+        self.mark_shown_visited(cx);
         self.persist_route(&route, cx);
         let panel_focused = self.right_panel.focus_handle(cx).contains_focused(window, cx);
         self.sync_panels(cx);
@@ -610,10 +648,11 @@ impl AppRoot {
                         let PullRequestsPageEvent::Open { environment_id, reference } = event;
                         let Some(source) = data.upgrade().and_then(|data| data.pull_request_detail(environment_id, cx)) else { return };
                         let reference = reference.clone();
+                        this.pull_request_number = Some(reference.number as u64);
                         this.detail = Some(cx.new(|cx| PullRequestDetailPanel::new(source, reference, cx)).into());
                         cx.notify();
                     });
-                    ListPage { list: page.into(), detail: None, width, _subscription: subscription }
+                    ListPage { list: page.into(), detail: None, pull_request_number: None, width, _subscription: subscription }
                 })
             }
             Route::Issues { .. } => {
@@ -628,7 +667,7 @@ impl AppRoot {
                         this.detail = Some(cx.new(|cx| IssueDetailPanel::new(source, reference, window, cx)).into());
                         cx.notify();
                     });
-                    ListPage { list: page.into(), detail: None, width, _subscription: subscription }
+                    ListPage { list: page.into(), detail: None, pull_request_number: None, width, _subscription: subscription }
                 })
             }
             _ => return None,
@@ -660,6 +699,15 @@ impl AppRoot {
     pub fn server_settings_pages(&self, cx: &mut App) -> Option<Entity<crate::components::settings::server_settings_pages::ServerSettingsPages>> {
         let model = self.data.server_settings(cx)?;
         Some(cx.new(|_| crate::components::settings::server_settings_pages::ServerSettingsPages::new(model)))
+    }
+
+    /// Records a visit to the shown thread while the window is in front.
+    fn mark_shown_visited(&self, cx: &mut Context<Self>) {
+        if let (true, Some(key)) = (self.window_active, self.shown_key()) {
+            let visited = jiff::Timestamp::now().to_string();
+            let key = scoped_key(&key);
+            UiStateStore::update_ui(cx, |ui| ui.mark_thread_visited(&key, visited));
+        }
     }
 
     fn persist_route(&self, route: &Route, cx: &mut Context<Self>) {
@@ -776,6 +824,13 @@ impl AppRoot {
             ThreadRouteEvent::OpenBrowser(tab) => {
                 let tab = tab.clone();
                 self.right_panel.update(cx, |panel, cx| panel.open_browser_tab(&tab, cx));
+            }
+            ThreadRouteEvent::ThreadCommand(keys, command) => {
+                self.thread_command(keys, *command, window, cx);
+            }
+            ThreadRouteEvent::NewThreadInProject => {
+                let project = self.shown_project(cx);
+                self.new_thread(project, window, cx);
             }
         }
     }
@@ -933,7 +988,8 @@ impl AppRoot {
         }
     }
 
-    fn on_sidebar_event(&mut self, _: &Entity<Sidebar>, event: &SidebarEvent, window: &mut Window, cx: &mut Context<Self>) {
+    /// Runs a sidebar event.
+    pub fn run_sidebar_event(&mut self, event: &SidebarEvent, window: &mut Window, cx: &mut Context<Self>) -> Wiring {
         match event {
             SidebarEvent::ActivateThread(key) => self.navigate(Route::Thread(key.clone()), cx),
             SidebarEvent::NewThread(project) => self.new_thread(project.clone(), window, cx),
@@ -949,13 +1005,25 @@ impl AppRoot {
             SidebarEvent::ActivateDraft(id) => self.navigate(Route::Draft(DraftId(id.clone())), cx),
             SidebarEvent::DiscardDraftSession(id) => self.discard_draft_session(DraftId(id.clone()), cx),
             SidebarEvent::DraftCommand(id, command) => self.draft_command(DraftId(id.clone()), *command, cx),
-            SidebarEvent::ThreadCommand(keys, command) => self.thread_command(keys, *command, window, cx),
+            SidebarEvent::ThreadCommand(keys, command) => return self.thread_command(keys, *command, window, cx),
             SidebarEvent::RenameThread(key, title) => self.data.rename_thread(key, title.clone(), cx),
             SidebarEvent::ProjectCommand(project, MenuCommand::ProjectSettings) => self.open_project_settings(project, cx),
             SidebarEvent::SearchChanged(query) => self.data.search_threads(query.clone(), cx),
             SidebarEvent::SettledShelf(request) => self.data.show_older_settled(request.clone(), cx),
-            SidebarEvent::AddProject | SidebarEvent::OpenProjectFilter | SidebarEvent::ProjectCommand(..) => {}
+            // `openAddProjectCommandPalette`.
+            SidebarEvent::AddProject => self.open_palette(OpenIntent::AddProject, window, cx),
+            SidebarEvent::ProjectCommand(project, MenuCommand::NewThread) => self.new_thread(Some(project.clone()), window, cx),
+            SidebarEvent::ProjectCommand(project, MenuCommand::CopyPath) => {
+                let snapshot = self.sidebar.read(cx).snapshot();
+                if let Some(root) = snapshot.projects.iter().find(|p| p.project_ref == *project).map(|p| p.workspace_root.to_string()) {
+                    cx.write_to_clipboard(ClipboardItem::new_string(root));
+                }
+            }
+            SidebarEvent::ProjectCommand(project, MenuCommand::PinProject | MenuCommand::UnpinProject) => self.toggle_project_pin(project, cx),
+            // Nothing emits these: the sidebar filters by project itself.
+            SidebarEvent::OpenProjectFilter | SidebarEvent::ProjectCommand(..) => return Wiring::Dropped,
         }
+        Wiring::Ran
     }
 
     /// Discards a new-thread draft; when it is the one shown, the index route takes its place.
@@ -1009,12 +1077,44 @@ impl AppRoot {
         (self.data.drafts(cx), active)
     }
 
-    /// Runs a sidebar row or context-menu command on threads.
-    fn thread_command(&mut self, keys: &[ThreadKey], command: MenuCommand, window: &mut Window, cx: &mut Context<Self>) {
+    /// Runs a sidebar row, chat header or shortcut command on threads.
+    pub fn thread_command(&mut self, keys: &[ThreadKey], command: MenuCommand, window: &mut Window, cx: &mut Context<Self>) -> Wiring {
+        // A thread menu's "Project settings" opens its project's page here.
+        if command == MenuCommand::ProjectSettings {
+            if let Some(project) = keys.first().and_then(|key| self.thread_project(key, cx)) {
+                self.open_project_settings(&project, cx);
+            }
+            return Wiring::Ran;
+        }
+        // `requestCustomSnooze` opens a dialog this app does not have yet.
+        if command == MenuCommand::SnoozeCustom {
+            return self.not_built_yet(t!("Custom snooze"), "custom snooze dialog", cx);
+        }
         match self.data.thread_command(keys, command, cx) {
             CommandOutcome::Done => {}
-            CommandOutcome::Rename(key) => self.sidebar.update(cx, |sidebar, cx| sidebar.start_rename(key, window, cx)),
+            CommandOutcome::Rename(key) => {
+                // The header has no title field of its own; the sidebar row takes the rename.
+                if !self.layout.read(cx).is_sidebar_open() {
+                    self.layout.update(cx, |layout, cx| layout.toggle_sidebar(cx));
+                }
+                self.sidebar.update(cx, |sidebar, cx| sidebar.start_rename(key, window, cx))
+            }
             CommandOutcome::NewThread(project) => self.new_thread(project, window, cx),
+        }
+        Wiring::Ran
+    }
+
+    /// The project of a listed thread.
+    fn thread_project(&self, key: &ThreadKey, cx: &App) -> Option<ProjectRef> {
+        self.sidebar.read(cx).snapshot().threads.iter().find(|t| &t.key == key).map(|t| t.project_ref())
+    }
+
+    /// The project of the thread or draft on screen.
+    fn shown_project(&self, cx: &App) -> Option<ProjectRef> {
+        match &self.shown {
+            Some(ThreadTarget::Server(key)) => self.thread_project(key, cx),
+            Some(ThreadTarget::Draft(id)) => self.sidebar.read(cx).snapshot().drafts.iter().find(|d| d.id == id.0).map(|d| d.project.clone()),
+            None => None,
         }
     }
 
@@ -1024,6 +1124,54 @@ impl AppRoot {
         let draft = self.data.create_draft(project, cx);
         self.navigate(Route::Draft(draft), cx);
         self.restore_focus(window, cx);
+    }
+
+    /// Opens the command palette on `intent`'s page.
+    fn open_palette(&self, intent: OpenIntent, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(palette) = self.palette.as_ref().and_then(WeakEntity::upgrade) {
+            palette.update(cx, |palette, cx| palette.open(intent, window, cx));
+        }
+    }
+
+    /// `chat.new`: with one open project group (or none) a new thread where the user is, else
+    /// the palette's "New thread in…" (`shouldCreateNewThreadInCurrentProject`).
+    fn chat_new(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let snapshot = self.sidebar.read(cx).snapshot();
+        let groups = crate::components::sidebar::sidebar_project_grouping::build_project_groups(
+            &snapshot.projects,
+            snapshot.settings.grouping_mode,
+            &Default::default(),
+        );
+        let open = groups.iter().filter(|group| !group.archived).count();
+        if open == 1 || groups.is_empty() {
+            self.new_local_thread(window, cx);
+        } else {
+            self.open_palette(OpenIntent::NewThreadIn, window, cx);
+        }
+    }
+
+    /// `chat.newLocal`: a new thread in the shown thread's project, else the default one; with
+    /// neither, the palette asks for a project (`startNewThreadFromContext`).
+    fn new_local_thread(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        match self.shown_project(cx).or_else(|| self.data.most_recent_project(cx)) {
+            Some(project) => self.new_thread(Some(project), window, cx),
+            None => self.open_palette(OpenIntent::NewThreadIn, window, cx),
+        }
+    }
+
+    /// `chat.newWithoutProject`: a new thread in the machine's No project (scratch) project.
+    /// `environment` is the machine the palette row named, else the one on screen.
+    fn new_thread_without_project(&mut self, environment: Option<t3code_contracts::EnvironmentId>, window: &mut Window, cx: &mut Context<Self>) {
+        if !StateBridge::is_running(cx) {
+            return self.new_thread(None, window, cx);
+        }
+        let Some(environment) = environment.or_else(|| crate::state::palette::scratch_environment(self.shown_key().as_ref(), cx)) else { return };
+        let task = crate::state::palette::start_scratch_thread(environment, cx);
+        cx.spawn_in(window, async move |this, cx| {
+            let Some(project) = task.await else { return };
+            _ = this.update_in(cx, |this, window, cx| this.new_thread(Some(project), window, cx));
+        })
+        .detach();
     }
 
     /// Opens settings on General, as the sidebar gear and the palette do.
@@ -1056,11 +1204,15 @@ impl AppRoot {
         }
     }
 
-    fn on_palette_event(&mut self, _: &Entity<CommandPalette>, event: &PaletteEvent, window: &mut Window, cx: &mut Context<Self>) {
+    /// Runs what a palette row asks for.
+    pub fn run_palette_event(&mut self, event: &PaletteEvent, window: &mut Window, cx: &mut Context<Self>) -> Wiring {
         match event {
             PaletteEvent::OpenThread { thread, .. } => self.navigate(Route::Thread(thread.clone()), cx),
             PaletteEvent::NewThreadIn(project) => self.new_thread(Some(project.clone()), window, cx),
-            PaletteEvent::NewThreadWithoutProject(_) => self.new_thread(None, window, cx),
+            PaletteEvent::NewThreadWithoutProject(environment) => {
+                let environment = t3code_contracts::EnvironmentId::new(environment.0.as_ref());
+                self.new_thread_without_project(Some(environment), window, cx)
+            }
             PaletteEvent::OpenSettings => self.open_settings(cx),
             PaletteEvent::OpenSetting(id) => {
                 let panel = SettingsPanel::from_slug(id).unwrap_or(SettingsPanel::General);
@@ -1079,15 +1231,78 @@ impl AppRoot {
                 }
             }
             PaletteEvent::Triage => self.start_triage(cx),
-            // Need the sync layer or server features the fixture store does not have.
-            PaletteEvent::CopyPromptLink { .. }
-            | PaletteEvent::ShareWithGuest
-            | PaletteEvent::NewProject
-            | PaletteEvent::AddProject(_)
-            | PaletteEvent::UseInAnotherApp
-            | PaletteEvent::ToggleProjectPin(_)
-            | PaletteEvent::PortForward(_) => {}
+            PaletteEvent::CopyPromptLink { with_context } => self.copy_prompt_link(*with_context, cx),
+            PaletteEvent::AddProject(AddProjectStep::ConnectEnvironment) => {
+                self.navigate(Route::Settings { panel: SettingsPanel::Connections, query: SharedString::default() }, cx)
+            }
+            PaletteEvent::ToggleProjectPin(project) => self.toggle_project_pin(project, cx),
+            PaletteEvent::PortForward(request) => {
+                if StateBridge::is_running(cx) {
+                    crate::port_discovery_state::PortForwards::handle(request.clone(), cx);
+                }
+            }
+            PaletteEvent::ShareWithGuest | PaletteEvent::UseInAnotherApp => return self.not_built_yet(t!("Sharing"), "sharing", cx),
+            PaletteEvent::NewProject => return self.not_built_yet(t!("New project"), "palette views", cx),
+            PaletteEvent::AddProject(AddProjectStep::BrowseFolders(_)) => return self.not_built_yet(t!("Local folder"), "palette views", cx),
+            PaletteEvent::AddProject(AddProjectStep::CloneRepository(_)) => return self.not_built_yet(t!("Git URL"), "palette views", cx),
         }
+        Wiring::Ran
+    }
+
+    /// A row whose feature this app does not have yet says so instead of doing nothing.
+    fn not_built_yet(&self, feature: SharedString, owner: &'static str, cx: &mut Context<Self>) -> Wiring {
+        Toaster::push(ToastData::new(ToastKind::Info, t!("{feature} is not available in this app yet", feature = feature.as_ref())), cx);
+        Wiring::Unavailable(owner)
+    }
+
+    /// Pins or unpins `project`'s group on every machine (`toggleProjectGroupPin`).
+    fn toggle_project_pin(&self, project: &ProjectRef, cx: &mut Context<Self>) {
+        let snapshot = self.sidebar.read(cx).snapshot();
+        let groups = crate::components::sidebar::sidebar_project_grouping::build_project_groups(
+            &snapshot.projects,
+            snapshot.settings.grouping_mode,
+            &Default::default(),
+        );
+        let Some(group) = groups.iter().find(|g| g.member_refs.contains(project)) else { return };
+        if StateBridge::is_running(cx) {
+            crate::state::sidebar_actions::set_projects_pinned(&group.member_refs, !group.pinned, cx);
+        }
+    }
+
+    /// Copies a link that opens a new thread with the composer's prompt on the hosted app
+    /// (`composerPromptLink`, `buildNewThreadLink`); `with_context` adds the GitHub repository
+    /// and the selected provider and model.
+    fn copy_prompt_link(&self, with_context: bool, cx: &mut Context<Self>) {
+        /// `PROMPT_LINK_MAX_PROMPT_LENGTH`.
+        const MAX_PROMPT: usize = 8_000;
+        let composer = self.composer(cx);
+        let prompt = composer.read(cx).editor().read(cx).text().trim().to_owned();
+        if prompt.is_empty() || prompt.encode_utf16().count() > MAX_PROMPT {
+            return;
+        }
+        let mut url = url::Url::parse("https://app.t3.codes/new").expect("static url");
+        {
+            let mut query = url.query_pairs_mut();
+            query.append_pair("prompt", &prompt);
+            if with_context {
+                let repository = self
+                    .shown_key()
+                    .filter(|_| StateBridge::is_running(cx))
+                    .and_then(|key| crate::state::palette::link_project(&key, cx))
+                    .filter(|project| project.host == "github.com")
+                    .map(|project| project.repository);
+                if let Some(repository) = repository {
+                    query.append_pair("repo", &repository);
+                }
+                let state = composer.read(cx).state();
+                let driver = state.catalog.instances.iter().find(|i| i.instance_id == state.selection.instance_id).map(|i| i.driver_kind.as_str().to_owned());
+                if let Some(driver) = driver {
+                    query.append_pair("provider", &driver);
+                    query.append_pair("model", &state.selection.model);
+                }
+            }
+        }
+        cx.write_to_clipboard(ClipboardItem::new_string(url.to_string()));
     }
 
     /// Opens "Link pull request" for the thread on screen (`openLinkPullRequestDialog`).
@@ -1206,6 +1421,16 @@ impl AppRoot {
             }
             return;
         }
+        if let DataEvent::DraftStartedInBackground { thread, .. } = event {
+            let (router, thread) = (self.router.downgrade(), thread.clone());
+            let toast = ToastData::new(ToastKind::Success, t!("Started in background"))
+                .timeout(std::time::Duration::from_secs(5))
+                .action(t!("Open", context = "verb, opens the background thread"), move |_, cx| {
+                    _ = router.update(cx, |router, cx| router.navigate(Route::Thread(thread.clone()), cx));
+                });
+            Toaster::push(toast, cx);
+            return;
+        }
         if let DataEvent::OpenSideChat { parent, side_chat } = event {
             let side_chat_id = side_chat.thread_id.0.to_string();
             self.right_panels.update(cx, |store, cx| {
@@ -1236,6 +1461,15 @@ impl AppRoot {
         }
     }
 
+    /// Edit → Paste as Text: the text goes into the composer of the shown thread.
+    pub fn paste_text(&mut self, text: &str, cx: &mut Context<Self>) {
+        if self.shown.is_none() {
+            return;
+        }
+        let editor = self.composer(cx).read(cx).editor().clone();
+        editor.update(cx, |editor, cx| editor.insert(text, cx));
+    }
+
     /// Writes every store now (quit).
     pub fn flush_state(&self, cx: &mut App) {
         let dir = cx.global::<UiStateStore>().dir.clone();
@@ -1249,6 +1483,30 @@ impl AppRoot {
     }
 }
 
+/// The shortcuts the thread view runs on the shown thread ([`ThreadRouteView::run_command`]).
+const THREAD_VIEW_COMMANDS: [StaticCommand; 20] = [
+    StaticCommand::ComposerSendAlternate,
+    StaticCommand::ComposerSendBackground,
+    StaticCommand::ComposerSendAndNewThread,
+    StaticCommand::ComposerHost,
+    StaticCommand::ComposerCycleHost,
+    StaticCommand::ComposerWorkspace,
+    StaticCommand::ComposerBranch,
+    StaticCommand::ComposerPreviousWorktree,
+    StaticCommand::ComposerStash,
+    StaticCommand::ComposerEffort,
+    StaticCommand::ComposerIncreaseEffort,
+    StaticCommand::ComposerDecreaseEffort,
+    StaticCommand::ComposerMode,
+    StaticCommand::ComposerDictation,
+    StaticCommand::ThreadStop,
+    StaticCommand::ThreadSteerQueuedMessage,
+    StaticCommand::ThreadEditQueuedMessage,
+    StaticCommand::ThreadSettle,
+    StaticCommand::ThreadPin,
+    StaticCommand::ThreadRegenerateTitle,
+];
+
 /// Which thread `thread.previous`, `thread.next` and `thread.jump.n` show.
 #[derive(Clone, Copy)]
 enum ThreadStep {
@@ -1260,7 +1518,15 @@ enum ThreadStep {
 
 impl Render for AppRoot {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        div()
+        let this = cx.weak_entity();
+        let thread_commands: Rc<dyn Fn(StaticCommand, &mut Window, &mut App)> = Rc::new(move |command, window, cx| {
+            _ = this.update(cx, |this, cx| {
+                if this.shown.is_some() && this.main.read(cx).page.is_none() {
+                    this.thread_view.update(cx, |view, cx| view.run_command(command, window, cx));
+                }
+            });
+        });
+        let root = div()
             .id("app-root")
             .track_focus(&self.focus)
             .size_full()
@@ -1292,9 +1558,9 @@ impl Render for AppRoot {
             }))
             .on_action(cx.listener(|this, _: &NavigateBack, _, cx| this.router.update(cx, |r, cx| r.back(cx))))
             .on_action(cx.listener(|this, _: &NavigateForward, _, cx| this.router.update(cx, |r, cx| r.forward(cx))))
-            .on_action(cx.listener(|this, _: &NewChat, window, cx| this.new_thread(None, window, cx)))
-            .on_action(cx.listener(|this, _: &NewLocalChat, window, cx| this.new_thread(None, window, cx)))
-            .on_action(cx.listener(|this, _: &NewChatWithoutProject, window, cx| this.new_thread(None, window, cx)))
+            .on_action(cx.listener(|this, _: &NewChat, window, cx| this.chat_new(window, cx)))
+            .on_action(cx.listener(|this, _: &NewLocalChat, window, cx| this.new_local_thread(window, cx)))
+            .on_action(cx.listener(|this, _: &NewChatWithoutProject, window, cx| this.new_thread_without_project(None, window, cx)))
             .on_action(cx.listener(|this, _: &OpenUsage, _, cx| this.navigate(Route::Usage, cx)))
             .on_action(cx.listener(|this, _: &crate::components::pull_request::thread_pull_requests_panel::OpenLinkPullRequestDialog, window, cx| {
                 this.open_link_pull_request(window, cx)
@@ -1311,6 +1577,20 @@ impl Render for AppRoot {
             .on_action(cx.listener(|this, _: &JumpToThread8, _, cx| this.step_thread(ThreadStep::Jump(7), cx)))
             .on_action(cx.listener(|this, _: &JumpToThread9, _, cx| this.step_thread(ThreadStep::Jump(8), cx)))
             .on_action(cx.listener(|this, _: &OpenSettings, _, cx| this.open_settings(cx)))
+            // `PullRequestDetailPanel`'s window-wide copy-number shortcut: `#<number>` while the
+            // pull requests page shows one.
+            .on_action(cx.listener(|this, _: &CopyPullRequestNumber, _, cx| {
+                let number = this.main.read(cx).page_view.as_ref().and_then(|(_, page)| page.read(cx).pull_request_number);
+                if let Some(number) = number {
+                    cx.write_to_clipboard(ClipboardItem::new_string(format!("#{number}")));
+                }
+            }))
+            .on_action(|_: &UndoThreadAction, _, cx| {
+                crate::thread_undo::ThreadUndo::undo_latest(cx);
+            })
+            .on_action(cx.listener(|this, action: &RunProjectScript, _, cx| {
+                this.thread_view.update(cx, |view, cx| view.run_project_script(&action.id, cx));
+            }))
             .on_action(cx.listener(|this, _: &ToggleThreadPanel, _, cx| this.toggle_details(cx)))
             .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
                 if this.shown.is_some() && this.main.read(cx).page.is_none() {
@@ -1339,7 +1619,8 @@ impl Render for AppRoot {
             .on_action(|_: &ToggleFullScreen, window, _| window.toggle_fullscreen())
             .on_action(|_: &Minimize, window, _| window.minimize_window())
             .on_action(|_: &ZoomWindow, window, _| window.zoom_window())
-            .on_action(|_: &crate::shortcuts::commands::ToggleThemeEditor, window, cx| crate::components::settings::theme_editor_panel::ThemeEditorStore::toggle(window, cx))
+            .on_action(|_: &crate::shortcuts::commands::ToggleThemeEditor, window, cx| crate::components::settings::theme_editor_panel::ThemeEditorStore::toggle(window, cx));
+        on_commands(root, |command| THREAD_VIEW_COMMANDS.contains(&command), thread_commands)
             .child(self.layout.clone())
             .children(self.usage.as_ref().map(|(usage, _)| {
                 let router = self.router.downgrade();

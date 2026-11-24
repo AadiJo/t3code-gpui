@@ -5,6 +5,8 @@
 extern crate self as t3code_web;
 
 pub mod app_root;
+pub mod quit_hold;
+pub mod thread_undo;
 pub mod appearance_contrast;
 pub mod appearance_fonts;
 pub mod assets;

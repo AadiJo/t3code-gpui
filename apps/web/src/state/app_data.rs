@@ -70,6 +70,9 @@ pub enum DataEvent {
     Text { thread: ThreadKey, changes: Arc<[(MessageId, SharedString, bool)]> },
     /// A draft got its first message and is now a server thread.
     DraftPromoted { draft: DraftId, thread: ThreadKey },
+    /// A draft sent with "Start in background" became `thread`; `next` is the fresh draft in the
+    /// same project and workspace that takes its place on screen.
+    DraftStartedInBackground { draft: DraftId, thread: ThreadKey, next: DraftId },
     /// The server refused the launch `DraftPromoted` announced: the draft is back, with why.
     DraftLaunchFailed { draft: DraftId, thread: ThreadKey, error: SharedString },
     /// Show this thread (a fork or side chat that just arrived).
@@ -287,6 +290,9 @@ pub trait AppData: 'static {
 
     /// The main pane shows `active` now.
     fn set_active_thread(&self, active: Option<&ThreadKey>, cx: &mut App);
+
+    /// The window came to the front or went to the background; only a front window records visits.
+    fn set_window_active(&self, _active: bool, _cx: &mut App) {}
 
     /// The pull requests page's environments.
     fn pull_request_sources(&self, cx: &mut App) -> Vec<EnvironmentListSource>;

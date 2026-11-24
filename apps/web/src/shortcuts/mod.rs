@@ -30,6 +30,21 @@ pub fn init(cx: &mut App) {
     command_palette::init(cx);
     keymap::init(cx);
     ShortcutModifierStore::init(cx);
+    // Key bindings run before key listeners, so the quit chord is held back from its Quit
+    // binding here; the shortcut root's key listener then runs the quit confirmation.
+    cx.intercept_keystrokes(|event, _, cx| {
+        if is_quit_chord(&event.keystroke) {
+            cx.stop_propagation();
+        }
+    })
+    .detach();
+}
+
+/// mod+q with no other modifier: `meta` on macOS, `control` elsewhere (`QuitHold.ts`).
+fn is_quit_chord(keystroke: &gpui_kit::Keystroke) -> bool {
+    let m = keystroke.modifiers;
+    let modifier = if cfg!(target_os = "macos") { m.platform && !m.control } else { m.control && !m.platform };
+    keystroke.key == "q" && modifier && !m.alt && !m.shift
 }
 
 /// The window root for keyboard control. It carries the shortcut state's key
@@ -86,7 +101,16 @@ impl Render for ShortcutRoot {
             .key_context(key_context)
             .track_focus(&self.focus)
             .size_full()
+            .capture_key_up(|event, _, cx| {
+                if event.keystroke.key == "q" {
+                    crate::quit_hold::QuitHold::q_up(cx);
+                }
+            })
             .on_modifiers_changed(|event, window, cx| {
+                let modifier = if cfg!(target_os = "macos") { event.modifiers.platform } else { event.modifiers.control };
+                if !modifier {
+                    crate::quit_hold::QuitHold::modifier_up(cx);
+                }
                 let context = keymap::current_context(window, cx);
                 let event = ModifierEvent::ModifiersChanged(event.modifiers);
                 ShortcutModifierStore::global(cx).update(cx, |store, cx| store.apply(event, context, cx));
@@ -95,6 +119,13 @@ impl Render for ShortcutRoot {
                 if event.keystroke.is_modifier_key() {
                     return;
                 }
+                // The quit shortcut goes through the quit confirmation, not straight to Quit.
+                if is_quit_chord(&event.keystroke) {
+                    crate::quit_hold::QuitHold::key_down(event.is_held, cx);
+                    cx.stop_propagation();
+                    return;
+                }
+                crate::quit_hold::QuitHold::other_key(cx);
                 let context = keymap::current_context(window, cx);
                 let event = ModifierEvent::KeyDown(event.keystroke.modifiers);
                 ShortcutModifierStore::global(cx).update(cx, |store, cx| store.apply(event, context, cx));
@@ -116,6 +147,7 @@ impl Render for ShortcutRoot {
             .child(self.content.clone())
             .child(palette)
             .child(Toaster::view(cx))
+            .children(crate::quit_hold::quit_hold_overlay(cx))
             .child(BackgroundThreadAnnouncer::view(cx))
     }
 }
