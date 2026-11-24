@@ -904,6 +904,14 @@ impl ThreadRouteView {
                     }
                 }
             }
+            DataEvent::DraftStartedInBackground { draft, next, .. } => {
+                if self.target.as_ref() == Some(&ThreadTarget::Draft(draft.clone())) {
+                    let target = ThreadTarget::Draft(next.clone());
+                    self.target = None;
+                    self.show(target.clone(), cx);
+                    cx.emit(ThreadRouteEvent::Promoted(target));
+                }
+            }
             DataEvent::ThreadChanged(_) | DataEvent::OpenThread(_) | DataEvent::OpenSideChat { .. } => {}
         }
     }

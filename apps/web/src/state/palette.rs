@@ -450,3 +450,54 @@ async fn wait_for_project(store: t3code_client_runtime::state::EnvironmentStore,
     };
     tokio::time::timeout(std::time::Duration::from_secs(10), found).await.ok()
 }
+
+/// `scratchEnvironmentId`: the machine a projectless thread starts on: the one on screen when it
+/// offers a scratch workspace, else the only one that does.
+pub fn scratch_environment(active: Option<&ThreadKey>, cx: &App) -> Option<t3code_contracts::EnvironmentId> {
+    let environments = super::StateBridge::environments(cx).read(cx).list.clone();
+    let offers = |env: &gpui_kit::Entity<super::LiveEnvironment>| env.read(cx).config.as_ref().is_some_and(|c| c.scratch_workspace_root.is_some());
+    if let Some(id) = active.map(|key| super::shell::runtime_ids(key).0)
+        && environments.iter().any(|env| env.read(cx).environment_id() == &id && offers(env))
+    {
+        return Some(id);
+    }
+    let mut offering = environments.iter().filter(|env| offers(env));
+    match (offering.next(), offering.next()) {
+        (Some(env), None) => Some(env.read(cx).environment_id().clone()),
+        _ => None,
+    }
+}
+
+/// `startScratchThread`: finds or creates the environment's No project (scratch) project and
+/// resolves once the shell lists it, for a new draft there. Failures toast.
+pub fn start_scratch_thread(environment_id: t3code_contracts::EnvironmentId, cx: &mut App) -> Task<Option<ProjectRef>> {
+    let failed = |description: SharedString, cx: &mut App| {
+        Toaster::push(ToastData::new(ToastKind::Error, t!("Could not start without a project")).description(description), cx);
+    };
+    let Some(environment) = super::StateBridge::environment(&environment_id, cx) else { return Task::ready(None) };
+    let Some(link) = crate::live::rpc::RpcLink::new(&environment_id, cx) else {
+        failed(t!("An error occurred."), cx);
+        return Task::ready(None);
+    };
+    let store = environment.read(cx).store.clone();
+    let scratch = link.call::<ProjectsEnsureScratch>(Default::default());
+    cx.spawn(async move |cx| {
+        let result: Result<ProjectRef, SharedString> = async {
+            let project_id = scratch.await?.project_id;
+            let wait = project_id.clone();
+            let loaded = cx.update(|cx| super::StateBridge::spawn(async move { wait_for_project(store, wait).await }, cx)).await.flatten();
+            if loaded.is_none() {
+                return Err(t!("T3 Code could not open a new thread."));
+            }
+            Ok(ProjectRef { environment_id: super::shell::environment_key(&environment_id), project_id: project_key(&project_id) })
+        }
+        .await;
+        cx.update(|cx| match result {
+            Ok(project) => Some(project),
+            Err(error) => {
+                failed(error, cx);
+                None
+            }
+        })
+    })
+}

@@ -12,7 +12,7 @@ use std::time::Instant;
 
 use gpui_kit::{App, AppContext as _, Context, Entity, Subscription};
 use t3code_client_runtime::state::environment::{RESUME_CACHE_LIMIT, RESUME_TTL};
-use t3code_client_runtime::state::models::{format_ms, now_ms};
+use t3code_client_runtime::state::models::now_ms;
 use t3code_client_runtime::state::drafts::scoped_thread_key;
 
 use super::StateBridge;
@@ -47,6 +47,11 @@ pub struct ThreadViews {
     cache: VecDeque<CachedView>,
     last_switch: Option<(SwitchSource, std::time::Duration)>,
     _subscription: Option<Subscription>,
+    /// The open thread's visit tracker hears here whether the window is in the background; it
+    /// stops when this is dropped.
+    viewing: Option<tokio::sync::watch::Sender<bool>>,
+    /// The window went to the background (`ThreadVisitWatermark` `windowFocusedAtom`).
+    window_inactive: bool,
 }
 
 impl ThreadViews {
@@ -82,7 +87,21 @@ impl ThreadViews {
             self.sweep();
         }
         self._subscription = None;
+        self.viewing = None;
         cx.notify();
+    }
+
+    /// The window gained or lost focus. A background window does not count as a visit: a turn
+    /// that finishes meanwhile stays unread until the window is in front again.
+    pub fn set_window_active(&mut self, active: bool, cx: &mut Context<Self>) {
+        self.window_inactive = !active;
+        if let Some(viewing) = &self.viewing {
+            viewing.send_replace(active);
+        }
+        if active && let Some(thread) = &self.active {
+            let (environment_id, thread_id) = runtime_ids(thread.read(cx).key());
+            StateBridge::ui_state(cx).update(|ui| ui.mark_local_visit(scoped_thread_key(&environment_id, &thread_id), now_ms()));
+        }
     }
 
     /// Opens a thread and makes it the active one. Returns `None` when its environment is not
@@ -119,9 +138,13 @@ impl ThreadViews {
         self._subscription = Some(cx.observe(&thread, |_, _, cx| cx.notify()));
         self.active = Some(thread.clone());
         // The visit watermark: the server's for unread state, the local one for old servers.
-        let now = now_ms();
-        StateBridge::ui_state(cx).update(|ui| ui.mark_local_visit(scoped_thread_key(&environment_id, &thread_id), now));
-        StateBridge::spawn(async move { commands.visit(&thread_id, format_ms(now), true, None).await }, cx).detach();
+        if !self.window_inactive {
+            StateBridge::ui_state(cx).update(|ui| ui.mark_local_visit(scoped_thread_key(&environment_id, &thread_id), now_ms()));
+        }
+        // `createThreadVisitTracker`: one open, then the watermark follows the row while shown.
+        let (viewing, watch) = tokio::sync::watch::channel(!self.window_inactive);
+        self.viewing = Some(viewing);
+        StateBridge::spawn(t3code_client_runtime::state::thread_visits::run_visit_tracker(commands, thread_id, watch, |_| None), cx).detach();
         StateBridge::shell(cx).update(cx, |shell, cx| shell.set_active_thread(Some(key), cx));
         cx.notify();
         Some(thread)

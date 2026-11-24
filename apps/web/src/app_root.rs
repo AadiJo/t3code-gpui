@@ -23,6 +23,7 @@ use crate::components::right_panel_tabs::{RightPanel, RightPanelEvent, ScriptBac
 use crate::components::ui::toast::{ToastData, ToastKind, Toaster};
 use crate::components::pull_request::link_pull_request_dialog::{LinkPullRequest, LinkPullRequestClosed, LinkPullRequestDialog};
 use crate::components::ui::dialog::Modal;
+use crate::command_palette_store::OpenIntent;
 use crate::state::StateBridge;
 use crate::components::issue::issue_detail_panel::IssueDetailPanel;
 use crate::components::issue::issues_page::{IssuesPage, IssuesPageEvent};
@@ -306,6 +307,11 @@ pub struct AppRoot {
     details: DetailsVisibility,
     /// The thread under the main pane; it stays shown under modal routes.
     shown: Option<ThreadTarget>,
+    /// The window's command palette, for commands that open one of its pages.
+    palette: Option<WeakEntity<CommandPalette>>,
+    /// The window is in front; a background window records no visits (`ThreadVisitWatermark`).
+    /// Until the platform says otherwise a new window counts as in front.
+    window_active: bool,
     focus: FocusHandle,
     _subscriptions: Vec<Subscription>,
 }
@@ -404,6 +410,14 @@ impl AppRoot {
                 }
             }),
             cx.observe_global_in::<TerminalUiStateStore>(window, |this, window, cx| this.panels_changed(window, cx)),
+            cx.observe_window_activation(window, |this, window, cx| {
+                let active = window.is_window_active();
+                this.window_active = active;
+                this.data.set_window_active(active, cx);
+                if active {
+                    this.mark_shown_visited(cx);
+                }
+            }),
             // A native notification or an inbox row opened a thread.
             cx.subscribe(&NotificationInbox::global(cx), |this, _, event: &InboxEvent, cx| {
                 let InboxEvent::OpenThread(key) = event;
@@ -427,6 +441,8 @@ impl AppRoot {
             usage: None,
             details: DetailsVisibility { mode: ThreadDetailsMode::Popover, inline_open: true, popover_open: false },
             shown: None,
+            palette: None,
+            window_active: true,
             focus: cx.focus_handle(),
             _subscriptions: subscriptions,
         };
@@ -511,6 +527,7 @@ impl AppRoot {
 
     /// Handles what the window's command palette asks for.
     pub fn attach_palette(&mut self, palette: &Entity<CommandPalette>, window: &mut Window, cx: &mut Context<Self>) {
+        self.palette = Some(palette.downgrade());
         let subscription = cx.subscribe_in(palette, window, |this, _, event: &PaletteEvent, window, cx| {
             this.run_palette_event(event, window, cx);
         });
@@ -598,11 +615,7 @@ impl AppRoot {
         self.sync_sidebar_drafts(cx);
         self.data.set_active_thread(active.as_ref(), cx);
         ThreadNotificationCoordinator::apply(NotificationInput::Route(active.clone()), cx);
-        if let Some(key) = &active {
-            let visited = jiff::Timestamp::now().to_string();
-            let key = scoped_key(key);
-            UiStateStore::update_ui(cx, |ui| ui.mark_thread_visited(&key, visited));
-        }
+        self.mark_shown_visited(cx);
         self.persist_route(&route, cx);
         let panel_focused = self.right_panel.focus_handle(cx).contains_focused(window, cx);
         self.sync_panels(cx);
@@ -682,6 +695,15 @@ impl AppRoot {
     pub fn server_settings_pages(&self, cx: &mut App) -> Option<Entity<crate::components::settings::server_settings_pages::ServerSettingsPages>> {
         let model = self.data.server_settings(cx)?;
         Some(cx.new(|_| crate::components::settings::server_settings_pages::ServerSettingsPages::new(model)))
+    }
+
+    /// Records a visit to the shown thread while the window is in front.
+    fn mark_shown_visited(&self, cx: &mut Context<Self>) {
+        if let (true, Some(key)) = (self.window_active, self.shown_key()) {
+            let visited = jiff::Timestamp::now().to_string();
+            let key = scoped_key(&key);
+            UiStateStore::update_ui(cx, |ui| ui.mark_thread_visited(&key, visited));
+        }
     }
 
     fn persist_route(&self, route: &Route, cx: &mut Context<Self>) {
@@ -1083,6 +1105,54 @@ impl AppRoot {
         self.restore_focus(window, cx);
     }
 
+    /// Opens the command palette on `intent`'s page.
+    fn open_palette(&self, intent: OpenIntent, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(palette) = self.palette.as_ref().and_then(WeakEntity::upgrade) {
+            palette.update(cx, |palette, cx| palette.open(intent, window, cx));
+        }
+    }
+
+    /// `chat.new`: with one open project group (or none) a new thread where the user is, else
+    /// the palette's "New thread in…" (`shouldCreateNewThreadInCurrentProject`).
+    fn chat_new(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let snapshot = self.sidebar.read(cx).snapshot();
+        let groups = crate::components::sidebar::sidebar_project_grouping::build_project_groups(
+            &snapshot.projects,
+            snapshot.settings.grouping_mode,
+            &Default::default(),
+        );
+        let open = groups.iter().filter(|group| !group.archived).count();
+        if open == 1 || groups.is_empty() {
+            self.new_local_thread(window, cx);
+        } else {
+            self.open_palette(OpenIntent::NewThreadIn, window, cx);
+        }
+    }
+
+    /// `chat.newLocal`: a new thread in the shown thread's project, else the default one; with
+    /// neither, the palette asks for a project (`startNewThreadFromContext`).
+    fn new_local_thread(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        match self.shown_project(cx).or_else(|| self.data.most_recent_project(cx)) {
+            Some(project) => self.new_thread(Some(project), window, cx),
+            None => self.open_palette(OpenIntent::NewThreadIn, window, cx),
+        }
+    }
+
+    /// `chat.newWithoutProject`: a new thread in the machine's No project (scratch) project.
+    /// `environment` is the machine the palette row named, else the one on screen.
+    fn new_thread_without_project(&mut self, environment: Option<t3code_contracts::EnvironmentId>, window: &mut Window, cx: &mut Context<Self>) {
+        if !StateBridge::is_running(cx) {
+            return self.new_thread(None, window, cx);
+        }
+        let Some(environment) = environment.or_else(|| crate::state::palette::scratch_environment(self.shown_key().as_ref(), cx)) else { return };
+        let task = crate::state::palette::start_scratch_thread(environment, cx);
+        cx.spawn_in(window, async move |this, cx| {
+            let Some(project) = task.await else { return };
+            _ = this.update_in(cx, |this, window, cx| this.new_thread(Some(project), window, cx));
+        })
+        .detach();
+    }
+
     /// Opens settings on General, as the sidebar gear and the palette do.
     fn open_settings(&self, cx: &mut App) {
         self.navigate(Route::settings(SettingsPath::General), cx);
@@ -1118,7 +1188,10 @@ impl AppRoot {
         match event {
             PaletteEvent::OpenThread { thread, .. } => self.navigate(Route::Thread(thread.clone()), cx),
             PaletteEvent::NewThreadIn(project) => self.new_thread(Some(project.clone()), window, cx),
-            PaletteEvent::NewThreadWithoutProject(_) => self.new_thread(None, window, cx),
+            PaletteEvent::NewThreadWithoutProject(environment) => {
+                let environment = t3code_contracts::EnvironmentId::new(environment.0.as_ref());
+                self.new_thread_without_project(Some(environment), window, cx)
+            }
             PaletteEvent::OpenSettings => self.open_settings(cx),
             PaletteEvent::OpenSetting(id) => {
                 let panel = SettingsPanel::from_slug(id).unwrap_or(SettingsPanel::General);
@@ -1252,6 +1325,16 @@ impl AppRoot {
         if let DataEvent::OpenThread(key) = event {
             return self.navigate(Route::Thread(key.clone()), cx);
         }
+        if let DataEvent::DraftStartedInBackground { thread, .. } = event {
+            let (router, thread) = (self.router.downgrade(), thread.clone());
+            let toast = ToastData::new(ToastKind::Success, t!("Started in background"))
+                .timeout(std::time::Duration::from_secs(5))
+                .action(t!("Open", context = "verb, opens the background thread"), move |_, cx| {
+                    _ = router.update(cx, |router, cx| router.navigate(Route::Thread(thread.clone()), cx));
+                });
+            Toaster::push(toast, cx);
+            return;
+        }
         if let DataEvent::OpenSideChat { parent, side_chat } = event {
             let side_chat_id = side_chat.thread_id.0.to_string();
             self.right_panels.update(cx, |store, cx| {
@@ -1370,9 +1453,9 @@ impl Render for AppRoot {
             }))
             .on_action(cx.listener(|this, _: &NavigateBack, _, cx| this.router.update(cx, |r, cx| r.back(cx))))
             .on_action(cx.listener(|this, _: &NavigateForward, _, cx| this.router.update(cx, |r, cx| r.forward(cx))))
-            .on_action(cx.listener(|this, _: &NewChat, window, cx| this.new_thread(None, window, cx)))
-            .on_action(cx.listener(|this, _: &NewLocalChat, window, cx| this.new_thread(None, window, cx)))
-            .on_action(cx.listener(|this, _: &NewChatWithoutProject, window, cx| this.new_thread(None, window, cx)))
+            .on_action(cx.listener(|this, _: &NewChat, window, cx| this.chat_new(window, cx)))
+            .on_action(cx.listener(|this, _: &NewLocalChat, window, cx| this.new_local_thread(window, cx)))
+            .on_action(cx.listener(|this, _: &NewChatWithoutProject, window, cx| this.new_thread_without_project(None, window, cx)))
             .on_action(cx.listener(|this, _: &OpenUsage, _, cx| this.navigate(Route::Usage, cx)))
             .on_action(cx.listener(|this, _: &PreviousThread, _, cx| this.step_thread(ThreadStep::Previous, cx)))
             .on_action(cx.listener(|this, _: &NextThread, _, cx| this.step_thread(ThreadStep::Next, cx)))
