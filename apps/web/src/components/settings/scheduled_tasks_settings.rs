@@ -352,7 +352,7 @@ impl Render for ScheduledTaskEditor {
             .prompt
             .get_or_insert_with(|| {
                 let initial = d.prompt.clone();
-                cx.new(|cx| TextareaState::new(window, cx).auto_grow(3, 12).placeholder(t!("What should the agent do each time this runs?")).default_value(initial))
+                cx.new(|cx| TextareaState::new(window, cx).auto_grow(1, 12).placeholder(t!("What should the agent do each time this runs?")).default_value(initial))
             })
             .clone();
         let webhook_denied = managed_capability_denial(snapshot.managed_policy.as_deref(), ManagedCapability::WebhookTasks);

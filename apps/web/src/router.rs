@@ -111,7 +111,9 @@ impl SettingsPanel {
             Self::ScheduledTasks => SettingsPath::ScheduledTasks,
             Self::SourceControl => SettingsPath::SourceControl,
             Self::Worktrees => SettingsPath::Worktrees,
-            Self::Connections | Self::Secrets => SettingsPath::Connections,
+            Self::Connections => SettingsPath::Connections,
+            // The secrets feature is off, so `/settings/secrets` redirects to General as the web's route does.
+            Self::Secrets => SettingsPath::General,
             Self::Access => SettingsPath::Access,
             Self::Maintenance | Self::Diagnostics => SettingsPath::Maintenance,
             Self::Labs => SettingsPath::Labs,

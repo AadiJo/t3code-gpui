@@ -50,15 +50,19 @@ const LAST_ENABLED_PROJECT_GROUPING_MODE_KEY: &str = "t3code:last-enabled-projec
 pub fn general_panel(cx: &App) -> AnyElement {
     let settings = ClientSettingsStore::get(cx).clone();
     let notifications = SettingsSection::new(t!("Notifications"))
-        .child(client_select(
-            "thread-notifications",
-            t!("System alerts when a thread finishes, fails, or needs input or approval. Applies to this device while T3 Code is open."),
-            SelectWidth::Rem(14.),
-            notification_mode_options(),
-            |s| &s.notification_mode,
-            |s, v| s.notification_mode = v,
-            cx,
-        ))
+        // `NotificationSettings`: the select alone, with no reset action.
+        .child({
+            let options = notification_mode_options();
+            let selected = options.iter().position(|(value, _)| *value == settings.notification_mode).unwrap_or(0);
+            let labels: std::rc::Rc<[SharedString]> = options.iter().map(|(_, label)| label.clone()).collect();
+            let values: std::rc::Rc<[_]> = options.into_iter().map(|(value, _)| value).collect();
+            SettingsRow::new(setting_title("thread-notifications"))
+                .description(t!("System alerts when a thread finishes, fails, or needs input or approval. Applies to this device while T3 Code is open."))
+                .control(super::settings_controls::select_control("select-thread-notifications".into(), SelectWidth::Rem(14.), labels, selected, move |index, _, cx| {
+                    let value = values[index].clone();
+                    ClientSettingsStore::update(cx, |s| s.notification_mode = value);
+                }))
+        })
         .child(client_switch(
             "in-app-notifications",
             t!("Show a toast when another thread finishes, fails, or needs input or approval while this app has focus."),
@@ -593,9 +597,9 @@ const PRIVACY_POLICY_URL: &str = "https://t3.codes/privacy-policy";
 const APP_STORE_URL: &str = "https://apps.apple.com/us/app/t3-code-remote-claude-more/id6787819824";
 const PLAY_STORE_URL: &str = "https://play.google.com/store/apps/details?id=com.t3tools.t3code";
 
-/// `AboutSettingsPanel`. The desktop self-updater is not built, so the
-/// version row has no "Check for Updates" button; the update track is
-/// saved for it. The Welcome page row needs a primary environment, which
+/// `AboutSettingsPanel`. This app has no self-updater, so the version row
+/// shows what the web shows with no update state (`canCheckForUpdate(null)`
+/// is false): "Check for Updates", disabled. The update track is saved for the servers. The Welcome page row needs a primary environment, which
 /// this remote-only app does not have, so it is hidden as on the web.
 pub fn about_panel(on_open_licenses: Rc<dyn Fn(&mut Window, &mut App)>, cx: &App) -> AnyElement {
     let channel = DesktopSettingsStore::get(cx).update_channel;
@@ -627,7 +631,8 @@ pub fn about_panel(on_open_licenses: Rc<dyn Fn(&mut Window, &mut App)>, cx: &App
         .child(
             SettingsRow::new(t!("Version"))
                 .title_suffix(version_copy_button(cx))
-                .description(t!("Current version of the application.")),
+                .description(t!("Current version of the application."))
+                .control(Button::new("check-for-updates").variant(ButtonVariant::Outline).size(ButtonSize::Sm).label(t!("Check for Updates")).disabled(true)),
         )
         .child(track_row)
         .child(
