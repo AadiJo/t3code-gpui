@@ -13,9 +13,12 @@
 //            learned routes and their kinds, the cleartext rule, the 500 ms head start past a
 //            silent preferred route, promotion back to it, and a route order the user changed
 //   offline  run inside a network namespace with no route: the app reports itself offline
+//   wake     the open socket stalls (as one the host dropped while a laptop slept) while the
+//            host still answers new requests; the probe a wake sends replaces it within a
+//            second, instead of waiting out the socket's 15 s silence timer
 //
 // `T3_PAIR_CMD` prints a fresh pairing credential.
-// Usage: states-check <states|routing|offline> <out-dir> <data-dir>
+// Usage: states-check <states|routing|offline|wake> <out-dir> <data-dir>
 use std::fmt::Write as _;
 use std::io::{Read as _, Write as _};
 use std::path::PathBuf;
@@ -220,7 +223,7 @@ fn active_route(state: &ConnectionsState) -> Option<String> {
 
 fn main() -> anyhow::Result<()> {
     let mut args = std::env::args().skip(1);
-    let usage = "usage: states-check <states|routing|offline> <out-dir> <data-dir>";
+    let usage = "usage: states-check <states|routing|offline|wake> <out-dir> <data-dir>";
     let phase = args.next().context(usage)?;
     let out = PathBuf::from(args.next().context(usage)?);
     let data_dir = PathBuf::from(args.next().context(usage)?);
@@ -265,6 +268,7 @@ fn main() -> anyhow::Result<()> {
         "states" => run_states(&mut check),
         "routing" => run_routing(&mut check),
         "offline" => run_offline(&mut check),
+        "wake" => run_wake(&mut check),
         other => bail!("unknown phase {other}"),
     };
     if let Err(error) = &result {
@@ -447,5 +451,24 @@ fn run_offline(check: &mut Check) -> anyhow::Result<()> {
     })?;
     check.open_row(false, true)?;
     check.shot("s08-offline.png")?;
+    Ok(())
+}
+
+fn run_wake(check: &mut Check) -> anyhow::Result<()> {
+    let direct = std::env::var("T3_DIRECT_URL").context("T3_DIRECT_URL")?;
+    let port = std::env::var("T3_SERVER_PORT").unwrap_or_else(|_| "39410".into());
+    check.control("POST", &format!("/direct/up?port={port}"))?;
+    check.pair(&direct)?;
+    check.wait("connected", Duration::from_secs(30), connected)?;
+    check.wait("latency measured", Duration::from_secs(40), |s| s.environments[0].latency.is_some())?;
+    let generation = check.env(|e| e.status.as_ref().map_or(0, |s| s.generation));
+    check.control("POST", "/direct/stall")?;
+    // What a wake (or a network change) sends every supervisor.
+    check.cx.update(|cx| ConnectionRuntime::global(cx).registry().broadcast(t3code_client_runtime::connection::SupervisorSignal::Wakeup));
+    let took = check.wait("a new socket replaced the stalled one", Duration::from_secs(20), |s| {
+        s.environments[0].status.as_ref().is_some_and(|st| st.phase == ConnectionPhase::Connected && st.generation > generation)
+    })?;
+    check.expect(took < Duration::from_secs(3), format!("replaced {:.2}s after the wake (socket timer: 15 s)", took.as_secs_f64()));
+    check.control("POST", "/direct/up")?;
     Ok(())
 }

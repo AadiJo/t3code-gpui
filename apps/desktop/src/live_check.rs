@@ -913,7 +913,8 @@ fn run_import(check: &mut Check) -> anyhow::Result<()> {
     check.wait(Duration::from_millis(300));
     check.shot("31-import-done.png")?;
     let labels = check.cx.update(|cx| ConnectionRuntime::state(cx).read(cx).environments.iter().map(|e| e.entry.label.clone()).collect::<Vec<_>>());
-    check.check("the fixture catalog's environments arrive", labels.len() == 4, format!("{labels:?}"));
+    // Without T3 Connect no session is adopted, so the relay-only fixture environment stays behind.
+    check.check("the fixture catalog's environments arrive", labels.len() == 3, format!("{labels:?}"));
     let (halves, graphite_applied, catalog) = check.cx.update(|cx| {
         use t3code_web::hooks::use_theme::ThemeStore;
         use t3code_web::theme_palette::Appearance;

@@ -5,7 +5,8 @@
 // every install file before and after and fails if one changed.
 //
 //   first    fresh data dir: settings and localStorage arrive, the Keychain notice shows, the
-//            catalog is decrypted with the fixture key and its environments saved; the
+//            catalog is decrypted with the fixture key and its environments saved (T3 Connect
+//            routes only with a session to adopt, so none here); the
 //            device-bound route reads like a signed-out route with a way to pair again
 //   second   same data dir, after the install's client-settings.json changed: the change is
 //            applied, nothing is imported twice, no environment or route is duplicated
@@ -221,7 +222,10 @@ fn run_first(check: &mut Check) -> anyhow::Result<()> {
     check.shot("l02-first-launch-imported.png")?;
     let (ids, routes) = check.catalog();
     check.note(format!("{} environments, routes {routes:?}", ids.len()));
-    check.check("the fixture's four portable environments arrive", ids.len() == 4, format!("{ids:?}"));
+    // This check runs without T3 Connect, so no session is adopted and the relay-only "Cloud box"
+    // and Desk's relay route stay behind (signing in lists them again with Add).
+    check.check("the fixture's three directly reachable environments arrive", ids.len() == 3, format!("{ids:?}"));
+    check.check("no T3 Connect route without a session to use it", !routes.iter().any(|r| r.ends_with(" relay")), format!("{routes:?}"));
     let font = interface_font(check);
     check.check("the owner's interface size (15) applies", font.contains("15"), &font);
     check.open_environments()?;
@@ -284,7 +288,7 @@ fn run_second(check: &mut Check) -> anyhow::Result<()> {
     let mut unique_routes = routes.clone();
     unique_routes.sort();
     unique_routes.dedup();
-    check.check("no environment was imported twice", ids.len() == 4, format!("{ids:?}"));
+    check.check("no environment was imported twice", ids.len() == 3, format!("{ids:?}"));
     check.check("no route was duplicated", unique_routes.len() == routes.len(), format!("{} routes", routes.len()));
     let expected = std::env::var("EXPECT_INTERFACE_SIZE").unwrap_or_default();
     let font = interface_font(check);

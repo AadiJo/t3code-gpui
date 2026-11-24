@@ -783,8 +783,9 @@ async fn watch_account(
             CloudAccountState::SignedIn(account) => Some(account.user_id.clone()),
             _ => None,
         };
+        // Every confirmed signed-out notice cleans up (removal is idempotent): routes imported
+        // after an earlier notice must not wait on a sign-in that is not coming.
         let changed_account = match (&previous, &current) {
-            (Some(CloudAccountState::SignedOut), CloudAccountState::SignedOut) => false,
             (_, CloudAccountState::SignedOut) => true,
             (Some(before @ CloudAccountState::SignedIn(_)), CloudAccountState::SignedIn(_)) => user(before) != user(&current),
             _ => false,

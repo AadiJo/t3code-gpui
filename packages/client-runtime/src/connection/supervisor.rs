@@ -13,7 +13,7 @@ use super::catalog::{CatalogEntry, ConnectionRoute};
 use super::driver::{self, ConnectionContext, RoutePreflight};
 use super::model::{
     AttemptStage, ConnectionError, ConnectionPhase, ConnectionStatus, DPOP_ACCESS_TOKEN_REFRESH_SKEW_MS,
-    NetworkStatus,
+    NetworkStatus, TransientReason,
 };
 use super::routes::{ReportedEndpoint, route_id};
 use crate::authorization::HttpAuthorization;
@@ -36,6 +36,13 @@ const BETTER_ROUTE_CHECK_INTERVAL: Duration = Duration::from_secs(60);
 const BETTER_ROUTE_COOLDOWN: Duration = Duration::from_secs(300);
 /// A dead route's checks back off up to this.
 const SILENT_ROUTE_BACKOFF_MAX: Duration = Duration::from_secs(1_800);
+/// A wake probe this long unanswered asks the host for its descriptor over a fresh request.
+const WAKE_PROBE_GRACE: Duration = Duration::from_millis(500);
+/// How long a wake probe may stay unanswered: loopback and LAN, elsewhere.
+const WAKE_PROBE_DEADLINE_NEARBY: Duration = Duration::from_secs(3);
+const WAKE_PROBE_DEADLINE: Duration = Duration::from_secs(15);
+/// Elsewhere, a host that answers while its socket is silent gets this long from the check's start.
+const WAKE_SILENT_SOCKET_GRACE: Duration = Duration::from_millis(2_500);
 
 /// Retry delay for the `failure`th failure (0-based): exponential with
 /// jitter in the upper half, capped at 5 minutes.
@@ -357,13 +364,26 @@ impl Supervisor {
             BETTER_ROUTE_CHECK_INTERVAL,
         );
         let mut switching_to: Option<String> = None;
+        let mut wake_probe: Option<std::pin::Pin<Box<dyn std::future::Future<Output = bool> + Send>>> = None;
         let ended = loop {
             tokio::select! {
                 error = session.ended() => {
                     break Ended::Failed { error, established: true, stable: connected_at.elapsed() >= BACKOFF_RESET_AFTER };
                 }
+                dead = async { wake_probe.as_mut().expect("guarded").await }, if wake_probe.is_some() => {
+                    wake_probe = None;
+                    if dead {
+                        let error = ConnectionError::transient(TransientReason::Transport, "The connection went silent after the device woke.");
+                        break Ended::Failed { error, established: true, stable: connected_at.elapsed() >= BACKOFF_RESET_AFTER };
+                    }
+                }
                 signal = self.signals.recv() => {
                     let Some(signal) = signal else { renewal.abort(); return None };
+                    // Foregrounding, a wake, a network change or a retry probes the session;
+                    // only a failed probe replaces it.
+                    if matches!(signal, SupervisorSignal::Wakeup | SupervisorSignal::Retry) && wake_probe.is_none() {
+                        wake_probe = Some(Box::pin(probe_after_wake(session.clone())));
+                    }
                     let reset_retry = self.apply(signal);
                     // A wakeup, retry or offline report keeps a working session (offline
                     // reports are often wrong, e.g. for a loopback host); only intent ends it.
@@ -429,6 +449,37 @@ impl Supervisor {
             }
         }
         ready
+    }
+}
+
+/// Whether a session is dead after a wake (`connection-runtime.md`). The socket's own 15 s
+/// silence timer runs on the monotonic clock, which macOS stops while asleep, so a socket the
+/// host dropped during sleep would otherwise linger. A `server.probe` unanswered after 500 ms
+/// asks for the host's descriptor over a fresh request: if the host answers while the socket
+/// stays silent, the socket is dead (at once on loopback and LAN, 2.5 s after the check started
+/// elsewhere); without that evidence the probe deadline decides (3 s nearby, 15 s elsewhere).
+async fn probe_after_wake(session: Arc<RpcSession>) -> bool {
+    let started = Instant::now();
+    let http = session.prepared.http_base_url.clone();
+    let nearby = super::routes::is_nearby_address(&http);
+    let call = session.client.call::<t3code_contracts::rpc::methods::ServerProbe>(t3code_contracts::wire::Empty);
+    tokio::pin!(call);
+    if let Ok(answer) = tokio::time::timeout(WAKE_PROBE_GRACE, &mut call).await {
+        return answer.is_err();
+    }
+    let deadline = started + if nearby { WAKE_PROBE_DEADLINE_NEARBY } else { WAKE_PROBE_DEADLINE };
+    let descriptor = crate::environment::fetch_descriptor(&http, deadline.saturating_duration_since(Instant::now()));
+    tokio::select! {
+        answer = &mut call => answer.is_err(),
+        fetched = descriptor => {
+            let silent_deadline = if fetched.is_ok() {
+                if nearby { return true }
+                started + WAKE_SILENT_SOCKET_GRACE
+            } else {
+                deadline
+            };
+            !matches!(tokio::time::timeout_at(silent_deadline, &mut call).await, Ok(Ok(_)))
+        }
     }
 }
 
