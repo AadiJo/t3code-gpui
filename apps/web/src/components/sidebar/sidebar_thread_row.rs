@@ -278,7 +278,8 @@ impl Sidebar {
             .items_center()
             .justify_end()
             .text_xs()
-            .line_height(colors.r(16.));
+            .line_height(colors.r(16.))
+            .font_features(super::style::tabular_figures());
         let woke = state.top == Some(TopStatus::Woke);
         let label = match state.top {
             Some(top) => {
@@ -605,7 +606,8 @@ impl Sidebar {
             .items_center()
             .justify_end()
             .text_xs()
-            .line_height(colors.r(16.));
+            .line_height(colors.r(16.))
+            .font_features(super::style::tabular_figures());
         let content = if action == SlimAction::Wake
             && let Some(until) = thread.snoozed_until
         {

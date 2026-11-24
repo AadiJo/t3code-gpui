@@ -741,8 +741,11 @@ impl TextLayout {
                 for line in &lines {
                     let line_size = line.size(line_height);
                     size.height += line_size.height;
-                    size.width = size.width.max(line_size.width).ceil();
+                    size.width = size.width.max(line_size.width);
                 }
+                // Chromium keeps text widths in 1/64px layout units; a whole-pixel ceiling
+                // pushes right-aligned text up to 1px left.
+                size.width = Pixels((size.width.0 * 64.).ceil() / 64.);
 
                 element_state.0.borrow_mut().replace(TextLayoutInner {
                     lines,
