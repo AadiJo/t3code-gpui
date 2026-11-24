@@ -671,17 +671,19 @@ impl DiffPanel {
         let mut menu = MenuPopup::new()
             .item(
                 MenuItem::new(t!("Changes"))
+                    .id("scope-branch")
                     .kind(MenuItemKind::Radio(matches!(selection, DiffPanelSelection::Branch { .. })))
                     .on_hover(hover(None))
                     .on_select(pick(Rc::new(|store, thread| store.select_git_scope(thread, GitScope::Branch)))),
             )
             .item(
                 MenuItem::new(t!("Uncommitted"))
+                    .id("scope-unstaged")
                     .kind(MenuItemKind::Radio(selection == DiffPanelSelection::Unstaged))
                     .on_hover(hover(None))
                     .on_select(pick(Rc::new(|store, thread| store.select_git_scope(thread, GitScope::Unstaged)))),
             );
-        let mut latest_item = MenuItem::new(t!("Latest turn")).kind(MenuItemKind::Radio(latest_checked)).on_hover(hover(None));
+        let mut latest_item = MenuItem::new(t!("Latest turn")).id("scope-latest").kind(MenuItemKind::Radio(latest_checked)).on_hover(hover(None));
         if let Some(latest) = latest {
             latest_item = latest_item.on_select(pick(Rc::new(move |store, thread| store.select_turn(thread, &latest, None))));
         }
@@ -716,6 +718,7 @@ impl DiffPanel {
                         let id = turn.turn_id.clone();
                         popup = popup.item(
                             MenuItem::new(t!("Turn {count}", count = turn.turn_count))
+                                .id(format!("scope-turn-{}", turn.turn_id))
                                 .kind(MenuItemKind::Radio(checked))
                                 .detail(turn.completed_label.clone())
                                 .on_select(pick(Rc::new(move |store, thread| store.select_turn(thread, &id, None)))),
@@ -729,6 +732,7 @@ impl DiffPanel {
                         let short: SharedString = commit.sha.chars().take(7).collect::<String>().into();
                         popup = popup.item(
                             MenuItem::new(commit.subject.clone())
+                                .id(format!("scope-commit-{}", commit.sha))
                                 .kind(MenuItemKind::Radio(checked))
                                 .detail(format!("{}  {short}", commit.relative_label))
                                 .on_select(pick(Rc::new(move |store, thread| store.select_commit(thread, &sha)))),

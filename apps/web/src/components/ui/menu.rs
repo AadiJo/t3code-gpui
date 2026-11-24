@@ -43,6 +43,7 @@ pub struct MenuItem {
     inset: bool,
     highlighted: bool,
     detail: Option<SharedString>,
+    id: Option<SharedString>,
     on_select: Option<Action>,
     on_hover: Option<Rc<dyn Fn(&bool, &mut Window, &mut App) + 'static>>,
 }
@@ -59,6 +60,7 @@ impl MenuItem {
             inset: false,
             highlighted: false,
             detail: None,
+            id: None,
             on_select: None,
             on_hover: None,
         }
@@ -104,6 +106,12 @@ impl MenuItem {
 
     pub fn on_select(mut self, action: impl Fn(&mut Window, &mut App) + 'static) -> Self {
         self.on_select = Some(Rc::new(action));
+        self
+    }
+
+    /// A stable element id, for scripted checks; rows are otherwise numbered.
+    pub fn id(mut self, id: impl Into<SharedString>) -> Self {
+        self.id = Some(id.into());
         self
     }
 
@@ -225,7 +233,7 @@ fn render_item(theme: &AppTheme, index: usize, item: MenuItem, dismiss: Option<A
     let radio_checked = item.kind == MenuItemKind::Radio(true);
     let leading_check = matches!(item.kind, MenuItemKind::Checkbox(_));
     let row = div()
-        .id(("menu-item", index))
+        .id(item.id.clone().map_or_else(|| ElementId::from(("menu-item", index)), ElementId::from))
         .flex()
         .items_center()
         .gap(theme.sp(2.))
