@@ -13,7 +13,7 @@ use super::TextStyleExt as _;
 use super::sheet::SheetSide;
 use super::button::{Button, ButtonSize, ButtonVariant};
 use crate::appearance_fonts::{TextSize, weight};
-use crate::components::icons::IconName;
+use crate::components::icons::{Icon, IconName, IconSize, IconSource};
 use crate::{ActiveAppTheme as _, AppTheme};
 
 type Close = Rc<dyn Fn(&mut Window, &mut App) + 'static>;
@@ -22,6 +22,9 @@ type Close = Rc<dyn Fn(&mut Window, &mut App) + 'static>;
 #[derive(IntoElement)]
 pub struct DialogSurface {
     title: SharedString,
+    title_icon: Option<IconSource>,
+    /// `max-w-*` in rem; `max-w-lg` (32rem) unless set.
+    max_width_rem: f32,
     description: Option<SharedString>,
     children: Vec<AnyElement>,
     footer: Vec<AnyElement>,
@@ -30,7 +33,27 @@ pub struct DialogSurface {
 
 impl DialogSurface {
     pub fn new(title: impl Into<SharedString>) -> Self {
-        Self { title: title.into(), description: None, children: Vec::new(), footer: Vec::new(), on_close: None }
+        Self {
+            title: title.into(),
+            title_icon: None,
+            max_width_rem: 32.,
+            description: None,
+            children: Vec::new(),
+            footer: Vec::new(),
+            on_close: None,
+        }
+    }
+
+    /// A 1rem icon before the title (`<Icon className="me-2 size-4" />`).
+    pub fn title_icon(mut self, icon: impl Into<IconSource>) -> Self {
+        self.title_icon = Some(icon.into());
+        self
+    }
+
+    /// The card's `max-w-*` in rem (`max-w-xl` is 36).
+    pub fn max_width_rem(mut self, rem: f32) -> Self {
+        self.max_width_rem = rem;
+        self
     }
 
     pub fn description(mut self, description: impl Into<SharedString>) -> Self {
@@ -79,7 +102,7 @@ impl RenderOnce for DialogSurface {
         let has_panel = !self.children.is_empty();
         dialog_glass(theme)
             .w_full()
-            .max_w(theme.rem(32.))
+            .max_w(theme.rem(self.max_width_rem))
             .child(
                 div()
                     .flex()
@@ -89,8 +112,13 @@ impl RenderOnce for DialogSurface {
                     .when(has_panel, |h| h.pb(sp(3.)))
                     .child(
                         div()
+                            .flex()
+                            .items_center()
                             .ui_text(theme, TextSize::Xl, weight::SEMIBOLD)
                             .line_height(px(TextSize::Xl.size(theme.fonts.interface) * 1.375))
+                            .children(self.title_icon.map(|icon| {
+                                div().mr(sp(2.)).child(Icon::new(icon).size(IconSize::Custom(theme.rem(1.))))
+                            }))
                             .child(self.title),
                     )
                     .children(self.description.map(|d| {

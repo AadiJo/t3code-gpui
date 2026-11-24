@@ -497,7 +497,7 @@ impl Render for ChatView {
             ));
 
         let header_height = self.header_height;
-        let details_padding = cx.app_theme().rem(0.5);
+        let details_padding = crate::ActiveAppTheme::app_theme(&**cx).rem(0.5);
         let details = self.details.clone().map(|details| {
             div()
                 .id("thread-details-popover")

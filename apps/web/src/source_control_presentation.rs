@@ -5,7 +5,7 @@
 use gpui_kit::SharedString;
 use t3code_contracts::SourceControlProviderInfo;
 
-use crate::components::icons::IconName;
+use crate::components::icons::{BrandIcon, IconName, IconSource};
 
 /// Selects the noun in translated sentences (`changeRequestTerm.ts`): every
 /// sentence is written once per host term, so a language can inflect the whole thing.
@@ -89,8 +89,9 @@ pub struct SourceControlPresentation {
     pub definition: SourceControlDefinition,
     pub provider_name: SharedString,
     pub terminology: ChangeRequestTerminology,
-    /// Host artwork is not bundled; every host draws the pull request glyph.
-    pub icon: IconName,
+    /// The host's mark (`sourceControlIcon`); a host without artwork draws the
+    /// pull request glyph.
+    pub icon: IconSource,
 }
 
 /// `getSourceControlPresentation`.
@@ -104,6 +105,21 @@ pub fn source_control_presentation(provider: Option<&SourceControlProviderInfo>)
         definition,
         provider_name: SharedString::from(provider_name.to_owned()),
         terminology: definition.terminology,
-        icon: IconName::GitPullRequestArrow,
+        icon: source_control_icon(definition),
     }
+}
+
+/// `sourceControlIcon`: each built-in host's mark from its definition's artwork.
+pub fn source_control_icon(definition: SourceControlDefinition) -> IconSource {
+    let brand = match definition.kind {
+        "github" => BrandIcon::SourceControlGitHub,
+        "cursor-origin" => BrandIcon::SourceControlCursorOrigin,
+        "gitlab" => BrandIcon::SourceControlGitLab,
+        "gitcafe" => BrandIcon::SourceControlGitCafe,
+        "forgejo" => BrandIcon::SourceControlForgejo,
+        "bitbucket" => BrandIcon::SourceControlBitbucket,
+        "azure-devops" => BrandIcon::SourceControlAzureDevOps,
+        _ => return IconName::GitPullRequestArrow.into(),
+    };
+    brand.into()
 }

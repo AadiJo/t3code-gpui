@@ -223,6 +223,8 @@ impl Render for PullRequestThreadDialog {
             "Checkout {term, select, mr {merge request} cr {change request} other {pull request}}",
             term = term
         ))
+        .title_icon(self.presentation.icon)
+        .max_width_rem(36.)
         .description(t!(
             "Resolve a {provider} {term, select, mr {merge request} cr {change request} other {pull request}}, then create the draft thread in the main repo or in a dedicated worktree.",
             provider = self.presentation.provider_name.as_ref(),

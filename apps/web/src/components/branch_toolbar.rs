@@ -268,12 +268,10 @@ impl BranchToolbar {
 
     fn picker_options(&self, cx: &App) -> BranchPickerOptions {
         let blocked: Vec<String> = self.refs().iter().filter(|r| self.is_blocked(r)).map(|r| r.name.clone()).collect();
-        let term = source_control_presentation(
+        let presentation = source_control_presentation(
             self.model.read(cx).status.as_ref().and_then(|s| s.source_control_provider.as_ref()),
-        )
-        .terminology
-        .term_kind()
-        .as_str();
+        );
+        let term = presentation.terminology.term_kind().as_str();
         let status = match &self.refs {
             None => Some(t!("Loading refs...")),
             Some(r) if r.next_cursor.is_some() => Some(t!(
@@ -291,6 +289,7 @@ impl BranchToolbar {
             can_create_ref: self.props.can_change_thread_branch && !self.selecting_worktree_base(),
             can_checkout_pull_request: self.props.can_change_thread_branch && self.props.can_checkout_pull_request,
             term,
+            host_icon: Some(presentation.icon),
             start_from_origin: self.selecting_worktree_base().then_some(self.props.start_from_origin),
             notice: (!blocked.is_empty()).then(worktree_change_blocked),
             status,

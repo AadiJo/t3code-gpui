@@ -17,7 +17,7 @@ use gpui_kit::{
 use t3code_contracts::VcsRef;
 
 use super::branch_toolbar_logic::{sanitize_new_ref_name, should_include_branch_picker_item};
-use super::icons::{Icon, IconName, IconSize};
+use super::icons::{Icon, IconName, IconSize, IconSource};
 use super::ui::popover::glass_surface;
 use super::ui::switch::{Switch, SwitchSize};
 use super::ui::tooltip::tooltip;
@@ -98,6 +98,8 @@ pub struct BranchPickerOptions {
     pub can_checkout_pull_request: bool,
     /// Change request noun for the checkout item.
     pub term: &'static str,
+    /// The host's mark on the checkout item; the pull request glyph when unset.
+    pub host_icon: Option<IconSource>,
     /// `Some(on)` shows the "Start from remote" switch.
     pub start_from_origin: Option<bool>,
     /// Shown above the status line ("Stop the current turn to switch worktrees.").
@@ -282,7 +284,11 @@ impl BranchPicker {
                 .min_w_0()
                 .items_center()
                 .gap(px(8.))
-                .child(Icon::new(IconName::GitPullRequestArrow).size(IconSize::Sm).color(c.muted_foreground))
+                .child(
+                    Icon::new(self.options.host_icon.unwrap_or(IconName::GitPullRequestArrow.into()))
+                        .size(IconSize::Custom(theme.rem(0.875)))
+                        .color(c.muted_foreground),
+                )
                 .child(
                     div()
                         .flex()

@@ -335,6 +335,13 @@ brand_icons! {
     MacScreenRecording => "mac-screen-recording",
     Meta => "meta",
     Ollama => "ollama",
+    SourceControlAzureDevOps => "source-control-azure-devops",
+    SourceControlBitbucket => "source-control-bitbucket",
+    SourceControlCursorOrigin => "source-control-cursor-origin",
+    SourceControlForgejo => "source-control-forgejo",
+    SourceControlGitCafe => "source-control-gitcafe",
+    SourceControlGitHub => "source-control-github",
+    SourceControlGitLab => "source-control-gitlab",
     OnePassword => "one-password",
     OpenAi => "open-ai",
     OpenRouter => "open-router",
@@ -362,7 +369,7 @@ impl BrandIcon {
     pub const fn paint(self) -> BrandPaint {
         use BrandIcon::*;
         match self {
-            Android | Anthropic | Apple | Linear | Linux | Ollama | OnePassword | OpenAi
+            Android | Anthropic | Apple | Linear | Linux | Ollama | OnePassword | OpenAi | SourceControlGitHub | SourceControlCursorOrigin
             | OpenRouter | Trae | Ultrafast | Zed => BrandPaint::Current,
             AcpRegistry => BrandPaint::Fixed { light: 0x000000, dark: 0xffffff },
             Cursor => BrandPaint::Fixed { light: 0x26251e, dark: 0xedecec },
