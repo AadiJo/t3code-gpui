@@ -2,7 +2,9 @@
 //!
 //! - One-shot transitions (`data-starting-style` and `data-ending-style` in
 //!   the web's primitives): [`Transition`] runs GPUI's animation element for
-//!   a finite duration, repainting each frame only until it ends.
+//!   a finite duration, repainting each frame only until it ends. An exit
+//!   ([`Transition::exit`]) keeps drawing an element's last frame after it
+//!   stops being rendered, until its transition ends.
 //! - Stepped pulses: the app's pulses hold a value, step to another in a few
 //!   discrete frames, hold, and step back (`index.css` keyframes with
 //!   `steps(n)`). A pulse re-renders its view only at those step boundaries.
@@ -15,7 +17,8 @@ use std::collections::HashSet;
 use std::time::{Duration, Instant};
 
 use gpui_kit::{
-    Animation, AnimationExt as _, AnyElement, App, ElementId, EntityId, Global, IntoElement, Styled, Window,
+    Animation, AnimationExt as _, AnyElement, App, ElementId, EntityId, ExitTransition, Global, IntoElement, Pixels,
+    Point, Styled, Window, point, px,
 };
 
 use crate::theme_tokens::CubicBezier;
@@ -77,6 +80,33 @@ impl Transition {
     /// Fades in from transparent (`data-starting-style:opacity-0`).
     pub fn fade_in<E: IntoElement + Styled + 'static>(self, id: impl Into<ElementId>, element: E) -> AnyElement {
         self.run(id, element, |el, t| el.opacity(t))
+    }
+
+    /// Runs when `element` stops being rendered under `id` (`data-ending-style:opacity-0`
+    /// plus `scale`, about `origin` as a fraction of its box, and `translate`): the
+    /// window keeps drawing its last frame, fading, until the transition ends.
+    pub fn exit<E: IntoElement>(
+        self,
+        id: impl Into<ElementId>,
+        scale: f32,
+        origin: Point<f32>,
+        translate: Point<Pixels>,
+        element: E,
+    ) -> gpui_kit::Exit {
+        let CubicBezier(x1, y1, x2, y2) = self.easing;
+        let transition = ExitTransition {
+            duration: self.duration,
+            easing: [x1, y1, x2, y2],
+            scale,
+            origin,
+            translate,
+        };
+        gpui_kit::exit(id, transition, element)
+    }
+
+    /// [`Self::exit`] with a fade only.
+    pub fn fade_exit<E: IntoElement>(self, id: impl Into<ElementId>, element: E) -> gpui_kit::Exit {
+        self.exit(id, 1., point(0.5, 0.5), point(px(0.), px(0.)), element)
     }
 
     /// Fades out to transparent (`data-ending-style:opacity-0`).

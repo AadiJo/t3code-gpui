@@ -326,6 +326,107 @@ impl Scene {
         }
     }
 
+    /// A copy of the operations in `range`, to replay in a later scene.
+    pub(crate) fn operations(&self, range: Range<usize>) -> Vec<PaintOperation> {
+        self.paint_operations[range].to_vec()
+    }
+
+    /// Replays `operations` from an earlier scene with their opacity multiplied by
+    /// `opacity`, scaled by `scale` about `origin` and moved by `translate`, as a CSS
+    /// transform and opacity on an element. Paths keep their shape and color.
+    pub(crate) fn replay_transformed(
+        &mut self,
+        operations: &[PaintOperation],
+        opacity: f32,
+        scale: f32,
+        origin: Point<ScaledPixels>,
+        translate: Point<ScaledPixels>,
+    ) {
+        let point = |p: Point<ScaledPixels>| {
+            Point::new(
+                origin.x + (p.x - origin.x) * scale + translate.x,
+                origin.y + (p.y - origin.y) * scale + translate.y,
+            )
+        };
+        let bounds = |b: Bounds<ScaledPixels>| Bounds {
+            origin: point(b.origin),
+            size: b.size.map(|d| d * scale),
+        };
+        let mask = |m: ContentMask<ScaledPixels>| ContentMask { bounds: bounds(m.bounds) };
+        let radii = |r: Corners<ScaledPixels>| r.map(|c| *c * scale);
+        for operation in operations {
+            let primitive = match operation {
+                PaintOperation::StartLayer => {
+                    self.push_layer();
+                    continue;
+                }
+                PaintOperation::EndLayer => {
+                    self.pop_layer();
+                    continue;
+                }
+                PaintOperation::Primitive(primitive) => primitive.clone(),
+            };
+            let primitive = match primitive {
+                Primitive::Shadow(shadow) => Primitive::Shadow(Shadow {
+                    blur_radius: shadow.blur_radius * scale,
+                    bounds: bounds(shadow.bounds),
+                    corner_radii: radii(shadow.corner_radii),
+                    content_mask: mask(shadow.content_mask),
+                    color: shadow.color.opacity(opacity),
+                    shape_bounds: bounds(shadow.shape_bounds),
+                    shape_corner_radii: radii(shadow.shape_corner_radii),
+                    ..shadow
+                }),
+                Primitive::Quad(quad) => Primitive::Quad(Quad {
+                    bounds: bounds(quad.bounds),
+                    content_mask: mask(quad.content_mask),
+                    background: quad.background.opacity(opacity),
+                    border_color: quad.border_color.opacity(opacity),
+                    corner_radii: radii(quad.corner_radii),
+                    border_widths: quad.border_widths.map(|w| *w * scale),
+                    ..quad
+                }),
+                Primitive::Underline(underline) => Primitive::Underline(Underline {
+                    bounds: bounds(underline.bounds),
+                    content_mask: mask(underline.content_mask),
+                    color: underline.color.opacity(opacity),
+                    thickness: underline.thickness * scale,
+                    ..underline
+                }),
+                Primitive::MonochromeSprite(sprite) => Primitive::MonochromeSprite(MonochromeSprite {
+                    animation: SpriteAnimationId::NONE,
+                    bounds: bounds(sprite.bounds),
+                    content_mask: mask(sprite.content_mask),
+                    color: sprite.color.opacity(opacity),
+                    ..sprite
+                }),
+                Primitive::SubpixelSprite(sprite) => Primitive::SubpixelSprite(SubpixelSprite {
+                    bounds: bounds(sprite.bounds),
+                    content_mask: mask(sprite.content_mask),
+                    color: sprite.color.opacity(opacity),
+                    ..sprite
+                }),
+                Primitive::PolychromeSprite(sprite) => Primitive::PolychromeSprite(PolychromeSprite {
+                    bounds: bounds(sprite.bounds),
+                    content_mask: mask(sprite.content_mask),
+                    corner_radii: radii(sprite.corner_radii),
+                    opacity: sprite.opacity * opacity,
+                    ..sprite
+                }),
+                Primitive::Backdrop(backdrop) => Primitive::Backdrop(Backdrop {
+                    bounds: bounds(backdrop.bounds),
+                    content_mask: mask(backdrop.content_mask),
+                    corner_radii: radii(backdrop.corner_radii),
+                    blur_radius: backdrop.blur_radius * scale,
+                    opacity: backdrop.opacity * opacity,
+                    ..backdrop
+                }),
+                other => other,
+            };
+            self.insert_primitive(primitive);
+        }
+    }
+
     pub fn finish(&mut self) {
         debug_assert!(self.layer_stack.is_empty(), "unbalanced scene layers");
         let keys = &mut Vec::new();
@@ -519,6 +620,7 @@ impl PrimitiveKind {
     }
 }
 
+#[derive(Clone)]
 pub(crate) enum PaintOperation {
     Primitive(Primitive),
     StartLayer,

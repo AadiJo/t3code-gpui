@@ -1073,6 +1073,27 @@ pub(crate) struct Frame {
     #[cfg(any(feature = "inspector", debug_assertions))]
     pub(crate) inspector_hitboxes: FxHashMap<HitboxId, crate::InspectorElementId>,
     pub(crate) tab_stops: TabStopMap,
+    /// Elements painted with an exit transition this frame (see [`crate::exit`]).
+    pub(crate) exits: Vec<ExitRecord>,
+}
+
+/// An element painted with an exit transition: its operations in the frame's scene.
+#[derive(Clone)]
+pub(crate) struct ExitRecord {
+    id: GlobalElementId,
+    scene_range: Range<usize>,
+    bounds: Bounds<ScaledPixels>,
+    transition: crate::ExitTransition,
+}
+
+/// An element that stopped being rendered and is drawn through its exit transition from
+/// the last frame it was painted in.
+struct ExitGhost {
+    id: GlobalElementId,
+    operations: Vec<crate::scene::PaintOperation>,
+    bounds: Bounds<ScaledPixels>,
+    transition: crate::ExitTransition,
+    started: Instant,
 }
 
 #[derive(Clone, Default)]
@@ -1088,6 +1109,7 @@ pub(crate) struct PrepaintStateIndex {
 #[derive(Clone, Default)]
 pub(crate) struct PaintIndex {
     scene_index: usize,
+    exits_index: usize,
     #[cfg(any(test, feature = "test-support"))]
     debug_bounds_index: usize,
     mouse_listeners_index: usize,
@@ -1132,6 +1154,7 @@ impl Frame {
             #[cfg(any(feature = "inspector", debug_assertions))]
             inspector_hitboxes: FxHashMap::default(),
             tab_stops: TabStopMap::default(),
+            exits: Vec::new(),
         }
     }
 
@@ -1148,6 +1171,7 @@ impl Frame {
         self.window_control_hitboxes.clear();
         self.deferred_draws.clear();
         self.tab_stops.clear();
+        self.exits.clear();
         self.focus = None;
 
         #[cfg(any(test, feature = "test-support"))]
@@ -1250,6 +1274,8 @@ pub struct Window {
     rem_size_override_stack: SmallVec<[Pixels; 8]>,
     pub(crate) viewport_size: Size<Pixels>,
     layout_engine: Option<TaffyLayoutEngine>,
+    /// Elements drawn through their exit transitions (see [`crate::exit`]).
+    exit_ghosts: Vec<ExitGhost>,
     /// The bounds [`Self::layout_bounds`] last returned and that box's origin before
     /// snapping, for [`Self::unsnapped_origin`].
     last_layout_origin: Option<(Bounds<Pixels>, Point<Pixels>)>,
@@ -2449,6 +2475,7 @@ impl Window {
             viewport_size: content_size,
             layout_engine: Some(TaffyLayoutEngine::new()),
             last_layout_origin: None,
+            exit_ghosts: Vec::new(),
             root: None,
             element_id_stack: ElementIdStack::default(),
             text_style_stack: Vec::new(),
@@ -3878,6 +3905,7 @@ impl Window {
         }
         if !cx.mode.skip_drawing() {
             self.draw_roots(cx);
+            self.paint_exit_ghosts(cx);
             #[cfg(feature = "profiler")]
             {
                 let viewport_size = self.viewport_size;
@@ -4479,6 +4507,7 @@ impl Window {
     pub(crate) fn paint_index(&self) -> PaintIndex {
         PaintIndex {
             scene_index: self.next_frame.scene.len(),
+            exits_index: self.next_frame.exits.len(),
             #[cfg(any(test, feature = "test-support"))]
             debug_bounds_index: self.next_frame.debug_bounds_records.len(),
             mouse_listeners_index: self.next_frame.mouse_listeners.len(),
@@ -4530,10 +4559,81 @@ impl Window {
 
         self.text_system
             .reuse_layouts(range.start.line_layout_index..range.end.line_layout_index);
+        let scene_offset = self.next_frame.scene.len();
+        self.next_frame.exits.extend(
+            self.rendered_frame.exits[range.start.exits_index..range.end.exits_index]
+                .iter()
+                .map(|exit| {
+                    let start = exit.scene_range.start - range.start.scene_index + scene_offset;
+                    ExitRecord {
+                        scene_range: start..start + exit.scene_range.len(),
+                        ..exit.clone()
+                    }
+                }),
+        );
         self.next_frame.scene.replay(
             range.start.scene_index..range.end.scene_index,
             &self.rendered_frame.scene,
         );
+    }
+
+    /// Records that the element `id`, whose paint began at scene operation `start` and just
+    /// ended, leaves through `transition` when it is no longer rendered.
+    pub(crate) fn record_exit(
+        &mut self,
+        id: GlobalElementId,
+        start: usize,
+        bounds: Bounds<Pixels>,
+        transition: crate::ExitTransition,
+    ) {
+        let end = self.next_frame.scene.len();
+        let bounds = bounds.scale(self.scale_factor());
+        self.next_frame.exits.push(ExitRecord { id, scene_range: start..end, bounds, transition });
+    }
+
+    /// Draws elements that left since the last frame, and those still leaving, through their
+    /// exit transitions over everything else, and asks for another frame while any is.
+    fn paint_exit_ghosts(&mut self, cx: &App) {
+        let now = Instant::now();
+        let present: FxHashSet<&GlobalElementId> =
+            self.next_frame.exits.iter().map(|exit| &exit.id).collect();
+        self.exit_ghosts.retain(|ghost| !present.contains(&ghost.id));
+        if !cx.reduce_motion() {
+            for exit in &self.rendered_frame.exits {
+                if present.contains(&exit.id) || self.exit_ghosts.iter().any(|ghost| ghost.id == exit.id) {
+                    continue;
+                }
+                self.exit_ghosts.push(ExitGhost {
+                    id: exit.id.clone(),
+                    operations: self.rendered_frame.scene.operations(exit.scene_range.clone()),
+                    bounds: exit.bounds,
+                    transition: exit.transition,
+                    started: now,
+                });
+            }
+        }
+        drop(present);
+        self.exit_ghosts.retain(|ghost| now.duration_since(ghost.started) < ghost.transition.duration);
+        for ghost in &self.exit_ghosts {
+            let t = now.duration_since(ghost.started).as_secs_f32() / ghost.transition.duration.as_secs_f32();
+            let progress = ghost.transition.ease(t.min(1.));
+            let scale = 1. + (ghost.transition.scale - 1.) * progress;
+            let origin = point(
+                ghost.bounds.origin.x + ghost.bounds.size.width * ghost.transition.origin.x,
+                ghost.bounds.origin.y + ghost.bounds.size.height * ghost.transition.origin.y,
+            );
+            let translate = ghost.transition.translate.scale(self.scale_factor()) * progress;
+            self.next_frame.scene.replay_transformed(
+                &ghost.operations,
+                1. - progress,
+                scale,
+                origin,
+                translate,
+            );
+        }
+        if !self.exit_ghosts.is_empty() {
+            self.on_next_frame(|window, _| window.invalidator.set_dirty(true));
+        }
     }
 
     /// Push a text style onto the stack, and call a function with that style active.
