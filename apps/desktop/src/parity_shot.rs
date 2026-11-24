@@ -9,8 +9,7 @@
 // by PARITY_CLIENT_SETTINGS (an Electron `client-settings.json`) and render at
 // the size in their table; without that variable they are skipped. With it and
 // PARITY_AT_OWNER=1, every shared scene also renders at 1710x1074 with those
-// settings as `<scene>-mac` (and at 1100x780 as `<scene>-mac1100`). PARITY_UI_STATE adds the
-// owner's imported window UI state (sidebar width, shelves) to the 1710x1074 renders.
+// settings as `<scene>-mac` (and at 1100x780 as `<scene>-mac1100`).
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -323,25 +322,6 @@ fn mouse(cx: &mut HeadlessAppContext, window: AnyWindowHandle, at: Point<Pixels>
     .ok();
 }
 
-/// PARITY_UI_STATE=<dir>: the owner's window UI state as the app imports it (`layout.json`,
-/// `ui-state.json`; `import-check <out> <owner-dir>` writes one under `owner-install/ui`), for
-/// the 1710x1074 owner renders the Mac captures compare with. Copied, so a run never edits it.
-fn owner_ui_state(profile: &Profile, data: &std::path::Path) -> anyhow::Result<StateDir> {
-    let source = std::env::var_os("PARITY_UI_STATE").map(PathBuf::from);
-    let Some(source) = source.filter(|_| profile.owner.is_some() && !profile.owner_sidebar && profile.size == (1710., 1074.)) else {
-        return Ok(StateDir(None));
-    };
-    let dir = data.join("ui-state");
-    _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir)?;
-    for name in [t3code_web::ui_state_store::files::LAYOUT, t3code_web::ui_state_store::files::UI_STATE] {
-        if source.join(name).is_file() {
-            std::fs::copy(source.join(name), dir.join(name))?;
-        }
-    }
-    Ok(StateDir(Some(dir)))
-}
-
 /// Opens a fresh window on the reference world, applies `scene`'s steps and saves the frame.
 fn render(scene: &Scene, profile: Profile, file_name: &str, out: &std::path::Path, data: &std::path::Path) -> anyhow::Result<()> {
     let mut cx = headless();
@@ -387,7 +367,7 @@ fn render(scene: &Scene, profile: Profile, file_name: &str, out: &std::path::Pat
     let options = AppRootOptions {
         data: DataSource::Fixtures(store),
         platform: TitlebarPlatform::Mac,
-        state_dir: owner_ui_state(&profile, data)?,
+        state_dir: StateDir(None),
     };
     let (window, parts) = cx.update(|cx| {
         let window_options = WindowOptions {

@@ -106,7 +106,14 @@ struct Scene {
     steps: &'static [Step],
 }
 
-const CARD: Step = Dispatch(|| Box::new(ToggleThreadPanel));
+/// Opens the thread details card unless it shows already: a docked card starts open, as the
+/// fork's `inlineOpen` does, so a blind toggle would close it.
+const CARD: Step = Root(open_card);
+fn open_card(root: &Entity<AppRoot>, window: &mut Window, cx: &mut App) {
+    if !root.read(cx).thread_view().read(cx).details_open() {
+        window.dispatch_action(Box::new(ToggleThreadPanel), cx);
+    }
+}
 const TERMINAL: &[Step] = &[
     CARD,
     Dispatch(|| Box::new(ToggleTerminal)),
