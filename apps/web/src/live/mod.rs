@@ -9,6 +9,7 @@ pub mod rpc;
 pub mod sources;
 pub mod terminal;
 pub mod thread_details;
+pub mod thread_relationships;
 pub mod workspace;
 
 use std::cell::RefCell;

@@ -64,6 +64,7 @@ pub struct DetailsFeed {
     automation_busy: Option<SharedString>,
     /// The Lineage merge or disconnect waiting on the server.
     relationship_busy: Option<crate::components::chat::thread_details_relationships::RelationshipBusy>,
+    pub(super) relationships: super::thread_relationships::RelationshipsState,
 }
 
 impl EventEmitter<DetailsChanged> for DetailsFeed {}
@@ -98,6 +99,11 @@ fn wire_merge_method(method: MergeMethod) -> PullRequestMergeMethod {
 }
 
 impl DetailsFeed {
+    /// The thread the card follows.
+    pub(super) fn shown(&self) -> Option<&ThreadKey> {
+        self.shown.as_ref()
+    }
+
     /// Follows `key`: its environment's scheduled tasks and its discovered servers.
     pub fn follow(&mut self, key: Option<ThreadKey>, cx: &mut Context<Self>) {
         if self.shown == key {
@@ -252,43 +258,10 @@ pub fn input(feed: &Entity<DetailsFeed>, view: &ThreadView, base: ThreadDetailsI
         automation_busy,
         context_window: context_window(&key, cx),
         usage_limits: usage_limits(row.as_deref(), config.as_deref(), cx),
-        relationships: relationships(&key, config.as_deref(), cx),
+        relationships: super::thread_relationships::relationships(feed, &key, config.as_deref(), cx),
         relationship_busy: feed.read(cx).relationship_busy,
         ..base
     }
-}
-
-/// The Lineage and Side chats rows: the environment's live and archived shells and the shown
-/// thread's projection (`ThreadRelationshipsPanel`).
-fn relationships(key: &ThreadKey, config: Option<&t3code_contracts::ServerConfig>, cx: &App) -> Option<crate::state::thread_relationships::RelationshipsInput> {
-    let (environment_id, thread_id) = ids(key);
-    let environment = StateBridge::environment(&environment_id, cx)?;
-    let snapshot = environment.read(cx).shell.snapshot.clone()?;
-    let thread = StateBridge::threads(cx).read(cx).find(key, cx).cloned();
-    let projection = thread.as_ref().and_then(|t| t.read(cx).projection().cloned());
-    let shells = snapshot.threads.iter().chain(snapshot.archived_threads.iter()).collect();
-    let providers: Vec<_> = config.map(|c| c.providers.iter().cloned().map(std::sync::Arc::new).collect()).unwrap_or_default();
-    let entries = crate::provider_instances::derive_provider_instance_entries(&providers);
-    let labels: Vec<(t3code_contracts::EnvironmentId, SharedString)> = StateBridge::environments(cx)
-        .read(cx)
-        .list
-        .iter()
-        .filter_map(|e| {
-            let env = e.read(cx);
-            Some((env.environment_id().clone(), SharedString::from(env.config.as_ref()?.environment.label.clone())))
-        })
-        .collect();
-    crate::state::thread_relationships::derive(crate::state::thread_relationships::RelationshipSources {
-        thread_id: &thread_id,
-        shells,
-        projection: projection.as_deref(),
-        is_hidden: &|_| false,
-        hiding_anywhere: false,
-        show_lineage: true,
-        show_side_chats: true,
-        any_instance_badge: crate::provider_instances::has_instance_badge(&entries),
-        connected_label: &|id| labels.iter().find(|(e, _)| e == id).map(|(_, label)| label.clone()),
-    })
 }
 
 /// Opens a related thread (`openThread` with `resolveThreadOpenRoute`): a side chat opens as a
@@ -317,12 +290,8 @@ fn relationship_event(feed: &Entity<DetailsFeed>, key: &ThreadKey, event: &crate
             open_related(key, related, cx);
             Task::ready(DetailsOutcome::Done)
         }
-        RelationshipEvent::OpenDelegatedFrom => {
-            let from = StateBridge::shell(cx).read(cx).row(key).and_then(|row| row.source.delegated_from.clone());
-            if let Some(from) = from {
-                crate::state::open_thread(crate::state::shell::thread_key(&from.environment_id, &from.thread_id), cx);
-            }
-            Task::ready(DetailsOutcome::Done)
+        RelationshipEvent::OpenDelegatedFrom | RelationshipEvent::StopSubagent { .. } | RelationshipEvent::StopWorkflow(_) | RelationshipEvent::OpenRemote { .. } => {
+            super::thread_relationships::run(feed, key, event, cx)
         }
         RelationshipEvent::ToggleMenu(_) => Task::ready(DetailsOutcome::Done),
         RelationshipEvent::MergeBack | RelationshipEvent::Disconnect => {

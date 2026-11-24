@@ -54,7 +54,12 @@
 //            transfer on the parent), a fork with the lineage on both ends, and `/side` refused
 //            inside a side chat; each read back from the server
 //   sidechats-ref  shots of the fork capture's states on its server (`T3_REF_IDS`: ids.json)
-// Usage: live-check <seed|drive|restart|import|send|sidebar|notify|details|mentions|heic|wheel|workspace|banner|sidebardata|composer|composer-restart|sidechats|sidechats-ref|probe> <out-dir>
+//   lineage  the details card's subagent rows on server data from a scripted fx stand-in: two
+//            provider-native subagents with the driver mark, live elapsed time, per-second redraw
+//            and hover card; an app-owned child (the server's `delegate_task`) stopped from its
+//            row's hover stop button and read back as stopped; the fx subagents released
+//            (`T3_CONTROL_DIR`) and settled Done
+// Usage: live-check <seed|drive|restart|import|send|sidebar|notify|details|mentions|heic|wheel|workspace|banner|sidebardata|composer|composer-restart|sidechats|sidechats-ref|lineage|probe> <out-dir>
 #[allow(dead_code)]
 #[path = "import/mod.rs"]
 mod import;
@@ -535,6 +540,7 @@ fn main() -> anyhow::Result<()> {
         "composer-restart" => run_composer_restart(&mut check),
         "sidechats" => run_sidechats(&mut check),
         "sidechats-ref" => run_sidechats_ref(&mut check),
+        "lineage" => run_lineage(&mut check),
         other => Err(anyhow::anyhow!("unknown phase {other}")),
     };
     check.finish(&phase, result)
@@ -3540,5 +3546,150 @@ fn run_sidechats_ref(check: &mut Check) -> anyhow::Result<()> {
     open_details(check);
     check.wait(Duration::from_millis(800));
     check.shot("details-side-chats-running.png")?;
+    Ok(())
+}
+
+/// Moves the pointer to `at`, as a user hovering there.
+fn hover_at(check: &mut Check, at: Point<Pixels>) -> anyhow::Result<()> {
+    check.cx.update_window(check.window, |_, w, cx| {
+        w.dispatch_event(MouseMoveEvent { position: at, pressed_button: None, modifiers: Modifiers::default() }.to_platform_input(), cx);
+    })?;
+    check.frame();
+    Ok(())
+}
+
+/// Presses and releases the left button at `at`.
+fn click_at(check: &mut Check, at: Point<Pixels>) -> anyhow::Result<()> {
+    hover_at(check, at)?;
+    check.cx.update_window(check.window, |_, w, cx| {
+        w.dispatch_event(MouseDownEvent { button: MouseButton::Left, position: at, modifiers: Modifiers::default(), click_count: 1, first_mouse: false }.to_platform_input(), cx);
+        w.dispatch_event(MouseUpEvent { button: MouseButton::Left, position: at, modifiers: Modifiers::default(), click_count: 1 }.to_platform_input(), cx);
+    })?;
+    check.frame();
+    Ok(())
+}
+
+/// The shown thread's Lineage rows, every group flattened.
+fn lineage_rows(check: &mut Check) -> Vec<t3code_web::state::thread_relationships::RelationshipRow> {
+    details_input(check).and_then(|i| i.relationships).map(|r| r.groups.into_iter().flat_map(|g| g.rows).collect()).unwrap_or_default()
+}
+
+/// A shell thread of the paired environment by title, skipping ones in status `not`.
+fn thread_titled(check: &mut Check, environment_id: &t3code_contracts::EnvironmentId, title: &str, not: Option<&str>) -> Option<ThreadKey> {
+    let id = environment_id.clone();
+    let (title, status) = (title.to_owned(), not.map(str::to_owned));
+    check.cx.update(|cx| {
+        let snapshot = StateBridge::environment(&id, cx)?.read(cx).shell.snapshot.clone()?;
+        // `status` is a status the thread must not have.
+        let thread = snapshot.threads.iter().find(|t| t.title == title && status.as_deref().is_none_or(|s| t.status.as_str() != s))?;
+        Some(thread_key(&id, &thread.id))
+    })
+}
+
+/// The `lineage` phase. Needs threads a scripted fx stand-in made on the server, named by
+/// `T3_LINEAGE_TAG`: "Native fan-out <tag>" holding two fx subagents (released by writing
+/// `release-<tag>` in `T3_CONTROL_DIR`), and "Parent agent <tag>" waiting on an app-owned child
+/// made by the server's own `delegate_task`.
+fn run_lineage(check: &mut Check) -> anyhow::Result<()> {
+    use t3code_client_runtime::state::thread_relationships::RelationshipStatus;
+    use t3code_web::components::chat::thread_details_relationships::probed_bounds;
+    let control = PathBuf::from(std::env::var("T3_CONTROL_DIR").context("T3_CONTROL_DIR")?);
+    let tag = std::env::var("T3_LINEAGE_TAG").context("T3_LINEAGE_TAG")?;
+    let (fan_out, parent) = (format!("Native fan-out {tag}"), format!("Parent agent {tag}"));
+    let paired = check.cx.update(|cx| !ConnectionRuntime::state(cx).read(cx).environments.is_empty());
+    if !paired {
+        let request = parse_pairing_url(&std::env::var("T3_PAIRING_URL").context("T3_PAIRING_URL")?)?;
+        let pairing = check.cx.update(|cx| ConnectionRuntime::global(cx).pair(request, None, cx));
+        let label = check.wait_task(pairing)?.map_err(|e| anyhow::anyhow!("{}", e.0))?;
+        check.note(format!("paired {label}"));
+    }
+    check.pump(|c| c.connected(), Duration::from_secs(30), "connected")?;
+    let id = check.cx.update(|cx| ConnectionRuntime::state(cx).read(cx).environments[0].entry.environment_id.to_string());
+    let environment_id = t3code_contracts::EnvironmentId::new(id.as_str());
+    let env = environment_id.clone();
+    let (f, p) = (fan_out.clone(), parent.clone());
+    check.pump(move |c| thread_titled(c, &env, &f, None).is_some() && thread_titled(c, &env, &p, None).is_some(), Duration::from_secs(20), "the prepared threads are listed")?;
+    let native = thread_titled(check, &environment_id, &fan_out, None).context("fan-out")?;
+    let delegating = thread_titled(check, &environment_id, &parent, Some("failed")).context("the delegating parent")?;
+
+    // Provider-native subagents while they run: the driver mark, a ticking elapsed time and
+    // the hover card, read from the server's projection.
+    check.go(&native);
+    let k = native.clone();
+    check.pump(move |c| c.route() == Route::Thread(k.clone()), Duration::from_secs(20), "the fan-out shows")?;
+    open_details(check);
+    check.pump(|c| lineage_rows(c).iter().filter(|r| r.agent.is_some()).count() >= 2, Duration::from_secs(20), "two subagent rows")?;
+    let rows = lineage_rows(check);
+    let running = rows.iter().filter(|r| r.agent.as_ref().is_some_and(|a| a.clock.live && a.clock.started_at.is_some())).count();
+    check.check("both fx subagents run, with a start time from the server", running == 2, format!("{running} live of {}", rows.len()));
+    let marks: Vec<_> = rows.iter().map(|r| r.mark.as_ref().map(|m| m.driver.to_string())).collect();
+    check.check("subagent rows show the fx driver mark", marks.iter().all(|m| m.as_deref() == Some("fx")), format!("{marks:?}"));
+    let titles: Vec<_> = rows.iter().map(|r| r.title.to_string()).collect();
+    // The child thread's title wins over the projected subagent's, as in the fork.
+    check.check("rows are titled by their child threads", titles.iter().any(|t| t == "Read file one"), format!("{titles:?}"));
+    let heading = details_input(check).and_then(|i| i.relationships).map(|r| r.running_count);
+    check.check("the heading counts the running subagents", heading == Some(2), format!("{heading:?}"));
+    check.wait(Duration::from_millis(1200));
+    let ticking = check.read(|root, cx| root.thread_view().read(cx).details().is_some_and(|d| d.read(cx).ticking()));
+    check.check("the card redraws each second while a subagent runs", ticking, "");
+    check.shot("l0-native-running.png")?;
+    let first = rows.first().map(|r| r.thread_id.to_string()).unwrap_or_default();
+    let at = probed_bounds(&format!("relationship-row-{first}")).context("first row bounds")?;
+    hover_at(check, at.center())?;
+    check.wait(Duration::from_millis(700));
+    check.shot("l1-native-hover-card.png")?;
+    check.wait(Duration::from_millis(2100));
+    check.shot("l2-native-hover-card-later.png")?;
+    hover_at(check, point(px(5.), px(700.)))?;
+
+    // An app-owned child: the stop button shows on hover and stops it on the server.
+    check.go(&delegating);
+    let k = delegating.clone();
+    check.pump(move |c| c.route() == Route::Thread(k.clone()), Duration::from_secs(20), "the delegating thread shows")?;
+    open_details(check);
+    check.pump(|c| lineage_rows(c).iter().any(|r| r.agent.as_ref().is_some_and(|a| a.can_stop)), Duration::from_secs(20), "a stoppable child row")?;
+    let child = lineage_rows(check).into_iter().find(|r| r.agent.as_ref().is_some_and(|a| a.can_stop)).context("child row")?;
+    check.note(format!("child row {} ({:?})", child.title, child.status));
+    let row_at = probed_bounds(&format!("relationship-row-{}", child.thread_id)).context("child row bounds")?;
+    hover_at(check, row_at.center())?;
+    check.wait(Duration::from_millis(700));
+    check.shot("l3-app-owned-hover-stop.png")?;
+    let stop = (0..8).find_map(|ix| probed_bounds(&format!("relationship-active-stop-{ix}"))).context("stop button bounds")?;
+    let stop_inside = stop.left() > row_at.left() && stop.right() <= row_at.right() + px(1.);
+    check.check("the stop button sits at the row's right end", stop_inside, format!("stop {stop:?} row {row_at:?}"));
+    hover_at(check, stop.center())?;
+    check.wait(Duration::from_millis(500));
+    check.shot("l4-stop-tooltip.png")?;
+    click_at(check, stop.center())?;
+    let child_id = child.thread_id.clone();
+    check.pump(
+        move |c| lineage_rows(c).iter().any(|r| r.thread_id == child_id && r.status.is_some_and(RelationshipStatus::is_finished_agent)),
+        Duration::from_secs(30),
+        "the stopped child settles",
+    )?;
+    let k = delegating.clone();
+    let stopped = projection_of(check, &k).is_some_and(|p| p.subagents.iter().any(|a| a.child_thread_id.as_ref() == Some(&child.thread_id) && !matches!(a.status.as_str(), "running" | "pending" | "waiting")));
+    check.check("the server recorded the child as stopped", stopped, "");
+    let previous = details_input(check).and_then(|i| i.relationships).is_some_and(|r| r.groups.iter().any(|g| g.id == "previous" && g.rows.iter().any(|row| row.thread_id == child.thread_id)));
+    check.check("the stopped child moves under Previous agents", previous, "");
+    hover_at(check, point(px(5.), px(700.)))?;
+    check.wait(Duration::from_millis(300));
+    check.shot("l5-app-owned-stopped.png")?;
+
+    // Releasing the fx subagents: rows settle as Done with frozen times.
+    std::fs::write(control.join(format!("release-{tag}")), "")?;
+    check.go(&native);
+    open_details(check);
+    check.pump(
+        |c| { let rows = lineage_rows(c); !rows.is_empty() && rows.iter().all(|r| r.agent.as_ref().is_some_and(|a| !a.clock.live)) },
+        Duration::from_secs(60),
+        "the fx subagents finish",
+    )?;
+    let done = lineage_rows(check).iter().filter(|r| r.status == Some(RelationshipStatus::Completed)).count();
+    check.check("both fx subagents end Done", done == 2, format!("{done}"));
+    check.wait(Duration::from_millis(1500));
+    let ticking = check.read(|root, cx| root.thread_view().read(cx).details().is_some_and(|d| d.read(cx).ticking()));
+    check.check("the card stops its per-second redraw once nothing runs", !ticking, "");
+    check.shot("l6-native-done.png")?;
     Ok(())
 }
