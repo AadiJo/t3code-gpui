@@ -729,7 +729,7 @@ fn active_pick<'a>(thread: &'a ThreadSearchSubject, normalized: &str, now: i64) 
 const USE_BOOST_LIMIT: f64 = 2.5;
 
 /// 1 for a stale, never-opened thread, about 2 for one active today, up to 2.5 for often-opened ones.
-fn thread_usage_boost(thread: &ThreadSearchSubject, now: i64) -> f64 {
+pub fn thread_usage_boost(thread: &ThreadSearchSubject, now: i64) -> f64 {
     let recency = thread.activity_at.map_or(0.0, |at| decay((now - at) as f64));
     let opens = thread.opens.as_ref().map_or(0.0, |o| o.score * decay((now - o.opened_at) as f64));
     (1.0 + recency + 0.5 * (1.0 + opens).log2()).min(USE_BOOST_LIMIT)

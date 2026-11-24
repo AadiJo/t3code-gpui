@@ -31,11 +31,24 @@
 //   heic     a HEIC photo attaches as a JPEG fitted to 2000px and uploads; an unreadable one is
 //            refused. Linux has no HEIC decoder here, so run it with a stand-in `heif-convert`
 //            on PATH (the macOS build decodes with `sips`)
+//   wheel    scrolls an overflowing sidebar by wheel (event and draw in one update, trackpad
+//            gestures, mouse-wheel lines) down and back to the top; makes rows until it overflows.
+//            `drive` also reaches below-the-fold rows by wheel. A watchdog ends any phase that
+//            stops making progress for three minutes and names the last step
+//   workspace three drafts sent from the composer with each workspace choice: the project root,
+//            a new worktree (its base auto-picked, then chosen) and that worktree again; each
+//            thread's workspace is read back from the server and its checkout from git
+//   banner   the thread error banner: a thread whose provider fails shows the server's last
+//            error, dismiss hides it for the session; a send the server refuses shows its error
+//            and puts the prompt back in the composer (dark, at the T3CODE_* theme overrides)
+//   sidebardata  the server's snooze presets reach the sidebar snapshot and resolve to the
+//            menu; the header breadcrumb draws the project's icon source; message search results
+//            rank a word match above a newer prefix match, as the web ranks them
 //   import   a fresh data directory and a stand-in install (`T3CODE_IMPORT_HOME`, made by
 //            `import-check`, encrypted with the fixture macOS key): the launch import runs,
 //            the window explains the Keychain read, environments and settings arrive
 //
-// Usage: live-check <seed|drive|restart|import|send|sidebar|notify|details|mentions|heic> <out-dir>
+// Usage: live-check <seed|drive|restart|import|send|sidebar|notify|details|mentions|heic|wheel|workspace|banner|sidebardata|probe> <out-dir>
 #[allow(dead_code)]
 #[path = "import/mod.rs"]
 mod import;
@@ -80,6 +93,23 @@ use t3code_web::state::shell::thread_key;
 use t3code_web::ui_state_store::StateDir;
 
 const STATE_FILE: &str = "live-state.json";
+
+/// The last transcript line and when it was written, for the watchdog.
+static LAST_NOTE: std::sync::Mutex<Option<(Instant, String)>> = std::sync::Mutex::new(None);
+
+/// Ends the process when no step has been noted for three minutes, naming the last one, so a
+/// call that never returns (a hang inside an event dispatch or a draw) fails instead of spinning.
+fn start_watchdog() {
+    std::thread::spawn(|| loop {
+        std::thread::sleep(Duration::from_secs(5));
+        if let Some((at, line)) = LAST_NOTE.lock().unwrap().as_ref()
+            && at.elapsed() > Duration::from_secs(180)
+        {
+            eprintln!("FAIL watchdog: no progress for {:.0}s after: {line}", at.elapsed().as_secs_f64());
+            std::process::exit(3);
+        }
+    });
+}
 
 /// What `seed` made, for the later phases.
 #[derive(Serialize, Deserialize, Default)]
@@ -191,6 +221,7 @@ impl Check {
 
     fn note(&mut self, text: impl AsRef<str>) {
         let line = format!("{:>8.3}s  {}", self.started.elapsed().as_secs_f64(), text.as_ref());
+        *LAST_NOTE.lock().unwrap() = Some((Instant::now(), line.clone()));
         println!("{line}");
         writeln!(self.log, "{line}").ok();
     }
@@ -285,6 +316,7 @@ impl Check {
     /// helpers of the test kit draw a whole frame before each event, so they are not used here.
     fn click_row(&mut self, key: &ThreadKey, label: &str) -> anyhow::Result<Duration> {
         self.frame();
+        self.reveal_row(key);
         let at = self.row_center(key).with_context(|| format!("no row for {label}"))?;
         self.cx.update_window(self.window, |_, w, cx| {
             w.dispatch_event(MouseMoveEvent { position: at, pressed_button: None, modifiers: Modifiers::default() }.to_platform_input(), cx);
@@ -305,6 +337,43 @@ impl Check {
         self.cx.run_until_parked();
         self.note(format!("click {label}: handler {:.2} ms, click-to-frame {:.2} ms", ms(handler), ms(to_frame)));
         Ok(to_frame)
+    }
+
+    /// Scrolls the sidebar with the wheel, as a user would, until a listed row is in view. The
+    /// list is virtualized, so a row below the fold has no bounds until it scrolls in.
+    fn reveal_row(&mut self, key: &ThreadKey) {
+        for _ in 0..60 {
+            let Some((ix, first)) = self.read(|root, cx| {
+                let sidebar = root.sidebar().read(cx);
+                let entries = &sidebar.list().entries;
+                let ix = entries.iter().position(|e| matches!(e, SidebarListEntry::Thread { thread, .. } if &thread.key == key))?;
+                Some((ix, (0..entries.len()).find(|i| sidebar.entry_bounds(*i).is_some())))
+            }) else {
+                return;
+            };
+            let center = self.row_center(key);
+            if center.is_some_and(|at| at.y > px(60.) && at.y < px(780.)) {
+                return;
+            }
+            let down = match center {
+                Some(at) => at.y >= px(780.),
+                None => first.is_none_or(|first| ix > first),
+            };
+            let delta = if down { px(-120.) } else { px(120.) };
+            let at = point(px(150.), px(400.));
+            self.cx
+                .update_window(self.window, |_, w, cx| {
+                    w.dispatch_event(
+                        ScrollEvent { position: at, delta: ScrollDelta::Pixels(point(px(0.), delta)), modifiers: Modifiers::default(), touch_phase: TouchPhase::Moved, source: ScrollSource::Pointer }
+                            .to_platform_input(),
+                        cx,
+                    );
+                    w.draw(cx).clear(cx);
+                })
+                .ok();
+            self.cx.advance_clock(Duration::from_millis(16));
+            self.frame();
+        }
     }
 
     /// `app-check`'s switch measure: navigate, then layout and paint.
@@ -419,7 +488,7 @@ fn key_of(state: &Seeded, thread: &str) -> ThreadKey {
 
 fn main() -> anyhow::Result<()> {
     let mut args = std::env::args().skip(1);
-    let usage = "usage: live-check <seed|drive|restart|import|send|sidebar|notify|details|mentions|heic> <out-dir> | live-check timeline <projections-dir> <out-dir> | live-check commands <corpus.json> <out.json>";
+    let usage = "usage: live-check <seed|drive|restart|import|send|sidebar|notify|details|mentions|heic|wheel|workspace|banner|sidebardata|probe> <out-dir> | live-check timeline <projections-dir> <out-dir> | live-check commands <corpus.json> <out.json>";
     let phase = args.next().context(usage)?;
     let out = PathBuf::from(args.next().context(usage)?);
     if phase == "timeline" {
@@ -429,6 +498,7 @@ fn main() -> anyhow::Result<()> {
         return timeline_dump::commands(&out, &PathBuf::from(args.next().context(usage)?));
     }
     let key = (phase == "import").then(|| SafeStorageKey::from_mac_password(b"fixture keychain password"));
+    start_watchdog();
     let mut check = Check::open(&out, key)?;
     check.note(format!("phase {phase}, data dir {}", data_dir()?.display()));
     let result = match phase.as_str() {
@@ -443,6 +513,10 @@ fn main() -> anyhow::Result<()> {
         "mentions" => run_mentions(&mut check),
         "heic" => run_heic(&mut check),
         "probe" => run_probe(&mut check),
+        "wheel" => run_wheel(&mut check),
+        "workspace" => run_workspace(&mut check),
+        "banner" => run_banner(&mut check),
+        "sidebardata" => run_sidebar_data(&mut check),
         other => Err(anyhow::anyhow!("unknown phase {other}")),
     };
     check.finish(&phase, result)
@@ -610,20 +684,6 @@ fn run_drive(check: &mut Check) -> anyhow::Result<()> {
     let rows = check.sidebar_threads();
     check.check("sidebar paints rows from cache at launch", rows >= 5, format!("{rows} rows"));
     check.pump(|c| c.connected(), Duration::from_secs(30), "connected")?;
-    // Later phases add threads that sort above these, and the list is virtualized: a row below
-    // the fold has no bounds to click. Pinning keeps the two clicked rows at the top.
-    let environment_id = t3code_contracts::EnvironmentId::new(state.environment_id.as_str());
-    let commands = commands_of(check, &environment_id)?;
-    for key in [&long, &edit] {
-        if check.row_center(key).is_some_and(|at| at.y < px(780.)) {
-            continue;
-        }
-        let (_, thread_id) = t3code_web::state::shell::runtime_ids(key);
-        let c = commands.clone();
-        check.block(async move { c.pin(&thread_id, None).await })?.map_err(|e| anyhow::anyhow!("{e}"))?;
-        let k = key.clone();
-        check.pump(move |c| c.row_center(&k).is_some_and(|at| at.y < px(780.)), Duration::from_secs(10), "pinned row in view")?;
-    }
     check.shot("01-sidebar.png")?;
 
     // Cold open, then cached switches between two threads.
@@ -789,7 +849,8 @@ fn run_drive(check: &mut Check) -> anyhow::Result<()> {
     check.pump(|c| c.cx.update(|cx| terminal.read(cx).core().screen_text().contains("golive-42")), Duration::from_secs(20), "terminal ran a command on the server")?;
     check.shot("10-terminal.png")?;
 
-    // Thread details: switch the branch from the details card.
+    // Thread details: switch the branch from the details card. The terminal keeps its keys.
+    check.focus_composer();
     check.action(t3code_web::shortcuts::commands::ToggleThreadPanel);
     check.pump(|c| c.read(|root, cx| root.thread_view().read(cx).details().is_some()), Duration::from_secs(5), "thread details open")?;
     check.shot("11-details.png")?;
@@ -817,6 +878,9 @@ fn run_drive(check: &mut Check) -> anyhow::Result<()> {
     )?;
     check.shot("12-branch-switched.png")?;
     check.action(t3code_web::shortcuts::commands::ToggleThreadPanel);
+    // Back to the seeded branch, so the phase can run again on this checkout.
+    let back = std::process::Command::new("git").arg("-C").arg(&repo).args(["checkout", "-q", "feature/clamp"]).status()?;
+    check.note(format!("checkout back on feature/clamp: {back}"));
 
     // Settings: change a server setting and read it back from the server.
     let shell = check.shell.clone();
@@ -2380,5 +2444,512 @@ fn run_probe(check: &mut Check) -> anyhow::Result<()> {
         check.note(format!("t{step}: {line} drawn={drawn}"));
         check.wait(Duration::from_millis(400));
     }
+    Ok(())
+}
+
+fn wheel_step(check: &mut Check, step: String) {
+    check.note(step);
+}
+
+/// One wheel event at `at`, as a trackpad sends it (pixel deltas) or a mouse wheel (lines).
+fn wheel_event(check: &mut Check, at: Point<Pixels>, delta: ScrollDelta, touch: TouchPhase) {
+    check
+        .cx
+        .update_window(check.window, |_, w, cx| {
+            w.dispatch_event(ScrollEvent { position: at, delta, modifiers: Modifiers::default(), touch_phase: touch, source: ScrollSource::Pointer }.to_platform_input(), cx);
+        })
+        .ok();
+}
+
+/// Where the sidebar draws its first row (None once it scrolls out of view).
+fn sidebar_scroll_offset(check: &mut Check) -> Option<f32> {
+    check.read(|root, cx| root.sidebar().read(cx).entry_bounds(0).map(|b| f32::from(b.origin.y)))
+}
+
+/// Scrolls an overflowing sidebar with the wheel, as two-finger scrolling does all day: makes
+/// threads until the list overflows, then sends trackpad gestures (began, moved, ended) and
+/// mouse-wheel lines down to the end and back up, drawing a frame after each event. A watchdog
+/// fails the phase if any step does not return.
+fn run_wheel(check: &mut Check) -> anyhow::Result<()> {
+    check.wait(Duration::from_millis(500));
+    if check.sidebar_threads() < 24 {
+        let state = load_state(&check.out)?;
+        check.pump(|c| c.connected(), Duration::from_secs(30), "connected")?;
+        let environment_id = t3code_contracts::EnvironmentId::new(state.environment_id.as_str());
+        let commands = commands_of(check, &environment_id)?;
+        let project = check
+            .cx
+            .update(|cx| {
+                let shell = StateBridge::environment(&environment_id, cx)?.read(cx).shell.clone();
+                shell.snapshot.as_ref()?.projects.iter().find(|p| p.workspace_root == state.project_root).map(|p| p.id.clone())
+            })
+            .context("seeded project")?;
+        for n in check.sidebar_threads()..24 {
+            let input = CreateThread {
+                thread_id: ThreadId::new(uuid::Uuid::new_v4().to_string()),
+                project_id: project.clone(),
+                title: format!("Wheel filler {n}"),
+                model_selection: ModelSelection { instance_id: "devReplay".into(), model: "multi-turn".into(), options: None },
+                runtime_mode: RuntimeMode::ApprovalRequired,
+                interaction_mode: ProviderInteractionMode::Default,
+                branch: None,
+                worktree_path: None,
+            };
+            let commands = commands.clone();
+            check.block(async move { commands.create_thread(input).await })?.map_err(|e| anyhow::anyhow!("{e}"))?;
+        }
+        check.pump(|c| c.sidebar_threads() >= 24, Duration::from_secs(20), "24 sidebar rows")?;
+        check.go(&key_of(&state, &state.long_thread));
+        check.wait(Duration::from_millis(500));
+    }
+    let rows = check.sidebar_threads();
+    check.note(format!("{rows} sidebar rows"));
+    // A streaming turn rebuilds the list while it is scrolled, as live updates do.
+    if let Ok(state) = load_state(&check.out)
+        && check.connected()
+    {
+        let environment_id = t3code_contracts::EnvironmentId::new(state.environment_id.as_str());
+        let commands = commands_of(check, &environment_id)?;
+        let message = SendMessage::text(ThreadId::new(state.stream_thread.as_str()), "Stream while the sidebar scrolls.");
+        check.block(async move { commands.send_message(message).await })?.map_err(|e| anyhow::anyhow!("{e}"))?;
+        check.note("streaming a turn during the wheel steps");
+    }
+    let at = check.read(|root, cx| root.sidebar().read(cx).entry_bounds(2).map(|b| b.center())).context("sidebar row bounds")?;
+    // Before any pointer move: the event and the next draw in one window update, as a platform
+    // frame handles them.
+    for step in 0..6 {
+        wheel_step(check, format!("wheel with draw in the same update {step}"));
+        let window = check.window;
+        check.cx.advance_clock(Duration::from_millis(16));
+        check
+            .cx
+            .update_window(window, |_, w, cx| {
+                w.dispatch_event(
+                    ScrollEvent { position: point(px(150.), px(400.)), delta: ScrollDelta::Pixels(point(px(0.), px(-120.))), modifiers: Modifiers::default(), touch_phase: TouchPhase::Moved, source: ScrollSource::Pointer }
+                        .to_platform_input(),
+                    cx,
+                );
+                w.draw(cx).clear(cx);
+            })
+            .ok();
+    }
+    check.frame();
+    check.cx.update_window(check.window, |_, w, cx| {
+        w.dispatch_event(MouseMoveEvent { position: at, pressed_button: None, modifiers: Modifiers::default() }.to_platform_input(), cx);
+    })?;
+    check.frame();
+    wheel_event(check, at, ScrollDelta::Pixels(point(px(0.), px(100_000.))), TouchPhase::Moved);
+    check.frame();
+    let started = sidebar_scroll_offset(check);
+    let mut frames = Vec::new();
+    for (gesture, dy) in [(0, -40.), (1, -40.), (2, 40.)] {
+        wheel_step(check, format!("trackpad gesture {gesture} began"));
+        wheel_event(check, at, ScrollDelta::Pixels(point(px(0.), px(0.))), TouchPhase::Started);
+        check.frame();
+        for step in 0..40 {
+            wheel_step(check, format!("trackpad gesture {gesture} moved {step}"));
+            wheel_event(check, at, ScrollDelta::Pixels(point(px(0.), px(dy))), TouchPhase::Moved);
+            check.cx.advance_clock(Duration::from_millis(16));
+            frames.push(ms(check.frame()));
+            std::thread::sleep(Duration::from_millis(16));
+        }
+        wheel_step(check, format!("trackpad gesture {gesture} ended"));
+        wheel_event(check, at, ScrollDelta::Pixels(point(px(0.), px(0.))), TouchPhase::Ended);
+        check.frame();
+        if gesture == 0 {
+            let moved = sidebar_scroll_offset(check);
+            check.check("trackpad scroll moves the sidebar list", moved != started, format!("first row top {started:?} -> {moved:?}"));
+            check.shot("wheel-00-scrolled.png")?;
+        }
+    }
+    for step in 0..30 {
+        wheel_step(check, format!("mouse wheel lines {step}"));
+        wheel_event(check, at, ScrollDelta::Lines(point(0., if step < 15 { -3. } else { 3. })), TouchPhase::Moved);
+        frames.push(ms(check.frame()));
+    }
+    wheel_step(check, "back to the top".into());
+    wheel_event(check, at, ScrollDelta::Pixels(point(px(0.), px(100_000.))), TouchPhase::Moved);
+    check.frame();
+    let top = sidebar_scroll_offset(check);
+    check.check("scrolling up returns the list to its top", top == started, format!("first row top {top:?}, at start {started:?}"));
+    let worst = frames.iter().cloned().fold(0., f64::max);
+    check.check("every wheel event returns and draws its frame", true, format!("{} events, slowest frame {worst:.2} ms", frames.len()));
+    check.shot("wheel-01-top.png")
+}
+
+fn git_out(dir: &str, args: &[&str]) -> Option<String> {
+    let out = std::process::Command::new("git").arg("-C").arg(dir).args(args).output().ok()?;
+    out.status.success().then(|| String::from_utf8_lossy(&out.stdout).trim().to_owned())
+}
+
+/// Opens a draft in the seeded project, lets `choose` act on its branch strip, sends `prompt`
+/// from the composer and returns the thread it became, with its row once the server has it.
+fn send_draft(
+    check: &mut Check,
+    state: &Seeded,
+    prompt: &str,
+    choose: impl FnOnce(&mut Check, &Entity<t3code_web::components::branch_toolbar::BranchToolbar>) -> anyhow::Result<()>,
+) -> anyhow::Result<ThreadKey> {
+    let root_dir = state.project_root.clone();
+    let project = check
+        .cx
+        .update(|cx| StateBridge::shell(cx).read(cx).snapshot().projects.iter().find(|p| p.workspace_root.as_ref() == root_dir).map(|p| p.project_ref.clone()))
+        .context("seeded project in the sidebar")?;
+    let root = check.root.clone();
+    check.cx.update(|cx| {
+        let data = root.read(cx).data().clone();
+        let draft = data.create_draft(Some(project), cx);
+        root.update(cx, |root, cx| root.navigate(Route::Draft(draft), cx));
+    });
+    check.pump(|c| c.read(|root, cx| root.thread_view().read(cx).branch_strip().is_some()), Duration::from_secs(10), "draft branch strip")?;
+    let strip = check.read(|root, cx| root.thread_view().read(cx).branch_strip().cloned()).context("strip")?;
+    choose(check, &strip)?;
+    check.focus_composer();
+    check.type_text(prompt);
+    check.press("enter");
+    check.pump(|c| matches!(c.route(), Route::Thread(_)), Duration::from_secs(20), "draft became a thread")?;
+    let Route::Thread(key) = check.route() else { bail!("no thread route") };
+    let k = key.clone();
+    check.pump(move |c| c.cx.update(|cx| StateBridge::shell(cx).read(cx).row(&k).is_some()), Duration::from_secs(30), "thread row from the server")?;
+    Ok(key)
+}
+
+fn emit_strip(check: &mut Check, strip: &Entity<t3code_web::components::branch_toolbar::BranchToolbar>, event: t3code_web::components::branch_toolbar::BranchToolbarEvent) {
+    let strip = strip.clone();
+    check.cx.update(|cx| strip.update(cx, |_, cx| cx.emit(event)));
+    check.frame();
+}
+
+fn strip_props(check: &mut Check, strip: &Entity<t3code_web::components::branch_toolbar::BranchToolbar>) -> t3code_web::components::branch_toolbar::BranchToolbarProps {
+    let strip = strip.clone();
+    check.cx.update(|cx| strip.read(cx).props().clone())
+}
+
+/// The server's workspace for a thread: (branch, worktree path).
+fn row_workspace(check: &mut Check, key: &ThreadKey) -> (Option<String>, Option<String>) {
+    check.cx.update(|cx| {
+        StateBridge::shell(cx).read(cx).row(key).map(|row| (row.source.branch.clone(), row.source.worktree_path.clone())).unwrap_or_default()
+    })
+}
+
+/// Sends from drafts with each workspace choice and reads the thread's workspace back.
+fn run_workspace(check: &mut Check) -> anyhow::Result<()> {
+    use t3code_web::components::branch_toolbar::BranchToolbarEvent;
+    use t3code_web::components::branch_toolbar_logic::EnvMode;
+    let state = load_state(&check.out)?;
+    check.pump(|c| c.connected(), Duration::from_secs(30), "connected")?;
+    let root_dir = state.project_root.clone();
+    let checkout_branch = git_out(&root_dir, &["branch", "--show-current"]).unwrap_or_default();
+
+    // Project root.
+    let local = send_draft(check, &state, "Workspace check: project root.", |check, strip| {
+        emit_strip(check, strip, BranchToolbarEvent::EnvModeChanged(EnvMode::Local));
+        Ok(())
+    })?;
+    let k = local.clone();
+    check.pump(move |c| row_workspace(c, &k).0.is_some(), Duration::from_secs(20), "root thread has its branch")?;
+    let (branch, worktree) = row_workspace(check, &local);
+    check.check(
+        "project root: the thread runs in the checkout",
+        worktree.is_none() && branch.as_deref() == Some(checkout_branch.as_str()),
+        format!("branch {branch:?} worktree {worktree:?} (checkout on {checkout_branch})"),
+    );
+    check.shot("w0-root.png")?;
+
+    // New worktree: the base is auto-picked once refs load, then chosen.
+    let base_commit = git_out(&root_dir, &["rev-parse", "main"]).context("main")?;
+    let clamp_commit = git_out(&root_dir, &["rev-parse", "feature/clamp"]).context("feature/clamp")?;
+    let fresh = send_draft(check, &state, "Workspace check: new worktree.", |check, strip| {
+        emit_strip(check, strip, BranchToolbarEvent::EnvModeChanged(EnvMode::Worktree));
+        let s = strip.clone();
+        check.pump(move |c| { let p = strip_props(c, &s); p.thread_branch.is_some() }, Duration::from_secs(15), "base branch auto-picked")?;
+        let props = strip_props(check, strip);
+        // The default branch (origin's HEAD), else the checked-out one.
+        let expected = git_out(&root_dir, &["symbolic-ref", "--short", "refs/remotes/origin/HEAD"])
+            .map(|r| r.trim_start_matches("origin/").to_owned())
+            .unwrap_or_else(|| checkout_branch.clone());
+        check.check(
+            "new worktree: the base defaults to the default branch, else the current one",
+            props.env_mode == EnvMode::Worktree && props.thread_branch.as_deref() == Some(expected.as_str()),
+            format!("mode {:?} base {:?} start from origin {}", props.env_mode, props.thread_branch, props.start_from_origin),
+        );
+        emit_strip(check, strip, BranchToolbarEvent::ThreadBranchChanged { branch: "main".into(), worktree_path: None });
+        let props = strip_props(check, strip);
+        check.check("new worktree: choosing a base keeps worktree mode", props.env_mode == EnvMode::Worktree && props.thread_branch.as_deref() == Some("main"), format!("{:?} {:?}", props.env_mode, props.thread_branch));
+        check.shot("w1-worktree-draft.png")?;
+        Ok(())
+    })?;
+    let k = fresh.clone();
+    check.pump(move |c| row_workspace(c, &k).1.is_some(), Duration::from_secs(60), "thread gets its new worktree")?;
+    let (branch, worktree) = row_workspace(check, &fresh);
+    let path = worktree.clone().unwrap_or_default();
+    let head_branch = git_out(&path, &["branch", "--show-current"]);
+    let head = git_out(&path, &["rev-parse", "HEAD"]);
+    let has_clamp = git_out(&path, &["merge-base", "--is-ancestor", &clamp_commit, "HEAD"]).is_some();
+    check.check(
+        "new worktree: a new checkout from the chosen base (main, not the checkout's feature/clamp)",
+        path != root_dir && head.as_deref() == Some(base_commit.as_str()) && !has_clamp && head_branch.is_some() && branch == head_branch,
+        format!("worktree {path} branch {branch:?} head {head_branch:?} at main {} has clamp {has_clamp}", head.as_deref() == Some(base_commit.as_str())),
+    );
+    check.shot("w2-worktree-thread.png")?;
+
+    // Existing worktree: the one the previous thread made.
+    let existing_branch = branch.clone().unwrap_or_default();
+    let reuse = send_draft(check, &state, "Workspace check: existing worktree.", |check, strip| {
+        emit_strip(check, strip, BranchToolbarEvent::ThreadBranchChanged { branch: existing_branch.clone(), worktree_path: Some(path.clone()) });
+        let props = strip_props(check, strip);
+        check.check("existing worktree: the draft takes the worktree", props.worktree_path.as_deref() == Some(path.as_str()), format!("{:?} {:?}", props.env_mode, props.worktree_path));
+        Ok(())
+    })?;
+    let k = reuse.clone();
+    check.pump(move |c| row_workspace(c, &k).1.is_some(), Duration::from_secs(30), "thread in the existing worktree")?;
+    let (branch, worktree) = row_workspace(check, &reuse);
+    check.check(
+        "existing worktree: the thread runs in that worktree",
+        worktree.as_deref() == Some(path.as_str()) && branch.as_deref() == Some(existing_branch.as_str()),
+        format!("branch {branch:?} worktree {worktree:?}"),
+    );
+    std::fs::write(
+        check.out.join("workspace-record.json"),
+        serde_json::to_vec_pretty(&serde_json::json!({
+            "root": row_workspace(check, &local),
+            "newWorktree": row_workspace(check, &fresh),
+            "existingWorktree": row_workspace(check, &reuse),
+        }))?,
+    )?;
+    check.shot("w3-existing-worktree.png")
+}
+
+fn banner_input(check: &mut Check) -> Option<t3code_web::components::chat::thread_error_banner::ThreadErrorBannerInput> {
+    check.read(|root, cx| root.thread_view().read(cx).error_banner().read(cx).input().cloned())
+}
+
+/// The banner over the timeline: the server's last error, dismissal, and a refused send.
+fn run_banner(check: &mut Check) -> anyhow::Result<()> {
+    let state = load_state(&check.out)?;
+    check.pump(|c| c.connected(), Duration::from_secs(30), "connected")?;
+    check.cx.update(|cx| {
+        t3code_web::theme_palette::ThemeSettings::apply_env_overrides(cx);
+        t3code_web::hooks::use_theme::ThemeStore::set_appearance_mode(t3code_web::theme_palette::ThemeMode::Dark, cx);
+    });
+    let environment_id = t3code_contracts::EnvironmentId::new(state.environment_id.as_str());
+    let commands = commands_of(check, &environment_id)?;
+    let project = check
+        .cx
+        .update(|cx| {
+            let shell = StateBridge::environment(&environment_id, cx)?.read(cx).shell.clone();
+            shell.snapshot.as_ref()?.projects.iter().find(|p| p.workspace_root == state.project_root).map(|p| p.id.clone())
+        })
+        .context("seeded project")?;
+
+    // The server's last error: a provider that cannot start the scenario.
+    let thread_id = ThreadId::new(uuid::Uuid::new_v4().to_string());
+    let input = CreateThread {
+        thread_id: thread_id.clone(),
+        project_id: project,
+        title: "Banner failure".into(),
+        model_selection: ModelSelection { instance_id: "devReplay".into(), model: "no-such-scenario".into(), options: None },
+        runtime_mode: RuntimeMode::FullAccess,
+        interaction_mode: ProviderInteractionMode::Default,
+        branch: None,
+        worktree_path: None,
+    };
+    let c = commands.clone();
+    check.block(async move { c.create_thread(input).await })?.map_err(|e| anyhow::anyhow!("{e}"))?;
+    let message = SendMessage::text(thread_id.clone(), "Run a scenario that does not exist.");
+    let c = commands.clone();
+    check.block(async move { c.send_message(message).await })?.map_err(|e| anyhow::anyhow!("{e}"))?;
+    let key = thread_key(&environment_id, &thread_id);
+    let k = key.clone();
+    check.pump(
+        move |c| c.cx.update(|cx| StateBridge::shell(cx).read(cx).row(&k).is_some_and(|r| r.source.last_error.is_some())),
+        Duration::from_secs(60),
+        "the server records the thread's last error",
+    )?;
+    let server_error = check.cx.update(|cx| StateBridge::shell(cx).read(cx).row(&key).and_then(|r| r.source.last_error.clone())).unwrap_or_default();
+    check.go(&key);
+    check.pump(|c| banner_input(c).is_some(), Duration::from_secs(10), "banner shows")?;
+    let shown = banner_input(check);
+    check.check(
+        "the banner shows the server's last error",
+        shown.as_ref().is_some_and(|b| b.error.as_ref() == server_error.as_str() && !b.usage_limit),
+        format!("{:?}", shown.map(|b| b.error)),
+    );
+    check.shot("b0-server-error.png")?;
+    let window = check.window;
+    check.cx.update_window(window, |_, w, cx| w.click("thread-error-dismiss", cx))?;
+    check.frame();
+    let hidden = banner_input(check).is_none();
+    check.check("dismiss hides the banner", hidden, "");
+    check.go(&key_of(&state, &state.long_thread));
+    check.go(&key);
+    check.wait(Duration::from_millis(300));
+    let hidden = banner_input(check).is_none();
+    check.check("a dismissed error stays hidden for the session", hidden, "");
+    check.shot("b1-dismissed.png")?;
+
+    // A send the server refuses: the model's provider instance is not enabled there.
+    let long = key_of(&state, &state.long_thread);
+    check.go(&long);
+    check.pump(|c| c.read(|root, cx| root.thread_view().read(cx).branch_strip().is_some()), Duration::from_secs(10), "thread shown")?;
+    let composer = composer_of(check);
+    let prompt = "This send is refused by the server.";
+    // Submit takes the composer's text, as a send does.
+    let editor = check.cx.update(|cx| composer.read(cx).editor().clone());
+    check.cx.update(|cx| editor.update(cx, |editor, cx| editor.set_text(String::new(), cx)));
+    check.cx.update(|cx| {
+        composer.update(cx, |_, cx| {
+            cx.emit(t3code_web::components::chat::composer::ComposerEvent::Submit {
+                prompt: prompt.into(),
+                attachments: Vec::new(),
+                model: t3code_web::model_selection::ModelSelection {
+                    instance_id: t3code_web::model_selection::ProviderInstanceId("no-such-instance".into()),
+                    model: "nothing".into(),
+                    effort: None,
+                    speed: None,
+                    ultracode: false,
+                },
+                intent: t3code_web::composer_logic::ComposerSubmissionIntent::Foreground,
+                dispatch: None,
+            })
+        })
+    });
+    check.pump(|c| banner_input(c).is_some(), Duration::from_secs(20), "send error banner")?;
+    let shown = banner_input(check);
+    let restored = check.cx.update(|cx| composer.read(cx).editor().read(cx).text().to_owned());
+    check.check("a refused send shows the server's message in the banner", shown.as_ref().is_some_and(|b| b.error.contains("is disabled") && !b.error.contains("Error(")), format!("{:?}", shown.map(|b| b.error)));
+    check.check("the refused prompt is back in the composer", restored.trim() == prompt, format!("{restored:?}"));
+    check.shot("b2-send-error.png")?;
+    check.cx.update_window(window, |_, w, cx| w.click("thread-error-dismiss", cx))?;
+    check.frame();
+    let hidden = banner_input(check).is_none();
+    check.check("dismiss clears the send error", hidden, "");
+    Ok(())
+}
+
+/// Sidebar data from the server: snooze presets, the breadcrumb's project icon, search ranking.
+fn run_sidebar_data(check: &mut Check) -> anyhow::Result<()> {
+    let state = load_state(&check.out)?;
+    check.pump(|c| c.connected(), Duration::from_secs(30), "connected")?;
+    let environment_id = t3code_contracts::EnvironmentId::new(state.environment_id.as_str());
+    let sidebar_env = t3code_web::components::sidebar::model::EnvironmentId(state.environment_id.clone().into());
+    let commands = commands_of(check, &environment_id)?;
+
+    // Snooze presets: saved on the server, carried by the snapshot, resolved as the menu.
+    let model = check.read(|root, _| root.data().clone()).server_settings_model(check)?;
+    let source = check.cx.update(|cx| model.read(cx).source().clone());
+    let presets = serde_json::json!([{ "kind": "after", "minutes": 45 }, { "kind": "after", "minutes": 120 }, { "kind": "at", "day": "tomorrow", "time": "08:30" }]);
+    let patch: t3code_contracts::ServerUpdateSettingsPayload = serde_json::from_value(serde_json::json!({ "patch": { "snoozePresets": presets } }))?;
+    let s = source.clone();
+    let saved = check.block(async move { s.update_settings(patch).await })?;
+    check.check("snooze presets saved on the server", saved.is_ok(), format!("{:?}", saved.as_ref().err()));
+    let env = sidebar_env.clone();
+    check.pump(
+        move |c| c.cx.update(|cx| StateBridge::shell(cx).read(cx).snapshot().snooze_presets.get(&env).is_some_and(|p| p.len() == 3)),
+        Duration::from_secs(15),
+        "the sidebar snapshot carries the server's presets",
+    )?;
+    let env = sidebar_env.clone();
+    let settings = check.cx.update(|cx| StateBridge::shell(cx).read(cx).snapshot().snooze_presets.get(&env).cloned());
+    let now = jiff::ZonedDateTime::now();
+    let menu = t3code_web::state::sidebar_actions::resolve_snooze_presets(settings.as_deref(), &now);
+    let labels: Vec<String> = menu.iter().map(|p| format!("{} ({}) [{}]", p.label, p.when, p.id)).collect();
+    check.check(
+        "the snooze menu resolves the server's presets, soonest first",
+        menu.len() == 3 && menu[0].id.as_ref() == "after:45" && menu[1].id.as_ref() == "after:120" && menu[2].id.as_ref() == "at:tomorrow:08:30",
+        labels.join(", "),
+    );
+    let patch: t3code_contracts::ServerUpdateSettingsPayload = serde_json::from_value(serde_json::json!({ "patch": { "snoozePresets": serde_json::Value::Null } }))?;
+    let s = source.clone();
+    let _ = check.block(async move { s.update_settings(patch).await })?;
+
+    // The header breadcrumb's project icon is the one the sidebar draws for the project, here a
+    // favicon the server finds in the checkout.
+    let favicon = PathBuf::from(&state.project_root).join("favicon.svg");
+    if !favicon.exists() {
+        std::fs::write(&favicon, r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><rect width="16" height="16" rx="3" fill="#e5484d"/></svg>"##)?;
+    }
+    let root_dir = state.project_root.clone();
+    check
+        .pump(
+            move |c| c.cx.update(|cx| StateBridge::shell(cx).read(cx).snapshot().projects.iter().any(|p| p.workspace_root.as_ref() == root_dir && p.favicon.is_some())),
+            Duration::from_secs(20),
+            "the project's favicon loaded",
+        )
+        .ok();
+    let key = key_of(&state, &state.long_thread);
+    check.go(&key);
+    check.wait(Duration::from_millis(300));
+    check.frame();
+    let shown = check.read(|root, cx| root.thread_view().read(cx).chat().read(cx).project_icon().cloned());
+    let sidebar = check.cx.update(|cx| {
+        StateBridge::shell(cx).read(cx).snapshot().projects.iter().find(|p| p.workspace_root.as_ref() == state.project_root).map(|p| (p.icon.clone(), p.favicon.clone()))
+    });
+    check.check(
+        "the breadcrumb draws the project's icon source",
+        shown.as_ref().is_some_and(|s| s.favicon.is_some()) && shown.as_ref().map(|s| (s.icon.clone(), s.favicon.clone())) == sidebar,
+        format!("header {:?}, sidebar {:?}", shown.as_ref().map(|s| s.favicon.is_some()), sidebar.as_ref().map(|s| s.1.is_some())),
+    );
+    check.shot("s0-breadcrumb.png")?;
+
+    // Search ranking: a word match above a newer prefix match.
+    // Letters only: a digit next to a letter starts a new word for the server's matcher.
+    let tag: String = format!("{}", now_ms() % 1_000_000).chars().map(|c| (b'j' + c.to_digit(10).unwrap_or(0) as u8) as char).collect();
+    let project = check
+        .cx
+        .update(|cx| {
+            let shell = StateBridge::environment(&environment_id, cx)?.read(cx).shell.clone();
+            shell.snapshot.as_ref()?.projects.iter().find(|p| p.workspace_root == state.project_root).map(|p| p.id.clone())
+        })
+        .context("seeded project")?;
+    let mut made = Vec::new();
+    for (title, text) in [("Search word", format!("quokka{tag} lives here")), ("Search prefix", format!("quokka{tag}ish is longer"))] {
+        let thread_id = ThreadId::new(uuid::Uuid::new_v4().to_string());
+        let input = CreateThread {
+            thread_id: thread_id.clone(),
+            project_id: project.clone(),
+            title: title.into(),
+            model_selection: ModelSelection { instance_id: "devReplay".into(), model: "multi-turn".into(), options: None },
+            runtime_mode: RuntimeMode::FullAccess,
+            interaction_mode: ProviderInteractionMode::Default,
+            branch: None,
+            worktree_path: None,
+        };
+        let c = commands.clone();
+        check.block(async move { c.create_thread(input).await })?.map_err(|e| anyhow::anyhow!("{e}"))?;
+        let message = SendMessage::text(thread_id.clone(), text);
+        let c = commands.clone();
+        check.block(async move { c.send_message(message).await })?.map_err(|e| anyhow::anyhow!("{e}"))?;
+        made.push(thread_key(&environment_id, &thread_id));
+        check.wait(Duration::from_millis(1200));
+    }
+    let query: SharedString = format!("quokka{tag}").into();
+    let data = check.read(|root, _| root.data().clone());
+    let q = query.clone();
+    check.cx.update(|cx| data.search_threads(q, cx));
+    let q = query.clone();
+    check.pump(
+        move |c| c.cx.update(|cx| StateBridge::shell(cx).read(cx).snapshot().search_content_matches.as_ref().is_some_and(|m| m.query == q && m.threads.len() >= 2)),
+        Duration::from_secs(20),
+        "message matches for both threads",
+    )?;
+    let order = check.cx.update(|cx| StateBridge::shell(cx).read(cx).snapshot().search_content_matches.as_ref().map(|m| m.threads.to_vec())).unwrap_or_default();
+    let link = check.cx.update(|cx| ConnectionRuntime::global(cx).environment_link(&environment_id)).context("link")?;
+    let raw_query = query.to_string();
+    let raw = check.block(async move {
+        let session = link.session(Duration::from_secs(5)).await.ok()?;
+        let input = t3code_contracts::OrchestrationV2SearchThreadsInput { query: raw_query, limit: None, older_settled_before: None, project_ids: None, environment_label: None, titles_only: None };
+        session.client.call::<t3code_contracts::rpc::methods::OrchestrationSearchThreads>(input).await.ok()
+    })?;
+    for m in raw.iter().flat_map(|r| r.matches.iter()) {
+        check.note(format!("server match {} quality {:?} hits {:?} at {:?} snippet {:?}", m.thread_id, m.quality, m.hits, m.message_created_at, m.snippet));
+    }
+    let word = order.iter().position(|k| *k == made[0]);
+    let prefix = order.iter().position(|k| *k == made[1]);
+    check.check(
+        "the word match ranks above the newer prefix match",
+        matches!((word, prefix), (Some(w), Some(p)) if w < p),
+        format!("word at {word:?}, prefix at {prefix:?} of {}", order.len()),
+    );
     Ok(())
 }

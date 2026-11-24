@@ -31,6 +31,7 @@ pub mod thread_find_bar;
 pub mod thread_details_panel;
 pub mod thread_details_pr_row;
 pub mod thread_details_sections;
+pub mod thread_error_banner;
 pub mod thread_details_panel_styles;
 pub mod timeline_entries;
 pub mod timeline_fixtures;

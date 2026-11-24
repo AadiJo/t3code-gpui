@@ -25,7 +25,7 @@ use crate::components::chat::messages_timeline::TimelineAction;
 use crate::components::chat::timeline_entries::{MessageId, PendingQuestion, TimelineInput};
 use crate::components::command_palette_lookups::CommandPaletteSource;
 use crate::components::diff_panel::DiffPanelInput;
-use crate::components::branch_toolbar::BranchToolbarProps;
+use crate::components::branch_toolbar::{BranchToolbarEvent, BranchToolbarProps};
 use crate::components::git_actions_control::GitActionsProps;
 use crate::components::git_actions_control_source::GitActionsSource;
 use crate::remote_open::RemoteOpenState;
@@ -53,6 +53,8 @@ pub struct ThreadView {
     pub branch: Option<SharedString>,
     /// The project, for per-project panels (Files) and the git controls.
     pub project_id: Option<ProjectId>,
+    /// The project's icon override and fetched favicon, for the header breadcrumb.
+    pub project_icon: Option<crate::components::project_favicon::ProjectIconSource>,
 }
 
 /// A change the views apply.
@@ -203,6 +205,16 @@ pub trait AppData: 'static {
 
     /// The branch toolbar's props for `view`; re-read whenever the thread changes.
     fn toolbar_props(&self, view: &ThreadView, cx: &mut App) -> BranchToolbarProps;
+
+    /// The breadcrumb's project icon source for `target`; re-read when the snapshot changes, as
+    /// a favicon can load after the thread shows.
+    fn project_icon(&self, _target: &ThreadTarget, _cx: &mut App) -> Option<crate::components::project_favicon::ProjectIconSource> {
+        None
+    }
+
+    /// A branch toolbar choice on a draft (workspace mode, base branch, start from origin): the
+    /// draft keeps it for its first send and emits [`DataEvent::ThreadChanged`].
+    fn draft_workspace_event(&self, _draft: &DraftId, _event: &BranchToolbarEvent, _cx: &mut App) {}
 
     /// The details card's server facts for `view` (pull request, issues, servers, automations,
     /// context window) on top of `base`; re-read whenever the thread changes.

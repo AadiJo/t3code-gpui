@@ -61,8 +61,30 @@ fn transport_lost<E: std::fmt::Debug>(error: &RpcError<E>) -> bool {
     matches!(error, RpcError::Closed(_) | RpcError::Interrupted)
 }
 
-fn command_error<E: std::fmt::Debug>(error: RpcError<E>) -> CommandError {
-    if transport_lost(&error) { CommandError::TransportLost } else { CommandError::Refused(error.to_string()) }
+/// A refusal carries the server error's own `message` when it has one, as the web shows it.
+fn command_error<E: std::fmt::Debug + serde::Serialize>(error: RpcError<E>) -> CommandError {
+    if transport_lost(&error) {
+        return CommandError::TransportLost;
+    }
+    let message = match &error {
+        RpcError::Failure(failure) => serde_json::to_value(failure).ok().as_ref().and_then(server_message),
+        _ => None,
+    };
+    CommandError::Refused(message.unwrap_or_else(|| error.to_string()))
+}
+
+/// The first non-empty `message` in a server error body.
+fn server_message(value: &serde_json::Value) -> Option<String> {
+    match value {
+        serde_json::Value::Object(map) => map
+            .get("message")
+            .and_then(|m| m.as_str())
+            .filter(|m| !m.trim().is_empty())
+            .map(str::to_owned)
+            .or_else(|| map.values().find_map(server_message)),
+        serde_json::Value::Array(items) => items.iter().find_map(server_message),
+        _ => None,
+    }
 }
 
 /// A fresh client command id (UUIDv4).

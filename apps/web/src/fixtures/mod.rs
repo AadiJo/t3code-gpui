@@ -253,6 +253,7 @@ impl FixtureStore {
                     questions: record.questions.clone(),
                     branch: record.branch.clone(),
                     project_id: Some(record.project_id.clone()),
+                    project_icon: None,
                 })
             }
             ThreadTarget::Draft(id) => {
@@ -269,6 +270,7 @@ impl FixtureStore {
                     questions: Arc::from([]),
                     branch: None,
                     project_id: project.map(|p| p.project_ref.project_id.clone()),
+                    project_icon: None,
                 })
             }
         }
