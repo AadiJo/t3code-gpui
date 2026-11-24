@@ -137,6 +137,11 @@ pub struct Sidebar {
     /// Six-step phase of the terminal pulse.
     pub(crate) pulse: u8,
     pub(crate) renaming: Option<Renaming>,
+    /// Scenes that show several setting combinations at once keep the
+    /// snapshot's settings instead of the client settings.
+    snapshot_settings_only: bool,
+    /// The snapshot's own settings, which the client settings overlay.
+    base_settings: model::SidebarSettings,
     /// Jump hints show: the jump modifier has been held 200ms.
     pub(crate) jump_hints: bool,
     /// The project filter popup, while open.
@@ -165,6 +170,7 @@ impl Sidebar {
             }
         });
         let now = snapshot.now;
+        let snapshot_settings = snapshot.settings;
         let mut this = Self {
             snapshot,
             options: SidebarListOptions::default(),
@@ -190,6 +196,8 @@ impl Sidebar {
             now,
             pulse: 0,
             renaming: None,
+            snapshot_settings_only: false,
+            base_settings: snapshot_settings,
             jump_hints: false,
             scope_menu: None,
             drag_target: Default::default(),
@@ -222,6 +230,7 @@ impl Sidebar {
     /// Replaces the data. Rows are re-derived once here, not per frame.
     pub fn set_snapshot(&mut self, snapshot: SidebarSnapshot, cx: &mut Context<Self>) {
         self.now = snapshot.now;
+        self.base_settings = snapshot.settings;
         self.snapshot = snapshot;
         self.rebuild(cx);
     }
@@ -255,6 +264,12 @@ impl Sidebar {
     /// Bounds of list entry `ix` from the last frame, if laid out.
     pub fn entry_bounds(&self, ix: usize) -> Option<Bounds<Pixels>> {
         self.list_state.bounds_for_item(ix)
+    }
+
+    /// Renders with the snapshot's settings, ignoring the client settings (scenes).
+    pub fn use_snapshot_settings(&mut self, cx: &mut Context<Self>) {
+        self.snapshot_settings_only = true;
+        self.rebuild(cx);
     }
 
     /// The data the sidebar renders.
@@ -339,7 +354,8 @@ impl Sidebar {
     fn apply_client_settings(&mut self, cx: &App) {
         use crate::hooks::use_settings::ClientSettingsStore;
         use t3code_contracts::{SidebarProjectGroupingMode as G, SidebarProjectSortOrder as O};
-        if !cx.has_global::<ClientSettingsStore>() {
+        self.snapshot.settings = self.base_settings;
+        if self.snapshot_settings_only || !cx.has_global::<ClientSettingsStore>() {
             return;
         }
         let client = ClientSettingsStore::get(cx);
