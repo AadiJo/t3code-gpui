@@ -30,6 +30,19 @@ pub fn apply_features_and_fallbacks(
     features: &FontFeatures,
     fallbacks: Option<&FontFallbacks>,
 ) -> anyhow::Result<()> {
+    let descriptor = features_and_fallbacks_descriptor(font, features, fallbacks);
+    let new_font = copy_with_descriptor(&font.native_font(), 0.0, &descriptor);
+    *font = unsafe { font_kit::font::Font::from_native_font(&new_font) };
+    Ok(())
+}
+
+/// The descriptor that adds `features` and the `fallbacks` cascade (then the system's
+/// cascade for the user's languages) to `font`, for [`copy_with_descriptor`].
+pub fn features_and_fallbacks_descriptor(
+    font: &mut FontKitFont,
+    features: &FontFeatures,
+    fallbacks: Option<&FontFallbacks>,
+) -> CTFontDescriptor {
     unsafe {
         let mut keys = vec![kCTFontFeatureSettingsAttribute];
         let mut values = vec![generate_feature_array(features)];
@@ -54,25 +67,69 @@ pub fn apply_features_and_fallbacks(
 
         let new_descriptor = CTFontDescriptorCreateWithAttributes(attrs);
         CFRelease(attrs as _);
-        let new_descriptor = CTFontDescriptor::wrap_under_create_rule(new_descriptor);
+        CTFontDescriptor::wrap_under_create_rule(new_descriptor)
+    }
+}
+
+/// `CTFontCreateCopyWithAttributes`: `font` at `size` (0 keeps its size) with the
+/// descriptor's attributes added.
+pub fn copy_with_descriptor(font: &CTFont, size: f64, descriptor: &CTFontDescriptor) -> CTFont {
+    unsafe {
         // font-kit uses the older core-text wrappers. Borrow the same CF objects
         // for the generated API, then transfer its create-rule ownership back.
-        let native_font = font.native_font();
-        let generated_font = &*native_font
+        let generated_font = &*font
             .as_concrete_TypeRef()
             .cast::<objc2_core_text::CTFont>();
-        let descriptor = &*new_descriptor
+        let descriptor = &*descriptor
             .as_concrete_TypeRef()
             .cast::<objc2_core_text::CTFontDescriptor>();
-        let new_font = generated_font.copy_with_attributes(0.0, std::ptr::null(), Some(descriptor));
-        let new_font = CTFont::wrap_under_create_rule(
+        let new_font = generated_font.copy_with_attributes(size as _, std::ptr::null(), Some(descriptor));
+        CTFont::wrap_under_create_rule(
             objc2_core_foundation::CFRetained::into_raw(new_font)
                 .as_ptr()
                 .cast(),
-        );
-        *font = font_kit::font::Font::from_native_font(&new_font);
+        )
+    }
+}
 
-        Ok(())
+/// The system UI font the way Blink's `MatchSystemUIFont` makes it for `system-ui` and
+/// `-apple-system`: `CTFontCreateUIFontForLanguage` at the exact size (so CoreText picks
+/// the optical size and tracking for it), the bold trait from CSS weight 600 and the
+/// italic trait when asked, then the CSS weight itself on the `wght` axis.
+pub fn system_ui_font(size: f64, weight: f32, italic: bool) -> CTFont {
+    use core_text::font_descriptor::{kCTFontBoldTrait, kCTFontVariationAttribute};
+    let mut font = core_text::font::new_ui_font_for_language(
+        core_text::font::kCTFontSystemFontType,
+        size,
+        None,
+    );
+    let mut traits = 0;
+    if italic {
+        traits |= kCTFontItalicTrait;
+    }
+    if weight >= 600. {
+        traits |= kCTFontBoldTrait;
+    }
+    if traits != 0
+        && let Some(styled) = font.clone_with_symbolic_traits(traits, traits)
+    {
+        font = styled;
+    }
+    if weight == 400. {
+        return font;
+    }
+    const WGHT: i64 = 0x7767_6874;
+    unsafe {
+        let variations = core_foundation::dictionary::CFDictionary::from_CFType_pairs(&[(
+            CFNumber::from(WGHT),
+            CFNumber::from(weight as f64),
+        )]);
+        let attributes = core_foundation::dictionary::CFDictionary::from_CFType_pairs(&[(
+            CFString::wrap_under_get_rule(kCTFontVariationAttribute),
+            variations.as_CFType(),
+        )]);
+        let descriptor = core_text::font_descriptor::new_from_attributes(&attributes);
+        copy_with_descriptor(&font, size, &descriptor)
     }
 }
 

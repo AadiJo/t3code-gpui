@@ -17,6 +17,7 @@ pub mod settings_server;
 pub mod settings;
 mod sidebar;
 mod terminal;
+mod text_metrics;
 pub mod ui;
 mod preview;
 mod usage;
@@ -40,6 +41,7 @@ pub fn scenes() -> &'static [(&'static str, SceneBuilder)] {
         ("terminal", terminal::build),
         ("terminal-light", terminal::build_light),
         ("i18n", i18n::build),
+        ("text-metrics", text_metrics::build),
         ("composer-light", composer::build_light),
         ("composer-popovers", composer::build_popovers),
         ("composer-popovers-light", composer::build_popovers_light),

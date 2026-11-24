@@ -38,7 +38,7 @@ use gpui::{
     Result, SUBPIXEL_VARIANTS_X, ShapedGlyph, ShapedRun, SharedString, Size, TextRenderingMode,
     point, px, size, swap_rgba_pa_to_bgra,
 };
-use parking_lot::{RwLock, RwLockUpgradableReadGuard};
+use parking_lot::{Mutex, RwLock, RwLockUpgradableReadGuard};
 use pathfinder_geometry::{
     rect::{RectF, RectI},
     transform2d::Transform2F,
@@ -54,7 +54,10 @@ use {
     std::sync::OnceLock,
 };
 
-use crate::open_type::apply_features_and_fallbacks;
+use crate::open_type::{
+    apply_features_and_fallbacks, copy_with_descriptor, features_and_fallbacks_descriptor,
+    system_ui_font,
+};
 
 #[allow(non_upper_case_globals)]
 const kCGImageAlphaOnly: u32 = 7;
@@ -77,6 +80,20 @@ struct AppleTextSystemState {
     font_ids_by_postscript_name: HashMap<String, FontId>,
     font_ids_by_font_key: HashMap<FontKey, SmallVec<[FontId; 4]>>,
     postscript_names_by_font_id: HashMap<FontId, String>,
+    /// Faces of the `.SystemUIFont` family, which are made per size (see [`SystemUiFace`]).
+    system_ui_faces: HashMap<FontId, SystemUiFace>,
+    /// Each system UI face at each size it has been laid out or drawn at.
+    sized_system_fonts: Mutex<HashMap<(FontId, u32), CTFont>>,
+}
+
+/// One weight and style of the system UI font. Chromium creates the system font for every
+/// size it draws (`MatchSystemUIFont`), and SF's tracking and optical size follow that
+/// size, so the face is rebuilt at each size instead of scaling one 16pt copy.
+struct SystemUiFace {
+    weight: f32,
+    italic: bool,
+    /// The features and fallback cascade the font asked for.
+    extras: CTFontDescriptor,
 }
 
 impl AppleTextSystem {
@@ -90,6 +107,8 @@ impl AppleTextSystem {
             font_ids_by_postscript_name: HashMap::default(),
             font_ids_by_font_key: HashMap::default(),
             postscript_names_by_font_id: HashMap::default(),
+            system_ui_faces: HashMap::default(),
+            sized_system_fonts: Mutex::default(),
         }))
     }
 }
@@ -145,6 +164,9 @@ impl PlatformTextSystem for AppleTextSystem {
             Ok(*font_id)
         } else {
             let mut lock = RwLockUpgradableReadGuard::upgrade(lock);
+            if font.family.as_ref() == ".SystemUIFont" {
+                return lock.load_system_ui_face(font);
+            }
             let font_key = FontKey {
                 font_family: font.family.clone(),
                 font_features: font.features.clone(),
@@ -279,6 +301,43 @@ impl AppleTextSystemState {
             .collect::<Result<Vec<_>>>()?;
         self.memory_source.add_fonts(fonts.into_iter())?;
         Ok(())
+    }
+
+    /// Registers one weight and style of the system UI font as its own font id.
+    fn load_system_ui_face(&mut self, font: &Font) -> Result<FontId> {
+        let weight = font.weight.0;
+        let italic = font.style != FontStyle::Normal;
+        let mut template = unsafe { FontKitFont::from_native_font(&system_ui_font(16., weight, italic)) };
+        let extras =
+            features_and_fallbacks_descriptor(&mut template, &font.features, font.fallbacks.as_ref());
+        let template = copy_with_descriptor(&template.native_font(), 0., &extras);
+        let template = unsafe { FontKitFont::from_native_font(&template) };
+        let font_id = FontId(self.fonts.len());
+        if let Some(postscript_name) = template.postscript_name() {
+            self.postscript_names_by_font_id.insert(font_id, postscript_name);
+        }
+        self.fonts.push(template);
+        self.system_ui_faces.insert(font_id, SystemUiFace { weight, italic, extras });
+        self.font_selections.insert(font.clone(), font_id);
+        Ok(font_id)
+    }
+
+    /// The font to lay out or draw `font_id` with at `size`: a system UI face made at that
+    /// size, or any other font scaled to it.
+    fn sized_font(&self, font_id: FontId, size: f32) -> CTFont {
+        let Some(face) = self.system_ui_faces.get(&font_id) else {
+            return self.fonts[font_id.0]
+                .native_font()
+                .clone_with_font_size(size as CGFloat);
+        };
+        self.sized_system_fonts
+            .lock()
+            .entry((font_id, size.to_bits()))
+            .or_insert_with(|| {
+                let font = system_ui_font(size as f64, face.weight, face.italic);
+                copy_with_descriptor(&font, size as f64, &face.extras)
+            })
+            .clone()
     }
 
     fn load_family(
@@ -427,7 +486,14 @@ impl AppleTextSystemState {
     }
 
     fn raster_bounds(&self, params: &RenderGlyphParams) -> Result<Bounds<DevicePixels>> {
-        let font = &self.fonts[params.font_id.0];
+        let sized;
+        let font = if self.system_ui_faces.contains_key(&params.font_id) {
+            let native = self.sized_font(params.font_id, params.font_size.into());
+            sized = unsafe { FontKitFont::from_native_font(&native) };
+            &sized
+        } else {
+            &self.fonts[params.font_id.0]
+        };
         let scale = Transform2F::from_scale(params.scale_factor);
         let bounds: Bounds<DevicePixels> = bounds_from_rect_i(font.raster_bounds(
             params.glyph_id.0,
@@ -514,9 +580,7 @@ impl AppleTextSystemState {
             } else {
                 cx.set_gray_fill_color(0.0, 1.0);
             }
-            self.fonts[params.font_id.0]
-                .native_font()
-                .clone_with_font_size(f32::from(params.font_size) as CGFloat)
+            self.sized_font(params.font_id, params.font_size.into())
                 .draw_glyphs(
                     &[params.glyph_id.0 as CGGlyph],
                     &[CGPoint::new(
@@ -542,6 +606,9 @@ impl AppleTextSystemState {
         let mut string = CFMutableAttributedString::new();
         let mut max_ascent = 0.0f32;
         let mut max_descent = 0.0f32;
+        // The system UI fonts set on this line and their ids. Weights of SF can share a
+        // PostScript name, so the global by-name lookup can't map them back.
+        let mut system_runs = SmallVec::<[(CTFont, FontId); 2]>::new();
 
         {
             let mut text = text;
@@ -562,24 +629,19 @@ impl AppleTextSystemState {
 
                 let length = utf16_end - utf16_start;
                 let cf_range = CFRange::init(utf16_start, length);
-                let font = &self.fonts[run.font_id.0];
-
-                let font_metrics = font.metrics();
-                let font_scale = f32::from(font_size) / font_metrics.units_per_em as f32;
-                max_ascent = max_ascent.max(font_metrics.ascent * font_scale);
-                max_descent = max_descent.max(-font_metrics.descent * font_scale);
-
                 let font_size = if break_ligature {
                     px(f32::from(font_size).next_up())
                 } else {
                     font_size
                 };
+                let native = self.sized_font(run.font_id, font_size.into());
+                max_ascent = max_ascent.max(native.ascent() as f32);
+                max_descent = max_descent.max(native.descent() as f32);
+                if self.system_ui_faces.contains_key(&run.font_id) {
+                    system_runs.push((native.clone(), run.font_id));
+                }
                 unsafe {
-                    string.set_attribute(
-                        cf_range,
-                        kCTFontAttributeName,
-                        &font.native_font().clone_with_font_size(font_size.into()),
-                    );
+                    string.set_attribute(cf_range, kCTFontAttributeName, &native);
                 }
                 if length > 0 {
                     break_ligature = !break_ligature;
@@ -599,7 +661,10 @@ impl AppleTextSystemState {
                     .downcast::<CTFont>()
                     .unwrap()
             };
-            let font_id = self.id_for_native_font(font);
+            let font_id = match system_runs.iter().find(|(set, _)| *set == font) {
+                Some((_, font_id)) => *font_id,
+                None => self.id_for_native_font(font),
+            };
 
             let glyphs = match runs.last_mut() {
                 Some(run) if run.font_id == font_id => &mut run.glyphs,
