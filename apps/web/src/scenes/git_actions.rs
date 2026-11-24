@@ -25,7 +25,7 @@ use crate::components::branch_toolbar_logic::{EnvMode, EnvironmentOption, Machin
 use crate::components::chat::open_in_picker::OpenInPicker;
 use crate::components::chat::thread_details_items::ThreadDetailsItemSettings;
 use crate::components::chat::thread_details_panel::{ThreadDetailsInput, ThreadDetailsPanel};
-use crate::components::chat::thread_details_pr_row::{PullRequestRowData, pull_request_row};
+use crate::components::chat::thread_details_pr_row::{PullRequestRowData, PullRequestRowHandlers, pull_request_row};
 use crate::components::git_actions_control::{GitActionsControl, GitActionsProps};
 use crate::components::git_actions_control_fixture::{FixtureGitSource, fixture_open_pr, fixture_status};
 use crate::components::git_actions_control_logic::{VcsActionOperation, VcsActionState};
@@ -163,6 +163,8 @@ pub fn fixture_pull_request_row(detail: Option<PullRequestDetail>) -> PullReques
         is_draft: false,
         detail,
         watching: false,
+        project_merge_method: None,
+        last_merge_method: t3code_contracts::PullRequestMergeMethod::Squash,
     }
 }
 
@@ -306,7 +308,13 @@ impl Render for GitActionsScene {
         let states = self.states.iter().map(|(label, branch, git, pr)| {
             let mut rows = vec![branch.clone().into_any_element()];
             if let Some(pr) = pr {
-                rows.push(pull_request_row(0, &theme, pr, |_, _| {}, |_, _, _| {}));
+                let handlers = PullRequestRowHandlers {
+                    open: std::rc::Rc::new(|_, _| {}),
+                    action: std::rc::Rc::new(|_, _, _| {}),
+                    toggle_checks: std::rc::Rc::new(|_, _| {}),
+                    stop_watching: None,
+                };
+                rows.push(pull_request_row(0, &theme, pr, handlers, None));
             }
             rows.push(git.clone().into_any_element());
             cell(&theme, *label, width, rows)
