@@ -1,12 +1,14 @@
 //! Draws [`gpui::Backdrop`] regions, CSS `backdrop-filter: blur() saturate()`.
 //!
 //! This mirrors `backdrop.rs` in gpui-pre-wgpu step for step, and the shaders
-//! at the end of `shaders.metal` mirror its `shaders_backdrop.wgsl`. The
-//! renderer ends its render encoder when it reaches a backdrop batch. For each
-//! backdrop a blit copies the region beneath it out of the frame, and three
-//! render passes average it down and blur it across and down. The renderer
-//! then resumes the frame and draws the result over the region, clipped to
-//! the rounded border box. A frame without backdrops creates nothing here.
+//! at the end of `shaders.metal` mirror its `shaders_backdrop.wgsl`. A
+//! backdrop is painted as a blur and then a draw ([`gpui::BackdropPass`]).
+//! The renderer ends its render encoder at a batch with a blur. For each blur
+//! a blit copies the region beneath it out of the frame, and three render
+//! passes average it down and blur it across and down, into the slot numbered
+//! by the blur's id. The renderer then resumes the frame, and each draw
+//! composites its blur's slot over the region, clipped to the rounded border
+//! box. A frame without backdrops creates nothing here.
 
 use anyhow::{Context as _, Result};
 use gpui::{Backdrop, DevicePixels, Size};
@@ -96,10 +98,17 @@ impl BackdropPlan {
     }
 }
 
+/// A backdrop of a batch: the slot of its blur and its plan.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct BatchBackdrop {
+    pub(crate) slot: usize,
+    pub(crate) plan: BackdropPlan,
+}
+
 type Texture = Retained<ProtocolObject<dyn MTLTexture>>;
 type Pipeline = Retained<ProtocolObject<dyn MTLRenderPipelineState>>;
 
-/// The textures one backdrop of a batch is blurred in, kept across frames:
+/// The textures one blur of a frame is drawn in, kept across frames:
 /// the copied region, then the downsampled image in `first`, blurred across
 /// into `second` and down back into `first`, which the composite reads.
 struct Slot {
@@ -128,16 +137,16 @@ struct State {
 }
 
 impl BackdropRenderer {
-    /// Copies, downsamples and blurs each backdrop of a batch into its slot.
-    /// Call between render encoders, after everything beneath the batch was
-    /// drawn into `target`.
+    /// Copies, downsamples and blurs each blur of a batch into its slot. Call
+    /// between render encoders, after everything beneath the batch was drawn
+    /// into `target`.
     pub(crate) fn encode_blurs(
         &mut self,
         device: &ProtocolObject<dyn MTLDevice>,
         library: &ProtocolObject<dyn MTLLibrary>,
         command_buffer: &ProtocolObject<dyn MTLCommandBuffer>,
         target: &ProtocolObject<dyn MTLTexture>,
-        plans: &[BackdropPlan],
+        blurs: &[BatchBackdrop],
     ) -> Result<()> {
         if self.state.is_none() {
             self.state = Some(State {
@@ -146,14 +155,15 @@ impl BackdropRenderer {
             });
         }
         let state = self.state.as_mut().context("backdrop state")?;
-        for (index, plan) in plans.iter().enumerate() {
-            state.ensure_slot(device, index, plan)?;
+        for blur in blurs {
+            state.ensure_slot(device, blur.slot, &blur.plan)?;
         }
 
         let blit = command_buffer
             .blitCommandEncoder()
             .context("creating backdrop blit encoder")?;
-        for (slot, plan) in state.slots.iter().zip(plans) {
+        for BatchBackdrop { slot, plan } in blurs {
+            let slot = &state.slots[*slot];
             let [x, y] = plan.plan.region_origin.map(|value| value as usize);
             let [width, height] = plan.plan.region_size.map(|value| value as usize);
             // SAFETY: The region lies within `target`, which `plan` was made for,
@@ -174,7 +184,8 @@ impl BackdropRenderer {
         }
         blit.endEncoding();
 
-        for (slot, plan) in state.slots.iter().zip(plans) {
+        for BatchBackdrop { slot, plan } in blurs {
+            let slot = &state.slots[*slot];
             let passes = [
                 (&state.pipelines.downsample, &slot.region, &slot.first),
                 (&state.pipelines.blur_horizontal, &slot.first, &slot.second),
@@ -224,18 +235,21 @@ impl BackdropRenderer {
         Ok(())
     }
 
-    /// Draws a blurred batch over the frame, in the resumed render encoder
-    /// whose viewport already places the batch at its depth.
+    /// Draws each draw of a batch from its blur's slot, in the render
+    /// encoder whose viewport places the batch at its depth.
     pub(crate) fn draw_composites(
         &self,
         encoder: &ProtocolObject<dyn MTLRenderCommandEncoder>,
-        plans: &[BackdropPlan],
+        draws: &[BatchBackdrop],
     ) {
         let Some(state) = &self.state else {
             return;
         };
         encoder.setRenderPipelineState(&state.pipelines.composite);
-        for (slot, plan) in state.slots.iter().zip(plans) {
+        for BatchBackdrop { slot, plan } in draws {
+            let Some(slot) = state.slots.get(*slot) else {
+                continue;
+            };
             // SAFETY: As in `encode_blurs`; the composite reads `first`.
             unsafe {
                 encoder.setVertexBytes_length_atIndex(
@@ -263,7 +277,7 @@ impl BackdropRenderer {
 }
 
 impl State {
-    /// Makes the slot for the `index`th backdrop of a batch large enough for `plan`.
+    /// Makes the slot numbered `index` large enough for `plan`.
     fn ensure_slot(
         &mut self,
         device: &ProtocolObject<dyn MTLDevice>,
@@ -283,7 +297,7 @@ impl State {
         let new_texture = |size: [usize; 2], usage: MTLTextureUsage| {
             intermediate_texture(device, size, usage)
         };
-        if index == self.slots.len() {
+        while self.slots.len() <= index {
             let down = grown(None, down_size);
             self.slots.push(Slot {
                 region: new_texture(grown(None, region_size), MTLTextureUsage::ShaderRead)?,

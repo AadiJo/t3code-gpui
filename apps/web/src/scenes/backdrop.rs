@@ -2,13 +2,14 @@
 //! backdrop blur with Chromium's `backdrop-filter`. The same page in HTML is
 //! `scripts/parity/backdrop.html`; keep the two in step.
 
-use gpui_kit::{AnyView, App, AppContext as _, Context, IntoElement, Render, Rgba, Window, div, prelude::*, px, rgb, rgba};
+use gpui_kit::{AnyView, App, AppContext as _, BoxShadow, Context, IntoElement, Render, Rgba, Window, div, point, prelude::*, px, rgb, rgba};
 
 /// The grid's colours, picked by `(column * 7 + row * 3) % 6`.
 const PALETTE: [u32; 6] = [0xe04040, 0x40c040, 0x4060e0, 0xe0c040, 0xf0f0f0, 0x202020];
 const CELL: f32 = 40.;
 
-/// A glass panel: position, size, corner radius, blur, saturation and fill.
+/// A glass panel: position, size, corner radius, blur, saturation, fill and
+/// whether it has the `dialog-glass` drop shadow.
 struct Panel {
     x: f32,
     y: f32,
@@ -18,15 +19,16 @@ struct Panel {
     blur: f32,
     saturation: f32,
     fill: Rgba,
+    shadow: bool,
 }
 
 fn panels() -> [Panel; 5] {
     [
-        Panel { x: 60., y: 60., width: 300., height: 200., radius: 12., blur: 16., saturation: 1.08, fill: rgba(0x00000000) },
-        Panel { x: 420., y: 60., width: 300., height: 200., radius: 8., blur: 12., saturation: 1.14, fill: rgba(0x18181b66) },
-        Panel { x: 60., y: 300., width: 300., height: 150., radius: 16., blur: 16., saturation: 1.08, fill: rgba(0x00000066) },
-        Panel { x: 420., y: 300., width: 300., height: 150., radius: 0., blur: 4., saturation: 1., fill: rgba(0x0a0a0aa3) },
-        Panel { x: 740., y: 430., width: 120., height: 120., radius: 10., blur: 16., saturation: 1.08, fill: rgba(0xffffff1a) },
+        Panel { x: 60., y: 60., width: 300., height: 200., radius: 12., blur: 16., saturation: 1.08, fill: rgba(0x00000000), shadow: false },
+        Panel { x: 420., y: 60., width: 300., height: 200., radius: 8., blur: 12., saturation: 1.14, fill: rgba(0x18181b66), shadow: false },
+        Panel { x: 60., y: 300., width: 300., height: 150., radius: 16., blur: 16., saturation: 1.08, fill: rgba(0x00000066), shadow: true },
+        Panel { x: 420., y: 300., width: 300., height: 150., radius: 0., blur: 4., saturation: 1., fill: rgba(0x0a0a0aa3), shadow: false },
+        Panel { x: 740., y: 430., width: 120., height: 120., radius: 10., blur: 16., saturation: 1.08, fill: rgba(0xffffff1a), shadow: false },
     ]
 }
 
@@ -54,6 +56,16 @@ impl Render for BackdropScene {
                 .rounded(px(panel.radius))
                 .backdrop_blur(px(panel.blur), panel.saturation)
                 .bg(panel.fill)
+                .when(panel.shadow, |panel| {
+                    panel.shadow(vec![BoxShadow {
+                        color: rgba(0x000000e6).into(),
+                        offset: point(px(0.), px(24.)),
+                        // GPUI's blur radius is the standard deviation: half of CSS's 72px.
+                        blur_radius: px(36.),
+                        spread_radius: px(-20.),
+                        inset: false,
+                    }])
+                })
         });
         div()
             .size_full()

@@ -66,6 +66,8 @@ pub struct Scene {
     pub surfaces: Vec<PaintSurface>,
     pub native_views: Vec<PaintNativeView>,
     pub backdrops: Vec<Backdrop>,
+    /// How many [`BackdropPass::Blur`] backdrops were inserted, which numbers them.
+    backdrop_blurs: u32,
     animations: Vec<SpriteAnimation>,
 }
 
@@ -86,6 +88,7 @@ impl Scene {
         self.surfaces.clear();
         self.native_views.clear();
         self.backdrops.clear();
+        self.backdrop_blurs = 0;
         self.animations.clear();
     }
 
@@ -284,7 +287,22 @@ impl Scene {
                 order,
                 ..native_view
             }),
-            Primitive::Backdrop(backdrop) => self.backdrops.push(Backdrop { order, ..backdrop }),
+            Primitive::Backdrop(mut backdrop) => {
+                // Primitives arrive here in paint order, so a draw follows
+                // the blur painted just before it, even when replayed.
+                backdrop.pass = match backdrop.pass {
+                    BackdropPass::Blur { .. } => {
+                        self.backdrop_blurs += 1;
+                        BackdropPass::Blur {
+                            id: self.backdrop_blurs - 1,
+                        }
+                    }
+                    BackdropPass::Draw { .. } => BackdropPass::Draw {
+                        blur: self.backdrop_blurs.saturating_sub(1),
+                    },
+                };
+                self.backdrops.push(Backdrop { order, ..backdrop });
+            }
         }
     }
 
@@ -488,6 +506,8 @@ impl PrimitiveKind {
             Self::MonochromeSprite => Self::Underline,
             Self::SubpixelSprite => Self::MonochromeSprite,
             Self::PolychromeSprite => Self::SubpixelSprite,
+            // A backdrop drawn over another has to read it.
+            Self::Backdrop => Self::NativeView,
             kind => kind,
         }
     }
@@ -873,8 +893,9 @@ pub enum PrimitiveBatch {
     },
     Surfaces(Range<usize>),
     NativeViews(Range<usize>),
-    /// Regions whose backdrop is blurred. The renderer draws everything
-    /// before this batch, then blurs and composites each region.
+    /// Regions whose backdrop is blurred. For a batch with a
+    /// [`BackdropPass::Blur`] the renderer draws everything before it, then
+    /// blurs each region; it then draws each [`BackdropPass::Draw`].
     Backdrops(Range<usize>),
 }
 
@@ -1266,11 +1287,15 @@ impl From<PaintNativeView> for Primitive {
 /// blurred and saturated, like CSS `backdrop-filter: blur() saturate()`.
 ///
 /// Only the backdrop within the border box is read, so nothing outside the
-/// box bleeds in, as in Chromium.
+/// box bleeds in, as in Chromium. It is painted twice, a blur and then a
+/// draw, so that the element's drop shadows can be painted between them: the
+/// draw covers them inside the box, as CSS clips outer shadows to outside it.
 #[derive(Clone, Copy, Debug)]
 pub struct Backdrop {
     /// The backdrop's position among the scene's other primitives.
     pub order: DrawOrder,
+    /// Whether this blurs the backdrop or draws the blur.
+    pub pass: BackdropPass,
     /// The border box whose backdrop is blurred.
     pub bounds: Bounds<ScaledPixels>,
     /// The clip applied to the blurred result.
@@ -1364,6 +1389,22 @@ fn downsampled_gaussian(sigma: f32) -> (u32, f32) {
     let upsample = if factor > 1 { f * f / 6. } else { 0. };
     let variance = sigma * sigma - (f * f - 1.) / 12. - upsample;
     (factor, (variance / (f * f)).max(0.25).sqrt())
+}
+
+/// The two halves of a [`Backdrop`]. The scene numbers them as they are
+/// inserted, so the ids painted with are placeholders.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BackdropPass {
+    /// Reads and blurs what is drawn beneath the region so far.
+    Blur {
+        /// This blur's number among the scene's blurs.
+        id: u32,
+    },
+    /// Draws a blur over the region, clipped to its rounded rectangle.
+    Draw {
+        /// The number of the blur it draws, the one painted before it.
+        blur: u32,
+    },
 }
 
 impl From<Backdrop> for Primitive {

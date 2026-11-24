@@ -8,7 +8,7 @@ use crate::subscription::SingleSubscriberSet;
 use crate::taffy::TaffyLayoutEngine;
 use crate::{
     Action, AnyDrag, AnyElement, AnyImageCache, AnyTooltip, AnyView, App, AppContext, Arena, Asset,
-    AsyncWindowContext, AtlasTile, AvailableSpace, Backdrop, Background, BorderStyle, Bounds, BoxShadow,
+    AsyncWindowContext, AtlasTile, AvailableSpace, Backdrop, BackdropPass, Background, BorderStyle, Bounds, BoxShadow,
     Capslock, Context, Corners, CursorHideMode, CursorStyle, Decorations, DevicePixels,
     DispatchActionListener, DispatchNodeId, DispatchTree, DisplayId, Edges, Effect, Entity,
     EntityId, EventEmitter, FileDropEvent, FontId, Global, GlobalElementId, GlyphId, GpuSpecs,
@@ -5014,8 +5014,10 @@ impl Window {
     }
 
     /// Blurs and saturates what is drawn beneath `bounds`, like CSS
-    /// `backdrop-filter: blur(blur_radius) saturate(saturation)`. Paint it before the
-    /// element's background, which is drawn over the blurred result.
+    /// `backdrop-filter: blur(blur_radius) saturate(saturation)`, and paints the element's
+    /// drop shadows from `shadows` outside it. Paint it in place of
+    /// [`Self::paint_drop_shadows`], before the element's background, which is drawn over
+    /// the blurred result.
     ///
     /// This method should only be called as part of the paint phase of element drawing.
     pub fn paint_backdrop(
@@ -5024,16 +5026,19 @@ impl Window {
         corner_radii: Corners<Pixels>,
         blur_radius: Pixels,
         saturation: f32,
+        shadows: &[BoxShadow],
     ) {
         self.invalidator.debug_assert_paint();
 
         let opacity = self.element_opacity();
         if blur_radius <= Pixels::ZERO && saturation == 1. || opacity <= 0. {
+            self.paint_drop_shadows(bounds, corner_radii, shadows);
             return;
         }
         let scale_factor = self.scale_factor();
         let backdrop = Backdrop {
             order: 0,
+            pass: BackdropPass::Blur { id: 0 },
             bounds: self.snap_bounds(bounds),
             content_mask: self.snapped_content_mask(),
             corner_radii: corner_radii.scale(scale_factor),
@@ -5042,6 +5047,13 @@ impl Window {
             opacity,
         };
         self.next_frame.scene.insert_primitive(backdrop);
+        // Between the blur and the draw, so the shadows are not blurred and
+        // the draw covers them inside the box.
+        self.paint_drop_shadows(bounds, corner_radii, shadows);
+        self.next_frame.scene.insert_primitive(Backdrop {
+            pass: BackdropPass::Draw { blur: 0 },
+            ..backdrop
+        });
     }
 
     /// Paint the inset shadows from `shadows` into the scene at the current z-index. Should

@@ -1,9 +1,9 @@
-use crate::backdrop::{BackdropPlan, BackdropRenderer};
+use crate::backdrop::{BackdropPlan, BackdropRenderer, BatchBackdrop};
 use crate::metal_atlas::MetalAtlas;
 use anyhow::{Context as _, Result};
 use block2::RcBlock;
 use gpui::{
-    AtlasTextureId, Bounds, ContentMask, DevicePixels, PaintSurface, PaintedPath, PrimitiveBatch,
+    AtlasTextureId, BackdropPass, Bounds, ContentMask, DevicePixels, PaintSurface, PaintedPath, PrimitiveBatch,
     ScaledPixels, Scene, Size, quad_depth, quad_depth_scale, size,
 };
 #[cfg(any(test, feature = "bench-support", feature = "test-support"))]
@@ -784,10 +784,10 @@ impl MetalRenderer {
         let alpha = if self.opaque { 1. } else { 0. };
         let depth_texture = self.depth_texture_matching(texture)?;
 
-        // A backdrop reads the frame drawn beneath it, so the frame is drawn
-        // in segments that end at each backdrop batch. Each segment's opaque
-        // quads are drawn first, as for a whole frame, so none drawn above a
-        // backdrop is in the frame when it is read.
+        // A backdrop's blur reads the frame drawn beneath it, so the frame is
+        // drawn in segments that end at each batch with a blur. Each segment's
+        // opaque quads are drawn first, as for a whole frame, so none drawn
+        // above a backdrop is in the frame when it is read.
         let can_blur = !scene.backdrops.is_empty() && !texture.isFramebufferOnly();
         let mut segment_quad_ends = SmallVec::<[usize; 4]>::new();
         let mut backdrop_plans = SmallVec::<[Option<BackdropPlan>; 4]>::new();
@@ -796,7 +796,13 @@ impl MetalRenderer {
             for batch in scene.batches() {
                 match batch {
                     PrimitiveBatch::Quads(range) => quad_cursor += range.len(),
-                    PrimitiveBatch::Backdrops(_) => segment_quad_ends.push(quad_cursor),
+                    PrimitiveBatch::Backdrops(range)
+                        if scene.backdrops[range.clone()].iter().any(|backdrop| {
+                            matches!(backdrop.pass, BackdropPass::Blur { .. })
+                        }) =>
+                    {
+                        segment_quad_ends.push(quad_cursor)
+                    }
                     _ => {}
                 }
             }
@@ -910,34 +916,51 @@ impl MetalRenderer {
                     if !can_blur {
                         continue;
                     }
-                    command_encoder.endEncoding();
-                    let plans: SmallVec<[BackdropPlan; 4]> =
-                        backdrop_plans[range].iter().flatten().copied().collect();
-                    self.backdrops.encode_blurs(
-                        &self.device,
-                        &self.library,
-                        &command_buffer,
-                        texture,
-                        &plans,
-                    )?;
-                    command_encoder = new_command_encoder_for_texture(
-                        &command_buffer,
-                        texture,
-                        &depth_texture,
-                        viewport_size,
-                        None,
-                    )?;
-                    set_global_inputs(&command_encoder, &viewport_size, &depth_scale);
-                    segment += 1;
-                    self.draw_opaque_quads(
-                        scene.quads.len(),
-                        quad_cursor as usize..segment_quad_ends[segment],
-                        instance_bindings,
-                        &command_encoder,
-                    );
-                    command_encoder.setDepthStencilState(Some(&self.depth_test_state));
-                    command_encoder.setViewport(viewport);
-                    self.backdrops.draw_composites(&command_encoder, &plans);
+                    let mut blurs = SmallVec::<[BatchBackdrop; 4]>::new();
+                    let mut draws = SmallVec::<[BatchBackdrop; 4]>::new();
+                    for index in range {
+                        let Some(plan) = backdrop_plans[index] else {
+                            continue;
+                        };
+                        match scene.backdrops[index].pass {
+                            BackdropPass::Blur { id } => blurs.push(BatchBackdrop {
+                                slot: id as usize,
+                                plan,
+                            }),
+                            BackdropPass::Draw { blur } => draws.push(BatchBackdrop {
+                                slot: blur as usize,
+                                plan,
+                            }),
+                        }
+                    }
+                    if !blurs.is_empty() {
+                        command_encoder.endEncoding();
+                        self.backdrops.encode_blurs(
+                            &self.device,
+                            &self.library,
+                            &command_buffer,
+                            texture,
+                            &blurs,
+                        )?;
+                        command_encoder = new_command_encoder_for_texture(
+                            &command_buffer,
+                            texture,
+                            &depth_texture,
+                            viewport_size,
+                            None,
+                        )?;
+                        set_global_inputs(&command_encoder, &viewport_size, &depth_scale);
+                        segment += 1;
+                        self.draw_opaque_quads(
+                            scene.quads.len(),
+                            quad_cursor as usize..segment_quad_ends[segment],
+                            instance_bindings,
+                            &command_encoder,
+                        );
+                        command_encoder.setDepthStencilState(Some(&self.depth_test_state));
+                        command_encoder.setViewport(viewport);
+                    }
+                    self.backdrops.draw_composites(&command_encoder, &draws);
                 }
                 PrimitiveBatch::SubpixelSprites { .. } => unreachable!(),
             }

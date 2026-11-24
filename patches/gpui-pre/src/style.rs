@@ -712,11 +712,16 @@ impl Style {
             .to_pixels(rem_size)
             .clamp_radii_for_quad_size(bounds.size);
 
-        if let Some(backdrop) = self.backdrop_blur {
-            window.paint_backdrop(bounds, corner_radii, backdrop.radius, backdrop.saturation);
+        match self.backdrop_blur {
+            Some(backdrop) => window.paint_backdrop(
+                bounds,
+                corner_radii,
+                backdrop.radius,
+                backdrop.saturation,
+                &self.box_shadow,
+            ),
+            None => window.paint_drop_shadows(bounds, corner_radii, &self.box_shadow),
         }
-
-        window.paint_drop_shadows(bounds, corner_radii, &self.box_shadow);
 
         let background_color = self.background.as_ref().and_then(Fill::color);
         if background_color.is_some_and(|color| !color.is_transparent()) {

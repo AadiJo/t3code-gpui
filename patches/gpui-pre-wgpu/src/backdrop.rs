@@ -1,11 +1,13 @@
 //! Draws [`gpui::Backdrop`] regions, CSS `backdrop-filter: blur() saturate()`.
 //!
-//! The renderer ends its pass when it reaches a backdrop batch. For each
-//! backdrop it copies the region beneath it out of the frame, averages it down
-//! by a power of two, and blurs it with two Gaussian passes whose combined
-//! spread matches the CSS standard deviation. It then resumes the frame and
-//! draws the result over the region, clipped to the rounded border box. A
-//! frame without backdrops creates nothing here.
+//! A backdrop is painted as a blur and then a draw ([`gpui::BackdropPass`]).
+//! The renderer ends its pass at a batch with a blur. For each blur it copies
+//! the region beneath it out of the frame, averages it down by a power of two,
+//! and blurs it with two Gaussian passes whose combined spread matches the CSS
+//! standard deviation, into the slot numbered by the blur's id. It then
+//! resumes the frame, and each draw composites its blur's slot over the
+//! region, clipped to the rounded border box. A frame without backdrops
+//! creates nothing here.
 
 use bytemuck::{Pod, Zeroable};
 use gpui::{Backdrop, DevicePixels, Size};
@@ -124,7 +126,7 @@ impl Intermediate {
     }
 }
 
-/// The textures one backdrop of a batch is blurred in, kept across frames:
+/// The textures one blur of a frame is drawn in, kept across frames:
 /// the copied region, then the downsampled image in `first`, blurred across
 /// into `second` and down back into `first`.
 struct Slot {
@@ -164,10 +166,13 @@ struct State {
     slots: Vec<Slot>,
 }
 
-/// A batch of backdrops ready to encode: each plan with the slot it uses and
-/// the index of its parameters in the frame's buffer.
-pub(crate) struct PreparedBatch<'a> {
-    plans: &'a [(usize, BackdropPlan)],
+/// A backdrop of a batch: the index of its parameters in the frame's
+/// buffer, which is its index in the scene, the slot of its blur, and its plan.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct BatchBackdrop {
+    pub(crate) index: usize,
+    pub(crate) slot: usize,
+    pub(crate) plan: BackdropPlan,
 }
 
 impl BackdropRenderer {
@@ -204,16 +209,16 @@ impl BackdropRenderer {
         queue.write_buffer(&state.uniforms, 0, &self.staged);
     }
 
-    /// Copies, downsamples and blurs each backdrop of a batch. `plans` pairs
-    /// each with its index among the frame's backdrops. Call between render
-    /// passes, after everything beneath the batch was drawn into `target`.
-    pub(crate) fn encode_blurs<'a>(
+    /// Copies, downsamples and blurs each blur of a batch into its slot. Call
+    /// between render passes, after everything beneath the batch was drawn
+    /// into `target`.
+    pub(crate) fn encode_blurs(
         &mut self,
         device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
         target: &wgpu::Texture,
-        plans: &'a [(usize, BackdropPlan)],
-    ) -> PreparedBatch<'a> {
+        blurs: &[BatchBackdrop],
+    ) {
         let state = self
             .state
             .as_mut()
@@ -223,9 +228,9 @@ impl BackdropRenderer {
             sampler: &state.sampler,
             uniforms: &state.uniforms,
         };
-        for (slot_index, (uniform_index, plan)) in plans.iter().enumerate() {
-            let slot = resources.slot(&mut state.slots, device, slot_index, target.format(), plan);
-            let offset = (*uniform_index as u64 * state.uniform_stride) as u32;
+        for BatchBackdrop { index, slot, plan } in blurs {
+            let slot = resources.slot(&mut state.slots, device, *slot, target.format(), plan);
+            let offset = (*index as u64 * state.uniform_stride) as u32;
             let [downsample_group, horizontal_group, vertical_group] = slot
                 .bind_groups
                 .as_ref()
@@ -286,21 +291,21 @@ impl BackdropRenderer {
                 pass.draw(0..3, 0..1);
             }
         }
-        PreparedBatch { plans }
     }
 
-    /// Draws a blurred batch over the frame, in the resumed main pass whose
-    /// viewport already places the batch at its depth.
-    pub(crate) fn draw_composites(&self, pass: &mut wgpu::RenderPass<'_>, batch: PreparedBatch<'_>) {
+    /// Draws each draw of a batch from its blur's slot, in the main pass
+    /// whose viewport places the batch at its depth.
+    pub(crate) fn draw_composites(&self, pass: &mut wgpu::RenderPass<'_>, draws: &[BatchBackdrop]) {
         let Some(state) = &self.state else {
             return;
         };
         pass.set_pipeline(&state.pipelines.composite);
-        for (slot, (uniform_index, _)) in state.slots.iter().zip(batch.plans) {
-            let Some([_, reads_first, _]) = &slot.bind_groups else {
+        for BatchBackdrop { index, slot, .. } in draws {
+            let Some([_, reads_first, _]) = state.slots.get(*slot).and_then(|slot| slot.bind_groups.as_ref())
+            else {
                 continue;
             };
-            let offset = (*uniform_index as u64 * state.uniform_stride) as u32;
+            let offset = (*index as u64 * state.uniform_stride) as u32;
             pass.set_bind_group(0, reads_first, &[offset]);
             pass.draw(0..4, 0..1);
         }
@@ -412,8 +417,7 @@ struct SlotResources<'a> {
 }
 
 impl SlotResources<'_> {
-    /// The slot for the `index`th backdrop of a batch, with textures large
-    /// enough for `plan`.
+    /// The slot numbered `index`, with textures large enough for `plan`.
     fn slot<'s>(
         &self,
         slots: &'s mut Vec<Slot>,
@@ -425,7 +429,7 @@ impl SlotResources<'_> {
         let step = |size: [u32; 2]| size.map(|size| size.next_multiple_of(TEXTURE_SIZE_STEP));
         let region_usage = wgpu::TextureUsages::COPY_DST;
         let blur_usage = wgpu::TextureUsages::RENDER_ATTACHMENT;
-        if index == slots.len() {
+        while slots.len() <= index {
             let region = step(plan.plan.region_size);
             let down = step(plan.plan.down_size);
             slots.push(Slot {

@@ -1,11 +1,11 @@
 // Modified for gpui-pre (snapshot of zed@f126950): adapt device queues and sRGB detection to wgpu 30.0.1.
-use crate::backdrop::{BackdropPlan, BackdropRenderer};
+use crate::backdrop::{BackdropPlan, BackdropRenderer, BatchBackdrop};
 use crate::{CompositorGpuHint, DeviceErrorState, WgpuAtlas, WgpuContext};
 use anyhow::{Context as _, Result};
 use bytemuck::{Pod, Zeroable};
 use collections::FxHashMap;
 use gpui::{
-    AtlasTextureId, Bounds, DevicePixels, GpuSpecs, PaintedPath, PrimitiveBatch, ScaledPixels,
+    AtlasTextureId, BackdropPass, Bounds, DevicePixels, GpuSpecs, PaintedPath, PrimitiveBatch, ScaledPixels,
     Scene, Size, get_gamma_correction_ratios, quad_depth, quad_depth_scale,
 };
 use log::warn;
@@ -225,10 +225,12 @@ struct WgpuRendererCore {
     adapter_info: wgpu::AdapterInfo,
     depth_texture: Option<DepthTexture>,
     backdrops: BackdropRenderer,
-    /// Per frame with backdrops: each backdrop's plan, and the quads drawn
-    /// before each backdrop batch. Kept to reuse their allocations.
+    /// Per frame with backdrops: each backdrop's plan, the blurs and draws of
+    /// the current batch, and the quads drawn before each batch with a blur.
+    /// Kept to reuse their allocations.
     backdrop_plans: Vec<Option<BackdropPlan>>,
-    backdrop_batch_plans: Vec<(usize, BackdropPlan)>,
+    backdrop_blurs: Vec<BatchBackdrop>,
+    backdrop_draws: Vec<BatchBackdrop>,
     segment_quad_ends: Vec<u32>,
     /// Read by the headless renderer to create its render target.
     #[cfg(all(
@@ -1306,7 +1308,8 @@ impl WgpuRendererCore {
             depth_texture: None,
             backdrops: BackdropRenderer::default(),
             backdrop_plans: Vec::new(),
-            backdrop_batch_plans: Vec::new(),
+            backdrop_blurs: Vec::new(),
+            backdrop_draws: Vec::new(),
             segment_quad_ends: Vec::new(),
             #[cfg(all(
                 not(target_family = "wasm"),
@@ -1438,10 +1441,10 @@ impl WgpuRendererCore {
                     label: Some("main_encoder"),
                 });
 
-        // A backdrop reads the frame drawn beneath it, so the frame is drawn
-        // in segments that end at each backdrop batch. Each segment's opaque
-        // quads are drawn first, as for a whole frame, so none drawn above a
-        // backdrop is in the frame when it is read.
+        // A backdrop's blur reads the frame drawn beneath it, so the frame is
+        // drawn in segments that end at each batch with a blur. Each segment's
+        // opaque quads are drawn first, as for a whole frame, so none drawn
+        // above a backdrop is in the frame when it is read.
         self.segment_quad_ends.clear();
         self.backdrop_plans.clear();
         let can_blur = !scene.backdrops.is_empty()
@@ -1451,7 +1454,13 @@ impl WgpuRendererCore {
             for batch in scene.batches() {
                 match batch {
                     PrimitiveBatch::Quads(range) => quad_cursor += range.len() as u32,
-                    PrimitiveBatch::Backdrops(_) => self.segment_quad_ends.push(quad_cursor),
+                    PrimitiveBatch::Backdrops(range)
+                        if scene.backdrops[range.clone()].iter().any(|backdrop| {
+                            matches!(backdrop.pass, BackdropPass::Blur { .. })
+                        }) =>
+                    {
+                        self.segment_quad_ends.push(quad_cursor)
+                    }
                     _ => {}
                 }
             }
@@ -1577,37 +1586,47 @@ impl WgpuRendererCore {
                         if !can_blur {
                             continue;
                         }
-                        drop(pass);
-                        self.backdrop_batch_plans.clear();
-                        self.backdrop_batch_plans.extend(
-                            range.clone().filter_map(|index| {
-                                self.backdrop_plans[index].map(|plan| (index, plan))
-                            }),
-                        );
-                        let batch = self.backdrops.encode_blurs(
-                            &self.resources.device,
-                            &mut encoder,
-                            target,
-                            &self.backdrop_batch_plans,
-                        );
-                        pass = begin_main_pass(&mut encoder, frame_view, depth_view, wgpu::LoadOp::Load);
-                        segment += 1;
-                        self.draw_opaque_quads(
-                            &instance_bindings.quads,
-                            quad_count,
-                            quad_cursor..self.segment_quad_ends[segment],
-                            &mut pass,
-                        );
-                        pass.set_viewport(
-                            0.0,
-                            0.0,
-                            viewport_width,
-                            viewport_height,
-                            minimum_depth,
-                            maximum_depth,
-                        );
-                        self.backdrops.draw_composites(&mut pass, batch);
-                        pass.set_bind_group(0, &self.resources().globals_bind_group, &[]);
+                        self.backdrop_blurs.clear();
+                        self.backdrop_draws.clear();
+                        for index in range {
+                            let Some(plan) = self.backdrop_plans[index] else {
+                                continue;
+                            };
+                            let (list, slot) = match scene.backdrops[index].pass {
+                                BackdropPass::Blur { id } => (&mut self.backdrop_blurs, id),
+                                BackdropPass::Draw { blur } => (&mut self.backdrop_draws, blur),
+                            };
+                            list.push(BatchBackdrop { index, slot: slot as usize, plan });
+                        }
+                        if !self.backdrop_blurs.is_empty() {
+                            drop(pass);
+                            self.backdrops.encode_blurs(
+                                &self.resources.device,
+                                &mut encoder,
+                                target,
+                                &self.backdrop_blurs,
+                            );
+                            pass = begin_main_pass(&mut encoder, frame_view, depth_view, wgpu::LoadOp::Load);
+                            segment += 1;
+                            self.draw_opaque_quads(
+                                &instance_bindings.quads,
+                                quad_count,
+                                quad_cursor..self.segment_quad_ends[segment],
+                                &mut pass,
+                            );
+                            pass.set_viewport(
+                                0.0,
+                                0.0,
+                                viewport_width,
+                                viewport_height,
+                                minimum_depth,
+                                maximum_depth,
+                            );
+                        }
+                        if !self.backdrop_draws.is_empty() {
+                            self.backdrops.draw_composites(&mut pass, &self.backdrop_draws);
+                            pass.set_bind_group(0, &self.resources().globals_bind_group, &[]);
+                        }
                     }
                 }
             }

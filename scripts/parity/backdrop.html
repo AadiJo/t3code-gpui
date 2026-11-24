@@ -15,11 +15,11 @@
   const panels = [
     [60, 60, 300, 200, 12, 16, 1.08, "rgb(0 0 0 / 0)"],
     [420, 60, 300, 200, 8, 12, 1.14, "rgb(24 24 27 / 0.4)"],
-    [60, 300, 300, 150, 16, 16, 1.08, "rgb(0 0 0 / 0.4)"],
+    [60, 300, 300, 150, 16, 16, 1.08, "rgb(0 0 0 / 0.4)", "0 24px 72px -20px rgb(0 0 0 / 0.9)"],
     [420, 300, 300, 150, 0, 4, 1, "rgb(10 10 10 / 0.64)"],
     [740, 430, 120, 120, 10, 16, 1.08, "rgb(255 255 255 / 0.1)"],
   ];
-  for (const [x, y, w, h, r, blur, saturation, fill] of panels)
-    add(`left:${x}px;top:${y}px;width:${w}px;height:${h}px;border-radius:${r}px;background:${fill};backdrop-filter:blur(${blur}px) saturate(${saturation})`);
+  for (const [x, y, w, h, r, blur, saturation, fill, shadow = "none"] of panels)
+    add(`left:${x}px;top:${y}px;width:${w}px;height:${h}px;border-radius:${r}px;background:${fill};backdrop-filter:blur(${blur}px) saturate(${saturation});box-shadow:${shadow}`);
   add("left:320px;top:280px;width:80px;height:80px;background:#ff00ff");
 </script>
