@@ -15,6 +15,7 @@ use gpui_kit::{
     AnyElement, App, ClipboardItem, Context, Entity, IntoElement, Render, SharedString, Subscription, Task, WeakEntity,
     Window, div, prelude::*, px,
 };
+use t3code_client_runtime::connection::catalog::TargetRoute;
 use t3code_client_runtime::connection::routes::{is_learned, route_id};
 use t3code_client_runtime::environment::EnvironmentId;
 
@@ -482,6 +483,8 @@ impl ConnectionsSettings {
         let key = env.id().as_str().to_owned();
         let retry_id = env.id().clone();
         let report = diagnosis_text(&env.entry.label, diagnosis);
+        let relay_only = env.entry.routes.len() == 1 && env.entry.routes[0].target.route == TargetRoute::Relay;
+        let add_route_target = (env.id().clone(), SharedString::from(env.entry.label.clone()));
         div()
             .mt(sp(2.))
             .pt(sp(2.))
@@ -517,6 +520,16 @@ impl ConnectionsSettings {
                             .text_color(c.muted_foreground)
                             .child(format!("{}.", ix + 1))
                             .child(div().flex_1().child(step.clone()))
+                    }))
+                    .children(diagnosis.more_info_url.clone().map(|url| {
+                        div()
+                            .id(SharedString::from(format!("env-more-info-{key}")))
+                            .cursor_pointer()
+                            .text_color(c.muted_foreground)
+                            .underline()
+                            .hover(|s| s.text_color(c.foreground()))
+                            .on_click(move |_, _, cx| cx.open_url(&url))
+                            .child(t!("More info"))
                     })),
             )
             .child(div().flex().flex_col().text_color(c.muted_foreground).children(diagnosis.facts.iter().map(|(label, value)| {
@@ -545,7 +558,18 @@ impl ConnectionsSettings {
                             .variant(ButtonVariant::Outline)
                             .size(ButtonSize::Xs)
                             .on_click(move |_, _, cx| cx.write_to_clipboard(ClipboardItem::new_string(report.clone()))),
-                    ),
+                    )
+                    .when(relay_only, |d| {
+                        d.child(
+                            Button::new(SharedString::from(format!("env-add-direct-route-{key}")))
+                                .label(t!("Add direct route"))
+                                .variant(ButtonVariant::Outline)
+                                .size(ButtonSize::Xs)
+                                .on_click(cx.listener(move |this, _, window, cx| {
+                                    this.open_add_dialog(Some(add_route_target.clone()), window, cx)
+                                })),
+                        )
+                    }),
             )
             .into_any_element()
     }
