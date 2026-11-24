@@ -31,7 +31,7 @@ use crate::components::chat::composer_icons::{composer_icon_stroke, provider_ico
 use crate::components::chat::composer_permissions::{RuntimeMode, runtime_mode_icon};
 use crate::components::chat::composer_prompt_history::{PromptHistoryEntry, PromptHistoryPosition, step_prompt_history};
 use crate::components::chat::composer_theme::{
-    ATTACHMENT_OVERLAP, BODY_PADDING_BOTTOM, BODY_PADDING_TOP, BODY_PADDING_X, COMPOSER_MAX_WIDTH, CONTROL_HEIGHT,
+    ATTACHMENT_OVERLAP, BODY_PADDING_BOTTOM, BORDER, BODY_PADDING_TOP, BODY_PADDING_X, COMPOSER_MAX_WIDTH, CONTROL_HEIGHT,
     CONTROL_RADIUS, ComposerColors, DRAWER_INSET, FOOTER_COMPACT_BREAKPOINT, FOOTER_PADDING_BOTTOM, FOOTER_PADDING_X,
     ICON_ACTION_RADIUS, SURFACE_RADIUS, ui_font_family,
 };
@@ -199,6 +199,8 @@ pub enum ComposerEvent {
     /// The limits banner's confirmed reset credit, for an account of its report.
     RedeemResetCredit { account: SharedString, choice: crate::components::usage::usage_limits::ResetCreditChoice },
     OpenUrl(SharedString),
+    /// Stashed files leaving the stash unrestored (deleted or evicted): delete their uploads.
+    ReleaseStashedFiles(Vec<crate::prompt_stash_store::StashedFile>),
 }
 
 /// A control in the context strip.
@@ -213,9 +215,9 @@ pub enum ContextStripControl {
 pub struct ChatComposer {
     editor: Entity<ComposerPromptEditor>,
     state: ComposerState,
-    attachments: Vec<ComposerAttachment>,
+    pub(super) attachments: Vec<ComposerAttachment>,
     /// HEIC photos converting off the UI thread, by draft; each holds an attachment slot.
-    converting: Vec<ComposerDraftKey>,
+    pub(super) converting: Vec<ComposerDraftKey>,
     picker: Option<(Entity<ModelPicker>, Subscription)>,
     menu: Option<ComposerMenuState>,
     dismissed_trigger: Option<Range<usize>>,
@@ -241,6 +243,8 @@ pub struct ChatComposer {
     chip_hidden: bool,
     /// Pages the timeline when Page Up/Down reach the prompt's edge.
     page_scroller: Option<super::composer_page_scroll::PageScroller>,
+    /// The stash drawer is open on this row (`isStashMenuOpen`).
+    pub(super) stash_menu: Option<usize>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -288,6 +292,7 @@ impl ChatComposer {
             held_command: None,
             chip_hidden: false,
             page_scroller: None,
+            stash_menu: None,
             _subscriptions: vec![subscription, settings],
         };
         this.load_draft(cx);
@@ -391,6 +396,11 @@ impl ChatComposer {
         ComposerDraft { prompt: self.editor.read(cx).text().to_owned(), attachments: self.attachments.clone(), model: None }
     }
 
+    /// Writes the draft now (a stash or restore changed it wholesale).
+    pub(super) fn save_stashed_draft(&mut self, cx: &mut Context<Self>) {
+        self.save_draft_now(cx);
+    }
+
     fn save_draft_now(&mut self, cx: &mut Context<Self>) {
         self.save_task = None;
         let draft = self.current_draft(cx);
@@ -414,6 +424,8 @@ impl ChatComposer {
                 if self.history_position.as_ref().is_some_and(|p| p.recalled != text) {
                     self.history_position = None;
                 }
+                // The stash closes when the prompt changes (`stashMenuClosesOn`).
+                self.stash_menu = None;
                 self.refresh_menu(cx);
                 self.schedule_save(cx);
                 cx.notify();
@@ -475,6 +487,7 @@ impl ChatComposer {
         let active = self.menu.as_ref().filter(|m| m.trigger.range.start == trigger.range.start).map_or(0, |m| m.active);
         let empty = self.menu_source.empty_text(&trigger);
         self.menu = Some(ComposerMenuState { active: active.min(items.len().saturating_sub(1)), trigger, items: Arc::new(items), loading, empty });
+        self.stash_menu = None;
         cx.notify();
     }
 
@@ -956,6 +969,14 @@ impl ChatComposer {
                 })
             }))
             .on_action(cx.listener(|this, _: &k::ToggleDictation, _, cx| this.once::<k::ToggleDictation>(cx, |t, cx| t.toggle_dictation(cx))))
+            .capture_action(cx.listener(|this, _: &k::StashComposer, window, cx| {
+                // Taken in the capture phase, so the model picker's search cannot swallow it.
+                cx.stop_propagation();
+                this.once::<k::StashComposer>(cx, |t, cx| {
+                    t.stash(window, cx);
+                    true
+                })
+            }))
             // Any key release or modifier change ends the press that `once` remembered.
             .on_key_up(cx.listener(|this, _: &gpui_kit::KeyUpEvent, _, _| {
                 this.held_command = None;
@@ -968,6 +989,10 @@ impl ChatComposer {
     // ---- Captured keys ----
 
     fn capture_up(&mut self, _: &editor_mod::MoveUp, window: &mut Window, cx: &mut Context<Self>) {
+        if self.stash_menu.is_some() {
+            cx.stop_propagation();
+            return self.step_stash_menu(false, cx);
+        }
         if let Some(menu) = self.menu.as_mut() {
             menu.step(false);
             cx.stop_propagation();
@@ -978,6 +1003,10 @@ impl ChatComposer {
     }
 
     fn capture_down(&mut self, _: &editor_mod::MoveDown, window: &mut Window, cx: &mut Context<Self>) {
+        if self.stash_menu.is_some() {
+            cx.stop_propagation();
+            return self.step_stash_menu(true, cx);
+        }
         if let Some(menu) = self.menu.as_mut() {
             menu.step(true);
             cx.stop_propagation();
@@ -1005,6 +1034,10 @@ impl ChatComposer {
         if self.editor.read(cx).is_composing() {
             return;
         }
+        if self.stash_menu.is_some() {
+            cx.stop_propagation();
+            return self.act_on_highlighted(true, window, cx);
+        }
         if let Some(menu) = &self.menu
             && !menu.items.is_empty()
         {
@@ -1023,12 +1056,32 @@ impl ChatComposer {
     }
 
     fn capture_escape(&mut self, _: &editor_mod::Escape, window: &mut Window, cx: &mut Context<Self>) {
+        if self.stash_menu.is_some() {
+            cx.stop_propagation();
+            self.stash_menu = None;
+            return cx.notify();
+        }
         if self.picker.is_some() {
             cx.stop_propagation();
             self.close_picker(window, cx);
         } else if self.menu.is_some() {
             cx.stop_propagation();
             self.dismiss_menu(cx);
+        }
+    }
+
+    /// Mod+Backspace deletes the highlighted stash entry while the drawer is open.
+    fn capture_delete_line(&mut self, _: &editor_mod::DeleteToLineStart, window: &mut Window, cx: &mut Context<Self>) {
+        if self.stash_menu.is_some() {
+            cx.stop_propagation();
+            self.act_on_highlighted(false, window, cx);
+        }
+    }
+
+    fn capture_delete_word(&mut self, _: &editor_mod::DeleteWordLeft, window: &mut Window, cx: &mut Context<Self>) {
+        if self.stash_menu.is_some() && !cfg!(target_os = "macos") {
+            cx.stop_propagation();
+            self.act_on_highlighted(false, window, cx);
         }
     }
 
@@ -1359,16 +1412,19 @@ impl ChatComposer {
     }
 
     fn render_banners(&self, c: &ComposerColors, window: &Window, cx: &mut Context<Self>) -> Option<AnyElement> {
-        if self.state.banners.is_empty() {
+        let badge = self.render_stash_badge(c, cx);
+        if self.state.banners.is_empty() && badge.is_none() {
             return None;
         }
         // `ComposerBanner.Scroll`: `max-h-[min(24rem,40dvh)]`.
         let max_body = c.r(px(384.)).min(window.viewport_size().height * 0.4);
-        let rows = self.state.banners.iter().map(|banner| {
-            let (tint, ink) = match banner.tone {
-                BannerTone::Neutral => (None, c.muted_foreground),
-                BannerTone::Warning => (Some(c.warning), c.warning),
-                BannerTone::Error => (Some(c.error), c.error_foreground),
+        let count = self.state.banners.len();
+        let cards = self.state.banners.iter().enumerate().map(|(index, banner)| {
+            // `variantColors`: warning and error cards take a tinted outline and an 8% wash.
+            let (tint, ink, outline) = match banner.tone {
+                BannerTone::Neutral => (None, c.muted_foreground, c.outline),
+                BannerTone::Warning => (Some(c.warning), c.warning, c.warning.opacity(0.28)),
+                BannerTone::Error => (Some(c.error), c.error_foreground, c.error.opacity(0.32)),
             };
             // `min-h-(--composer-banner-icon-column)`: spacing(6) from `sm` up.
             let row = div()
@@ -1378,7 +1434,6 @@ impl ChatComposer {
                 .items_center()
                 .gap(c.r(px(4.)))
                 .rounded(c.r(px(12.)))
-                .when_some(tint, |el, t| el.bg(t.opacity(0.08)))
                 .child(div().w(c.r(px(24.))).flex().justify_center().child(Icon::new(banner.icon).size(IconSize::Custom(c.r(px(14.)))).color(ink).stroke(composer_icon_stroke(banner.icon))))
                 .child(
                     div()
@@ -1418,23 +1473,37 @@ impl ChatComposer {
                 });
             // `ComposerBanner.Children`: the body under the row.
             let body = banner.body.as_ref().map(|body| self.render_usage_limits_body(&banner.id, body, c, max_body, cx));
-            div().flex().flex_col().child(row).children(body)
+            // Each notice is its own attached card (`NoticeCard`); a card below another joins it
+            // edge to edge, square-topped with no top border, and the last tucks under the composer.
+            let joined = index > 0;
+            div()
+                .relative()
+                .w_full()
+                .when(index + 1 < count, |el| el.mb(-c.r(ATTACHMENT_OVERLAP)))
+                .pb(c.r(ATTACHMENT_OVERLAP) + c.r(px(5.)) - BORDER)
+                .px(c.r(px(4.)) - BORDER)
+                .pt(c.r(px(5.)) - if joined { px(0.) } else { BORDER })
+                .when(!joined, |el| el.rounded_t(c.r(SURFACE_RADIUS)))
+                .glass(c.glass_surface)
+                .border_1()
+                .when(joined, |el| el.border_t_0())
+                .border_color(outline)
+                .when_some(tint, |el, t| {
+                    el.child(div().absolute().inset_0().when(!joined, |d| d.rounded_t(c.r(SURFACE_RADIUS))).bg(t.opacity(0.08)))
+                })
+                .child(div().relative().flex().flex_col().child(row).children(body))
         });
+        let cards: Vec<_> = cards.collect();
+        // `ComposerBanner.Dock`: the notices' column and the stash badge, bottoms aligned.
         Some(
             div()
                 .mx(c.r(DRAWER_INSET))
                 .mb(-c.r(ATTACHMENT_OVERLAP))
-                // `density="comfortable"`: 5px above and below, then the overlap.
-                .pb(c.r(ATTACHMENT_OVERLAP) + c.r(px(5.)))
-                .px(c.r(px(4.)))
-                .pt(c.r(px(5.)))
-                .rounded_t(c.r(SURFACE_RADIUS))
-                .glass(c.glass_surface)
-                .border_1()
-                .border_color(c.outline)
                 .flex()
-                .flex_col()
-                .children(rows)
+                .items_end()
+                .gap(c.r(px(4.)))
+                .when(!cards.is_empty(), |el| el.child(div().flex().flex_1().min_w_0().flex_col().children(cards)))
+                .when_some(badge, |el, badge| el.child(div().ml_auto().child(badge)))
                 .into_any_element(),
         )
     }
@@ -1634,6 +1703,7 @@ impl Render for ChatComposer {
             .child(body)
             .child(footer);
 
+        let stash_menu = if self.menu.is_none() { self.render_stash_menu(&c, window, cx) } else { None };
         let menu = self.menu.clone().map(|menu| {
             let pick = cx.entity();
             let hover = cx.entity();
@@ -1684,10 +1754,12 @@ impl Render for ChatComposer {
             .capture_action(cx.listener(Self::capture_enter))
             .capture_action(cx.listener(Self::capture_tab))
             .capture_action(cx.listener(Self::capture_escape))
+            .capture_action(cx.listener(Self::capture_delete_line))
+            .capture_action(cx.listener(Self::capture_delete_word))
             .on_modifiers_changed(cx.listener(Self::on_modifiers))
             .children(self.render_banners(&c, window, cx))
             .children(self.render_reset_credit_dialog(&c, cx))
-            .child(div().relative().w_full().children(menu).child(card))
+            .child(div().relative().w_full().children(menu).children(stash_menu).child(card))
             .children(self.render_context_strip(&c, cx))
     }
 }

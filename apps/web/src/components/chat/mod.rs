@@ -14,6 +14,7 @@ pub mod composer_icons;
 pub mod composer_page_scroll;
 pub mod composer_permissions;
 pub mod composer_prompt_history;
+pub mod composer_stash;
 pub mod composer_theme;
 pub mod composer_usage_limits;
 pub mod expanded_image_dialog;

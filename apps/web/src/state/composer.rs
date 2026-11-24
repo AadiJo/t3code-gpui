@@ -482,6 +482,7 @@ pub fn handle_event(event: &ComposerEvent, thread: &Entity<LiveThread>, composer
         ComposerEvent::AttachmentRemoved(context_id) => super::attachments::AttachmentUploads::release(context_id, cx),
         ComposerEvent::FavoriteToggled { instance_id, model } => super::favorites::toggle(&environment_id, instance_id, model, cx),
         ComposerEvent::AttachRequested => pick_files(composer, cx),
+        ComposerEvent::ReleaseStashedFiles(files) => release_stashed_files(files, cx),
         _ => {}
     }
     EventOutcome::Done
@@ -1723,4 +1724,16 @@ fn redeem_reset_credit(key: &ThreadKey, account: &SharedString, choice: &crate::
         })
     })
     .detach();
+}
+
+/// Deletes the uploads of stashed files that left the stash unrestored, on each file's own server
+/// (`releasePersistedAttachmentUpload`).
+pub fn release_stashed_files(files: &[crate::prompt_stash_store::StashedFile], cx: &mut App) {
+    for file in files {
+        let environment_id = t3code_contracts::EnvironmentId::new(file.environment_id.as_str());
+        let Some(environment) = StateBridge::environment(&environment_id, cx) else { continue };
+        let commands = environment.read(cx).commands.clone();
+        let attachment_id = file.attachment_id.clone();
+        StateBridge::spawn(async move { commands.delete_attachment(attachment_id).await }, cx).detach();
+    }
 }

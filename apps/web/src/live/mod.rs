@@ -571,6 +571,10 @@ impl AppData for LiveData {
                         live_composer::pick_files(composer, cx);
                         return None;
                     }
+                    ComposerEvent::ReleaseStashedFiles(files) => {
+                        live_composer::release_stashed_files(files, cx);
+                        return None;
+                    }
                     ComposerEvent::FavoriteToggled { instance_id, model } => {
                         if let Some(environment_id) = draft_environment {
                             crate::state::favorites::toggle(&environment_id, instance_id, model, cx);
