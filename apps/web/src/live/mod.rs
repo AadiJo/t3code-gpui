@@ -5,6 +5,7 @@
 pub mod diff;
 pub mod git;
 pub mod rpc;
+pub mod sources;
 pub mod terminal;
 pub mod workspace;
 
@@ -45,6 +46,12 @@ use crate::state::shell::{runtime_ids, thread_key};
 use crate::state::sidebar_actions::{self, SidebarOutcome};
 use crate::state::{LiveEnvironment, StateBridge};
 use crate::thread_sync::{LiveThread, LiveThreadEvent};
+use crate::components::issue::issues_page::EnvironmentIssueSource;
+use crate::components::preview::preview_source::{LivePreviewSource, PreviewSource};
+use crate::components::pull_request::pull_request_source::PullRequestDetailSource;
+use crate::components::pull_request::pull_requests_page::EnvironmentListSource;
+use crate::components::settings::server_settings_data::ServerPanelsModel;
+use crate::components::usage::usage_source::{LiveUsageSource, UsageSource};
 
 /// A new thread that has no messages yet (`/draft/$draftId`).
 struct Draft {
@@ -64,6 +71,11 @@ pub struct LiveData {
     /// One menu source per environment and workspace.
     menus: RefCell<HashMap<(t3code_contracts::EnvironmentId, Option<String>), Rc<LiveMenuSource>>>,
     workspaces: RefCell<HashMap<SharedString, Workspace>>,
+    usage: RefCell<Option<Rc<dyn UsageSource>>>,
+    /// The server settings model and the environment it follows.
+    settings: RefCell<Option<(t3code_contracts::EnvironmentId, Entity<ServerPanelsModel>, Subscription)>>,
+    /// The environment of the thread the main pane shows.
+    shown_environment: RefCell<Option<t3code_contracts::EnvironmentId>>,
 }
 
 impl LiveData {
@@ -96,6 +108,9 @@ impl LiveData {
             thread: RefCell::default(),
             menus: RefCell::default(),
             workspaces: RefCell::default(),
+            usage: RefCell::default(),
+            settings: RefCell::default(),
+            shown_environment: RefCell::default(),
         })
     }
 
@@ -474,10 +489,118 @@ impl AppData for LiveData {
         self.palette.clone()
     }
 
-    fn set_active_thread(&self, _: Option<&ThreadKey>, _: &mut App) {}
+    fn set_active_thread(&self, active: Option<&ThreadKey>, _: &mut App) {
+        *self.shown_environment.borrow_mut() = active.map(|key| runtime_ids(key).0);
+    }
+
+    fn pull_request_sources(&self, cx: &mut App) -> Vec<EnvironmentListSource> {
+        self.environment_links(cx)
+            .into_iter()
+            .map(|(label, link)| EnvironmentListSource {
+                environment_id: link.environment_id().clone(),
+                label,
+                source: Rc::new(sources::LivePullRequests { link }),
+            })
+            .collect()
+    }
+
+    fn pull_request_detail(&self, environment: &t3code_contracts::EnvironmentId, cx: &mut App) -> Option<Rc<dyn PullRequestDetailSource>> {
+        Some(Rc::new(sources::LivePullRequests { link: rpc::RpcLink::new(environment, cx)? }))
+    }
+
+    fn issue_sources(&self, cx: &mut App) -> Vec<EnvironmentIssueSource> {
+        self.environment_links(cx)
+            .into_iter()
+            .map(|(label, link)| EnvironmentIssueSource {
+                environment_id: link.environment_id().clone(),
+                label,
+                source: Rc::new(sources::LiveIssues { link }),
+            })
+            .collect()
+    }
+
+    fn usage_source(&self, cx: &mut App) -> Rc<dyn UsageSource> {
+        if let Some(source) = self.usage.borrow().as_ref() {
+            return source.clone();
+        }
+        let source: Rc<dyn UsageSource> = LiveUsageSource::new(cx);
+        *self.usage.borrow_mut() = Some(source.clone());
+        source
+    }
+
+    fn server_settings(&self, cx: &mut App) -> Option<Entity<ServerPanelsModel>> {
+        let environments = StateBridge::environments(cx).read(cx).list.clone();
+        let shown = self.shown_environment.borrow().clone();
+        let environment = shown
+            .and_then(|id| environments.iter().find(|e| e.read(cx).environment_id() == &id).cloned())
+            .or_else(|| environments.first().cloned())?;
+        let id = environment.read(cx).environment_id().clone();
+        if let Some((existing, model, _)) = self.settings.borrow().as_ref()
+            && *existing == id
+        {
+            return Some(model.clone());
+        }
+        let source = Arc::new(sources::LiveServerSettings { link: rpc::RpcLink::new(&id, cx)?, snapshot: Default::default() });
+        let sync = {
+            let source = source.clone();
+            move |environment: &LiveEnvironment| {
+                if let Some(config) = &environment.config {
+                    let label = SharedString::from(config.environment.label.clone());
+                    sources::apply_config(&source, label, config);
+                }
+                if let Some(shell) = &environment.shell.snapshot {
+                    source.snapshot.lock().expect("snapshot").projects = shell.projects.iter().map(|p| project_of(p)).collect();
+                }
+            }
+        };
+        sync(environment.read(cx));
+        let model = cx.new(|_| ServerPanelsModel::new(source.clone()));
+        let subscription = cx.observe(&environment, {
+            let model = model.downgrade();
+            move |environment, cx| {
+                sync(environment.read(cx));
+                _ = model.update(cx, |model, cx| model.refresh(cx));
+            }
+        });
+        *self.settings.borrow_mut() = Some((id, model.clone(), subscription));
+        Some(model)
+    }
+
+    fn preview_source(&self, environment: &t3code_contracts::EnvironmentId, cx: &mut App) -> Option<Rc<dyn PreviewSource>> {
+        let link = rpc::RpcLink::new(environment, cx)?;
+        Some(LivePreviewSource::new(link.link, link.tokio))
+    }
+}
+
+/// A shell project as the server settings pages list it.
+fn project_of(project: &t3code_contracts::OrchestrationProjectShell) -> t3code_contracts::Project {
+    serde_json::to_value(project).ok().and_then(|value| serde_json::from_value(value).ok()).unwrap_or_else(|| {
+        serde_json::from_value(serde_json::json!({
+            "id": project.id, "title": project.title, "workspaceRoot": project.workspace_root,
+            "scripts": [], "createdAt": project.created_at, "updatedAt": project.updated_at
+        }))
+        .expect("a minimal project decodes")
+    })
 }
 
 impl LiveData {
+    /// Every enabled environment's label and RPC link.
+    fn environment_links(&self, cx: &mut App) -> Vec<(SharedString, rpc::RpcLink)> {
+        let environments = StateBridge::environments(cx).read(cx).list.clone();
+        environments
+            .iter()
+            .filter_map(|env| {
+                let env = env.read(cx);
+                let label = env
+                    .config
+                    .as_ref()
+                    .map(|c| SharedString::from(c.environment.label.clone()))
+                    .unwrap_or_else(|| SharedString::from(env.environment_id().to_string()));
+                Some((label, rpc::RpcLink::new(env.environment_id(), cx)?))
+            })
+            .collect()
+    }
+
     /// The environment of the project a draft starts in.
     fn draft_environment(&self, view: &ThreadView, _: &App) -> Option<t3code_contracts::EnvironmentId> {
         let id = view.key.strip_prefix("draft:")?;

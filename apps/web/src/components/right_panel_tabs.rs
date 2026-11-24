@@ -6,9 +6,10 @@
 //!
 //! Bodies: the diff panel (one view, fed the shown thread's patch the frame
 //! after the thread shows, so switching threads never waits on it), the
-//! Files panel (one per project), and terminal tabs (one session per tab).
-//! Surfaces not built yet (browser, device, pull requests, issues, side
-//! chat) draw a labelled empty state. Only the active tab's body renders,
+//! Files panel (one per project), terminal tabs (one session per tab), and a
+//! pull request, issue or browser tab's view on the thread's environment.
+//! Surfaces not built yet (device, linked items, side chat) draw a labelled
+//! empty state. Only the active tab's body renders,
 //! and a closed panel renders nothing.
 
 use std::collections::HashMap;
@@ -127,6 +128,8 @@ pub struct RightPanel {
     terminals: HashMap<(SharedString, String), Entity<TerminalSurface>>,
     /// Scripts to start in the terminal tab of that id when it first renders.
     pending_scripts: HashMap<(SharedString, String), ProjectScript>,
+    /// Pull request, issue and browser tab views, by thread and surface id.
+    surface_views: HashMap<(SharedString, String), AnyView>,
     /// Read for the titlebar row's height and the insets around the fixed toggles.
     layout: WeakEntity<AppSidebarLayout>,
     topbar_height: Pixels,
@@ -255,6 +258,7 @@ impl RightPanel {
             backends,
             terminals: HashMap::new(),
             pending_scripts: HashMap::new(),
+            surface_views: HashMap::new(),
             layout,
             topbar_height: px(40.),
             focus: cx.focus_handle(),
@@ -544,8 +548,59 @@ impl RightPanel {
                 Some(terminal) => div().flex_1().min_h_0().px_2().pb_2().child(terminal).into_any_element(),
                 None => self.render_empty(surface, cx),
             },
+            RightPanelSurface::PullRequest { .. } | RightPanelSurface::Issue { .. } | RightPanelSurface::Preview { .. } => {
+                match self.surface_view(surface, window, cx) {
+                    Some(view) => div().flex_1().min_h_0().child(view).into_any_element(),
+                    None => self.render_empty(surface, cx),
+                }
+            }
             _ => self.render_empty(surface, cx),
         }
+    }
+
+    /// The view behind a pull request, issue or browser tab, built on first show over the
+    /// shown thread's environment.
+    fn surface_view(&mut self, surface: &RightPanelSurface, window: &mut Window, cx: &mut Context<Self>) -> Option<AnyView> {
+        let thread = self.thread.clone()?;
+        let key = (thread.clone(), surface.id().to_string());
+        if let Some(view) = self.surface_views.get(&key) {
+            return Some(view.clone());
+        }
+        let (environment, thread_id) = thread.split_once(':')?;
+        let environment = t3code_contracts::EnvironmentId::new(environment);
+        let view: AnyView = match surface {
+            RightPanelSurface::PullRequest { project_id, repository, number, .. } => {
+                let source = self.data.pull_request_detail(&environment, cx)?;
+                let reference = t3code_contracts::PullRequestRef {
+                    project_id: t3code_contracts::ProjectId::new(project_id.as_str()),
+                    host: None,
+                    expected_account_id: None,
+                    allow_stale: None,
+                    repository: repository.clone(),
+                    number: u64::from(*number),
+                };
+                cx.new(|cx| crate::components::pull_request::pull_request_detail_panel::PullRequestDetailPanel::new(source, reference, cx)).into()
+            }
+            RightPanelSurface::Issue { project_id, tracker, scope, key: issue, .. } => {
+                let source = self.data.issue_sources(cx).into_iter().find(|s| s.environment_id == environment)?.source;
+                let reference = t3code_contracts::IssueRef {
+                    project_id: t3code_contracts::ProjectId::new(project_id.as_str()),
+                    tracker: serde_json::from_value(serde_json::Value::String(tracker.clone())).ok()?,
+                    host: None,
+                    scope: scope.clone(),
+                    key: issue.clone(),
+                };
+                cx.new(|cx| crate::components::issue::issue_detail_panel::IssueDetailPanel::new(source, reference, window, cx)).into()
+            }
+            RightPanelSurface::Preview { resource_id, .. } => {
+                let source = self.data.preview_source(&environment, cx)?;
+                let (thread_id, tab) = (thread_id.to_owned(), resource_id.clone().unwrap_or_default());
+                cx.new(|cx| crate::browser::server_browser_surface::ServerBrowserSurface::new(source, thread_id, tab, cx)).into()
+            }
+            _ => return None,
+        };
+        self.surface_views.insert(key, view.clone());
+        Some(view)
     }
 
     /// A surface whose view does not exist yet names itself.

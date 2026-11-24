@@ -33,6 +33,13 @@ use crate::router::{DraftId, ThreadTarget};
 use crate::scenes::composer::FixtureMenuSource;
 use crate::scenes::git_actions::{fixture_git_props, fixture_scripts, fixture_toolbar_props};
 use crate::state::app_data::{ActionOutcome, AppData, CommandOutcome, DataEvent, DataEvents, GitControlsSetup};
+use crate::components::issue::issues_page::EnvironmentIssueSource;
+use crate::components::preview::preview_source::PreviewSource;
+use crate::components::pull_request::pull_request_fixture::FixtureSource as PrFixture;
+use crate::components::pull_request::pull_request_source::{IssueSource, PullRequestDetailSource};
+use crate::components::pull_request::pull_requests_page::EnvironmentListSource;
+use crate::components::settings::server_settings_data::ServerPanelsModel;
+use crate::components::usage::usage_source::{FixtureUsageSource, UsageSource};
 
 /// The fixture store as the window's data.
 pub struct FixtureData {
@@ -250,5 +257,30 @@ impl AppData for FixtureData {
 
     fn set_active_thread(&self, active: Option<&ThreadKey>, _: &mut App) {
         self.palette.set_active_thread(active.cloned());
+    }
+
+    fn pull_request_sources(&self, _: &mut App) -> Vec<EnvironmentListSource> {
+        crate::scenes::pull_requests::fixture_sources(&PrFixture::standard())
+    }
+
+    fn pull_request_detail(&self, _: &t3code_contracts::EnvironmentId, _: &mut App) -> Option<Rc<dyn PullRequestDetailSource>> {
+        Some(Rc::new(PrFixture::standard()))
+    }
+
+    fn issue_sources(&self, _: &mut App) -> Vec<EnvironmentIssueSource> {
+        let source: Rc<dyn IssueSource> = Rc::new(PrFixture::standard());
+        vec![EnvironmentIssueSource { environment_id: t3code_contracts::EnvironmentId::new("env-studio"), label: "Studio".into(), source }]
+    }
+
+    fn usage_source(&self, _: &mut App) -> Rc<dyn UsageSource> {
+        FixtureUsageSource::new()
+    }
+
+    fn server_settings(&self, _: &mut App) -> Option<Entity<ServerPanelsModel>> {
+        None
+    }
+
+    fn preview_source(&self, _: &t3code_contracts::EnvironmentId, _: &mut App) -> Option<Rc<dyn PreviewSource>> {
+        None
     }
 }

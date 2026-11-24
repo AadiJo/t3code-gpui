@@ -20,6 +20,13 @@ use crate::components::media::media_actions::MediaKind;
 use crate::components::media::media_source::MediaBytes;
 use crate::components::right_panel_tabs::{RightPanel, RightPanelEvent, ScriptBackendFactory};
 use crate::components::ui::toast::{ToastData, ToastKind, Toaster};
+use crate::components::ui::dialog::Modal;
+use crate::components::issue::issue_detail_panel::IssueDetailPanel;
+use crate::components::issue::issues_page::{IssuesPage, IssuesPageEvent};
+use crate::components::pull_request::pull_request_detail_panel::PullRequestDetailPanel;
+use crate::components::pull_request::pull_requests_page::{PullRequestsPage, PullRequestsPageEvent};
+use crate::components::usage::usage_page::UsagePageEvent;
+use crate::routes::usage::UsageRoute;
 use crate::file_source::absolute_path;
 use crate::thread_find_store::ThreadFindStore;
 use crate::i18n::t;
@@ -201,7 +208,27 @@ struct MainPane {
     thread_view: Entity<ThreadRouteView>,
     /// `None` shows the thread view (or the no-thread state when there is no thread).
     page: Option<Route>,
+    /// The built view of a page route (pull requests, issues), kept while it shows.
+    page_view: Option<(Route, Entity<ListPage>)>,
     has_thread: bool,
+}
+
+/// The pull requests or issues page, with the item it opened beside it.
+struct ListPage {
+    list: AnyView,
+    detail: Option<AnyView>,
+    width: Pixels,
+    _subscription: Subscription,
+}
+
+impl Render for ListPage {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        div()
+            .size_full()
+            .flex()
+            .child(div().flex_1().min_w_0().h_full().child(self.list.clone()))
+            .children(self.detail.clone().map(|detail| div().flex_none().w(self.width).h_full().child(detail)))
+    }
 }
 
 impl Render for MainPane {
@@ -211,6 +238,11 @@ impl Render for MainPane {
             .read_with(cx, |layout, _| (layout.platform().topbar_height(), layout.header_content_left()))
             .unwrap_or((px(40.), px(0.)));
         if let Some(route) = &self.page {
+            if let Some((built, view)) = &self.page_view
+                && built == route
+            {
+                return view.clone().into_any_element();
+            }
             return RoutePage { route: route.clone(), topbar, leading_inset: inset }.into_any_element();
         }
         if !self.has_thread {
@@ -237,6 +269,8 @@ pub struct AppRoot {
     terminals: Entity<PersistentThreadTerminals>,
     /// The media viewer over the whole window, while open.
     expanded: Option<(Entity<ExpandedImageDialog>, Subscription)>,
+    /// The Usage page in the large route modal, while its route shows.
+    usage: Option<(Entity<UsageRoute>, Subscription)>,
     /// The thread details card is open (a popover; the toggle stays unpressed).
     details_open: bool,
     /// The thread under the main pane; it stays shown under modal routes.
@@ -304,7 +338,7 @@ impl AppRoot {
             layout
         });
         let thread_view = cx.new(|cx| ThreadRouteView::new(data.clone(), window, cx));
-        let main = cx.new(|_| MainPane { layout: layout.downgrade(), thread_view: thread_view.clone(), page: None, has_thread: false });
+        let main = cx.new(|_| MainPane { layout: layout.downgrade(), thread_view: thread_view.clone(), page: None, page_view: None, has_thread: false });
         let backends = data.terminal_backends(cx);
         let shell_backend = backends.shell.clone();
         let right_panel = cx.new(|cx| RightPanel::new(right_panels.clone(), layout.downgrade(), data.clone(), backends, cx));
@@ -351,6 +385,7 @@ impl AppRoot {
             right_panels,
             terminals,
             expanded: None,
+            usage: None,
             details_open: false,
             shown: None,
             focus: cx.focus_handle(),
@@ -483,13 +518,23 @@ impl AppRoot {
         } else if !route.is_modal() {
             self.shown = None;
         }
+        // Usage opens in the route modal over whatever the main pane showed.
+        if route == Route::Usage {
+            self.sync_usage(&route, window, cx);
+            return self.persist_route(&route, cx);
+        }
         // Settings is a modal over whatever the main pane showed.
         let page = (route.thread_target().is_none() && route != Route::Index && !route.is_modal()).then(|| route.clone());
         if route.is_modal() && self.main.read(cx).page.is_some() {
             return self.persist_route(&route, cx);
         }
         let has_thread = self.shown.is_some();
+        let page_view = page.as_ref().and_then(|route| self.page_view(route, window, cx));
+        self.sync_usage(&route, window, cx);
         self.main.update(cx, |main, cx| {
+            if page_view.is_some() || page.is_none() {
+                main.page_view = page_view;
+            }
             main.page = page;
             main.has_thread = has_thread;
             cx.notify();
@@ -512,6 +557,76 @@ impl AppRoot {
         if panel_focused && !self.layout.read(cx).is_right_panel_open() {
             self.restore_focus(window, cx);
         }
+    }
+
+    /// The pull requests or issues page for `route`, reused while the route stays.
+    fn page_view(&mut self, route: &Route, window: &mut Window, cx: &mut Context<Self>) -> Option<(Route, Entity<ListPage>)> {
+        if let Some((built, view)) = &self.main.read(cx).page_view
+            && built == route
+        {
+            return Some((built.clone(), view.clone()));
+        }
+        let width = self.layout.read(cx).right_panel_width();
+        let view = match route {
+            Route::PullRequests { .. } => {
+                let sources = self.data.pull_request_sources(cx);
+                let page = cx.new(|cx| PullRequestsPage::new(sources, window, cx));
+                let data = self.data.clone();
+                cx.new(|cx| {
+                    let subscription = cx.subscribe(&page, move |this: &mut ListPage, _, event: &PullRequestsPageEvent, cx| {
+                        let PullRequestsPageEvent::Open { environment_id, reference } = event;
+                        let Some(source) = data.pull_request_detail(environment_id, cx) else { return };
+                        let reference = reference.clone();
+                        this.detail = Some(cx.new(|cx| PullRequestDetailPanel::new(source, reference, cx)).into());
+                        cx.notify();
+                    });
+                    ListPage { list: page.into(), detail: None, width, _subscription: subscription }
+                })
+            }
+            Route::Issues { .. } => {
+                let sources = self.data.issue_sources(cx);
+                let lookup = sources.clone();
+                let page = cx.new(|cx| IssuesPage::new(sources, window, cx));
+                cx.new(|cx| {
+                    let subscription = cx.subscribe_in(&page, window, move |this: &mut ListPage, _, event: &IssuesPageEvent, window, cx| {
+                        let IssuesPageEvent::Open { environment_id, reference } = event else { return };
+                        let Some(source) = lookup.iter().find(|s| &s.environment_id == environment_id).map(|s| s.source.clone()) else { return };
+                        let reference = reference.clone();
+                        this.detail = Some(cx.new(|cx| IssueDetailPanel::new(source, reference, window, cx)).into());
+                        cx.notify();
+                    });
+                    ListPage { list: page.into(), detail: None, width, _subscription: subscription }
+                })
+            }
+            _ => return None,
+        };
+        Some((route.clone(), view))
+    }
+
+    /// Opens the Usage page over the window while its route shows, and closes it after.
+    fn sync_usage(&mut self, route: &Route, window: &mut Window, cx: &mut Context<Self>) {
+        if *route != Route::Usage {
+            if self.usage.take().is_some() {
+                cx.notify();
+            }
+            return;
+        }
+        if self.usage.is_some() {
+            return;
+        }
+        let source = self.data.usage_source(cx);
+        let prefs = cx.global::<UiStateStore>().dir.0.as_ref().map(|dir| dir.join("usage-preferences.json"));
+        let usage = cx.new(|cx| UsageRoute::new(source, prefs, window, cx));
+        let subscription = cx.subscribe(&usage, |this, _, _: &UsagePageEvent, cx| this.router.update(cx, |router, cx| router.back(cx)));
+        window.focus(&usage.focus_handle(cx), cx);
+        self.usage = Some((usage, subscription));
+        cx.notify();
+    }
+
+    /// The server settings pages over the live data, for the settings modal.
+    pub fn server_settings_pages(&self, cx: &mut App) -> Option<Entity<crate::components::settings::server_settings_pages::ServerSettingsPages>> {
+        let model = self.data.server_settings(cx)?;
+        Some(cx.new(|_| crate::components::settings::server_settings_pages::ServerSettingsPages::new(model)))
     }
 
     fn persist_route(&self, route: &Route, cx: &mut Context<Self>) {
@@ -982,6 +1097,12 @@ impl Render for AppRoot {
             .on_action(|_: &Minimize, window, _| window.minimize_window())
             .on_action(|_: &ZoomWindow, window, _| window.zoom_window())
             .child(self.layout.clone())
+            .children(self.usage.as_ref().map(|(usage, _)| {
+                let router = self.router.downgrade();
+                Modal::dialog("usage-route", usage.clone(), move |_, cx| {
+                    _ = router.update(cx, |router, cx| router.back(cx));
+                })
+            }))
             .children(self.expanded.as_ref().map(|(dialog, _)| dialog.clone()))
     }
 }

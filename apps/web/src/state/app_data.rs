@@ -9,7 +9,14 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use gpui_kit::{App, Entity, EventEmitter, SharedString, Task, WeakEntity};
-use t3code_contracts::{EditorId, ProjectScript};
+use t3code_contracts::{EditorId, EnvironmentId, ProjectScript};
+
+use crate::components::issue::issues_page::EnvironmentIssueSource;
+use crate::components::preview::preview_source::PreviewSource;
+use crate::components::pull_request::pull_request_source::PullRequestDetailSource;
+use crate::components::pull_request::pull_requests_page::EnvironmentListSource;
+use crate::components::settings::server_settings_data::ServerPanelsModel;
+use crate::components::usage::usage_source::UsageSource;
 
 use crate::components::chat::composer::{ChatComposer, ComposerEvent, ComposerState};
 use crate::components::chat::composer_command_menu::ComposerMenuSource;
@@ -180,6 +187,24 @@ pub trait AppData: 'static {
 
     /// The main pane shows `active` now.
     fn set_active_thread(&self, active: Option<&ThreadKey>, cx: &mut App);
+
+    /// The pull requests page's environments.
+    fn pull_request_sources(&self, cx: &mut App) -> Vec<EnvironmentListSource>;
+
+    /// One environment's pull request detail (the page's detail and the panel tab).
+    fn pull_request_detail(&self, environment: &EnvironmentId, cx: &mut App) -> Option<Rc<dyn PullRequestDetailSource>>;
+
+    /// The issues page's environments.
+    fn issue_sources(&self, cx: &mut App) -> Vec<EnvironmentIssueSource>;
+
+    /// The usage page's data.
+    fn usage_source(&self, cx: &mut App) -> Rc<dyn UsageSource>;
+
+    /// The server settings pages' model, for the environment the window shows.
+    fn server_settings(&self, cx: &mut App) -> Option<Entity<ServerPanelsModel>>;
+
+    /// One environment's streamed browser preview.
+    fn preview_source(&self, environment: &EnvironmentId, cx: &mut App) -> Option<Rc<dyn PreviewSource>>;
 }
 
 /// The handle views hold.
