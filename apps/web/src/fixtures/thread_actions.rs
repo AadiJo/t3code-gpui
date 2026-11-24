@@ -149,6 +149,7 @@ impl FixtureStore {
                 branch: record_branch(self, key),
                 project_id,
                 next_id,
+                working: false,
             },
         );
         cx.emit(FixtureEvent::SnapshotChanged);
@@ -235,6 +236,9 @@ impl FixtureStore {
     pub fn diff_input(&mut self, target: &ThreadTarget, selection: &DiffPanelSelection) -> Option<DiffPanelInput> {
         let view = self.thread_view(target)?;
         let workspace = self.workspace(target)?;
+        if let Some(checkout) = self.reference.clone() {
+            return Some(workspace::reference_diff_input(view.key, workspace.root.to_string_lossy().to_string().into(), view.branch, &checkout.patch));
+        }
         Some(workspace::diff_input(
             view.key,
             workspace.root.to_string_lossy().to_string().into(),
@@ -251,6 +255,14 @@ impl FixtureStore {
             ThreadTarget::Draft(id) => self.drafts.get(id)?.project.as_ref()?.project_id.clone(),
         };
         let project = self.snapshot.projects.iter().find(|p| p.project_ref.project_id == project_id)?;
+        if let Some(checkout) = &self.reference {
+            let root = std::env::temp_dir().join("t3code-reference-checkout");
+            return Some(FixtureWorkspace {
+                project_key: format!("{}:{}", project.project_ref.environment_id.0, project_id.0).into(),
+                name: project.title.clone(),
+                root: checkout.write(&root).ok()?,
+            });
+        }
         let mut changed: Vec<&str> = workspace::CHANGED_PATHS.to_vec();
         if let ThreadTarget::Server(key) = target
             && let Some(timeline) = self.threads.get(key).and_then(|r| r.timeline.as_ref())

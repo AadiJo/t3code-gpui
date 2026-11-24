@@ -144,7 +144,7 @@ fn open(out: &Path, data: &Path) -> anyhow::Result<Check> {
         ConnectionRuntime::init(config, cx)
     })?;
     let options = AppRootOptions {
-        data: DataSource::Fixtures(FixtureStore::reference()),
+        data: DataSource::Fixtures(FixtureStore::audit_reference()),
         platform: TitlebarPlatform::Mac,
         state_dir: StateDir(None),
     };

@@ -130,7 +130,30 @@ impl AppData for FixtureData {
         self.store.update(cx, |store, _| store.create_draft(project))
     }
 
-    fn composer_state(&self, view: &ThreadView, base: &ComposerState, _: &mut App) -> ComposerState {
+    fn composer_state(&self, view: &ThreadView, base: &ComposerState, cx: &mut App) -> ComposerState {
+        if let Some((model, supervised)) = self.store.read(cx).reference_thread(&view.key).cloned() {
+            use crate::components::chat::composer_permissions::RuntimeMode;
+            let mode = if supervised { RuntimeMode::ApprovalRequired } else { RuntimeMode::FullAccess };
+            return ComposerState {
+                draft_key: ComposerDraftKey(view.key.clone()),
+                is_draft_thread: view.is_draft,
+                running: view.running,
+                can_interrupt: view.running,
+                catalog: Arc::new(super::reference_world::model_catalog()),
+                selection: crate::model_selection::ModelSelection {
+                    instance_id: crate::model_selection::ProviderInstanceId("replayRich".into()),
+                    model,
+                    effort: None,
+                    speed: None,
+                    ultracode: false,
+                },
+                runtime_mode: mode,
+                default_runtime_mode: RuntimeMode::FullAccess,
+                // The reference server had no transcription provider.
+                voice_available: false,
+                ..base.clone()
+            };
+        }
         ComposerState {
             draft_key: ComposerDraftKey(view.key.clone()),
             is_draft_thread: view.is_draft,
@@ -220,8 +243,33 @@ impl AppData for FixtureData {
         Some(workspace.clone())
     }
 
-    fn git_controls(&self, view: &ThreadView, _: &mut App) -> GitControlsSetup {
+    fn git_controls(&self, view: &ThreadView, cx: &mut App) -> GitControlsSetup {
         let branch = view.branch.clone().unwrap_or_else(|| "main".into());
+        if let Some(checkout) = self.store.read(cx).reference_checkout().cloned() {
+            // The reference checkout: on main with an upstream, the seed's four files uncommitted,
+            // no project scripts, and Cursor the only editor.
+            let mut status = fixture_status(Some(&branch), true, true, 0, 0);
+            let files: Vec<_> = checkout
+                .file_stats()
+                .into_iter()
+                .map(|(path, insertions, deletions)| t3code_contracts::VcsStatusLocalResultWorkingTreeFilesItem { path, insertions, deletions })
+                .collect();
+            status.working_tree.insertions = files.iter().map(|f| f.insertions).sum();
+            status.working_tree.deletions = files.iter().map(|f| f.deletions).sum();
+            status.working_tree.files = files;
+            status.working_tree.root_path = Some(view.cwd.to_string());
+            let source = FixtureGitSource::new(status);
+            self.git.borrow_mut().insert(view.key.clone(), source.clone());
+            let project_id = ProjectId::new(view.project_id.as_ref().map(|p| p.0.to_string()).unwrap_or_default());
+            return GitControlsSetup {
+                source: Arc::new(source),
+                git: GitActionsProps { project_id: Some(project_id), ..fixture_git_props() },
+                scripts: Vec::new(),
+                editors: vec![EditorId::Cursor],
+                open_state: RemoteOpenState::LocalExec,
+                is_git_repo: true,
+            };
+        }
         let source = FixtureGitSource::new(fixture_status(Some(&branch), true, true, 1, 0));
         self.git.borrow_mut().insert(view.key.clone(), source.clone());
         let project_id = ProjectId::new(view.project_id.as_ref().map(|p| p.0.to_string()).unwrap_or_default());
@@ -235,15 +283,34 @@ impl AppData for FixtureData {
         }
     }
 
-    fn toolbar_props(&self, view: &ThreadView, _: &mut App) -> BranchToolbarProps {
+    fn toolbar_props(&self, view: &ThreadView, cx: &mut App) -> BranchToolbarProps {
         let branch = view.branch.as_deref().unwrap_or("main");
+        let reference = self.store.read(cx).is_reference_world();
+        let base = fixture_toolbar_props(Some(branch));
+        let base = if reference {
+            use crate::components::branch_toolbar_logic::{EnvironmentOption, MachineKind};
+            let id = t3code_contracts::EnvironmentId::new(super::fixture_environment().0.to_string());
+            BranchToolbarProps {
+                environments: vec![EnvironmentOption {
+                    environment_id: id.clone(),
+                    label: super::reference_world::ENVIRONMENT_LABEL.into(),
+                    is_primary: false,
+                    machine: MachineKind::Server,
+                }],
+                environment_id: Some(id),
+                previous_worktree: None,
+                ..base
+            }
+        } else {
+            base
+        };
         BranchToolbarProps {
             project_cwd: view.cwd.to_string(),
             is_server_thread: !view.is_draft,
             env_locked: !view.is_draft,
             turn_running: view.running,
             thread_branch: Some(branch.to_owned()),
-            ..fixture_toolbar_props(Some(branch))
+            ..base
         }
     }
 

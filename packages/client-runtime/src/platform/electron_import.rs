@@ -202,18 +202,6 @@ fn dpapi_unprotect(data: &[u8]) -> Result<Vec<u8>, ImportError> {
     }
 }
 
-#[cfg(target_os = "macos")]
-fn mac_key() -> Result<SafeStorageKey, ImportError> {
-    let mut last = None;
-    for (service, account) in [("T3 Code Safe Storage", "T3 Code Key"), ("T3 Code Safe Storage", "T3 Code")] {
-        match keyring::Entry::new(service, account).and_then(|entry| entry.get_secret()) {
-            Ok(password) => return Ok(SafeStorageKey::from_mac_password(&password)),
-            Err(error) => last = Some(error.to_string()),
-        }
-    }
-    Err(ImportError::KeyUnavailable(last.unwrap_or_default()))
-}
-
 /// Decrypts one safeStorage value (`v10` + payload).
 pub fn decrypt_safe_storage(value: &[u8], key: &SafeStorageKey) -> Result<Vec<u8>, ImportError> {
     let payload = value.strip_prefix(OSCRYPT_V10).ok_or(ImportError::Decrypt)?;
