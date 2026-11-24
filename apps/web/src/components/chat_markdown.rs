@@ -539,12 +539,12 @@ impl Renderer<'_> {
                     .flex()
                     .gap(self.view.colors.r(px(2.)))
                     .child(
-                        icon_button(("wrap", key), IconName::TextWrap, header_color, colors)
+                        icon_button(("wrap", key), IconName::TextWrap, if wrapped { colors.theme.secondary_foreground } else { colors.theme.muted_foreground }, colors)
                             .when_active(wrapped, colors)
                             .on_click(move |_, window, cx| wrap_actions(MarkdownAction::ToggleWrap(key), window, cx)),
                     )
                     .children(run_command.map(|command| {
-                        icon_button(("run", key), IconName::Play, header_color, colors)
+                        icon_button(("run", key), IconName::Play, colors.theme.muted_foreground, colors)
                             .tooltip(crate::components::ui::tooltip::tooltip(crate::i18n::t!("Run in terminal")))
                             .on_click(move |_, window, cx| run_actions(MarkdownAction::RunShellCommand(command.clone()), window, cx))
                     }))
@@ -552,7 +552,7 @@ impl Renderer<'_> {
                         icon_button(
                             ("copy", key),
                             if copied { IconName::Check } else { IconName::Copy },
-                            if copied { colors.theme.message_action } else { header_color },
+                            colors.theme.muted_foreground,
                             colors,
                         )
                         .on_click(move |_, window, cx| {
@@ -678,7 +678,7 @@ impl Renderer<'_> {
                     icon_button(
                         ("table-copy", key),
                         if copied { IconName::Check } else { IconName::Copy },
-                        if copied { colors.theme.message_action } else { colors.theme.muted_foreground },
+                        colors.theme.muted_foreground,
                         colors,
                     )
                     .on_click(move |_, window, cx| actions(MarkdownAction::Copy { key, text: markdown.clone() }, window, cx)),
@@ -965,7 +965,7 @@ pub fn rotated_chevron(open: bool, size: Pixels, color: Hsla) -> AnyElement {
     }
 }
 
-/// A 24px square ghost button with a 12px icon (`Button size=icon-xs`).
+/// A 24px square `ghost-muted` button with a 12px icon (`Button size=icon-xs`) drawn in `color`.
 pub fn icon_button(
     id: impl Into<ElementId>,
     glyph: IconName,
