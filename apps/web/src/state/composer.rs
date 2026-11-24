@@ -152,6 +152,7 @@ pub fn composer_state(key: &ThreadKey, row: Option<&ThreadRow>, thread: &LiveThr
             tone: BannerTone::Neutral,
             icon: IconName::Eraser,
             title: t!("Your next message starts a fresh session"),
+            description: Some(t!("The agent won't see earlier messages in this thread.")),
             action: Some(t!("Keep the current session")),
         }]
     } else {
