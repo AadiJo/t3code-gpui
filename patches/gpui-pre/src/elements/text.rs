@@ -596,9 +596,10 @@ struct TextLayoutInner {
     truncate_width: Option<Pixels>,
     size: Option<Size<Pixels>>,
     bounds: Option<Bounds<Pixels>>,
-    /// Where the lines are painted from: the layout box's origin before it snapped to
-    /// device pixels. Blink rounds each line's top once (`ComputePhysicalBoxGeometry`);
-    /// starting from the snapped origin would round a fractional line twice.
+    /// Where the lines are painted from: the layout box's left edge, and its top before it
+    /// snapped to device pixels. Blink rounds each line's top once
+    /// (`ComputePhysicalBoxGeometry`); starting from the snapped top would round a
+    /// fractional line twice.
     paint_origin: Point<Pixels>,
 }
 
@@ -772,7 +773,8 @@ impl TextLayout {
             .with_context(|| format!("measurement has not been performed on {text}"))
             .unwrap();
         element_state.bounds = Some(bounds);
-        element_state.paint_origin = paint_origin;
+        // Only the top: a box's left edge snaps, as glyph ink in Chromium at 2x shows.
+        element_state.paint_origin = crate::point(bounds.origin.x, paint_origin.y);
     }
 
     fn paint(&self, text: &str, window: &mut Window, cx: &mut App) {

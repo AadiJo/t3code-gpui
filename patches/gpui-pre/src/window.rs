@@ -4594,7 +4594,7 @@ impl Window {
     /// Draws elements that left since the last frame, and those still leaving, through their
     /// exit transitions over everything else, and asks for another frame while any is.
     fn paint_exit_ghosts(&mut self, cx: &App) {
-        let now = Instant::now();
+        let now = cx.background_executor().now();
         let present: FxHashSet<&GlobalElementId> =
             self.next_frame.exits.iter().map(|exit| &exit.id).collect();
         self.exit_ghosts.retain(|ghost| !present.contains(&ghost.id));
