@@ -78,7 +78,9 @@ pub struct LiveData {
     /// The right panel's side chat's event subscription.
     side_thread: RefCell<Option<(ThreadKey, Subscription)>>,
     /// One menu source per environment and workspace.
-    menus: RefCell<HashMap<(t3code_contracts::EnvironmentId, Option<String>), Rc<LiveMenuSource>>>,
+    /// By environment, workspace and composer: a source holds its composer's shown thread, so the
+    /// main pane and a side chat pane in the same workspace each keep their own.
+    menus: RefCell<HashMap<(t3code_contracts::EnvironmentId, Option<String>, gpui_kit::EntityId), Rc<LiveMenuSource>>>,
     workspaces: RefCell<HashMap<SharedString, Workspace>>,
     usage: RefCell<Option<Rc<dyn UsageSource>>>,
     /// The server settings model and the environment it follows.
@@ -430,8 +432,10 @@ impl AppData for LiveData {
                 let show_skills = crate::hooks::use_settings::ClientSettingsStore::get(cx).show_skills_in_slash_menu;
                 let facts = live_composer::slash_facts(row.as_deref(), thread.read(cx), environment.read(cx), &state.selection.instance_id.0, show_skills);
                 let cwd = (!view.cwd.is_empty()).then(|| view.cwd.to_string());
-                if let Some(source) = self.menus.borrow().get(&(environment_id.clone(), cwd)) {
-                    source.set_facts(facts);
+                for ((environment, workspace, _), source) in self.menus.borrow().iter() {
+                    if *environment == environment_id && *workspace == cwd {
+                        source.set_facts(facts.clone());
+                    }
                 }
                 state
             }
@@ -478,7 +482,7 @@ impl AppData for LiveData {
             return Rc::new(crate::scenes::composer::FixtureMenuSource);
         };
         let cwd = (!view.cwd.is_empty()).then(|| view.cwd.to_string());
-        let key = (environment.read(cx).environment_id().clone(), cwd.clone());
+        let key = (environment.read(cx).environment_id().clone(), cwd.clone(), composer.entity_id());
         let source = self
             .menus
             .borrow_mut()
