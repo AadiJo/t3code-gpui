@@ -518,7 +518,8 @@ fn main() -> anyhow::Result<()> {
         }
         Some("--list") => {
             let owner = OWNER_SCENES.iter().flat_map(|s| [s.name.to_owned(), format!("{}-wide", s.name)]);
-            for name in SCENES.iter().map(|s| s.name.to_owned()).chain(SCENE_VIEWS.iter().map(|(n, _)| (*n).to_owned())).chain(owner) {
+            let owner_sidebar = OWNER_SIDEBAR_SCENES.iter().map(|s| s.name.to_owned());
+            for name in SCENES.iter().map(|s| s.name.to_owned()).chain(SCENE_VIEWS.iter().map(|(n, _)| (*n).to_owned())).chain(owner).chain(owner_sidebar) {
                 println!("{name}");
             }
             return Ok(());
