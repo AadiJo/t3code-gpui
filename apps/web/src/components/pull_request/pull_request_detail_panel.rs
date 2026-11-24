@@ -79,6 +79,8 @@ pub enum PullRequestDetailEvent {
     Acted(PullRequestAction),
     /// Open a link in the browser.
     OpenUrl(SharedString),
+    /// Search the command palette for this pull request's URL, listing the threads that link it.
+    SearchLinkedThreads { url: SharedString, threads: Vec<ThreadId> },
 }
 
 /// A reaction subject: the pull request itself or one comment.
@@ -135,6 +137,10 @@ pub struct PullRequestDetailPanel {
     review_verdict: PullRequestReviewVerdict,
     review_pending: bool,
     confirm_delete_branch: bool,
+    /// `pullRequests.changeBreakdown`, read with the detail (`eager`).
+    breakdown: Option<PullRequestChangeBreakdownValue>,
+    /// `pullRequests.linkedThreads`: `None` before the first answer, `Err` when it failed.
+    linked_threads: Option<Result<Vec<ThreadId>, SharedString>>,
     _picker_events: Vec<Subscription>,
     /// Fixed clock for scenes; `None` reads the system clock.
     pub now_ms: Option<i64>,
@@ -199,6 +205,8 @@ impl PullRequestDetailPanel {
             review_verdict: PullRequestReviewVerdict::Comment,
             review_pending: false,
             confirm_delete_branch: false,
+            breakdown: None,
+            linked_threads: None,
             _picker_events: Vec::new(),
             now_ms: None,
         };
@@ -221,8 +229,34 @@ impl PullRequestDetailPanel {
         self.activity.as_ref()
     }
 
-    /// Reads the detail, activity, stack, files viewed and guide again.
+    /// Reads the detail, activity, stack, files viewed, guide and change breakdown again.
     pub fn refresh(&mut self, cx: &mut Context<Self>) {
+        let linked = self.source.linked_threads(self.reference.clone());
+        cx.spawn(async move |this, cx| {
+            let result = linked.await;
+            this.update(cx, |this, cx| {
+                // A failed refresh keeps the last count, as the fork does.
+                match result {
+                    Ok(answer) => this.linked_threads = Some(Ok(answer.threads.into_iter().map(|t| t.id).collect())),
+                    Err(e) if this.linked_threads.is_none() => this.linked_threads = Some(Err(e.0)),
+                    Err(_) => {}
+                }
+                cx.notify();
+            })
+            .ok();
+        })
+        .detach();
+        let breakdown = self.source.change_breakdown(self.reference.clone());
+        cx.spawn(async move |this, cx| {
+            if let Ok(value) = breakdown.await {
+                this.update(cx, |this, cx| {
+                    this.breakdown = value;
+                    cx.notify();
+                })
+                .ok();
+            }
+        })
+        .detach();
         let r = self.reference.clone();
         let (detail, checks, activity, stack, viewed, guide) = (
             self.source.detail(r.clone()),
@@ -1318,6 +1352,54 @@ fn tour_file(file: &FileDiff) -> tour::FileDiff {
     }
 }
 
+/// `ChangeBreakdownGrid` in a tooltip: lines per kind of file, then the total.
+struct BreakdownTooltip {
+    breakdown: PullRequestChangeBreakdownValue,
+    additions: u64,
+    deletions: u64,
+}
+
+impl Render for BreakdownTooltip {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = cx.app_theme();
+        let c = &theme.colors;
+        let b = &self.breakdown;
+        let kinds = [
+            (t!("Code", context = "kind of changed file"), b.code.additions, b.code.deletions),
+            (t!("Tests", context = "kind of changed file"), b.tests.additions, b.tests.deletions),
+            (t!("Mocks", context = "kind of changed file"), b.mocks.additions, b.mocks.deletions),
+            (t!("Generated", context = "kind of changed file"), b.generated.additions, b.generated.deletions),
+            (t!("Docs", context = "kind of changed file"), b.docs.as_ref().map_or(0, |d| d.additions), b.docs.as_ref().map_or(0, |d| d.deletions)),
+        ];
+        let row = |label: SharedString, add: u64, del: u64| {
+            div()
+                .flex()
+                .gap(theme.sp(4.))
+                .child(div().flex_1().ui_text(theme, TextSize::Xs, weight::NORMAL).child(label))
+                .child(div().w(theme.sp(12.)).flex().justify_end().text_color(theme.fixed.diff_addition_foreground).child(format!("+{}", crate::diff_count::format_diff_count(add))))
+                .child(div().w(theme.sp(12.)).flex().justify_end().text_color(theme.fixed.diff_deletion_foreground).child(format!("-{}", crate::diff_count::format_diff_count(del))))
+        };
+        div().pb(px(4.)).child(
+            div()
+                .flex()
+                .flex_col()
+                .gap(theme.sp(1.))
+                .px(theme.sp(2.))
+                .py(theme.sp(1.5))
+                .rounded(theme.radii.md)
+                .border_1()
+                .border_color(c.border)
+                .bg(c.popover())
+                .shadow(theme.shadows.md5.clone())
+                .mono_text(px(TextSize::Xs.size(theme.fonts.interface)), weight::NORMAL)
+                .text_color(theme.foregrounds.popover)
+                .children(kinds.into_iter().filter(|(_, a, d)| *a > 0 || *d > 0).map(|(l, a, d)| row(l, a, d)))
+                .child(div().h(px(1.)).bg(c.border))
+                .child(row(t!("Total", context = "sum of changed lines"), self.additions, self.deletions)),
+        )
+    }
+}
+
 /// The `{term, select, ...}` key for a host's change-request word.
 fn term_select(provider: &str) -> &'static str {
     match crate::source_control_presentation::source_control_definition(Some(provider)).terminology.term_kind() {
@@ -1526,6 +1608,38 @@ impl PullRequestDetailPanel {
                 },
             )
         };
+        // `PullRequestThreadLinks display="count"`: threads that link this pull request.
+        if let Some(linked) = &self.linked_threads
+            && !matches!(linked, Ok(t) if t.is_empty())
+        {
+            let count = linked.as_ref().map_or(0, |t| t.len());
+            let label = if count > 0 {
+                t!("{count, plural, one {Linked from {count} thread} other {Linked from {count} threads}}", count = count)
+            } else {
+                t!("Linked threads")
+            };
+            let url: SharedString = detail.url.clone().into();
+            let threads = linked.clone().unwrap_or_default();
+            actions = actions.child(
+                div()
+                    .id("pr-linked-threads")
+                    .tooltip(crate::components::ui::tooltip::tooltip(crate::components::ui::tooltip::TooltipSurface::new(t!(
+                        "{label}. Search in the command palette.",
+                        label = label.as_ref()
+                    ))))
+                    .child(
+                        Button::new("pr-linked-threads-button")
+                            .size(ButtonSize::Xs)
+                            .variant(ButtonVariant::Ghost)
+                            .icon(IconName::MessageSquare)
+                            .icon_size(IconSize::Sm)
+                            .label(if count > 0 { SharedString::from(count.to_string()) } else { "?".into() })
+                            .on_click(cx.listener(move |_, _, _, cx| {
+                                cx.emit(PullRequestDetailEvent::SearchLinkedThreads { url: url.clone(), threads: threads.clone() })
+                            })),
+                    ),
+            );
+        }
         actions = actions.child(more_menu);
         let confirm = self.confirming_merge.then(|| {
             let text = SharedString::from(format!("{} #{} → {}", t!("Confirm merge?"), detail.number, detail.base_branch));
@@ -1645,7 +1759,16 @@ impl PullRequestDetailPanel {
                             .child("→")
                             .child(div().px(px(4.)).rounded(px(4.)).bg(theme.colors.muted).child(SharedString::from(detail.base_branch.clone()))),
                     )
-                    .children(diff_stat(theme, detail.additions, detail.deletions))
+                    .children(diff_stat(theme, detail.additions, detail.deletions).map(|stat| {
+                        // `PullRequestChangeBreakdownStat`: the split shows on hover once read.
+                        let split = self.breakdown.clone().map(|b| (b, detail.additions, detail.deletions));
+                        div()
+                            .id("pr-diff-stat")
+                            .child(stat)
+                            .when_some(split, |el, (b, additions, deletions)| {
+                                el.tooltip(move |_, cx| cx.new(|_| BreakdownTooltip { breakdown: b.clone(), additions, deletions }).into())
+                            })
+                    }))
                     .when_some(self.stack.as_ref(), |el, stack| {
                         let pos = stack.layers.iter().position(|l| l.number == detail.number).map_or(0, |p| p + 1);
                         el.child(div().flex().items_center().gap(px(3.)).child(Icon::new(IconName::Layers).size(IconSize::Xs)).child(format!("{pos}/{}", stack.layers.len())))
