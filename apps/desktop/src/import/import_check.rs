@@ -4,7 +4,18 @@
 // imports it into a fresh catalog, and confirms the fixture files did not
 // change. The real key sources (DPAPI, Keychain) are not exercised here.
 //
-// Usage: import-check <out-dir>
+// With an owner directory (`mac-client-settings.json`, `mac-desktop-settings.json`,
+// `mac-local-storage/leveldb` copied from a real install), it also builds a whole stand-in
+// install around them and runs the first-launch file import the app runs, checking that the
+// theme, custom themes, drafts and UI state decode and that no install file changed. Only key
+// names and counts are printed.
+//
+// Usage: import-check <out-dir> [owner-dir]
+// Only the read half is used here.
+#[allow(dead_code)]
+#[path = "install.rs"]
+mod install;
+
 use std::fmt::Write as _;
 use std::path::Path;
 use std::sync::Arc;
@@ -104,7 +115,7 @@ async fn check(name: &str, key: SafeStorageKey, wrong: SafeStorageKey, out: &Pat
     let jwt = read_electron_clerk_client_jwt(&paths, &key)?;
     writeln!(log, "clerk client jwt: {jwt:?}")?;
     ensure!(jwt.as_deref() == Some("fixture.client.jwt"), "clerk jwt decrypts");
-    ensure!(import.environments.len() == 3, "env-a, env-c and env-e carry over");
+    ensure!(import.environments.len() == 4, "env-a, env-c and env-e carry over, and env-b without its device-bound credential");
     ensure!(import.credentials.len() == 2, "only the two bearer credentials with targets carry over");
     ensure!(import.skipped.len() == 2, "the DPoP route and the SSH route need pairing again");
 
@@ -133,9 +144,118 @@ async fn check(name: &str, key: SafeStorageKey, wrong: SafeStorageKey, out: &Pat
     Ok(())
 }
 
+/// Every file under `dir` with its digest, to prove an import left the install alone.
+fn tree_digest(dir: &Path) -> anyhow::Result<Vec<(String, String)>> {
+    let mut files = Vec::new();
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(next) = stack.pop() {
+        for entry in std::fs::read_dir(&next)? {
+            let entry = entry?;
+            if entry.file_type()?.is_dir() {
+                stack.push(entry.path());
+            } else {
+                files.push((entry.path().strip_prefix(dir)?.display().to_string(), digest(&entry.path())?));
+            }
+        }
+    }
+    files.sort();
+    Ok(files)
+}
+
+fn copy_tree(from: &Path, to: &Path) -> anyhow::Result<()> {
+    std::fs::create_dir_all(to)?;
+    for entry in std::fs::read_dir(from)? {
+        let entry = entry?;
+        if entry.file_type()?.is_dir() {
+            copy_tree(&entry.path(), &to.join(entry.file_name()))?;
+        } else {
+            std::fs::copy(entry.path(), to.join(entry.file_name()))?;
+        }
+    }
+    Ok(())
+}
+
+/// A stand-in Mac install: the fixture catalog and Clerk tokens under the macOS scheme, the
+/// owner's settings files and localStorage copy. Runs the app's file import into a fresh data
+/// directory twice (the second run must change nothing) and checks what came over.
+fn check_owner_install(owner: &Path, out: &Path, log: &mut String) -> anyhow::Result<()> {
+    let dir = out.join("owner-install");
+    _ = std::fs::remove_dir_all(&dir);
+    let key = SafeStorageKey::from_mac_password(b"fixture keychain password");
+    let paths = write_fixture(&dir.join("install"), &key)?;
+    std::fs::copy(owner.join("mac-client-settings.json"), paths.state_dir.join("client-settings.json"))?;
+    std::fs::copy(owner.join("mac-desktop-settings.json"), paths.state_dir.join("desktop-settings.json"))?;
+    copy_tree(&owner.join("mac-local-storage/leveldb"), &paths.user_data_dir.join("Local Storage/leveldb"))?;
+    // Electron holds this lock while it runs; the import must not need it.
+    std::fs::write(paths.user_data_dir.join("Local Storage/leveldb/LOCK"), b"")?;
+    let before = tree_digest(&dir.join("install"))?;
+    writeln!(log, "== owner install ({} files)", before.len())?;
+
+    let entries = install::read_local_storage(&paths.user_data_dir.join("Local Storage/leveldb"))?;
+    let mut origins: Vec<_> = entries.iter().map(|e| e.origin.clone()).collect();
+    origins.sort();
+    origins.dedup();
+    writeln!(log, "localStorage: {} entries in {} origins", entries.len(), origins.len())?;
+    let app = install::app_entries(entries);
+    // Key names only, cut at the first id-like part, so the log carries no user data.
+    let mut keys: Vec<_> = app.iter().map(|e| e.key.split([':', '.']).take(3).collect::<Vec<_>>().join(":")).collect();
+    keys.sort();
+    keys.dedup();
+    writeln!(log, "app origin keys:\n  {}", keys.join("\n  "))?;
+
+    let data = dir.join("data");
+    let ui = dir.join("ui");
+    let target = install::Install { paths: paths.clone() };
+    let mut state = install::ImportState::default();
+    let report = install::import_files(&target, &data, Some(&ui), &mut state);
+    writeln!(
+        log,
+        "import: {} localStorage keys, drafts {}, ui state {}, desktop settings {}, notifications {}, client settings to apply {}, errors {:?}",
+        report.local_storage_keys.len(),
+        report.drafts,
+        report.ui_state,
+        report.desktop_settings,
+        report.notifications,
+        report.client_settings_path.is_some(),
+        report.errors
+    )?;
+    ensure!(report.errors.is_empty(), "the file import reports no errors");
+    ensure!(report.client_settings_path.is_some(), "first launch applies the install's client settings");
+    let again = install::import_files(&target, &data, Some(&ui), &mut state);
+    ensure!(again.client_settings_path.is_none() && again.local_storage_keys.is_empty(), "a second launch with nothing changed imports nothing");
+    writeln!(log, "second launch: nothing to import")?;
+
+    let local: serde_json::Map<String, serde_json::Value> = serde_json::from_slice(&std::fs::read(data.join("local-storage.json"))?)?;
+    let theme = local.get("t3code:theme").and_then(|v| v.as_str()).map(str::to_owned);
+    writeln!(log, "theme preference present: {}", theme.is_some())?;
+    let custom = local.get("t3code:themes:v1").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+    let mut parsed = 0;
+    for theme in &custom {
+        match t3code_web::theme_palette::ThemeDocument::parse(theme.to_string().as_bytes()) {
+            Ok(_) => parsed += 1,
+            Err(error) => writeln!(log, "custom theme does not parse: {error}")?,
+        }
+    }
+    writeln!(log, "custom themes: {} stored, {parsed} parse", custom.len())?;
+    ensure!(parsed == custom.len(), "every custom theme parses");
+    if let Some(theme) = &theme {
+        let known = custom.iter().any(|t| t.get("id").and_then(|id| id.as_str()) == Some(theme.as_str()));
+        writeln!(log, "selected theme is a custom theme: {known}")?;
+    }
+    for key in ["t3code:theme-appearance-mode", "t3code:theme-halves:v1"] {
+        writeln!(log, "{key}: {}", local.contains_key(key))?;
+    }
+
+    let after = tree_digest(&dir.join("install"))?;
+    ensure!(before == after, "no install file changed");
+    writeln!(log, "install files unchanged ({} files)", after.len())?;
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let out = std::path::PathBuf::from(std::env::args().nth(1).context("usage: import-check <out-dir>")?);
+    let out = std::path::PathBuf::from(std::env::args().nth(1).context("usage: import-check <out-dir> [owner-dir]")?);
+    let owner = std::env::args().nth(2).map(std::path::PathBuf::from);
     std::fs::create_dir_all(&out)?;
     let mut log = String::new();
     let result = async {
@@ -147,7 +267,11 @@ async fn main() -> anyhow::Result<()> {
             &out,
             &mut log,
         )
-        .await
+        .await?;
+        if let Some(owner) = &owner {
+            check_owner_install(owner, &out, &mut log)?;
+        }
+        Ok(())
     }
     .await;
     if let Err(error) = &result {

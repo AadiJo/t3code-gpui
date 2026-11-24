@@ -13,8 +13,11 @@ use t3code_web::desktop_notifications::{
 
 use super::model::{NotificationState, read_notifications, reconcile_notifications};
 
-/// `<data dir>/t3code-gpui/notifications.json`.
+/// `<data dir>/t3code-gpui/notifications.json` (`T3CODE_DATA_DIR/ui` for an isolated run).
 pub fn default_path() -> Option<PathBuf> {
+    if let Some(dir) = std::env::var_os("T3CODE_DATA_DIR") {
+        return Some(PathBuf::from(dir).join("ui").join("notifications.json"));
+    }
     Some(dirs::data_dir()?.join("t3code-gpui").join("notifications.json"))
 }
 

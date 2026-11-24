@@ -1,7 +1,7 @@
 //! The Environments page. Ports `ConnectionsSettings view="environments"`,
 //! `SavedEnvironmentRows.tsx` (`SavedBackendListRow`), `EnvironmentRow.tsx`,
-//! `EnvironmentRoutesList.tsx` and `ConnectionDiagnosisDetails.tsx`, plus a
-//! T3 Connect account section and the desktop-app import this port adds.
+//! `EnvironmentRoutesList.tsx` and `ConnectionDiagnosisDetails.tsx`. The T3
+//! Connect sign-in opens from the settings nav footer and the empty state.
 //!
 //! Rows read [`ConnectionsState`]; every change goes through
 //! [`ConnectionRuntime`] and comes back as new state. Without a runtime
@@ -18,11 +18,9 @@ use gpui_kit::{
 };
 use t3code_client_runtime::connection::routes::{is_learned, route_id};
 use t3code_client_runtime::environment::EnvironmentId;
-use t3code_client_runtime::relay::CloudAccountState;
 
 use super::add_environment_dialog::{AddEnvironmentDialog, AddEnvironmentEvent};
-use super::import_desktop_dialog::{ImportDesktopDialog, ImportDesktopEvent};
-use super::settings_layout::{SettingsRow, SettingsSection, page_container};
+use super::settings_layout::{SettingsSection, page_container};
 use crate::ActiveAppTheme as _;
 use crate::appearance_fonts::{TextSize, weight};
 use crate::components::clerk::{T3ConnectSignIn, T3ConnectSignInEvent};
@@ -45,16 +43,10 @@ use crate::connection::{ConnectionRuntime, ConnectionsState, EnvironmentState};
 use crate::i18n::t;
 use crate::theme_color::with_alpha;
 
-/// What the account row says when the desktop import is offered. This copy
-/// has no web counterpart, so it is not in the translation catalogs.
-const IMPORT_TITLE: &str = "Import from the desktop app";
-const IMPORT_DESCRIPTION: &str = "Copy environments, routes and pairings saved by the T3 Code desktop app on this computer. The desktop app's files are only read, never changed.";
-
 /// A dialog the page has open over itself.
 enum PageDialog {
     Add(Entity<AddEnvironmentDialog>),
     SignIn(Entity<T3ConnectSignIn>),
-    Import(Entity<ImportDesktopDialog>),
     RemoveEnvironment { id: EnvironmentId, label: SharedString },
     RemoveRoute { id: EnvironmentId, route_id: String, label: SharedString, address: Option<SharedString> },
 }
@@ -170,20 +162,6 @@ impl ConnectionsSettings {
         });
         self._subscriptions.push(subscription);
         self.dialog = Some(PageDialog::SignIn(dialog));
-        cx.notify();
-    }
-
-    /// Opens the desktop-app import.
-    pub fn open_import(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let dialog = cx.new(|cx| ImportDesktopDialog::new(window, cx));
-        let subscription = cx.subscribe(&dialog, |this, _, event: &ImportDesktopEvent, cx| match event {
-            ImportDesktopEvent::Close => {
-                this.dialog = None;
-                cx.notify();
-            }
-        });
-        self._subscriptions.push(subscription);
-        self.dialog = Some(PageDialog::Import(dialog));
         cx.notify();
     }
 
@@ -769,43 +747,6 @@ impl ConnectionsSettings {
             .into_any_element()
     }
 
-    fn render_account(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
-        let state = self.state.read(cx);
-        let cloud = state.cloud.as_ref()?;
-        let row = match &cloud.account {
-            CloudAccountState::SignedIn(account) => {
-                let who = account.email.clone().or(account.name.clone()).unwrap_or_else(|| account.user_id.clone());
-                SettingsRow::new(SharedString::from(who)).description(t!("Signed in")).control(
-                    Button::new("t3-connect-sign-out")
-                        .label(t!("Sign out"))
-                        .variant(ButtonVariant::Outline)
-                        .size(ButtonSize::Sm)
-                        .on_click(cx.listener(|_, _, _, cx| {
-                            let Some(runtime) = cx.try_global::<ConnectionRuntime>() else { return };
-                            let task = runtime.sign_out(cx);
-                            cx.spawn(async move |_, cx| {
-                                if let Err(error) = task.await {
-                                    cx.update(|cx| {
-                                        Toaster::push(ToastData::new(ToastKind::Error, t!("Sign out")).description(error.0), cx)
-                                    });
-                                }
-                            })
-                            .detach();
-                        })),
-                )
-            }
-            CloudAccountState::SignedOut => SettingsRow::new(t!("Sign in to T3 Connect")).control(
-                Button::new("t3-connect-sign-in")
-                    .label(t!("Sign in"))
-                    .variant(ButtonVariant::Outline)
-                    .size(ButtonSize::Sm)
-                    .on_click(cx.listener(|this, _, window, cx| this.open_sign_in(window, cx))),
-            ),
-            CloudAccountState::Loading => SettingsRow::new(t!("T3 Connect")).description(t!("Loading…")),
-        };
-        Some(SettingsSection::new(t!("T3 Connect")).child(row).into_any_element())
-    }
-
     fn render_dialog(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         let dialog = self.dialog.as_ref()?;
         let on_close = {
@@ -817,7 +758,6 @@ impl ConnectionsSettings {
         let content: AnyElement = match dialog {
             PageDialog::Add(dialog) => dialog.clone().into_any_element(),
             PageDialog::SignIn(dialog) => dialog.clone().into_any_element(),
-            PageDialog::Import(dialog) => dialog.clone().into_any_element(),
             PageDialog::RemoveEnvironment { id, label, .. } => {
                 let id = id.clone();
                 let message = t!(
@@ -925,11 +865,8 @@ impl Render for ConnectionsSettings {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.sync_ticker(cx);
         let environments: Vec<EnvironmentState> = self.state.read(cx).environments.clone();
-        let import_available = self.state.read(cx).electron_import_available;
-        let cloud_enabled = self.state.read(cx).cloud.is_some();
         let rows: Vec<AnyElement> = environments.iter().map(|env| self.render_row(env, cx)).collect();
         let cloud_rows = cloud_environment_connect_rows(&self.state, cx);
-        let account = self.render_account(cx);
         let dialog = self.render_dialog(cx);
         let theme = cx.app_theme();
         let c = &theme.colors;
@@ -941,11 +878,7 @@ impl Render for ConnectionsSettings {
             .on_click(cx.listener(|this, _, window, cx| this.open_add_dialog(None, window, cx)));
         let mut section = SettingsSection::new(t!("Environments")).header_action(header_action).children(rows).children(cloud_rows.rows);
         if environments.is_empty() && !cloud_rows.any {
-            let description = if cloud_enabled {
-                t!("Click “Add environment” to pair another environment, or connect one from T3 Connect.")
-            } else {
-                t!("Click “Add environment” to pair another environment.")
-            };
+            let description = t!("Click “Add environment” to pair another environment.");
             section = section.child(
                 div()
                     .min_h(theme.rem(13.))
@@ -955,23 +888,9 @@ impl Render for ConnectionsSettings {
                     .child(Empty::new(t!("No saved remote environments")).icon(IconName::ChevronsLeftRightEllipsis).description(description)),
             );
         }
-        let import = import_available.then(|| {
-            SettingsSection::new(t!("This app")).child(
-                SettingsRow::new(IMPORT_TITLE).description(IMPORT_DESCRIPTION).control(
-                    Button::new("import-desktop")
-                        .label("Import…")
-                        .icon(IconName::Download)
-                        .variant(ButtonVariant::Outline)
-                        .size(ButtonSize::Sm)
-                        .on_click(cx.listener(|this, _, window, cx| this.open_import(window, cx))),
-                ),
-            )
-        });
         page_container(cx)
             .text_color(c.foreground())
             .child(section)
-            .children(account)
-            .children(import)
             .children(dialog)
     }
 }
