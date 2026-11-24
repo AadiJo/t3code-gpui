@@ -307,3 +307,76 @@ pub fn bool_setting(
     let model = model.clone();
     switch_row(id, title, description, value, lock, move |checked, _, cx| save_patch(&model, id, patch(checked), cx))
 }
+
+/// `AdvancedSettings`: a 40px "Advanced" row with a chevron that folds
+/// power-user rows at the end of a section. Place it as the section's last child.
+pub fn advanced_fold(
+    id: impl Into<SharedString>,
+    open: bool,
+    on_toggle: impl Fn(&mut Window, &mut App) + 'static,
+    children: Vec<AnyElement>,
+    cx: &App,
+) -> AnyElement {
+    let theme = cx.app_theme();
+    let c = &theme.colors;
+    let divider = gpui_kit::Hsla { a: c.border.a * 0.5, ..c.border };
+    div()
+        .flex()
+        .flex_col()
+        .child(
+            div()
+                .id(id.into())
+                .flex()
+                .items_center()
+                .gap(theme.sp(1.5))
+                .min_h(theme.sp(10.))
+                .w_full()
+                .px(theme.sp(4.))
+                .cursor_pointer()
+                .ui_text(theme, TextSize::Xs, weight::MEDIUM)
+                .text_color(c.muted_foreground)
+                .hover(|d| d.text_color(c.foreground()))
+                .on_click(move |_, window, cx| on_toggle(window, cx))
+                .child(crate::components::icons::Icon::new(if open { IconName::ChevronDown } else { IconName::ChevronRight }).size(crate::components::icons::IconSize::Sm))
+                .child(t!("Advanced")),
+        )
+        .when(open, |d| {
+            d.child(div().border_t_1().border_color(divider).flex().flex_col().children(children.into_iter().enumerate().map(|(ix, child)| {
+                div().when(ix > 0, |d| d.border_t_1().border_color(divider)).child(child)
+            })))
+        })
+        .into_any_element()
+}
+
+/// `SourceControlItemMark`: an 18px mark with an 8px status dot at its top-left,
+/// or the dot alone when there is no mark.
+pub fn status_mark(icon: Option<crate::components::icons::IconSource>, dot: Hsla, cx: &App) -> AnyElement {
+    let theme = cx.app_theme();
+    let ring = theme.colors.background();
+    match icon {
+        None => div().size(gpui_kit::px(8.)).flex_none().rounded_full().bg(dot).into_any_element(),
+        Some(icon) => div()
+            .relative()
+            .flex_none()
+            .size(theme.sp(5.))
+            .flex()
+            .items_center()
+            .justify_center()
+            .child(crate::components::icons::Icon::new(icon).size(crate::components::icons::IconSize::Custom(gpui_kit::px(18.))).color(gpui_kit::Hsla { a: 0.8, ..theme.colors.foreground() }))
+            .child(
+                // `ring-2 ring-background` around the 8px dot.
+                div()
+                    .absolute()
+                    .left(gpui_kit::px(-4.))
+                    .top(gpui_kit::px(-4.))
+                    .size(gpui_kit::px(12.))
+                    .rounded_full()
+                    .bg(ring)
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .child(div().size(gpui_kit::px(8.)).rounded_full().bg(dot)),
+            )
+            .into_any_element(),
+    }
+}

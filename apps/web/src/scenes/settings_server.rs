@@ -125,17 +125,27 @@ pub fn fixture_snapshot() -> ServerPanelsSnapshot {
         "message": null, "interaction": { "type": "deviceCode", "id": "i-1", "url": "https://claude.ai/oauth/device", "userCode": "QFXK-7RMB" }
     }));
     let codex_auth: ProviderAuthState = decode(json!({ "instanceId": "codex", "phase": "succeeded", "flowId": null, "authorizationUrl": null, "expiresAt": null, "message": null }));
+    let none = json!({ "_tag": "None" });
+    let some = |v: &str| json!({ "_tag": "Some", "value": v });
+    let host = |kind: &str, label: &str, exe: Option<&str>, status: &str, version: serde_json::Value, hint: &str, auth: &str, app: bool| json!({
+        "kind": kind, "label": label, "executable": exe, "status": status, "version": version, "installHint": hint,
+        "detail": { "_tag": "None" }, "appSignIn": app,
+        "auth": { "status": auth, "account": { "_tag": "None" }, "host": { "_tag": "Some", "value": "github.com" }, "detail": { "_tag": "None" } }
+    });
     let source_control = decode(json!({
-        "versionControlSystems": [],
-        "sourceControlProviders": [{
-            "kind": "github", "label": "GitHub", "executable": "gh", "status": "available", "version": "2.62.0",
-            "installHint": "Install the GitHub CLI.", "detail": null, "appSignIn": true,
-            "auth": { "status": "unauthenticated", "account": null, "host": "github.com", "detail": null }
-        }]
+        "versionControlSystems": [
+            { "kind": "git", "implemented": true, "label": "Git", "executable": "git", "status": "available", "version": some("git version 2.43.0"), "installHint": "Install Git.", "detail": none },
+            { "kind": "jj", "implemented": false, "label": "Jujutsu", "executable": "jj", "status": "missing", "version": none, "installHint": "Install Jujutsu.", "detail": none }
+        ],
+        "sourceControlProviders": [
+            host("github", "GitHub", Some("gh"), "available", some("gh version 2.62.0"), "Install the GitHub CLI.", "unauthenticated", true),
+            host("gitlab", "GitLab", Some("glab"), "missing", none.clone(), "Install the GitLab command-line tool (`glab`).", "unknown", false),
+            host("bitbucket", "Bitbucket", None, "available", none.clone(), "Add a Bitbucket token in Settings → Source control & issues.", "unauthenticated", false)
+        ]
     }));
     let trackers = decode(json!({ "trackers": [
         { "tracker": "linear", "displayName": "Linear", "host": "linear.app", "scopeNoun": "team",
-          "credential": { "label": "API key", "placeholder": "lin_api_…", "helpUrl": null }, "connected": true, "account": "dev@example.com", "detail": null, "scopes": [] }
+          "credential": { "label": "Personal API key", "helpUrl": "https://linear.app/settings/api" }, "connected": false, "account": null, "detail": null, "scopes": [] }
     ], "bindings": {} }));
     ServerPanelsSnapshot {
         environment_id: "env-studio".into(),
