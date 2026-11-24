@@ -421,15 +421,15 @@ fn font_settings(settings: &ClientSettings, separate: bool) -> FontSettings {
 /// `applyAppearanceFontVariables`: the composer and terminal families
 /// apply only when fonts are separate.
 fn family_overrides(settings: &ClientSettings, separate: bool) -> FamilyOverrides {
-    let first = |value: &str| -> Option<SharedString> {
-        let family = value.split(',').next()?.trim().trim_matches(['"', '\'']).trim();
-        (!family.is_empty()).then(|| SharedString::from(family.to_owned()))
+    let families = |value: &str| -> Option<SharedString> {
+        let list = value.trim();
+        (!list.is_empty()).then(|| SharedString::from(list.to_owned()))
     };
     FamilyOverrides {
-        sans: first(settings.font_family_sans.as_str()),
-        code: first(settings.font_family_code.as_str()),
-        composer: separate.then(|| first(settings.font_family_composer.as_str())).flatten(),
-        terminal: separate.then(|| first(settings.font_family_terminal.as_str())).flatten(),
+        sans: families(settings.font_family_sans.as_str()),
+        code: families(settings.font_family_code.as_str()),
+        composer: separate.then(|| families(settings.font_family_composer.as_str())).flatten(),
+        terminal: separate.then(|| families(settings.font_family_terminal.as_str())).flatten(),
     }
 }
 
