@@ -45,6 +45,13 @@ name = "states-check"
 path = "src/states_check.rs"
 required-features = ["headless"]
 
+# The first-launch import as the app runs it, a second launch, and a denied key read,
+# against a stand-in install. Usage: launch-check <first|second|denied> <out> <data>
+[[bin]]
+name = "launch-check"
+path = "src/launch_check.rs"
+required-features = ["headless"]
+
 # Imports made-up Electron catalogs encrypted with the Windows and macOS
 # safeStorage schemes, and runs the first-launch file import over a stand-in
 # install built around copied owner files. Usage: import-check <out-dir> [owner-dir]

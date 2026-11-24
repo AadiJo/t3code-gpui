@@ -188,11 +188,20 @@ impl<E: std::fmt::Display> From<E> for CommandError {
     }
 }
 
-/// What the Electron import found, before anything is saved.
-#[derive(Clone, Debug)]
+/// What the Electron import found, before anything is saved. Holds the
+/// decrypted T3 Connect client JWT so saving needs no second Keychain read
+/// (each read can prompt on macOS).
+#[derive(Clone)]
 pub struct ImportPreview {
     pub import: ElectronImport,
     pub has_clerk_session: bool,
+    clerk_client_jwt: Option<String>,
+}
+
+impl std::fmt::Debug for ImportPreview {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ImportPreview").field("import", &self.import).field("has_clerk_session", &self.has_clerk_session).finish()
+    }
 }
 
 impl ConnectionRuntime {
@@ -459,8 +468,8 @@ impl ConnectionRuntime {
                 tokio::task::spawn_blocking(move || {
                     let key = electron_key(&source)?;
                     let import = read_electron_catalog(&source.paths, &key)?;
-                    let has_clerk_session = read_electron_clerk_client_jwt(&source.paths, &key)?.is_some();
-                    Ok::<_, ImportError>(ImportPreview { import, has_clerk_session })
+                    let clerk_client_jwt = read_electron_clerk_client_jwt(&source.paths, &key)?;
+                    Ok::<_, ImportError>(ImportPreview { import, has_clerk_session: clerk_client_jwt.is_some(), clerk_client_jwt })
                 })
                 .await
                 .map_err(CommandError::from)?
@@ -475,20 +484,13 @@ impl ConnectionRuntime {
     pub fn apply_electron_import(&self, preview: ImportPreview, with_clerk_session: bool, cx: &App) -> Task<Result<usize, CommandError>> {
         let registry = self.registry.clone();
         let clerk = self.clerk();
-        let source = self.electron.clone();
         self.spawn(
             async move {
                 let added = registry.import(&preview.import).await.map_err(registry_error)?;
-                if with_clerk_session && let (Some(clerk), Some(source)) = (clerk, source) {
-                    let jwt = tokio::task::spawn_blocking(move || {
-                        let key = electron_key(&source)?;
-                        read_electron_clerk_client_jwt(&source.paths, &key)
-                    })
-                    .await
-                    .map_err(CommandError::from)??;
-                    if let Some(jwt) = jwt {
-                        clerk.adopt_client_jwt(jwt).await.map_err(clerk_error)?;
-                    }
+                if with_clerk_session
+                    && let (Some(clerk), Some(jwt)) = (clerk, preview.clerk_client_jwt)
+                {
+                    clerk.adopt_client_jwt(jwt).await.map_err(clerk_error)?;
                 }
                 Ok(added)
             },
