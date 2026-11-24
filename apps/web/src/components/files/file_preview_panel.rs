@@ -4,14 +4,14 @@
 //! width when no file is open).
 //!
 //! Text opens in the editor and saves itself 500ms after the last edit, as
-//! the web's `FileSaveCoordinator` does; Mod+S saves at once. Before each
-//! write the file is read again: when it changed on disk since it was opened,
-//! the save stops and a notice offers to keep the edits or take the disk copy.
+//! the web's `FileSaveCoordinator` does; Mod+S saves at once. Leaving a file
+//! writes its edits at once (`fileSaveSessions`); edits not yet written stay
+//! as that file's draft, so reopening it shows them and writes them again.
 //! Files over 1 MB open read-only in the code view; markdown and CSV toggle
 //! between source and rendered; images get the zoomable viewer; every other
-//! kind opens in this machine's default app.
+//! kind offers to open it externally.
 
-use std::{sync::Arc, time::Duration};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use gpui_kit::{
     AnyElement, App, AppContext as _, ClipboardItem, Context, Entity, EventEmitter, FocusHandle, Focusable,
@@ -27,6 +27,7 @@ use super::{
     preview_image::{ExpandImage, PreviewImage},
     project_file_picker::{FilePickerEvent, ProjectFilePicker},
 };
+use crate::components::chat::open_in_picker::editor_icon;
 use crate::components::search::{
     palette_shell::palette_overlay,
     project_content_search::{ContentSearchEvent, ProjectContentSearch},
@@ -45,18 +46,20 @@ use crate::{
         media::{
             media_actions::MediaKind,
             media_source::{MediaBytes, load_image},
-            video_preview::{ExternalFileCard, open_with_default_app},
+            video_preview::ExternalFileCard,
         },
         ui::{
             button::{Button, ButtonSize, ButtonVariant},
-            dialog::{DialogSurface, Modal},
+            DISABLED_OPACITY,
             menu::{MenuItem, MenuPopup, dropdown_menu},
             spinner::{Spinner, SpinnerSize},
             toggle::{Toggle, ToggleSize, ToggleVariant},
             tooltip::tooltip,
         },
     },
-    file_context_menu::{FileContextMenuAction, FileContextMenuCapabilities, composer_file_mention, editor_label},
+    diff_panel_store::DiffPanelStore,
+    editor_preferences::{EDITORS, LastEditor, Platform, editor_label as platform_editor_label, effective_editor},
+    file_context_menu::{FileContextMenuAction, FileContextMenuCapabilities, RevealKind, composer_file_mention},
     file_preview::{FilePreviewKind, LARGE_TEXT_PREVIEW_MAX_BYTES, decode_file_preview_text, file_preview_delimiter, workspace_preview_kind},
     file_source::{FileError, SharedWorkspaceFiles, absolute_path},
     i18n::t,
@@ -93,24 +96,23 @@ pub enum FilesPanelEvent {
     AddToChat(String),
     /// `shell.openInEditor` on the server: an editor, or the file manager to reveal.
     OpenInEditor { absolute_path: String, editor: EditorId, reveal: bool },
+    /// "Open file in preview browser" (`openFileInPreview`): an HTML or PDF file
+    /// of the workspace, by absolute path, in the thread's preview browser.
+    OpenInPreview { absolute_path: String },
 }
 
-/// Where a text file's saving stands.
+/// Where a text file's saving stands. A failed write stays `Pending`: its
+/// draft is kept and written again on the next edit or when the file reopens.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SaveState {
     Saved,
-    /// Edited; a save is scheduled.
+    /// Edited; a save is scheduled, or the last write failed.
     Pending,
     Saving,
-    Failed(SharedString),
-    /// The file changed on disk since it was opened; holds the disk copy.
-    Conflict(Arc<str>),
 }
 
 struct TextFile {
     editor: Entity<FileEditor>,
-    /// The server copy the editor started from or last wrote.
-    base: Arc<str>,
     save: SaveState,
     /// Another save was asked for while one was in flight.
     resave: bool,
@@ -150,8 +152,12 @@ pub struct FilesPanel {
     explorer_width: f32,
     resizing: bool,
     open: Option<OpenFile>,
-    /// A file to open once the user answers the unsaved-changes prompt.
-    prompt: Option<(SharedString, Option<u32>)>,
+    /// Edits not yet written, by path (`getUnsavedProjectFileQueryData`).
+    drafts: HashMap<SharedString, Arc<str>>,
+    /// Paths with a write in flight.
+    writing: Vec<SharedString>,
+    /// The word-wrap toggle, over the `wordWrap` setting.
+    wrap_override: Option<bool>,
     expanded: Option<(Entity<ExpandedImageDialog>, Subscription)>,
     pending_gallery: Option<(Vec<ExpandedImageItem>, usize)>,
     palette: Option<Palette>,
@@ -186,7 +192,9 @@ impl FilesPanel {
             explorer_width: EXPLORER_DEFAULT_WIDTH,
             resizing: false,
             open: None,
-            prompt: None,
+            drafts: HashMap::new(),
+            writing: Vec::new(),
+            wrap_override: None,
             expanded: None,
             pending_gallery: None,
             palette: None,
@@ -254,16 +262,6 @@ impl FilesPanel {
         }
     }
 
-    /// Whether the unsaved-changes prompt is showing.
-    pub fn prompt_open(&self) -> bool {
-        self.prompt.is_some()
-    }
-
-    /// Answers the unsaved-changes prompt: discard the edits and open the file.
-    pub fn discard_unsaved(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.discard_and_open(window, cx);
-    }
-
     /// True while the open file is still loading.
     pub fn is_loading(&self) -> bool {
         matches!(self.open.as_ref().map(|o| &o.view), Some(FileView::Loading))
@@ -278,8 +276,28 @@ impl FilesPanel {
         cx.notify();
     }
 
-    /// Opens a workspace file, revealing a 1-based line when given. With
-    /// unsaved edits that could not be written, asks before leaving them.
+    /// Whether text files wrap: the toggle, else the `wordWrap` setting.
+    pub fn word_wrap(&self, cx: &App) -> bool {
+        self.wrap_override.unwrap_or_else(|| cx.try_global::<DiffPanelStore>().is_none_or(|store| store.settings.word_wrap))
+    }
+
+    /// The word-wrap toggle; it lasts while the panel does, as the web's does.
+    pub fn set_word_wrap(&mut self, wrap: bool, cx: &mut Context<Self>) {
+        self.wrap_override = Some(wrap);
+        if let Some(FileView::Text(text)) = self.open.as_ref().map(|o| &o.view) {
+            text.editor.update(cx, |editor, cx| editor.set_wrap(wrap, cx));
+        }
+        cx.notify();
+    }
+
+    /// True while any file has edits not yet written (the tab's pending marker).
+    pub fn has_unsaved(&self) -> bool {
+        !self.drafts.is_empty() || matches!(self.save_state(), Some(SaveState::Pending | SaveState::Saving))
+    }
+
+    /// Opens a workspace file, revealing a 1-based line when given. Edits to
+    /// the file being left are written at once and kept as its draft until
+    /// the write lands.
     pub fn open_file(&mut self, path: SharedString, line: Option<u32>, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(open) = &mut self.open
             && open.path == path
@@ -290,17 +308,14 @@ impl FilesPanel {
             }
             return;
         }
-        if let Some(FileView::Text(text)) = self.open.as_ref().map(|o| &o.view)
+        if let Some(open) = &self.open
+            && let FileView::Text(text) = &open.view
             && text.editor.read(cx).is_dirty()
         {
-            match text.save {
-                SaveState::Failed(_) | SaveState::Conflict(_) => {
-                    self.prompt = Some((path, line));
-                    cx.notify();
-                    return;
-                }
-                _ => self.save_now(cx),
-            }
+            let contents: Arc<str> = text.editor.read(cx).text().into();
+            let left = open.path.clone();
+            self.drafts.insert(left.clone(), contents.clone());
+            self.write(left, contents, cx);
         }
         self.load_file(path, line, window, cx);
     }
@@ -425,12 +440,21 @@ impl FilesPanel {
         let Some(open) = self.open.as_mut().filter(|o| &o.path == path) else { return };
         match result {
             Ok(file) => {
-                let editor = cx.new(|cx| FileEditor::new(path.clone(), &file.contents, false, window, cx));
+                let wrap = self.wrap_override.unwrap_or_else(|| cx.try_global::<DiffPanelStore>().is_none_or(|store| store.settings.word_wrap));
+                let draft = self.drafts.get(path).cloned();
+                let editor = cx.new(|cx| {
+                    let mut editor = FileEditor::new(path.clone(), &file.contents, false, window, cx);
+                    editor.set_wrap(wrap, cx);
+                    if let Some(draft) = &draft {
+                        editor.restore_draft(draft, cx);
+                    }
+                    editor
+                });
                 let subscription = cx.subscribe(&editor, |panel, _, event: &FileEditorEvent, cx| panel.on_editor_event(event, cx));
+                let Some(open) = self.open.as_mut().filter(|o| &o.path == path) else { return };
                 open.view = FileView::Text(TextFile {
                     editor,
-                    base: file.contents.into(),
-                    save: SaveState::Saved,
+                    save: if draft.is_some() { SaveState::Pending } else { SaveState::Saved },
                     resave: false,
                     table: None,
                     markdown: None,
@@ -439,6 +463,10 @@ impl FilesPanel {
                 });
                 self.prepare_rendered(cx);
                 self.apply_reveal(cx);
+                if draft.is_some() {
+                    // `recover`: the draft goes through the debounce again.
+                    self.schedule_save(cx);
+                }
             }
             Err(error) if error.failure == Some(ProjectFileFailure::BinaryFile) => {
                 open.view = FileView::External { size: None };
@@ -533,9 +561,6 @@ impl FilesPanel {
             this.update(cx, |panel, cx| panel.save_now(cx)).ok();
         });
         let Some(text) = self.text_mut() else { return };
-        if matches!(text.save, SaveState::Conflict(_)) {
-            return;
-        }
         text._timer = Some(timer);
         // Re-render the bar only when the state changes, not on every keystroke.
         if !matches!(text.save, SaveState::Saving | SaveState::Pending) {
@@ -544,87 +569,67 @@ impl FilesPanel {
         }
     }
 
-    /// Writes the editor's text now: reads the file first and stops on a conflict.
+    /// Writes the open file's text now, or after the write in flight.
     pub fn save_now(&mut self, cx: &mut Context<Self>) {
         let Some(path) = self.open.as_ref().map(|o| o.path.clone()) else { return };
-        let files = self.files.clone();
+        let writing = self.writing.contains(&path);
         let Some(text) = self.text_mut() else { return };
-        match text.save {
-            SaveState::Saving => {
-                text.resave = true;
-                return;
-            }
-            SaveState::Conflict(_) => return,
-            _ => {}
-        }
-        let contents = text.editor.read(cx).text();
-        if contents.as_str() == &*text.base && !text.editor.read(cx).is_dirty() {
+        text._timer = None;
+        if !text.editor.read(cx).is_dirty() {
             text.save = SaveState::Saved;
             cx.notify();
             return;
         }
+        if writing {
+            text.resave = true;
+            return;
+        }
+        let contents: Arc<str> = text.editor.read(cx).text().into();
         text.save = SaveState::Saving;
-        text._timer = None;
-        let base = text.base.clone();
-        let read = files.read_file(path.to_string());
-        let work = cx.background_spawn(async move {
-            let disk = read.await?;
-            if disk.contents.as_str() != &*base && disk.contents != contents {
-                return Ok(Err(Arc::<str>::from(disk.contents)));
-            }
-            files.write_file(path.to_string(), contents.clone()).await?;
-            Ok(Ok(contents))
-        });
+        self.drafts.insert(path.clone(), contents.clone());
+        self.write(path, contents, cx);
+        cx.notify();
+    }
+
+    /// One write of `contents` to `path`; one at a time per file, as the web's
+    /// coordinator queues them.
+    fn write(&mut self, path: SharedString, contents: Arc<str>, cx: &mut Context<Self>) {
+        if self.writing.contains(&path) {
+            return;
+        }
+        self.writing.push(path.clone());
+        let request = self.files.write_file(path.to_string(), contents.to_string());
+        let work = cx.background_spawn(request);
         cx.spawn(async move |this, cx| {
-            let result: Result<Result<String, Arc<str>>, FileError> = work.await;
-            this.update(cx, |panel, cx| panel.save_finished(result, cx)).ok();
+            let result = work.await;
+            this.update(cx, |panel, cx| panel.write_finished(path, contents, result.is_ok(), cx)).ok();
         })
         .detach();
-        cx.notify();
     }
 
-    fn save_finished(&mut self, result: Result<Result<String, Arc<str>>, FileError>, cx: &mut Context<Self>) {
-        let Some(text) = self.text_mut() else { return };
-        match result {
-            Ok(Ok(written)) => {
-                text.base = written.as_str().into();
-                text.save = SaveState::Saved;
-                text.editor.update(cx, |editor, cx| editor.mark_saved(written, cx));
-                if text.editor.read(cx).is_dirty() || std::mem::take(&mut text.resave) {
-                    self.schedule_save(cx);
-                }
+    fn write_finished(&mut self, path: SharedString, contents: Arc<str>, written: bool, cx: &mut Context<Self>) {
+        self.writing.retain(|p| p != &path);
+        if written && self.drafts.get(&path) == Some(&contents) {
+            self.drafts.remove(&path);
+        }
+        let open = self.open.as_ref().is_some_and(|o| o.path == path);
+        if !open {
+            // A draft that changed while this write ran goes out next.
+            if written && let Some(draft) = self.drafts.get(&path).cloned() {
+                self.write(path, draft, cx);
             }
-            Ok(Err(disk)) => text.save = SaveState::Conflict(disk),
-            Err(error) => text.save = SaveState::Failed(error.message.into()),
+            return;
+        }
+        let Some(text) = self.text_mut() else { return };
+        if written {
+            text.editor.update(cx, |editor, cx| editor.mark_saved(contents.to_string(), cx));
+        }
+        let again = std::mem::take(&mut text.resave) || (written && text.editor.read(cx).is_dirty());
+        text.save = if !written || text.editor.read(cx).is_dirty() { SaveState::Pending } else { SaveState::Saved };
+        if again {
+            self.schedule_save(cx);
         }
         cx.notify();
-    }
-
-    /// Conflict: write the editor's text over the disk copy.
-    pub fn keep_my_changes(&mut self, cx: &mut Context<Self>) {
-        let Some(text) = self.text_mut() else { return };
-        if let SaveState::Conflict(disk) = &text.save {
-            text.base = disk.clone();
-            text.save = SaveState::Pending;
-        }
-        self.save_now(cx);
-    }
-
-    /// Conflict: replace the edits with the disk copy.
-    pub fn use_disk_copy(&mut self, cx: &mut Context<Self>) {
-        let Some(text) = self.text_mut() else { return };
-        if let SaveState::Conflict(disk) = text.save.clone() {
-            text.base = disk.clone();
-            text.save = SaveState::Saved;
-            text.editor.update(cx, |editor, cx| editor.replace_contents(&disk, cx));
-        }
-        cx.notify();
-    }
-
-    fn discard_and_open(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some((path, line)) = self.prompt.take() {
-            self.load_file(path, line, window, cx);
-        }
     }
 
     fn expand_open_image(&mut self, cx: &mut Context<Self>) {
@@ -734,10 +739,13 @@ impl FilesPanel {
         self.expanded = Some((dialog, subscription));
     }
 
-    fn run_file_action(&mut self, action: FileContextMenuAction, path: SharedString, cx: &mut Context<Self>) {
+    /// Runs a file menu row for `path`; the diff panel's header menu uses it too.
+    pub fn run_file_action(&mut self, action: FileContextMenuAction, path: SharedString, cx: &mut Context<Self>) {
         let absolute = absolute_path(self.files.root(), &path);
         match action {
-            FileContextMenuAction::OpenLocally => open_with_default_app(&self.files, &path, cx),
+            FileContextMenuAction::Open => {
+                cx.emit(FilesPanelEvent::OpenInEditor { absolute_path: absolute, editor: EditorId::FileManager, reveal: false })
+            }
             FileContextMenuAction::RevealInFolder => {
                 cx.emit(FilesPanelEvent::OpenInEditor { absolute_path: absolute, editor: EditorId::FileManager, reveal: true })
             }
@@ -812,37 +820,7 @@ impl FilesPanel {
     fn render_actions(&self, open: &OpenFile, cx: &mut Context<Self>) -> Vec<AnyElement> {
         let mut actions = Vec::new();
         let path = open.path.clone();
-        // Open in: server editors and this machine's default app.
-        let editors: Vec<EditorId> = self.capabilities.editor_ids.iter().filter(|id| **id != EditorId::FileManager).cloned().collect();
-        let panel = cx.entity().downgrade();
-        let open_menu_path = path.clone();
-        actions.push(
-            div()
-                .id("file-open-in")
-                .tooltip(tooltip(t!("Open in editor")))
-                .child(dropdown_menu(
-                    "file-open-in-menu",
-                    Button::new("file-open-in-button").variant(ButtonVariant::Ghost).size(ButtonSize::IconSm).icon(IconName::SquareArrowOutUpRight),
-                    move |_, _| {
-                        let mut menu = MenuPopup::new();
-                        let local = panel.clone();
-                        let local_path = open_menu_path.clone();
-                        menu = menu.item(MenuItem::new(t!("Open", context = "verb, opens a file")).icon(IconName::Pencil).on_select(move |_, cx| {
-                            local.update(cx, |panel, cx| panel.run_file_action(FileContextMenuAction::OpenLocally, local_path.clone(), cx)).ok();
-                        }));
-                        for editor in &editors {
-                            let panel = panel.clone();
-                            let path = open_menu_path.clone();
-                            let editor = editor.clone();
-                            menu = menu.item(MenuItem::new(editor_label(&editor)).on_select(move |_, cx| {
-                                panel.update(cx, |panel, cx| panel.run_file_action(FileContextMenuAction::OpenWith(editor.clone()), path.clone(), cx)).ok();
-                            }));
-                        }
-                        menu
-                    },
-                ))
-                .into_any_element(),
-        );
+        actions.push(self.render_open_in(&path, cx));
         if let Some(rendered_label) = rendered_toggle_label(open) {
             let icon = if open.rendered {
                 IconName::Code
@@ -863,6 +841,31 @@ impl FilesPanel {
                     .into_any_element(),
             );
         }
+        if matches!(open.view, FileView::Text(_)) && !open.rendered {
+            let wrap = self.word_wrap(cx);
+            let panel = cx.entity().downgrade();
+            actions.push(
+                div()
+                    .id("file-wrap-toggle")
+                    .tooltip(tooltip(if wrap { t!("Disable word wrap") } else { t!("Enable word wrap") }))
+                    .child(Toggle::new("file-wrap").variant(ToggleVariant::Ghost).size(ToggleSize::Sm).icon(IconName::TextWrap).pressed(wrap).on_toggle(move |_, _, cx| {
+                        panel.update(cx, |panel, cx| panel.set_word_wrap(!wrap, cx)).ok();
+                    }))
+                    .into_any_element(),
+            );
+        }
+        if is_browser_preview_file(&path) {
+            let absolute = absolute_path(self.files.root(), &path);
+            actions.push(
+                div()
+                    .id("file-open-in-browser")
+                    .tooltip(tooltip(t!("Open file in preview browser")))
+                    .child(Button::new("file-open-in-browser-button").variant(ButtonVariant::Ghost).size(ButtonSize::IconSm).icon(IconName::Globe).on_click(cx.listener(move |_, _, _, cx| {
+                        cx.emit(FilesPanelEvent::OpenInPreview { absolute_path: absolute.clone() });
+                    })))
+                    .into_any_element(),
+            );
+        }
         let explorer_label = if self.explorer_open { t!("Hide file explorer") } else { t!("Show file explorer") };
         let panel = cx.entity().downgrade();
         let explorer_open = self.explorer_open;
@@ -876,46 +879,6 @@ impl FilesPanel {
                 .into_any_element(),
         );
         actions
-    }
-
-    fn render_save_notice(&self, text: &TextFile, cx: &mut Context<Self>) -> Option<AnyElement> {
-        let theme = cx.app_theme();
-        let colors = theme.colors;
-        let notice = |content: AnyElement| {
-            div()
-                .flex_none()
-                .flex()
-                .flex_wrap()
-                .items_center()
-                .gap(px(8.))
-                .px(px(12.))
-                .py(px(6.))
-                .border_b_1()
-                .border_color(colors.warning.opacity(0.2))
-                .bg(colors.warning_surface)
-                .text_size(px(11.))
-                .text_color(colors.warning_foreground)
-                .child(content)
-        };
-        match &text.save {
-            SaveState::Conflict(_) => Some(
-                notice(div().flex_1().child(t!("This file changed on disk since you opened it.")).into_any_element())
-                    .child(Button::new("conflict-keep").variant(ButtonVariant::Outline).size(ButtonSize::Xs).label(t!("Keep my changes")).on_click(cx.listener(|panel, _, _, cx| panel.keep_my_changes(cx))))
-                    .child(Button::new("conflict-disk").variant(ButtonVariant::Ghost).size(ButtonSize::Xs).label(t!("Use the file on disk")).on_click(cx.listener(|panel, _, _, cx| panel.use_disk_copy(cx))))
-                    .into_any_element(),
-            ),
-            SaveState::Failed(message) => Some(
-                notice(div().flex_1().child(format!("{} {message}", t!("Could not save file"))).into_any_element())
-                    .child(Button::new("save-retry").variant(ButtonVariant::Outline).size(ButtonSize::Xs).label(t!("Try again")).on_click(cx.listener(|panel, _, _, cx| {
-                        if let Some(text) = panel.text_mut() {
-                            text.save = SaveState::Pending;
-                        }
-                        panel.save_now(cx);
-                    })))
-                    .into_any_element(),
-            ),
-            _ => None,
-        }
     }
 
     fn render_body(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
@@ -941,14 +904,13 @@ impl FilesPanel {
             FileView::Image { view: image, .. } => image.clone().into_any_element(),
             FileView::Large(view) => view.clone().into_any_element(),
             FileView::Text(text) => {
-                let notice = self.render_save_notice(text, cx);
                 let body: AnyElement = match (&text.table, &text.markdown) {
                     (Some(table), _) if open.rendered => table.clone().into_any_element(),
                     (_, Some(markdown)) if open.rendered => self.render_markdown(markdown.clone(), window, cx),
                     // Cached: a keystroke re-renders the editor alone, not the panel around it.
                     _ => text.editor.clone().cached(StyleRefinement::default().size_full()).into_any_element(),
                 };
-                div().size_full().flex().flex_col().children(notice).child(div().flex_1().min_h_0().child(body)).into_any_element()
+                div().size_full().flex().flex_col().child(div().flex_1().min_h_0().child(body)).into_any_element()
             }
         }
     }
@@ -1000,32 +962,103 @@ impl FilesPanel {
             .into_any_element()
     }
 
-    fn render_prompt(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
-        let (path, _) = self.prompt.as_ref()?;
-        let _ = path;
-        let name = self.open.as_ref().map(|o| o.path.clone()).unwrap_or_default();
-        let surface = DialogSurface::new(t!("Discard unsaved changes?"))
-            .description(format!("{} {name}", t!("Your edits have not been saved:")))
-            .footer(Button::new("prompt-cancel").variant(ButtonVariant::Ghost).label(t!("Cancel")).on_click(cx.listener(|panel, _, _, cx| {
-                panel.prompt = None;
-                cx.notify();
-            })))
-            .footer(Button::new("prompt-discard").variant(ButtonVariant::Destructive).label(t!("Discard")).on_click(cx.listener(|panel, _, window, cx| {
-                panel.discard_and_open(window, cx);
-            })));
-        let close = cx.entity().downgrade();
-        Some(
-            Modal::dialog("files-unsaved-prompt", surface, move |_, cx| {
-                close
-                    .update(cx, |panel, cx| {
-                        panel.prompt = None;
-                        cx.notify();
-                    })
-                    .ok();
-            })
-            .into_any_element(),
-        )
+    /// The compact "Open in" group (`OpenInPicker` with `compact`): the
+    /// preferred editor's mark, then a chevron whose menu picks the preferred
+    /// editor. Opening runs `shell.openInEditor` on the environment's server.
+    fn render_open_in(&self, path: &SharedString, cx: &mut Context<Self>) -> AnyElement {
+        let theme = cx.app_theme().clone();
+        let (c, d) = (&theme.colors, &theme.derived);
+        let platform = Platform::current();
+        let available = self.capabilities.editor_ids.clone();
+        let preferred = effective_editor(LastEditor::get(cx), &available);
+        let absolute = absolute_path(self.files.root(), path);
+        let reveal = self.capabilities.reveal.is_some();
+        let (border, fill, hover) = (c.input, d.outline_fill, d.outline_hover);
+        let height = theme.sp(6.);
+        let mark = |editor: EditorId| {
+            let (icon, brand) = editor_icon(editor, platform);
+            Icon::new(icon).size(IconSize::Custom(theme.sp(3.5))).color(if brand { c.foreground() } else { c.muted_foreground })
+        };
+        let primary = div()
+            .id("file-open-in-primary")
+            .h(height)
+            .min_w(height + px(1.))
+            .px(theme.sp(2.) - px(1.))
+            .flex()
+            .items_center()
+            .justify_center()
+            .border_l_1()
+            .border_t_1()
+            .border_b_1()
+            .border_color(border)
+            .rounded_l(theme.radii.lg)
+            .bg(fill)
+            .children(preferred.map(mark))
+            .tooltip(tooltip(t!("Open file in preferred editor")))
+            .when(preferred.is_none(), |el| el.opacity(DISABLED_OPACITY))
+            .when_some(preferred, |el, editor| {
+                el.cursor_pointer().hover(move |s| s.bg(hover)).on_click(cx.listener(move |_, _, _, cx| {
+                    LastEditor::set(editor, cx);
+                    cx.emit(FilesPanelEvent::OpenInEditor {
+                        absolute_path: absolute.clone(),
+                        editor,
+                        reveal: reveal && editor == EditorId::FileManager,
+                    });
+                }))
+            });
+        let chevron = div()
+            .id("file-open-in-chevron")
+            .size(height)
+            .flex()
+            .items_center()
+            .justify_center()
+            .border_t_1()
+            .border_r_1()
+            .border_b_1()
+            .border_color(border)
+            .rounded_r(theme.radii.lg)
+            .bg(fill)
+            .cursor_pointer()
+            .hover(move |s| s.bg(hover))
+            .child(Icon::new(IconName::ChevronDown).size(IconSize::Custom(theme.sp(4.))));
+        let panel = cx.entity().downgrade();
+        let shortcut = if cfg!(target_os = "macos") { "⌘O" } else { "Ctrl+O" };
+        let menu = dropdown_menu("file-open-in-menu", chevron, move |_, cx| {
+            let editors: Vec<EditorId> = EDITORS.iter().map(|(id, ..)| *id).filter(|id| available.contains(id)).collect();
+            let preferred = effective_editor(LastEditor::get(cx), &available);
+            let mut menu = MenuPopup::new();
+            if editors.is_empty() {
+                menu = menu.item(MenuItem::new(t!("No installed editors found")).disabled(true));
+            }
+            for editor in editors {
+                let panel = panel.clone();
+                let mut item = MenuItem::new(platform_editor_label(editor, platform)).icon(editor_icon(editor, platform).0).on_select(move |_, cx| {
+                    // Outside the menu presentation, picking only changes the preferred editor.
+                    LastEditor::set(editor, cx);
+                    panel.update(cx, |_, cx| cx.notify()).ok();
+                });
+                if Some(editor) == preferred {
+                    item = item.shortcut(shortcut);
+                }
+                menu = menu.item(item);
+            }
+            menu
+        });
+        div()
+            .id("file-open-in")
+            .flex()
+            .items_center()
+            .child(primary)
+            .child(div().w(px(1.)).h(height).bg(border))
+            .child(div().id("file-open-in-chooser").tooltip(tooltip(t!("Choose editor"))).child(menu))
+            .into_any_element()
     }
+}
+
+/// `isBrowserPreviewFile`: HTML and PDF files open in the preview browser.
+pub fn is_browser_preview_file(path: &str) -> bool {
+    let path = path.split(['?', '#']).next().unwrap_or(path).to_ascii_lowercase();
+    path.ends_with(".html") || path.ends_with(".htm") || path.ends_with(".pdf")
 }
 
 /// `renderedToggleLabel`.
@@ -1074,13 +1107,6 @@ impl Render for FilesPanel {
         let subheader = self.open.as_ref().map(|open| {
             let breadcrumbs = self.render_breadcrumbs(&open.path, cx).into_any_element();
             let actions = self.render_actions(open, cx);
-            let saving = match self.open.as_ref().map(|o| &o.view) {
-                Some(FileView::Text(text)) => match text.save {
-                    SaveState::Pending | SaveState::Saving => Some(t!("Saving…")),
-                    _ => None,
-                },
-                _ => None,
-            };
             div()
                 .h(px(40.))
                 .flex_none()
@@ -1092,11 +1118,9 @@ impl Render for FilesPanel {
                 .border_color(colors.border.opacity(0.6))
                 .bg(colors.canvas)
                 .child(breadcrumbs)
-                .children(saving.map(|label| div().flex_none().text_size(px(11.)).text_color(colors.muted_foreground).child(label)))
                 .children(actions)
         });
         let body = self.open.is_some().then(|| self.render_body(window, cx));
-        let prompt = self.render_prompt(cx);
         let expanded = self.expanded.as_ref().map(|(dialog, _)| dialog.clone());
         let close_palette = cx.entity().downgrade();
         let palette = self.palette.as_ref().map(|palette| {
@@ -1175,7 +1199,6 @@ impl Render for FilesPanel {
                         )
                     }),
             )
-            .children(prompt)
             .children(palette)
             .children(expanded)
     }

@@ -276,6 +276,20 @@ pub fn mix_oklab(a: Hsla, weight: f32, b: Hsla) -> Hsla {
     Srgb8 { r: to_byte(r), g: to_byte(g), b: to_byte(b), a: 255 }.hsla()
 }
 
+/// `color-mix(in oklab, color-mix(in oklab, a weight, b), target boost)` for
+/// opaque colours, rounded once at the end as the browser paints it.
+pub fn mix_oklab_twice(a: Hsla, weight: f32, b: Hsla, target: Hsla, boost: f32) -> Hsla {
+    let lab = |color: Hsla| {
+        let rgba = color.to_rgb();
+        linear_to_oklab([rgba.r, rgba.g, rgba.b].map(|c| srgb_to_linear(c as f64)))
+    };
+    let lerp = |x: [f64; 3], y: [f64; 3], w: f64| [0, 1, 2].map(|i| x[i] * w + y[i] * (1. - w));
+    let inner = lerp(lab(a), lab(b), weight.clamp(0., 1.) as f64);
+    let mixed = lerp(lab(target), inner, boost.clamp(0., 1.) as f64);
+    let [r, g, b] = oklab_to_linear(mixed).map(linear_to_srgb);
+    Srgb8 { r: to_byte(r), g: to_byte(g), b: to_byte(b), a: 255 }.hsla()
+}
+
 /// Composites `top` over an opaque `bottom` in sRGB, as the browser does.
 pub fn flatten(top: Hsla, bottom: Hsla) -> Hsla {
     let (t, b) = (top.to_rgb(), bottom.to_rgb());

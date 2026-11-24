@@ -36,7 +36,6 @@ unicode-segmentation.workspace = true
 markdown.workspace = true
 resvg.workspace = true
 rodio.workspace = true
-two-face.workspace = true
 wasmi.workspace = true
 unicode-ident.workspace = true
 regex.workspace = true

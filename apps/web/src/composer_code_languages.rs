@@ -1,19 +1,16 @@
 //! Code block languages and highlighting for the composer. Ports
-//! `composer-code-languages.ts` (names and aliases) and applies the chat's
-//! syntax theme (pierre-dark, and t3-light: pierre-light darkened until it
-//! reads on light code) through syntect.
+//! `composer-code-languages.ts` (names and aliases) and colours code with
+//! the chat's lexers and syntax theme (pierre-dark, and t3-light).
 
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::ops::Range;
-use std::str::FromStr;
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 
-use gpui_kit::{Hsla, rgb};
-use syntect::easy::HighlightLines;
-use syntect::highlighting::{Color, FontStyle, ScopeSelectors, StyleModifier, Theme, ThemeItem, ThemeSettings};
-use syntect::parsing::SyntaxSet;
+use gpui_kit::{FontStyle, Hsla};
 
+use crate::components::chat::syntax_highlighting;
+use crate::components::chat::syntax_theme::SyntaxTheme;
 use crate::theme_palette::Appearance;
 
 /// Blocks larger than this are drawn without highlighting.
@@ -54,53 +51,10 @@ pub fn code_language_label(language: &str) -> String {
     CODE_BLOCK_LANGUAGES.iter().find(|(lid, _)| *lid == id).map_or_else(|| language.to_owned(), |(_, label)| (*label).to_owned())
 }
 
-use crate::composer_code_theme::CODE_THEME_SCOPES;
-
-fn syntax_set() -> &'static SyntaxSet {
-    static SET: OnceLock<SyntaxSet> = OnceLock::new();
-    SET.get_or_init(SyntaxSet::load_defaults_newlines)
-}
-
-fn build_theme(appearance: Appearance) -> Theme {
-    let color = |hex: u32| Color { r: (hex >> 16) as u8, g: (hex >> 8) as u8, b: hex as u8, a: 0xff };
-    let scopes = CODE_THEME_SCOPES
-        .iter()
-        .filter_map(|(scope, dark, light, italic)| {
-            Some(ThemeItem {
-                scope: ScopeSelectors::from_str(scope).ok()?,
-                style: StyleModifier {
-                    foreground: Some(color(if appearance == Appearance::Dark { *dark } else { *light })),
-                    background: None,
-                    font_style: italic.then_some(FontStyle::ITALIC),
-                },
-            })
-        })
-        .collect();
-    let foreground = if appearance == Appearance::Dark { 0xfafafa } else { 0x0a0a0a };
-    Theme {
-        settings: ThemeSettings { foreground: Some(color(foreground)), ..Default::default() },
-        scopes,
-        ..Default::default()
-    }
-}
-
-fn theme(appearance: Appearance) -> &'static Theme {
-    static DARK: OnceLock<Theme> = OnceLock::new();
-    static LIGHT: OnceLock<Theme> = OnceLock::new();
-    match appearance {
-        Appearance::Dark => DARK.get_or_init(|| build_theme(Appearance::Dark)),
-        Appearance::Light => LIGHT.get_or_init(|| build_theme(Appearance::Light)),
-    }
-}
-
-/// Loads the syntax set and themes on a background thread, so the first code
-/// block typed does not pay for it.
+/// Builds both syntax themes ahead of the first code block typed.
 pub fn warm_highlighter() {
-    std::thread::spawn(|| {
-        syntax_set();
-        theme(Appearance::Dark);
-        theme(Appearance::Light);
-    });
+    SyntaxTheme::for_appearance(Appearance::Dark);
+    SyntaxTheme::for_appearance(Appearance::Light);
 }
 
 /// A coloured span in one code line.
@@ -114,38 +68,42 @@ pub struct CodeSpan {
 /// Highlighted lines of one block: spans per line, by byte offset in the line.
 pub type HighlightedBlock = Arc<Vec<Vec<CodeSpan>>>;
 
-/// Highlights a block's lines. Unknown languages and very large blocks get no spans.
+/// Highlights a block's lines with the chat's lexers and syntax theme.
+/// Unknown languages and very large blocks get no spans.
 pub fn highlight_block(lines: &[&str], language: &str, appearance: Appearance) -> HighlightedBlock {
     let total: usize = lines.iter().map(|l| l.len() + 1).sum();
-    let set = syntax_set();
     let id = canonical_language(language_of_info_string(language));
-    let syntax = (!id.is_empty() && total <= MAX_HIGHLIGHT_BYTES)
-        .then(|| set.find_syntax_by_token(&id).or_else(|| set.find_syntax_by_extension(&id)))
-        .flatten();
-    let Some(syntax) = syntax else {
-        return Arc::new(vec![Vec::new(); lines.len()]);
+    let mut out = vec![Vec::new(); lines.len()];
+    if id.is_empty() || total > MAX_HIGHLIGHT_BYTES {
+        return Arc::new(out);
+    }
+    let code = lines.join("\n");
+    // The cache below keeps the result, so the chat's content cache is skipped.
+    let Some(highlights) = syntax_highlighting::highlight(&id, &code, true) else {
+        return Arc::new(out);
     };
-    let mut highlighter = HighlightLines::new(syntax, theme(appearance));
-    let mut out = Vec::with_capacity(lines.len());
-    let mut buffer = String::new();
+    let theme = SyntaxTheme::for_appearance(appearance);
+    let mut starts = Vec::with_capacity(lines.len());
+    let mut offset = 0;
     for line in lines {
-        buffer.clear();
-        buffer.push_str(line);
-        buffer.push('\n');
-        let mut spans = Vec::new();
-        let mut offset = 0;
-        if let Ok(styled) = highlighter.highlight_line(&buffer, set) {
-            for (style, piece) in styled {
-                let end = (offset + piece.len()).min(line.len());
-                if end > offset {
-                    let c = style.foreground;
-                    let hex = (u32::from(c.r) << 16) | (u32::from(c.g) << 8) | u32::from(c.b);
-                    spans.push(CodeSpan { range: offset..end, color: rgb(hex).into(), italic: style.font_style.contains(FontStyle::ITALIC) });
-                }
-                offset += piece.len();
+        starts.push(offset);
+        offset += line.len() + 1;
+    }
+    for (range, name) in highlights.iter() {
+        let Some(style) = theme.style(name) else { continue };
+        let Some(color) = style.color else { continue };
+        let italic = style.font_style == Some(FontStyle::Italic);
+        // A token can span lines (block comments, template strings).
+        let mut line = starts.partition_point(|start| *start <= range.start).saturating_sub(1);
+        while line < lines.len() && starts[line] < range.end {
+            let line_start = starts[line];
+            let start = range.start.max(line_start);
+            let end = range.end.min(line_start + lines[line].len());
+            if end > start {
+                out[line].push(CodeSpan { range: start - line_start..end - line_start, color, italic });
             }
+            line += 1;
         }
-        out.push(spans);
     }
     Arc::new(out)
 }

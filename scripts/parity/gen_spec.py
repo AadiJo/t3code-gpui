@@ -46,7 +46,7 @@ def sidebar(active=True):
         ink("settled label", 14, 700, 80, 724, **T),
         ink("settled count", 200, 700, 245, 724),
         ink("footer icons", 8, 735, 200, 772),
-        ink("update button", 210, 740, 245, 772, exclude="Check for updates: the native shell has its own updater, so the port leaves it out"),
+        ink("update button", 210, 740, 245, 772, exclude="reference build has no desktop updater bridge, so the web draws it disabled at 60%; the owner's app draws it enabled"),
     ]
     return e
 
@@ -203,6 +203,140 @@ scene("settings-environments", [
     fill("backdrop", 1080, 400),
 ])
 
+
+# Settings pages (ConnectionsSettings excluded): boxes come from the
+# reference outlines (`artifacts/audit/ref/settings-*.outline.txt`), each
+# padded so the ink lands inside. Switch states and select values follow
+# the client settings, which differ between the captures and the port's
+# defaults, so only geometry is judged there.
+def box(name, x, y, w, h, pad=4, **k):
+    return ink(name, x - pad, y - pad, x + w + pad, y + h + pad, **k)
+
+def control(name, x, y, w, h):
+    """A bordered control: its left and right edges at mid-height and its
+    top and bottom 3px inside the left edge, where no text runs. Ink boxes
+    miss a 1px border that sits within the ink threshold of its fill."""
+    mid = y + h / 2
+    return [
+        hscan(f"{name} left edge", mid, x - 6, x + 6),
+        hscan(f"{name} right edge", mid, x + w - 6, x + w + 6),
+        vscan(f"{name} top/bottom", x + 3, y - 6, y + h + 6),
+    ]
+
+def settings_chrome(title_w):
+    return [
+        fill("modal fill (content)", 700, 760 - 30),
+        box("nav search kbd", 244, 55, 20, 20),
+        box("breadcrumb", 301, 55, 85 + title_w, 20, **T),
+        box("close button", 1023, 51, 28, 28),
+    ]
+
+def scope_row():
+    return [box("scope sentence", 327, 113, 459, 28)]
+
+GROUP_EDGES = [hscan("group left edge", 400, 300, 325), hscan("group right edge", 400, 1015, 1040)]
+
+scene("settings-general", settings_chrome(51), GROUP_EDGES, [
+    *control("restore defaults", 855, 53, 164, 24),
+    box("h2 Notifications", 327, 113, 99, 28, **T),
+    vscan("notifications card top", 600, 140, 165),
+    box("thread notifications title", 328, 164, 134, 20, **T),
+    box("thread notifications description", 328, 188, 428, 36, **T),
+    *control("thread notifications select", 788, 180, 224, 28),
+    box("in-app title", 328, 249, 131, 20, **T),
+    box("h2 Sidebar", 327, 470, 58, 28, **T),
+    *control("project order select", 836, 595, 176, 28),
+    box("working section title", 328, 655, 108, 20, **T),
+])
+scene("settings-appearance", settings_chrome(81), [
+    box("h3 Color scheme", 327, 113, 105, 28, **T),
+    box("system tile", 311, 153, 231, 180, pad=3),
+    box("dark tile", 798, 153, 231, 180, pad=3),
+    box("h3 Themes", 327, 365, 62, 24, **T),
+    *control("create theme", 805, 365, 108, 24),
+    *control("add theme", 921, 365, 92, 24),
+    box("T3 Code light sphere", 416, 414, 68, 68, pad=0),
+    box("T3 Code name", 324, 492, 57, 20, **T),
+    *control("T3 Code duplicate", 629, 490, 24, 24),
+    box("T3 Chat light sphere", 779, 414, 68, 68, pad=0),
+    box("Grove light sphere", 416, 548, 68, 68, pad=0),
+])
+scene("settings-chat", settings_chrome(31), GROUP_EDGES, [
+    box("h2 Composer", 327, 113, 80, 28, **T),
+    box("send shortcut title", 328, 231, 93, 20, **T),
+    *control("send shortcut select", 852, 238, 160, 28),
+    box("advanced", 312, 286, 160, 40, **T),
+    box("h2 Follow-ups", 327, 359, 85, 28, **T),
+    *control("follow-up select", 852, 426, 160, 28),
+    box("h2 Activity", 327, 515, 59, 28, **T),
+    *control("tool calls select", 852, 582, 160, 28),
+    box("h2 Screen reader", 327, 671, 106, 28, **T),
+])
+scene("settings-diffs", settings_chrome(136), GROUP_EDGES, [
+    box("h2 Diffs", 327, 113, 36, 28, **T),
+    *control("diff layout select", 852, 171, 160, 28),
+    *control("file state select", 852, 305, 160, 28),
+    *control("diff colors select", 852, 372, 160, 28),
+    box("diff colors value", 862, 376, 124, 20, **T),
+    box("h2 Pull requests", 327, 452, 100, 28, **T),
+    box("open in T3 Code title", 328, 570, 205, 20, **T),
+])
+scene("settings-keybindings", settings_chrome(84), scope_row(), [
+    box("h2 Keybindings", 327, 173, 95, 28, **T),
+    *control("search field", 328, 224, 485, 34),
+    box("search icon", 338, 234, 14, 14),
+    *control("add keybinding", 821, 225, 151, 32),
+    *control("keybindings.json", 980, 225, 32, 32),
+    box("h2 Navigation", 327, 303, 83, 28, **T),
+    box("row 1 title", 328, 354, 172, 20, **T),
+    box("row 1 when", 328, 380, 150, 20, **T),
+    box("row 1 keycaps", 967, 368, 44, 20, **TR),
+    box("row 2 title", 328, 427, 141, 20, **T),
+    box("row 2 when Always", 328, 453, 101, 20, **T),
+    box("row 2 keycaps", 967, 441, 44, 20, **TR),
+    box("row 3 keycaps", 967, 514, 44, 20, **TR),
+])
+scene("settings-voice", settings_chrome(37), scope_row(), [
+    box("h2 Input", 327, 173, 40, 28, **T),
+    *control("refresh microphones", 984, 231, 28, 28),
+    box("microphone list", 328, 278, 684, 36, pad=1),
+    *control("record button", 927, 348, 85, 28),
+    *control("dictation select", 852, 415, 160, 28),
+    box("h2 Transcription", 327, 495, 103, 28, **T),
+    *control("transcribe with select", 852, 553, 160, 28),
+    box("h2 Dictionary", 327, 767, 79, 13, pad=0, exclude="cut by the window edge"),
+])
+scene("settings-snap-shot", settings_chrome(72), GROUP_EDGES, [
+    box("h2 SnapShots", 327, 113, 84, 28, **T),
+    box("title", 328, 164, 72, 20, **T),
+    box("description", 328, 188, 300, 18, **T),
+    box("status", 328, 210, 200, 18, **T),
+])
+scene("settings-labs", settings_chrome(33), scope_row(), [
+    box("h2 Beta", 327, 173, 35, 28, **T),
+    box("boring sidebar title", 328, 224, 223, 20, **T),
+    box("guest links title", 328, 309, 75, 20, **T),
+    box("sharing & access link", 556, 352, 98, 15, **T),
+    box("linked environments title", 328, 394, 139, 20, **T),
+    box("simlock title", 328, 564, 194, 20, **T),
+])
+scene("settings-archived", settings_chrome(52), scope_row(), [
+    box("h2 Archived threads", 327, 173, 132, 28, **T),
+    box("empty title with icon", 328, 224, 158, 20, exclude="fixture: the parity world settings server is not connected, so the page shows the load error instead of the empty state"),
+    box("empty description", 328, 250, 200, 18, exclude="fixture: the parity world settings server is not connected, so the page shows the load error instead of the empty state"),
+    vscan("card top/bottom", 600, 200, 300, exclude="fixture: the parity world settings server is not connected, so the page shows the load error instead of the empty state"),
+])
+scene("settings-about", settings_chrome(40), [
+    box("h2 App", 327, 113, 32, 28, **T),
+    box("version title", 328, 164, 50, 20, **T),
+    box("version copy", 386, 169, 36, 16, **T),
+    *control("update track select", 852, 248, 160, 28),
+    *control("iPhone and iPad", 767, 324, 146, 28),
+    *control("Android", 921, 324, 91, 28),
+    box("check for updates", 867, 172, 145, 28, exclude="the native app has no self-updater yet; see the settings report"),
+    box("h2 Legal", 327, 471, 41, 28, exclude="sits 67px higher: the Welcome page row needs a primary environment this remote-only app does not have"),
+])
+
 scene("terminal-drawer", chrome(), [
     vscan("drawer top border", 900, 485, 520),
     ink("terminal line 1", 258, 503, 700, 522, **T),
@@ -240,6 +374,30 @@ scene("right-panel-diff", chrome(), [
     ink("panel header", 620, 52, 1100, 90),
 ])
 
+# Captured by the audit (artifacts/audit/ref): the title's "Thread actions" menu.
+scene("thread-actions-menu", chrome(), [
+    hscan("menu left edge", 120, 360, 380, **BL),
+    vscan("menu top edge", 450, 30, 60, **BL),
+    vscan("menu bottom edge", 450, 405, 440, **BL),
+    ink("item 1 icon", 380, 66, 400, 86),
+    ink("item 1 label", 405, 64, 520, 88, **T),
+    ink("snooze chevron", 545, 166, 570, 186),
+    ink("delete label", 405, 402, 470, 426, **T),
+])
+
+# Captured by the audit: "Use `inline code` and **bold** here" then a TypeScript block.
+scene("composer-markdown", chrome(), [
+    hscan("code block left edge", 640, 300, 340, **BL),
+    hscan("code block right edge", 640, 1020, 1060, **BL),
+    vscan("code block top", 600, 600, 640, **BL),
+    fill("code block fill", 700, 660),
+    ink("language icon", 330, 630, 352, 652),
+    ink("language label", 348, 628, 425, 650, **T),
+    ink("code line 1", 330, 652, 500, 672, **T),
+    ink("inline code chip", 345, 588, 440, 610),
+    ink("prose line", 318, 582, 500, 612, **T),
+])
+
 scene("window-thread-light", [
     fill("titlebar fill", 600, 30),
     fill("sidebar fill", 240, 40),
@@ -251,6 +409,118 @@ scene("window-thread-light", [
     ink("row 1 title", 16, 133, 240, 157, **T),
     hscan("row 1 card edges", 140, 0, 256),
 ])
+
+# Server settings pages (fixture data; references are the audit's captures of the fork,
+# `artifacts/audit/ref/settings-*.png`). The shell draws the scope row above these pages,
+# so each page is measured relative to a control right of that row: the anchor.
+LOC = "locator: a control right of the scope row, so the page is judged apart from the shell above it"
+def server_page(name, anchor, *elements):
+    a = {"anchor": anchor["name"]}
+    scene(name, [{**anchor, "exclude": LOC}], [{**e, **a} for e in elements])
+
+server_page("settings-providers", ink("refresh icon", 903, 100, 921, 215),
+    ink("heading", 325, 165, 402, 206, **T),
+    ink("add button", 405, 175, 428, 199),
+    hscan("card left edge", 300, 300, 330),
+    hscan("card right edge", 300, 1010, 1040),
+    ink("row 1 mark", 328, 226, 348, 250),
+    ink("row 1 title", 358, 226, 420, 250, **T),
+    ink("row 1 switch", 978, 236, 1016, 260),
+)
+server_page("settings-source-control", ink("first switch", 978, 100, 1016, 300),
+    ink("heading", 325, 165, 425, 206, **T),
+    ink("row 1 title", 326, 220, 452, 246, **T),
+    ink("row 2 title", 326, 305, 575, 331, **T),
+    ink("row 2 switch", 978, 326, 1016, 352),
+    hscan("merge method select", 424, 840, 1020),
+)
+server_page("settings-worktrees", ink("start from remote switch", 978, 285, 1016, 420),
+    ink("heading", 325, 165, 395, 206, **T),
+    ink("row 1 title", 326, 220, 447, 246, **T),
+    hscan("location input", 263, 765, 1020),
+    ink("advanced chevron", 326, 409, 344, 431),
+    ink("advanced label", 344, 409, 400, 431, **T),
+    ink("branches heading", 325, 465, 402, 506, **T),
+)
+server_page("settings-maintenance", ink("first switch", 978, 100, 1016, 300),
+    ink("heading", 325, 165, 395, 206, **T),
+    ink("row 1 title", 326, 220, 489, 246, **T),
+    ink("row 2 switch", 978, 326, 1016, 352),
+    ink("background heading", 325, 406, 483, 447, **T),
+    hscan("profile select", 486, 840, 1020),
+    ink("artifacts heading", 325, 629, 466, 670, **T),
+    ink("artifacts off label", 948, 698, 974, 720, **TR),
+)
+server_page("settings-threads", ink("clone switch", 978, 262, 1016, 360),
+    ink("heading", 325, 165, 430, 206, **T),
+    ink("row 1 title", 326, 220, 468, 246, **T),
+    hscan("starts-in input", 245, 715, 1020),
+    ink("new threads heading", 325, 370, 426, 411, **T),
+)
+server_page("settings-projects", ink("row 1 chevron", 990, 100, 1016, 300),
+    ink("intro", 309, 170, 800, 196, **T),
+    hscan("card left edge", 236, 300, 330),
+    hscan("card right edge", 236, 1010, 1040),
+    ink("row 1 icon", 326, 226, 346, 246),
+    ink("row 1 title", 354, 216, 420, 240, **T),
+    ink("row 2 icon", 326, 287, 346, 307),
+)
+server_page("settings-browser", ink("first switch", 978, 100, 1016, 290),
+    ink("heading", 325, 165, 436, 206, **T),
+    ink("row 1 title", 326, 220, 481, 246, **T),
+    ink("browsing heading", 325, 303, 402, 344, **T),
+    hscan("add profile button", 383, 890, 1020),
+    hscan("profile list edge", 433, 320, 340),
+)
+server_page("settings-devices", ink("first switch", 978, 100, 1016, 290),
+    ink("heading", 325, 165, 390, 206, **T),
+    ink("row 1 title", 326, 220, 413, 246, **T),
+    ink("sources heading", 325, 370, 447, 411, **T),
+    hscan("add source button", 392, 870, 1020),
+    ink("local simulators", 326, 425, 440, 451, **T),
+)
+
+# Scene captures (`SCENE_VIEWS` in parity_shot.rs): pages AppRoot does not mount yet.
+scene("usage-limits-empty", [
+    hscan("dialog left edge", 400, 36, 50),
+    vscan("dialog top edge", 500, 30, 50),
+    fill("dialog fill", 500, 400),
+    ink("breadcrumb Usage", 61, 54, 106, 76, **T),
+    ink("breadcrumb environments", 133, 53, 246, 77, **T),
+    ink("environments chevron", 247, 56, 262, 73),
+    ink("breadcrumb providers", 290, 54, 377, 76, **T),
+    hscan("metric group edges", 74.5, 780, 990),
+    ink("Limits pressed", 918, 52, 981, 77, **T),
+    ink("refresh", 991, 50, 1019, 79),
+    ink("close", 1023, 50, 1051, 79),
+    vscan("header rule", 500, 80, 96),
+    ink("empty message", 65, 113, 1035, 133, **T),
+], reference="usage")
+
+LINUX_TOPBAR = "Linux topbar is 40px, the Mac's 52px (theme_tokens.rs); the scene has no sidebar"
+# The fork's list reserves a 6px scrollbar gutter (classic scrollbars in the capture browser); overlay scrollbars on macOS reserve none.
+SIDEBAR = {"port_dx": -262, "port_dy": -12, "note": LINUX_TOPBAR + "; 6px scrollbar gutter in the capture"}
+RIGHT = {"port_dx": 6, "port_dy": -12, "note": LINUX_TOPBAR + "; 6px scrollbar gutter in the capture"}
+scene("pull-requests-toolbar", [
+    hscan("search box left edge", 93, 280, 300, **SIDEBAR),
+    vscan("search box top/bottom", 500, 70, 116, **SIDEBAR),
+    ink("search icon", 294, 83, 314, 103, **SIDEBAR),
+    ink("search placeholder", 318, 83, 600, 103, **T, **SIDEBAR),
+    ink("sort button", 685, 77, 756, 109, **RIGHT),
+    ink("views button", 858, 77, 960, 109, **RIGHT),
+    ink("provider filter", 968, 77, 1030, 109, **RIGHT),
+    ink("refresh button", 1038, 77, 1070, 109, **RIGHT),
+], reference="pull-requests")
+scene("issues-toolbar", [
+    hscan("search box left edge", 93, 280, 300, **SIDEBAR),
+    vscan("search box top/bottom", 500, 70, 116, **SIDEBAR),
+    ink("search icon", 294, 83, 314, 103, **SIDEBAR),
+    ink("search placeholder", 318, 83, 600, 103, **T, **SIDEBAR),
+    ink("sort button", 755, 77, 826, 109, **RIGHT),
+    ink("filters button", 834, 77, 920, 109, **RIGHT),
+    ink("views button", 928, 77, 1030, 109, **RIGHT),
+    ink("refresh button", 1038, 77, 1070, 109, **RIGHT),
+], reference="issues")
 
 # Owner scenes (interface 15, glass 40, contrast 95), rendered by parity-shot
 # when PARITY_CLIENT_SETTINGS names the owner's settings file. "-wide" is the

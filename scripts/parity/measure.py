@@ -151,23 +151,33 @@ def unshift(result, dy):
     return out
 
 
-def shifted_x(element, dx):
-    """An ink or fill element with its horizontal coordinates moved by `dx`."""
-    if not dx or element["kind"] not in ("ink", "fill"):
+def moved(element, dx, dy):
+    """The element moved by `dx` and `dy`, for a port image whose layout is offset."""
+    element = shifted(element, dy)
+    if not dx:
         return element
     at = list(element["at"])
-    at[0] += dx
-    if element["kind"] == "ink":
+    kind = element["kind"]
+    if kind in ("fill", "vscan"):
+        at[0] += dx
+    elif kind == "ink":
+        at[0] += dx
+        at[2] += dx
+    else:
+        at[1] += dx
         at[2] += dx
     return {**element, "at": at}
 
 
-def unshift_x(result, dx):
-    """A measurement taken at a horizontally shifted position, moved back by `dx`."""
+def unmoved(result, dx, dy):
+    """A measurement from `moved`, back in reference coordinates."""
+    result = unshift(result, dy)
     if not dx or result.get("empty"):
         return result
     out = dict(result)
     for key in ("left", "right"):
         if key in out:
             out[key] -= dx
+    if isinstance(out.get("edges"), list) and "vertical" not in out:
+        out["edges"] = [{**e, "at": e["at"] - dx} for e in out["edges"]]
     return out

@@ -81,6 +81,16 @@ pub enum SidebarEvent {
     /// A context-menu command on a project.
     ProjectCommand(ProjectRef, MenuCommand),
     DiscardDraft(ThreadKey),
+    /// The inline rename field committed a new, non-empty title.
+    RenameThread(ThreadKey, String),
+}
+
+/// The row whose title is being edited (`ThreadRenameInput`).
+pub(crate) struct Renaming {
+    pub(crate) key: ThreadKey,
+    original: SharedString,
+    pub(crate) field: Entity<InputState>,
+    _subscription: Subscription,
 }
 
 /// The sidebar view.
@@ -103,6 +113,10 @@ pub struct Sidebar {
     pub(crate) focus_handle: FocusHandle,
     pub(crate) search: Entity<InputState>,
     pub(crate) context_menu: Option<ContextMenu>,
+    /// The row whose hover card shows, the pending open, and when one last closed.
+    pub(crate) hover_card: Option<usize>,
+    hover_card_open: Option<Task<()>>,
+    hover_card_closed_at: Option<std::time::Instant>,
     pub(crate) hovered_control: Option<sidebar_thread_header::HeaderControl>,
     /// Header row height: the platform topbar height.
     pub(crate) topbar_height: Pixels,
@@ -112,6 +126,7 @@ pub struct Sidebar {
     pub(crate) now: TimestampMs,
     /// Six-step phase of the terminal pulse.
     pub(crate) pulse: u8,
+    pub(crate) renaming: Option<Renaming>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -149,11 +164,15 @@ impl Sidebar {
             focus_handle: cx.focus_handle(),
             search,
             context_menu: None,
+            hover_card: None,
+            hover_card_open: None,
+            hover_card_closed_at: None,
             hovered_control: None,
             topbar_height: style::TOPBAR_HEIGHT_OVERLAY,
             header_inset: px(53.),
             now,
             pulse: 0,
+            renaming: None,
             _subscriptions: vec![subscription],
         };
         this.rebuild(cx);
@@ -179,6 +198,53 @@ impl Sidebar {
     pub fn set_active_thread(&mut self, key: Option<ThreadKey>, cx: &mut Context<Self>) {
         if self.snapshot.active_thread != key {
             self.snapshot.active_thread = key;
+            cx.notify();
+        }
+    }
+
+    /// Swaps the row's title for a focused field holding it, all selected (`startThreadRename`).
+    /// Enter or leaving the field commits; Escape cancels.
+    pub fn start_rename(&mut self, key: ThreadKey, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(title) = self.snapshot.threads.iter().find(|t| t.key == key).map(|t| t.title.clone()) else { return };
+        let field = cx.new(|cx| InputState::new(window, cx).default_value(title.clone()));
+        let subscription = cx.subscribe_in(&field, window, |this, _, event: &InputEvent, window, cx| match event {
+            InputEvent::PressEnter { .. } | InputEvent::Blur => this.commit_rename(window, cx),
+            _ => {}
+        });
+        field.update(cx, |field, cx| {
+            field.focus(window, cx);
+            field.select_all(window, cx);
+        });
+        self.renaming = Some(Renaming { key, original: title, field, _subscription: subscription });
+        cx.notify();
+    }
+
+    /// The thread whose title is being edited.
+    pub fn renaming(&self) -> Option<(&ThreadKey, &Entity<InputState>)> {
+        self.renaming.as_ref().map(|r| (&r.key, &r.field))
+    }
+
+    /// `commitThreadRename`: an empty title warns, an unchanged one does nothing.
+    pub fn commit_rename(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(renaming) = self.renaming.take() else { return };
+        let title = renaming.field.read(cx).value().trim().to_owned();
+        window.focus(&self.focus_handle, cx);
+        cx.notify();
+        if title.is_empty() {
+            let toast = crate::components::ui::toast::ToastData::new(
+                crate::components::ui::toast::ToastKind::Warning,
+                crate::i18n::t!("Thread title cannot be empty"),
+            );
+            crate::components::ui::toast::Toaster::push(toast, cx);
+        } else if title != renaming.original.as_ref() {
+            cx.emit(SidebarEvent::RenameThread(renaming.key, title));
+        }
+    }
+
+    /// Escape in the field: the title stays as it was.
+    pub fn cancel_rename(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.renaming.take().is_some() {
+            window.focus(&self.focus_handle, cx);
             cx.notify();
         }
     }
@@ -387,8 +453,38 @@ impl Sidebar {
         };
         if self.hovered != next {
             self.hovered = next;
+            self.schedule_hover_card(cx);
             cx.notify();
         }
+    }
+
+    /// The sidebar's `TooltipProvider delay={150} closeDelay={0} timeout={400}`:
+    /// a row's card opens 150ms after the pointer settles on it, at once when
+    /// another card closed less than 400ms ago, and closes when it leaves.
+    fn schedule_hover_card(&mut self, cx: &mut Context<Self>) {
+        const DELAY: std::time::Duration = std::time::Duration::from_millis(150);
+        const WARM: std::time::Duration = std::time::Duration::from_millis(400);
+        let target = self.hovered.filter(|ix| matches!(self.list.entries.get(*ix), Some(SidebarListEntry::Thread { .. })));
+        if self.hover_card.is_some() && self.hover_card != target {
+            self.hover_card = None;
+            self.hover_card_closed_at = Some(std::time::Instant::now());
+        }
+        self.hover_card_open = None;
+        let Some(target) = target.filter(|_| self.context_menu.is_none()) else { return };
+        if self.hover_card_closed_at.is_some_and(|at| at.elapsed() < WARM) {
+            self.hover_card = Some(target);
+            return;
+        }
+        self.hover_card_open = Some(cx.spawn(async move |this, cx| {
+            cx.background_executor().timer(DELAY).await;
+            this.update(cx, |this, cx| {
+                if this.hovered == Some(target) && this.context_menu.is_none() {
+                    this.hover_card = Some(target);
+                    cx.notify();
+                }
+            })
+            .ok();
+        }));
     }
 
     fn focusable_entry(&self, ix: usize) -> bool {
@@ -487,6 +583,10 @@ impl Sidebar {
         position: Point<Pixels>,
         cx: &mut Context<Self>,
     ) {
+        self.hover_card = None;
+        self.hover_card_open = None;
+        // Chromium reports whole-pixel client coordinates, and the fallback menu opens there.
+        let position = point(position.x.floor(), position.y.floor());
         let menu = match self.list.entries.get(entry) {
             Some(SidebarListEntry::Thread { thread, section, .. }) => {
                 let label = self
@@ -507,6 +607,9 @@ impl Sidebar {
                     ),
                     project_label: label,
                     project_filter_active: false,
+                    show_project_filter: true,
+                    can_find: false,
+                    auto_settle_enabled: !self.snapshot.auto_settle_disabled.contains(&thread.key),
                 });
                 ContextMenu {
                     target: MenuTarget::Thread(thread.key.clone()),
@@ -587,11 +690,7 @@ impl Sidebar {
     /// Runs a menu row (`child` picks a submenu row) and closes the menu.
     pub(crate) fn run_menu_item(&mut self, ix: usize, child: Option<usize>, cx: &mut Context<Self>) {
         let Some(menu) = self.context_menu.take() else { return };
-        let item = match child {
-            Some(c) => menu.items.get(ix).and_then(|i| i.children.get(c)),
-            None => menu.items.get(ix),
-        };
-        if let Some(command) = item.filter(|i| !i.disabled).and_then(|i| i.command) {
+        if let Some(command) = context_menu::picked_command(&menu, ix, child) {
             match menu.target {
                 MenuTarget::Thread(key) => {
                     let targets = self.command_targets(&key);

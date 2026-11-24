@@ -1,8 +1,9 @@
 """Visual parity between the GPUI port and the fork's web app.
 
-  record  <ref-dir> [scene ...]           measure the reference PNGs once and write
+  record  <ref-dir> [scene-filter ...]    measure the reference PNGs once and write
                                           expected.json (committed; the PNGs are not);
-                                          named scenes only re-record those
+                                          filters re-record only the scenes whose name
+                                          contains one, skipping those without a PNG here
   compare <port-dir> <out-dir> [ref-dir]  measure the port PNGs, write report.md and
                                           results.json, and side-by-side images when
                                           the reference PNGs are available
@@ -18,6 +19,7 @@ judges the right edge and reports the left) or `exclude: "<reason>"` (a fixture 
 documented GPUI limit; measured and shown, never judged).
 """
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -27,7 +29,8 @@ import measure as m
 
 HERE = Path(__file__).resolve().parent
 SPEC = json.loads((HERE / "spec.json").read_text())
-EXPECTED = HERE / "expected.json"
+# `PARITY_EXPECTED=expected-owner.json` judges against the owner-settings capture.
+EXPECTED = HERE / os.environ.get("PARITY_EXPECTED", "expected.json")
 PX = SPEC["tolerance"]["px"]
 # GPUI places a line's baseline with the font's exact ascent and descent
 # (gpui text_system/line.rs: padding_top = (line_height - ascent - descent) / 2);
@@ -44,14 +47,19 @@ def channels(a, b):
 
 
 def record(ref_dir, *only):
-    """Measures the reference PNGs; with scene names, re-records only those and
-    keeps every other scene's values (references captured at different times)."""
+    """Measures the reference PNGs; with filters, re-records just the scenes whose name
+    contains one and keeps every other scene's values (references live in several
+    directories, captured at different times)."""
     ref_dir = Path(ref_dir)
     expected = json.loads(EXPECTED.read_text()) if only and EXPECTED.exists() else {}
     for scene, body in SPEC["scenes"].items():
-        if only and scene not in only:
+        if only and not any(f in scene for f in only):
             continue
-        im = m.load(ref_dir / f"{body.get('reference', scene)}.png")
+        png = ref_dir / f"{body.get('reference', scene)}.png"
+        if only and not png.exists():
+            print(f"skipped {scene}: no {png.name} in {ref_dir}")
+            continue
+        im = m.load(png)
         expected[scene] = {e["name"]: m.measure(im, e) for e in body["elements"]}
     EXPECTED.write_text(json.dumps(expected, indent=1) + "\n")
     print(f"wrote {EXPECTED.name}")
@@ -155,6 +163,9 @@ def compare(port_dir, out_dir, ref_dir=None):
         if not port_png.exists():
             summary.append((scene, 0, 0, 0, "(no port image)"))
             continue
+        if scene not in expected:
+            summary.append((scene, 0, 0, 0, f"(not recorded in {EXPECTED.name})"))
+            continue
         im = m.load(port_png)
         by_name = {e["name"]: e for e in body["elements"]}
         counts = {"pass": 0, "FAIL": 0, "excluded": 0}
@@ -172,7 +183,10 @@ def compare(port_dir, out_dir, ref_dir=None):
                     dy = found["top"] - expected[scene][anchor["name"]]["top"]
                     if element.get("anchor_x"):
                         dx = found["left"] - expected[scene][anchor["name"]]["left"]
-            port = m.unshift_x(m.unshift(m.measure(im, m.shifted_x(m.shifted(element, dy), dx)), dy), dx)
+            # Scene captures lay out without the sidebar or with the Linux topbar; `port_dx`/`port_dy` say how far.
+            dx += element.get("port_dx", 0)
+            dy += element.get("port_dy", 0)
+            port = m.unmoved(m.measure(im, m.moved(element, dx, dy)), dx, dy)
             rows = judge(element, ref, port)
             verdicts = [ok for *_, ok in rows if ok is not None]
             state = "excluded" if element.get("exclude") else ("pass" if all(verdicts) else "FAIL")

@@ -6,7 +6,7 @@
 use gpui_kit::{AnyElement, App, IntoElement, SharedString, prelude::*};
 use t3code_contracts::{SnapShotShortcut, SnapShotSound};
 
-use super::settings_controls::{client_row, client_switch, select_control};
+use super::settings_controls::{SelectWidth, client_row, client_switch, select_control};
 use super::settings_layout::{SettingsRow, SettingsSection, page_container};
 use super::settings_search::setting_title;
 use crate::components::ui::kbd::Kbd;
@@ -35,16 +35,20 @@ fn shortcut_label(shortcut: &SnapShotShortcut) -> SharedString {
 /// `SnapShotSettings`.
 pub fn snap_shot_panel(cx: &App) -> AnyElement {
     let settings = ClientSettingsStore::get(cx).clone();
-    let enabled = client_switch(
+    let mut enabled = client_switch(
         "snap-shot-enabled",
-        t!("Capture the window you're using without switching apps."),
+        t!("Capture a window and attach it to your current draft."),
         |s| &s.snap_shot_enabled,
         |s, v| s.snap_shot_enabled = v,
         cx,
     );
+    if !settings.snap_shot_enabled {
+        enabled = enabled.status(t!("Turn this on to set up snapshots."));
+    }
     let sound_index = if !settings.snap_shot_play_sound { 0 } else if settings.snap_shot_sound == SnapShotSound::CameraShutter { 2 } else { 1 };
     let sound = select_control(
         "select-snap-shot-sound".into(),
+        SelectWidth::Fit,
         std::rc::Rc::from([
             t!("Off", context = "snapshot sound turned off"),
             t!("Whoosh (Default)"),

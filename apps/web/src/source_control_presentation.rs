@@ -128,13 +128,13 @@ pub fn source_control_presentation(provider: Option<&SourceControlProviderInfo>)
 /// `sourceControlIcon`: each built-in host's mark from its definition's artwork.
 pub fn source_control_icon(definition: SourceControlDefinition) -> IconSource {
     let brand = match definition.kind {
-        "github" => BrandIcon::SourceControlGitHub,
-        "cursor-origin" => BrandIcon::SourceControlCursorOrigin,
-        "gitlab" => BrandIcon::SourceControlGitLab,
-        "gitcafe" => BrandIcon::SourceControlGitCafe,
-        "forgejo" => BrandIcon::SourceControlForgejo,
-        "bitbucket" => BrandIcon::SourceControlBitbucket,
-        "azure-devops" => BrandIcon::SourceControlAzureDevOps,
+        "github" => BrandIcon::GitHub,
+        "cursor-origin" => BrandIcon::CursorOrigin,
+        "gitlab" => BrandIcon::GitLab,
+        "gitcafe" => BrandIcon::GitCafe,
+        "forgejo" => BrandIcon::Forgejo,
+        "bitbucket" => BrandIcon::Bitbucket,
+        "azure-devops" => BrandIcon::AzureDevOps,
         _ => return IconName::GitPullRequestArrow.into(),
     };
     brand.into()

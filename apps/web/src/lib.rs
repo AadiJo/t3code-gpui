@@ -5,6 +5,7 @@
 extern crate self as t3code_web;
 
 pub mod app_root;
+pub mod appearance_contrast;
 pub mod appearance_fonts;
 pub mod assets;
 pub mod client_persistence_storage;
@@ -38,8 +39,10 @@ pub mod model_search;
 pub mod model_selection;
 pub mod markdown_pipeline;
 pub mod right_panel_store;
+pub mod panel_animations;
 pub mod router;
 pub mod keybindings;
+pub mod live;
 pub mod navigation_history;
 pub mod project_identity;
 pub mod provider_auth_delivery;
@@ -55,6 +58,7 @@ pub mod thread_sync;
 pub mod shortcut_modifier_state;
 pub mod shortcuts;
 pub mod source_control_presentation;
+pub mod thread_pull_requests;
 pub mod terminal;
 pub mod terminal_links;
 pub mod terminal_ui_state_store;
@@ -106,8 +110,7 @@ pub fn init(cx: &mut App) {
         document: Arc::new(ThemeDocument::graphite()),
         mode: ThemeMode::System,
         system: Appearance::from(cx.window_appearance()),
-        fonts: Default::default(),
-        glass_opacity: Default::default(),
+        ..Default::default()
     };
     theme_palette::install(settings, cx);
     components::ui::toast::Toaster::init(cx);

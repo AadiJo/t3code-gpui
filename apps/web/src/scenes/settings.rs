@@ -17,7 +17,9 @@ use crate::routes::settings::SettingsRoute;
 /// The fixture environment's id.
 pub const FIXTURE_ENVIRONMENT: &str = "env-fixture";
 
-/// A server config for a made-up macOS host with the default keymap.
+/// A server config for a made-up host with the default keymap and the
+/// built-in server settings, like the reference capture's server (which
+/// reports no fast worktree checkout).
 pub fn fixture_config() -> ServerConfig {
     let keybindings = serde_json::to_value(default_resolved_keybindings()).expect("keybindings encode");
     let config = serde_json::json!({
@@ -26,7 +28,7 @@ pub fn fixture_config() -> ServerConfig {
             "label": "Studio",
             "platform": { "os": "darwin", "arch": "arm64" },
             "serverVersion": "0.1.11",
-            "capabilities": { "fastWorktreeCheckout": true }
+            "capabilities": {}
         },
         "auth": {
             "policy": "loopback-browser",
@@ -46,7 +48,7 @@ pub fn fixture_config() -> ServerConfig {
             "otlpTracesEnabled": false,
             "otlpMetricsEnabled": false
         },
-        "settings": { "linkedEnvironmentsEnabled": true, "speechProjectCustomWords": [{ "term": "GPUI", "aliases": ["gee pee you eye"] }] }
+        "settings": {}
     });
     serde_json::from_value(config).expect("fixture server config decodes")
 }
@@ -67,9 +69,21 @@ impl Render for SettingsScene {
     }
 }
 
+/// Loads a client settings document (`T3CODE_CLIENT_SETTINGS=<path to a
+/// T3 Code client settings JSON>`) over the defaults, so a scene can render
+/// with someone's real settings without them living in the repo.
+pub fn apply_client_settings_override(cx: &mut App) {
+    let Some(path) = std::env::var_os("T3CODE_CLIENT_SETTINGS") else { return };
+    let Ok(bytes) = std::fs::read(&path) else { return };
+    let Ok(serde_json::Value::Object(document)) = serde_json::from_slice(&bytes) else { return };
+    let (settings, _) = crate::hooks::use_settings::ClientSettings::from_document(document);
+    crate::hooks::use_settings::ClientSettingsStore::update(cx, |current| *current = settings);
+}
+
 /// Opens Settings on `path` over the app shell, with the fixture environment.
 pub fn open(path: SettingsPath, window: &mut Window, cx: &mut App) -> (AnyView, Entity<SettingsRoute>) {
     seed_fixture(cx);
+    apply_client_settings_override(cx);
     let state = cx.new(|_| ConnectionsState {
         environments: Vec::new(),
         cloud: None,

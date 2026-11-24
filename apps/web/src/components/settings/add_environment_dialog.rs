@@ -1,7 +1,8 @@
 //! "Add environment" and "Add route". Ports `AddEnvironmentDialog.tsx`: a
 //! backend host plus pairing code, where pasting a pairing URL (direct,
-//! hosted, or a `t3code://pair` link) into the host field fills both. SSH
-//! is not offered: this app has no SSH launcher.
+//! hosted, or a `t3code://pair` link) into the host field fills both. The
+//! SSH card switches to the SSH fields as on the desktop app, but this app
+//! has no SSH launcher yet, so its Add button stays disabled.
 
 use gpui_kit::component::input::{InputEvent, InputState};
 use gpui_kit::{
@@ -33,6 +34,10 @@ pub struct AddEnvironmentDialog {
     route_target: Option<(EnvironmentId, SharedString)>,
     host: Entity<InputState>,
     code: Entity<InputState>,
+    ssh: bool,
+    ssh_host: Entity<InputState>,
+    ssh_user: Entity<InputState>,
+    ssh_port: Entity<InputState>,
     error: Option<SharedString>,
     adding: bool,
     _subscriptions: Vec<Subscription>,
@@ -44,6 +49,9 @@ impl AddEnvironmentDialog {
     pub fn new(route_target: Option<(EnvironmentId, SharedString)>, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let host = cx.new(|cx| InputState::new(window, cx).placeholder("backend.example.com"));
         let code = cx.new(|cx| InputState::new(window, cx).placeholder(t!("PAIRCODE")));
+        let ssh_host = cx.new(|cx| InputState::new(window, cx).placeholder(t!("Search hosts or type devbox")));
+        let ssh_user = cx.new(|cx| InputState::new(window, cx).placeholder("root"));
+        let ssh_port = cx.new(|cx| InputState::new(window, cx).placeholder("22"));
         let code_for_paste = code.clone();
         let on_host = cx.subscribe_in(&host, window, move |this, state, event: &InputEvent, window, cx| match event {
             InputEvent::Change => {
@@ -67,7 +75,7 @@ impl AddEnvironmentDialog {
             }
         });
         host.update(cx, |state, cx| state.focus(window, cx));
-        Self { route_target, host, code, error: None, adding: false, _subscriptions: vec![on_host, on_code] }
+        Self { route_target, host, code, ssh: false, ssh_host, ssh_user, ssh_port, error: None, adding: false, _subscriptions: vec![on_host, on_code] }
     }
 
     /// The host and code fields, for scripted checks.
@@ -151,44 +159,74 @@ impl Render for AddEnvironmentDialog {
             ),
             None => (t!("Add Environment"), t!("Pair another environment to this client.")),
         };
-        let mode_card = div()
-            .flex()
-            .items_start()
-            .gap(sp(3.))
-            .min_h(sp(24.))
-            .p(sp(4.))
-            .rounded(theme.radii.lg)
-            .border_1()
-            .border_color(with_alpha(c.primary(), 0.5))
-            .bg(with_alpha(c.primary(), 0.05))
-            .child(
-                div()
-                    .mt(px(2.))
-                    .flex()
-                    .flex_none()
-                    .items_center()
-                    .justify_center()
-                    .size(sp(8.))
-                    .rounded(theme.radii.md)
-                    .border_1()
-                    .border_color(with_alpha(c.primary(), 0.3))
-                    .bg(with_alpha(c.primary(), 0.1))
-                    .child(Icon::new(IconName::ChevronsLeftRightEllipsis).size(IconSize::Md).color(c.primary())),
-            )
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .min_w_0()
-                    .child(div().ui_text(theme, TextSize::Sm, weight::MEDIUM).child(t!("Remote link")))
-                    .child(
-                        div()
-                            .mt(sp(1.))
-                            .ui_text(theme, TextSize::Xs, weight::NORMAL)
-                            .text_color(c.muted_foreground)
-                            .child(t!("Enter a backend host and pairing code.")),
-                    ),
-            );
+        // `renderConnectionModeCard`: the selected card is primary-tinted.
+        let mode_card = |id: &'static str, selected: bool, icon: IconName, title: SharedString, description: SharedString, ssh: bool| {
+            div()
+                .id(id)
+                .flex()
+                .items_start()
+                .gap(sp(3.))
+                .min_h(sp(24.))
+                .h_full()
+                .p(sp(4.))
+                .rounded(theme.radii.lg)
+                .border_1()
+                .cursor_pointer()
+                .when(selected, |d| d.border_color(with_alpha(c.primary(), 0.5)).bg(with_alpha(c.primary(), 0.05)))
+                .when(!selected, |d| d.border_color(with_alpha(c.border, 0.6)).hover(|s| s.bg(with_alpha(c.muted, 0.4))))
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    if this.ssh != ssh {
+                        this.error = None;
+                    }
+                    this.ssh = ssh;
+                    cx.notify();
+                }))
+                .child(
+                    div()
+                        .mt(px(2.))
+                        .flex()
+                        .flex_none()
+                        .items_center()
+                        .justify_center()
+                        .size(sp(8.))
+                        .rounded(theme.radii.md)
+                        .border_1()
+                        .when(selected, |d| d.border_color(with_alpha(c.primary(), 0.3)).bg(with_alpha(c.primary(), 0.1)))
+                        .when(!selected, |d| d.border_color(with_alpha(c.border, 0.7)).bg(c.background()))
+                        .child(Icon::new(icon).size(IconSize::Md).color(if selected { c.primary() } else { c.muted_foreground })),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .min_w_0()
+                        .child(div().ui_text(theme, TextSize::Sm, weight::MEDIUM).child(title))
+                        .child(
+                            div()
+                                .mt(sp(1.))
+                                .ui_text(theme, TextSize::Xs, weight::NORMAL)
+                                .line_height(px(TextSize::Xs.size(theme.fonts.interface) * 1.625))
+                                .text_color(c.muted_foreground)
+                                .child(description),
+                        ),
+                )
+        };
+        let remote_card = mode_card(
+            "add-environment-mode-remote",
+            !self.ssh,
+            IconName::ChevronsLeftRightEllipsis,
+            t!("Remote link"),
+            t!("Enter a backend host and pairing code."),
+            false,
+        );
+        let ssh_card = mode_card(
+            "add-environment-mode-ssh",
+            self.ssh,
+            IconName::Terminal,
+            SharedString::new_static("SSH"),
+            t!("Use local SSH config, agent, and tunnels for the backend."),
+            true,
+        );
         let fields = div()
             .flex()
             .gap(sp(3.))
@@ -244,8 +282,22 @@ impl Render for AddEnvironmentDialog {
                     .px(sp(6.))
                     .pt(sp(1.))
                     .pb(sp(6.))
-                    .child(div().flex().gap(sp(3.)).child(div().flex_1().child(mode_card)).child(div().flex_1()))
-                    .child(
+                    .child(div().flex().gap(sp(3.)).child(div().flex_1().min_w_0().child(remote_card)).child(div().flex_1().min_w_0().child(ssh_card)))
+                    .child(if self.ssh {
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap(sp(3.))
+                            .child(div().child(field_label(t!("SSH host or alias"), cx)).child(TextInput::new(&self.ssh_host)))
+                            .child(
+                                div()
+                                    .flex()
+                                    .gap(sp(3.))
+                                    .child(div().flex_1().min_w_0().child(field_label(t!("Username"), cx)).child(TextInput::new(&self.ssh_user)))
+                                    .child(div().w(theme.rem(7.)).flex_none().child(field_label(t!("Port"), cx)).child(TextInput::new(&self.ssh_port))),
+                            )
+                            .into_any_element()
+                    } else {
                         div()
                             .flex()
                             .flex_col()
@@ -257,18 +309,20 @@ impl Render for AddEnvironmentDialog {
                                     .ui_text(theme, TextSize::Xs2, weight::NORMAL)
                                     .text_color(c.muted_foreground)
                                     .child(t!("Paste a full pairing URL here to fill both fields automatically.")),
-                            ),
-                    )
+                            )
+                            .into_any_element()
+                    })
                     .children(self.error.clone().map(|error| {
                         div().ui_text(theme, TextSize::Xs, weight::NORMAL).text_color(c.destructive()).child(error)
                     }))
                     .child(
-                        div().flex().w_full().child(
+                        // `w-full`: the button stretches across the dialog.
+                        div().flex().flex_col().w_full().child(
                             Button::new("add-environment-submit")
                                 .label(submit_label)
                                 .icon(IconName::Plus)
                                 .variant(ButtonVariant::Outline)
-                                .disabled(self.adding)
+                                .disabled(self.adding || self.ssh)
                                 .on_click(cx.listener(|this, _, _, cx| this.submit(cx))),
                         ),
                     ),

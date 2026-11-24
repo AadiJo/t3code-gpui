@@ -13,6 +13,8 @@ use super::style::{MENU_MAX_WIDTH, MENU_MIN_WIDTH, MENU_ROW_HEIGHT, ShellColors}
 /// What a menu row does when picked.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MenuCommand {
+    /// "Find in thread": only in the chat header's menu, which handles it itself.
+    FindInThread,
     NewThreadOnBranch,
     Pin,
     Unpin,
@@ -25,6 +27,8 @@ pub enum MenuCommand {
     RegenerateTitle,
     MarkUnread,
     FilterByProject,
+    /// "Auto-settle behavior": `true` follows the settings, `false` never auto-settles.
+    AutoSettle(bool),
     CopyPath,
     CopyBranch,
     CopyThread,
@@ -57,6 +61,8 @@ pub struct MenuItem {
     pub destructive: bool,
     pub disabled: bool,
     pub separator_before: bool,
+    /// A radio row: a check when `true`, an icon-sized gap when `false`.
+    pub checked: Option<bool>,
     pub children: Vec<MenuItem>,
 }
 
@@ -70,8 +76,14 @@ impl MenuItem {
             destructive: false,
             disabled: false,
             separator_before: false,
+            checked: None,
             children: Vec::new(),
         }
+    }
+
+    fn checked(mut self, checked: bool) -> Self {
+        self.checked = Some(checked);
+        self
     }
 
     fn icon(mut self, icon: IconName) -> Self {
@@ -123,12 +135,21 @@ pub struct ThreadMenuState<'a> {
     pub is_running: bool,
     pub project_label: &'a str,
     pub project_filter_active: bool,
+    /// Rows offer "Filter by <project>"; the chat header's menu does not.
+    pub show_project_filter: bool,
+    /// The chat header's menu starts with "Find in thread".
+    pub can_find: bool,
+    /// The thread follows the auto-settle setting (no `autoSettleDisabledAt`).
+    pub auto_settle_enabled: bool,
 }
 
 /// `buildThreadActionMenuItems` for a sidebar row.
 pub fn thread_menu_items(state: &ThreadMenuState<'_>) -> Vec<MenuItem> {
     use MenuCommand as C;
     let mut items = Vec::new();
+    if state.can_find {
+        items.push(MenuItem::new(C::FindInThread, "Find in thread").icon(IconName::TextSearch));
+    }
     if let Some(branch) = state.branch {
         items.push(
             MenuItem::new(C::NewThreadOnBranch, format!("New thread on {branch}"))
@@ -159,16 +180,26 @@ pub fn thread_menu_items(state: &ThreadMenuState<'_>) -> Vec<MenuItem> {
     );
     items.push(MenuItem::new(C::RegenerateTitle, "Regenerate title").icon(IconName::RefreshCw));
     items.push(MenuItem::new(C::MarkUnread, "Mark unread").icon(IconName::MailOpen));
+    if state.show_project_filter {
+        items.push(
+            MenuItem::new(
+                C::FilterByProject,
+                if state.project_filter_active {
+                    "Show all projects".to_string()
+                } else {
+                    format!("Filter by {}", state.project_label)
+                },
+            )
+            .icon(IconName::FolderTree),
+        );
+    }
     items.push(
-        MenuItem::new(
-            C::FilterByProject,
-            if state.project_filter_active {
-                "Show all projects".to_string()
-            } else {
-                format!("Filter by {}", state.project_label)
-            },
-        )
-        .icon(IconName::FolderTree),
+        MenuItem::new(C::AutoSettle(true), "Auto-settle behavior")
+            .icon(IconName::Timer)
+            .submenu(vec![
+                MenuItem::new(C::AutoSettle(true), "Follow settings").checked(state.auto_settle_enabled),
+                MenuItem::new(C::AutoSettle(false), "Never").checked(!state.auto_settle_enabled),
+            ]),
     );
     let mut copy = vec![MenuItem::new(C::CopyPath, "Path").icon(IconName::Folder)];
     if state.branch.is_some() {
@@ -237,7 +268,13 @@ pub fn menu_row(item: &MenuItem, highlighted: bool, colors: &ShellColors) -> Div
         (false, true) => (colors.accent_foreground, Some(colors.accent)),
         (false, false) => (colors.foreground, None),
     };
+    let fg = if item.disabled { colors.muted_foreground } else { fg };
     let icon_color = if item.destructive { fg } else { colors.muted_foreground };
+    let icon = match item.checked {
+        Some(true) => Some(Some(IconName::Check)),
+        Some(false) => Some(None),
+        None => item.icon.map(Some),
+    };
     div()
         .flex()
         .items_center()
@@ -251,7 +288,10 @@ pub fn menu_row(item: &MenuItem, highlighted: bool, colors: &ShellColors) -> Div
         .text_color(fg)
         .when_some(bg, |row, bg| row.bg(bg))
         .when(item.disabled, |row| row.opacity(0.64))
-        .when_some(item.icon, |row, icon| row.child(Icon::new(icon).size(IconSize::Custom(px(16.))).color(icon_color).stroke(2.)))
+        .when_some(icon, |row, icon| match icon {
+            Some(icon) => row.child(Icon::new(icon).size(IconSize::Custom(px(16.))).color(icon_color).stroke(2.)),
+            None => row.child(div().size(px(16.)).flex_none()),
+        })
         .child(div().flex_1().min_w_0().truncate().child(item.label.clone()))
         .when_some(item.detail.clone(), |row, detail| {
             row.child(
@@ -264,7 +304,14 @@ pub fn menu_row(item: &MenuItem, highlighted: bool, colors: &ShellColors) -> Div
             )
         })
         .when(!item.children.is_empty(), |row| {
-            row.child(Icon::new(IconName::ChevronRight).size(IconSize::Custom(px(16.))).color(fg.opacity(0.8)).stroke(2.))
+            row.child(
+                div().mr(px(-2.)).child(
+                    Icon::new(IconName::ChevronRight)
+                        .size(IconSize::Custom(px(16.)))
+                        .color(colors.muted_foreground.opacity(0.8))
+                        .stroke(2.),
+                ),
+            )
         })
 }
 
@@ -277,6 +324,7 @@ pub fn menu_surface(colors: &ShellColors) -> Div {
         .min_w(MENU_MIN_WIDTH)
         .max_w(MENU_MAX_WIDTH)
         .p_1()
+        .font_weight(FontWeight::NORMAL)
         .rounded(px(8.))
         .border_1()
         .border_color(colors.glass_border)
@@ -295,6 +343,87 @@ pub fn menu_separator(colors: &ShellColors) -> Div {
     div().mx_2().my_1().h(px(1.)).bg(colors.border)
 }
 
+/// The rows of an open menu and its open submenu, for any view that keeps a
+/// [`ContextMenu`]. `menu_of` finds the menu on the view; `pick` runs a row
+/// (top-level index, submenu index).
+pub fn menu_body<V: 'static>(
+    menu: &ContextMenu,
+    colors: &ShellColors,
+    menu_of: fn(&mut V) -> Option<&mut ContextMenu>,
+    pick: fn(&mut V, usize, Option<usize>, &mut Window, &mut Context<V>),
+    cx: &mut Context<V>,
+) -> Stateful<Div> {
+    let mut surface = menu_surface(colors).id("context-menu");
+    for (ix, item) in menu.items.iter().enumerate() {
+        if item.separator_before {
+            surface = surface.child(menu_separator(colors));
+        }
+        let highlighted = menu.highlighted == Some(ix) || menu.submenu.is_some_and(|(open, _)| open == ix);
+        let has_children = !item.children.is_empty();
+        let mut row = div()
+            .id(("menu-item", ix))
+            .relative()
+            .child(menu_row(item, highlighted, colors))
+            .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
+                if !*hovered {
+                    return;
+                }
+                if let Some(menu) = menu_of(this) {
+                    menu.highlighted = Some(ix);
+                    menu.submenu = has_children.then_some((ix, None));
+                    cx.notify();
+                }
+            }))
+            .on_click(cx.listener(move |this, _, window, cx| {
+                if has_children {
+                    if let Some(menu) = menu_of(this) {
+                        menu.submenu = Some((ix, None));
+                        cx.notify();
+                    }
+                } else {
+                    pick(this, ix, None, window, cx);
+                }
+            }));
+        if let Some((open, child_highlight)) = menu.submenu
+            && open == ix
+        {
+            let mut sub = menu_surface(colors).id("context-submenu");
+            for (cix, child) in item.children.iter().enumerate() {
+                if child.separator_before {
+                    sub = sub.child(menu_separator(colors));
+                }
+                sub = sub.child(
+                    div()
+                        .id(("submenu-item", cix))
+                        .child(menu_row(child, child_highlight == Some(cix), colors))
+                        .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
+                            if let Some(menu) = menu_of(this)
+                                && *hovered
+                            {
+                                menu.submenu = Some((ix, Some(cix)));
+                                cx.notify();
+                            }
+                        }))
+                        .on_click(cx.listener(move |this, _, window, cx| pick(this, ix, Some(cix), window, cx))),
+                );
+            }
+            // `contextMenuFallback.ts`: the submenu opens at the trigger's right + 4px, at its top.
+            row = row.child(deferred(div().absolute().left_full().top_0().pl(px(4.)).child(sub)).with_priority(3));
+        }
+        surface = surface.child(row);
+    }
+    surface
+}
+
+/// The picked row's command, if it is enabled.
+pub fn picked_command(menu: &ContextMenu, ix: usize, child: Option<usize>) -> Option<MenuCommand> {
+    let item = match child {
+        Some(c) => menu.items.get(ix).and_then(|i| i.children.get(c)),
+        None => menu.items.get(ix),
+    };
+    item.filter(|i| !i.disabled).and_then(|i| i.command)
+}
+
 impl super::Sidebar {
     /// The open context menu, drawn above everything at the pointer.
     pub(crate) fn render_context_menu(
@@ -309,76 +438,11 @@ impl super::Sidebar {
         let height = menu_height(&menu.items);
         let x = menu.position.x.min(viewport.width - MENU_MAX_WIDTH.min(px(240.)) - px(4.)).max(px(4.));
         let y = menu.position.y.min(viewport.height - height - px(4.)).max(px(4.));
-        let mut surface = menu_surface(colors)
-            .id("context-menu")
+        let surface = menu_body(&menu, colors, |this: &mut Self| this.context_menu.as_mut(), |this, ix, child, _, cx| this.run_menu_item(ix, child, cx), cx)
             .on_mouse_down_out(cx.listener(|this, _, _, cx| {
                 this.context_menu = None;
                 cx.notify();
             }));
-        for (ix, item) in menu.items.iter().enumerate() {
-            if item.separator_before {
-                surface = surface.child(menu_separator(colors));
-            }
-            let highlighted = menu.highlighted == Some(ix)
-                || menu.submenu.is_some_and(|(open, _)| open == ix);
-            let has_children = !item.children.is_empty();
-            let mut row = div()
-                .id(("menu-item", ix))
-                .relative()
-                .child(menu_row(item, highlighted, colors))
-                .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
-                    if !*hovered {
-                        return;
-                    }
-                    if let Some(menu) = this.context_menu.as_mut() {
-                        menu.highlighted = Some(ix);
-                        menu.submenu = has_children.then_some((ix, None));
-                        cx.notify();
-                    }
-                }))
-                .on_click(cx.listener(move |this, _, _, cx| {
-                    if has_children {
-                        if let Some(menu) = this.context_menu.as_mut() {
-                            menu.submenu = Some((ix, None));
-                            cx.notify();
-                        }
-                    } else {
-                        this.run_menu_item(ix, None, cx);
-                    }
-                }));
-            if let Some((open, child_highlight)) = menu.submenu
-                && open == ix
-            {
-                let mut sub = menu_surface(colors).id("context-submenu");
-                for (cix, child) in item.children.iter().enumerate() {
-                    if child.separator_before {
-                        sub = sub.child(menu_separator(colors));
-                    }
-                    sub = sub.child(
-                        div()
-                            .id(("submenu-item", cix))
-                            .child(menu_row(child, child_highlight == Some(cix), colors))
-                            .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
-                                if let Some(menu) = this.context_menu.as_mut()
-                                    && *hovered
-                                {
-                                    menu.submenu = Some((ix, Some(cix)));
-                                    cx.notify();
-                                }
-                            }))
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                this.run_menu_item(ix, Some(cix), cx);
-                            })),
-                    );
-                }
-                // Opens inline-end, aligned 5px above the trigger row.
-                row = row.child(
-                    deferred(div().absolute().left_full().top(px(-5.)).pl(px(8.)).child(sub))
-                        .with_priority(3),
-                );
-            }
-            surface = surface.child(row);
-        }
         Some(
             deferred(anchored().position(point(x, y)).child(surface))
                 .with_priority(2)

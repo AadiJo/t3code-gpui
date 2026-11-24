@@ -144,13 +144,82 @@ pub fn interval_seconds_field(
         )
 }
 
+/// What a draft field commits to: the saved value and the commit callback,
+/// both replaced on every render so the callback sees current data.
+type Commit = Rc<dyn Fn(SharedString, &mut Window, &mut App)>;
+
+struct DraftBinding {
+    value: SharedString,
+    focused_value: SharedString,
+    on_commit: Commit,
+}
+
 /// Text fields a panel creates on first render, keyed by a stable name.
 #[derive(Default)]
 pub struct Fields {
     fields: HashMap<SharedString, Entity<InputState>>,
+    drafts: HashMap<SharedString, (Rc<std::cell::RefCell<DraftBinding>>, gpui_kit::Subscription)>,
 }
 
 impl Fields {
+    /// `DraftInput` / `useCommitOnBlur`: a field showing `value` that commits
+    /// its text on blur or Enter when it differs from both the value it had on
+    /// focus and the current value. While unfocused it follows `value`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn draft<V: 'static>(
+        &mut self,
+        key: impl Into<SharedString>,
+        value: impl Into<SharedString>,
+        placeholder: impl Into<SharedString>,
+        masked: bool,
+        window: &mut Window,
+        cx: &mut Context<V>,
+        on_commit: impl Fn(SharedString, &mut Window, &mut App) + 'static,
+    ) -> Entity<InputState> {
+        use gpui_kit::Focusable as _;
+        use gpui_kit::component::input::InputEvent;
+        let key = key.into();
+        let value = value.into();
+        let field = self.get(key.clone(), value.clone(), placeholder, masked, window, cx);
+        let on_commit: Commit = Rc::new(on_commit);
+        match self.drafts.get(&key) {
+            Some((binding, _)) => {
+                let mut binding = binding.borrow_mut();
+                binding.on_commit = on_commit;
+                if binding.value != value {
+                    binding.value = value.clone();
+                    if !field.read(cx).focus_handle(cx).is_focused(window) {
+                        field.update(cx, |state, cx| state.set_value(value, window, cx));
+                    }
+                }
+            }
+            None => {
+                let binding = Rc::new(std::cell::RefCell::new(DraftBinding { value: value.clone(), focused_value: value, on_commit }));
+                let shared = binding.clone();
+                let sub = cx.subscribe_in(&field, window, move |_, state, event: &InputEvent, window, cx| match event {
+                    InputEvent::Focus => {
+                        let mut b = shared.borrow_mut();
+                        b.focused_value = b.value.clone();
+                    }
+                    InputEvent::PressEnter { .. } => window.blur(cx),
+                    InputEvent::Blur => {
+                        let next = state.read(cx).value();
+                        let (changed, commit) = {
+                            let b = shared.borrow();
+                            (next != b.focused_value && next != b.value, b.on_commit.clone())
+                        };
+                        if changed {
+                            commit(next, window, cx);
+                        }
+                    }
+                    _ => {}
+                });
+                self.drafts.insert(key, (binding, sub));
+            }
+        }
+        field
+    }
+
     /// The field for `key`, created with `initial` and `placeholder` the first time.
     pub fn get<V: 'static>(
         &mut self,
@@ -192,11 +261,13 @@ impl Fields {
     /// Forgets a field so the next `get` recreates it from a new initial value.
     pub fn reset(&mut self, key: &str) {
         self.fields.remove(key);
+        self.drafts.remove(key);
     }
 
     /// Forgets every field whose key starts with `prefix`.
     pub fn reset_prefix(&mut self, prefix: &str) {
         self.fields.retain(|key, _| !key.starts_with(prefix));
+        self.drafts.retain(|key, _| !key.starts_with(prefix));
     }
 }
 
@@ -235,4 +306,111 @@ pub fn bool_setting(
 ) -> SettingsRow {
     let model = model.clone();
     switch_row(id, title, description, value, lock, move |checked, _, cx| save_patch(&model, id, patch(checked), cx))
+}
+
+/// `AdvancedSettings`: a 40px "Advanced" row with a chevron that folds
+/// power-user rows at the end of a section. Place it as the section's last child.
+pub fn advanced_fold(
+    id: impl Into<SharedString>,
+    open: bool,
+    on_toggle: impl Fn(&mut Window, &mut App) + 'static,
+    children: Vec<AnyElement>,
+    cx: &App,
+) -> AnyElement {
+    let theme = cx.app_theme();
+    let c = &theme.colors;
+    let divider = gpui_kit::Hsla { a: c.border.a * 0.5, ..c.border };
+    div()
+        .flex()
+        .flex_col()
+        .child(
+            div()
+                .id(id.into())
+                .flex()
+                .items_center()
+                .gap(theme.sp(1.5))
+                .min_h(theme.sp(10.))
+                .w_full()
+                .px(theme.sp(4.))
+                .cursor_pointer()
+                .ui_text(theme, TextSize::Xs, weight::MEDIUM)
+                .text_color(c.muted_foreground)
+                .hover(|d| d.text_color(c.foreground()))
+                .on_click(move |_, window, cx| on_toggle(window, cx))
+                .child(crate::components::icons::Icon::new(if open { IconName::ChevronDown } else { IconName::ChevronRight }).size(crate::components::icons::IconSize::Sm))
+                .child(t!("Advanced")),
+        )
+        .when(open, |d| {
+            d.child(div().border_t_1().border_color(divider).flex().flex_col().children(children.into_iter().enumerate().map(|(ix, child)| {
+                div().when(ix > 0, |d| d.border_t_1().border_color(divider)).child(child)
+            })))
+        })
+        .into_any_element()
+}
+
+/// `SourceControlItemMark`: an 18px mark with an 8px status dot at its top-left,
+/// or the dot alone when there is no mark.
+pub fn status_mark(icon: Option<crate::components::icons::IconSource>, dot: Hsla, cx: &App) -> AnyElement {
+    let theme = cx.app_theme();
+    let ring = theme.colors.background();
+    match icon {
+        None => div().size(gpui_kit::px(8.)).flex_none().rounded_full().bg(dot).into_any_element(),
+        Some(icon) => div()
+            .relative()
+            .flex_none()
+            .size(theme.sp(5.))
+            .flex()
+            .items_center()
+            .justify_center()
+            .child(crate::components::icons::Icon::new(icon).size(crate::components::icons::IconSize::Custom(gpui_kit::px(18.))).color(gpui_kit::Hsla { a: 0.8, ..theme.colors.foreground() }))
+            .child(
+                // `ring-2 ring-background` around the 8px dot.
+                div()
+                    .absolute()
+                    .left(gpui_kit::px(-4.))
+                    .top(gpui_kit::px(-4.))
+                    .size(gpui_kit::px(12.))
+                    .rounded_full()
+                    .bg(ring)
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .child(div().size(gpui_kit::px(8.)).rounded_full().bg(dot)),
+            )
+            .into_any_element(),
+    }
+}
+
+/// `RetentionControl`: "Off" and a switch, or a days stepper and the switch.
+/// Switching on saves 8 days; switching off saves `None` (null).
+pub fn retention_control(
+    id: impl Into<SharedString>,
+    value: Option<u64>,
+    minimum: u64,
+    disabled: bool,
+    on_change: impl Fn(Option<u64>, &mut Window, &mut App) + 'static,
+    cx: &App,
+) -> AnyElement {
+    let theme = cx.app_theme();
+    let id: SharedString = id.into();
+    let change = Rc::new(on_change);
+    let (step, toggle) = (change.clone(), change);
+    div()
+        .flex()
+        .items_center()
+        .gap(theme.sp(3.))
+        .child(match value {
+            Some(days) => div()
+                .flex()
+                .items_center()
+                .gap(theme.sp(2.))
+                .child(interval_seconds_field(SharedString::from(format!("{id}-days")), days, minimum, 1, disabled, move |d, window, cx| step(Some(d.min(3650)), window, cx), cx))
+                .child(hint(t!("days"), cx))
+                .into_any_element(),
+            None => hint(t!("Off"), cx),
+        })
+        .child(Switch::new(SharedString::from(format!("{id}-switch")), value.is_some()).disabled(disabled).on_change(move |on, window, cx| {
+            toggle(on.then_some(8), window, cx)
+        }))
+        .into_any_element()
 }

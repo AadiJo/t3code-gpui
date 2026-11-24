@@ -16,7 +16,7 @@ concurrency:
 jobs:
   mac:
     runs-on: macos-26
-    timeout-minutes: 60
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
 
@@ -51,6 +51,34 @@ jobs:
         with:
           name: t3code-gpui-mac-arm64
           path: T3-Code-GPUI-mac-arm64.zip
+          retention-days: 14
+
+      # The headless tools, to render through CoreText (SF Pro, Monaco, PT Mono)
+      # and Metal on a real Mac: shot <scene> <out.png>, parity-shot <out-dir>,
+      # app-check <mode> ..., motion-check <out-dir>, plus the parity scripts.
+      - name: Build headless tools
+        run: >
+          cargo build --release --locked --features headless -p t3code-desktop
+          --bin shot --bin parity-shot --bin app-check --bin motion-check
+
+      - name: Package headless tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          dir=t3code-gpui-tools-mac-arm64
+          mkdir -p "$dir/bin"
+          for bin in shot parity-shot app-check motion-check; do
+            cp "target/release/$bin" "$dir/bin/"
+          done
+          codesign --force --sign - "$dir"/bin/*
+          cp -R scripts/parity "$dir/parity"
+          tar -czf "$dir.tar.gz" "$dir"
+
+      - name: Upload headless tools
+        uses: actions/upload-artifact@v7
+        with:
+          name: t3code-gpui-tools-mac-arm64
+          path: t3code-gpui-tools-mac-arm64.tar.gz
           retention-days: 14
 
   windows:

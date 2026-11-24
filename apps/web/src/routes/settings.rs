@@ -15,7 +15,7 @@ use crate::ActiveAppTheme as _;
 use crate::appearance_fonts::{TextSize, weight};
 use crate::components::icons::{Icon, IconName, IconSize};
 use crate::components::settings::connections_settings::ConnectionsSettings;
-use crate::components::settings::settings_layout::page_container;
+use crate::components::settings::settings_layout::{CurrentSettingsPath, SCROLLBAR_GUTTER, SettingsNavigator, page_container};
 use crate::components::settings::server_settings_pages::ServerSettingsPages;
 use crate::components::settings::settings_pages::{SettingsPages, is_device_page};
 use crate::components::settings::settings_search::{SearchItem, SettingsPath, nav_groups, search_settings};
@@ -85,6 +85,11 @@ impl SettingsRoute {
         });
         let environments = cx.new(|cx| ConnectionsSettings::with_state(state, window, cx));
         let pages = cx.new(|cx| SettingsPages::new(path, window, cx));
+        cx.set_global(CurrentSettingsPath(path));
+        let route = cx.entity().downgrade();
+        cx.set_global(SettingsNavigator(std::rc::Rc::new(move |path, cx| {
+            route.update(cx, |route, cx| route.navigate(path, cx)).ok();
+        })));
         Self {
             path,
             search,
@@ -124,6 +129,7 @@ impl SettingsRoute {
     }
 
     pub fn navigate(&mut self, path: SettingsPath, cx: &mut Context<Self>) {
+        cx.set_global(CurrentSettingsPath(path));
         self.pages.update(cx, |pages, cx| pages.set_path(path, cx));
         if self.path != path {
             self.path = path;
@@ -179,7 +185,7 @@ impl SettingsRoute {
                     .on_click(cx.listener(|this, _, window, cx| this.clear_search(window, cx)))
                     .into_any_element()
             } else {
-                Kbd::new(if cfg!(target_os = "macos") { "⌘F" } else { "Ctrl F" }).into_any_element()
+                Kbd::new("/").into_any_element()
             });
         let row = |id: SharedString, icon: IconName, label: SharedString, active: bool| {
             div()
@@ -343,12 +349,12 @@ impl SettingsRoute {
                 div()
                     .flex()
                     .items_center()
-                    .gap(sp(1.5))
+                    .gap(sp(3.))
                     .min_w_0()
-                    .ui_text(theme, TextSize::Sm, weight::NORMAL)
-                    .child(div().text_color(c.muted_foreground).child(t!("Settings")))
-                    .child(div().text_color(c.muted_foreground).child("/"))
-                    .child(div().truncate().font_weight(weight::MEDIUM).text_color(c.foreground()).child(self.path.section_label())),
+                    .ui_text(theme, TextSize::Sm, weight::MEDIUM)
+                    .child(div().flex_none().text_color(c.muted_foreground).child(t!("Settings")))
+                    .child(div().flex_none().font_weight(weight::NORMAL).text_color(c.icon_muted).child("/"))
+                    .child(div().min_w_0().truncate().text_color(c.foreground()).child(self.path.section_label())),
             )
             .child(
                 div().ml_auto().flex().items_center().gap(sp(1.)).children(SettingsPages::restore_button(&self.pages, cx)).child(
@@ -390,6 +396,7 @@ impl SettingsRoute {
                     .min_h_0()
                     .overflow_y_scroll()
                     .track_scroll(&self.scroll)
+                    .px(px(SCROLLBAR_GUTTER))
                     .child(body),
             )
     }
@@ -412,9 +419,19 @@ impl Render for SettingsRoute {
             .key_context("SettingsRoute")
             .on_key_down(cx.listener(move |this, event: &gpui_kit::KeyDownEvent, window, cx| {
                 let keys = &event.keystroke;
-                let find = keys.key == "f" && (keys.modifiers.platform || keys.modifiers.control) && !keys.modifiers.alt;
+                let find = keys.key == "f"
+                    && (keys.modifiers.platform || keys.modifiers.control)
+                    && !keys.modifiers.alt
+                    && !keys.modifiers.shift;
+                // "/" focuses search unless a text field has focus; only the
+                // modal itself (or nothing) holding focus means none does.
+                let slash = keys.key == "/"
+                    && !keys.modifiers.platform
+                    && !keys.modifiers.control
+                    && !keys.modifiers.alt
+                    && window.focused(cx).is_none_or(|focused| focused == this.focus);
                 let searching = !this.query.trim().is_empty();
-                if find {
+                if find || slash {
                     search.update(cx, |state, cx| state.focus(window, cx));
                     cx.stop_propagation();
                 } else if keys.key == "escape" && searching {

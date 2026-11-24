@@ -8,7 +8,7 @@ use gpui_kit::{
 
 use super::{ControlState, DISABLED_OPACITY, TextStyleExt as _, control_highlight, focus_ring_inset, BORDER};
 use crate::appearance_fonts::{TextSize, weight};
-use crate::components::icons::{Icon, IconName, IconSize};
+use crate::components::icons::{Icon, IconName, IconSize, IconSource};
 use crate::theme_color::with_alpha;
 use crate::theme_tokens::Shadows;
 use crate::{ActiveAppTheme as _, AppTheme};
@@ -367,7 +367,7 @@ fn apply(style: StyleRefinement, paint: &Paint) -> StyleRefinement {
 pub struct Button {
     id: ElementId,
     label: Option<SharedString>,
-    icon: Option<IconName>,
+    icon: Option<IconSource>,
     trailing_icon: Option<IconName>,
     variant: ButtonVariant,
     size: ButtonSize,
@@ -400,8 +400,9 @@ impl Button {
         self
     }
 
-    pub fn icon(mut self, icon: IconName) -> Self {
-        self.icon = Some(icon);
+    /// A Lucide icon or a brand mark before the label.
+    pub fn icon(mut self, icon: impl Into<IconSource>) -> Self {
+        self.icon = Some(icon.into());
         self
     }
 
@@ -471,7 +472,7 @@ impl RenderOnce for Button {
         let ring = focus_ring_inset(theme, BORDER);
         let text_weight = weight::MEDIUM;
         let icon_margin = if self.size.is_icon() { px(0.) } else { px(-2.) };
-        let icon = |name: IconName| {
+        let icon = |name: IconSource| {
             div().mx(icon_margin).child(
                 Icon::new(name)
                     .size(IconSize::Custom(spec.icon))
@@ -506,7 +507,7 @@ impl RenderOnce for Button {
         button
             .children(self.icon.map(icon))
             .children(self.label)
-            .children(self.trailing_icon.map(icon))
+            .children(self.trailing_icon.map(|name| icon(name.into())))
             .when(disabled, |b| b.opacity(DISABLED_OPACITY))
             .when(live, |b| {
                 b.cursor_pointer()

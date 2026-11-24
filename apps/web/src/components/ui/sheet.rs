@@ -62,7 +62,7 @@ impl RenderOnce for SheetSurface {
             .h_full()
             .w_full()
             .bg(c.popover())
-            .text_color(c.foreground())
+            .text_color(theme.foregrounds.popover)
             .border_color(c.border)
             .map(|s| match self.side {
                 SheetSide::Left => s.border_r_1(),

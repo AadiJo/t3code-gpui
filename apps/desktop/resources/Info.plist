@@ -24,5 +24,16 @@
     <true/>
     <key>NSSupportsAutomaticGraphicsSwitching</key>
     <true/>
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLName</key>
+            <string>com.t3code.gpui</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>t3code-gpui</string>
+            </array>
+        </dict>
+    </array>
 </dict>
 </plist>

@@ -21,7 +21,7 @@ use gpui_kit::{
 };
 
 use crate::components::chat::composer_theme::{
-    CODE_FONT_SIZE, CODE_LINE_HEIGHT, ComposerColors, EDITOR_MAX_HEIGHT, EDITOR_MIN_HEIGHT, MONO_FONT_FAMILY,
+    ComposerColors, EDITOR_MAX_HEIGHT, EDITOR_MIN_HEIGHT, MONO_FONT_FAMILY,
     PROMPT_FONT_SIZE, PROMPT_LINE_HEIGHT, UI_FONT_FAMILY,
 };
 use crate::components::composer_prompt_editor::{ComposerPromptEditor, Doc, DocLine, LineParse};
@@ -73,6 +73,12 @@ pub struct DisplayLine {
     /// A rule drawn as a line instead of text.
     pub rule: bool,
     pub code_block: Option<usize>,
+    /// Space kept free at the right edge (code block padding).
+    pub right_inset: Pixels,
+    /// A code block's language icon, drawn before the header label.
+    pub header_icon: Option<crate::pierre_icons::PierreIcon>,
+    /// A closing fence hidden while the caret is elsewhere: no height.
+    pub collapsed: bool,
     /// The line shaped at its last wrap width, reused while the line and width are unchanged.
     pub shaped: RefCell<Option<(Pixels, Rc<WrappedLine>)>>,
 }
@@ -230,13 +236,39 @@ fn build_display_line(line: &DocLine, ctx: &BuildCtx<'_>) -> DisplayLine {
     let mut code_block = None;
     let caret_on_line = ctx.focused && ctx.active.is_some();
 
-    // Code lines: monospace, highlighted, no inline parsing.
+    // Code lines: monospace, highlighted, no inline parsing. The fences are
+    // hidden: the opening fence draws as the block's language header, the
+    // closing one collapses, unless the caret is on it.
     if ctx.rich && line.kind.is_code() {
         code_block = line.kind.code_block();
-        font_size = CODE_FONT_SIZE;
-        line_height = CODE_LINE_HEIGHT;
         let mono = RunStyle { mono: true, color: c.code_foreground, ..base };
-        match (&line.kind, ctx.code) {
+        let code_inset = px(1.) + c.rem * 0.75;
+        let mut display = match (&line.kind, ctx.code) {
+            (LineKind::FenceOpen { .. }, _) if caret_on_line => {
+                b.text(0..text.len(), text, RunStyle { color: c.muted_foreground, ..mono });
+                finish(b, line, c.rem * 0.75, c.rem * 1.5, false, false, code_block)
+            }
+            (LineKind::FenceOpen { .. }, _) => {
+                let language = crate::composer_code_languages::language_of_info_string(text.trim_start_matches(['`', '~']));
+                let label = crate::composer_code_languages::code_language_label(language);
+                let style = RunStyle { color: c.muted_foreground, weight: FontWeight::MEDIUM, ..base };
+                b.atom(0..text.len(), &label, style, None);
+                let mut d = finish(b, line, c.rem * 0.75, c.rem * 1.5, false, false, code_block);
+                let file = if language.is_empty() {
+                    "file.txt".to_owned()
+                } else {
+                    crate::components::chat_markdown::synthetic_file_name(language)
+                };
+                d.header_icon = Some(crate::pierre_icons::resolve_file_icon(&file));
+                d.indent = code_inset + px(16.);
+                return d;
+            }
+            (LineKind::FenceClose { .. }, _) if !caret_on_line => {
+                b.hidden(0..text.len());
+                let mut d = finish(b, line, c.code_font_size, px(0.), false, false, code_block);
+                d.collapsed = true;
+                return d;
+            }
             (LineKind::Code { .. }, Some(spans)) if !spans.is_empty() => {
                 let mut at = 0;
                 for span in spans {
@@ -250,14 +282,23 @@ fn build_display_line(line: &DocLine, ctx: &BuildCtx<'_>) -> DisplayLine {
                 if at < text.len() {
                     b.text(at..text.len(), &text[at..], mono);
                 }
+                finish(b, line, c.code_font_size, c.code_font_size * 1.375, false, false, code_block)
             }
-            (LineKind::Code { .. }, _) => b.text(0..text.len(), text, mono),
-            _ => b.text(0..text.len(), text, RunStyle { color: c.code_foreground.opacity(0.72), ..mono }),
+            (LineKind::Code { .. }, _) => {
+                b.text(0..text.len(), text, mono);
+                finish(b, line, c.code_font_size, c.code_font_size * 1.375, false, false, code_block)
+            }
+            _ => {
+                b.text(0..text.len(), text, RunStyle { color: c.code_foreground.opacity(0.72), ..mono });
+                finish(b, line, c.code_font_size, c.code_font_size * 1.375, false, false, code_block)
+            }
+        };
+        if display.segs.is_empty() {
+            display.segs.push(Seg { src: 0..0, disp: 0..0, atom: false });
         }
-        if b.segs.is_empty() {
-            b.hidden(0..0);
-        }
-        return finish(b, line, font_size, line_height, false, false, code_block);
+        display.indent = code_inset;
+        display.right_inset = code_inset;
+        return display;
     }
 
     let mut content_start = 0;
@@ -391,6 +432,9 @@ fn build_display_line(line: &DocLine, ctx: &BuildCtx<'_>) -> DisplayLine {
                 let gap = at..gap_end;
                 if delimiter_visible(&gap) {
                     b.text(gap.clone(), &text[gap.clone()], marker_style);
+                } else if !gap.is_empty() && text[gap.clone()].bytes().all(|c| c == b'`') {
+                    // Inline code's 0.25em side padding: a thin space stands in for the hidden backticks.
+                    b.atom(gap.clone(), "\u{2009}", base, None);
                 } else {
                     b.hidden(gap.clone());
                 }
@@ -428,6 +472,9 @@ fn finish(
         quote,
         rule,
         code_block,
+        right_inset: px(0.),
+        header_icon: None,
+        collapsed: false,
         shaped: RefCell::new(None),
     }
 }
@@ -441,8 +488,11 @@ pub struct DisplayCache {
 
 /// A line placed in the editor's content.
 pub struct LaidLine {
+    /// Top of the line's text, below its spacing.
     pub y: Pixels,
     pub height: Pixels,
+    /// Spacing after the text, before the next line's spacing.
+    pub below: Pixels,
     pub wrapped: Rc<WrappedLine>,
     pub display: Rc<DisplayLine>,
     pub source_start: usize,
@@ -539,7 +589,8 @@ impl EditorLayout {
         let line = self
             .lines
             .iter()
-            .find(|l| p.y < l.y + l.height)
+            .filter(|l| !l.display.collapsed)
+            .find(|l| p.y < l.y + l.height + l.below)
             .or(self.lines.last())?;
         let disp = line.disp_at(point(p.x, (p.y - line.y).max(px(0.))), self.wrap_width);
         Some(line.source_start + line.display.src_for_disp(disp))
@@ -623,13 +674,16 @@ fn display_lines(editor: &ComposerPromptEditor, colors: &ComposerColors, focused
             };
             // Only lines with markers, chips or a rule care where the caret is.
             let caret_matters = rich
-                && (line.parse.pieces.iter().any(|p| !p.marks.is_empty()) || matches!(line.kind, LineKind::Rule));
+                && (line.parse.pieces.iter().any(|p| !p.marks.is_empty())
+                    || matches!(line.kind, LineKind::Rule | LineKind::FenceOpen { .. } | LineKind::FenceClose { .. }));
             let mut h = std::collections::hash_map::DefaultHasher::new();
             Arc::as_ptr(&line.parse).hash(&mut h);
             line.kind.hash(&mut h);
             line.direction.hash(&mut h);
             rich.hash(&mut h);
             colors.is_dark().hash(&mut h);
+            f32::from(colors.rem).to_bits().hash(&mut h);
+            f32::from(colors.code_font_size).to_bits().hash(&mut h);
             if caret_matters {
                 active.hash(&mut h);
             }
@@ -660,14 +714,87 @@ fn display_lines(editor: &ComposerPromptEditor, colors: &ComposerColors, focused
     lines
 }
 
+/// Space above and below a line's text.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct LineSpace {
+    pub above: Pixels,
+    pub below: Pixels,
+}
+
+/// Which margin group a line's block belongs to; neighbours in one group share margins.
+#[derive(PartialEq)]
+enum MarginGroup {
+    None,
+    Heading,
+    List,
+    Quote,
+    Rule,
+    Code(usize),
+}
+
+/// The web composer's block spacing (`index.css` `.composer-tiptap`): lists,
+/// quotes, rules and code blocks have 0.65rem margins, headings 1.25rem above
+/// and 0.5rem below, adjacent margins collapse, and the draft's first block
+/// has none above; only a code block keeps its margin below at the end. A code block adds its border and padding: 1px + 0.375rem
+/// above the header, 0.25rem above the code, 0.5rem + 1px below it.
+fn line_spacing(doc: &Doc, lines: &[Rc<DisplayLine>], rich: bool, rem: Pixels) -> Vec<LineSpace> {
+    let mut space = vec![LineSpace::default(); lines.len()];
+    if !rich {
+        return space;
+    }
+    let group = |i: usize| match doc.lines.get(i).map(|l| &l.kind) {
+        Some(LineKind::Heading { .. }) => MarginGroup::Heading,
+        Some(LineKind::ListItem { .. }) => MarginGroup::List,
+        Some(LineKind::Quote { .. }) => MarginGroup::Quote,
+        Some(LineKind::Rule) => MarginGroup::Rule,
+        Some(kind) => kind.code_block().map_or(MarginGroup::None, MarginGroup::Code),
+        None => MarginGroup::None,
+    };
+    let margins = |g: &MarginGroup| match g {
+        MarginGroup::None => (px(0.), px(0.)),
+        MarginGroup::Heading => (rem * 1.25, rem * 0.5),
+        _ => (rem * 0.65, rem * 0.65),
+    };
+    let visible = |i: usize| lines.get(i).is_some_and(|l| !l.collapsed);
+    for i in 0..lines.len() {
+        let g = group(i);
+        if i > 0 {
+            let prev = group(i - 1);
+            let joined = g == prev && !matches!(g, MarginGroup::Heading | MarginGroup::Rule | MarginGroup::None);
+            if !joined {
+                space[i].above = margins(&prev).1.max(margins(&g).0);
+            }
+        }
+        if let MarginGroup::Code(block) = g {
+            let kind = &doc.lines[i].kind;
+            if matches!(kind, LineKind::FenceOpen { .. }) {
+                space[i].above += px(1.) + rem * 0.375;
+            } else if i > 0 && matches!(doc.lines[i - 1].kind, LineKind::FenceOpen { .. }) {
+                space[i].above += rem * 0.25;
+            }
+            let next_visible = (i + 1..lines.len()).find(|j| visible(*j));
+            let last = visible(i) && next_visible.is_none_or(|j| group(j) != MarginGroup::Code(block));
+            if last {
+                space[i].below += rem * 0.5 + px(1.);
+                // The node view keeps its bottom margin when it ends the draft
+                // (the capture's textbox ends 0.65rem + 4px below the box).
+                if next_visible.is_none() {
+                    space[i].below += rem * 0.65;
+                }
+            }
+        }
+    }
+    space
+}
+
 /// Shapes every line at a wrap width. A line keeps its shaped result across
 /// frames, so a keystroke shapes only the line it changed.
-fn shape(lines: &[Rc<DisplayLine>], width: Pixels, window: &mut Window) -> (Vec<Rc<WrappedLine>>, Pixels) {
-    let mut total = px(0.);
+fn shape(lines: &[Rc<DisplayLine>], space: &[LineSpace], width: Pixels, window: &mut Window) -> (Vec<Rc<WrappedLine>>, Pixels) {
+    let mut total = space.iter().fold(px(0.), |a, s| a + s.above + s.below);
     let shaped = lines
         .iter()
         .map(|line| {
-            let wrap = (width - line.indent).max(px(1.));
+            let wrap = (width - line.indent - line.right_inset).max(px(1.));
             let cached = line.shaped.borrow().as_ref().filter(|(w, _)| *w == wrap).map(|(_, l)| l.clone());
             let wrapped = cached.unwrap_or_else(|| {
                 let wrapped = Rc::new(if line.text.is_empty() {
@@ -695,6 +822,7 @@ fn shape(lines: &[Rc<DisplayLine>], width: Pixels, window: &mut Window) -> (Vec<
 #[derive(Default)]
 pub struct MeasureState {
     lines: Vec<Rc<DisplayLine>>,
+    space: Vec<LineSpace>,
     shaped: Option<(Pixels, Vec<Rc<WrappedLine>>, Pixels)>,
     placeholder: Option<(Pixels, WrappedLine)>,
 }
@@ -737,7 +865,8 @@ impl Element for PromptEditorElement {
         let last_width = editor.layout.borrow().as_ref().map_or(px(600.), |l| l.wrap_width);
         let show_placeholder = editor.text().is_empty();
         let placeholder: SharedString = editor.placeholder.clone();
-        let state = Rc::new(RefCell::new(MeasureState { lines, shaped: None, placeholder: None }));
+        let space = line_spacing(&editor.doc, &lines, editor.rich_text, colors.rem);
+        let state = Rc::new(RefCell::new(MeasureState { lines, space, shaped: None, placeholder: None }));
         let measure_state = state.clone();
         let mut style = Style::default();
         style.size.width = relative(1.).into();
@@ -749,7 +878,7 @@ impl Element for PromptEditorElement {
                 _ => last_width,
             });
             let mut state = measure_state.borrow_mut();
-            let (shaped, height) = shape(&state.lines, width, window);
+            let (shaped, height) = shape(&state.lines, &state.space, width, window);
             let mut height = height;
             if show_placeholder {
                 let run = TextRun { len: placeholder.len(), font: font(UI_FONT_FAMILY), color: colors.placeholder, background_color: None, underline: None, strikethrough: None };
@@ -780,7 +909,7 @@ impl Element for PromptEditorElement {
         let mut measured = state.borrow_mut();
         let width = bounds.size.width;
         if measured.shaped.as_ref().is_none_or(|(w, ..)| *w != width) {
-            let (shaped, height) = shape(&measured.lines, width, window);
+            let (shaped, height) = shape(&measured.lines, &measured.space, width, window);
             measured.shaped = Some((width, shaped, height));
         }
         let (_, shaped, content_height) = measured.shaped.take().unwrap_or_default();
@@ -791,10 +920,12 @@ impl Element for PromptEditorElement {
             .lines
             .iter()
             .zip(shaped)
-            .map(|(display, wrapped)| {
+            .zip(measured.space.iter())
+            .map(|((display, wrapped), space)| {
                 let height = display.line_height * (wrapped.wrap_boundaries().len() + 1) as f32;
-                let laid = LaidLine { y, height, wrapped, display: display.clone(), source_start: source_lines.next().unwrap_or(0) };
-                y += height;
+                y += space.above;
+                let laid = LaidLine { y, height, below: space.below, wrapped, display: display.clone(), source_start: source_lines.next().unwrap_or(0) };
+                y += height + space.below;
                 laid
             })
             .collect();
@@ -857,17 +988,23 @@ impl Element for PromptEditorElement {
         let visible = scroll_y..scroll_y + bounds.size.height;
 
         window.with_content_mask(Some(gpui_kit::ContentMask { bounds }), |window| {
-            // Code block backgrounds span their lines.
+            // Code blocks: a rounded, bordered box from the header to the last
+            // visible line (`MarkdownCodeBlockFrame`: rounded-lg, 1px border,
+            // header pt-1.5, pre pt-1 pb-2).
             let mut block_spans: HashMap<usize, (Pixels, Pixels)> = HashMap::new();
-            for line in &layout.lines {
+            for line in layout.lines.iter().filter(|l| !l.display.collapsed) {
                 if let Some(block) = line.display.code_block {
-                    let entry = block_spans.entry(block).or_insert((line.y, line.y + line.height));
-                    entry.1 = line.y + line.height;
+                    let top = line.y - px(1.) - c.rem * 0.375;
+                    let bottom = line.y + line.height + c.rem * 0.5 + px(1.);
+                    let entry = block_spans.entry(block).or_insert((top, bottom));
+                    entry.1 = bottom;
                 }
             }
             for (top, bottom) in block_spans.values() {
-                let rect = Bounds::from_corners(origin + point(px(-4.), *top - px(4.)), origin + point(layout.wrap_width + px(4.), *bottom + px(4.)));
-                window.paint_quad(fill(rect, c.code_background).corner_radii(px(8.)));
+                let rect = Bounds::from_corners(origin + point(px(0.), *top), origin + point(layout.wrap_width, *bottom));
+                window.paint_quad(
+                    fill(rect, c.code_background).corner_radii(px(8.)).border_widths(px(1.)).border_color(c.border),
+                );
             }
             for (index, line) in layout.lines.iter().enumerate() {
                 if line.y + line.height < visible.start || line.y > visible.end {
@@ -886,9 +1023,15 @@ impl Element for PromptEditorElement {
                     window.paint_quad(fill(rule, c.muted_foreground));
                 }
                 // Inline code boxes.
+                // `.composer-tiptap :not(pre) > code`: 0.92em, padding 0.05em 0.25em,
+                // radius 0.3em; the chip is the code font's content box plus padding.
+                let em = line.display.font_size * 0.92;
                 for code in &line.display.code_boxes {
                     paint_range_boxes(line, code.clone(), origin, layout.wrap_width, window, |b| {
-                        fill(b, c.muted_foreground.opacity(0.12)).corner_radii(px(4.))
+                        let h = em * 1.11;
+                        let top = b.top() + (b.size.height - h) / 2. + px(1.);
+                        let chip = Bounds::new(point(b.left() - em * 0.25, top), size(b.size.width + em * 0.5, h));
+                        fill(chip, c.muted_foreground.opacity(0.12)).corner_radii(em * 0.3)
                     });
                 }
                 // Selection.
@@ -910,6 +1053,19 @@ impl Element for PromptEditorElement {
                 let align = if line.display.direction == TextDirection::Rtl { TextAlign::Right } else { TextAlign::Left };
                 let align_bounds = Bounds::new(line_origin, size(layout.wrap_width - line.display.indent, line.height));
                 line.wrapped.paint(line_origin, lh, align, Some(align_bounds), window, cx).ok();
+                if let Some(icon) = line.display.header_icon {
+                    let s = px(14.);
+                    let top = line.y + (lh - s) / 2.;
+                    let icon_box = Bounds::new(origin + point(line.display.indent - px(16.), top), size(s, s));
+                    for layer in icon.layers() {
+                        let color = layer.tint.color(c.appearance, c.muted_foreground);
+                        window.paint_svg(icon_box, layer.asset.into(), None, TransformationMatrix::unit(), color, cx).ok();
+                    }
+                    let label_end = line.wrapped.unwrapped_layout.width;
+                    let chevron = Bounds::new(origin + point(line.display.indent + label_end + px(2.), top), size(s, s));
+                    let ink = c.muted_foreground.opacity(0.6);
+                    window.paint_svg(chevron, IconName::ChevronDown.path().into(), None, TransformationMatrix::unit(), ink, cx).ok();
+                }
                 for icon in &line.display.icons {
                     let (row, x) = line.locate(icon.disp, layout.wrap_width);
                     let s = line.display.font_size;

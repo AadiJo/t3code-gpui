@@ -4,9 +4,10 @@
 
 use crate::components::project_favicon::ProjectFavicon;
 use crate::components::icons::{Icon, IconName, IconSize};
+use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    AnyElement, FontWeight, InteractiveElement as _, IntoElement, ParentElement as _, SharedString,
-    Styled as _, div, px,
+    AnyElement, App, ClickEvent, FontWeight, InteractiveElement as _, IntoElement, ParentElement as _, SharedString,
+    StatefulInteractiveElement as _, Styled as _, Window, div, px,
 };
 
 use super::{
@@ -21,6 +22,14 @@ const HEADER_TOGGLE_CLEARANCE: gpui_kit::Pixels = px(96.);
 const CRUMB_GAP: gpui_kit::Pixels = px(12.);
 const PROJECT_CRUMB_GAP: gpui_kit::Pixels = px(6.);
 
+/// The thread title as the "Thread actions for <title>" menu trigger, with
+/// the open menu drawn below it.
+pub struct ThreadActionsTrigger {
+    pub open: bool,
+    pub on_click: Box<dyn Fn(&ClickEvent, &mut Window, &mut App)>,
+    pub menu: Option<AnyElement>,
+}
+
 /// The header row: project crumb, separator, thread title. `height` is the
 /// window's topbar height; `leading_inset` clears the floating sidebar
 /// toggle while the sidebar is collapsed.
@@ -30,6 +39,7 @@ pub fn chat_header(
     height: gpui_kit::Pixels,
     leading_inset: gpui_kit::Pixels,
     colors: &ChatColors,
+    actions: Option<ThreadActionsTrigger>,
 ) -> AnyElement {
     div()
         .flex_none()
@@ -66,12 +76,17 @@ pub fn chat_header(
                         .child(project.clone()),
                 )
                 .child(div().font_weight(FontWeight::NORMAL).text_color(colors.theme.icon_muted).child("/"))
-                .child(
+                .child({
+                    let open = actions.as_ref().is_some_and(|a| a.open);
+                    let (on_click, menu) = actions.map(|a| (a.on_click, a.menu)).unzip();
                     div()
                         .id("thread-title")
                         .group("thread-title")
+                        .relative()
                         .flex()
                         .min_w_0()
+                        // The trigger button is 22px tall; the menu opens 4px below it.
+                        .h(px(22.))
                         .items_center()
                         .gap_1()
                         .cursor_pointer()
@@ -79,11 +94,13 @@ pub fn chat_header(
                         .child(div().min_w_0().truncate().child(title.clone()))
                         .child(
                             div()
-                                .opacity(0.)
+                                .opacity(if open { 1. } else { 0. })
                                 .group_hover("thread-title", |s| s.opacity(1.))
                                 .child(Icon::new(IconName::ChevronDown).size(IconSize::Custom(px(14.))).color(colors.theme.muted_foreground)),
-                        ),
-                ),
+                        )
+                        .when_some(on_click, |d, on_click| d.on_click(move |e, w, cx| on_click(e, w, cx)))
+                        .children(menu.flatten())
+                }),
         )
         .into_any_element()
 }

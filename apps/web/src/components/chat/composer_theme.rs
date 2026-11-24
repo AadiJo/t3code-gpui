@@ -79,6 +79,10 @@ pub fn mix(color: Hsla, base: Hsla, amount: f32) -> Hsla {
 #[derive(Clone, Copy, Debug)]
 pub struct ComposerColors {
     pub appearance: Appearance,
+    /// The root font size (Interface size setting) that rem-based metrics scale with.
+    pub rem: Pixels,
+    /// Code size setting (`--font-size-code`), used by composer code blocks.
+    pub code_font_size: Pixels,
     pub canvas: Hsla,
     pub foreground: Hsla,
     pub muted_foreground: Hsla,
@@ -115,6 +119,8 @@ impl ComposerColors {
         let dark = theme.appearance == Appearance::Dark;
         Self {
             appearance: theme.appearance,
+            rem: theme.rem(1.),
+            code_font_size: px(theme.fonts.code),
             canvas: c.canvas,
             foreground: c.text,
             muted_foreground: c.muted_foreground,

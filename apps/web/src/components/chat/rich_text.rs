@@ -21,6 +21,8 @@ pub struct TextBox {
     /// Horizontal padding outside the glyphs.
     pub pad_x: Pixels,
     pub radius: Pixels,
+    /// Box height in ems of the paragraph's font, centred on the line; `None` fills the line.
+    pub height_em: Option<f32>,
 }
 
 /// An icon painted over a placeholder glyph, such as the file icon of a file chip.
@@ -161,11 +163,20 @@ impl Element for RichText {
     ) {
         let layout = self.styled.layout().clone();
         let line_height = layout.line_height();
+        let em = window.text_style().font_size.to_pixels(window.rem_size());
         for text_box in self.boxes.iter() {
             for quad in range_quads(&layout, text_box.range.clone(), line_height) {
+                let (top, bottom) = match text_box.height_em {
+                    Some(h) => {
+                        let h = em * h;
+                        let top = quad.top() + (quad.size.height - h) / 2. + px(0.5);
+                        (top, top + h)
+                    }
+                    None => (quad.top(), quad.bottom()),
+                };
                 let quad = Bounds::from_corners(
-                    point(quad.left() - text_box.pad_x, quad.top()),
-                    point(quad.right() + text_box.pad_x, quad.bottom()),
+                    point(quad.left() - text_box.pad_x, top),
+                    point(quad.right() + text_box.pad_x, bottom),
                 );
                 window.paint_quad(fill(quad, text_box.color).corner_radii(Corners::all(text_box.radius)));
             }

@@ -1,4 +1,6 @@
 pub mod add_project_to_machine_dialog;
+pub mod animated_height;
+pub mod animated_width;
 pub mod app_sidebar_layout;
 pub mod background_thread_announcer;
 pub mod chat;
@@ -44,6 +46,7 @@ pub mod thread_notification_coordinator;
 pub mod thread_notification_coordinator_logic;
 pub mod thread_terminal_drawer;
 pub mod sidebar_logic;
+pub mod thread_hover_card;
 pub mod thread_status_indicators;
 pub mod ui;
 pub mod usage;

@@ -23,7 +23,7 @@ use anyhow::{Context as _, bail, ensure};
 use gpui_kit::test::TestWindowExt as _;
 use gpui_kit::*;
 use t3code_client_runtime::platform::{ClientPresentation, FileSecretStore};
-use t3code_web::app_root::{AppRootOptions, WindowRoot, local_shell_backend, local_script_backend};
+use t3code_web::app_root::{AppRootOptions, DataSource, WindowRoot};
 use t3code_web::connection::shell::EnvironmentShell;
 use t3code_web::connection::{ConnectionRuntime, RuntimeConfig};
 use t3code_web::components::command_palette::CommandPalette;
@@ -90,13 +90,7 @@ impl Run {
             ThemeSettings::set_mode(mode, cx);
             ConnectionRuntime::init(config, cx)
         })?;
-        let options = AppRootOptions {
-            store,
-            platform: TitlebarPlatform::Overlay,
-            state_dir: state,
-            terminal_backend: local_shell_backend(),
-            script_backend: local_script_backend(),
-        };
+        let options = AppRootOptions { data: DataSource::Fixtures(store), platform: TitlebarPlatform::Overlay, state_dir: state };
         let (window, parts) = cx.update(|cx| {
             let window_options = WindowOptions {
                 window_bounds: Some(WindowBounds::centered(None, size(px(1100.), px(780.)), cx)),
@@ -108,6 +102,7 @@ impl Run {
         })?;
         let WindowRoot { shortcuts, shell, app: root } = parts;
         cx.update(|cx| {
+            ThemeSettings::apply_env_overrides(cx);
             let layout = root.read(cx).layout().clone();
             layout.update(cx, |l, _| {
                 l.force_caption_buttons(true);
@@ -657,7 +652,7 @@ impl Run {
 
     fn store(&mut self) -> Entity<FixtureStore> {
         let root = self.root.clone();
-        self.cx.update(|cx| root.read(cx).store().clone())
+        self.cx.update(|cx| root.read(cx).store().expect("fixture window").clone())
     }
 
     fn go(&mut self, key: &ThreadKey) {
@@ -885,13 +880,22 @@ fn mount(r: &mut Run) -> anyhow::Result<()> {
     r.shot("script-terminal")?;
     r.press("mod-shift-b");
     r.press("mod-o");
-    let calls = r.cx.update(|cx| root.read(cx).thread_view().read(cx).git_calls());
+    let calls = r.cx.update(|cx| {
+        let root = root.read(cx);
+        let key = root.thread_view().read(cx).shown_key().unwrap_or_default();
+        root.fixture_data().map(|data| data.git_calls(&key)).unwrap_or_default()
+    });
     r.check("mod+o opens the checkout in the favorite editor", calls.iter().any(|c| c.contains("pen")), format!("{calls:?}"));
     r.press("mod-shift-b");
     let open = r.cx.update(|cx| root.read(cx).thread_view().read(cx).details_open());
     r.check("and mod+shift+b closes it", !open, "");
 
-    // The branch strip under the composer: pick another branch.
+    // The branch strip under the composer: pick another branch. A started
+    // thread shows the strip only with "persist context strip" on, as the fork does.
+    r.cx.update(|cx| {
+        t3code_web::hooks::use_settings::ClientSettingsStore::update(cx, |s| s.persist_composer_context_strip = true)
+    });
+    r.frame();
     r.click_id("strip-branch");
     r.shot("branch-picker")?;
     r.type_text("feat");
@@ -901,6 +905,10 @@ fn mount(r: &mut Run) -> anyhow::Result<()> {
     let branch = r.cx.update(|cx| store.read(cx).snapshot(None).threads.iter().find(|t| t.key == with_diffs).and_then(|t| t.branch.clone()));
     r.check("picking a branch updates the thread", branch.as_deref().is_some_and(|b| b != "main"), format!("{branch:?}"));
     r.shot("branch-changed")?;
+    r.cx.update(|cx| {
+        t3code_web::hooks::use_settings::ClientSettingsStore::update(cx, |s| s.persist_composer_context_strip = false)
+    });
+    r.frame();
 
     // Timeline actions: copy, reply, edit from here, fork.
     let rows = r.rows();
@@ -1225,7 +1233,7 @@ fn bench(out: PathBuf) -> anyhow::Result<String> {
     let keys: Vec<ThreadKey> = {
         let root = r.root.clone();
         r.cx.update(|cx| {
-            let mut keys: Vec<_> = root.read(cx).store().read(cx).thread_keys().cloned().collect();
+            let mut keys: Vec<_> = root.read(cx).store().expect("fixture window").read(cx).thread_keys().cloned().collect();
             keys.sort_by_key(|k| k.thread_id.0.trim_start_matches('t').parse::<usize>().unwrap_or(0));
             keys
         })
@@ -1237,7 +1245,7 @@ fn bench(out: PathBuf) -> anyhow::Result<String> {
     let root = r.root.clone();
     let gen_start = Instant::now();
     r.cx.update(|cx| {
-        let store = root.read(cx).store().clone();
+        let store = root.read(cx).store().expect("fixture window").clone();
         store.update(cx, |store, _| {
             for key in long.iter().chain(&short) {
                 store.thread_view(&ThreadTarget::Server(key.clone()));
@@ -1294,7 +1302,7 @@ fn bench(out: PathBuf) -> anyhow::Result<String> {
         let root = r.root.clone();
         let target = ThreadTarget::Server(key.clone());
         let (a, b) = r.cx.update(|cx| {
-            let store = root.read(cx).store().clone();
+            let store = root.read(cx).store().expect("fixture window").clone();
             let start = Instant::now();
             let view = store.update(cx, |store, _| store.thread_view(&target)).expect("thread");
             let a = start.elapsed().as_secs_f64() * 1000.;

@@ -54,6 +54,7 @@ impl TimelineBuilder {
                 input_intent: intent,
                 sent_by_app: false,
                 guest: None,
+                from_agent: None,
             }),
         });
         MessageId(id)
@@ -76,6 +77,7 @@ impl TimelineBuilder {
                 input_intent: InputIntent::Prompt,
                 sent_by_app: false,
                 guest: None,
+                from_agent: None,
             }),
         });
         MessageId(id)
@@ -285,6 +287,12 @@ pub fn reference_thread(prefix: &str) -> TimelineInput {
     for (ago, prompt) in prompts {
         let run = b.run_id();
         b.user(ts(ago), prompt, InputIntent::Prompt);
+        // The capture's opening prompt came from another agent: it folds to an "Agent" line.
+        if ago == 300_000
+            && let Some(TimelineEntry { kind: EntryKind::Message(message), .. }) = b.entries.last_mut()
+        {
+            message.from_agent = Some(AgentSender { title: None });
+        }
         let at = |offset: i64| ts(ago - offset);
         b.work(at(400), &run, ToolStatus::Completed, "Thought", WorkItem::Reasoning {
             text: "The user wants a short tour. I will read the manifest, add a small helper, run the tests, and then summarize with some markdown.".into(),

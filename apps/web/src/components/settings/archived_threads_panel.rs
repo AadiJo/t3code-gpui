@@ -151,14 +151,18 @@ impl Render for ArchivedThreadsPanel {
         }
         let this = cx.entity();
         let sections: Vec<AnyElement> = if groups.is_empty() {
-            let (title, description) = if self.loading {
-                (t!("Loading archived threads"), t!("Checking connected environments."))
+            let (title, description, empty) = if self.loading {
+                (t!("Loading archived threads"), t!("Checking connected environments."), false)
             } else if let Some(error) = &self.error {
-                (t!("Could not load archived threads"), error.clone())
+                (t!("Could not load archived threads"), error.clone(), false)
             } else {
-                (t!("No archived threads"), t!("Archived threads will appear here."))
+                (t!("No archived threads"), t!("Archived threads will appear here."), true)
             };
-            vec![SettingsSection::new(setting_title("archive")).child(SettingsRow::new(title).description(description)).into_any_element()]
+            let mut row = SettingsRow::new(title).description(description);
+            if empty {
+                row = row.title_icon(crate::components::icons::IconName::Archive);
+            }
+            vec![SettingsSection::new(setting_title("archive")).child(row).into_any_element()]
         } else {
             groups
                 .into_iter()

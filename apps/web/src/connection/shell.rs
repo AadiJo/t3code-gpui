@@ -102,6 +102,10 @@ impl EnvironmentShell {
             return;
         }
         let settings = cx.new(|cx| SettingsRoute::new(path, window, cx));
+        // The server pages read the environment the window shows.
+        if let Some(pages) = self.app.update(cx, |app, cx| app.server_settings_pages(cx)) {
+            settings.update(cx, |settings, cx| settings.set_server_pages(pages, cx));
+        }
         let subscriptions = [
             cx.subscribe(&settings, |this, _, event: &SettingsRouteEvent, cx| match event {
                 SettingsRouteEvent::Close => this.close_settings(cx),

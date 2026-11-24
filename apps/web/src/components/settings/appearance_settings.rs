@@ -3,22 +3,23 @@
 //! `ThemeImportDialog` (paste a T3 or VS Code theme, or search Open VSX)
 //! and `TypographySettings.tsx`.
 //!
-//! Left out because this app cannot honour them: Contrast (a CSS filter
-//! over every colour), Glass opacity (no backdrop blur), custom theme CSS,
-//! background images, the theme editor, and font smoothing (GPUI picks the
-//! rasteriser's smoothing).
+//! Contrast, Glass opacity and font smoothing write the client settings the
+//! theme reads. Not built: the theme editor (Create theme and Duplicate add
+//! a copy instead of opening it; custom themes have no Edit or Export), the
+//! installed-font picker, and the live font previews under the font rows.
 
 use std::rc::Rc;
 
 use gpui_kit::component::input::{InputEvent, InputState, TextareaState};
-use gpui_kit::component::slider::{Slider, SliderEvent, SliderState};
 use gpui_kit::{
-    TestSupportExt as _, Focusable as _, AnyElement, App, AppContext as _, Context, Entity, Hsla, IntoElement, Render, SharedString, Subscription, Window,
+    TestSupportExt as _, Focusable as _, AnyElement, App, AppContext as _, Context, Entity, Hsla, IntoElement, Pixels, Render, SharedString, Subscription, Window,
     div, prelude::*, px,
 };
 use t3code_contracts::{ChatWidth, EffortDisplay, EnvironmentIdentificationMode};
 
-use super::settings_controls::{client_row, client_select, client_switch, reset_button};
+use super::settings_controls::{SelectWidth, client_row, client_select, client_switch, reset_button, sized_select};
+use super::settings_slider::{SettingsSlider, slider_value};
+use super::theme_sphere::{SphereColors, standard_sphere_colors, theme_sphere};
 use super::settings_layout::{SettingsRow, SettingsSection, page_container};
 use super::settings_panels::advanced_settings;
 use super::settings_search::setting_title;
@@ -90,6 +91,15 @@ impl FontRole {
         }
     }
 
+    /// The input's placeholder: the family the default stack resolves to.
+    fn default_family(self) -> SharedString {
+        match self {
+            Self::Interface | Self::Prompt if cfg!(target_os = "macos") => SharedString::new_static("SF Pro"),
+            Self::Interface | Self::Prompt => t!("System default"),
+            Self::Code | Self::Terminal => crate::appearance_fonts::mono_font_family(),
+        }
+    }
+
     /// `MIN_*_FONT_SIZE`..=`MAX_*_FONT_SIZE`.
     fn range(self) -> (u64, u64) {
         match self {
@@ -112,9 +122,9 @@ struct ImportDialog {
 
 /// The Appearance page.
 pub struct AppearanceSettings {
-    animation: Entity<SliderState>,
     fonts: Vec<Entity<InputState>>,
     advanced_open: bool,
+    typography_advanced_open: bool,
     import: Option<ImportDialog>,
     /// A custom theme waiting for "Remove theme" to be confirmed.
     remove: Option<CatalogTheme>,
@@ -124,19 +134,12 @@ pub struct AppearanceSettings {
 impl AppearanceSettings {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let settings = ClientSettingsStore::get(cx).clone();
-        let animation = cx.new(|_| {
-            SliderState::new().min(0.).max(400.).step(25.).default_value(settings.panel_animation_duration_ms as f32)
-        });
-        let mut subscriptions = vec![cx.subscribe(&animation, |_, _, event: &SliderEvent, cx| {
-            let (SliderEvent::Change(value) | SliderEvent::Release(value)) = event;
-            let ms = value.start().round() as u64;
-            ClientSettingsStore::update(cx, |s| s.panel_animation_duration_ms = ms);
-        })];
+        let mut subscriptions = Vec::new();
         let fonts: Vec<Entity<InputState>> = FontRole::ALL
             .iter()
             .map(|role| {
                 let value = role.family(&settings).to_owned();
-                cx.new(|cx| InputState::new(window, cx).placeholder(t!("System default")).default_value(value))
+                cx.new(|cx| InputState::new(window, cx).placeholder(role.default_family()).default_value(value))
             })
             .collect();
         for (role, input) in FontRole::ALL.iter().zip(&fonts) {
@@ -149,7 +152,7 @@ impl AppearanceSettings {
             }));
         }
         subscriptions.push(cx.observe_global_in::<ClientSettingsStore>(window, |this, window, cx| this.sync_inputs(window, cx)));
-        Self { animation, fonts, advanced_open: false, import: None, remove: None, _subscriptions: subscriptions }
+        Self { fonts, advanced_open: false, typography_advanced_open: false, import: None, remove: None, _subscriptions: subscriptions }
     }
 
     /// Puts reset or imported values into the inputs the user is not typing in.
@@ -161,10 +164,6 @@ impl AppearanceSettings {
             if !focused && input.read(cx).value().as_ref() != wanted {
                 input.update(cx, |state, cx| state.set_value(wanted, window, cx));
             }
-        }
-        let ms = settings.panel_animation_duration_ms as f32;
-        if (self.animation.read(cx).value().start() - ms).abs() > 0.5 {
-            self.animation.update(cx, |state, cx| state.set_value(ms, window, cx));
         }
         cx.notify();
     }
@@ -280,13 +279,14 @@ impl AppearanceSettings {
         let theme = cx.app_theme();
         let c = &theme.colors;
         let mode = ThemeStore::global(cx).appearance_mode();
-        let light = owner_palette(Appearance::Light, cx);
-        let dark = owner_palette(Appearance::Dark, cx);
+        let light = wireframe_colors(Appearance::Light, cx);
+        let dark = wireframe_colors(Appearance::Dark, cx);
         let tile = |m: ThemeMode, label: SharedString, panes: AnyElement| {
             let active = m == mode;
             div()
                 .id(SharedString::from(format!("appearance-mode-{}", mode_slug(m))))
                 .flex_1()
+                .min_w_0()
                 .flex()
                 .flex_col()
                 .gap(theme.sp(1.5))
@@ -294,8 +294,14 @@ impl AppearanceSettings {
                 .rounded(theme.radii.xl)
                 .border_1()
                 .cursor_pointer()
-                .when(active, |d| d.border_2().border_color(c.ring()).bg(with_alpha(c.accent_surface, 0.3)))
-                .when(!active, |d| d.border_color(with_alpha(c.border, 0.7)).bg(with_alpha(c.card(), 0.6)))
+                .relative()
+                .when(active, |d| {
+                    // `ring-2 ring-inset` inside the transparent 1px border.
+                    d.border_color(gpui_kit::transparent_black()).bg(with_alpha(c.accent_surface, 0.3)).child(
+                        div().absolute().inset_0().rounded(theme.radii.xl - px(1.)).shadow(vec![inset_ring(c.ring(), px(2.))]),
+                    )
+                })
+                .when(!active, |d| d.border_color(with_alpha(c.border, 0.7)).bg(with_alpha(c.card(), 0.6)).hover(|s| s.bg(with_alpha(c.accent_surface, 0.1))))
                 .on_click(move |_, _, cx| ThemeStore::set_appearance_mode(m, cx))
                 .child(panes)
                 .child(
@@ -311,13 +317,9 @@ impl AppearanceSettings {
             .flex()
             .gap(theme.sp(3.))
             .w_full()
-            .child(tile(
-                ThemeMode::System,
-                t!("System"),
-                div().flex().child(div().w_1_2().overflow_hidden().child(wireframe(&light, true))).child(div().w_1_2().overflow_hidden().child(wireframe(&dark, false))).into_any_element(),
-            ))
-            .child(tile(ThemeMode::Light, t!("Light"), wireframe(&light, true)))
-            .child(tile(ThemeMode::Dark, t!("Dark"), wireframe(&dark, true)))
+            .child(tile(ThemeMode::System, t!("System"), wireframe(&[(light, Some(Half::Left)), (dark, Some(Half::Right))], cx)))
+            .child(tile(ThemeMode::Light, t!("Light"), wireframe(&[(light, None)], cx)))
+            .child(tile(ThemeMode::Dark, t!("Dark"), wireframe(&[(dark, None)], cx)))
             .into_any_element()
     }
 
@@ -325,7 +327,8 @@ impl AppearanceSettings {
         let theme = cx.app_theme();
         let c = &theme.colors;
         let id = card.id().to_owned();
-        let card_id: Option<String> = (card.document.id != standard_theme().document.id).then(|| id.clone());
+        let standard = card.document.id == standard_theme().document.id;
+        let card_id: Option<String> = (!standard).then(|| id.clone());
         let picked: Vec<Appearance> =
             [Appearance::Light, Appearance::Dark].into_iter().filter(|m| owner_id(*m, cx) == card_id).collect();
         let modes = card.modes();
@@ -346,48 +349,77 @@ impl AppearanceSettings {
                 (Some(id), None) => ThemeStore::set_theme(id, cx),
             }
         };
+        let (ring, backdrop) = (c.background(), mix_oklab(c.card(), 0.6, c.background()));
         let circles = modes.iter().map(|mode| {
             let mode = *mode;
-            let palette = card.document.palette(mode);
+            let colors = if standard {
+                standard_sphere_colors(mode)
+            } else {
+                let palette = card.document.palette(mode);
+                SphereColors { canvas: palette.canvas, accent: palette.accent, message_action: palette.message_action }
+            };
             let is_picked = picked.contains(&mode);
             let card_id = card_id.clone();
             div()
                 .id(SharedString::from(format!("theme-{id}-{}", if mode.is_dark() { "dark" } else { "light" })))
                 .relative()
+                .flex_none()
                 .size(px(68.))
+                .p(theme.sp(1.5))
                 .flex()
                 .items_center()
                 .justify_center()
                 .rounded_full()
                 .cursor_pointer()
-                .when(is_picked, |d| d.border_2().border_color(c.ring()))
                 .tooltip(tooltip(if mode.is_dark() { t!("Use for dark mode only") } else { t!("Use for light mode only") }))
                 .on_click(move |_, _, cx| {
                     cx.stop_propagation();
                     assign_half(mode, card_id.clone(), cx);
                 })
-                .child(preview_circle(&palette, mode, c.background()))
+                .child(theme_sphere(colors, mode, ring, backdrop))
                 .when(is_picked, |d| {
-                    d.child(
-                        div()
-                            .absolute()
-                            .bottom(px(2.))
-                            .right(px(2.))
-                            .size(px(20.))
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .rounded_full()
-                            .border_1()
-                            .border_color(with_alpha(c.border, 0.7))
-                            .bg(c.background())
-                            .child(Icon::new(if mode.is_dark() { IconName::Moon } else { IconName::Sun }).size(IconSize::Xs).color(c.foreground())),
-                    )
+                    d.child(div().absolute().inset_0().rounded_full().shadow(vec![inset_ring(c.ring(), px(2.))]))
+                        .child(
+                            div()
+                                .absolute()
+                                .bottom(theme.sp(0.5))
+                                .right(theme.sp(0.5))
+                                .size(theme.sp(5.))
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .rounded_full()
+                                .border_1()
+                                .border_color(with_alpha(c.border, 0.7))
+                                .bg(c.background())
+                                .shadow(theme.shadows.xs5.clone())
+                                .child(Icon::new(if mode.is_dark() { IconName::Moon } else { IconName::Sun }).size(IconSize::Xs).color(c.foreground())),
+                        )
                 })
         });
         let removable = card.source == ThemeSource::Custom;
         let remove_card = card.clone();
         let remove_handle = cx.entity();
+        let action = |slug: &str, tip: SharedString, icon: IconName| {
+            div().id(SharedString::from(format!("theme-{slug}-tip-{id}"))).tooltip(tooltip(tip)).child(
+                Button::new(SharedString::from(format!("theme-{slug}-{id}"))).variant(ButtonVariant::Ghost).size(ButtonSize::IconXs).icon(icon),
+            )
+        };
+        let duplicate_id = id.clone();
+        let duplicate = div()
+            .id(SharedString::from(format!("theme-duplicate-tip-{id}")))
+            .tooltip(tooltip(t!("Duplicate theme")))
+            .child(
+                Button::new(SharedString::from(format!("theme-duplicate-{id}")))
+                    .variant(ButtonVariant::Ghost)
+                    .size(ButtonSize::IconXs)
+                    .icon(IconName::Copy)
+                    .on_click(move |_, _, cx| {
+                        cx.stop_propagation();
+                        duplicate_theme(&duplicate_id, cx);
+                    }),
+            );
+        let _ = action;
         div()
             .id(SharedString::from(format!("theme-card-{id}")))
             .flex()
@@ -402,7 +434,7 @@ impl AppearanceSettings {
             .tooltip(tooltip(tooltip_text))
             .on_click(use_card)
             .test_support()
-            .child(div().flex().min_h(px(64.)).items_center().justify_center().gap(theme.sp(2.5)).px(theme.sp(3.)).pt(theme.sp(3.)).children(circles))
+            .child(div().flex().min_h(theme.sp(16.)).items_center().justify_center().gap(theme.sp(2.5)).px(theme.sp(3.)).pt(theme.sp(3.)).children(circles))
             .child(
                 div()
                     .flex()
@@ -412,11 +444,11 @@ impl AppearanceSettings {
                     .pb(theme.sp(3.))
                     .pt(theme.sp(2.))
                     .child(div().flex_1().min_w_0().truncate().ui_text(theme, TextSize::Sm, weight::MEDIUM).text_color(c.foreground()).child(SharedString::from(card.document.name.clone())))
-                    .when(removable, |d| {
+                    .child(div().flex().flex_none().items_center().gap(theme.sp(1.)).child(duplicate).when(removable, |d| {
                         d.child(
                             div().id(SharedString::from(format!("theme-remove-tip-{id}"))).tooltip(tooltip(t!("Remove theme"))).child(
                                 Button::new(SharedString::from(format!("theme-remove-{id}")))
-                                    .variant(ButtonVariant::GhostMuted)
+                                    .variant(ButtonVariant::Ghost)
                                     .size(ButtonSize::IconXs)
                                     .icon(IconName::Trash2)
                                     .on_click(move |_, _, cx| {
@@ -428,12 +460,12 @@ impl AppearanceSettings {
                                     }),
                             ),
                         )
-                    }),
+                    })),
             )
             .into_any_element()
     }
 
-    fn render_library(&self, cx: &mut Context<Self>) -> AnyElement {
+    fn render_library(&self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let catalog = ThemeStore::catalog(cx);
         let cards: Vec<AnyElement> = catalog.into_iter().map(|card| self.render_card(card, cx)).collect();
         let tiles = self.render_mode_tiles(cx);
@@ -441,20 +473,29 @@ impl AppearanceSettings {
         let theme = cx.app_theme();
         let c = &theme.colors;
         let heading = |text: SharedString| div().flex().items_center().min_h(theme.sp(7.)).ui_text(theme, TextSize::Base, weight::SEMIBOLD).text_color(c.foreground()).child(text);
+        // `repeat(auto-fit, minmax(min(100%, 16rem), 1fr))` with an 8px gap,
+        // over the page's width (see `settings_content_width`).
+        let gap = theme.sp(2.);
+        let width = settings_group_width(window, cx);
+        let columns = (((width + gap) / (theme.rem(16.) + gap)).floor() as usize).max(1);
         let mut rows = Vec::new();
         let mut iter = cards.into_iter().peekable();
         while iter.peek().is_some() {
-            let row: Vec<AnyElement> = iter.by_ref().take(3).collect();
-            let fill = 3 - row.len();
+            let row: Vec<AnyElement> = iter.by_ref().take(columns).collect();
+            let fill = columns - row.len();
             rows.push(
                 div()
                     .flex()
-                    .gap(theme.sp(2.))
+                    .gap(gap)
                     .children(row.into_iter().map(|card| div().flex_1().min_w_0().child(card)))
                     .children((0..fill).map(|_| div().flex_1()))
                     .into_any_element(),
             );
         }
+        let create = Button::new("theme-create").variant(ButtonVariant::Outline).size(ButtonSize::Xs).icon(IconName::Paintbrush).label(t!("Create theme")).on_click(|_, _, cx| {
+            let seed = owner_id(cx.app_theme().appearance, cx).unwrap_or_else(|| standard_theme().id().to_owned());
+            duplicate_theme(&seed, cx);
+        });
         div()
             .flex()
             .flex_col()
@@ -465,15 +506,25 @@ impl AppearanceSettings {
                 div()
                     .flex()
                     .flex_wrap()
+                    .min_h(theme.sp(8.))
                     .items_center()
                     .justify_between()
                     .gap(theme.sp(3.))
                     .px(theme.sp(4.))
                     .pt(theme.sp(5.))
-                    .child(heading(setting_title("theme")))
-                    .child(Button::new("theme-add").variant(ButtonVariant::Outline).size(ButtonSize::Xs).icon(IconName::Plus).label(t!("Add theme")).on_click(open)),
+                    .child(div().ui_text(theme, TextSize::Base, weight::SEMIBOLD).text_color(c.foreground()).child(setting_title("theme")))
+                    .child(
+                        div()
+                            .flex()
+                            .flex_wrap()
+                            .items_center()
+                            .justify_end()
+                            .gap(theme.sp(2.))
+                            .child(create)
+                            .child(Button::new("theme-add").variant(ButtonVariant::Outline).size(ButtonSize::Xs).icon(IconName::Plus).label(t!("Add theme")).on_click(open)),
+                    ),
             )
-            .child(div().flex().flex_col().gap(theme.sp(2.)).children(rows))
+            .child(div().flex().flex_col().gap(gap).children(rows))
             .into_any_element()
     }
 
@@ -510,7 +561,7 @@ impl AppearanceSettings {
         );
         let mut details_row = SettingsRow::new(setting_title("thread-details-items"))
             .description(t!("Choose what the thread details card shows. You can also right-click the card."))
-            .control(details_menu);
+            .control(div().min_w(theme.rem(10.)).child(details_menu));
         if !THREAD_DETAILS_ITEMS.iter().all(|(id, _, default)| thread_detail_visible(&settings, id, *default) == *default) {
             details_row = details_row.reset(reset_button("thread-details-items", |_, cx| {
                 ClientSettingsStore::update(cx, |s| {
@@ -519,12 +570,51 @@ impl AppearanceSettings {
                 })
             }));
         }
+        // `flex w-full items-center gap-3 sm:w-52`: the value chip, then the slider.
+        let slider_row = |id: &'static str, value: u64, text: String, chip_rem: f32, range: (u64, u64, u64), set: fn(&mut ClientSettings, u64)| {
+            div()
+                .flex()
+                .items_center()
+                .gap(theme.sp(3.))
+                .w(theme.rem(13.))
+                .child(slider_value(text, chip_rem, cx))
+                .child(SettingsSlider::new(SharedString::from(format!("slider-{id}")), value, range, move |v, _, cx| {
+                    ClientSettingsStore::update(cx, |s| set(s, v))
+                }))
+        };
+        let contrast = client_row(
+            "setting-appearance-contrast",
+            t!("Adjust the contrast of colors and borders across the interface."),
+            |s| &s.appearance_contrast,
+            |s, v| s.appearance_contrast = v,
+            slider_row("contrast", settings.appearance_contrast, format!("{}%", settings.appearance_contrast), 3., (50, 150, 5), |s, v| s.appearance_contrast = v),
+            cx,
+        );
+        let glass = client_row(
+            "setting-glass-opacity",
+            t!("Higher values make menus, dialogs, and the composer more solid."),
+            |s| &s.glass_opacity,
+            |s, v| s.glass_opacity = v,
+            slider_row("glass", settings.glass_opacity, format!("{}%", settings.glass_opacity), 3., (0, 100, 5), |s, v| s.glass_opacity = v),
+            cx,
+        );
+        // `grid sm:grid-cols-[7rem_13rem] sm:gap-4`: the preview, then the chip and slider.
         let animation = div()
             .flex()
             .items_center()
-            .gap(theme.sp(3.))
-            .child(div().w(px(160.)).child(Slider::new(&self.animation)))
-            .child(div().w(px(48.)).ui_text(theme, TextSize::Xs, weight::MEDIUM).text_color(theme.colors.muted_foreground).child(format!("{} ms", settings.panel_animation_duration_ms)));
+            .gap(theme.sp(4.))
+            .child(div().w(theme.rem(7.)).child(panel_animations_preview(cx)))
+            .child(
+                div()
+                    .w(theme.rem(13.))
+                    .flex()
+                    .items_center()
+                    .gap(theme.sp(3.))
+                    .child(slider_value(format!("{} ms", settings.panel_animation_duration_ms), 4., cx))
+                    .child(SettingsSlider::new("slider-panel-animations", settings.panel_animation_duration_ms, (0, 400, 25), |v, _, cx| {
+                        ClientSettingsStore::update(cx, |s| s.panel_animation_duration_ms = v)
+                    })),
+            );
         let toggle_advanced: Rc<dyn Fn(&mut Window, &mut App)> = {
             let this = cx.entity();
             Rc::new(move |_, cx| {
@@ -548,15 +638,16 @@ impl AppearanceSettings {
                     cx,
                 )
                 .into_any_element(),
+                // This app has no Dev or Nightly stage label, so the web's
+                // "Latest" choices apply: the default art reads None.
                 client_select(
                     "environment-identification",
-                    t!("Choose how Dev and Nightly environments are identified."),
+                    t!("Show Dev or Nightly artwork in the sidebar header."),
+                    SelectWidth::Rem(10.),
                     vec![
-                        (EnvironmentIdentificationMode::Artwork, t!("Artwork")),
+                        (EnvironmentIdentificationMode::Artwork, t!("None")),
                         (EnvironmentIdentificationMode::NightlyArtwork, t!("Nightly artwork")),
                         (EnvironmentIdentificationMode::DevArtwork, t!("Dev artwork")),
-                        (EnvironmentIdentificationMode::Pill, t!("Version pill")),
-                        (EnvironmentIdentificationMode::NoneType, t!("None")),
                     ],
                     |s| &s.environment_identification_mode,
                     |s, v| s.environment_identification_mode = v,
@@ -573,29 +664,62 @@ impl AppearanceSettings {
                 .into_any_element(),
             ],
         );
+        let chat_width = crate::components::ui::select::Select::new(
+            "select-chat-width",
+            Rc::from([t!("Comfortable (default)"), t!("Wide"), t!("Full", context = "chat width")]),
+            match settings.chat_width {
+                ChatWidth::Wide => 1,
+                ChatWidth::Full => 2,
+                _ => 0,
+            },
+            |index, _, cx| {
+                let value = match index {
+                    1 => ChatWidth::Wide,
+                    2 => ChatWidth::Full,
+                    _ => ChatWidth::Comfortable,
+                };
+                ClientSettingsStore::update(cx, |s| s.chat_width = value)
+            },
+        )
+        .size(crate::components::ui::select::SelectSize::Sm)
+        .value_label(match settings.chat_width {
+            ChatWidth::Wide => t!("Wide"),
+            ChatWidth::Full => t!("Full", context = "chat width"),
+            _ => t!("Comfortable"),
+        });
+        let effort = crate::components::ui::select::Select::new(
+            "select-effort-display",
+            Rc::from([t!("Word (default)"), t!("Bars", context = "show effort as bars")]),
+            usize::from(settings.effort_display == EffortDisplay::Bars),
+            |index, _, cx| {
+                let value = if index == 1 { EffortDisplay::Bars } else { EffortDisplay::Label };
+                ClientSettingsStore::update(cx, |s| s.effort_display = value)
+            },
+        )
+        .size(crate::components::ui::select::SelectSize::Sm)
+        .value_label(if settings.effort_display == EffortDisplay::Bars {
+            t!("Bars", context = "show effort as bars")
+        } else {
+            t!("Word", context = "show effort as a word")
+        });
         SettingsSection::new(t!("Interface"))
-            .child(client_select(
+            .child(contrast)
+            .child(glass)
+            .child(client_row(
                 "chat-width",
                 t!("Set how wide messages and the composer can grow on large screens."),
-                vec![
-                    (ChatWidth::Comfortable, t!("Comfortable (default)")),
-                    (ChatWidth::Wide, t!("Wide")),
-                    (ChatWidth::Full, t!("Full", context = "chat width")),
-                ],
                 |s| &s.chat_width,
                 |s, v| s.chat_width = v,
+                sized_select(SelectWidth::Rem(10.), chat_width),
                 cx,
             ))
             .child(details_row)
-            .child(client_select(
+            .child(client_row(
                 "effort-display",
                 t!("Show reasoning effort in the composer as its name, such as High, or as bars."),
-                vec![
-                    (EffortDisplay::Label, t!("Word (default)")),
-                    (EffortDisplay::Bars, t!("Bars", context = "show effort as bars")),
-                ],
                 |s| &s.effort_display,
                 |s, v| s.effort_display = v,
+                sized_select(SelectWidth::Rem(10.), effort),
                 cx,
             ))
             .child(client_switch(
@@ -609,6 +733,8 @@ impl AppearanceSettings {
             .into_any_element()
     }
 
+    /// `FontFamilySettingsRow`: the family field (`sm:w-44`) and the size
+    /// select (`w-22`, raised to the row's 10rem select minimum).
     fn font_row(&self, role: FontRole, id: &'static str, title: Option<SharedString>, description: SharedString, cx: &mut Context<Self>) -> AnyElement {
         let settings = ClientSettingsStore::get(cx).clone();
         let defaults = ClientSettings::defaults();
@@ -616,27 +742,20 @@ impl AppearanceSettings {
         let input = self.fonts[FontRole::ALL.iter().position(|r| *r == role).expect("role")].clone();
         let size = role.size(&settings);
         let (min, max) = role.range();
-        let stepper = |delta: i64, icon: IconName, enabled: bool| {
-            Button::new(SharedString::from(format!("{id}-size-{}", if delta < 0 { "down" } else { "up" })))
-                .variant(ButtonVariant::Outline)
-                .size(ButtonSize::IconSm)
-                .icon(icon)
-                .disabled(!enabled)
-                .on_click(move |_, _, cx| {
-                    ClientSettingsStore::update(cx, |s| {
-                        let next = (role.size(s) as i64 + delta).clamp(min as i64, max as i64) as u64;
-                        role.set_size(s, next);
-                    })
-                })
-        };
+        let sizes: Rc<[SharedString]> = (min..=max).map(|px| SharedString::from(format!("{px} px"))).collect();
+        let select = crate::components::ui::select::Select::new(
+            SharedString::from(format!("select-{id}-size")),
+            sizes,
+            size.saturating_sub(min) as usize,
+            move |index, _, cx| ClientSettingsStore::update(cx, |s| role.set_size(s, min + index as u64)),
+        )
+        .size(crate::components::ui::select::SelectSize::Sm);
         let control = div()
             .flex()
             .items_center()
             .gap(theme.sp(2.))
-            .child(div().w(px(176.)).child(TextInput::new(&input)))
-            .child(stepper(-1, IconName::Minus, size > min))
-            .child(div().w(px(40.)).flex().justify_center().ui_text(theme, TextSize::Sm, weight::MEDIUM).child(format!("{size}px")))
-            .child(stepper(1, IconName::Plus, size < max));
+            .child(div().w(theme.rem(11.)).child(TextInput::new(&input).size(crate::components::ui::input::InputSize::Sm)))
+            .child(sized_select(SelectWidth::Rem(10.), select));
         let changed = role.size(&settings) != role.size(defaults) || role.family(&settings) != role.family(defaults);
         let mut row = SettingsRow::new(title.unwrap_or_else(|| setting_title(id))).description(description).control(control);
         if changed {
@@ -669,7 +788,33 @@ impl AppearanceSettings {
                 cx,
             ));
         }
-        let separate = gpui_kit::SharedString::from("switch-separate-fonts");
+        let separate = SettingsRow::new(setting_title("separate-fonts"))
+            .description(t!("Set the prompt, code, and terminal fonts separately instead of one monospace font."))
+            .control(crate::components::ui::switch::Switch::new("switch-separate-fonts", advanced).on_change(|on, _, cx| set_separate_fonts(on, cx)))
+            .into_any_element();
+        let mut advanced_rows = vec![separate];
+        // `FontSmoothingRow` renders on macOS only.
+        if cfg!(target_os = "macos") {
+            advanced_rows.push(
+                client_switch(
+                    "font-smoothing",
+                    t!("Use thinner grayscale text smoothing instead of the macOS default."),
+                    |s| &s.font_smoothing,
+                    |s, v| s.font_smoothing = v,
+                    cx,
+                )
+                .into_any_element(),
+            );
+        }
+        let toggle: Rc<dyn Fn(&mut Window, &mut App)> = {
+            let this = cx.entity();
+            Rc::new(move |_, cx| {
+                this.update(cx, |this, cx| {
+                    this.typography_advanced_open = !this.typography_advanced_open;
+                    cx.notify();
+                })
+            })
+        };
         section
             .child(client_switch(
                 "word-wrap",
@@ -678,11 +823,7 @@ impl AppearanceSettings {
                 |s, v| s.word_wrap = v,
                 cx,
             ))
-            .child(
-                SettingsRow::new(setting_title("separate-fonts"))
-                    .description(t!("Set the prompt, code, and terminal fonts separately instead of one monospace font."))
-                    .control(crate::components::ui::switch::Switch::new(separate, advanced).on_change(|on, _, cx| set_separate_fonts(on, cx))),
-            )
+            .child(advanced_settings("typography-advanced", self.typography_advanced_open, toggle, advanced_rows))
             .into_any_element()
     }
 
@@ -771,12 +912,14 @@ impl AppearanceSettings {
 }
 
 impl Render for AppearanceSettings {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let library = self.render_library(cx);
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let library = self.render_library(window, cx);
         let interface = self.render_interface(cx);
         let typography = self.render_typography(cx);
         let import = self.render_import_dialog(cx);
         let remove = self.render_remove_dialog(cx);
+        // `SettingsSection hideTitle variant="plain"` titled "Colors & themes".
+        let library = SettingsSection::new(t!("Colors & themes")).plain().hide_title().child(library);
         page_container(cx).child(library).child(interface).child(typography).children(import).children(remove)
     }
 }
@@ -841,76 +984,224 @@ fn assign_half(appearance: Appearance, card_id: Option<String>, cx: &mut App) {
     ThemeStore::set_half(appearance, card_id.as_deref(), cx);
 }
 
-/// `ThemePreviewCircle`: the canvas mixed toward black or white with the
-/// accent and action as soft spots. The web blurs radial gradients; GPUI
-/// draws the spots as plain circles.
-fn preview_circle(palette: &ThemePalette, mode: Appearance, ring: Hsla) -> AnyElement {
-    let base = mix_oklab(palette.canvas, if mode.is_dark() { 0.85 } else { 0.9 }, if mode.is_dark() { gpui_kit::black() } else { gpui_kit::white() });
+/// `box-shadow: inset 0 0 0 <width> <color>`, a ring inside the border
+/// box. GPUI insets from the border box, so a bordered element adds its
+/// border width.
+fn inset_ring(color: Hsla, width: Pixels) -> gpui_kit::BoxShadow {
+    gpui_kit::BoxShadow::new(px(0.), px(0.), color).spread_radius(width).inset()
+}
+
+/// Which half of a System tile a wireframe pane fills.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Half {
+    Left,
+    Right,
+}
+
+/// `ThemeCardPreviewColors`: the roles the wireframe draws.
+#[derive(Clone, Copy)]
+struct WireframeColors {
+    sidebar: Hsla,
+    canvas: Hsla,
+    surface: Hsla,
+    accent_surface: Hsla,
+    message_surface: Hsla,
+    message_action: Hsla,
+}
+
+/// The colours of the theme that owns `appearance`, or the standard
+/// theme's fixed preview colours.
+fn wireframe_colors(appearance: Appearance, cx: &App) -> WireframeColors {
+    let hex = |v: &str| crate::syntax::hex(v).unwrap_or_default();
+    match owner_id(appearance, cx) {
+        None if appearance.is_dark() => WireframeColors {
+            sidebar: hex("#0f0f10"),
+            canvas: hex("#0a0a0a"),
+            surface: hex("#121212"),
+            accent_surface: hex("#27272a"),
+            message_surface: hex("#27272a"),
+            message_action: hex("#8b9cff"),
+        },
+        None => WireframeColors {
+            sidebar: hex("#fafafa"),
+            canvas: hex("#fcfcfc"),
+            surface: hex("#ffffff"),
+            accent_surface: hex("#f4f4f5"),
+            message_surface: hex("#e4e4e7"),
+            message_action: hex("#4f46e5"),
+        },
+        Some(_) => {
+            let p = owner_palette(appearance, cx);
+            WireframeColors {
+                sidebar: p.sidebar,
+                canvas: p.canvas,
+                surface: p.surface,
+                accent_surface: p.accent_surface,
+                message_surface: p.message_surface,
+                message_action: p.message_action,
+            }
+        }
+    }
+}
+
+/// `ThemeWireframe`: a 140px sketch of the app in a theme's colours, its
+/// shapes placed in percentages of the tile. A System tile clips the light
+/// pane to the left half and the dark pane to the right, 2px apart.
+fn wireframe(panes: &[(WireframeColors, Option<Half>)], cx: &App) -> AnyElement {
+    let theme = cx.app_theme();
+    let line = gpui_kit::hsla(0., 0., 127. / 255., 0.25);
+    let pane = |colors: WireframeColors| {
+        let rect = |left: f32, top: f32, w: f32, h: f32| {
+            div().absolute().left(gpui_kit::relative(left)).top(gpui_kit::relative(top)).w(gpui_kit::relative(w)).h(gpui_kit::relative(h))
+        };
+        let outline = |d: gpui_kit::Div| d.shadow(vec![inset_ring(line, px(1.))]);
+        div()
+            .absolute()
+            .inset_0()
+            .bg(colors.canvas)
+            .child(div().absolute().top_0().bottom_0().left_0().w(gpui_kit::relative(0.22)).bg(colors.sidebar).border_r_1().border_color(line))
+            .child(outline(rect(0.03, 0.08, 0.16, 0.08).rounded(theme.radii.md).bg(colors.surface)))
+            .child(rect(0.03, 0.22, 0.16, 0.07).rounded(theme.radii.md).bg(colors.accent_surface))
+            .child(rect(0.03, 0.32, 0.16, 0.07).rounded(theme.radii.md).bg(with_alpha(colors.message_surface, 0.7)))
+            .child(rect(0.03, 0.42, 0.16, 0.07).rounded(theme.radii.md).bg(with_alpha(colors.message_surface, 0.5)))
+            .child(rect(0.48, 0.11, 0.24, 0.09).rounded(theme.radii.lg).bg(colors.message_surface))
+            .child(rect(0.27, 0.28, 0.34, 0.05).rounded(theme.radii.sm).bg(line))
+            .child(rect(0.27, 0.38, 0.26, 0.05).rounded(theme.radii.sm).bg(line))
+            .child(
+                outline(rect(0.26, 0.77, 0.68, 0.15).rounded(theme.radii.md).bg(colors.surface))
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .px(theme.sp(1.))
+                    .child(div().h(gpui_kit::relative(0.26)).w(gpui_kit::relative(0.34)).rounded_full().bg(with_alpha(line, 0.7 * 0.25)))
+                    .child(div().size(px(11.)).rounded_full().bg(colors.message_action)),
+            )
+            .child(
+                outline(rect(0.75, 0.08, 0.20, 0.46).rounded(theme.radii.lg).bg(colors.surface))
+                    .shadow(vec![inset_ring(line, px(1.)), gpui_kit::BoxShadow {
+                        color: gpui_kit::hsla(0., 0., 0., 0.14),
+                        offset: gpui_kit::point(px(0.), px(2.)),
+                        blur_radius: px(5.),
+                        spread_radius: px(0.),
+                        inset: false,
+                    }])
+                    .children([gpui_kit::rgb(0x34d399).into(), colors.message_action, gpui_kit::rgb(0xfbbf24).into()].into_iter().enumerate().map(|(row, dot): (usize, Hsla)| {
+                        div()
+                            .absolute()
+                            .left(gpui_kit::relative(0.11))
+                            .right(gpui_kit::relative(0.11))
+                            .top(gpui_kit::relative(0.10 + row as f32 * 0.30))
+                            .h(gpui_kit::relative(0.20))
+                            .flex()
+                            .items_center()
+                            .gap(theme.sp(1.))
+                            .child(div().size(px(4.)).flex_none().rounded_full().bg(with_alpha(dot, 0.55)))
+                            .child(div().h(gpui_kit::relative(0.30)).w(gpui_kit::relative(0.52)).rounded_sm().bg(line))
+                    })),
+            )
+    };
     div()
         .relative()
-        .size(px(56.))
+        .w_full()
+        .h(theme.rem(8.75))
         .overflow_hidden()
-        .rounded_full()
-        .border_2()
-        .border_color(ring)
-        .bg(base)
-        .child(div().absolute().left(px(14.)).top(px(8.)).size(px(30.)).rounded_full().bg(with_alpha(palette.accent, 0.85)))
-        .child(div().absolute().left(px(30.)).top(px(30.)).size(px(16.)).rounded_full().bg(with_alpha(palette.message_action, 0.7)))
+        .rounded(theme.radii.lg)
+        .border_1()
+        .border_color(with_alpha(theme.colors.border, 0.6))
+        .children(panes.iter().map(|(colors, half)| match half {
+            None => pane(*colors).into_any_element(),
+            Some(Half::Left) => div()
+                .absolute()
+                .top_0()
+                .bottom_0()
+                .left_0()
+                .right(gpui_kit::relative(0.5))
+                .mr(px(1.))
+                .overflow_hidden()
+                .child(div().absolute().top_0().bottom_0().left_0().w(gpui_kit::relative(2.)).child(pane(*colors)))
+                .into_any_element(),
+            Some(Half::Right) => div()
+                .absolute()
+                .top_0()
+                .bottom_0()
+                .right_0()
+                .left(gpui_kit::relative(0.5))
+                .ml(px(1.))
+                .overflow_hidden()
+                .child(div().absolute().top_0().bottom_0().right_0().w(gpui_kit::relative(2.)).child(pane(*colors)))
+                .into_any_element(),
+        }))
         .into_any_element()
 }
 
-/// `ThemeWireframe`: a sidebar, a message bubble and a composer, drawn
-/// with a palette.
-fn wireframe(palette: &ThemePalette, round_left: bool) -> AnyElement {
-    let bar = |w: f32, color: Hsla| div().h(px(4.)).w(px(w)).rounded_full().bg(color);
+/// `PanelAnimationsPreview` at rest with the panels open: a 40px frame
+/// with a sidebar, three lines, a composer strip and a side panel.
+fn panel_animations_preview(cx: &App) -> AnyElement {
+    let theme = cx.app_theme();
+    let c = &theme.colors;
+    let line = |w: f32, alpha: f32| div().h(px(2.)).w(gpui_kit::relative(w)).rounded_full().bg(with_alpha(c.muted_foreground, alpha));
     div()
-        .h(px(140.))
         .flex()
+        .h(theme.rem(2.5))
+        .w_full()
         .overflow_hidden()
-        .when(round_left, |d| d.rounded(px(8.)))
+        .rounded(theme.radii.lg)
         .border_1()
-        .border_color(palette.border)
-        .bg(palette.canvas)
+        .border_color(c.border)
+        .bg(c.background())
+        .p(theme.sp(1.))
+        .shadow(theme.shadows.xs5.clone())
+        .child(div().h_full().w(theme.rem(1.)).flex_none().rounded(theme.radii.md).bg(c.sidebar))
         .child(
             div()
-                .w(px(44.))
-                .h_full()
                 .flex()
                 .flex_col()
-                .gap(px(6.))
-                .p(px(8.))
-                .bg(palette.sidebar)
-                .border_r_1()
-                .border_color(palette.sidebar_border)
-                .child(bar(24., palette.sidebar_foreground))
-                .child(bar(28., palette.sidebar_row_selected))
-                .child(bar(20., palette.sidebar_muted_foreground))
-                .child(bar(26., palette.sidebar_muted_foreground)),
-        )
-        .child(
-            div()
                 .flex_1()
-                .flex()
-                .flex_col()
-                .justify_between()
-                .p(px(10.))
-                .child(div().flex().justify_end().child(div().w(px(64.)).h(px(18.)).rounded(px(6.)).bg(palette.message_surface)))
-                .child(div().flex().flex_col().gap(px(5.)).child(bar(70., palette.text)).child(bar(52., palette.text_muted)))
+                .min_w_0()
+                .px(theme.sp(1.))
+                .child(div().flex().flex_col().flex_1().gap(theme.sp(1.)).pt(theme.sp(1.)).child(line(1., 0.25)).child(line(0.8, 0.2)).child(line(0.6, 0.15)))
                 .child(
                     div()
-                        .h(px(26.))
                         .flex()
+                        .flex_none()
                         .items_center()
-                        .justify_end()
-                        .px(px(5.))
-                        .rounded(px(7.))
-                        .border_1()
-                        .border_color(palette.border)
-                        .bg(palette.surface)
-                        .child(div().size(px(14.)).rounded_full().bg(palette.message_action)),
+                        .h(theme.sp(2.))
+                        .px(theme.sp(2.))
+                        .border_t_1()
+                        .border_color(with_alpha(c.border, 0.7))
+                        .bg(with_alpha(c.foreground(), 0.05))
+                        .child(div().h(px(1.)).w(gpui_kit::relative(0.66)).rounded_full().bg(with_alpha(c.muted_foreground, 0.25))),
                 ),
         )
+        .child(div().h_full().w(theme.rem(1.25)).flex_none().rounded(theme.radii.md).bg(c.muted))
         .into_any_element()
+}
+
+/// Copies a theme as a custom theme and uses it. The web opens the theme
+/// editor seeded with it instead; this app has no editor.
+fn duplicate_theme(id: &str, cx: &mut App) {
+    match ThemeStore::duplicate(id, cx) {
+        Ok(new_id) => {
+            if let Some(theme) = ThemeStore::find(&new_id, cx) {
+                use_imported(&new_id, &theme.document.name.clone(), cx);
+            }
+        }
+        Err(error) => {
+            Toaster::push(ToastData::new(ToastKind::Error, t!("Could not create the theme.")).description(error.to_string()), cx);
+        }
+    }
+}
+
+/// The width of a settings section's card on the current page: the modal's
+/// content column less the scrollbar gutters, capped at `max-w-4xl`, less
+/// the page padding. Mirrors the sizes `routes/settings.rs` lays out.
+pub fn settings_group_width(window: &Window, cx: &App) -> Pixels {
+    let theme = cx.app_theme();
+    let viewport = window.viewport_size();
+    let inset = if viewport.width >= px(1024.) { px(40.) } else { px(24.) };
+    let modal = (viewport.width - inset * 2.).min(theme.rem(80.));
+    let content = modal - px(2.) - theme.rem(15.);
+    (content - px(2. * super::settings_layout::SCROLLBAR_GUTTER)).min(theme.rem(56.)) - theme.sp(12.)
 }
 
 /// `THREAD_DETAILS_ITEMS`: id, label source, default visibility.

@@ -4,6 +4,7 @@
 //! reply, sends during a reply steer or queue, and pending questions and
 //! approvals resolve when answered.
 
+pub mod app_data;
 pub mod palette_source;
 mod thread_actions;
 pub mod timelines;
@@ -31,23 +32,7 @@ const REPLY_DELAY: Duration = Duration::from_millis(250);
 const STREAM_TICK: Duration = Duration::from_millis(32);
 const STREAM_CHUNK: usize = 18;
 
-/// What the chat view needs to show one thread.
-#[derive(Clone)]
-pub struct ThreadView {
-    pub key: SharedString,
-    pub project: SharedString,
-    pub title: SharedString,
-    pub cwd: SharedString,
-    pub timeline: TimelineInput,
-    pub is_draft: bool,
-    pub running: bool,
-    /// Every question of the pending request; `timeline.pending_question` is the first.
-    pub questions: Arc<[PendingQuestion]>,
-    /// The branch the thread works on.
-    pub branch: Option<SharedString>,
-    /// The project, for per-project panels (Files) and the git controls.
-    pub project_id: Option<sidebar::ProjectId>,
-}
+pub use crate::state::app_data::ThreadView;
 
 /// A thread's content. The timeline is built on first open.
 struct ThreadRecord {

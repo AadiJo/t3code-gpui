@@ -6,13 +6,13 @@
 //!
 //! Bodies: the diff panel (one view, fed the shown thread's patch the frame
 //! after the thread shows, so switching threads never waits on it), the
-//! Files panel (one per project), and terminal tabs (one session per tab).
-//! Surfaces not built yet (browser, device, pull requests, issues, side
-//! chat) draw a labelled empty state. Only the active tab's body renders,
+//! Files panel (one per project), terminal tabs (one session per tab), and a
+//! pull request, issue or browser tab's view on the thread's environment.
+//! Surfaces not built yet (device, linked items, side chat) draw a labelled
+//! empty state. Only the active tab's body renders,
 //! and a closed panel renders nothing.
 
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::rc::Rc;
 
 use gpui_kit::prelude::FluentBuilder as _;
@@ -24,9 +24,9 @@ use crate::components::diff_panel_shell::DiffPanelLoadingState;
 use crate::components::files::file_preview_panel::{FilesPanel, FilesPanelEvent};
 use crate::components::thread_terminal_drawer::{BackendFactory, TerminalLaunch, next_terminal_id};
 use crate::diff_panel_store::{DiffPanelSelection, DiffPanelStore};
-use crate::file_source::{DirectoryFiles, SharedWorkspaceFiles};
-use crate::fixtures::FixtureStore;
+use crate::file_source::SharedWorkspaceFiles;
 use crate::router::ThreadTarget;
+use crate::state::app_data::SharedAppData;
 use crate::terminal::backend::TerminalBackend;
 use crate::terminal::surface::{TerminalSurface, TerminalSurfaceEvent};
 use crate::terminal_ui_state_store::ThreadKey as TerminalThreadKey;
@@ -110,15 +110,17 @@ pub struct RightPanel {
     /// The scoped thread key whose panel shows.
     thread: Option<SharedString>,
     target: Option<ThreadTarget>,
-    data: Entity<FixtureStore>,
+    data: SharedAppData,
     diff: Option<(Entity<DiffPanel>, Subscription)>,
     /// The thread and scope the diff view holds; anything else is stale.
     diff_shown: Option<(SharedString, DiffPanelSelection)>,
     diff_load_scheduled: bool,
     diff_fallback: Option<Task<()>>,
+    /// The scope being loaded and its request; a newer request replaces it.
+    diff_requested: Option<(SharedString, DiffPanelSelection)>,
+    diff_loading: Option<Task<()>>,
     /// A file to reveal once the diff loads.
     pending_reveal: Option<SharedString>,
-    workspaces: HashMap<SharedString, Workspace>,
     files: HashMap<SharedString, (Entity<FilesPanel>, Subscription)>,
     files_requests: Vec<FilesRequest>,
     backends: TerminalBackends,
@@ -126,6 +128,8 @@ pub struct RightPanel {
     terminals: HashMap<(SharedString, String), Entity<TerminalSurface>>,
     /// Scripts to start in the terminal tab of that id when it first renders.
     pending_scripts: HashMap<(SharedString, String), ProjectScript>,
+    /// Pull request, issue and browser tab views, by thread and surface id.
+    surface_views: HashMap<(SharedString, String), AnyView>,
     /// Read for the titlebar row's height and the insets around the fixed toggles.
     layout: WeakEntity<AppSidebarLayout>,
     topbar_height: Pixels,
@@ -231,7 +235,7 @@ impl RightPanel {
     pub fn new(
         store: Entity<RightPanelStore>,
         layout: WeakEntity<AppSidebarLayout>,
-        data: Entity<FixtureStore>,
+        data: SharedAppData,
         backends: TerminalBackends,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -246,13 +250,15 @@ impl RightPanel {
             diff_shown: None,
             diff_load_scheduled: false,
             diff_fallback: None,
+            diff_requested: None,
+            diff_loading: None,
             pending_reveal: None,
-            workspaces: HashMap::new(),
             files: HashMap::new(),
             files_requests: Vec::new(),
             backends,
             terminals: HashMap::new(),
             pending_scripts: HashMap::new(),
+            surface_views: HashMap::new(),
             layout,
             topbar_height: px(40.),
             focus: cx.focus_handle(),
@@ -276,7 +282,7 @@ impl RightPanel {
     }
 
     /// The Files panel of the shown thread's project, once built.
-    pub fn files_panel(&mut self, cx: &App) -> Option<Entity<FilesPanel>> {
+    pub fn files_panel(&mut self, cx: &mut App) -> Option<Entity<FilesPanel>> {
         let key = self.workspace(cx)?.key;
         self.files.get(&key).map(|(panel, _)| panel.clone())
     }
@@ -292,16 +298,10 @@ impl RightPanel {
         self.diff.is_some() && !self.diff_stale(cx)
     }
 
-    /// The shown thread's project workspace, written on first use.
-    pub fn workspace(&mut self, cx: &App) -> Option<Workspace> {
+    /// The shown thread's project workspace.
+    pub fn workspace(&mut self, cx: &mut App) -> Option<Workspace> {
         let target = self.target.clone()?;
-        let fixture = self.data.read(cx).workspace(&target)?;
-        let workspace = self.workspaces.entry(fixture.project_key.clone()).or_insert_with(|| Workspace {
-            key: fixture.project_key.clone(),
-            name: fixture.name.clone(),
-            files: DirectoryFiles::new(PathBuf::from(&fixture.root)) as SharedWorkspaceFiles,
-        });
-        Some(workspace.clone())
+        self.data.workspace(&target, cx)
     }
 
     /// Opens the Diff tab on a turn (its reply id) or the branch, revealing `file`.
@@ -370,6 +370,8 @@ impl RightPanel {
             FilesPanelEvent::AddToChat(mention) => cx.emit(RightPanelEvent::InsertReference(mention.clone())),
             // Opening on the host needs the server (`shell.openInEditor`).
             FilesPanelEvent::OpenInEditor { .. } => {}
+            // Opening in the preview browser needs the server (`assets.createUrl`, `preview.open`).
+            FilesPanelEvent::OpenInPreview { .. } => {}
         });
         self.files.insert(workspace.key.clone(), (panel.clone(), subscription));
         Some(panel)
@@ -460,23 +462,41 @@ impl RightPanel {
         else {
             return;
         };
-        let diff = diff.clone();
-        let Some(input) = self.data.update(cx, |store, _| store.diff_input(&target, &selection)) else { return };
-        diff.update(cx, |diff, cx| diff.set_input(input, cx));
-        self.diff_shown = Some((thread, selection));
-        if let Some(path) = self.pending_reveal.take() {
-            diff.update(cx, |diff, cx| diff.reveal_path(&path, cx));
-        }
-        cx.notify();
+        let diff = diff.downgrade();
+        self.diff_requested = Some((thread.clone(), selection.clone()));
+        let input = self.data.diff_input(&target, &selection, cx);
+        self.diff_loading = Some(cx.spawn(async move |this, cx| {
+            let Some(input) = input.await else { return };
+            this.update(cx, |this, cx| {
+                // A thread or scope switch while it loaded makes the reply stale.
+                if this.diff_selection(cx).as_ref() != Some(&(thread.clone(), selection.clone())) {
+                    return;
+                }
+                let Some(diff) = diff.upgrade() else { return };
+                diff.update(cx, |diff, cx| diff.set_input(input, cx));
+                this.diff_shown = Some((thread, selection));
+                if let Some(path) = this.pending_reveal.take() {
+                    diff.update(cx, |diff, cx| diff.reveal_path(&path, cx));
+                }
+                cx.notify();
+            })
+            .ok();
+        }));
     }
 
     fn on_diff_event(&mut self, event: &DiffPanelEvent, window: &mut Window, cx: &mut Context<Self>) {
         match event {
             DiffPanelEvent::SelectionChanged(_) | DiffPanelEvent::Refresh | DiffPanelEvent::IgnoreWhitespaceChanged(_) => {
                 self.diff_shown = None;
+                self.diff_requested = None;
                 cx.notify();
             }
             DiffPanelEvent::OpenFile(path) => self.open_file(path.clone(), None, window, cx),
+            DiffPanelEvent::FileMenuAction { action, path } => {
+                if let Some(files) = self.ensure_files(window, cx) {
+                    files.update(cx, |files, cx| files.run_file_action(action.clone(), path.clone(), cx));
+                }
+            }
             // Full contents and review comments need the server.
             DiffPanelEvent::RequestFileContents { .. }
             | DiffPanelEvent::ReviewComment(_)
@@ -495,7 +515,7 @@ impl RightPanel {
                 }
                 if self.diff_stale(cx) {
                     // The patch loads after this frame, so showing a thread never waits on it.
-                    if !self.diff_load_scheduled {
+                    if !self.diff_load_scheduled && self.diff_requested != self.diff_selection(cx) {
                         self.diff_load_scheduled = true;
                         cx.on_next_frame(window, |this, _, cx| this.load_diff(cx));
                         // A window that draws no next frame (hidden, headless) still loads.
@@ -535,8 +555,59 @@ impl RightPanel {
                 Some(terminal) => div().flex_1().min_h_0().px_2().pb_2().child(terminal).into_any_element(),
                 None => self.render_empty(surface, cx),
             },
+            RightPanelSurface::PullRequest { .. } | RightPanelSurface::Issue { .. } | RightPanelSurface::Preview { .. } => {
+                match self.surface_view(surface, window, cx) {
+                    Some(view) => div().flex_1().min_h_0().child(view).into_any_element(),
+                    None => self.render_empty(surface, cx),
+                }
+            }
             _ => self.render_empty(surface, cx),
         }
+    }
+
+    /// The view behind a pull request, issue or browser tab, built on first show over the
+    /// shown thread's environment.
+    fn surface_view(&mut self, surface: &RightPanelSurface, window: &mut Window, cx: &mut Context<Self>) -> Option<AnyView> {
+        let thread = self.thread.clone()?;
+        let key = (thread.clone(), surface.id().to_string());
+        if let Some(view) = self.surface_views.get(&key) {
+            return Some(view.clone());
+        }
+        let (environment, thread_id) = thread.split_once(':')?;
+        let environment = t3code_contracts::EnvironmentId::new(environment);
+        let view: AnyView = match surface {
+            RightPanelSurface::PullRequest { project_id, repository, number, .. } => {
+                let source = self.data.pull_request_detail(&environment, cx)?;
+                let reference = t3code_contracts::PullRequestRef {
+                    project_id: t3code_contracts::ProjectId::new(project_id.as_str()),
+                    host: None,
+                    expected_account_id: None,
+                    allow_stale: None,
+                    repository: repository.clone(),
+                    number: u64::from(*number),
+                };
+                cx.new(|cx| crate::components::pull_request::pull_request_detail_panel::PullRequestDetailPanel::new(source, reference, cx)).into()
+            }
+            RightPanelSurface::Issue { project_id, tracker, scope, key: issue, .. } => {
+                let source = self.data.issue_sources(cx).into_iter().find(|s| s.environment_id == environment)?.source;
+                let reference = t3code_contracts::IssueRef {
+                    project_id: t3code_contracts::ProjectId::new(project_id.as_str()),
+                    tracker: serde_json::from_value(serde_json::Value::String(tracker.clone())).ok()?,
+                    host: None,
+                    scope: scope.clone(),
+                    key: issue.clone(),
+                };
+                cx.new(|cx| crate::components::issue::issue_detail_panel::IssueDetailPanel::new(source, reference, window, cx)).into()
+            }
+            RightPanelSurface::Preview { resource_id, .. } => {
+                let source = self.data.preview_source(&environment, cx)?;
+                let (thread_id, tab) = (thread_id.to_owned(), resource_id.clone().unwrap_or_default());
+                cx.new(|cx| crate::browser::server_browser_surface::ServerBrowserSurface::new(source, thread_id, tab, cx)).into()
+            }
+            _ => return None,
+        };
+        self.surface_views.insert(key, view.clone());
+        Some(view)
     }
 
     /// A surface whose view does not exist yet names itself.

@@ -4,8 +4,7 @@
 //! browser; a localhost callback URL pasted back; credential fields; and a
 //! login running in a terminal), with progress, cancel, retry and sign-out.
 //!
-//! The terminal flow shows the login's output as text and sends each typed
-//! line with `provider.auth.respond`; it does not emulate a terminal.
+//! The terminal flow embeds a real terminal (`provider_auth_terminal`).
 
 use std::collections::BTreeMap;
 
@@ -13,7 +12,7 @@ use gpui_kit::{AnyElement, ClipboardItem, Context, IntoElement, SharedString, Wi
 use t3code_contracts::{
     ProviderAuthCancelInput, ProviderAuthCompleteInput, ProviderAuthInteraction, ProviderAuthRespondInput,
     ProviderAuthResponse, ProviderAuthResponseBrowser, ProviderAuthResponseBrowserAction, ProviderAuthResponseCredentials,
-    ProviderAuthResponseTerminal, ProviderAuthStartInput, ProviderAuthState, ProviderAuthStatePhase, ProviderInstanceId,
+    ProviderAuthStartInput, ProviderAuthState, ProviderAuthStatePhase, ProviderInstanceId,
     ProviderSetupInput, ServerProviderAuthStatus,
 };
 
@@ -111,7 +110,7 @@ impl ProviderSettingsPanel {
     }
 
     /// Runs one sign-in command and records its failure on the row.
-    fn run_auth(
+    pub(super) fn run_auth(
         &mut self,
         instance: String,
         call: impl FnOnce(&dyn ServerSettingsSource) -> Reply<ProviderAuthState> + 'static,
@@ -384,54 +383,20 @@ impl ProviderSettingsPanel {
                 );
             }
             Some(ProviderAuthInteraction::Terminal(terminal)) => {
-                let tail: String = {
-                    let lines: Vec<&str> = terminal.output.lines().collect();
-                    lines[lines.len().saturating_sub(12)..].join("\n")
-                };
-                let line = self.fields.get(format!("{instance}:auth:terminal"), "", t!("Type a response and press Send"), false, window, cx);
-                let id = instance.clone();
-                let flow = flow_id.clone().unwrap_or_default();
-                let interaction_id = terminal.id.clone();
-                let read = line.clone();
+                let surface = self.auth_terminal(&instance, flow_id.as_deref().unwrap_or_default(), terminal, window, cx);
+                // `h-64 overflow-hidden rounded-md border`.
                 details.push(
                     div()
-                        .flex()
-                        .flex_col()
-                        .gap(theme.sp(2.))
                         .py(theme.sp(2.))
                         .child(
                             div()
-                                .p(theme.sp(2.))
+                                .relative()
+                                .h(theme.sp(64.))
+                                .overflow_hidden()
                                 .rounded(theme.radii.md)
-                                .bg(c.terminal_background)
-                                .text_color(c.terminal_foreground)
-                                .mono_text(px(12.), weight::NORMAL)
-                                .min_h(px(80.))
-                                .child(tail),
-                        )
-                        .child(
-                            div()
-                                .flex()
-                                .gap(theme.sp(2.))
-                                .child(div().flex_1().child(field_input(&line, true, false, disabled)))
-                                .child(
-                                    Button::new(SharedString::from(format!("auth-terminal-send-{instance}")))
-                                        .variant(ButtonVariant::Outline)
-                                        .size(ButtonSize::Sm)
-                                        .label(t!("Send"))
-                                        .disabled(disabled)
-                                        .on_click(cx.listener(move |this, _, window, cx| {
-                                            let text = format!("{}\r", read.read(cx).value());
-                                            this.fields.set(&format!("{id}:auth:terminal"), "", window, cx);
-                                            let input = ProviderAuthRespondInput {
-                                                instance_id: ProviderInstanceId::new(id.as_str()),
-                                                flow_id: flow.clone(),
-                                                interaction_id: interaction_id.clone(),
-                                                response: ProviderAuthResponse::Terminal(ProviderAuthResponseTerminal { data: text, binary: None, size: None }),
-                                            };
-                                            this.run_auth(id.clone(), move |s| s.respond_provider_auth(input), cx);
-                                        })),
-                                ),
+                                .border_1()
+                                .border_color(c.border)
+                                .child(surface),
                         )
                         .into_any_element(),
                 );

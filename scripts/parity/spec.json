@@ -292,7 +292,7 @@
       245,
       772
      ],
-     "exclude": "Check for updates: the native shell has its own updater, so the port leaves it out"
+     "exclude": "reference build has no desktop updater bridge, so the web draws it disabled at 60%; the owner's app draws it enabled"
     },
     {
      "name": "composer left edge",
@@ -764,7 +764,7 @@
       245,
       772
      ],
-     "exclude": "Check for updates: the native shell has its own updater, so the port leaves it out"
+     "exclude": "reference build has no desktop updater bridge, so the web draws it disabled at 60%; the owner's app draws it enabled"
     },
     {
      "name": "composer left edge",
@@ -1135,7 +1135,7 @@
       245,
       772
      ],
-     "exclude": "Check for updates: the native shell has its own updater, so the port leaves it out"
+     "exclude": "reference build has no desktop updater bridge, so the web draws it disabled at 60%; the owner's app draws it enabled"
     },
     {
      "name": "hovered row fill",
@@ -3568,6 +3568,1770 @@
     }
    ]
   },
+  "settings-general": {
+   "elements": [
+    {
+     "name": "modal fill (content)",
+     "kind": "fill",
+     "at": [
+      700,
+      730
+     ]
+    },
+    {
+     "name": "nav search kbd",
+     "kind": "ink",
+     "at": [
+      240,
+      51,
+      268,
+      79
+     ]
+    },
+    {
+     "name": "breadcrumb",
+     "kind": "ink",
+     "at": [
+      297,
+      51,
+      441,
+      79
+     ],
+     "text": true
+    },
+    {
+     "name": "close button",
+     "kind": "ink",
+     "at": [
+      1019,
+      47,
+      1055,
+      83
+     ]
+    },
+    {
+     "name": "group left edge",
+     "kind": "hscan",
+     "at": [
+      400,
+      300,
+      325
+     ]
+    },
+    {
+     "name": "group right edge",
+     "kind": "hscan",
+     "at": [
+      400,
+      1015,
+      1040
+     ]
+    },
+    {
+     "name": "restore defaults left edge",
+     "kind": "hscan",
+     "at": [
+      65.0,
+      849,
+      861
+     ]
+    },
+    {
+     "name": "restore defaults right edge",
+     "kind": "hscan",
+     "at": [
+      65.0,
+      1013,
+      1025
+     ]
+    },
+    {
+     "name": "restore defaults top/bottom",
+     "kind": "vscan",
+     "at": [
+      858,
+      47,
+      83
+     ]
+    },
+    {
+     "name": "h2 Notifications",
+     "kind": "ink",
+     "at": [
+      323,
+      109,
+      430,
+      145
+     ],
+     "text": true
+    },
+    {
+     "name": "notifications card top",
+     "kind": "vscan",
+     "at": [
+      600,
+      140,
+      165
+     ]
+    },
+    {
+     "name": "thread notifications title",
+     "kind": "ink",
+     "at": [
+      324,
+      160,
+      466,
+      188
+     ],
+     "text": true
+    },
+    {
+     "name": "thread notifications description",
+     "kind": "ink",
+     "at": [
+      324,
+      184,
+      760,
+      228
+     ],
+     "text": true
+    },
+    {
+     "name": "thread notifications select left edge",
+     "kind": "hscan",
+     "at": [
+      194.0,
+      782,
+      794
+     ]
+    },
+    {
+     "name": "thread notifications select right edge",
+     "kind": "hscan",
+     "at": [
+      194.0,
+      1006,
+      1018
+     ]
+    },
+    {
+     "name": "thread notifications select top/bottom",
+     "kind": "vscan",
+     "at": [
+      791,
+      174,
+      214
+     ]
+    },
+    {
+     "name": "in-app title",
+     "kind": "ink",
+     "at": [
+      324,
+      245,
+      463,
+      273
+     ],
+     "text": true
+    },
+    {
+     "name": "h2 Sidebar",
+     "kind": "ink",
+     "at": [
+      323,
+      466,
+      389,
+      502
+     ],
+     "text": true
+    },
+    {
+     "name": "project order select left edge",
+     "kind": "hscan",
+     "at": [
+      609.0,
+      830,
+      842
+     ]
+    },
+    {
+     "name": "project order select right edge",
+     "kind": "hscan",
+     "at": [
+      609.0,
+      1006,
+      1018
+     ]
+    },
+    {
+     "name": "project order select top/bottom",
+     "kind": "vscan",
+     "at": [
+      839,
+      589,
+      629
+     ]
+    },
+    {
+     "name": "working section title",
+     "kind": "ink",
+     "at": [
+      324,
+      651,
+      440,
+      679
+     ],
+     "text": true
+    }
+   ]
+  },
+  "settings-appearance": {
+   "elements": [
+    {
+     "name": "modal fill (content)",
+     "kind": "fill",
+     "at": [
+      700,
+      730
+     ]
+    },
+    {
+     "name": "nav search kbd",
+     "kind": "ink",
+     "at": [
+      240,
+      51,
+      268,
+      79
+     ]
+    },
+    {
+     "name": "breadcrumb",
+     "kind": "ink",
+     "at": [
+      297,
+      51,
+      471,
+      79
+     ],
+     "text": true
+    },
+    {
+     "name": "close button",
+     "kind": "ink",
+     "at": [
+      1019,
+      47,
+      1055,
+      83
+     ]
+    },
+    {
+     "name": "h3 Color scheme",
+     "kind": "ink",
+     "at": [
+      323,
+      109,
+      436,
+      145
+     ],
+     "text": true
+    },
+    {
+     "name": "system tile",
+     "kind": "ink",
+     "at": [
+      308,
+      150,
+      545,
+      336
+     ]
+    },
+    {
+     "name": "dark tile",
+     "kind": "ink",
+     "at": [
+      795,
+      150,
+      1032,
+      336
+     ]
+    },
+    {
+     "name": "h3 Themes",
+     "kind": "ink",
+     "at": [
+      323,
+      361,
+      393,
+      393
+     ],
+     "text": true
+    },
+    {
+     "name": "create theme left edge",
+     "kind": "hscan",
+     "at": [
+      377.0,
+      799,
+      811
+     ]
+    },
+    {
+     "name": "create theme right edge",
+     "kind": "hscan",
+     "at": [
+      377.0,
+      907,
+      919
+     ]
+    },
+    {
+     "name": "create theme top/bottom",
+     "kind": "vscan",
+     "at": [
+      808,
+      359,
+      395
+     ]
+    },
+    {
+     "name": "add theme left edge",
+     "kind": "hscan",
+     "at": [
+      377.0,
+      915,
+      927
+     ]
+    },
+    {
+     "name": "add theme right edge",
+     "kind": "hscan",
+     "at": [
+      377.0,
+      1007,
+      1019
+     ]
+    },
+    {
+     "name": "add theme top/bottom",
+     "kind": "vscan",
+     "at": [
+      924,
+      359,
+      395
+     ]
+    },
+    {
+     "name": "T3 Code light sphere",
+     "kind": "ink",
+     "at": [
+      416,
+      414,
+      484,
+      482
+     ]
+    },
+    {
+     "name": "T3 Code name",
+     "kind": "ink",
+     "at": [
+      320,
+      488,
+      385,
+      516
+     ],
+     "text": true
+    },
+    {
+     "name": "T3 Code duplicate left edge",
+     "kind": "hscan",
+     "at": [
+      502.0,
+      623,
+      635
+     ]
+    },
+    {
+     "name": "T3 Code duplicate right edge",
+     "kind": "hscan",
+     "at": [
+      502.0,
+      647,
+      659
+     ]
+    },
+    {
+     "name": "T3 Code duplicate top/bottom",
+     "kind": "vscan",
+     "at": [
+      632,
+      484,
+      520
+     ]
+    },
+    {
+     "name": "T3 Chat light sphere",
+     "kind": "ink",
+     "at": [
+      779,
+      414,
+      847,
+      482
+     ]
+    },
+    {
+     "name": "Grove light sphere",
+     "kind": "ink",
+     "at": [
+      416,
+      548,
+      484,
+      616
+     ]
+    }
+   ]
+  },
+  "settings-chat": {
+   "elements": [
+    {
+     "name": "modal fill (content)",
+     "kind": "fill",
+     "at": [
+      700,
+      730
+     ]
+    },
+    {
+     "name": "nav search kbd",
+     "kind": "ink",
+     "at": [
+      240,
+      51,
+      268,
+      79
+     ]
+    },
+    {
+     "name": "breadcrumb",
+     "kind": "ink",
+     "at": [
+      297,
+      51,
+      421,
+      79
+     ],
+     "text": true
+    },
+    {
+     "name": "close button",
+     "kind": "ink",
+     "at": [
+      1019,
+      47,
+      1055,
+      83
+     ]
+    },
+    {
+     "name": "group left edge",
+     "kind": "hscan",
+     "at": [
+      400,
+      300,
+      325
+     ]
+    },
+    {
+     "name": "group right edge",
+     "kind": "hscan",
+     "at": [
+      400,
+      1015,
+      1040
+     ]
+    },
+    {
+     "name": "h2 Composer",
+     "kind": "ink",
+     "at": [
+      323,
+      109,
+      411,
+      145
+     ],
+     "text": true
+    },
+    {
+     "name": "send shortcut title",
+     "kind": "ink",
+     "at": [
+      324,
+      227,
+      425,
+      255
+     ],
+     "text": true
+    },
+    {
+     "name": "send shortcut select left edge",
+     "kind": "hscan",
+     "at": [
+      252.0,
+      846,
+      858
+     ]
+    },
+    {
+     "name": "send shortcut select right edge",
+     "kind": "hscan",
+     "at": [
+      252.0,
+      1006,
+      1018
+     ]
+    },
+    {
+     "name": "send shortcut select top/bottom",
+     "kind": "vscan",
+     "at": [
+      855,
+      232,
+      272
+     ]
+    },
+    {
+     "name": "advanced",
+     "kind": "ink",
+     "at": [
+      308,
+      282,
+      476,
+      330
+     ],
+     "text": true
+    },
+    {
+     "name": "h2 Follow-ups",
+     "kind": "ink",
+     "at": [
+      323,
+      355,
+      416,
+      391
+     ],
+     "text": true
+    },
+    {
+     "name": "follow-up select left edge",
+     "kind": "hscan",
+     "at": [
+      440.0,
+      846,
+      858
+     ]
+    },
+    {
+     "name": "follow-up select right edge",
+     "kind": "hscan",
+     "at": [
+      440.0,
+      1006,
+      1018
+     ]
+    },
+    {
+     "name": "follow-up select top/bottom",
+     "kind": "vscan",
+     "at": [
+      855,
+      420,
+      460
+     ]
+    },
+    {
+     "name": "h2 Activity",
+     "kind": "ink",
+     "at": [
+      323,
+      511,
+      390,
+      547
+     ],
+     "text": true
+    },
+    {
+     "name": "tool calls select left edge",
+     "kind": "hscan",
+     "at": [
+      596.0,
+      846,
+      858
+     ]
+    },
+    {
+     "name": "tool calls select right edge",
+     "kind": "hscan",
+     "at": [
+      596.0,
+      1006,
+      1018
+     ]
+    },
+    {
+     "name": "tool calls select top/bottom",
+     "kind": "vscan",
+     "at": [
+      855,
+      576,
+      616
+     ]
+    },
+    {
+     "name": "h2 Screen reader",
+     "kind": "ink",
+     "at": [
+      323,
+      667,
+      437,
+      703
+     ],
+     "text": true
+    }
+   ]
+  },
+  "settings-diffs": {
+   "elements": [
+    {
+     "name": "modal fill (content)",
+     "kind": "fill",
+     "at": [
+      700,
+      730
+     ]
+    },
+    {
+     "name": "nav search kbd",
+     "kind": "ink",
+     "at": [
+      240,
+      51,
+      268,
+      79
+     ]
+    },
+    {
+     "name": "breadcrumb",
+     "kind": "ink",
+     "at": [
+      297,
+      51,
+      526,
+      79
+     ],
+     "text": true
+    },
+    {
+     "name": "close button",
+     "kind": "ink",
+     "at": [
+      1019,
+      47,
+      1055,
+      83
+     ]
+    },
+    {
+     "name": "group left edge",
+     "kind": "hscan",
+     "at": [
+      400,
+      300,
+      325
+     ]
+    },
+    {
+     "name": "group right edge",
+     "kind": "hscan",
+     "at": [
+      400,
+      1015,
+      1040
+     ]
+    },
+    {
+     "name": "h2 Diffs",
+     "kind": "ink",
+     "at": [
+      323,
+      109,
+      367,
+      145
+     ],
+     "text": true
+    },
+    {
+     "name": "diff layout select left edge",
+     "kind": "hscan",
+     "at": [
+      185.0,
+      846,
+      858
+     ]
+    },
+    {
+     "name": "diff layout select right edge",
+     "kind": "hscan",
+     "at": [
+      185.0,
+      1006,
+      1018
+     ]
+    },
+    {
+     "name": "diff layout select top/bottom",
+     "kind": "vscan",
+     "at": [
+      855,
+      165,
+      205
+     ]
+    },
+    {
+     "name": "file state select left edge",
+     "kind": "hscan",
+     "at": [
+      319.0,
+      846,
+      858
+     ]
+    },
+    {
+     "name": "file state select right edge",
+     "kind": "hscan",
+     "at": [
+      319.0,
+      1006,
+      1018
+     ]
+    },
+    {
+     "name": "file state select top/bottom",
+     "kind": "vscan",
+     "at": [
+      855,
+      299,
+      339
+     ]
+    },
+    {
+     "name": "diff colors select left edge",
+     "kind": "hscan",
+     "at": [
+      386.0,
+      846,
+      858
+     ]
+    },
+    {
+     "name": "diff colors select right edge",
+     "kind": "hscan",
+     "at": [
+      386.0,
+      1006,
+      1018
+     ]
+    },
+    {
+     "name": "diff colors select top/bottom",
+     "kind": "vscan",
+     "at": [
+      855,
+      366,
+      406
+     ]
+    },
+    {
+     "name": "diff colors value",
+     "kind": "ink",
+     "at": [
+      858,
+      372,
+      990,
+      400
+     ],
+     "text": true
+    },
+    {
+     "name": "h2 Pull requests",
+     "kind": "ink",
+     "at": [
+      323,
+      448,
+      431,
+      484
+     ],
+     "text": true
+    },
+    {
+     "name": "open in T3 Code title",
+     "kind": "ink",
+     "at": [
+      324,
+      566,
+      537,
+      594
+     ],
+     "text": true
+    }
+   ]
+  },
+  "settings-keybindings": {
+   "elements": [
+    {
+     "name": "modal fill (content)",
+     "kind": "fill",
+     "at": [
+      700,
+      730
+     ]
+    },
+    {
+     "name": "nav search kbd",
+     "kind": "ink",
+     "at": [
+      240,
+      51,
+      268,
+      79
+     ]
+    },
+    {
+     "name": "breadcrumb",
+     "kind": "ink",
+     "at": [
+      297,
+      51,
+      474,
+      79
+     ],
+     "text": true
+    },
+    {
+     "name": "close button",
+     "kind": "ink",
+     "at": [
+      1019,
+      47,
+      1055,
+      83
+     ]
+    },
+    {
+     "name": "scope sentence",
+     "kind": "ink",
+     "at": [
+      323,
+      109,
+      790,
+      145
+     ]
+    },
+    {
+     "name": "h2 Keybindings",
+     "kind": "ink",
+     "at": [
+      323,
+      169,
+      426,
+      205
+     ],
+     "text": true
+    },
+    {
+     "name": "search field left edge",
+     "kind": "hscan",
+     "at": [
+      241.0,
+      322,
+      334
+     ]
+    },
+    {
+     "name": "search field right edge",
+     "kind": "hscan",
+     "at": [
+      241.0,
+      807,
+      819
+     ]
+    },
+    {
+     "name": "search field top/bottom",
+     "kind": "vscan",
+     "at": [
+      331,
+      218,
+      264
+     ]
+    },
+    {
+     "name": "search icon",
+     "kind": "ink",
+     "at": [
+      334,
+      230,
+      356,
+      252
+     ]
+    },
+    {
+     "name": "add keybinding left edge",
+     "kind": "hscan",
+     "at": [
+      241.0,
+      815,
+      827
+     ]
+    },
+    {
+     "name": "add keybinding right edge",
+     "kind": "hscan",
+     "at": [
+      241.0,
+      966,
+      978
+     ]
+    },
+    {
+     "name": "add keybinding top/bottom",
+     "kind": "vscan",
+     "at": [
+      824,
+      219,
+      263
+     ]
+    },
+    {
+     "name": "keybindings.json left edge",
+     "kind": "hscan",
+     "at": [
+      241.0,
+      974,
+      986
+     ]
+    },
+    {
+     "name": "keybindings.json right edge",
+     "kind": "hscan",
+     "at": [
+      241.0,
+      1006,
+      1018
+     ]
+    },
+    {
+     "name": "keybindings.json top/bottom",
+     "kind": "vscan",
+     "at": [
+      983,
+      219,
+      263
+     ]
+    },
+    {
+     "name": "h2 Navigation",
+     "kind": "ink",
+     "at": [
+      323,
+      299,
+      414,
+      335
+     ],
+     "text": true
+    },
+    {
+     "name": "row 1 title",
+     "kind": "ink",
+     "at": [
+      324,
+      350,
+      504,
+      378
+     ],
+     "text": true
+    },
+    {
+     "name": "row 1 when",
+     "kind": "ink",
+     "at": [
+      324,
+      376,
+      482,
+      404
+     ],
+     "text": true
+    },
+    {
+     "name": "row 1 keycaps",
+     "kind": "ink",
+     "at": [
+      963,
+      364,
+      1015,
+      392
+     ],
+     "text": "right"
+    },
+    {
+     "name": "row 2 title",
+     "kind": "ink",
+     "at": [
+      324,
+      423,
+      473,
+      451
+     ],
+     "text": true
+    },
+    {
+     "name": "row 2 when Always",
+     "kind": "ink",
+     "at": [
+      324,
+      449,
+      433,
+      477
+     ],
+     "text": true
+    },
+    {
+     "name": "row 2 keycaps",
+     "kind": "ink",
+     "at": [
+      963,
+      437,
+      1015,
+      465
+     ],
+     "text": "right"
+    },
+    {
+     "name": "row 3 keycaps",
+     "kind": "ink",
+     "at": [
+      963,
+      510,
+      1015,
+      538
+     ],
+     "text": "right"
+    }
+   ]
+  },
+  "settings-voice": {
+   "elements": [
+    {
+     "name": "modal fill (content)",
+     "kind": "fill",
+     "at": [
+      700,
+      730
+     ]
+    },
+    {
+     "name": "nav search kbd",
+     "kind": "ink",
+     "at": [
+      240,
+      51,
+      268,
+      79
+     ]
+    },
+    {
+     "name": "breadcrumb",
+     "kind": "ink",
+     "at": [
+      297,
+      51,
+      427,
+      79
+     ],
+     "text": true
+    },
+    {
+     "name": "close button",
+     "kind": "ink",
+     "at": [
+      1019,
+      47,
+      1055,
+      83
+     ]
+    },
+    {
+     "name": "scope sentence",
+     "kind": "ink",
+     "at": [
+      323,
+      109,
+      790,
+      145
+     ]
+    },
+    {
+     "name": "h2 Input",
+     "kind": "ink",
+     "at": [
+      323,
+      169,
+      371,
+      205
+     ],
+     "text": true
+    },
+    {
+     "name": "refresh microphones left edge",
+     "kind": "hscan",
+     "at": [
+      245.0,
+      978,
+      990
+     ]
+    },
+    {
+     "name": "refresh microphones right edge",
+     "kind": "hscan",
+     "at": [
+      245.0,
+      1006,
+      1018
+     ]
+    },
+    {
+     "name": "refresh microphones top/bottom",
+     "kind": "vscan",
+     "at": [
+      987,
+      225,
+      265
+     ]
+    },
+    {
+     "name": "microphone list",
+     "kind": "ink",
+     "at": [
+      327,
+      277,
+      1013,
+      315
+     ]
+    },
+    {
+     "name": "record button left edge",
+     "kind": "hscan",
+     "at": [
+      362.0,
+      921,
+      933
+     ]
+    },
+    {
+     "name": "record button right edge",
+     "kind": "hscan",
+     "at": [
+      362.0,
+      1006,
+      1018
+     ]
+    },
+    {
+     "name": "record button top/bottom",
+     "kind": "vscan",
+     "at": [
+      930,
+      342,
+      382
+     ]
+    },
+    {
+     "name": "dictation select left edge",
+     "kind": "hscan",
+     "at": [
+      429.0,
+      846,
+      858
+     ]
+    },
+    {
+     "name": "dictation select right edge",
+     "kind": "hscan",
+     "at": [
+      429.0,
+      1006,
+      1018
+     ]
+    },
+    {
+     "name": "dictation select top/bottom",
+     "kind": "vscan",
+     "at": [
+      855,
+      409,
+      449
+     ]
+    },
+    {
+     "name": "h2 Transcription",
+     "kind": "ink",
+     "at": [
+      323,
+      491,
+      434,
+      527
+     ],
+     "text": true
+    },
+    {
+     "name": "transcribe with select left edge",
+     "kind": "hscan",
+     "at": [
+      567.0,
+      846,
+      858
+     ]
+    },
+    {
+     "name": "transcribe with select right edge",
+     "kind": "hscan",
+     "at": [
+      567.0,
+      1006,
+      1018
+     ]
+    },
+    {
+     "name": "transcribe with select top/bottom",
+     "kind": "vscan",
+     "at": [
+      855,
+      547,
+      587
+     ]
+    },
+    {
+     "name": "h2 Dictionary",
+     "kind": "ink",
+     "at": [
+      327,
+      767,
+      406,
+      780
+     ],
+     "exclude": "cut by the window edge"
+    }
+   ]
+  },
+  "settings-snap-shot": {
+   "elements": [
+    {
+     "name": "modal fill (content)",
+     "kind": "fill",
+     "at": [
+      700,
+      730
+     ]
+    },
+    {
+     "name": "nav search kbd",
+     "kind": "ink",
+     "at": [
+      240,
+      51,
+      268,
+      79
+     ]
+    },
+    {
+     "name": "breadcrumb",
+     "kind": "ink",
+     "at": [
+      297,
+      51,
+      462,
+      79
+     ],
+     "text": true
+    },
+    {
+     "name": "close button",
+     "kind": "ink",
+     "at": [
+      1019,
+      47,
+      1055,
+      83
+     ]
+    },
+    {
+     "name": "group left edge",
+     "kind": "hscan",
+     "at": [
+      400,
+      300,
+      325
+     ]
+    },
+    {
+     "name": "group right edge",
+     "kind": "hscan",
+     "at": [
+      400,
+      1015,
+      1040
+     ]
+    },
+    {
+     "name": "h2 SnapShots",
+     "kind": "ink",
+     "at": [
+      323,
+      109,
+      415,
+      145
+     ],
+     "text": true
+    },
+    {
+     "name": "title",
+     "kind": "ink",
+     "at": [
+      324,
+      160,
+      404,
+      188
+     ],
+     "text": true
+    },
+    {
+     "name": "description",
+     "kind": "ink",
+     "at": [
+      324,
+      184,
+      632,
+      210
+     ],
+     "text": true
+    },
+    {
+     "name": "status",
+     "kind": "ink",
+     "at": [
+      324,
+      206,
+      532,
+      232
+     ],
+     "text": true
+    }
+   ]
+  },
+  "settings-labs": {
+   "elements": [
+    {
+     "name": "modal fill (content)",
+     "kind": "fill",
+     "at": [
+      700,
+      730
+     ]
+    },
+    {
+     "name": "nav search kbd",
+     "kind": "ink",
+     "at": [
+      240,
+      51,
+      268,
+      79
+     ]
+    },
+    {
+     "name": "breadcrumb",
+     "kind": "ink",
+     "at": [
+      297,
+      51,
+      423,
+      79
+     ],
+     "text": true
+    },
+    {
+     "name": "close button",
+     "kind": "ink",
+     "at": [
+      1019,
+      47,
+      1055,
+      83
+     ]
+    },
+    {
+     "name": "scope sentence",
+     "kind": "ink",
+     "at": [
+      323,
+      109,
+      790,
+      145
+     ]
+    },
+    {
+     "name": "h2 Beta",
+     "kind": "ink",
+     "at": [
+      323,
+      169,
+      366,
+      205
+     ],
+     "text": true
+    },
+    {
+     "name": "boring sidebar title",
+     "kind": "ink",
+     "at": [
+      324,
+      220,
+      555,
+      248
+     ],
+     "text": true
+    },
+    {
+     "name": "guest links title",
+     "kind": "ink",
+     "at": [
+      324,
+      305,
+      407,
+      333
+     ],
+     "text": true
+    },
+    {
+     "name": "sharing & access link",
+     "kind": "ink",
+     "at": [
+      552,
+      348,
+      658,
+      371
+     ],
+     "text": true
+    },
+    {
+     "name": "linked environments title",
+     "kind": "ink",
+     "at": [
+      324,
+      390,
+      471,
+      418
+     ],
+     "text": true
+    },
+    {
+     "name": "simlock title",
+     "kind": "ink",
+     "at": [
+      324,
+      560,
+      526,
+      588
+     ],
+     "text": true
+    }
+   ]
+  },
+  "settings-archived": {
+   "elements": [
+    {
+     "name": "modal fill (content)",
+     "kind": "fill",
+     "at": [
+      700,
+      730
+     ]
+    },
+    {
+     "name": "nav search kbd",
+     "kind": "ink",
+     "at": [
+      240,
+      51,
+      268,
+      79
+     ]
+    },
+    {
+     "name": "breadcrumb",
+     "kind": "ink",
+     "at": [
+      297,
+      51,
+      442,
+      79
+     ],
+     "text": true
+    },
+    {
+     "name": "close button",
+     "kind": "ink",
+     "at": [
+      1019,
+      47,
+      1055,
+      83
+     ]
+    },
+    {
+     "name": "scope sentence",
+     "kind": "ink",
+     "at": [
+      323,
+      109,
+      790,
+      145
+     ]
+    },
+    {
+     "name": "h2 Archived threads",
+     "kind": "ink",
+     "at": [
+      323,
+      169,
+      463,
+      205
+     ],
+     "text": true
+    },
+    {
+     "name": "empty title with icon",
+     "kind": "ink",
+     "at": [
+      324,
+      220,
+      490,
+      248
+     ],
+     "exclude": "fixture: the parity world settings server is not connected, so the page shows the load error instead of the empty state"
+    },
+    {
+     "name": "empty description",
+     "kind": "ink",
+     "at": [
+      324,
+      246,
+      532,
+      272
+     ],
+     "exclude": "fixture: the parity world settings server is not connected, so the page shows the load error instead of the empty state"
+    },
+    {
+     "name": "card top/bottom",
+     "kind": "vscan",
+     "at": [
+      600,
+      200,
+      300
+     ],
+     "exclude": "fixture: the parity world settings server is not connected, so the page shows the load error instead of the empty state"
+    }
+   ]
+  },
+  "settings-about": {
+   "elements": [
+    {
+     "name": "modal fill (content)",
+     "kind": "fill",
+     "at": [
+      700,
+      730
+     ]
+    },
+    {
+     "name": "nav search kbd",
+     "kind": "ink",
+     "at": [
+      240,
+      51,
+      268,
+      79
+     ]
+    },
+    {
+     "name": "breadcrumb",
+     "kind": "ink",
+     "at": [
+      297,
+      51,
+      430,
+      79
+     ],
+     "text": true
+    },
+    {
+     "name": "close button",
+     "kind": "ink",
+     "at": [
+      1019,
+      47,
+      1055,
+      83
+     ]
+    },
+    {
+     "name": "h2 App",
+     "kind": "ink",
+     "at": [
+      323,
+      109,
+      363,
+      145
+     ],
+     "text": true
+    },
+    {
+     "name": "version title",
+     "kind": "ink",
+     "at": [
+      324,
+      160,
+      382,
+      188
+     ],
+     "text": true
+    },
+    {
+     "name": "version copy",
+     "kind": "ink",
+     "at": [
+      382,
+      165,
+      426,
+      189
+     ],
+     "text": true
+    },
+    {
+     "name": "update track select left edge",
+     "kind": "hscan",
+     "at": [
+      262.0,
+      846,
+      858
+     ]
+    },
+    {
+     "name": "update track select right edge",
+     "kind": "hscan",
+     "at": [
+      262.0,
+      1006,
+      1018
+     ]
+    },
+    {
+     "name": "update track select top/bottom",
+     "kind": "vscan",
+     "at": [
+      855,
+      242,
+      282
+     ]
+    },
+    {
+     "name": "iPhone and iPad left edge",
+     "kind": "hscan",
+     "at": [
+      338.0,
+      761,
+      773
+     ]
+    },
+    {
+     "name": "iPhone and iPad right edge",
+     "kind": "hscan",
+     "at": [
+      338.0,
+      907,
+      919
+     ]
+    },
+    {
+     "name": "iPhone and iPad top/bottom",
+     "kind": "vscan",
+     "at": [
+      770,
+      318,
+      358
+     ]
+    },
+    {
+     "name": "Android left edge",
+     "kind": "hscan",
+     "at": [
+      338.0,
+      915,
+      927
+     ]
+    },
+    {
+     "name": "Android right edge",
+     "kind": "hscan",
+     "at": [
+      338.0,
+      1006,
+      1018
+     ]
+    },
+    {
+     "name": "Android top/bottom",
+     "kind": "vscan",
+     "at": [
+      924,
+      318,
+      358
+     ]
+    },
+    {
+     "name": "check for updates",
+     "kind": "ink",
+     "at": [
+      863,
+      168,
+      1016,
+      204
+     ],
+     "exclude": "the native app has no self-updater yet; see the settings report"
+    },
+    {
+     "name": "h2 Legal",
+     "kind": "ink",
+     "at": [
+      323,
+      467,
+      372,
+      503
+     ],
+     "exclude": "sits 67px higher: the Welcome page row needs a primary environment this remote-only app does not have"
+    }
+   ]
+  },
   "terminal-drawer": {
    "elements": [
     {
@@ -4124,6 +5888,375 @@
     }
    ]
   },
+  "thread-actions-menu": {
+   "elements": [
+    {
+     "name": "titlebar fill",
+     "kind": "fill",
+     "at": [
+      600,
+      30
+     ]
+    },
+    {
+     "name": "sidebar fill (top)",
+     "kind": "fill",
+     "at": [
+      240,
+      40
+     ]
+    },
+    {
+     "name": "sidebar edge",
+     "kind": "hscan",
+     "at": [
+      400,
+      250,
+      262
+     ]
+    },
+    {
+     "name": "sidebar toggle",
+     "kind": "ink",
+     "at": [
+      84,
+      14,
+      112,
+      40
+     ]
+    },
+    {
+     "name": "right toggles",
+     "kind": "ink",
+     "at": [
+      995,
+      14,
+      1090,
+      40
+     ]
+    },
+    {
+     "name": "breadcrumb monogram",
+     "kind": "ink",
+     "at": [
+      272,
+      16,
+      293,
+      37
+     ]
+    },
+    {
+     "name": "breadcrumb project",
+     "kind": "ink",
+     "at": [
+      294,
+      14,
+      350,
+      40
+     ],
+     "text": true
+    },
+    {
+     "name": "breadcrumb slash",
+     "kind": "ink",
+     "at": [
+      350,
+      14,
+      366,
+      40
+     ],
+     "text": true
+    },
+    {
+     "name": "breadcrumb title",
+     "kind": "ink",
+     "at": [
+      368,
+      14,
+      520,
+      40
+     ],
+     "text": true
+    },
+    {
+     "name": "dev badge",
+     "kind": "ink",
+     "at": [
+      2,
+      15,
+      34,
+      37
+     ],
+     "exclude": "dev builds only; never on the owner's build"
+    },
+    {
+     "name": "menu left edge",
+     "kind": "hscan",
+     "at": [
+      120,
+      360,
+      380
+     ],
+     "blur": true
+    },
+    {
+     "name": "menu top edge",
+     "kind": "vscan",
+     "at": [
+      450,
+      30,
+      60
+     ],
+     "blur": true
+    },
+    {
+     "name": "menu bottom edge",
+     "kind": "vscan",
+     "at": [
+      450,
+      405,
+      440
+     ],
+     "blur": true
+    },
+    {
+     "name": "item 1 icon",
+     "kind": "ink",
+     "at": [
+      380,
+      66,
+      400,
+      86
+     ]
+    },
+    {
+     "name": "item 1 label",
+     "kind": "ink",
+     "at": [
+      405,
+      64,
+      520,
+      88
+     ],
+     "text": true
+    },
+    {
+     "name": "snooze chevron",
+     "kind": "ink",
+     "at": [
+      545,
+      166,
+      570,
+      186
+     ]
+    },
+    {
+     "name": "delete label",
+     "kind": "ink",
+     "at": [
+      405,
+      402,
+      470,
+      426
+     ],
+     "text": true
+    }
+   ]
+  },
+  "composer-markdown": {
+   "elements": [
+    {
+     "name": "titlebar fill",
+     "kind": "fill",
+     "at": [
+      600,
+      30
+     ]
+    },
+    {
+     "name": "sidebar fill (top)",
+     "kind": "fill",
+     "at": [
+      240,
+      40
+     ]
+    },
+    {
+     "name": "sidebar edge",
+     "kind": "hscan",
+     "at": [
+      400,
+      250,
+      262
+     ]
+    },
+    {
+     "name": "sidebar toggle",
+     "kind": "ink",
+     "at": [
+      84,
+      14,
+      112,
+      40
+     ]
+    },
+    {
+     "name": "right toggles",
+     "kind": "ink",
+     "at": [
+      995,
+      14,
+      1090,
+      40
+     ]
+    },
+    {
+     "name": "breadcrumb monogram",
+     "kind": "ink",
+     "at": [
+      272,
+      16,
+      293,
+      37
+     ]
+    },
+    {
+     "name": "breadcrumb project",
+     "kind": "ink",
+     "at": [
+      294,
+      14,
+      350,
+      40
+     ],
+     "text": true
+    },
+    {
+     "name": "breadcrumb slash",
+     "kind": "ink",
+     "at": [
+      350,
+      14,
+      366,
+      40
+     ],
+     "text": true
+    },
+    {
+     "name": "breadcrumb title",
+     "kind": "ink",
+     "at": [
+      368,
+      14,
+      520,
+      40
+     ],
+     "text": true
+    },
+    {
+     "name": "dev badge",
+     "kind": "ink",
+     "at": [
+      2,
+      15,
+      34,
+      37
+     ],
+     "exclude": "dev builds only; never on the owner's build"
+    },
+    {
+     "name": "code block left edge",
+     "kind": "hscan",
+     "at": [
+      640,
+      300,
+      340
+     ],
+     "blur": true
+    },
+    {
+     "name": "code block right edge",
+     "kind": "hscan",
+     "at": [
+      640,
+      1020,
+      1060
+     ],
+     "blur": true
+    },
+    {
+     "name": "code block top",
+     "kind": "vscan",
+     "at": [
+      600,
+      600,
+      640
+     ],
+     "blur": true
+    },
+    {
+     "name": "code block fill",
+     "kind": "fill",
+     "at": [
+      700,
+      660
+     ]
+    },
+    {
+     "name": "language icon",
+     "kind": "ink",
+     "at": [
+      330,
+      630,
+      352,
+      652
+     ]
+    },
+    {
+     "name": "language label",
+     "kind": "ink",
+     "at": [
+      348,
+      628,
+      425,
+      650
+     ],
+     "text": true
+    },
+    {
+     "name": "code line 1",
+     "kind": "ink",
+     "at": [
+      330,
+      652,
+      500,
+      672
+     ],
+     "text": true
+    },
+    {
+     "name": "inline code chip",
+     "kind": "ink",
+     "at": [
+      345,
+      588,
+      440,
+      610
+     ]
+    },
+    {
+     "name": "prose line",
+     "kind": "ink",
+     "at": [
+      318,
+      582,
+      500,
+      612
+     ],
+     "text": true
+    }
+   ]
+  },
   "window-thread-light": {
    "elements": [
     {
@@ -4210,6 +6343,986 @@
      ]
     }
    ]
+  },
+  "settings-providers": {
+   "elements": [
+    {
+     "name": "refresh icon",
+     "kind": "ink",
+     "at": [
+      903,
+      100,
+      921,
+      215
+     ],
+     "exclude": "locator: a control right of the scope row, so the page is judged apart from the shell above it"
+    },
+    {
+     "name": "heading",
+     "kind": "ink",
+     "at": [
+      325,
+      165,
+      402,
+      206
+     ],
+     "text": true,
+     "anchor": "refresh icon"
+    },
+    {
+     "name": "add button",
+     "kind": "ink",
+     "at": [
+      405,
+      175,
+      428,
+      199
+     ],
+     "anchor": "refresh icon"
+    },
+    {
+     "name": "card left edge",
+     "kind": "hscan",
+     "at": [
+      300,
+      300,
+      330
+     ],
+     "anchor": "refresh icon"
+    },
+    {
+     "name": "card right edge",
+     "kind": "hscan",
+     "at": [
+      300,
+      1010,
+      1040
+     ],
+     "anchor": "refresh icon"
+    },
+    {
+     "name": "row 1 mark",
+     "kind": "ink",
+     "at": [
+      328,
+      226,
+      348,
+      250
+     ],
+     "anchor": "refresh icon"
+    },
+    {
+     "name": "row 1 title",
+     "kind": "ink",
+     "at": [
+      358,
+      226,
+      420,
+      250
+     ],
+     "text": true,
+     "anchor": "refresh icon"
+    },
+    {
+     "name": "row 1 switch",
+     "kind": "ink",
+     "at": [
+      978,
+      236,
+      1016,
+      260
+     ],
+     "anchor": "refresh icon"
+    }
+   ]
+  },
+  "settings-source-control": {
+   "elements": [
+    {
+     "name": "first switch",
+     "kind": "ink",
+     "at": [
+      978,
+      100,
+      1016,
+      300
+     ],
+     "exclude": "locator: a control right of the scope row, so the page is judged apart from the shell above it"
+    },
+    {
+     "name": "heading",
+     "kind": "ink",
+     "at": [
+      325,
+      165,
+      425,
+      206
+     ],
+     "text": true,
+     "anchor": "first switch"
+    },
+    {
+     "name": "row 1 title",
+     "kind": "ink",
+     "at": [
+      326,
+      220,
+      452,
+      246
+     ],
+     "text": true,
+     "anchor": "first switch"
+    },
+    {
+     "name": "row 2 title",
+     "kind": "ink",
+     "at": [
+      326,
+      305,
+      575,
+      331
+     ],
+     "text": true,
+     "anchor": "first switch"
+    },
+    {
+     "name": "row 2 switch",
+     "kind": "ink",
+     "at": [
+      978,
+      326,
+      1016,
+      352
+     ],
+     "anchor": "first switch"
+    },
+    {
+     "name": "merge method select",
+     "kind": "hscan",
+     "at": [
+      424,
+      840,
+      1020
+     ],
+     "anchor": "first switch"
+    }
+   ]
+  },
+  "settings-worktrees": {
+   "elements": [
+    {
+     "name": "start from remote switch",
+     "kind": "ink",
+     "at": [
+      978,
+      285,
+      1016,
+      420
+     ],
+     "exclude": "locator: a control right of the scope row, so the page is judged apart from the shell above it"
+    },
+    {
+     "name": "heading",
+     "kind": "ink",
+     "at": [
+      325,
+      165,
+      395,
+      206
+     ],
+     "text": true,
+     "anchor": "start from remote switch"
+    },
+    {
+     "name": "row 1 title",
+     "kind": "ink",
+     "at": [
+      326,
+      220,
+      447,
+      246
+     ],
+     "text": true,
+     "anchor": "start from remote switch"
+    },
+    {
+     "name": "location input",
+     "kind": "hscan",
+     "at": [
+      263,
+      765,
+      1020
+     ],
+     "anchor": "start from remote switch"
+    },
+    {
+     "name": "advanced chevron",
+     "kind": "ink",
+     "at": [
+      326,
+      409,
+      344,
+      431
+     ],
+     "anchor": "start from remote switch"
+    },
+    {
+     "name": "advanced label",
+     "kind": "ink",
+     "at": [
+      344,
+      409,
+      400,
+      431
+     ],
+     "text": true,
+     "anchor": "start from remote switch"
+    },
+    {
+     "name": "branches heading",
+     "kind": "ink",
+     "at": [
+      325,
+      465,
+      402,
+      506
+     ],
+     "text": true,
+     "anchor": "start from remote switch"
+    }
+   ]
+  },
+  "settings-maintenance": {
+   "elements": [
+    {
+     "name": "first switch",
+     "kind": "ink",
+     "at": [
+      978,
+      100,
+      1016,
+      300
+     ],
+     "exclude": "locator: a control right of the scope row, so the page is judged apart from the shell above it"
+    },
+    {
+     "name": "heading",
+     "kind": "ink",
+     "at": [
+      325,
+      165,
+      395,
+      206
+     ],
+     "text": true,
+     "anchor": "first switch"
+    },
+    {
+     "name": "row 1 title",
+     "kind": "ink",
+     "at": [
+      326,
+      220,
+      489,
+      246
+     ],
+     "text": true,
+     "anchor": "first switch"
+    },
+    {
+     "name": "row 2 switch",
+     "kind": "ink",
+     "at": [
+      978,
+      326,
+      1016,
+      352
+     ],
+     "anchor": "first switch"
+    },
+    {
+     "name": "background heading",
+     "kind": "ink",
+     "at": [
+      325,
+      406,
+      483,
+      447
+     ],
+     "text": true,
+     "anchor": "first switch"
+    },
+    {
+     "name": "profile select",
+     "kind": "hscan",
+     "at": [
+      486,
+      840,
+      1020
+     ],
+     "anchor": "first switch"
+    },
+    {
+     "name": "artifacts heading",
+     "kind": "ink",
+     "at": [
+      325,
+      629,
+      466,
+      670
+     ],
+     "text": true,
+     "anchor": "first switch"
+    },
+    {
+     "name": "artifacts off label",
+     "kind": "ink",
+     "at": [
+      948,
+      698,
+      974,
+      720
+     ],
+     "text": "right",
+     "anchor": "first switch"
+    }
+   ]
+  },
+  "settings-threads": {
+   "elements": [
+    {
+     "name": "clone switch",
+     "kind": "ink",
+     "at": [
+      978,
+      262,
+      1016,
+      360
+     ],
+     "exclude": "locator: a control right of the scope row, so the page is judged apart from the shell above it"
+    },
+    {
+     "name": "heading",
+     "kind": "ink",
+     "at": [
+      325,
+      165,
+      430,
+      206
+     ],
+     "text": true,
+     "anchor": "clone switch"
+    },
+    {
+     "name": "row 1 title",
+     "kind": "ink",
+     "at": [
+      326,
+      220,
+      468,
+      246
+     ],
+     "text": true,
+     "anchor": "clone switch"
+    },
+    {
+     "name": "starts-in input",
+     "kind": "hscan",
+     "at": [
+      245,
+      715,
+      1020
+     ],
+     "anchor": "clone switch"
+    },
+    {
+     "name": "new threads heading",
+     "kind": "ink",
+     "at": [
+      325,
+      370,
+      426,
+      411
+     ],
+     "text": true,
+     "anchor": "clone switch"
+    }
+   ]
+  },
+  "settings-projects": {
+   "elements": [
+    {
+     "name": "row 1 chevron",
+     "kind": "ink",
+     "at": [
+      990,
+      100,
+      1016,
+      300
+     ],
+     "exclude": "locator: a control right of the scope row, so the page is judged apart from the shell above it"
+    },
+    {
+     "name": "intro",
+     "kind": "ink",
+     "at": [
+      309,
+      170,
+      800,
+      196
+     ],
+     "text": true,
+     "anchor": "row 1 chevron"
+    },
+    {
+     "name": "card left edge",
+     "kind": "hscan",
+     "at": [
+      236,
+      300,
+      330
+     ],
+     "anchor": "row 1 chevron"
+    },
+    {
+     "name": "card right edge",
+     "kind": "hscan",
+     "at": [
+      236,
+      1010,
+      1040
+     ],
+     "anchor": "row 1 chevron"
+    },
+    {
+     "name": "row 1 icon",
+     "kind": "ink",
+     "at": [
+      326,
+      226,
+      346,
+      246
+     ],
+     "anchor": "row 1 chevron"
+    },
+    {
+     "name": "row 1 title",
+     "kind": "ink",
+     "at": [
+      354,
+      216,
+      420,
+      240
+     ],
+     "text": true,
+     "anchor": "row 1 chevron"
+    },
+    {
+     "name": "row 2 icon",
+     "kind": "ink",
+     "at": [
+      326,
+      287,
+      346,
+      307
+     ],
+     "anchor": "row 1 chevron"
+    }
+   ]
+  },
+  "settings-browser": {
+   "elements": [
+    {
+     "name": "first switch",
+     "kind": "ink",
+     "at": [
+      978,
+      100,
+      1016,
+      290
+     ],
+     "exclude": "locator: a control right of the scope row, so the page is judged apart from the shell above it"
+    },
+    {
+     "name": "heading",
+     "kind": "ink",
+     "at": [
+      325,
+      165,
+      436,
+      206
+     ],
+     "text": true,
+     "anchor": "first switch"
+    },
+    {
+     "name": "row 1 title",
+     "kind": "ink",
+     "at": [
+      326,
+      220,
+      481,
+      246
+     ],
+     "text": true,
+     "anchor": "first switch"
+    },
+    {
+     "name": "browsing heading",
+     "kind": "ink",
+     "at": [
+      325,
+      303,
+      402,
+      344
+     ],
+     "text": true,
+     "anchor": "first switch"
+    },
+    {
+     "name": "add profile button",
+     "kind": "hscan",
+     "at": [
+      383,
+      890,
+      1020
+     ],
+     "anchor": "first switch"
+    },
+    {
+     "name": "profile list edge",
+     "kind": "hscan",
+     "at": [
+      433,
+      320,
+      340
+     ],
+     "anchor": "first switch"
+    }
+   ]
+  },
+  "settings-devices": {
+   "elements": [
+    {
+     "name": "first switch",
+     "kind": "ink",
+     "at": [
+      978,
+      100,
+      1016,
+      290
+     ],
+     "exclude": "locator: a control right of the scope row, so the page is judged apart from the shell above it"
+    },
+    {
+     "name": "heading",
+     "kind": "ink",
+     "at": [
+      325,
+      165,
+      390,
+      206
+     ],
+     "text": true,
+     "anchor": "first switch"
+    },
+    {
+     "name": "row 1 title",
+     "kind": "ink",
+     "at": [
+      326,
+      220,
+      413,
+      246
+     ],
+     "text": true,
+     "anchor": "first switch"
+    },
+    {
+     "name": "sources heading",
+     "kind": "ink",
+     "at": [
+      325,
+      370,
+      447,
+      411
+     ],
+     "text": true,
+     "anchor": "first switch"
+    },
+    {
+     "name": "add source button",
+     "kind": "hscan",
+     "at": [
+      392,
+      870,
+      1020
+     ],
+     "anchor": "first switch"
+    },
+    {
+     "name": "local simulators",
+     "kind": "ink",
+     "at": [
+      326,
+      425,
+      440,
+      451
+     ],
+     "text": true,
+     "anchor": "first switch"
+    }
+   ]
+  },
+  "usage-limits-empty": {
+   "elements": [
+    {
+     "name": "dialog left edge",
+     "kind": "hscan",
+     "at": [
+      400,
+      36,
+      50
+     ]
+    },
+    {
+     "name": "dialog top edge",
+     "kind": "vscan",
+     "at": [
+      500,
+      30,
+      50
+     ]
+    },
+    {
+     "name": "dialog fill",
+     "kind": "fill",
+     "at": [
+      500,
+      400
+     ]
+    },
+    {
+     "name": "breadcrumb Usage",
+     "kind": "ink",
+     "at": [
+      61,
+      54,
+      106,
+      76
+     ],
+     "text": true
+    },
+    {
+     "name": "breadcrumb environments",
+     "kind": "ink",
+     "at": [
+      133,
+      53,
+      246,
+      77
+     ],
+     "text": true
+    },
+    {
+     "name": "environments chevron",
+     "kind": "ink",
+     "at": [
+      247,
+      56,
+      262,
+      73
+     ]
+    },
+    {
+     "name": "breadcrumb providers",
+     "kind": "ink",
+     "at": [
+      290,
+      54,
+      377,
+      76
+     ],
+     "text": true
+    },
+    {
+     "name": "metric group edges",
+     "kind": "hscan",
+     "at": [
+      74.5,
+      780,
+      990
+     ]
+    },
+    {
+     "name": "Limits pressed",
+     "kind": "ink",
+     "at": [
+      918,
+      52,
+      981,
+      77
+     ],
+     "text": true
+    },
+    {
+     "name": "refresh",
+     "kind": "ink",
+     "at": [
+      991,
+      50,
+      1019,
+      79
+     ]
+    },
+    {
+     "name": "close",
+     "kind": "ink",
+     "at": [
+      1023,
+      50,
+      1051,
+      79
+     ]
+    },
+    {
+     "name": "header rule",
+     "kind": "vscan",
+     "at": [
+      500,
+      80,
+      96
+     ]
+    },
+    {
+     "name": "empty message",
+     "kind": "ink",
+     "at": [
+      65,
+      113,
+      1035,
+      133
+     ],
+     "text": true
+    }
+   ],
+   "reference": "usage"
+  },
+  "pull-requests-toolbar": {
+   "elements": [
+    {
+     "name": "search box left edge",
+     "kind": "hscan",
+     "at": [
+      93,
+      280,
+      300
+     ],
+     "port_dx": -262,
+     "port_dy": -12,
+     "note": "Linux topbar is 40px, the Mac's 52px (theme_tokens.rs); the scene has no sidebar; 6px scrollbar gutter in the capture"
+    },
+    {
+     "name": "search box top/bottom",
+     "kind": "vscan",
+     "at": [
+      500,
+      70,
+      116
+     ],
+     "port_dx": -262,
+     "port_dy": -12,
+     "note": "Linux topbar is 40px, the Mac's 52px (theme_tokens.rs); the scene has no sidebar; 6px scrollbar gutter in the capture"
+    },
+    {
+     "name": "search icon",
+     "kind": "ink",
+     "at": [
+      294,
+      83,
+      314,
+      103
+     ],
+     "port_dx": -262,
+     "port_dy": -12,
+     "note": "Linux topbar is 40px, the Mac's 52px (theme_tokens.rs); the scene has no sidebar; 6px scrollbar gutter in the capture"
+    },
+    {
+     "name": "search placeholder",
+     "kind": "ink",
+     "at": [
+      318,
+      83,
+      600,
+      103
+     ],
+     "text": true,
+     "port_dx": -262,
+     "port_dy": -12,
+     "note": "Linux topbar is 40px, the Mac's 52px (theme_tokens.rs); the scene has no sidebar; 6px scrollbar gutter in the capture"
+    },
+    {
+     "name": "sort button",
+     "kind": "ink",
+     "at": [
+      685,
+      77,
+      756,
+      109
+     ],
+     "port_dx": 6,
+     "port_dy": -12,
+     "note": "Linux topbar is 40px, the Mac's 52px (theme_tokens.rs); the scene has no sidebar; 6px scrollbar gutter in the capture"
+    },
+    {
+     "name": "views button",
+     "kind": "ink",
+     "at": [
+      858,
+      77,
+      960,
+      109
+     ],
+     "port_dx": 6,
+     "port_dy": -12,
+     "note": "Linux topbar is 40px, the Mac's 52px (theme_tokens.rs); the scene has no sidebar; 6px scrollbar gutter in the capture"
+    },
+    {
+     "name": "provider filter",
+     "kind": "ink",
+     "at": [
+      968,
+      77,
+      1030,
+      109
+     ],
+     "port_dx": 6,
+     "port_dy": -12,
+     "note": "Linux topbar is 40px, the Mac's 52px (theme_tokens.rs); the scene has no sidebar; 6px scrollbar gutter in the capture"
+    },
+    {
+     "name": "refresh button",
+     "kind": "ink",
+     "at": [
+      1038,
+      77,
+      1070,
+      109
+     ],
+     "port_dx": 6,
+     "port_dy": -12,
+     "note": "Linux topbar is 40px, the Mac's 52px (theme_tokens.rs); the scene has no sidebar; 6px scrollbar gutter in the capture"
+    }
+   ],
+   "reference": "pull-requests"
+  },
+  "issues-toolbar": {
+   "elements": [
+    {
+     "name": "search box left edge",
+     "kind": "hscan",
+     "at": [
+      93,
+      280,
+      300
+     ],
+     "port_dx": -262,
+     "port_dy": -12,
+     "note": "Linux topbar is 40px, the Mac's 52px (theme_tokens.rs); the scene has no sidebar; 6px scrollbar gutter in the capture"
+    },
+    {
+     "name": "search box top/bottom",
+     "kind": "vscan",
+     "at": [
+      500,
+      70,
+      116
+     ],
+     "port_dx": -262,
+     "port_dy": -12,
+     "note": "Linux topbar is 40px, the Mac's 52px (theme_tokens.rs); the scene has no sidebar; 6px scrollbar gutter in the capture"
+    },
+    {
+     "name": "search icon",
+     "kind": "ink",
+     "at": [
+      294,
+      83,
+      314,
+      103
+     ],
+     "port_dx": -262,
+     "port_dy": -12,
+     "note": "Linux topbar is 40px, the Mac's 52px (theme_tokens.rs); the scene has no sidebar; 6px scrollbar gutter in the capture"
+    },
+    {
+     "name": "search placeholder",
+     "kind": "ink",
+     "at": [
+      318,
+      83,
+      600,
+      103
+     ],
+     "text": true,
+     "port_dx": -262,
+     "port_dy": -12,
+     "note": "Linux topbar is 40px, the Mac's 52px (theme_tokens.rs); the scene has no sidebar; 6px scrollbar gutter in the capture"
+    },
+    {
+     "name": "sort button",
+     "kind": "ink",
+     "at": [
+      755,
+      77,
+      826,
+      109
+     ],
+     "port_dx": 6,
+     "port_dy": -12,
+     "note": "Linux topbar is 40px, the Mac's 52px (theme_tokens.rs); the scene has no sidebar; 6px scrollbar gutter in the capture"
+    },
+    {
+     "name": "filters button",
+     "kind": "ink",
+     "at": [
+      834,
+      77,
+      920,
+      109
+     ],
+     "port_dx": 6,
+     "port_dy": -12,
+     "note": "Linux topbar is 40px, the Mac's 52px (theme_tokens.rs); the scene has no sidebar; 6px scrollbar gutter in the capture"
+    },
+    {
+     "name": "views button",
+     "kind": "ink",
+     "at": [
+      928,
+      77,
+      1030,
+      109
+     ],
+     "port_dx": 6,
+     "port_dy": -12,
+     "note": "Linux topbar is 40px, the Mac's 52px (theme_tokens.rs); the scene has no sidebar; 6px scrollbar gutter in the capture"
+    },
+    {
+     "name": "refresh button",
+     "kind": "ink",
+     "at": [
+      1038,
+      77,
+      1070,
+      109
+     ],
+     "port_dx": 6,
+     "port_dy": -12,
+     "note": "Linux topbar is 40px, the Mac's 52px (theme_tokens.rs); the scene has no sidebar; 6px scrollbar gutter in the capture"
+    }
+   ],
+   "reference": "issues"
   },
   "details": {
    "elements": [

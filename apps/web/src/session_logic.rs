@@ -30,10 +30,11 @@ use t3code_shared::thread_projection::{ThreadProjection, VisibleTurnItem};
 use t3code_shared::turn_item::TurnItemExt;
 
 use crate::components::chat::timeline_entries::{
+    AgentSender,
     ApprovalKind, AttemptId, Attachment, AttachmentKind, ChatMessage, CompactionStatus, Divider, DividerKind, DynamicToolKind,
     EntryId, EntryKind, FileChange, InputIntent, LatestRun, MessageId, MessageRole, PendingQuestion, ProposedPlan,
     QueuedMessage, RequestId, RunId, RunStatus, SearchMatch, Subagent, SubagentStatus, Timestamp, TimelineEntry,
-    TimelineEvent, TimelineInput, TodoState, ToolStatus, WebResult, WorkItem, WorkLogEntry,
+    TimelineEvent, TimelineInput, TodoState, ToolStatus, TurnDiffSummary, WebResult, WorkItem, WorkLogEntry,
 };
 use crate::i18n::t;
 
@@ -477,6 +478,7 @@ fn message(id: MessageId, role: MessageRole, text: &str, created_at: Timestamp, 
         input_intent: InputIntent::Prompt,
         sent_by_app: false,
         guest: None,
+        from_agent: None,
     }
 }
 
@@ -502,10 +504,17 @@ fn map_row(row: &VisibleTurnItem, superseded_attempt: Option<AttemptId>, folded_
                 Intent::PromotedQueuedToSteer => InputIntent::PromotedQueuedToSteer,
                 _ => InputIntent::Prompt,
             },
-            sent_by_app: user.created_by != OrchestrationV2Actor::User
+            // `resolveUserMessagePresentation`: an agent's message folds; one the
+            // server made shows "Sent by T3 Code".
+            from_agent: (user.created_by == OrchestrationV2Actor::Agent
+                && user.creation_source != OrchestrationV2CreationSource::Server
+                && user.scheduled_task_id.is_none())
+            .then(|| AgentSender { title: user.linked_sender.as_ref().map(|s| shared(s.title.trim())).filter(|t| !t.is_empty()) }),
+            sent_by_app: (user.created_by != OrchestrationV2Actor::User
                 || matches!(user.creation_source, OrchestrationV2CreationSource::Server | OrchestrationV2CreationSource::Mcp)
-                || user.scheduled_task_id.is_some(),
-            guest: user.linked_sender.as_ref().map(|_| t!("Guest")),
+                || user.scheduled_task_id.is_some())
+                && !(user.created_by == OrchestrationV2Actor::Agent && user.creation_source != OrchestrationV2CreationSource::Server),
+            guest: (user.created_by != OrchestrationV2Actor::Agent).then_some(()).and(user.linked_sender.as_ref()).map(|_| t!("Guest")),
             ..message(MessageId(id_of(&user.message_id)), MessageRole::User, &user.text, created_at, updated_at)
         }),
         Item::AssistantMessage(reply) => EntryKind::Message(ChatMessage {
@@ -719,6 +728,76 @@ fn pending_question(requests: &[PendingRequest]) -> Option<PendingQuestion> {
     })
 }
 
+/// One run's checkpoint: the turn count its diff is fetched by and the reply it follows.
+#[derive(Clone, Debug)]
+pub struct CheckpointSummary {
+    /// The run's last assistant message; the timeline's changed-files card and the diff panel's
+    /// turn chips key turns by it.
+    pub assistant_message_id: Option<SharedString>,
+    pub turn_count: u64,
+    pub completed_at: String,
+    pub files: Arc<[FileChange]>,
+}
+
+/// `deriveThreadCheckpointSummaries`: one summary per run checkpoint, oldest first.
+pub fn checkpoint_summaries(projection: &ThreadProjection) -> Vec<CheckpointSummary> {
+    let mut last_assistant: HashMap<&str, &str> = HashMap::new();
+    for message in projection.messages.iter() {
+        if message.role == t3code_contracts::OrchestrationV2ConversationMessageRole::Assistant
+            && let Some(run) = message.run_id.as_ref()
+        {
+            last_assistant.insert(run.as_ref(), message.id.as_ref());
+        }
+    }
+    projection
+        .checkpoints
+        .iter()
+        .filter_map(|checkpoint| {
+            let (turn_count, run) = (checkpoint.app_run_ordinal?, checkpoint.run_id.as_ref()?);
+            Some(CheckpointSummary {
+                assistant_message_id: last_assistant.get(run.as_ref()).map(|id| SharedString::from(id.to_string())),
+                turn_count,
+                completed_at: checkpoint.captured_at.clone(),
+                files: checkpoint
+                    .files
+                    .iter()
+                    .map(|file| FileChange {
+                        path: shared(file.path.clone()),
+                        additions: file.additions as u32,
+                        deletions: file.deletions as u32,
+                        operation: shared(file.kind.clone()),
+                    })
+                    .collect(),
+            })
+        })
+        .collect()
+}
+
+/// Every question of the first pending user-input request, with each question's id
+/// (`derivePendingUserInputs`); the answers map is keyed by those ids.
+pub fn pending_questions(projection: &ThreadProjection) -> Vec<(PendingQuestion, String)> {
+    let requests = pending_requests(projection);
+    let Some(pending) = requests.iter().find(|request| request.request.kind == RequestKind::UserInput) else { return Vec::new() };
+    let Some(Item::UserInputRequest(card)) = pending.card.as_deref() else { return Vec::new() };
+    let count = card.questions.len();
+    card.questions
+        .iter()
+        .enumerate()
+        .map(|(index, question)| {
+            let pending = PendingQuestion {
+                request_id: RequestId(id_of(&pending.request.id)),
+                header: shared(question.header.clone()),
+                question: shared(question.question.clone()),
+                options: question.options.iter().map(|option| (shared(option.label.clone()), shared(option.description.clone()))).collect(),
+                multi_select: question.multi_select == Some(true),
+                index,
+                count,
+            };
+            (pending, question.id.clone())
+        })
+        .collect()
+}
+
 /// Everything the timeline derives its rows from, for one projection.
 pub fn timeline_input(mapper: &mut TimelineMapper, projection: &ThreadProjection, optimistic: &[OptimisticMessage]) -> TimelineInput {
     let entries = mapper.entries(projection, optimistic);
@@ -741,7 +820,11 @@ pub fn timeline_input(mapper: &mut TimelineMapper, projection: &ThreadProjection
         }),
         is_working: active.is_some(),
         active_turn_started_at: active.and_then(|run| ms(Some(run.started_at.as_deref().unwrap_or(&run.requested_at)))),
-        turn_diff_summaries: Arc::from([]),
+        turn_diff_summaries: checkpoint_summaries(projection)
+            .into_iter()
+            .filter(|summary| !summary.files.is_empty())
+            .filter_map(|summary| Some(TurnDiffSummary { assistant_message_id: MessageId(summary.assistant_message_id?), files: summary.files }))
+            .collect(),
         supports_rollback: false,
         worktree_setup: None,
         queued: user_queued_runs(projection)

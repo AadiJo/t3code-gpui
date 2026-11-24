@@ -14,7 +14,7 @@ use anyhow::Context as _;
 use gpui_kit::test::TestWindowExt as _;
 use gpui_kit::*;
 use t3code_client_runtime::platform::{ClientPresentation, FileSecretStore};
-use t3code_web::app_root::{AppRootOptions, WindowRoot, local_shell_backend, local_script_backend};
+use t3code_web::app_root::{AppRootOptions, DataSource, WindowRoot};
 use t3code_web::components::app_sidebar_layout::TitlebarPlatform;
 use t3code_web::connection::{ConnectionRuntime, RuntimeConfig};
 use t3code_web::desktop_notifications::{DesktopNotification, DesktopNotificationKind, NotificationInbox};
@@ -48,6 +48,9 @@ enum Step {
     Press(&'static str),
     Action(fn() -> Box<dyn Action>),
     Navigate(&'static str),
+    /// Gives the open settings modal the server pages over the fixture environment
+    /// (`scenes::settings_server`), as the live bridge will over a real one.
+    ServerPages,
     /// Lets background work (a shell) run before the next step.
     Wait(u64),
     /// Changes app state directly (a setting the capture turned on).
@@ -76,7 +79,7 @@ const SCENES: &[Scene] = &[
     Scene { name: "window-thread", reference: "window-thread", light: false, steps: &[] },
     Scene { name: "window-thread-light", reference: "window-thread-light", light: true, steps: &[] },
     Scene { name: "sidebar-selected", reference: "sidebar-selected", light: false, steps: &[] },
-    Scene { name: "sidebar-hover", reference: "sidebar-hover", light: false, steps: &[Step::Move(127.5, 224.)] },
+    Scene { name: "sidebar-hover", reference: "sidebar-hover", light: false, steps: &[Step::Move(127.5, 224.), Step::Wait(300)] },
     Scene { name: "sidebar-context-menu", reference: "sidebar-context-menu", light: false, steps: &[Step::RightClick(127.5, 224.)] },
     Scene { name: "sidebar-inbox", reference: "sidebar-inbox", light: false, steps: &[Step::ClickId("sidebar-notifications")] },
     Scene { name: "timeline-top", reference: "timeline-top", light: false, steps: &[Step::Wheel(700., 400., 20_000.)] },
@@ -84,9 +87,7 @@ const SCENES: &[Scene] = &[
         name: "timeline-tools-expanded",
         reference: "timeline-tools-expanded",
         light: false,
-        // The port's turn sits 39px lower than the fork's: its first prompt is a
-        // bubble, not the fork's one-line Agent pill.
-        steps: &[Step::Wheel(700., 400., 20_000.), Step::Click(340., 181.)],
+        steps: &[Step::Wheel(700., 400., 20_000.), Step::Click(340., 142.)],
     },
     Scene { name: "timeline-bottom", reference: "timeline-bottom", light: false, steps: &[] },
     Scene { name: "timeline-user-message", reference: "timeline-user-message", light: false, steps: &[Step::Wheel(700., 400., 600.)] },
@@ -107,10 +108,46 @@ const SCENES: &[Scene] = &[
             Step::Type("Fourth line"),
         ],
     },
+    Scene {
+        name: "composer-markdown",
+        reference: "composer-markdown",
+        light: false,
+        steps: &[
+            Step::Click(700., 690.),
+            Step::Type("Use `inline code` and **bold** here"),
+            Step::Press("shift-enter"),
+            Step::Type("```ts"),
+            Step::Press("shift-enter"),
+            Step::Type("const x = sum(1, 2);"),
+            // The capture typed a closing fence, which the web keeps as code; the
+            // port shows its closing fence while the caret is on it.
+            Step::Press("shift-enter"),
+            Step::Type("```"),
+        ],
+    },
+    Scene { name: "thread-actions-menu", reference: "thread-actions-menu", light: false, steps: &[Step::Click(430., 26.)] },
     Scene { name: "composer-model-picker", reference: "composer-model-picker", light: false, steps: &[Step::Click(960., 733.)] },
     Scene { name: "composer-mention", reference: "composer-mention", light: false, steps: &[Step::Click(700., 690.), Step::Type("@"), Step::Wait(300)] },
     Scene { name: "command-palette", reference: "command-palette", light: false, steps: &[Step::Action(|| Box::new(ToggleCommandPalette))] },
     Scene { name: "settings-environments", reference: "settings-environments", light: false, steps: &[Step::Navigate("/settings/connections")] },
+    Scene { name: "settings-general", reference: "settings-general", light: false, steps: &[Step::Navigate("/settings/general")] },
+    Scene { name: "settings-appearance", reference: "settings-appearance", light: false, steps: &[Step::Navigate("/settings/appearance")] },
+    Scene { name: "settings-chat", reference: "settings-chat", light: false, steps: &[Step::Navigate("/settings/chat")] },
+    Scene { name: "settings-diffs", reference: "settings-diffs", light: false, steps: &[Step::Navigate("/settings/diffs")] },
+    Scene { name: "settings-keybindings", reference: "settings-keybindings", light: false, steps: &[Step::Navigate("/settings/keybindings")] },
+    Scene { name: "settings-voice", reference: "settings-voice", light: false, steps: &[Step::Navigate("/settings/voice")] },
+    Scene { name: "settings-snap-shot", reference: "settings-snap-shot", light: false, steps: &[Step::Navigate("/settings/snap-shot")] },
+    Scene { name: "settings-labs", reference: "settings-labs", light: false, steps: &[Step::Navigate("/settings/labs")] },
+    Scene { name: "settings-archived", reference: "settings-archived", light: false, steps: &[Step::Navigate("/settings/archived")] },
+    Scene { name: "settings-about", reference: "settings-about", light: false, steps: &[Step::Navigate("/settings/about")] },
+    Scene { name: "settings-providers", reference: "settings-providers", light: false, steps: &[Step::Navigate("/settings/providers"), Step::ServerPages] },
+    Scene { name: "settings-source-control", reference: "settings-source-control", light: false, steps: &[Step::Navigate("/settings/source-control"), Step::ServerPages] },
+    Scene { name: "settings-worktrees", reference: "settings-worktrees", light: false, steps: &[Step::Navigate("/settings/worktrees"), Step::ServerPages] },
+    Scene { name: "settings-maintenance", reference: "settings-maintenance", light: false, steps: &[Step::Navigate("/settings/maintenance"), Step::ServerPages] },
+    Scene { name: "settings-threads", reference: "settings-threads", light: false, steps: &[Step::Navigate("/settings/threads"), Step::ServerPages] },
+    Scene { name: "settings-projects", reference: "settings-projects", light: false, steps: &[Step::Navigate("/settings/projects"), Step::ServerPages] },
+    Scene { name: "settings-browser", reference: "settings-browser", light: false, steps: &[Step::Navigate("/settings/browser"), Step::ServerPages] },
+    Scene { name: "settings-devices", reference: "settings-devices", light: false, steps: &[Step::Navigate("/settings/devices"), Step::ServerPages] },
     Scene { name: "terminal-drawer", reference: "terminal-drawer", light: false, steps: TERMINAL_STEPS },
     Scene { name: "terminal-menu", reference: "terminal-menu", light: false, steps: &[Step::Action(|| Box::new(ToggleTerminal)), Step::Wait(1500), Step::Press("mod-n"), Step::Wait(1200), Step::RightClick(400.5, 626.)] },
     Scene { name: "terminal-close-confirm", reference: "terminal-close-confirm", light: false, steps: &[Step::Action(|| Box::new(ToggleTerminal)), Step::Wait(1500), Step::Press("mod-n"), Step::Wait(1200), Step::Click(1088., 512.5)] },
@@ -146,6 +183,45 @@ const OWNER_SCENES: &[Scene] = &[
 ];
 
 const DETAILS: &[Step] = &[Step::Action(|| Box::new(ToggleThreadPanel)), Step::Wait(300)];
+
+/// Views the app window cannot reach yet (their routes are not mounted in
+/// `AppRoot`), captured from their registered scenes instead: (image name, scene).
+const SCENE_VIEWS: &[(&str, &str)] = &[("usage-limits-empty", "usage-empty"), ("pull-requests-toolbar", "pull-requests"), ("issues-toolbar", "issues")];
+
+/// Renders a registered scene at the reference size with the owner's glass opacity.
+fn render_scene_view(name: &str, scene: &str, out: &std::path::Path) -> anyhow::Result<()> {
+    let build = t3code_web::scenes::scene(scene).with_context(|| format!("unknown scene {scene}"))?;
+    let mut cx = headless();
+    cx.update(|cx| {
+        t3code_web::init(cx);
+        ThemeSettings::set_mode(ThemeMode::Dark, cx);
+        ThemeSettings::set_glass_opacity(GlassOpacity::new(OWNER_GLASS_OPACITY), cx);
+    });
+    struct Host(AnyView);
+    impl Render for Host {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            self.0.clone()
+        }
+    }
+    let window = cx.update(|cx| {
+        let options = WindowOptions {
+            window_bounds: Some(WindowBounds::centered(None, size(px(1100.), px(780.)), cx)),
+            show: false,
+            focus: false,
+            ..component::TitleBar::window_options()
+        };
+        gpui_kit::open_window(options, cx, |window, cx| {
+            let view = build(window, cx);
+            cx.new(|_| Host(view))
+        })
+    })?;
+    let (window, _host) = window;
+    frame(&mut cx, window);
+    let file = out.join(format!("{name}.png"));
+    cx.capture_screenshot(window)?.save(&file)?;
+    println!("{} <- scene {scene}", file.display());
+    Ok(())
+}
 
 /// The reference inbox: the approval and the question, both unread.
 fn reference_inbox() -> Arc<[DesktopNotification]> {
@@ -222,11 +298,9 @@ fn render(scene: &Scene, profile: Profile, file_name: &str, out: &std::path::Pat
         ConnectionRuntime::init(config, cx)
     })?;
     let options = AppRootOptions {
-        store: FixtureStore::reference(),
+        data: DataSource::Fixtures(FixtureStore::reference()),
         platform: TitlebarPlatform::Mac,
         state_dir: StateDir(None),
-        terminal_backend: local_shell_backend(),
-        script_backend: local_script_backend(),
     };
     let (window, parts) = cx.update(|cx| {
         let window_options = WindowOptions {
@@ -238,11 +312,17 @@ fn render(scene: &Scene, profile: Profile, file_name: &str, out: &std::path::Pat
         WindowRoot::open_window(window_options, options, cx)
     })?;
     let root = parts.app.clone();
+    let shell = parts.shell.clone();
     cx.update(|cx| {
+        ThemeSettings::apply_env_overrides(cx);
         let timeline = root.read(cx).thread_view().read(cx).chat().read(cx).timeline().clone();
         timeline.update(cx, |t, _| t.set_now_millis(t3code_web::fixtures::timelines::NOW_MS));
         root.update(cx, |root, cx| root.navigate(Route::parse(THREAD), cx));
         NotificationInbox::set_items(reference_inbox(), cx);
+        // Settings pages read a connected server's config, as the reference's had.
+        if scene.name.starts_with("settings-") && scene.name != "settings-environments" {
+            t3code_web::scenes::settings::seed_fixture(cx);
+        }
     });
     frame(&mut cx, window);
     // The capture script leaves the mouse over the conversation before each view.
@@ -285,11 +365,20 @@ fn render(scene: &Scene, profile: Profile, file_name: &str, out: &std::path::Pat
             }
             Step::Navigate(route) => cx.update(|cx| root.update(cx, |root, cx| root.navigate(Route::parse(route), cx))),
             Step::Run(run) => cx.update(|cx| run(cx)),
+            Step::ServerPages => cx.update(|cx| {
+                if let Some(settings) = shell.read(cx).settings().cloned() {
+                    let (model, _) = t3code_web::scenes::settings_server::fixture_model(cx);
+                    let pages = cx.new(|_| t3code_web::components::settings::server_settings_pages::ServerSettingsPages::new(model));
+                    settings.update(cx, |s, cx| s.set_server_pages(pages, cx));
+                }
+            }),
             Step::Wait(ms) => {
                 let until = Instant::now() + Duration::from_millis(*ms);
                 while Instant::now() < until {
                     frame(&mut cx, window);
                     std::thread::sleep(Duration::from_millis(50));
+                    // Timers on the headless dispatcher run on its simulated clock.
+                    cx.advance_clock(Duration::from_millis(50));
                 }
             }
         }
@@ -313,6 +402,11 @@ fn main() -> anyhow::Result<()> {
     for scene in SCENES.iter().filter(|s| wanted(s.name)) {
         if let Err(error) = render(scene, SHARED, scene.name, &out, &data) {
             eprintln!("FAILED {}: {error:#}", scene.name);
+        }
+    }
+    for (name, scene) in SCENE_VIEWS.iter().filter(|(name, _)| wanted(name)) {
+        if let Err(error) = render_scene_view(name, scene, &out) {
+            eprintln!("FAILED {name}: {error:#}");
         }
     }
     let owner = std::env::var_os("PARITY_CLIENT_SETTINGS").map(|p| &*Box::leak(PathBuf::from(p).into_boxed_path()));
