@@ -74,6 +74,12 @@ pub fn row_icon(theme: &AppTheme, name: IconName) -> Icon {
 /// The base of every row control: 2rem tall, `rounded-lg`, 0.625rem gaps and padding.
 /// `open` keeps the hover fill while its popup is open.
 pub fn row_base(id: impl Into<ElementId>, theme: &AppTheme, disabled: bool, open: bool) -> Stateful<Div> {
+    row_base_hovering(id, theme, disabled, open, true)
+}
+
+/// [`row_base`], with its hover fill off while `hover_fill` is false (a control over the row has
+/// the pointer, and in the web the row is not hovered then).
+pub fn row_base_hovering(id: impl Into<ElementId>, theme: &AppTheme, disabled: bool, open: bool, hover_fill: bool) -> Stateful<Div> {
     let hover = row_hover(theme);
     row_font(div())
         .id(id)
@@ -88,7 +94,8 @@ pub fn row_base(id: impl Into<ElementId>, theme: &AppTheme, disabled: bool, open
         .text_color(row_text(theme))
         .when(open, |r| r.bg(hover))
         .when(disabled, |r| r.opacity(DISABLED_OPACITY))
-        .when(!disabled, |r| r.cursor_pointer().hover(move |s| s.bg(hover)))
+        .when(!disabled, |r| r.cursor_pointer())
+        .when(!disabled && hover_fill, |r| r.hover(move |s| s.bg(hover)))
 }
 
 /// A full-width row: icon, then a truncating label.

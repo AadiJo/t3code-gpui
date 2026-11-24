@@ -59,7 +59,8 @@
 //            and hover card; an app-owned child (the server's `delegate_task`) stopped from its
 //            row's hover stop button and read back as stopped; the fx subagents released
 //            (`T3_CONTROL_DIR`) and settled Done
-// Usage: live-check <seed|drive|restart|import|send|sidebar|notify|details|mentions|heic|wheel|workspace|banner|sidebardata|composer|composer-restart|sidechats|sidechats-ref|lineage|probe> <out-dir>
+//   lineage-ref  shots of the states `capture-lineage.mjs` takes in the fork, same threads
+// Usage: live-check <seed|drive|restart|import|send|sidebar|notify|details|mentions|heic|wheel|workspace|banner|sidebardata|composer|composer-restart|sidechats|sidechats-ref|lineage|lineage-ref|probe> <out-dir>
 #[allow(dead_code)]
 #[path = "import/mod.rs"]
 mod import;
@@ -541,6 +542,7 @@ fn main() -> anyhow::Result<()> {
         "sidechats" => run_sidechats(&mut check),
         "sidechats-ref" => run_sidechats_ref(&mut check),
         "lineage" => run_lineage(&mut check),
+        "lineage-ref" => run_lineage_ref(&mut check),
         other => Err(anyhow::anyhow!("unknown phase {other}")),
     };
     check.finish(&phase, result)
@@ -3691,5 +3693,52 @@ fn run_lineage(check: &mut Check) -> anyhow::Result<()> {
     let ticking = check.read(|root, cx| root.thread_view().read(cx).details().is_some_and(|d| d.read(cx).ticking()));
     check.check("the card stops its per-second redraw once nothing runs", !ticking, "");
     check.shot("l6-native-done.png")?;
+    Ok(())
+}
+
+/// The `lineage-ref` phase: the port's shots of the states `capture-lineage.mjs` captures in the
+/// fork, on the same server threads (`T3_LINEAGE_TAG`), with the right panel closed.
+fn run_lineage_ref(check: &mut Check) -> anyhow::Result<()> {
+    use t3code_web::components::chat::thread_details_relationships::probed_bounds;
+    let tag = std::env::var("T3_LINEAGE_TAG").context("T3_LINEAGE_TAG")?;
+    let paired = check.cx.update(|cx| !ConnectionRuntime::state(cx).read(cx).environments.is_empty());
+    if !paired {
+        let request = parse_pairing_url(&std::env::var("T3_PAIRING_URL").context("T3_PAIRING_URL")?)?;
+        let pairing = check.cx.update(|cx| ConnectionRuntime::global(cx).pair(request, None, cx));
+        check.wait_task(pairing)?.map_err(|e| anyhow::anyhow!("{}", e.0))?;
+    }
+    check.pump(|c| c.connected(), Duration::from_secs(30), "connected")?;
+    let id = check.cx.update(|cx| ConnectionRuntime::state(cx).read(cx).environments[0].entry.environment_id.to_string());
+    let environment_id = t3code_contracts::EnvironmentId::new(id.as_str());
+    let env = environment_id.clone();
+    let title = format!("Parent agent {tag}");
+    check.pump(move |c| thread_titled(c, &env, &title, None).is_some(), Duration::from_secs(20), "the prepared threads are listed")?;
+    for (title, name) in [(format!("Native fan-out {tag}"), "lineage-running"), (format!("Parent agent {tag}"), "lineage-app-owned")] {
+        let key = thread_titled(check, &environment_id, &title, None).context("thread")?;
+        check.go(&key);
+        let k = key.clone();
+        check.pump(move |c| c.route() == Route::Thread(k.clone()), Duration::from_secs(20), "thread shows")?;
+        let panel_key = t3code_web::fixtures::scoped_key(&key);
+        if check.read(|root, cx| root.right_panels().read(cx).is_open(&panel_key)) {
+            check.action(t3code_web::shortcuts::commands::ToggleRightPanel);
+            check.wait(Duration::from_millis(400));
+        }
+        open_details(check);
+        check.pump(|c| lineage_rows(c).iter().any(|r| r.agent.is_some()), Duration::from_secs(20), "agent rows")?;
+        hover_at(check, point(px(5.), px(700.)))?;
+        check.wait(Duration::from_millis(800));
+        check.shot(&format!("{name}.png"))?;
+        let first = lineage_rows(check).first().map(|r| r.thread_id.to_string()).unwrap_or_default();
+        let at = probed_bounds(&format!("relationship-row-{first}")).context("row bounds")?;
+        hover_at(check, at.center())?;
+        check.wait(Duration::from_millis(1000));
+        check.shot(&format!("{}.png", if name == "lineage-running" { "lineage-hover-card" } else { "lineage-app-owned-hover" }))?;
+        if name == "lineage-app-owned" {
+            let stop = (0..8).find_map(|ix| probed_bounds(&format!("relationship-active-stop-{ix}"))).context("stop bounds")?;
+            hover_at(check, stop.center())?;
+            check.wait(Duration::from_millis(1200));
+            check.shot("lineage-stop-tooltip.png")?;
+        }
+    }
     Ok(())
 }

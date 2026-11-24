@@ -16,7 +16,7 @@ use gpui_kit::{AnyElement, App, Hsla, IntoElement, ParentElement as _, SharedStr
 use t3code_client_runtime::state::thread_relationships::RelationshipStatus;
 use t3code_contracts::{EnvironmentId, NodeId, OrchestrationV2TurnItemStatus as ItemStatus, ThreadId};
 
-use super::thread_details_panel_styles::{row_base, row_hover, row_icon, row_inset, split_secondary_width};
+use super::thread_details_panel_styles::{row_base, row_base_hovering, row_hover, row_icon, row_inset, split_secondary_width};
 use crate::AppTheme;
 use crate::appearance_fonts::{TextSize, weight};
 use crate::components::icons::{Icon, IconName, IconSize};
@@ -71,6 +71,8 @@ pub struct RelationshipViewState {
     visible: HashMap<&'static str, usize>,
     workflows: HashSet<NodeId>,
     phases: HashMap<(NodeId, u64), bool>,
+    /// The stop button under the pointer: its row drops its own hover fill.
+    stop_hovered: Option<SharedString>,
 }
 
 impl RelationshipViewState {
@@ -435,7 +437,20 @@ fn stop_button(rc: &RowCx<'_>, id: SharedString, group: SharedString, label: Sha
     let emit = rc.emit.clone();
     let glyph = if stopping { Spinner::new(SpinnerSize::Xs).into_any_element() } else { stop_glyph(theme) };
     let probe_id = id.to_string();
+    let state = rc.state.clone();
+    let hovered_id = id.clone();
     control(id, theme, disabled, false)
+        .on_hover(move |hovered, window, cx| {
+            let id = hovered_id.clone();
+            let hovered = *hovered;
+            state(&|s| {
+                if hovered {
+                    s.stop_hovered = Some(id.clone());
+                } else if s.stop_hovered.as_ref() == Some(&id) {
+                    s.stop_hovered = None;
+                }
+            }, window, cx)
+        })
         .children(probe(probe_id))
         .flex_none()
         .size(theme.rem(1.5))
@@ -524,7 +539,9 @@ fn relationship_row(rc: &RowCx<'_>, section: &'static str, index: usize, row: &R
     }
     let merge = input.merge.as_ref().filter(|_| row.merge_target);
     let Some(merge) = merge else {
-        let control = content(control(link_id, theme, false, false).w_full())
+        let stop_id: SharedString = format!("relationship-{section}-stop-{index}").into();
+        let fill = rc.view.stop_hovered.as_ref() != Some(&stop_id);
+        let control = content(row_base_hovering(link_id, theme, false, false, fill).border_1().border_color(gpui_kit::transparent_black()).w_full())
             .children(probe(format!("relationship-row-{}", row.thread_id)))
             .tooltip_show_delay(ROW_TOOLTIP_DELAY)
             .tooltip(anchor.tooltip(tip, TooltipSide::Left))
@@ -533,7 +550,7 @@ fn relationship_row(rc: &RowCx<'_>, section: &'static str, index: usize, row: &R
             let stopping = input.stopping.as_deref() == Some(agent.subagent_id.as_str());
             div().absolute().right(theme.rem(0.25)).top_0().bottom_0().flex().items_center().child(stop_button(
                 rc,
-                format!("relationship-{section}-stop-{index}").into(),
+                stop_id.clone(),
                 group.clone(),
                 t!("Stop subagent"),
                 stopping,
