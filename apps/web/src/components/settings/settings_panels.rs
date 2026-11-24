@@ -577,6 +577,8 @@ fn version_copy_button(cx: &App) -> AnyElement {
     let version = env!("CARGO_PKG_VERSION");
     div()
         .id("about-version-copy")
+        // `items-baseline` with the 14px title puts the 11px code 2.5px lower.
+        .mt(gpui_kit::px(2.5))
         .cursor_pointer()
         .mono_text(gpui_kit::px(crate::appearance_fonts::TextSize::Xs2.size(theme.fonts.interface)), crate::appearance_fonts::weight::MEDIUM)
         .text_color(c.muted_foreground)

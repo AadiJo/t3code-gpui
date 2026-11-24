@@ -850,7 +850,7 @@ impl Render for KeybindingsSettings {
             .border_color(c.input)
             .bg(theme.derived.input_fill)
             .shadow(theme.shadows.xs5.clone())
-            .child(div().flex_none().pl(px(9.)).child(crate::components::icons::Icon::new(IconName::Search).size(crate::components::icons::IconSize::Sm).color(c.muted_foreground)))
+            .child(div().flex_none().pl(px(9.)).child(crate::components::icons::Icon::new(IconName::Search).size(crate::components::icons::IconSize::Sm).color(with_alpha(c.foreground(), 0.8))))
             .child(div().flex_1().min_w_0().pl(px(4.)).pr(theme.sp(2.5)).child(gpui_kit::Styled::h(gpui_kit::component::input::Input::new(&self.search).appearance(false), theme.sp(8.)).ui_text(theme, TextSize::Sm, weight::NORMAL).w_full()));
         let toolbar = div()
             .flex()

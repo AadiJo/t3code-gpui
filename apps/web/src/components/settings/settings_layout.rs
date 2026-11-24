@@ -328,8 +328,10 @@ impl RenderOnce for SettingsRow {
                                     .child(
                                         div()
                                             .flex()
-                                            .items_baseline()
+                                            .items_center()
                                             .gap(theme.sp(2.))
+                                            // An inline icon makes the web's `h3` 2px taller than its line.
+                                            .when(self.title_icon.is_some(), |d| d.min_h(theme.sp(5.) + px(2.)))
                                             .ui_text(theme, TextSize::Sm, weight::MEDIUM)
                                             .text_color(c.foreground())
                                             .children(self.title_icon.map(|icon| {

@@ -294,10 +294,12 @@ impl AppearanceSettings {
                 .rounded(theme.radii.xl)
                 .border_1()
                 .cursor_pointer()
+                .relative()
                 .when(active, |d| {
-                    d.border_color(gpui_kit::transparent_black())
-                        .bg(with_alpha(c.accent_surface, 0.3))
-                        .shadow(vec![inset_ring(c.ring(), px(3.))])
+                    // `ring-2 ring-inset` inside the transparent 1px border.
+                    d.border_color(gpui_kit::transparent_black()).bg(with_alpha(c.accent_surface, 0.3)).child(
+                        div().absolute().inset_0().rounded(theme.radii.xl - px(1.)).shadow(vec![inset_ring(c.ring(), px(2.))]),
+                    )
                 })
                 .when(!active, |d| d.border_color(with_alpha(c.border, 0.7)).bg(with_alpha(c.card(), 0.6)).hover(|s| s.bg(with_alpha(c.accent_surface, 0.1))))
                 .on_click(move |_, _, cx| ThemeStore::set_appearance_mode(m, cx))

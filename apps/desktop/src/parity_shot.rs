@@ -102,6 +102,16 @@ const SCENES: &[Scene] = &[
     Scene { name: "composer-mention", reference: "composer-mention", light: false, steps: &[Step::Click(700., 690.), Step::Type("@"), Step::Wait(300)] },
     Scene { name: "command-palette", reference: "command-palette", light: false, steps: &[Step::Action(|| Box::new(ToggleCommandPalette))] },
     Scene { name: "settings-environments", reference: "settings-environments", light: false, steps: &[Step::Navigate("/settings/connections")] },
+    Scene { name: "settings-general", reference: "settings-general", light: false, steps: &[Step::Navigate("/settings/general")] },
+    Scene { name: "settings-appearance", reference: "settings-appearance", light: false, steps: &[Step::Navigate("/settings/appearance")] },
+    Scene { name: "settings-chat", reference: "settings-chat", light: false, steps: &[Step::Navigate("/settings/chat")] },
+    Scene { name: "settings-diffs", reference: "settings-diffs", light: false, steps: &[Step::Navigate("/settings/diffs")] },
+    Scene { name: "settings-keybindings", reference: "settings-keybindings", light: false, steps: &[Step::Navigate("/settings/keybindings")] },
+    Scene { name: "settings-voice", reference: "settings-voice", light: false, steps: &[Step::Navigate("/settings/voice")] },
+    Scene { name: "settings-snap-shot", reference: "settings-snap-shot", light: false, steps: &[Step::Navigate("/settings/snap-shot")] },
+    Scene { name: "settings-labs", reference: "settings-labs", light: false, steps: &[Step::Navigate("/settings/labs")] },
+    Scene { name: "settings-archived", reference: "settings-archived", light: false, steps: &[Step::Navigate("/settings/archived")] },
+    Scene { name: "settings-about", reference: "settings-about", light: false, steps: &[Step::Navigate("/settings/about")] },
     Scene { name: "terminal-drawer", reference: "terminal-drawer", light: false, steps: TERMINAL_STEPS },
     Scene { name: "right-panel-diff", reference: "right-panel-diff", light: false, steps: &[Step::Action(|| Box::new(ToggleDiff)), Step::Wait(300)] },
 ];
@@ -192,6 +202,10 @@ fn render(scene: &Scene, out: &std::path::Path, data: &std::path::Path) -> anyho
         timeline.update(cx, |t, _| t.set_now_millis(t3code_web::fixtures::timelines::NOW_MS));
         root.update(cx, |root, cx| root.navigate(Route::parse(THREAD), cx));
         NotificationInbox::set_items(reference_inbox(), cx);
+        // Settings pages read a connected server's config, as the reference's had.
+        if scene.name.starts_with("settings-") && scene.name != "settings-environments" {
+            t3code_web::scenes::settings::seed_fixture(cx);
+        }
     });
     frame(&mut cx, window);
     // The capture script leaves the mouse over the conversation before each view.
