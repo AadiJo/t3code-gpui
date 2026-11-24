@@ -221,7 +221,8 @@ impl VirtualListState {
         let max = inner.max_scroll();
         let target = (current + delta).clamp(px(0.), max);
         match inner.position {
-            Position::Row { index, offset } if !(inner.follow.is_following() && target >= max) => {
+            // At the top edge the estimate-based clamp is not real content: snap to row 0.
+            Position::Row { index, offset } if target > px(0.) && !(inner.follow.is_following() && target >= max) => {
                 inner.position = Position::Row { index, offset: offset + (target - current) };
             }
             _ => inner.set_scroll_top(target),
