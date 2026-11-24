@@ -1,7 +1,7 @@
 //! The device preference pages the settings route shows: it picks the page
-//! for the current path, re-renders when a store changes, adds the scope
-//! sentence on pages saved on a server, and owns the "Restore device
-//! defaults" confirmation.
+//! for the current path, re-renders when a store changes, and owns the
+//! "Restore device defaults" confirmation. The scope sentence comes from
+//! [`page_container`](super::settings_layout::page_container).
 
 use std::rc::Rc;
 
@@ -10,7 +10,7 @@ use gpui_kit::{AnyElement, App, AppContext as _, Context, Entity, IntoElement, R
 use super::appearance_settings::AppearanceSettings;
 use super::archived_threads_panel::ArchivedThreadsPanel;
 use super::keybindings_settings::KeybindingsSettings;
-use super::settings_controls::{SettingsScope, restore_device_defaults, restore_defaults_button, scope_sentence};
+use super::settings_controls::{SettingsScope, restore_device_defaults, restore_defaults_button};
 use super::settings_panels::{about_panel, chat_panel, diffs_panel, general_panel, labs_panel};
 use super::settings_search::SettingsPath;
 use super::snap_shot_settings::snap_shot_panel;
@@ -92,9 +92,10 @@ impl SettingsPages {
         &self.appearance
     }
 
-    /// The header's "Restore device defaults" button, for device-only pages.
+    /// The header's "Restore device defaults" button. The web shows it on
+    /// General only, disabled while nothing differs from its default.
     pub fn restore_button(this: &Entity<Self>, cx: &App) -> Option<AnyElement> {
-        if !this.read(cx).path.is_device_only() {
+        if this.read(cx).path != SettingsPath::General {
             return None;
         }
         let pages = this.clone();
@@ -142,7 +143,6 @@ impl Render for SettingsPages {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let page = self.render_page(window, cx);
         let theme = cx.app_theme();
-        let scoped = !self.path.is_device_only() && self.path != SettingsPath::Keybindings;
         let confirm = self.confirm_restore.clone().map(|changed| {
             let close = cx.listener(|this, _: &(), _, cx| {
                 this.confirm_restore = None;
@@ -170,7 +170,6 @@ impl Render for SettingsPages {
         div()
             .flex()
             .flex_col()
-            .when(scoped, |d| d.child(div().pt(theme.sp(6.)).max_w(theme.rem(56.)).mx_auto().w_full().px(theme.sp(6.)).child(scope_sentence(cx))))
             .child(page)
             .children(confirm)
     }

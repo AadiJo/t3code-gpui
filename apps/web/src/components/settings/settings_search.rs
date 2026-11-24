@@ -146,7 +146,7 @@ impl SettingsPath {
             Self::Diffs => IconName::FileDiff,
             Self::Keybindings => IconName::Keyboard,
             Self::Voice => IconName::Mic,
-            Self::SnapShot => IconName::Monitor,
+            Self::SnapShot => IconName::SnapShot,
             Self::Providers => IconName::Bot,
             Self::Threads => IconName::MessagesSquare,
             Self::Browser => IconName::Globe,
@@ -161,7 +161,7 @@ impl SettingsPath {
             Self::Labs => IconName::FlaskConical,
             Self::About => IconName::Info,
             Self::Archived => IconName::Archive,
-            Self::Diagnostics => IconName::Activity,
+            Self::Diagnostics => IconName::Wrench,
             Self::Secrets => IconName::KeyRound,
         }
     }

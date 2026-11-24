@@ -10,7 +10,6 @@
 use std::collections::HashSet;
 use std::time::{Duration, SystemTime};
 
-use gpui_kit::component::input::{InputEvent, InputState};
 use gpui_kit::{
     TestSupportExt as _,
     AnyElement, App, ClipboardItem, Context, Entity, IntoElement, Render, SharedString, Subscription, Task, WeakEntity,
@@ -38,7 +37,7 @@ use crate::components::ui::switch::{Switch, SwitchSize};
 use crate::components::ui::toast::{ToastData, ToastKind, Toaster};
 use crate::components::ui::tooltip::tooltip;
 use crate::connection::presentation::{
-    Diagnosis, HopResult, PresentedPhase, Tone, diagnose, diagnosis_text, latency_text, present_phase, route_address,
+    Diagnosis, HopResult, Tone, diagnose, diagnosis_text, present_phase, route_address,
     route_label, row_status, status_text, transport_label,
 };
 use crate::connection::{ConnectionRuntime, ConnectionsState, EnvironmentState};
@@ -90,7 +89,6 @@ pub struct ConnectionsSettings {
     routes_open: HashSet<EnvironmentId>,
     diagnosis_open: HashSet<EnvironmentId>,
     removing: HashSet<EnvironmentId>,
-    renaming: Option<(EnvironmentId, Entity<InputState>)>,
     dialog: Option<PageDialog>,
     /// Ticks once a second while a row shows a retry countdown.
     ticker: Option<Task<()>>,
@@ -115,7 +113,6 @@ impl ConnectionsSettings {
             routes_open: HashSet::new(),
             diagnosis_open: HashSet::new(),
             removing: HashSet::new(),
-            renaming: None,
             dialog: None,
             ticker: None,
             _subscriptions: vec![observe],
@@ -278,35 +275,6 @@ impl ConnectionsSettings {
         .detach();
     }
 
-    fn start_rename(&mut self, env: &EnvironmentState, window: &mut Window, cx: &mut Context<Self>) {
-        let label = env.entry.label.clone();
-        let input = cx.new(|cx| InputState::new(window, cx).default_value(label));
-        let id = env.id().clone();
-        let subscription = cx.subscribe_in(&input, window, move |this, _, event: &InputEvent, _, cx| {
-            if let InputEvent::PressEnter { .. } = event {
-                this.commit_rename(cx);
-            }
-        });
-        self._subscriptions.push(subscription);
-        input.update(cx, |state, cx| state.focus(window, cx));
-        self.renaming = Some((id, input));
-        cx.notify();
-    }
-
-    fn commit_rename(&mut self, cx: &mut Context<Self>) {
-        let Some((id, input)) = self.renaming.take() else { return };
-        let label = input.read(cx).value().to_string();
-        cx.notify();
-        let Some(runtime) = cx.try_global::<ConnectionRuntime>() else { return };
-        let task = runtime.rename(id, label, cx);
-        cx.spawn(async move |_, cx| {
-            if let Err(error) = task.await {
-                cx.update(|cx| Toaster::push(ToastData::new(ToastKind::Error, t!("Rename")).description(error.0), cx));
-            }
-        })
-        .detach();
-    }
-
     fn retry(&self, id: &EnvironmentId, cx: &App) {
         if let Some(runtime) = cx.try_global::<ConnectionRuntime>() {
             runtime.retry(id);
@@ -358,9 +326,6 @@ impl ConnectionsSettings {
         let mut parts = vec![transport_label(env)];
         if diagnosis.is_none() {
             parts.push(status);
-        }
-        if let Some(latency) = latency_text(env).filter(|_| phase == PresentedPhase::Connected) {
-            parts.push(latency);
         }
         let error_tone = enabled && tone == Tone::Error && diagnosis.is_none();
         subtitle.push(
@@ -428,31 +393,7 @@ impl ConnectionsSettings {
                     .text_color(c.muted_foreground)
                     .children(subtitle),
             );
-        let identity = match &self.renaming {
-            Some((renaming, input)) if *renaming == id => div()
-                .flex()
-                .items_center()
-                .gap(sp(2.))
-                .child(div().flex_1().child(crate::components::ui::input::TextInput::new(input)))
-                .child(
-                    Button::new(SharedString::from(format!("env-rename-save-{key}")))
-                        .label(t!("Save"))
-                        .size(ButtonSize::Xs)
-                        .on_click(cx.listener(|this, _, _, cx| this.commit_rename(cx))),
-                )
-                .child(
-                    Button::new(SharedString::from(format!("env-rename-cancel-{key}")))
-                        .label(t!("Cancel"))
-                        .variant(ButtonVariant::GhostMuted)
-                        .size(ButtonSize::Xs)
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            this.renaming = None;
-                            cx.notify();
-                        })),
-                )
-                .into_any_element(),
-            _ => identity.into_any_element(),
-        };
+        let identity = identity.into_any_element();
         let below = diagnosis.as_ref().map(|diagnosis| {
             let status = env.status.as_ref();
             let retry_at = status.and_then(|s| s.retry_at);
@@ -878,6 +819,19 @@ fn chevron(open: bool, color: gpui_kit::Hsla) -> impl IntoElement {
     Icon::new(if open { IconName::ChevronDown } else { IconName::ChevronRight }).size(IconSize::Xs).color(color)
 }
 
+/// `environmentMcpUrl`: `/mcp` on the first route with an HTTP address.
+/// The web prefers the relay's address and the connected route; this app
+/// reads the saved routes in order.
+fn environment_mcp_url(env: &EnvironmentState) -> Option<String> {
+    env.entry.routes.iter().find_map(|route| {
+        let mut url = route.bearer_profile()?.http_base_url.clone();
+        url.set_path("/mcp");
+        url.set_query(None);
+        url.set_fragment(None);
+        Some(url.to_string())
+    })
+}
+
 /// The row's "More actions" menu.
 fn environment_menu(
     this: WeakEntity<ConnectionsSettings>,
@@ -887,7 +841,7 @@ fn environment_menu(
 ) -> MenuPopup {
     let id = env.id().clone();
     let label = SharedString::from(env.entry.label.clone());
-    let env_for_rename = env.clone();
+    let mcp_url = environment_mcp_url(env);
     let mut menu = MenuPopup::new()
         .item(MenuItem::new(if routes_open { t!("Hide routes") } else { t!("Routes") }).icon(IconName::Route).on_select({
             let (this, id) = (this.clone(), id.clone());
@@ -900,13 +854,12 @@ fn environment_menu(
                 })
                 .ok();
             }
-        }))
-        .item(MenuItem::new(t!("Rename")).icon(IconName::Pencil).on_select({
-            let this = this.clone();
-            move |window, cx| {
-                this.update(cx, |this, cx| this.start_rename(&env_for_rename, window, cx)).ok();
-            }
         }));
+    if let Some(url) = mcp_url {
+        menu = menu.item(MenuItem::new(t!("Copy MCP URL")).on_select(move |_, cx| {
+            cx.write_to_clipboard(ClipboardItem::new_string(url.clone()));
+        }));
+    }
     if let Some(trace_id) = trace_id {
         menu = menu.item(MenuItem::new(t!("Copy trace ID")).on_select(move |_, cx| {
             cx.write_to_clipboard(ClipboardItem::new_string(trace_id.clone()));
@@ -926,7 +879,6 @@ impl Render for ConnectionsSettings {
         self.sync_ticker(cx);
         let environments: Vec<EnvironmentState> = self.state.read(cx).environments.clone();
         let import_available = self.state.read(cx).electron_import_available;
-        let cloud_enabled = self.state.read(cx).cloud.is_some();
         let rows: Vec<AnyElement> = environments.iter().map(|env| self.render_row(env, cx)).collect();
         let cloud_rows = cloud_environment_connect_rows(&self.state, cx);
         let account = self.render_account(cx);
@@ -941,11 +893,7 @@ impl Render for ConnectionsSettings {
             .on_click(cx.listener(|this, _, window, cx| this.open_add_dialog(None, window, cx)));
         let mut section = SettingsSection::new(t!("Environments")).header_action(header_action).children(rows).children(cloud_rows.rows);
         if environments.is_empty() && !cloud_rows.any {
-            let description = if cloud_enabled {
-                t!("Click “Add environment” to pair another environment, or connect one from T3 Connect.")
-            } else {
-                t!("Click “Add environment” to pair another environment.")
-            };
+            let description = t!("Click “Add environment” to pair another environment.");
             section = section.child(
                 div()
                     .min_h(theme.rem(13.))

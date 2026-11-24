@@ -38,7 +38,7 @@ pub fn reset_button(id: impl Into<SharedString>, on_click: impl Fn(&mut Window, 
             Button::new(SharedString::from(format!("reset-{id}")))
                 .variant(ButtonVariant::GhostMuted)
                 .size(ButtonSize::IconMicro)
-                .icon(IconName::RotateCcw)
+                .icon(IconName::Undo2)
                 .on_click(move |_, window, cx| {
                     cx.stop_propagation();
                     on_click(window, cx);
@@ -84,10 +84,21 @@ pub fn client_switch(
     client_row(id, description, get, set, switch, cx)
 }
 
+/// How wide a settings select is, from its trigger's `sm:w-*` class.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum SelectWidth {
+    /// A fixed width in rem: `sm:w-40` is `Rem(10.)`.
+    Rem(f32),
+    /// `w-auto min-w-0`: as wide as the chosen value, but never under the
+    /// 10rem every select in a settings row gets (`[&_select-trigger]:min-w-40`).
+    Fit,
+}
+
 /// A select row bound to a client setting with fixed options.
 pub fn client_select<T: PartialEq + Clone + 'static>(
     id: &'static str,
     description: impl Into<SharedString>,
+    width: SelectWidth,
     options: Vec<(T, SharedString)>,
     get: fn(&ClientSettings) -> &T,
     set: fn(&mut ClientSettings, T),
@@ -97,23 +108,30 @@ pub fn client_select<T: PartialEq + Clone + 'static>(
     let selected = options.iter().position(|(value, _)| value == current).unwrap_or(0);
     let labels: Rc<[SharedString]> = options.iter().map(|(_, label)| label.clone()).collect();
     let values: Rc<[T]> = options.into_iter().map(|(value, _)| value).collect();
-    let select = select_control(SharedString::from(format!("select-{id}")), labels, selected, move |index, _, cx| {
+    let select = select_control(SharedString::from(format!("select-{id}")), width, labels, selected, move |index, _, cx| {
         let value = values[index].clone();
         ClientSettingsStore::update(cx, |settings| set(settings, value));
     });
     client_row(id, description, get, set, select, cx)
 }
 
-/// A small select at least 10rem wide, as settings rows draw it.
+/// A small select (`size="sm"`) at its row's width.
 pub fn select_control(
     id: SharedString,
+    width: SelectWidth,
     labels: Rc<[SharedString]>,
     selected: usize,
     on_change: impl Fn(usize, &mut Window, &mut App) + 'static,
 ) -> impl IntoElement {
-    div().min_w(gpui_kit::rems(10.)).child(
-        Select::new(id, labels, selected, on_change).size(crate::components::ui::select::SelectSize::Sm),
-    )
+    sized_select(width, Select::new(id, labels, selected, on_change).size(crate::components::ui::select::SelectSize::Sm))
+}
+
+/// Places a settings select at its width.
+pub fn sized_select(width: SelectWidth, select: Select) -> impl IntoElement {
+    match width {
+        SelectWidth::Rem(rem) => div().w(gpui_kit::rems(rem)).child(select),
+        SelectWidth::Fit => div().min_w(gpui_kit::rems(10.)).child(select),
+    }
 }
 
 /// The environments a server-saved setting applies to: one, or every
@@ -210,11 +228,35 @@ pub fn server_switch(
         .disabled(!available)
         .on_change(move |checked, _, cx| SettingsScope::update(patch(checked), cx));
     let row = SettingsRow::new(setting_title(id)).description(description).control(switch);
-    if available {
-        row
-    } else {
-        row.status(t!("Reconnect the selected environment to change this setting."))
+    if !available {
+        return row.status(t!("Reconnect the selected environment to change this setting."));
     }
+    let values: Vec<Option<bool>> =
+        SettingsScope::targets(cx).iter().map(|target| ServerSettingsStore::resolved(cx, target).as_ref().and_then(get)).collect();
+    let default = get(ServerSettingsStore::defaults());
+    let (summary, quiet) = if values.windows(2).any(|pair| pair[0] != pair[1]) {
+        (t!("Mixed across selected environments"), false)
+    } else if values.first().copied().flatten() != default {
+        (t!("Set on the environment"), true)
+    } else {
+        (t!("Built-in default"), true)
+    };
+    row.inheritance(inheritance_marker(id, summary), quiet)
+}
+
+/// `SettingInheritance`'s trigger: a micro layers button whose tooltip says
+/// where the value comes from.
+pub fn inheritance_marker(id: &'static str, summary: SharedString) -> AnyElement {
+    div()
+        .id(SharedString::from(format!("inheritance-tip-{id}")))
+        .tooltip(tooltip(summary))
+        .child(
+            Button::new(SharedString::from(format!("inheritance-{id}")))
+                .variant(ButtonVariant::GhostMuted)
+                .size(ButtonSize::IconMicro)
+                .icon(IconName::Layers),
+        )
+        .into_any_element()
 }
 
 /// `SettingsScopeSentence` for this app: "Applying settings for All
@@ -231,13 +273,21 @@ pub fn scope_sentence(cx: &App) -> AnyElement {
         None if ids.is_empty() => t!("No environments"),
         None => t!("All environments"),
     };
-    let menu_button = |id: &'static str, icon: IconName, label: SharedString| {
-        Button::new(id).variant(ButtonVariant::Outline).size(ButtonSize::Sm).icon(icon).label(label).trailing_icon(IconName::ChevronDown)
+    // Triggers carry an icon only for a picked project or environment.
+    let menu_button = |id: &'static str, icon: Option<IconName>, label: SharedString| {
+        let button = Button::new(id).variant(ButtonVariant::Outline).size(ButtonSize::Sm).label(label).trailing_icon(IconName::ChevronDown);
+        match icon {
+            Some(icon) => button.icon(icon),
+            None => button,
+        }
     };
-    let project = menu_button("scope-project", IconName::FolderOpen, t!("All projects"));
+    let project = dropdown_menu("scope-project", menu_button("scope-project-trigger", None, t!("All projects")), |_, _| {
+        MenuPopup::new().item(MenuItem::new(t!("All projects")).kind(MenuItemKind::Radio(true)).on_select(|_, _| {}))
+    });
+    let environment_icon = scope.environment.as_ref().map(|_| IconName::Server);
     let environments = ids.clone();
     let selected = scope.environment.clone();
-    let environment = dropdown_menu("scope-environment", menu_button("scope-environment-trigger", IconName::Server, environment_name), move |_, cx| {
+    let environment = dropdown_menu("scope-environment", menu_button("scope-environment-trigger", environment_icon, environment_name), move |_, cx| {
         let mut menu = MenuPopup::new().item(
             MenuItem::new(t!("All environments"))
                 .kind(MenuItemKind::Radio(selected.is_none()))
@@ -373,5 +423,39 @@ pub fn restore_defaults_button(on_confirm: impl Fn(Vec<SharedString>, &mut Windo
         .label(t!("Restore device defaults"))
         .disabled(changed.is_empty())
         .on_click(move |_, window, cx| on_confirm(changed.clone(), window, cx))
+        .into_any_element()
+}
+
+/// Where a link inside a settings description goes.
+#[derive(Clone, Copy, Debug)]
+pub enum LinkTarget {
+    Page(super::settings_search::SettingsPath),
+    Url(&'static str),
+}
+
+/// A description from a `<T>` block whose `<Link>` and `<a>` elements are
+/// underlined links (`underline underline-offset-2`), in order of
+/// `targets`.
+pub fn linked_description(id: &'static str, text: crate::i18n::RichText, targets: Vec<LinkTarget>) -> AnyElement {
+    let mut plain = String::new();
+    let mut ranges = Vec::new();
+    for segment in &text.segments {
+        let start = plain.len();
+        plain.push_str(&segment.text);
+        if matches!(segment.tag.as_deref(), Some("Link" | "a")) && start < plain.len() {
+            ranges.push(start..plain.len());
+        }
+    }
+    let underline = gpui_kit::HighlightStyle {
+        underline: Some(gpui_kit::UnderlineStyle { thickness: gpui_kit::px(1.), color: None, wavy: false }),
+        ..Default::default()
+    };
+    let styled = gpui_kit::StyledText::new(plain).with_highlights(ranges.iter().map(|range| (range.clone(), underline)));
+    gpui_kit::InteractiveText::new(id, styled)
+        .on_click(ranges, move |index, _, cx| match targets.get(index) {
+            Some(LinkTarget::Page(path)) => super::settings_layout::SettingsNavigator::open(*path, cx),
+            Some(LinkTarget::Url(url)) => cx.open_url(url),
+            None => {}
+        })
         .into_any_element()
 }

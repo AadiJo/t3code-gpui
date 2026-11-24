@@ -74,10 +74,11 @@ impl CatalogTheme {
     }
 }
 
-const BUILT_IN_FILES: [&str; 7] = ["t3-code", "graphite", "t3-chat", "grove", "ocean", "ember", "iris"];
+const BUILT_IN_FILES: [&str; 7] = ["t3-code", "t3-chat", "grove", "ocean", "ember", "iris", "graphite"];
 
-/// `BUILT_IN_THEMES`, with the standard T3 Code theme first and Graphite,
-/// which this port bundles, after it.
+/// `BUILT_IN_THEMES`, with the standard T3 Code theme first. Graphite,
+/// which this port bundles and the web imports as a custom theme, comes
+/// last, where the web lists custom themes.
 static BUILT_IN: LazyLock<Vec<CatalogTheme>> = LazyLock::new(|| {
     BUILT_IN_FILES
         .iter()
@@ -293,6 +294,31 @@ impl ThemeStore {
         custom.push(CustomTheme { document: Arc::new(document), source });
         Self::save_custom(custom, cx);
         Ok(id)
+    }
+
+    /// Adds a copy of a theme as a custom theme named "<name> copy" and
+    /// returns its id.
+    pub fn duplicate(id: &str, cx: &mut App) -> Result<String, ThemeImportError> {
+        let custom = cx.global::<Self>().custom.iter().find(|theme| theme.document.id == id).map(|theme| theme.source.clone());
+        let mut source = match custom {
+            Some(source) => source,
+            None => {
+                let file = BUILT_IN_FILES.iter().zip(BUILT_IN.iter()).find(|(_, theme)| theme.document.id == id).map(|(file, _)| file);
+                let bytes = file.and_then(|file| Assets::get(&format!("themes/{file}.json"))).ok_or_else(|| {
+                    ThemeImportError::Invalid(ThemeError::from(serde_json::Error::io(std::io::Error::other("unknown theme"))))
+                })?;
+                serde_json::from_slice(&bytes).map_err(ThemeError::from)?
+            }
+        };
+        let name = source.get("name").and_then(Value::as_str).unwrap_or("Theme").to_owned();
+        let taken: Vec<String> = Self::catalog(cx).iter().map(|t| t.document.id.clone()).collect();
+        let base = format!("{id}-copy");
+        let new_id = (1..).map(|n| if n == 1 { base.clone() } else { format!("{base}-{n}") }).find(|c| !taken.contains(c)).expect("an id is free");
+        if let Value::Object(map) = &mut source {
+            map.insert("id".into(), Value::String(new_id));
+            map.insert("name".into(), Value::String(format!("{name} copy")));
+        }
+        Self::add_custom(&serde_json::to_vec(&source).map_err(ThemeError::from)?, cx)
     }
 
     /// Deletes a custom theme. A deleted theme in use falls back to the
