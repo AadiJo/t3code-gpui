@@ -151,12 +151,16 @@ fn view_environment(data: &LiveData, view: &ThreadView, cx: &App) -> Option<Envi
     }
 }
 
+/// The environment's server runs on this machine (or no session says otherwise).
+pub fn is_loopback(link: Option<&RpcLink>) -> bool {
+    let host = link.and_then(|l| l.link.current_session()).and_then(|s| s.prepared.http_base_url.host_str().map(str::to_owned));
+    host.as_deref().is_none_or(|h| matches!(h, "localhost" | "127.0.0.1" | "[::1]" | "::1"))
+}
+
 /// `resolveRemoteOpenTarget`: a loopback server opens editors itself; another machine opens
 /// them here through the server's advertised SSH targets.
 fn remote_open_state(link: Option<&RpcLink>, config: Option<&ServerConfig>) -> RemoteOpenState {
-    let host = link.and_then(|l| l.link.current_session()).and_then(|s| s.prepared.http_base_url.host_str().map(str::to_owned));
-    let loopback = host.as_deref().is_some_and(|h| matches!(h, "localhost" | "127.0.0.1" | "[::1]" | "::1"));
-    if loopback || host.is_none() {
+    if is_loopback(link) {
         return resolve_remote_open_state(Some(&RemoteOpenTarget::Local));
     }
     let advertised = config

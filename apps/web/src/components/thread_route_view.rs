@@ -22,7 +22,8 @@ use crate::components::chat::composer::{ChatComposer, ComposerEvent, ComposerSta
 use crate::components::chat::messages_timeline::TimelineAction;
 use crate::components::chat::open_in_picker::OpenInPicker;
 use crate::components::chat::thread_details_items::ThreadDetailsItemSettings;
-use crate::components::chat::thread_details_panel::{ThreadDetailsInput, ThreadDetailsPanel};
+use crate::components::chat::thread_details_panel::{ThreadDetailsEvent, ThreadDetailsInput, ThreadDetailsPanel};
+use crate::components::chat::thread_details_sections::ThreadDetailsSectionEvent;
 use crate::components::chat::timeline_entries::{Attachment, MessageId};
 use crate::components::chat_view::{ChatView, ChatViewEvent, HeaderThreadMenu};
 use crate::components::git_actions_control::{GitActionsControl, GitActionsEvent};
@@ -30,12 +31,18 @@ use crate::components::chat::composer_command_menu::{ComposerCommandItem, Compos
 use crate::components::git_actions_control_source::SourceControlModel;
 use crate::components::project_scripts_control::{ProjectScriptsControl, ProjectScriptsEvent};
 use crate::components::sidebar::model::ThreadKey;
+use crate::components::ui::toast::{ToastData, ToastKind, Toaster};
 use crate::composer_editor_mentions::format_context_reference;
 use crate::composer_logic::ComposerTrigger;
 use crate::i18n::t;
 use crate::router::ThreadTarget;
 use crate::scenes::composer::fixture_state;
-use crate::state::app_data::{ActionOutcome, DataEvent, GitControlsSetup, SharedAppData, ThreadView};
+use crate::state::app_data::{ActionOutcome, DataEvent, DetailsOutcome, GitControlsSetup, SharedAppData, ThreadView};
+
+/// The card's facts that do not come from the server.
+fn details_base(is_git_repo: bool) -> ThreadDetailsInput {
+    ThreadDetailsInput { offers_git: true, is_git_repo, show_open_in: true, ..Default::default() }
+}
 
 /// Threads whose source control controls stay built.
 const GIT_CONTROLS_KEPT: usize = 16;
@@ -57,6 +64,12 @@ pub enum ThreadRouteEvent {
     RunScript(ProjectScript),
     /// A click outside the details popover closed it.
     DetailsClosed,
+    /// Open an app route (a settings page the controls link to).
+    Navigate(&'static str),
+    /// Open the Linked items tab (the strip's badge with several pull requests).
+    OpenLinkedItems,
+    /// Show this browser tab (a thread server opened in the preview).
+    OpenBrowser(SharedString),
 }
 
 /// The menu of the shown thread's workspace; the composer keeps one source.
@@ -185,6 +198,7 @@ impl ThreadRouteView {
         });
         self.sync_composer(&view, cx);
         self.sync_git_props(&view, cx);
+        self.sync_details(&view, cx);
     }
 
     fn sync_composer(&mut self, view: &ThreadView, cx: &mut Context<Self>) {
@@ -257,9 +271,8 @@ impl ThreadRouteView {
         let scripts = cx.new(|_| ProjectScriptsControl::new(arc.clone(), project_id, scripts, true));
         let cwd = Some(props.project_cwd.clone());
         let open_in = cx.new(|_| OpenInPicker::new(arc, editors, open_state, cwd));
-        let input = ThreadDetailsInput { offers_git: true, is_git_repo, show_open_in: true, ..Default::default() };
         let panel = cx.new(|cx| {
-            ThreadDetailsPanel::new(input, workspace.clone(), branch.clone(), git.clone(), Some(scripts.clone()), Some(open_in.clone()), cx)
+            ThreadDetailsPanel::new(details_base(is_git_repo), workspace.clone(), branch.clone(), git.clone(), Some(scripts.clone()), Some(open_in.clone()), cx)
         });
         let mut subscriptions = Vec::new();
         for toolbar in [&workspace, &branch] {
@@ -271,9 +284,11 @@ impl ThreadRouteView {
             move |this, _, event: &GitActionsEvent, cx| match event {
                 GitActionsEvent::OpenChanges => cx.emit(ThreadRouteEvent::OpenDiff { turn: None, file: None }),
                 GitActionsEvent::ThreadBranchChanged(branch) => this.set_branch(&key, branch.clone().into(), cx),
-                GitActionsEvent::OpenUrl(_) | GitActionsEvent::OpenSourceControlSettings => {}
+                GitActionsEvent::OpenUrl(url) => cx.open_url(url),
+                GitActionsEvent::OpenSourceControlSettings => cx.emit(ThreadRouteEvent::Navigate("/settings/source-control")),
             }
         }));
+        subscriptions.push(cx.subscribe(&panel, Self::on_details_event));
         subscriptions.push(cx.subscribe(&scripts, |_, _, event: &ProjectScriptsEvent, cx| {
             let ProjectScriptsEvent::Run(script) = event;
             cx.emit(ThreadRouteEvent::RunScript(script.clone()));
@@ -282,12 +297,58 @@ impl ThreadRouteView {
         front.panel = Some(panel.clone());
         front.open_in = Some(open_in);
         front._subscriptions.extend(subscriptions);
+        if let Some(view) = self.target.clone().and_then(|target| self.data.thread_view(&target, cx)) {
+            self.sync_details(&view, cx);
+        }
         Some(panel)
     }
 
+    /// Re-reads the shown thread's details card from the data, once built.
+    fn sync_details(&mut self, view: &ThreadView, cx: &mut Context<Self>) {
+        let Some(front) = self.git.front().filter(|g| g.key == view.key) else { return };
+        let Some(panel) = front.panel.clone() else { return };
+        let input = self.data.thread_details(view, details_base(front.setup.is_git_repo), cx);
+        if panel.read(cx).input() != &input {
+            panel.update(cx, |panel, cx| panel.set_input(input, cx));
+        }
+    }
+
+    /// A details card row: links and settings pages open here, the rest runs on the data.
+    fn on_details_event(&mut self, _: Entity<ThreadDetailsPanel>, event: &ThreadDetailsEvent, cx: &mut Context<Self>) {
+        match event {
+            ThreadDetailsEvent::OpenUrl(url) => return cx.open_url(url),
+            ThreadDetailsEvent::Section(ThreadDetailsSectionEvent::ManageAutomations(_)) => {
+                return cx.emit(ThreadRouteEvent::Navigate("/settings/scheduled-tasks"));
+            }
+            _ => {}
+        }
+        let Some(ThreadTarget::Server(key)) = self.target.clone() else { return };
+        let task = self.data.thread_details_event(&key, event, cx);
+        cx.spawn(async move |this, cx| {
+            let outcome = task.await;
+            this.update(cx, |this, cx| match outcome {
+                DetailsOutcome::Done => {}
+                DetailsOutcome::OpenBrowser(tab) => cx.emit(ThreadRouteEvent::OpenBrowser(tab)),
+                DetailsOutcome::LoadComposer(text) => {
+                    this.append_handoff(&text, cx);
+                    Toaster::push(
+                        ToastData::new(ToastKind::Success, t!("Added to the composer"))
+                            .description(t!("The task is in the composer. Read it over, then send.")),
+                        cx,
+                    );
+                }
+            })
+            .ok();
+        })
+        .detach();
+    }
+
     fn on_branch_event(&mut self, key: &SharedString, event: &BranchToolbarEvent, cx: &mut Context<Self>) {
-        if let BranchToolbarEvent::ThreadBranchChanged { branch, .. } = event {
-            self.set_branch(key, branch.clone().into(), cx);
+        match event {
+            BranchToolbarEvent::ThreadBranchChanged { branch, .. } => self.set_branch(key, branch.clone().into(), cx),
+            BranchToolbarEvent::OpenPullRequest(url) => cx.open_url(url),
+            BranchToolbarEvent::OpenPullRequestList => cx.emit(ThreadRouteEvent::OpenLinkedItems),
+            _ => {}
         }
     }
 
@@ -363,6 +424,22 @@ impl ThreadRouteView {
     }
 
     /// Puts `text` in the composer (edit from here, edit a queued message).
+    /// `appendHandoff`: adds a task below the composer's text unless it is already there.
+    fn append_handoff(&mut self, task: &str, cx: &mut Context<Self>) {
+        let editor = self.composer.read(cx).editor().clone();
+        editor.update(cx, |editor, cx| {
+            let kept = editor.text().trim_end().to_owned();
+            let added = task.trim();
+            if added.is_empty() || format!("\n\n{kept}\n\n").contains(&format!("\n\n{added}\n\n")) {
+                return;
+            }
+            let text = if kept.is_empty() { added.to_owned() } else { format!("{kept}\n\n{added}") };
+            let end = text.len();
+            editor.set_text(text, cx);
+            editor.set_cursor(end, cx);
+        });
+    }
+
     fn load_composer(&mut self, text: &str, window: &mut Window, cx: &mut Context<Self>) {
         let editor = self.composer.read(cx).editor().clone();
         editor.update(cx, |editor, cx| {

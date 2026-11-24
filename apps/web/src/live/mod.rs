@@ -7,6 +7,7 @@ pub mod git;
 pub mod rpc;
 pub mod sources;
 pub mod terminal;
+pub mod thread_details;
 pub mod workspace;
 
 use std::cell::RefCell;
@@ -39,7 +40,8 @@ use crate::diff_panel_store::DiffPanelSelection;
 use crate::i18n::t;
 use crate::provider_models_live::{model_catalog, to_wire};
 use crate::router::{DraftId, ThreadTarget};
-use crate::state::app_data::{ActionOutcome, AppData, CommandOutcome, DataEvent, DataEvents, GitControlsSetup, ThreadView};
+use crate::components::chat::thread_details_panel::{ThreadDetailsEvent, ThreadDetailsInput};
+use crate::state::app_data::{ActionOutcome, AppData, CommandOutcome, DataEvent, DataEvents, DetailsOutcome, GitControlsSetup, ThreadView};
 use crate::state::composer::{self as live_composer, CatalogCache, LiveDraftStore, LiveMenuSource, composer_state};
 use crate::state::palette::LivePaletteSource;
 use crate::state::shell::{runtime_ids, thread_key};
@@ -76,6 +78,8 @@ pub struct LiveData {
     settings: RefCell<Option<(t3code_contracts::EnvironmentId, Entity<ServerPanelsModel>, Subscription)>>,
     /// The environment of the thread the main pane shows.
     shown_environment: RefCell<Option<t3code_contracts::EnvironmentId>>,
+    /// The details card's pull request details, servers and scheduled tasks.
+    details: Entity<thread_details::DetailsFeed>,
 }
 
 impl LiveData {
@@ -97,7 +101,15 @@ impl LiveData {
                 })
             })
         };
-        events.update(cx, |events, _| events._subscriptions.push(subscription));
+        if !cx.has_global::<crate::port_discovery_state::PortForwards>() {
+            crate::port_discovery_state::PortForwards::init(cx);
+        }
+        let details = cx.new(|_| thread_details::DetailsFeed::default());
+        let followed = thread_details::follow_changes(&details, &events, cx);
+        events.update(cx, |events, _| {
+            events._subscriptions.push(subscription);
+            events._subscriptions.extend(followed);
+        });
         Rc::new(Self {
             events,
             palette,
@@ -111,6 +123,7 @@ impl LiveData {
             usage: RefCell::default(),
             settings: RefCell::default(),
             shown_environment: RefCell::default(),
+            details,
         })
     }
 
@@ -489,8 +502,17 @@ impl AppData for LiveData {
         self.palette.clone()
     }
 
-    fn set_active_thread(&self, active: Option<&ThreadKey>, _: &mut App) {
+    fn set_active_thread(&self, active: Option<&ThreadKey>, cx: &mut App) {
         *self.shown_environment.borrow_mut() = active.map(|key| runtime_ids(key).0);
+        self.details.update(cx, |details, cx| details.follow(active.cloned(), cx));
+    }
+
+    fn thread_details(&self, view: &ThreadView, base: ThreadDetailsInput, cx: &mut App) -> ThreadDetailsInput {
+        thread_details::input(&self.details, view, base, cx)
+    }
+
+    fn thread_details_event(&self, key: &ThreadKey, event: &ThreadDetailsEvent, cx: &mut App) -> Task<DetailsOutcome> {
+        thread_details::event(&self.details, key, event, cx)
     }
 
     fn pull_request_sources(&self, cx: &mut App) -> Vec<EnvironmentListSource> {

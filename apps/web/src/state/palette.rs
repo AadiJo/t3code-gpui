@@ -27,6 +27,8 @@ struct PaletteData {
     threads: Arc<[Arc<PaletteThread>]>,
     projects: Arc<[PaletteProject]>,
     active_thread: Option<ThreadKey>,
+    /// The active thread links pull requests or issues.
+    active_has_links: bool,
     environments: Vec<PaletteEnvironment>,
     now_ms: i64,
     memo: HashMap<ThreadKey, (Arc<SidebarThread>, Arc<PaletteThread>)>,
@@ -83,6 +85,9 @@ impl LivePaletteSource {
         data.threads = threads;
         data.projects = projects;
         data.active_thread = snapshot.active_thread.clone();
+        data.active_has_links = snapshot.active_thread.as_ref().and_then(|key| shell.row(key)).is_some_and(|row| {
+            row.source.pull_requests.as_ref().is_some_and(|links| !links.is_empty()) || row.source.issues.as_ref().is_some_and(|issues| !issues.is_empty())
+        });
         data.now_ms = snapshot.now.0;
         data.environments = shell
             .environments(cx)
@@ -147,6 +152,10 @@ impl CommandPaletteSource for LivePaletteSource {
 
     fn supports(&self, feature: PaletteFeature) -> bool {
         matches!(feature, PaletteFeature::NewProject | PaletteFeature::ProjectSettings)
+    }
+
+    fn active_thread_has_linked_items(&self) -> bool {
+        self.data.borrow().active_has_links
     }
 
     fn now_ms(&self) -> i64 {

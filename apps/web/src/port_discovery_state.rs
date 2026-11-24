@@ -127,6 +127,34 @@ impl PortForwards {
         cx.global_mut::<Self>().watch_task = Some(task);
     }
 
+    /// The servers of `thread` when it is the watched one.
+    pub fn servers<'a>(thread: &(EnvironmentId, ThreadId), cx: &'a App) -> &'a [DiscoveredLocalServer] {
+        cx.try_global::<Self>().filter(|s| s.watched.as_ref() == Some(thread)).map_or(&[], |s| &s.servers)
+    }
+
+    /// Forwards `port` (reusing a running forward) and opens `url` at its end on this machine.
+    pub fn open_forwarded(environment_id: EnvironmentId, port: u16, url: String, cx: &mut App) {
+        let Some(state) = cx.try_global::<Self>() else { return };
+        if let Some(forward) = state.forwards.iter().find(|f| f.environment_id == environment_id && f.remote_port == port) {
+            cx.open_url(&forwarded_url(forward, Some(&url)));
+            return;
+        }
+        let tunnel = state.tunnel.clone();
+        let runtime = ConnectionRuntime::global(cx);
+        let Some(link) = runtime.environment_link(&environment_id) else { return };
+        let task = runtime.spawn(async move { tunnel.forward(link, port).await.map_err(CommandError::from) }, cx);
+        cx.spawn(async move |cx| {
+            let result = task.await;
+            cx.update(|cx| match result {
+                Ok(forward) => cx.open_url(&forwarded_url(&forward, Some(&url))),
+                Err(error) => {
+                    Toaster::push(ToastData::new(ToastKind::Error, t!("Could not forward port {port}", port = port)).description(error.0), cx);
+                }
+            });
+        })
+        .detach();
+    }
+
     /// The current forwards.
     pub fn forwards(cx: &App) -> Arc<[PortForward]> {
         cx.try_global::<Self>().map_or_else(|| Arc::from(Vec::new()), |s| s.forwards.clone())

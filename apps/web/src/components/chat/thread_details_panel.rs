@@ -142,6 +142,11 @@ impl ThreadDetailsPanel {
         Self { input, workspace, branch, git, scripts, open_in, items_menu: None, checks: None, confirming_merge: false, server_page: SERVER_PAGE_COUNT }
     }
 
+    /// The facts the card shows now.
+    pub fn input(&self) -> &ThreadDetailsInput {
+        &self.input
+    }
+
     pub fn set_input(&mut self, input: ThreadDetailsInput, cx: &mut Context<Self>) {
         self.input = input;
         // The confirmation closes once Merge is no longer the row's action.
