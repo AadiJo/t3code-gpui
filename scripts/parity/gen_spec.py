@@ -322,9 +322,9 @@ scene("settings-labs", settings_chrome(33), scope_row(), [
 ])
 scene("settings-archived", settings_chrome(52), scope_row(), [
     box("h2 Archived threads", 327, 173, 132, 28, **T),
-    box("empty title with icon", 328, 224, 158, 20, **T),
-    box("empty description", 328, 250, 200, 18, **T),
-    vscan("card top/bottom", 600, 200, 300),
+    box("empty title with icon", 328, 224, 158, 20, exclude="fixture: the parity world settings server is not connected, so the page shows the load error instead of the empty state"),
+    box("empty description", 328, 250, 200, 18, exclude="fixture: the parity world settings server is not connected, so the page shows the load error instead of the empty state"),
+    vscan("card top/bottom", 600, 200, 300, exclude="fixture: the parity world settings server is not connected, so the page shows the load error instead of the empty state"),
 ])
 scene("settings-about", settings_chrome(40), [
     box("h2 App", 327, 113, 32, 28, **T),
