@@ -130,15 +130,9 @@ fn trailing_element(trailing: &PaletteTrailing, theme: &AppTheme) -> AnyElement 
             .items_center()
             .gap(theme.sp(2.))
             .when(*is_current, |d| d.child(current()))
-            .child(div().flex().items_center().gap(theme.sp(1.)).children(colors.iter().map(|[background, accent]| {
-                // `ThemePreviewCircle` at `size-3`: the background with the accent's half.
-                div()
-                    .size(theme.sp(3.))
-                    .rounded_full()
-                    .overflow_hidden()
-                    .flex()
-                    .child(div().w_1_2().h_full().bg(*background))
-                    .child(div().w_1_2().h_full().bg(*accent))
+            .child(div().flex().items_center().gap(theme.sp(1.)).children(colors.iter().map(|(mode, colors)| {
+                // `ThemePreviewCircle` at `size-3 border-0`, over the popover.
+                crate::components::settings::theme_sphere::borderless_theme_sphere(*colors, *mode, theme.colors.popover(), theme.sp(3.))
             })))
             .into_any_element(),
     }
@@ -229,7 +223,7 @@ pub fn render_item(
                 .self_start()
                 .pt(theme.sp(0.5))
                 .child(match &item.project {
-                    Some(project) => crate::components::project_favicon::ProjectFavicon::new(project.name.clone())
+                    Some(project) => crate::components::project_favicon::ProjectFavicon::new(project.title.clone())
                         .size(theme.rem(1.))
                         .into_any_element(),
                     None => Icon::new(item.icon).size(IconSize::Md).color(c.icon_muted).into_any_element(),

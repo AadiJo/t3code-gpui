@@ -22,14 +22,13 @@ use super::shell::LiveShell;
 use super::sidebar_actions::{SidebarOutcome, handle as handle_sidebar};
 use crate::components::command_palette_logic::PaletteEvent;
 use crate::components::command_palette_lookups::{
-    CommandPaletteSource, PaletteEnvironment, PaletteFeature, PalettePort, PaletteProject, PaletteSetting, PaletteTheme, PaletteThread,
+    CommandPaletteSource, PaletteEnvironment, PaletteFeature, PalettePort, PaletteProject, PaletteSetting, PaletteThread,
 };
 use crate::components::pull_request::link_pull_request_dialog::{LinkProject, ResolvedLink};
 use crate::components::sidebar::SidebarEvent;
 use crate::components::ui::toast::{ToastData, ToastKind, Toaster};
 use crate::i18n::t;
 use crate::components::sidebar::model::{EnvironmentId, ProjectRef, SidebarThread, ThreadKey};
-use crate::theme_palette::{Appearance, ThemeDocument};
 use t3code_client_runtime::state::models::ThreadRow;
 
 #[derive(Default)]
@@ -106,17 +105,7 @@ impl LivePaletteSource {
             return;
         }
         let snapshot = shell.snapshot();
-        let projects: Arc<[PaletteProject]> = snapshot
-            .projects
-            .iter()
-            .filter(|p| !p.archived)
-            .map(|p| PaletteProject {
-                project_ref: p.project_ref.clone(),
-                title: p.title.clone(),
-                workspace_root: p.workspace_root.clone(),
-                pinned: p.pinned,
-            })
-            .collect();
+        let projects = crate::components::command_palette_lookups::palette_projects(snapshot);
         let mut memo = std::mem::take(&mut data.memo);
         let mut next = HashMap::with_capacity(snapshot.threads.len());
         let threads: Arc<[Arc<PaletteThread>]> = snapshot
@@ -208,20 +197,6 @@ impl CommandPaletteSource for LivePaletteSource {
 
     fn environments(&self) -> Vec<PaletteEnvironment> {
         self.data.borrow().environments.clone()
-    }
-
-    fn themes(&self) -> Vec<PaletteTheme> {
-        let graphite = Arc::new(ThemeDocument::graphite());
-        let swatch = |appearance| {
-            let palette = graphite.palette(appearance);
-            (appearance, [palette.canvas, palette.accent])
-        };
-        vec![PaletteTheme {
-            id: Some(graphite.id.clone().into()),
-            label: graphite.name.clone().into(),
-            previews: vec![swatch(Appearance::Light), swatch(Appearance::Dark)],
-            document: graphite,
-        }]
     }
 
     fn ports(&self) -> Vec<PalettePort> {

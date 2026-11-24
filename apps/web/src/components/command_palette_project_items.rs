@@ -8,27 +8,31 @@ use super::command_palette_lookups::{PaletteEnvironment, PaletteProject};
 use super::icons::IconName;
 use super::sidebar::model::{EnvironmentId, ProjectRef};
 use crate::i18n::t;
+use gpui_kit::SharedString;
 use t3code_shared::keybindings::StaticCommand;
 
 fn project_item(prefix: &str, project: &PaletteProject, context: &ProjectContext) -> PaletteItem {
     let value = format!("{prefix}:{}:{}", project.project_ref.environment_id.0, project.project_ref.project_id.0);
     let mut item = PaletteItem::action(
         value,
-        PaletteTitle::Text(project.title.clone()),
+        PaletteTitle::Text(project.group_label.clone()),
         IconName::Folder,
         PaletteRun::Event(PaletteEvent::NewThreadIn(project.project_ref.clone())),
         &[],
     );
     let location = context.environments.iter().find(|e| e.id == project.project_ref.environment_id).map(|e| e.label.clone());
-    let mut terms = vec![project.title.clone(), project.workspace_root.clone()];
+    let mut terms = vec![project.group_label.clone(), project.title.clone(), project.workspace_root.clone()];
     terms.extend(location.clone());
     item.set_terms(terms);
     item.project = Some(PaletteProjectRow {
         project_ref: project.project_ref.clone(),
-        name: project.title.clone(),
+        name: project.group_label.clone(),
+        title: project.title.clone(),
         location,
         workspace_root: project.workspace_root.clone(),
-        current: context.current.as_ref() == Some(&project.project_ref),
+        current: context.current.as_ref().is_some_and(|current| {
+            current == &project.project_ref || context.current_group.as_ref() == Some(&project.group_key)
+        }),
         pinned: project.pinned,
     });
     item.description(project.workspace_root.clone())
@@ -39,6 +43,8 @@ fn project_item(prefix: &str, project: &PaletteProject, context: &ProjectContext
 pub struct ProjectContext<'a> {
     pub environments: &'a [PaletteEnvironment],
     pub current: Option<ProjectRef>,
+    /// The current project's logical project, so its group's row reads "Current".
+    pub current_group: Option<SharedString>,
 }
 
 /// The New thread in… page: pinned projects first, then the rest, with the
@@ -49,7 +55,9 @@ pub fn new_thread_in_items(
     scratch_environment: Option<&EnvironmentId>,
     context: &ProjectContext,
 ) -> Vec<Rc<PaletteItem>> {
-    let mut ordered: Vec<&PaletteProject> = projects.iter().collect();
+    // One row per logical project: its first member stands for the group.
+    let mut seen = std::collections::HashSet::new();
+    let mut ordered: Vec<&PaletteProject> = projects.iter().filter(|p| seen.insert(p.group_key.clone())).collect();
     ordered.sort_by_key(|p| !p.pinned);
     let numbered = enumerate_items(ordered.iter().map(|p| project_item("new-thread-in", p, context)).collect());
     let mut items: Vec<Rc<PaletteItem>> = numbered.into_iter().map(Rc::new).collect();
@@ -73,6 +81,6 @@ pub fn new_thread_in_items(
 /// Projects as root search results.
 /// Search results carry no "Current".
 pub fn project_search_items(projects: &[PaletteProject], environments: &[PaletteEnvironment]) -> Vec<Rc<PaletteItem>> {
-    let context = ProjectContext { environments, current: None };
+    let context = ProjectContext { environments, current: None, current_group: None };
     projects.iter().map(|p| Rc::new(project_item("project", p, &context))).collect()
 }
