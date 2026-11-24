@@ -648,6 +648,10 @@ pub(super) fn run_families_search(check: &mut Check) -> anyhow::Result<()> {
     let per_server: usize = std::env::var("T3_FAMILY_THREADS").ok().and_then(|v| v.parse().ok()).unwrap_or(1100);
     // The last seeded thread on server A settled first, so it is the oldest and below the cut.
     let title = format!("Old alpha {:04}", per_server - 1);
+    if check.cx.update(|cx| ConnectionRuntime::state(cx).read(cx).environments.is_empty()) {
+        pair_if_needed(check, 1, "T3_PAIRING_URL")?;
+        pair_if_needed(check, 2, "T3_PAIRING_URL_B")?;
+    }
     check.pump(|c| all_connected(c, 2), Duration::from_secs(60), "both servers connected")?;
     check.pump(
         |c| c.cx.update(|cx| StateBridge::shell(cx).read(cx).environments(cx).iter().all(|env| env.read(cx).shell.generation > 0)),
