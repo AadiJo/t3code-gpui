@@ -314,6 +314,15 @@ impl RemoteAuthorization {
         })
     }
 
+    /// Forgets every relay-minted environment token and the relay's own
+    /// tokens, when the T3 Connect account signs out or changes.
+    pub async fn reset_relay_tokens(&self) {
+        self.relay_tokens.lock().await.clear();
+        if let Some(relay) = &self.relay {
+            relay.client.reset_token_cache().await;
+        }
+    }
+
     async fn forget_relay_token(&self, environment_id: &EnvironmentId, access_token: &str) {
         let mut tokens = self.relay_tokens.lock().await;
         if tokens.get(environment_id).is_some_and(|token| &*token.access_token == access_token) {

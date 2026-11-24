@@ -95,8 +95,8 @@ impl ElectronPaths {
 }
 
 /// Reads the OS-held key. Windows unwraps `os_crypt.encrypted_key` with
-/// DPAPI; macOS reads the `T3 Code Safe Storage` Keychain item, which shows
-/// the user a Keychain prompt. Unverified against real installs.
+/// DPAPI; macOS reads the app's `<name> Safe Storage` Keychain item, which
+/// shows the user a Keychain prompt. Unverified against real installs.
 pub fn load_platform_key(paths: &ElectronPaths) -> Result<SafeStorageKey, ImportError> {
     #[cfg(windows)]
     {
@@ -104,14 +104,55 @@ pub fn load_platform_key(paths: &ElectronPaths) -> Result<SafeStorageKey, Import
     }
     #[cfg(target_os = "macos")]
     {
-        let _ = paths;
-        mac_key()
+        mac_key(paths)
     }
     #[cfg(not(any(windows, target_os = "macos")))]
     {
         let _ = paths;
         Err(ImportError::UnsupportedPlatform)
     }
+}
+
+/// The names the desktop app gives itself (`app.setName`: "T3 Code", plus
+/// " Nightly" or " Dev" for those builds), which Electron uses for the
+/// Keychain item: service `<name> Safe Storage`, account `<name> Key` (older
+/// Electron: `<name>`).
+pub const MAC_KEYCHAIN_APP_NAMES: [&str; 3] = ["T3 Code", "T3 Code Nightly", "T3 Code Dev"];
+
+/// Tries each existing Keychain item (a missing one does not prompt) and keeps
+/// the first whose key decrypts the catalog, so a machine with two builds
+/// installed picks the one that wrote these files.
+#[cfg(target_os = "macos")]
+fn mac_key(paths: &ElectronPaths) -> Result<SafeStorageKey, ImportError> {
+    let catalog = std::fs::read(paths.catalog_path()).ok();
+    let mut last = None;
+    for name in MAC_KEYCHAIN_APP_NAMES {
+        let service = format!("{name} Safe Storage");
+        for account in [format!("{name} Key"), name.to_owned()] {
+            let password = match keyring::Entry::new(&service, &account).and_then(|entry| entry.get_secret()) {
+                Ok(password) => password,
+                Err(keyring::Error::NoEntry) => continue,
+                Err(error) => {
+                    last = Some(ImportError::KeyUnavailable(error.to_string()));
+                    continue;
+                }
+            };
+            let key = SafeStorageKey::from_mac_password(&password);
+            match &catalog {
+                Some(bytes) if catalog_decrypts(bytes, &key) => return Ok(key),
+                Some(_) => last = Some(ImportError::Decrypt),
+                None => return Ok(key),
+            }
+        }
+    }
+    Err(last.unwrap_or_else(|| ImportError::KeyUnavailable("no \"T3 Code Safe Storage\" Keychain item".into())))
+}
+
+#[cfg(target_os = "macos")]
+fn catalog_decrypts(bytes: &[u8], key: &SafeStorageKey) -> bool {
+    let Ok(envelope) = serde_json::from_slice::<CatalogEnvelope>(bytes) else { return false };
+    let Ok(encrypted) = STANDARD.decode(envelope.encrypted_catalog.trim()) else { return false };
+    decrypt_safe_storage(&encrypted, key).is_ok()
 }
 
 #[cfg(windows)]

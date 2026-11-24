@@ -15,6 +15,7 @@ use gpui_kit::{
     AnyElement, App, ClipboardItem, Context, Entity, IntoElement, Render, SharedString, Subscription, Task, WeakEntity,
     Window, div, prelude::*, px,
 };
+use t3code_client_runtime::connection::catalog::TargetRoute;
 use t3code_client_runtime::connection::routes::{is_learned, route_id};
 use t3code_client_runtime::environment::EnvironmentId;
 
@@ -36,7 +37,7 @@ use crate::components::ui::toast::{ToastData, ToastKind, Toaster};
 use crate::components::ui::tooltip::tooltip;
 use crate::connection::presentation::{
     Diagnosis, HopResult, Tone, diagnose, diagnosis_text, present_phase, route_address,
-    route_label, row_status, status_text, transport_label,
+    route_label, row_status, status_text, version_mismatch, transport_label,
 };
 use crate::connection::{ConnectionRuntime, ConnectionsState, EnvironmentState};
 use crate::i18n::t;
@@ -149,11 +150,9 @@ impl ConnectionsSettings {
                 this.dialog = None;
                 cx.notify();
             }
+            // The runtime lists the account's environments on every sign-in.
             T3ConnectSignInEvent::SignedIn => {
                 this.dialog = None;
-                if let Some(runtime) = cx.try_global::<ConnectionRuntime>() {
-                    runtime.refresh_relay(cx);
-                }
                 cx.notify();
             }
         });
@@ -305,6 +304,20 @@ impl ConnectionsSettings {
         if diagnosis.is_none() {
             parts.push(status);
         }
+        let client_version = cx.try_global::<ConnectionRuntime>().map(|runtime| runtime.auth().presentation().app_version.clone());
+        let mismatch = client_version.and_then(|client| version_mismatch(env.server_version.as_deref(), &client));
+        if let (true, Some((server, _))) = (enabled, &mismatch) {
+            parts.push(server.clone());
+        }
+        let status_tooltip: SharedString = match &mismatch {
+            Some((server, client)) => format!(
+                "{}\n{}",
+                status_text(env),
+                t!("Update available: {serverVersion} → {clientVersion}", serverVersion = server, clientVersion = client)
+            )
+            .into(),
+            None => status_text(env),
+        };
         let error_tone = enabled && tone == Tone::Error && diagnosis.is_none();
         subtitle.push(
             div()
@@ -312,7 +325,7 @@ impl ConnectionsSettings {
                 .min_w_0()
                 .truncate()
                 .when(error_tone, |d| d.text_color(c.destructive()))
-                .tooltip(tooltip(status_text(env)))
+                .tooltip(tooltip(status_tooltip))
                 .child(SharedString::from(parts.join(" · ")))
                 .into_any_element(),
         );
@@ -484,6 +497,8 @@ impl ConnectionsSettings {
         let key = env.id().as_str().to_owned();
         let retry_id = env.id().clone();
         let report = diagnosis_text(&env.entry.label, diagnosis);
+        let relay_only = env.entry.routes.len() == 1 && env.entry.routes[0].target.route == TargetRoute::Relay;
+        let add_route_target = (env.id().clone(), SharedString::from(env.entry.label.clone()));
         div()
             .mt(sp(2.))
             .pt(sp(2.))
@@ -519,6 +534,16 @@ impl ConnectionsSettings {
                             .text_color(c.muted_foreground)
                             .child(format!("{}.", ix + 1))
                             .child(div().flex_1().child(step.clone()))
+                    }))
+                    .children(diagnosis.more_info_url.clone().map(|url| {
+                        div()
+                            .id(SharedString::from(format!("env-more-info-{key}")))
+                            .cursor_pointer()
+                            .text_color(c.muted_foreground)
+                            .underline()
+                            .hover(|s| s.text_color(c.foreground()))
+                            .on_click(move |_, _, cx| cx.open_url(&url))
+                            .child(t!("More info"))
                     })),
             )
             .child(div().flex().flex_col().text_color(c.muted_foreground).children(diagnosis.facts.iter().map(|(label, value)| {
@@ -547,7 +572,18 @@ impl ConnectionsSettings {
                             .variant(ButtonVariant::Outline)
                             .size(ButtonSize::Xs)
                             .on_click(move |_, _, cx| cx.write_to_clipboard(ClipboardItem::new_string(report.clone()))),
-                    ),
+                    )
+                    .when(relay_only, |d| {
+                        d.child(
+                            Button::new(SharedString::from(format!("env-add-direct-route-{key}")))
+                                .label(t!("Add direct route"))
+                                .variant(ButtonVariant::Outline)
+                                .size(ButtonSize::Xs)
+                                .on_click(cx.listener(move |this, _, window, cx| {
+                                    this.open_add_dialog(Some(add_route_target.clone()), window, cx)
+                                })),
+                        )
+                    }),
             )
             .into_any_element()
     }

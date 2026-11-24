@@ -147,6 +147,24 @@ impl ConnectionRegistry {
         Ok(())
     }
 
+    /// Removes every T3 Connect route and the routes learned through them,
+    /// when the account signs out or changes. Directly paired routes stay;
+    /// an environment left with no route is removed.
+    pub async fn remove_relay_environments(&self) -> Result<(), RegistryError> {
+        let relay_ids: Vec<EnvironmentId> = self
+            .inner
+            .entries
+            .borrow()
+            .iter()
+            .filter(|entry| entry.routes.iter().any(|route| route.target.route == super::catalog::TargetRoute::Relay))
+            .map(|entry| entry.environment_id.clone())
+            .collect();
+        for environment_id in relay_ids {
+            self.remove_route(&environment_id, super::routes::RELAY_ROUTE_ID).await?;
+        }
+        Ok(())
+    }
+
     /// Removes an environment, its supervisor, and its credentials.
     pub async fn remove_environment(&self, environment_id: &EnvironmentId) -> Result<(), RegistryError> {
         let mut removed = Vec::new();

@@ -70,6 +70,11 @@ impl T3ConnectSignIn {
         &self.email
     }
 
+    /// The code field, for scripted checks.
+    pub fn code(&self) -> &Entity<InputState> {
+        &self.code
+    }
+
     /// Shows the code step as if Clerk had sent a code (scenes).
     pub fn show_code_step(&mut self, email: &str, cx: &mut Context<Self>) {
         self.step = Step::Code(EmailCodeSignIn { sign_in_id: String::new(), email: email.to_owned() });

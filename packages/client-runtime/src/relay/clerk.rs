@@ -23,6 +23,14 @@ use crate::rpc::http::{DEFAULT_REQUEST_TIMEOUT, http_client};
 
 /// Secret store key for the rotating Clerk client JWT.
 const CLIENT_JWT_SECRET: &str = "clerk-client-jwt";
+/// The FAPI version and SDK markers clerk-js 6.42.3 and `@clerk/electron`
+/// 0.1.10 send on every request; the answer's shape follows the API version.
+const FAPI_QUERY: [(&str, &str); 4] = [
+    ("__clerk_api_version", "2026-08-20"),
+    ("_clerk_js_version", "6.42.3"),
+    ("_is_native", "1"),
+    ("_electron_sdk_version", "0.1.10"),
+];
 
 /// Public T3 Connect configuration. All values are public (repo `.env.example`).
 #[derive(Clone, Debug)]
@@ -33,6 +41,19 @@ pub struct CloudConfig {
 }
 
 impl CloudConfig {
+    /// Production, with any of `T3CODE_RELAY_URL`, `T3CODE_CLERK_PUBLISHABLE_KEY`
+    /// and `T3CODE_RELAY_JWT_TEMPLATE` replacing its value (a staging or
+    /// stand-in deployment).
+    pub fn from_env() -> Self {
+        let production = Self::production();
+        let var = |name: &str| std::env::var(name).ok().filter(|value| !value.trim().is_empty());
+        Self {
+            relay_url: var("T3CODE_RELAY_URL").unwrap_or(production.relay_url),
+            clerk_publishable_key: var("T3CODE_CLERK_PUBLISHABLE_KEY").unwrap_or(production.clerk_publishable_key),
+            jwt_template: var("T3CODE_RELAY_JWT_TEMPLATE").unwrap_or(production.jwt_template),
+        }
+    }
+
     /// The production deployment.
     pub fn production() -> Self {
         Self {
@@ -67,7 +88,8 @@ pub struct CloudAccount {
 /// Whether there is a T3 Connect sign-in.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum CloudAccountState {
-    /// The stored session has not been checked yet.
+    /// The stored session has not been confirmed by Clerk yet (at launch,
+    /// or while Clerk cannot be reached).
     Loading,
     SignedOut,
     SignedIn(CloudAccount),
@@ -247,7 +269,8 @@ impl ClerkSession {
         self.refresh().await
     }
 
-    /// Re-reads the client from Clerk. A 401 or no session means signed out.
+    /// Re-reads the client from Clerk. A 401 or no session means signed out;
+    /// any other failure keeps the current state and is returned.
     pub async fn refresh(&self) -> Result<(), ClerkError> {
         let mut jwt = self.client_jwt.lock().await;
         if jwt.is_none() {
@@ -267,13 +290,9 @@ impl ClerkSession {
                 self.forget().await?;
                 Ok(())
             }
-            Err(error) => {
-                // Keep a stored session through a network failure; it may load later.
-                if matches!(*self.account.borrow(), CloudAccountState::Loading) {
-                    self.account.send_replace(CloudAccountState::SignedOut);
-                }
-                Err(error)
-            }
+            // Only Clerk's answer confirms a sign-out: an unreachable Clerk
+            // leaves the state as it was (`Loading` at launch) for a retry.
+            Err(error) => Err(error),
         }
     }
 
@@ -283,7 +302,7 @@ impl ClerkSession {
         let mut jwt = self.client_jwt.lock().await;
         if jwt.is_none() {
             // A fresh native client; its JWT comes back in the Authorization header.
-            let _: Envelope<ClientResource> = self.request(&mut jwt, reqwest::Method::POST, "v1/client", &[]).await?;
+            let _: Envelope<ClientResource> = self.request(&mut jwt, reqwest::Method::PUT, "v1/client", &[]).await?;
         }
         let created: Envelope<SignInResource> = self
             .request(&mut jwt, reqwest::Method::POST, "v1/client/sign_ins", &[("identifier", email)])
@@ -433,10 +452,15 @@ impl ClerkSession {
         form: &[(&str, &str)],
     ) -> Result<T, ClerkError> {
         let mut url = self.fapi.join(path).map_err(|error| ClerkError::Request(error.to_string()))?;
-        url.query_pairs_mut().append_pair("_is_native", "1");
-        let mut request = http_client().request(method.clone(), url);
+        url.query_pairs_mut().extend_pairs(FAPI_QUERY);
+        // clerk-js sends every write as POST and names any other verb in `_method`.
+        let wire_method = if method == reqwest::Method::GET { method.clone() } else { reqwest::Method::POST };
+        if method != reqwest::Method::GET && method != reqwest::Method::POST {
+            url.query_pairs_mut().append_pair("_method", method.as_str());
+        }
+        let mut request = http_client().request(wire_method, url);
         if let Some(token) = jwt.as_deref() {
-            request = request.header(reqwest::header::AUTHORIZATION, token);
+            request = request.header(reqwest::header::AUTHORIZATION, format!("Bearer {token}"));
         }
         if method != reqwest::Method::GET {
             request = request.form(form);
@@ -449,6 +473,7 @@ impl ClerkSession {
             .headers()
             .get(reqwest::header::AUTHORIZATION)
             .and_then(|value| value.to_str().ok())
+            .map(|value| value.strip_prefix("Bearer ").unwrap_or(value))
             .filter(|value| !value.is_empty())
             .map(str::to_owned);
         if let Some(rotated) = rotated
