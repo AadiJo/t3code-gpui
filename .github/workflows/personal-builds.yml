@@ -5,6 +5,11 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      tools_only:
+        description: Build only the macOS headless tools (for parity runs on a branch)
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -28,9 +33,11 @@ jobs:
         run: xcodebuild -downloadComponent MetalToolchain || echo "::warning::Metal toolchain not installed; shaders are checked at launch only"
 
       - name: Build app
+        if: ${{ !inputs.tools_only }}
         run: cargo build --release --locked -p t3code-desktop --bin t3code
 
       - name: Bundle and ad hoc sign
+        if: ${{ !inputs.tools_only }}
         shell: bash
         run: |
           set -euo pipefail
@@ -52,6 +59,7 @@ jobs:
           ditto -c -k --keepParent "$app" T3-Code-GPUI-mac-arm64.zip
 
       - name: Upload app
+        if: ${{ !inputs.tools_only }}
         uses: actions/upload-artifact@v7
         with:
           name: t3code-gpui-mac-arm64
@@ -87,6 +95,7 @@ jobs:
           retention-days: 14
 
   windows:
+    if: ${{ !inputs.tools_only }}
     runs-on: windows-latest
     timeout-minutes: 60
     steps:

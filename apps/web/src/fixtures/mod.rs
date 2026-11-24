@@ -6,6 +6,7 @@
 
 pub mod app_data;
 pub mod palette_source;
+pub mod reference_world;
 mod thread_actions;
 pub mod timelines;
 pub mod workspace;
@@ -47,6 +48,8 @@ struct ThreadRecord {
     branch: Option<SharedString>,
     project_id: sidebar::ProjectId,
     next_id: usize,
+    /// A run is in progress that no fixture stream drives (the reference world's working threads).
+    working: bool,
 }
 
 /// A reply being streamed into a thread.
@@ -85,6 +88,11 @@ pub struct FixtureStore {
     next_thread: usize,
     /// Advances with every fixture action so new rows sort to the top.
     clock: i64,
+    /// Set for the Mac reference world (`reference_world`): its checkout, whose files and
+    /// uncommitted changes the Files and Diff tabs and the details card show.
+    reference: Option<Arc<reference_world::Checkout>>,
+    /// The Mac reference world's model and supervised flag per thread, for the composer.
+    reference_threads: HashMap<ThreadKey, (SharedString, bool)>,
 }
 
 impl EventEmitter<FixtureEvent> for FixtureStore {}
@@ -95,10 +103,56 @@ impl FixtureStore {
         Self::from_snapshot(sidebar_fixtures::showcase_snapshot(), |_| 6)
     }
 
-    /// The world the visual-parity reference was captured in
-    /// (`sidebar_fixtures::reference_snapshot`, `timelines::reference_thread`).
+    /// The world the owner's Mac reference captures show (`reference_world`): the reference
+    /// server's projects, threads and timelines.
     pub fn reference() -> Self {
+        let world = reference_world::build(&fixture_environment());
+        let mut store = Self::from_snapshot(world.snapshot, |_| 2);
+        for thread in world.threads {
+            if let Some(record) = store.threads.get_mut(&thread.row.key) {
+                record.next_id = thread.timeline.entries.len() + 8;
+                record.pending_question = !thread.questions.is_empty();
+                record.timeline = Some(thread.timeline);
+                record.questions = thread.questions;
+                record.working = thread.working;
+            }
+            store.reference_threads.insert(thread.row.key.clone(), (thread.model, thread.supervised));
+        }
+        store.reference = Some(world.checkout);
+        store
+    }
+
+    /// The older 4-project, 7-thread world of the first (Linux, 1100x780) audit captures, which the
+    /// `default` and `owner` parity modes were recorded against
+    /// (`sidebar_fixtures::reference_snapshot`, `timelines::reference_thread`).
+    pub fn audit_reference() -> Self {
         Self::from_snapshot(sidebar_fixtures::reference_snapshot(), |_| 2)
+    }
+
+    /// Whether this is the Mac reference world ([`FixtureStore::reference`]).
+    pub fn is_reference_world(&self) -> bool {
+        self.reference.is_some()
+    }
+
+    /// The Mac reference world's checkout (files and uncommitted patch).
+    pub fn reference_checkout(&self) -> Option<&Arc<reference_world::Checkout>> {
+        self.reference.as_ref()
+    }
+
+    /// The Mac reference world's model slug and supervised flag for the thread a view shows.
+    pub fn reference_thread(&self, view_key: &str) -> Option<&(SharedString, bool)> {
+        self.reference_threads.iter().find(|(key, _)| scoped_key(key).as_ref() == view_key).map(|(_, info)| info)
+    }
+
+    /// Sets the clock relative times are drawn against (the moment a reference view was captured).
+    pub fn set_now(&mut self, now_ms: i64) {
+        self.snapshot.now = sidebar::TimestampMs(now_ms);
+        self.clock = now_ms;
+    }
+
+    /// The key of the thread titled `title`, for checks that open a thread by its title.
+    pub fn thread_by_title(&self, title: &str) -> Option<ThreadKey> {
+        self.snapshot.threads.iter().find(|t| t.title.as_ref() == title).map(|t| t.key.clone())
     }
 
     /// `threads` threads where every `long_every`th one has a 1,000-turn
@@ -176,6 +230,7 @@ impl FixtureStore {
                     branch: thread.branch.clone(),
                     project_id: thread.project_id.clone(),
                     next_id: 0,
+                    working: false,
                 };
                 (thread.key.clone(), record)
             })
@@ -189,6 +244,8 @@ impl FixtureStore {
             next_draft: 0,
             next_thread: 0,
             clock: NOW_MS,
+            reference: None,
+            reference_threads: HashMap::new(),
         }
     }
 
@@ -247,7 +304,7 @@ impl FixtureStore {
                     project: record.project.clone(),
                     title: record.title.clone(),
                     cwd: record.cwd.clone(),
-                    running: self.streams.contains_key(key),
+                    running: self.streams.contains_key(key) || record.working,
                     timeline,
                     is_draft: false,
                     questions: record.questions.clone(),
@@ -403,6 +460,7 @@ impl FixtureStore {
                 branch: None,
                 project_id: project_ref.project_id.clone(),
                 next_id: 0,
+                working: false,
             },
         );
         Some(key)

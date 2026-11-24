@@ -1,7 +1,10 @@
 // Headless screenshot of one scene, for visual checks without a display.
-// Usage: shot <scene> <out.png> [width height]
+// Usage: shot <scene> <out.png> [width height]; `shot --list` prints every scene name.
 // `T3CODE_CONTRAST`, `T3CODE_GLASS_OPACITY`, `T3CODE_INTERFACE_SIZE` and
-// `T3CODE_PANEL_MS` render with those client settings; `T3CODE_SCALE` sets the
+// `T3CODE_PANEL_MS` render with those client settings; `T3CODE_CLIENT_SETTINGS=<file>`
+// applies a whole client settings file (an install's `client-settings.json`) to every scene
+// first, with the appearance still pinned (dark, or light for `-light` scenes) as the
+// owner's Mac shows it; `T3CODE_SCALE` sets the
 // device scale (2 by default). `T3CODE_SHOT_REPEAT=<n>` also renders the
 // finished scene n more times, each read back so the GPU work is included,
 // and prints the times.
@@ -13,6 +16,7 @@ use gpui_kit::{
     component::TitleBar, px, size, test::TestWindowExt as _,
 };
 use t3code_web::{
+    hooks::{use_settings::ClientSettingsStore, use_theme::ThemeStore},
     scenes,
     theme_palette::{ThemeMode, ThemeSettings},
 };
@@ -31,6 +35,12 @@ fn main() -> anyhow::Result<()> {
     let names: Vec<_> = scenes::scenes().iter().map(|(name, _)| *name).collect();
     let usage = || anyhow!("usage: shot <{}> <out.png> [width height]", names.join("|"));
     let name = args.next().ok_or_else(usage)?;
+    if name == "--list" {
+        for name in scenes::scenes().iter().chain(scenes::ui::SCENES).map(|(name, _)| *name) {
+            println!("{name}");
+        }
+        return Ok(());
+    }
     let out = args.next().ok_or_else(usage)?;
     let width: f32 = args.next().map(|v| v.parse()).transpose()?.unwrap_or(1100.);
     let height: f32 = args.next().map(|v| v.parse()).transpose()?.unwrap_or(780.);
@@ -41,13 +51,19 @@ fn main() -> anyhow::Result<()> {
         Arc::new(t3code_web::Assets),
         gpui_kit::platform::current_headless_renderer,
     );
+    // The headless platform reports a light system appearance; pin the mode
+    // so a screenshot does not depend on it.
+    let mode = if name.ends_with("-light") { ThemeMode::Light } else { ThemeMode::Dark };
+    let settings = std::env::var_os("T3CODE_CLIENT_SETTINGS").map(std::path::PathBuf::from);
     cx.update(|cx| {
         t3code_web::init(cx);
-        // The headless platform reports a light system appearance; pin the mode
-        // so a screenshot does not depend on it.
-        let mode = if name.ends_with("-light") { ThemeMode::Light } else { ThemeMode::Dark };
         ThemeSettings::set_mode(mode, cx);
-    });
+        if let Some(path) = &settings {
+            ClientSettingsStore::import_electron(path, cx)?;
+            ThemeStore::set_appearance_mode(mode, cx);
+        }
+        anyhow::Ok(())
+    })?;
     let (handle, _host) = cx.update(|cx| {
         let options = WindowOptions {
             window_bounds: Some(WindowBounds::centered(None, size(px(width), px(height)), cx)),
@@ -63,7 +79,14 @@ fn main() -> anyhow::Result<()> {
     if let Some(scale) = std::env::var("T3CODE_SCALE").ok().and_then(|value| value.parse().ok()) {
         cx.simulate_window_scale_factor_change(handle.into(), scale);
     }
-    cx.update(ThemeSettings::apply_env_overrides);
+    cx.update(|cx| {
+        // Scenes that load the settings file themselves replace the appearance mode with the
+        // file's ("system"); pin it again.
+        if settings.is_some() {
+            ThemeStore::set_appearance_mode(mode, cx);
+        }
+        ThemeSettings::apply_env_overrides(cx);
+    });
     cx.update_window(handle, |_, window, cx| window.render_frame(cx))?;
     cx.run_until_parked();
     cx.update_window(handle, |_, window, cx| window.render_frame(cx))?;
