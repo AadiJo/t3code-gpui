@@ -104,6 +104,13 @@ pub enum DetailsOutcome {
     LoadComposer(SharedString),
 }
 
+/// What "Edit from here" puts back in the composer: the message's text and fresh copies of its
+/// attachments (`rewindToMessage`).
+pub struct RevertedDraft {
+    pub prompt: SharedString,
+    pub attachments: Vec<crate::composer_draft_store::ComposerAttachment>,
+}
+
 /// What a sidebar thread command left for the app to do.
 #[derive(Clone, Debug)]
 pub enum CommandOutcome {
@@ -173,9 +180,9 @@ pub trait AppData: 'static {
     /// Runs a timeline button (approvals, fork, edit from here, the queue) on `key`.
     fn timeline_action(&self, key: &ThreadKey, action: &TimelineAction, cx: &mut App) -> ActionOutcome;
 
-    /// Rewinds to before `message` ("Edit from here" confirmed); resolves with the text to put
-    /// back in the composer.
-    fn revert(&self, _key: &ThreadKey, _message: &MessageId, _turn_count: usize, _restore_files: bool, _cx: &mut App) -> Task<Option<SharedString>> {
+    /// Rewinds to before `message` ("Edit from here" confirmed); resolves with the prompt and
+    /// attachments to put back in the composer.
+    fn revert(&self, _key: &ThreadKey, _message: &MessageId, _turn_count: usize, _restore_files: bool, _cx: &mut App) -> Task<Option<RevertedDraft>> {
         Task::ready(None)
     }
 

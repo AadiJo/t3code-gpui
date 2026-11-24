@@ -606,11 +606,13 @@ impl ThreadRouteView {
         }
         let task = self.data.revert(&pending.key, &pending.message, pending.turn_count, restore_files, cx);
         cx.spawn(async move |this, cx| {
-            let Some(prompt) = task.await else { return };
+            let Some(reverted) = task.await else { return };
+            let prompt = reverted.prompt;
             _ = this.update(cx, |this, cx| {
                 if this.target.as_ref() != Some(&ThreadTarget::Server(pending.key.clone())) {
                     return;
                 }
+                this.composer.update(cx, |composer, cx| composer.restore_attachments(reverted.attachments, cx));
                 let editor = this.composer.read(cx).editor().clone();
                 editor.update(cx, |editor, cx| {
                     let current = editor.text().to_owned();

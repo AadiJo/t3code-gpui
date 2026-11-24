@@ -22,8 +22,69 @@ pub struct DraftImageAttachment {
     pub name: String,
     pub mime_type: String,
     pub size_bytes: u64,
-    /// The image itself, as a `data:` URL, until it is uploaded.
+    /// The image itself, as a `data:` URL.
     pub data_url: String,
+    /// Where it is uploaded, once it is: the send references it without uploading again.
+    #[serde(default, flatten, skip_serializing_if = "Option::is_none")]
+    pub upload: Option<DraftUpload>,
+}
+
+/// An attachment's finished upload, kept with the draft.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DraftUpload {
+    pub attachment_id: String,
+    pub environment_id: EnvironmentId,
+}
+
+/// A file the user attached (`PersistedComposerDraftFileAttachment`). The web cannot keep a file
+/// handle and asks for the file again; this client keeps where it read it, or a paste's text.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DraftFileAttachment {
+    pub id: String,
+    pub name: String,
+    pub mime_type: String,
+    pub size_bytes: u64,
+    #[serde(default, flatten, skip_serializing_if = "Option::is_none")]
+    pub upload: Option<DraftUpload>,
+    /// Set for a large paste kept as a text file.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<t3code_contracts::PastedTextAttachmentSource>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+}
+
+/// `PullRequestContextMetadata`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PullRequestContextMetadata {
+    pub number: u64,
+    pub title: String,
+    pub url: String,
+    pub head_branch: String,
+    pub base_branch: String,
+    pub state: t3code_contracts::PullRequestState,
+    pub is_draft: bool,
+}
+
+/// `ReviewCommentContext` as a pull request reference makes it.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReviewCommentContext {
+    pub id: String,
+    pub section_id: String,
+    pub section_title: String,
+    pub file_path: String,
+    pub start_index: u64,
+    pub end_index: u64,
+    pub range_label: String,
+    pub text: String,
+    pub diff: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pull_request: Option<PullRequestContextMetadata>,
 }
 
 /// One thread's unsent composer state.
@@ -33,6 +94,11 @@ pub struct ThreadDraft {
     pub prompt: String,
     #[serde(default)]
     pub attachments: Vec<DraftImageAttachment>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub files: Vec<DraftFileAttachment>,
+    /// Pull request references (`#` mentions) whose chips are in the prompt.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub review_comments: Vec<ReviewCommentContext>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub model_selection_by_provider: BTreeMap<String, ModelSelection>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

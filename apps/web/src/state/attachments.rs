@@ -125,17 +125,55 @@ pub struct Candidate {
     pub kind: ComposerAttachmentKind,
 }
 
-/// The accepted attachments and the last refusal's message.
+/// The accepted attachments, the HEIC photos still to convert, and the last refusal's message.
 pub struct Intake {
     pub accepted: Vec<ComposerAttachment>,
+    pub converting: Vec<HeicJob>,
     pub error: Option<SharedString>,
 }
 
+/// Where a HEIC photo's bytes are.
+pub enum HeicSource {
+    Bytes(Arc<[u8]>),
+    Path(PathBuf),
+}
+
+/// A HEIC or HEIF photo accepted into the draft that still has to become a JPEG.
+pub struct HeicJob {
+    pub name: String,
+    pub source: HeicSource,
+}
+
+impl HeicJob {
+    /// Reads and converts the photo (blocking: run it on a background thread). The attachment is
+    /// `<name>.jpg`, as `fileNameForMimeType` names it; the error is the intake's refusal text.
+    pub fn convert(self) -> Result<ComposerAttachment, SharedString> {
+        let bytes = match self.source {
+            HeicSource::Bytes(bytes) => Some(bytes.to_vec()),
+            HeicSource::Path(path) => std::fs::read(path).ok(),
+        };
+        let Some(jpeg) = bytes.and_then(|bytes| convert_heic(&bytes)) else {
+            return Err(t!("''{name}'' could not be read as an image.", name = self.name));
+        };
+        let base = self.name.rsplit_once('.').filter(|(base, _)| !base.is_empty()).map_or(self.name.as_str(), |(base, _)| base);
+        let name = format!("{}.jpg", if base.is_empty() { "image" } else { base });
+        Ok(ComposerAttachment {
+            context_id: format!("image_{}", uuid::Uuid::new_v4()).into(),
+            name: name.into(),
+            size_bytes: jpeg.len() as u64,
+            kind: ComposerAttachmentKind::Image { bytes: Arc::from(jpeg), mime: "image/jpeg".into() },
+            upload: UploadState::Uploading,
+        })
+    }
+}
+
 /// Applies the web's intake rules: at most [`MAX_ATTACHMENTS`] per message, supported image types
-/// only, files within the server's staging limit (`None`: the server takes no files).
+/// only, files within the server's staging limit (`None`: the server takes no files). `held`
+/// counts the draft's attachments and the photos still converting.
 pub fn intake(candidates: Vec<Candidate>, held: usize, file_limit: Option<u64>) -> Intake {
     let mut reserved = held;
     let mut accepted = Vec::new();
+    let mut converting = Vec::new();
     let mut error = None;
     for candidate in candidates {
         if reserved >= MAX_ATTACHMENTS {
@@ -155,25 +193,13 @@ pub fn intake(candidates: Vec<Candidate>, held: usize, file_limit: Option<u64>) 
                 continue;
             }
             FileClass::Heic => {
-                let bytes = match &candidate.kind {
-                    ComposerAttachmentKind::Image { bytes, .. } => Some(bytes.to_vec()),
-                    ComposerAttachmentKind::File { path } => std::fs::read(path.as_ref()).ok(),
-                    ComposerAttachmentKind::PastedText { .. } => None,
+                // Decoding takes seconds; the composer runs it off the UI thread and holds the slot.
+                let source = match candidate.kind {
+                    ComposerAttachmentKind::Image { bytes, .. } => HeicSource::Bytes(bytes),
+                    ComposerAttachmentKind::File { path } => HeicSource::Path(PathBuf::from(path.as_ref())),
+                    ComposerAttachmentKind::PastedText { .. } => unreachable!("pasted text stages as a file"),
                 };
-                let Some(jpeg) = bytes.and_then(|bytes| convert_heic(&bytes)) else {
-                    error = Some(t!("''{name}'' could not be read as an image.", name = candidate.name));
-                    continue;
-                };
-                // `fileNameForMimeType`: the converted file is a .jpg.
-                let base = candidate.name.rsplit_once('.').filter(|(base, _)| !base.is_empty()).map_or(candidate.name.as_str(), |(base, _)| base);
-                let name = format!("{}.jpg", if base.is_empty() { "image" } else { base });
-                accepted.push(ComposerAttachment {
-                    context_id: format!("image_{}", uuid::Uuid::new_v4()).into(),
-                    name: name.into(),
-                    size_bytes: jpeg.len() as u64,
-                    kind: ComposerAttachmentKind::Image { bytes: Arc::from(jpeg), mime: "image/jpeg".into() },
-                    upload: UploadState::Uploading,
-                });
+                converting.push(HeicJob { name: candidate.name, source });
                 reserved += 1;
                 continue;
             }
@@ -217,7 +243,7 @@ pub fn intake(candidates: Vec<Candidate>, held: usize, file_limit: Option<u64>) 
         });
         reserved += 1;
     }
-    Intake { accepted, error }
+    Intake { accepted, converting, error }
 }
 
 /// The longest edge an attached image keeps (`IMAGE_ATTACHMENT_MAX_EDGE`).
@@ -337,6 +363,38 @@ impl AttachmentUploads {
         }
     }
 
+    /// Registers a persisted draft attachment's upload again after a restart and returns the
+    /// state its tile shows: uploaded when the draft kept where it went, else waiting for the
+    /// composer to upload it (`ComposerEvent::AttachmentsRestored`).
+    pub fn restore(context_id: &str, upload: Option<&t3code_client_runtime::state::drafts::DraftUpload>, mime: &str, size_bytes: u64) -> UploadState {
+        if let Some(state) = Self::state(context_id) {
+            return state;
+        }
+        match upload {
+            Some(upload) => {
+                let ready = ReadyUpload { attachment_id: upload.attachment_id.clone(), mime: mime.to_owned(), size_bytes };
+                Self::set(context_id.into(), upload.environment_id.clone(), UploadPhase::Ready(ready));
+                UploadState::Uploaded
+            }
+            None => UploadState::Uploading,
+        }
+    }
+
+    /// Where `context_id` finished uploading, as a draft keeps it.
+    pub fn persisted(context_id: &str) -> Option<t3code_client_runtime::state::drafts::DraftUpload> {
+        UPLOADS.with_borrow(|uploads| match uploads.get(context_id)? {
+            (environment, UploadPhase::Ready(ready)) => {
+                Some(t3code_client_runtime::state::drafts::DraftUpload { attachment_id: ready.attachment_id.clone(), environment_id: environment.clone() })
+            }
+            _ => None,
+        })
+    }
+
+    /// Whether this window has started (or finished) uploading `context_id`.
+    pub fn known(context_id: &str) -> bool {
+        UPLOADS.with_borrow(|uploads| uploads.contains_key(context_id))
+    }
+
     /// Forgets uploads a sent message now owns (the server keeps them).
     pub fn forget_sent(context_ids: impl IntoIterator<Item = SharedString>) {
         UPLOADS.with_borrow_mut(|uploads| {
@@ -350,11 +408,82 @@ impl AttachmentUploads {
 /// Where sent images are cached by attachment id, so timeline rows can show them.
 static IMAGE_CACHE: OnceLock<PathBuf> = OnceLock::new();
 
-/// Sets the image cache under the app's data directory. Called once at bridge start.
+/// Where files restored into a draft ("Edit from here") are kept while the draft holds them.
+static RESTORED_FILES: OnceLock<PathBuf> = OnceLock::new();
+
+/// Sets the image cache and the restored-files folder under the app's data directory. Called
+/// once at bridge start.
 pub fn init_image_cache(data_dir: &std::path::Path) {
     let dir = data_dir.join("attachment-images");
     _ = std::fs::create_dir_all(&dir);
     _ = IMAGE_CACHE.set(dir);
+    _ = RESTORED_FILES.set(data_dir.join("draft-files"));
+}
+
+/// Fetches a sent message's attachments back into composer attachments ("Edit from here",
+/// `prepareRevertedMessageAttachments`): each through `assets.createUrl` and the signed URL. They
+/// keep the context ids of the message's records, so the chips in its text still bind to them,
+/// and upload again when added. Fails with the web's message when any cannot be restored.
+pub async fn fetch_message_attachments(
+    link: crate::live::rpc::RpcLink,
+    attachments: Vec<ChatAttachment>,
+    context: Option<OrchestrationMessageContext>,
+) -> Result<Vec<ComposerAttachment>, SharedString> {
+    use t3code_contracts::rpc::methods::AssetsCreateUrl;
+    use t3code_contracts::{AssetCreateUrlInput, AssetResource, AssetResourceAttachment};
+    let records = context.map(|c| c.records).unwrap_or_default();
+    let context_id_of = |attachment_id: &str, kind: &str| {
+        records
+            .iter()
+            .find(|r| r.get("attachmentId").and_then(|v| v.as_str()) == Some(attachment_id))
+            .and_then(|r| r.get("contextId").and_then(|v| v.as_str()))
+            .map(SharedString::from)
+            .unwrap_or_else(|| SharedString::from(format!("{kind}_{}", uuid::Uuid::new_v4())))
+    };
+    let session = link.session().await?;
+    let mut restored = Vec::with_capacity(attachments.len());
+    for attachment in attachments {
+        let (id, name, mime, size, image, pasted) = match &attachment {
+            ChatAttachment::Image(a) => (a.id.clone(), a.name.clone(), a.mime_type.clone(), a.size_bytes, true, false),
+            ChatAttachment::File(a) => (a.id.clone(), a.name.clone(), a.mime_type.clone(), a.size_bytes, false, a.source.is_some()),
+            ChatAttachment::Unknown(_) => return Err(t!("This message has an attachment that cannot be restored.")),
+        };
+        let resource = AssetResource::Attachment(AssetResourceAttachment {
+            attachment_id: id.clone(),
+            file_name: Some(name.clone()),
+            mime_type: Some(mime.clone()),
+            disposition: None,
+            render_intent: None,
+        });
+        let url = session
+            .client
+            .call::<AssetsCreateUrl>(AssetCreateUrlInput { resource })
+            .await
+            .map_err(|error| crate::live::rpc::error_message(&error))?;
+        let bytes = link
+            .link
+            .fetch_relative(reqwest::Method::GET, &url.relative_url, None)
+            .await
+            .map_err(|_| t!("Could not restore attachment: {name}", name = name.clone()))?;
+        let kind = if image {
+            ComposerAttachmentKind::Image { bytes: Arc::from(bytes.as_ref()), mime: mime.clone().into() }
+        } else if pasted {
+            ComposerAttachmentKind::PastedText { text: Arc::from(String::from_utf8_lossy(&bytes).as_ref()) }
+        } else {
+            let dir = RESTORED_FILES.get().cloned().unwrap_or_else(std::env::temp_dir).join(uuid::Uuid::new_v4().simple().to_string());
+            let path = dir.join(name.replace(['/', '\\'], "_"));
+            std::fs::create_dir_all(&dir).and_then(|_| std::fs::write(&path, &bytes)).map_err(|_| t!("Could not restore attachment: {name}", name = name.clone()))?;
+            ComposerAttachmentKind::File { path: path.to_string_lossy().into_owned().into() }
+        };
+        restored.push(ComposerAttachment {
+            context_id: context_id_of(&id, if image { "image" } else { "file" }),
+            name: name.into(),
+            size_bytes: size,
+            kind,
+            upload: UploadState::Uploading,
+        });
+    }
+    Ok(restored)
 }
 
 /// The cache file of an image: its attachment id with the extension of its type, which GPUI's
