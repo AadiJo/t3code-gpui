@@ -12,7 +12,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use gpui_kit::{
+use gpui_kit::{prelude::FluentBuilder as _, 
     AnyElement, App, AppContext as _, ClipboardItem, Context, Entity, IntoElement, ParentElement as _, Pixels,
     Render, SharedString, Styled as _, Task, WeakEntity, Window, div, px,
 };
@@ -32,7 +32,6 @@ use crate::{
 };
 
 /// `--chat-content-max-width` for the "comfortable" chat width (46rem).
-pub const CHAT_CONTENT_MAX_WIDTH: Pixels = px(736.);
 /// Timeline gutter at ≥640px (`padding-inline: 3rem`); 12px below that.
 pub const TIMELINE_GUTTER: Pixels = px(48.);
 pub const TIMELINE_GUTTER_NARROW: Pixels = px(12.);
@@ -79,6 +78,8 @@ pub enum TimelineAction {
     OpenImage { attachments: Arc<[Attachment]>, index: usize },
     /// A markdown link or file chip that is not a web URL.
     OpenLink(SharedString),
+    /// A code block's Run button: run this shell command in a terminal.
+    RunShellCommand(SharedString),
 }
 
 /// The open find's query and where it stands.
@@ -137,6 +138,8 @@ pub struct MessagesTimeline {
     pub(super) markdown_state: MarkdownUiState,
     pub(super) markdown: HashMap<SharedString, MessageMarkdown>,
     pub(super) colors: ChatColors,
+    /// The message column's width at the Chat width setting.
+    lane: super::chat_style::ChatLane,
     /// Advances every [`ANIMATION_STEP`] while something animates on screen.
     pub(super) animation_step: u64,
     animation_task: Option<Task<()>>,
@@ -184,9 +187,10 @@ impl MessagesTimeline {
             unfolded_messages: HashSet::new(),
             list,
             group_lists: HashMap::new(),
-            markdown_state: MarkdownUiState::default(),
+            markdown_state: MarkdownUiState { run_shell_commands: true, ..Default::default() },
             markdown: HashMap::new(),
             colors: ChatColors::get(cx),
+            lane: super::chat_style::ChatLane::get(cx),
             animation_step: 0,
             animation_task: None,
             copied_task: None,
@@ -423,7 +427,6 @@ impl MessagesTimeline {
             return;
         }
         self.composer_inset = height;
-        self.list.set_insets(TIMELINE_TOP_INSET, height + TIMELINE_BOTTOM_PAD);
         cx.notify();
     }
 
@@ -578,6 +581,7 @@ impl MessagesTimeline {
                     self.markdown_state.open_details.insert(key);
                 }
             }
+            MarkdownAction::RunShellCommand(command) => cx.emit(TimelineAction::RunShellCommand(command)),
             MarkdownAction::OpenLink(target) => {
                 if target.contains("://") {
                     cx.open_url(&target);
@@ -638,7 +642,7 @@ impl MessagesTimeline {
         let Some(last) = last.filter(|i| matches!(self.rows[*i].kind, RowKind::AssistantMeta { .. })) else {
             return false;
         };
-        let composer_top = viewport.bounds.bottom() - self.composer_inset - TIMELINE_BOTTOM_PAD;
+        let composer_top = viewport.bounds.bottom() - self.composer_inset - self.colors.r(TIMELINE_BOTTOM_PAD);
         viewport
             .row_bounds
             .iter()
@@ -758,7 +762,7 @@ impl MessagesTimeline {
         let bottom = if row.continues_work_log { px(0.) } else { Self::row_bottom_padding(row) };
         let standalone_work = matches!(row.kind, RowKind::Work { .. } | RowKind::WorkToggle { .. } | RowKind::WorkLive { .. } | RowKind::Thinking { .. })
             && !row.continues_work_log;
-        let bottom = if standalone_work { px(8.) } else { bottom };
+        let bottom = self.colors.r(if standalone_work { px(8.) } else { bottom });
         let gutter = self.gutter(window);
         div()
             .w_full()
@@ -767,7 +771,7 @@ impl MessagesTimeline {
                 div()
                     .mx_auto()
                     .w_full()
-                    .max_w(CHAT_CONTENT_MAX_WIDTH)
+                    .when_some(self.lane.content, |d, w| d.max_w(w))
                     .overflow_x_hidden()
                     .pb(bottom)
                     .child(content),
@@ -775,14 +779,18 @@ impl MessagesTimeline {
             .into_any_element()
     }
 
+    /// The lane's side padding (`px-3 sm:px-12`): rem lengths at a breakpoint in CSS px.
     pub(super) fn gutter(&self, window: &Window) -> Pixels {
-        if window.viewport_size().width >= SM_BREAKPOINT { TIMELINE_GUTTER } else { TIMELINE_GUTTER_NARROW }
+        self.colors.r(if window.viewport_size().width >= SM_BREAKPOINT { TIMELINE_GUTTER } else { TIMELINE_GUTTER_NARROW })
     }
 }
 
 impl Render for MessagesTimeline {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.colors = ChatColors::get(cx);
+        self.lane = super::chat_style::ChatLane::get(cx);
+        // The insets are rem lengths; re-read them in case the Interface size changed.
+        self.list.set_insets(self.colors.r(TIMELINE_TOP_INSET), self.composer_inset + self.colors.r(TIMELINE_BOTTOM_PAD));
         self.now = Instant::now().max(self.now);
         let weak = self.weak.clone();
         let colors = self.colors;
@@ -793,7 +801,7 @@ impl Render for MessagesTimeline {
                 .items_center()
                 .justify_center()
                 .pb(self.composer_inset)
-                .text_size(px(14.))
+                .text_size(colors.r(px(14.)))
                 .text_color(colors.theme.muted_foreground)
                 .child("Send a message to start the conversation.")
                 .into_any_element();

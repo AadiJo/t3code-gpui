@@ -109,7 +109,7 @@ fn hint_line(hint: &SearchMatchHint, theme: &AppTheme) -> AnyElement {
     let highlights: Vec<_> = char_ranges_to_bytes(&hint.text, &hint.ranges).into_iter().map(|r| (r, strong)).collect();
     div()
         .flex()
-        .gap(px(4.))
+        .gap(theme.rem(0.25))
         .min_w_0()
         .truncate()
         .ui_text(theme, TextSize::Xs, weight::NORMAL)

@@ -1,0 +1,66 @@
+{
+ "default": {
+  "hint 1 chip": {
+   "start": "#28282b",
+   "edges": [
+    {
+     "at": 275.0,
+     "color": "#353537"
+    },
+    {
+     "at": 279.5,
+     "color": "#505051"
+    },
+    {
+     "at": 281.0,
+     "color": "#353537"
+    },
+    {
+     "at": 294.0,
+     "color": "#28282b"
+    }
+   ],
+   "vertical": true
+  },
+  "hint 1 label": {
+   "top": 279.5,
+   "left": 220.0,
+   "bottom": 288.0,
+   "right": 234.0,
+   "color": "#888888",
+   "bg": "#28282b"
+  }
+ },
+ "owner": {
+  "hint 1 chip": {
+   "start": "#28282b",
+   "edges": [
+    {
+     "at": 275.0,
+     "color": "#353537"
+    },
+    {
+     "at": 279.5,
+     "color": "#505051"
+    },
+    {
+     "at": 281.0,
+     "color": "#353537"
+    },
+    {
+     "at": 294.0,
+     "color": "#28282b"
+    }
+   ],
+   "vertical": true
+  },
+  "hint 1 label": {
+   "top": 279.5,
+   "left": 220.0,
+   "bottom": 288.0,
+   "right": 234.0,
+   "color": "#888888",
+   "bg": "#28282b"
+  }
+ }
+}

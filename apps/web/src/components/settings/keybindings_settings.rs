@@ -368,7 +368,7 @@ impl KeybindingsSettings {
         }
     }
 
-    fn render_row(&self, row: KeybindingRow, can_edit: bool, conditions: &[String], cx: &mut Context<Self>) -> AnyElement {
+    fn render_row(&self, row: KeybindingRow, can_edit: bool, conditions: &[String], _window: &Window, cx: &mut Context<Self>) -> AnyElement {
         let theme = cx.app_theme();
         let c = &theme.colors;
         let platform = Self::platform(cx);
@@ -467,11 +467,13 @@ impl KeybindingsSettings {
         }
         // `SettingsRow` with the condition as its description and the
         // conflict warning, the hover-only actions and the shortcut as its control.
+        let metrics = super::settings_layout::RowMetrics::new(theme, false, false);
         div()
             .id(SharedString::from(format!("kb-row-{}", row.id)))
             .group("kb-row")
             .px(theme.sp(4.))
-            .py(theme.sp(3.))
+            .pt(metrics.top)
+            .pb(metrics.bottom)
             .child(
                 div()
                     .flex()
@@ -483,12 +485,12 @@ impl KeybindingsSettings {
                             .flex_col()
                             .flex_1()
                             .min_w_0()
-                            .gap(theme.sp(1.))
+                            .gap(metrics.gap)
                             .child(
                                 div()
                                     .id(SharedString::from(format!("kb-title-{}", row.id)))
                                     .flex()
-                                    .min_h(theme.sp(5.))
+                                    .h(metrics.title_height)
                                     .items_center()
                                     .ui_text(theme, TextSize::Sm, weight::MEDIUM)
                                     .text_color(c.foreground())
@@ -808,7 +810,7 @@ fn open_keybindings_file(cx: &mut App) {
 }
 
 impl Render for KeybindingsSettings {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let (config, from_env) = Self::config(cx);
         let mut conditions: Vec<String> = config.rules().iter().map(when_of).filter(|w| !w.is_empty() && w != "false").collect();
         conditions.sort();
@@ -827,7 +829,7 @@ impl Render for KeybindingsSettings {
         let sections: Vec<AnyElement> = groups
             .into_iter()
             .map(|(_, title, rows)| {
-                let rows: Vec<AnyElement> = rows.into_iter().map(|row| self.render_row(row, from_env, &conditions, cx)).collect();
+                let rows: Vec<AnyElement> = rows.into_iter().map(|row| self.render_row(row, from_env, &conditions, window, cx)).collect();
                 SettingsSection::new(title).children(rows).into_any_element()
             })
             .collect();

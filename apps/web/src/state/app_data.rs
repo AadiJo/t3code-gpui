@@ -31,7 +31,7 @@ use crate::components::git_actions_control_source::GitActionsSource;
 use crate::remote_open::RemoteOpenState;
 use crate::components::right_panel_tabs::{TerminalBackends, Workspace};
 use crate::components::sidebar::context_menu::MenuCommand;
-use crate::components::sidebar::model::{ProjectId, ProjectRef, SidebarSnapshot, ThreadKey};
+use crate::components::sidebar::model::{ProjectId, ProjectRef, SidebarDraft, SidebarSnapshot, ThreadKey};
 use crate::composer_draft_store::ComposerDraftStore;
 use crate::diff_panel_store::DiffPanelSelection;
 use crate::router::{DraftId, ThreadTarget};
@@ -158,6 +158,12 @@ pub trait AppData: 'static {
 
     /// Forgets a draft the sidebar discarded.
     fn discard_draft(&self, _key: &ThreadKey, _cx: &mut App) {}
+
+    /// The new-thread drafts whose composer holds a prompt (`SidebarDraftBlock`).
+    fn drafts(&self, cx: &App) -> Vec<SidebarDraft>;
+
+    /// Discards a new-thread draft and its composer content (the draft row's X or menu).
+    fn discard_draft_session(&self, id: &DraftId, cx: &mut App);
 
     /// The composer's state for `view`, starting from the settings in `base`.
     fn composer_state(&self, view: &ThreadView, base: &ComposerState, cx: &mut App) -> ComposerState;

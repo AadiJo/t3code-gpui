@@ -173,6 +173,10 @@ pub fn handle(event: &SidebarEvent, cx: &mut App) -> SidebarOutcome {
             });
             SidebarOutcome::Done
         }
+        SidebarEvent::RenameThread(key, title) => {
+            rename(key, title.to_string(), cx);
+            SidebarOutcome::Done
+        }
         other => SidebarOutcome::Navigate(other.clone()),
     }
 }

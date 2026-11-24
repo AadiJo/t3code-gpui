@@ -40,14 +40,14 @@ impl Sidebar {
             .pl(self.header_inset)
             .children(self.snapshot.environment_pill.clone().map(|label| {
                 div()
-                    .h(px(16.))
-                    .px(px(3.))
+                    .h(colors.r(16.))
+                    .px(colors.r(3.))
                     .flex()
                     .items_center()
-                    .rounded(px(4.))
+                    .rounded(colors.r(4.))
                     .bg(colors.secondary)
-                    .text_size(px(10.))
-                    .line_height(px(10.))
+                    .text_size(colors.r(10.))
+                    .line_height(colors.r(10.))
                     .font_weight(FontWeight::MEDIUM)
                     .text_color(colors.foreground)
                     .child(label)
@@ -58,7 +58,7 @@ impl Sidebar {
     /// the footer's end. Downloading and install states belong to the native updater.
     fn render_update_button(&self, colors: &ShellColors, cx: &mut Context<Self>) -> impl IntoElement {
         let hovered = self.hovered_control == Some(HeaderControl::CheckForUpdates);
-        sidebar_icon_button("sidebar-check-updates", IconName::RefreshCw, px(32.), hovered, colors)
+        sidebar_icon_button("sidebar-check-updates", IconName::RefreshCw, colors.r(32.), hovered, colors)
             .ml_auto()
             .rounded_full()
             .tooltip(crate::components::ui::tooltip::tooltip(crate::i18n::t!("Check for updates")))
@@ -82,7 +82,7 @@ impl Sidebar {
                       control,
                       label: &'static str,
                       event: fn() -> SidebarEvent| {
-            sidebar_icon_button(id, glyph, px(32.), hovered(control), colors)
+            sidebar_icon_button(id, glyph, colors.r(32.), hovered(control), colors)
                 .tooltip(crate::components::ui::tooltip::tooltip(label))
                 .on_hover(this.control_hover_listener(control, cx))
                 .on_click(cx.listener(move |_, _, _, cx| cx.emit(event())))

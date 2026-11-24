@@ -21,6 +21,11 @@ pub const STATE_FILE: &str = "install-import.json";
 const DRAFTS_KEY: &str = "t3code:composer-drafts:v1";
 const UI_STATE_KEY: &str = "t3code:ui-state:v1";
 const CUSTOM_THEMES_KEY: &str = "t3code:themes:v1";
+/// The sidebar's saved width and open state (`SidebarProvider` storage keys).
+const SIDEBAR_WIDTH_KEY: &str = "chat_thread_sidebar_width";
+const SIDEBAR_OPEN_KEY: &str = "chat_thread_sidebar_open";
+/// The sidebar shelves' open states.
+const SHELF_KEYS: [&str; 3] = ["t3code:sidebar:working-expanded", "t3code:sidebar:snoozed-expanded", "t3code:sidebar:settled-expanded"];
 
 /// The desktop install to read. `T3CODE_IMPORT_HOME` points at a stand-in install for checks:
 /// `<dir>/userdata` is the T3 home state directory, `<dir>/t3code-v2` Chromium's `userData`.
@@ -88,6 +93,8 @@ pub struct FilesReport {
     pub local_storage_keys: Vec<String>,
     pub drafts: bool,
     pub ui_state: bool,
+    /// The sidebar's width, open state, shelves and project expansion reached the window's UI state.
+    pub layout: bool,
     pub desktop_settings: bool,
     pub notifications: bool,
     /// The install's client settings to apply over this app's (first launch, or the file
@@ -229,6 +236,50 @@ fn ui_state_document(mut state: Value) -> Value {
     state
 }
 
+/// Writes the window's own UI state (`ui-state.json`, `layout.json` in `ui_dir`) from the
+/// web's: `t3code:ui-state:v1` with the shelves' keys, and the sidebar's width and open state.
+/// Each file is written only when this app has none yet.
+fn write_window_ui_state(ui_dir: &Path, entries: &[StorageEntry]) -> anyhow::Result<bool> {
+    use t3code_web::ui_state_store::{LayoutState, UiState, files};
+    let value = |key: &str| entries.iter().find(|e| e.key == key).map(|e| storage_value(&e.value));
+    let mut wrote = false;
+    let ui_path = ui_dir.join(files::UI_STATE);
+    if !ui_path.exists() {
+        let mut state = match entries.iter().find(|e| e.key == UI_STATE_KEY).and_then(|e| persisted_state(&e.value)) {
+            Some(Value::Object(state)) => state,
+            _ => Map::new(),
+        };
+        let fields = ["sidebarWorkingExpanded", "sidebarSnoozedExpanded", "sidebarSettledExpanded"];
+        for (key, field) in SHELF_KEYS.into_iter().zip(fields) {
+            if let Some(open @ Value::Bool(_)) = value(key) {
+                state.insert(field.to_owned(), open);
+            }
+        }
+        if !state.is_empty() {
+            let state: UiState = serde_json::from_value(Value::Object(state))?;
+            std::fs::create_dir_all(ui_dir)?;
+            std::fs::write(&ui_path, serde_json::to_vec(&state)?)?;
+            wrote = true;
+        }
+    }
+    let layout_path = ui_dir.join(files::LAYOUT);
+    let width = value(SIDEBAR_WIDTH_KEY).and_then(|v| v.as_f64());
+    let open = value(SIDEBAR_OPEN_KEY).and_then(|v| v.as_bool());
+    if !layout_path.exists() && (width.is_some() || open.is_some()) {
+        let mut layout = LayoutState::default();
+        if let Some(width) = width {
+            layout.sidebar_width = width as f32;
+        }
+        if let Some(open) = open {
+            layout.sidebar_open = open;
+        }
+        std::fs::create_dir_all(ui_dir)?;
+        std::fs::write(&layout_path, serde_json::to_vec(&layout)?)?;
+        wrote = true;
+    }
+    Ok(wrote)
+}
+
 fn modified_ms(path: &Path) -> Option<u128> {
     std::fs::metadata(path).ok()?.modified().ok()?.duration_since(UNIX_EPOCH).ok().map(|d| d.as_millis())
 }
@@ -283,7 +334,11 @@ pub fn import_files(install: &Install, data_dir: &Path, ui_dir: Option<&Path>, s
                     .ok()
                     .and_then(|bytes| serde_json::from_slice(&bytes).ok())
                     .unwrap_or_default();
-                for entry in app_entries(entries) {
+                let entries = app_entries(entries);
+                if let Some(ui_dir) = ui_dir {
+                    report.layout = note(write_window_ui_state(ui_dir, &entries), "window ui state");
+                }
+                for entry in entries {
                     match entry.key.as_str() {
                         DRAFTS_KEY => {
                             let written = persisted_state(&entry.value)

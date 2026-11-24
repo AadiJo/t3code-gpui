@@ -467,7 +467,8 @@ impl Render for ThreadDetailsPanel {
         glass_surface(&theme)
             .id("thread-details-card")
             .rounded(theme.radii.xxl)
-            .w(theme.spacing.thread_details_panel_width)
+            // Docked, the card is `THREAD_DETAILS_CARD_WIDTH` (280px); as a popover, the panel width token.
+            .w(if self.input.mode == ThreadDetailsMode::Inline { px(280.) } else { theme.spacing.thread_details_panel_width })
             .when_some(self.input.max_height, |c, h| c.max_h(h))
             .overflow_y_scroll()
             .on_mouse_down(

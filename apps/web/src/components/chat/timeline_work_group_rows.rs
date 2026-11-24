@@ -5,7 +5,7 @@
 
 use crate::components::icons::{Icon, IconName, IconSize};
 use crate::components::chat::chat_style::chat_icon_stroke;
-use gpui_kit::{
+use gpui_kit::{rems, 
     AnyElement, Context, FontWeight, InteractiveElement as _, IntoElement, ParentElement as _, SharedString,
     StatefulInteractiveElement as _, Styled as _, Window, div, img, px,
 };
@@ -28,7 +28,7 @@ const OPEN_ENTRY_ALLOWANCE: gpui_kit::Pixels = px(240.);
 /// Nested rows estimate (`estimatedItemSize 24`).
 const GROUP_ROW_ESTIMATE: gpui_kit::Pixels = px(24.);
 /// Viewed image thumbnails are at most 10rem tall.
-const VIEWED_IMAGE_MAX: gpui_kit::Pixels = px(160.);
+const VIEWED_IMAGE_MAX: gpui_kit::Rems = gpui_kit::rems(10.0);
 
 impl MessagesTimeline {
     /// The header of a folded tool group: summary icon, summary, hover timestamp.
@@ -63,11 +63,11 @@ impl MessagesTimeline {
         } else {
             label.into_any_element()
         };
-        let glyph = Icon::new(entry_icon(entry)).size(IconSize::Custom(px(16.))).color(if *active { colors.theme.text } else { colors.theme.icon_muted }).stroke(chat_icon_stroke(entry_icon(entry)));
+        let glyph = Icon::new(entry_icon(entry)).size(IconSize::Custom(colors.r(px(16.)))).color(if *active { colors.theme.text } else { colors.theme.icon_muted }).stroke(chat_icon_stroke(entry_icon(entry)));
         let preview = thought.as_ref().and_then(|t| match &t.item {
             WorkItem::Reasoning { text } => Some(
                 div()
-                    .ml(px(30.))
+                    .ml(rems(1.875))
                     .mb_1()
                     .line_clamp(4)
                     .text_size(TEXT_SM_RELAXED.size)
@@ -122,14 +122,14 @@ impl MessagesTimeline {
             .child(
                 div()
                     .flex()
-                    .h(px(24.))
+                    .h(rems(1.5))
                     .items_center()
                     .gap_2()
                     .px_1()
                     .text_size(TEXT_SM_RELAXED.size)
                     .line_height(TEXT_SM_RELAXED.line_height)
                     .text_color(colors.theme.muted_foreground)
-                    .children(compacting.then(|| Icon::new(IconName::Minimize2).size(IconSize::Custom(px(12.))).color(colors.theme.muted_foreground)))
+                    .children(compacting.then(|| Icon::new(IconName::Minimize2).size(IconSize::Xs).color(colors.theme.muted_foreground)))
                     .child(label),
             )
             .into_any_element()
@@ -158,7 +158,7 @@ impl MessagesTimeline {
                     .flex()
                     .items_center()
                     .gap_1()
-                    .rounded(px(6.))
+                    .rounded(rems(0.375))
                     .px_1()
                     .cursor_pointer()
                     .text_size(TEXT_SM_RELAXED.size)
@@ -166,7 +166,7 @@ impl MessagesTimeline {
                     .text_color(colors.theme.muted_foreground)
                     .hover(|s| s.text_color(colors.theme.text))
                     .child(label.clone())
-                    .child(Icon::new(if expanded { IconName::ChevronDown } else { IconName::ChevronRight }).size(IconSize::Custom(px(14.))).color(colors.theme.muted_foreground).stroke(chat_icon_stroke(if expanded { IconName::ChevronDown } else { IconName::ChevronRight })))
+                    .child(Icon::new(if expanded { IconName::ChevronDown } else { IconName::ChevronRight }).size(IconSize::Custom(colors.r(px(14.)))).color(colors.theme.muted_foreground).stroke(chat_icon_stroke(if expanded { IconName::ChevronDown } else { IconName::ChevronRight })))
                     .child(
                         div()
                             .ml_auto()
@@ -197,15 +197,15 @@ impl MessagesTimeline {
             .flex()
             .items_center()
             .gap_2()
-            .rounded(px(6.))
+            .rounded(rems(0.375))
             .border_1()
             .border_color(alpha(colors.theme.border, 0.6))
             .bg(alpha(colors.theme.muted, 0.2))
             .hover(|s| s.bg(alpha(colors.theme.muted, 0.35)))
-            .px(px(10.))
+            .px(rems(0.625))
             .py_2()
             .cursor_pointer()
-            .child(disclosure(expanded, px(12.), colors.theme.muted_foreground))
+            .child(disclosure(expanded, IconSize::Xs, colors.theme.muted_foreground))
             .child(
                 div()
                     .text_size(TEXT_XS.size)
@@ -255,7 +255,7 @@ impl MessagesTimeline {
                     .flex()
                     .items_center()
                     .gap_1()
-                    .child(Icon::new(if failed { IconName::CircleAlert } else { IconName::Minimize2 }).size(IconSize::Custom(px(12.))).color(tone).stroke(chat_icon_stroke(if failed { IconName::CircleAlert } else { IconName::Minimize2 })))
+                    .child(Icon::new(if failed { IconName::CircleAlert } else { IconName::Minimize2 }).size(IconSize::Custom(colors.r(px(12.)))).color(tone).stroke(chat_icon_stroke(if failed { IconName::CircleAlert } else { IconName::Minimize2 })))
                     .child(text),
             )
             .child(div().h(px(1.)).flex_1().bg(rule))
@@ -282,7 +282,7 @@ impl MessagesTimeline {
         let weak = cx.weak_entity();
         let colors = self.colors;
         div()
-            .pl(px(28.))
+            .pl(rems(1.75))
             .pb_1()
             .child(
                 virtual_list(("group-list", MessagesTimeline::key_of(group_id)), state, move |index, _window, cx| {
@@ -314,12 +314,12 @@ impl MessagesTimeline {
             .flex()
             .flex_wrap()
             .gap_2()
-            .px(px(2.))
+            .px(rems(0.125))
             .children(paths.iter().map(|path| {
                 img(path.clone())
                     .max_h(VIEWED_IMAGE_MAX)
-                    .h(px(96.))
-                    .rounded(px(8.))
+                    .h(rems(6.))
+                    .rounded(rems(0.5))
                     .border_1()
                     .border_color(alpha(colors.theme.border, 0.8))
             }))

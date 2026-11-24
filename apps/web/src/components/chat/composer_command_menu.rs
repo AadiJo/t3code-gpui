@@ -6,7 +6,7 @@
 use crate::components::icons::{Icon, IconName, IconSize};
 use std::sync::Arc;
 
-use gpui_kit::{
+use gpui_kit::{rems, 
     AnyElement, App, Hsla, prelude::FluentBuilder as _, InteractiveElement as _, IntoElement, ParentElement as _, SharedString,
     StatefulInteractiveElement as _, Styled as _, div, px,
 };
@@ -160,10 +160,10 @@ pub fn render_menu(
     let on_hover = std::rc::Rc::new(on_hover);
     let c = *colors;
     if state.items.is_empty() {
-        return div().px(px(20.)).pt(px(14.)).pb(px(28.)).child(
+        return div().px(rems(1.25)).pt(rems(0.875)).pb(rems(1.75)).child(
             div()
-                .text_size(px(12.))
-                .line_height(px(16.))
+                .text_size(rems(0.75))
+                .line_height(rems(1.))
                 .text_color(c.secondary_label)
                 .child(match (&state.empty, state.loading) {
                     (Some(text), false) => text.clone(),
@@ -171,11 +171,13 @@ pub fn render_menu(
                 }),
         ).into_any_element();
     }
+    // `min-h-7` around one line.
     let rows: Vec<AnyElement> = state
         .items
         .iter()
         .enumerate()
         .map(|(index, item)| {
+            let height = c.r(MENU_ITEM_HEIGHT);
             let active = index == state.active;
             let pick = on_pick.clone();
             let hover = on_hover.clone();
@@ -187,17 +189,19 @@ pub fn render_menu(
                     let (icon, tone, _) = crate::components::pull_request::pull_request_presentation::pull_request_state_presentation(crate::theme_palette::ActiveAppTheme::app_theme(cx), *state, *is_draft);
                     Some(Icon::new(icon).size(IconSize::Custom(px(16.))).color(tone).into_any_element())
                 }
+                ComposerCommandIcon::Icon(i) => Some(Icon::new(*i).size(IconSize::Md).color(c.secondary_label).stroke(composer_icon_stroke(*i)).into_any_element()),
+                ComposerCommandIcon::Provider(p) => Some(provider_icon(*p, crate::ActiveAppTheme::app_theme(cx).rem(1.), &item.label, &c, cx)),
             };
             let text_color: Hsla = if active { c.accent_foreground } else { c.foreground };
             div()
                 .id(SharedString::from(format!("composer-menu-item-{index}")))
                 .flex()
                 .items_center()
-                .gap(px(8.))
-                .min_h(MENU_ITEM_HEIGHT)
-                .px(px(8.))
-                .py(px(6.))
-                .rounded(px(8.))
+                .gap(rems(0.5))
+                .h(height)
+                .flex_none()
+                .px(rems(0.5))
+                .rounded(rems(0.5))
                 .cursor_pointer()
                 .when(active, |el| el.bg(c.accent))
                 .text_color(text_color)
@@ -211,7 +215,7 @@ pub fn render_menu(
                         .flex_1()
                         .min_w_0()
                         .items_center()
-                        .gap(px(8.))
+                        .gap(rems(0.5))
                         .child(
                             div()
                                 .flex()
@@ -219,7 +223,7 @@ pub fn render_menu(
                                 .max_w(gpui_kit::relative(0.45))
                                 .overflow_hidden()
                                 .text_size(px(12.))
-                                .line_height(px(16.))
+                                .line_height(rems(1.))
                                 .font_weight(gpui_kit::FontWeight::MEDIUM)
                                 .whitespace_nowrap()
                                 .text_ellipsis()
@@ -234,18 +238,18 @@ pub fn render_menu(
                                 .whitespace_nowrap()
                                 .text_ellipsis()
                                 .text_size(px(12.))
-                                .line_height(px(16.))
+                                .line_height(rems(1.))
                                 .text_color(c.secondary_label)
                                 .child(item.description.clone()),
                         )
                         .children(item.badge.clone().map(|badge| {
                             div()
                                 .flex_none()
-                                .px(px(6.))
-                                .h(px(18.))
+                                .px(rems(0.375))
+                                .h(rems(1.125))
                                 .flex()
                                 .items_center()
-                                .rounded(px(4.))
+                                .rounded(rems(0.25))
                                 .bg(c.kbd_background)
                                 .text_size(px(11.))
                                 .text_color(c.secondary_label)
@@ -259,7 +263,7 @@ pub fn render_menu(
         .id("composer-command-menu-list")
         .max_h(COMMAND_MENU_MAX_HEIGHT)
         .overflow_y_scroll()
-        .p(px(8.))
+        .p(rems(0.5))
         .flex()
         .flex_col()
         .children(rows)

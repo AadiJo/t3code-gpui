@@ -12,6 +12,7 @@ use gpui_kit::*;
 
 use crate::components::app_sidebar_layout::{AppSidebarLayout, LayoutEvent, PanelToggle, TitlebarPlatform};
 use crate::components::chat::composer::ChatComposer;
+use crate::components::chat::thread_details_panel::ThreadDetailsMode;
 use crate::components::no_active_thread_state::NoActiveThreadState;
 use crate::components::persistent_thread_terminals::PersistentThreadTerminals;
 use crate::components::chat::expanded_image_dialog::{ExpandedImageDialog, ExpandedImageEvent, ExpandedImageItem};
@@ -56,7 +57,7 @@ use crate::fixtures::app_data::FixtureData;
 use crate::fixtures::{FixtureStore, scoped_key};
 use crate::state::app_data::{CommandOutcome, DataEvent, DataEvents, SharedAppData};
 use crate::right_panel_store::{RightPanelStore, SingletonKind};
-use crate::router::{Route, RouteChanged, Router, ThreadTarget};
+use crate::router::{DraftId, Route, RouteChanged, Router, ThreadTarget};
 use crate::routes::RoutePage;
 #[cfg(unix)]
 use crate::terminal::local_pty::LocalPty;
@@ -80,6 +81,9 @@ actions!(
     ]
 );
 
+/// The right panel's width for a thread with none saved (`PREVIEW_PANEL_DEFAULT_WIDTH`).
+const RIGHT_PANEL_DEFAULT_WIDTH: f32 = 540.;
+
 /// The web keymap's `mod`: `cmd` on macOS, `ctrl` elsewhere.
 macro_rules! mod_key {
     ($keys:literal) => {
@@ -100,6 +104,14 @@ pub enum DataSource {
     Fixtures(FixtureStore),
     /// The saved environments' stores and sessions. Needs the connection runtime.
     Live,
+}
+
+/// The details card's mode and each mode's open state.
+#[derive(Clone, Copy, Debug)]
+struct DetailsVisibility {
+    mode: ThreadDetailsMode,
+    inline_open: bool,
+    popover_open: bool,
 }
 
 /// How to build the window: which data, which titlebar and where state lives.
@@ -271,8 +283,9 @@ pub struct AppRoot {
     expanded: Option<(Entity<ExpandedImageDialog>, Subscription)>,
     /// The Usage page in the large route modal, while its route shows.
     usage: Option<(Entity<UsageRoute>, Subscription)>,
-    /// The thread details card is open (a popover; the toggle stays unpressed).
-    details_open: bool,
+    /// The thread details card: docked or popover by the canvas width, each with its own
+    /// open state (`rightPanelStore` visibility: docked starts open, the popover closed).
+    details: DetailsVisibility,
     /// The thread under the main pane; it stays shown under modal routes.
     shown: Option<ThreadTarget>,
     focus: FocusHandle,
@@ -388,7 +401,7 @@ impl AppRoot {
             terminals,
             expanded: None,
             usage: None,
-            details_open: false,
+            details: DetailsVisibility { mode: ThreadDetailsMode::Popover, inline_open: true, popover_open: false },
             shown: None,
             focus: cx.focus_handle(),
             _subscriptions: subscriptions,
@@ -543,8 +556,10 @@ impl AppRoot {
         });
         let active = self.shown_key();
         let shown_key = self.panel_key();
+        self.restore_right_panel_width(cx);
         ThreadFindStore::retain_for_route(cx, route.is_modal(), shown_key.as_deref());
         self.sidebar.update(cx, |sidebar, cx| sidebar.set_active_thread(active.clone(), cx));
+        self.sync_sidebar_drafts(cx);
         self.data.set_active_thread(active.as_ref(), cx);
         ThreadNotificationCoordinator::apply(NotificationInput::Route(active.clone()), cx);
         if let Some(key) = &active {
@@ -726,7 +741,14 @@ impl AppRoot {
                 let script = script.clone();
                 self.right_panel.update(cx, |panel, cx| panel.run_script(script, cx));
             }
-            ThreadRouteEvent::DetailsClosed => self.details_open = false,
+            ThreadRouteEvent::DetailsClosed => {
+                self.details.popover_open = false;
+                self.apply_details(cx);
+            }
+            ThreadRouteEvent::DetailsModeChanged(mode) => {
+                self.details.mode = *mode;
+                self.apply_details(cx);
+            }
             ThreadRouteEvent::Navigate(path) => self.navigate(Route::parse(path), cx),
             ThreadRouteEvent::OpenLinkedItems => self.right_panel.update(cx, |panel, cx| panel.open_linked_items(cx)),
             ThreadRouteEvent::OpenBrowser(tab) => {
@@ -736,19 +758,31 @@ impl AppRoot {
         }
     }
 
-    /// Opens or closes the thread details card. It opens as a popover, so
-    /// the titlebar toggle does not draw pressed (fork `12be669d98`).
+    /// Opens or closes the thread details card in its current mode.
     fn toggle_details(&mut self, cx: &mut Context<Self>) {
         if self.shown.is_none() {
             return;
         }
-        self.details_open = !self.details_open;
-        let open = self.details_open;
-        self.thread_view.update(cx, |view, cx| view.set_details_open(open, cx));
-        let pressed = crate::components::chat::thread_details_panel::thread_details_toggle_pressed(
-            crate::components::chat::thread_details_panel::ThreadDetailsMode::Popover,
-            open,
-        );
+        let open = match self.details.mode {
+            ThreadDetailsMode::Inline => &mut self.details.inline_open,
+            ThreadDetailsMode::Popover => &mut self.details.popover_open,
+        };
+        *open = !*open;
+        self.apply_details(cx);
+    }
+
+    /// Shows the card when its mode's state is open. Only the docked card presses the
+    /// titlebar toggle (fork `12be669d98`).
+    fn apply_details(&mut self, cx: &mut Context<Self>) {
+        let mode = self.details.mode;
+        let open = match mode {
+            ThreadDetailsMode::Inline => self.details.inline_open,
+            ThreadDetailsMode::Popover => self.details.popover_open,
+        };
+        if self.thread_view.read(cx).details_open() != open {
+            self.thread_view.update(cx, |view, cx| view.set_details_open(open, cx));
+        }
+        let pressed = crate::components::chat::thread_details_panel::thread_details_toggle_pressed(mode, open);
         self.layout.update(cx, |layout, cx| layout.set_details_open(pressed, cx));
     }
 
@@ -890,11 +924,66 @@ impl AppRoot {
                 let route = Route::Thread(key.clone());
                 self.router.update(cx, |router, _| router.retain_history(|r| *r != route));
             }
+            SidebarEvent::ActivateDraft(id) => self.navigate(Route::Draft(DraftId(id.clone())), cx),
+            SidebarEvent::DiscardDraftSession(id) => self.discard_draft_session(DraftId(id.clone()), cx),
+            SidebarEvent::DraftCommand(id, command) => self.draft_command(DraftId(id.clone()), *command, cx),
             SidebarEvent::ThreadCommand(keys, command) => self.thread_command(keys, *command, window, cx),
             SidebarEvent::RenameThread(key, title) => self.data.rename_thread(key, title.clone(), cx),
+            SidebarEvent::ProjectCommand(project, MenuCommand::ProjectSettings) => self.open_project_settings(project, cx),
             SidebarEvent::SearchChanged(query) => self.data.search_threads(query.clone(), cx),
             SidebarEvent::AddProject | SidebarEvent::OpenProjectFilter | SidebarEvent::ProjectCommand(..) => {}
         }
+    }
+
+    /// Discards a new-thread draft; when it is the one shown, the index route takes its place.
+    fn discard_draft_session(&mut self, id: DraftId, cx: &mut Context<Self>) {
+        self.data.discard_draft_session(&id, cx);
+        let route = Route::Draft(id.clone());
+        self.router.update(cx, |router, _| router.retain_history(|r| *r != route));
+        if self.shown == Some(ThreadTarget::Draft(id)) {
+            self.navigate(Route::Index, cx);
+        }
+        self.sync_sidebar_drafts(cx);
+    }
+
+    /// A draft row's menu (`buildDraftActionMenuItems`): copy its project's path, open the
+    /// project's settings, or discard it.
+    fn draft_command(&mut self, id: DraftId, command: MenuCommand, cx: &mut Context<Self>) {
+        let project = self.sidebar.read(cx).snapshot().drafts.iter().find(|d| d.id == id.0).map(|d| d.project.clone());
+        match (command, project) {
+            (MenuCommand::Delete, _) => self.discard_draft_session(id, cx),
+            (MenuCommand::ProjectSettings, Some(project)) => self.open_project_settings(&project, cx),
+            (MenuCommand::CopyPath, Some(project)) => {
+                let snapshot = self.sidebar.read(cx).snapshot();
+                if let Some(root) = snapshot.projects.iter().find(|p| p.project_ref == project).map(|p| p.workspace_root.to_string()) {
+                    cx.write_to_clipboard(gpui_kit::ClipboardItem::new_string(root));
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Settings > Projects on `project`, as the palette's "Project settings" opens it.
+    fn open_project_settings(&self, project: &ProjectRef, cx: &mut App) {
+        self.navigate(
+            Route::Settings { panel: SettingsPanel::Projects, query: format!("project={}", project.project_id.0).into() },
+            cx,
+        );
+    }
+
+    /// Gives the sidebar the current unsent drafts and the shown one.
+    fn sync_sidebar_drafts(&self, cx: &mut Context<Self>) {
+        let (drafts, active) = self.sidebar_drafts(cx);
+        self.sidebar.update(cx, |sidebar, cx| sidebar.set_drafts(drafts, active, cx));
+    }
+
+    /// The unsent drafts and the shown one's id, as the sidebar lists them.
+    fn sidebar_drafts(&self, cx: &App) -> (Vec<crate::components::sidebar::model::SidebarDraft>, Option<SharedString>) {
+        let active = match &self.shown {
+            Some(ThreadTarget::Draft(id)) => Some(id.0.clone()),
+            _ => None,
+        };
+        (self.data.drafts(cx), active)
     }
 
     /// Runs a sidebar row or context-menu command on threads.
@@ -954,10 +1043,7 @@ impl AppRoot {
                 let panel = SettingsPanel::from_slug(id).unwrap_or(SettingsPanel::General);
                 self.navigate(Route::Settings { panel, query: SharedString::default() }, cx);
             }
-            PaletteEvent::OpenProjectSettings(project) => self.navigate(
-                Route::Settings { panel: SettingsPanel::Projects, query: format!("project={}", project.project_id.0).into() },
-                cx,
-            ),
+            PaletteEvent::OpenProjectSettings(project) => self.open_project_settings(project, cx),
             PaletteEvent::OpenPullRequests => self.navigate(Route::parse("/pull-requests"), cx),
             PaletteEvent::OpenIssues => self.navigate(Route::parse("/issues"), cx),
             // Need the sync layer or server features the fixture store does not have.
@@ -986,7 +1072,32 @@ impl AppRoot {
                 store.set_maximized(key, !maximized);
             }),
             LayoutEvent::Toggle(PanelToggle::Details) => self.toggle_details(cx),
-            LayoutEvent::Changed => Self::persist_layout(layout, cx),
+            LayoutEvent::Changed => {
+                Self::persist_layout(layout, cx);
+                self.save_right_panel_width(cx);
+            }
+        }
+    }
+
+    /// The web keeps the right panel's width per thread (`t3code:preview-panel-width:<thread>`).
+    fn right_panel_width_key(&self) -> Option<String> {
+        self.shown_key().map(|key| format!("t3code:preview-panel-width:{}", scoped_key(&key)))
+    }
+
+    /// Gives the right panel the shown thread's saved width, or the web's default.
+    fn restore_right_panel_width(&self, cx: &mut Context<Self>) {
+        let Some(key) = self.right_panel_width_key() else { return };
+        let width = crate::client_persistence_storage::LocalStorage::get::<f32>(cx, &key).unwrap_or(RIGHT_PANEL_DEFAULT_WIDTH);
+        self.layout.update(cx, |layout, cx| layout.set_right_panel_width(px(width), cx));
+    }
+
+    /// Saves the right panel's width for the shown thread (after a drag, like the web).
+    fn save_right_panel_width(&self, cx: &mut Context<Self>) {
+        let Some(key) = self.right_panel_width_key() else { return };
+        let width = f32::from(self.layout.read(cx).right_panel_width());
+        let saved = crate::client_persistence_storage::LocalStorage::get::<f32>(cx, &key);
+        if saved.unwrap_or(RIGHT_PANEL_DEFAULT_WIDTH) != width {
+            crate::client_persistence_storage::LocalStorage::set(cx, &key, Some(&width));
         }
     }
 
@@ -1010,7 +1121,9 @@ impl AppRoot {
         if let DataEvent::SnapshotChanged = event {
             // The sidebar takes every snapshot, including the one that lets a restored route show.
             let active = self.shown_key();
-            let snapshot = self.data.snapshot(active.as_ref(), cx);
+            let mut snapshot = self.data.snapshot(active.as_ref(), cx);
+            // Drafts ride along so one snapshot rebuilds the sidebar once.
+            (snapshot.drafts, snapshot.active_draft) = self.sidebar_drafts(cx);
             self.sidebar.update(cx, |sidebar, cx| sidebar.set_snapshot(snapshot, cx));
             let route = self.router.read(cx).current().clone();
             if self.shown.is_none()

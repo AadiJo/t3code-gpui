@@ -2,8 +2,8 @@ use crate::{
     AbsoluteLength, App, Bounds, DefiniteLength, Edges, GridTemplate, Length, Pixels, Point, Size,
     Style, Window, size,
     util::{
-        ceil_to_device_pixel, round_half_toward_zero, round_stroke_to_device_pixel,
-        round_to_device_pixel,
+        ceil_to_layout_units, round_stroke_to_device_pixel, round_to_device_pixel, snap_edge,
+        to_layout_units,
     },
 };
 use collections::{FxHashMap, FxHashSet};
@@ -270,7 +270,7 @@ impl TaffyLayoutEngine {
                                 window,
                                 cx,
                             );
-                            snap_measured_size_to_device_pixels(measured_size, scale_factor).into()
+                            measured_size_in_layout_units(measured_size, scale_factor).into()
                         },
                     )
                 },
@@ -278,80 +278,24 @@ impl TaffyLayoutEngine {
             .expect(EXPECT_MESSAGE);
     }
 
-    // Pixel snapping
+    // Pixel snapping, as Chromium does it.
     //
-    // Painting primitives at non-integer pixel coordinates produces blurry
-    // output. Pixel snapping converts layout coordinates into integer
-    // device-pixel coordinates so painted edges land exactly on physical
-    // pixel boundaries.
+    // Chromium lays a page out in layout units (1/64 CSS px) and snaps only
+    // when it paints, by rounding each box's absolute edges to device pixels
+    // (ties up). A stack of fractional rows therefore keeps its exact pitch:
+    // at a 15px rem on a 2x display, `h-[1.75rem]` rows (26.25px) end at
+    // 52.5, 105, 157.5 dp and paint at 53, 105, 158, alternating 53 and 52 dp.
+    // Rounding each length before layout instead (26.25 -> 26.0) loses a
+    // quarter pixel per row, so a 13-row menu drifts 3 to 5px.
     //
-    // Non-integer coordinates can arise for several reasons, including:
-    //   - flex distribution, percentages, centering, and text measurement
-    //     can produce fractional element sizes and positions;
-    //   - at fractional scale factors (for example 125% or 150%), integer
-    //     logical-pixel values can map to non-integer device-pixel values.
-    //
-    // We pixel-snap by rounding in device-pixel space, after multiplying
-    // by `scale_factor`, so that snapping targets physical pixels. Bounds
-    // are divided by `scale_factor` before being returned to GPUI.
-    //
-    // Midpoints are rounded toward zero. This is a stylistic choice: a
-    // 1-logical-pixel line at 150% scale should render as 1 dp rather than
-    // 2 dp.
-    //
-    // Pixel snapping is done in two phases:
-    //
-    //  1. Pre-layout metric snapping. Before Taffy computes layout, all
-    //     authored absolute lengths are rounded in `to_taffy`. This
-    //     includes borders, padding, gaps, and explicit sizes.
-    //     Custom-measured leaf nodes have their measured sizes rounded up
-    //     to integer device-pixel lengths.
-    //
-    //  2. Post-layout edge snapping. After Taffy resolves the tree, layout
-    //     relationships such as flex shares, grid tracks, percentages, and
-    //     centering can produce new fractional edge positions. Boxes now
-    //     have edges in absolute coordinates, and snapping must decide
-    //     where those edges land on the device-pixel grid.
-    //
-    // Ideally, post-layout snapping would satisfy:
-    //
-    //  - Edge closure. Two raw layout edges at the same absolute position
-    //    should snap to the same pixel column.
-    //  - Translation stability. A component's internal geometry should not
-    //    change when it moves to a new absolute position.
-    //
-    // These goals are in tension because rounding is not associative.
-    // The simple local schemes make different tradeoffs:
-    //
-    //  - Absolute edge rounding gives each window coordinate one answer,
-    //    so coincident edges always close globally. But a span's snapped
-    //    length is `round(far) - round(near)`, which may change by 1 dp
-    //    as its absolute origin moves.
-    //
-    //  - Parent-relative edge rounding rounds each child inside its
-    //    parent's coordinate space. This guarantees translation stability,
-    //    but a shared edge reached through different parents can
-    //    accumulate different rounding, causing non-closure between
-    //    cousins.
-    //
-    //  - Length rounding rounds each width, height, and thickness
-    //    independently and then places boxes from those rounded lengths.
-    //    Sizes stay stable under translation, but neighboring boxes derive
-    //    their shared boundary from different sources, so closure is not
-    //    guaranteed.
-    //
-    // We apply absolute edge rounding for each element's outer box in
-    // post-layout rounding to preserve closure. Border and padding widths
-    // are not touched by post-layout rounding; they keep their pre-layout
-    // rounded value so that they remain stable under translation.
-    //
-    // This gives both closure and translation stability in the case that
-    // all local metrics are integer device-pixel lengths. Pre-layout
-    // rounding covers that in most cases. The exception is metrics
-    // resolved by layout relationships, such as percentages. Outer box
-    // edges will still close globally, and painted border widths are still
-    // snapped independently, but the raw content-box origin can carry a
-    // 1dp residual into descendants.
+    // So layout here keeps authored lengths (sizes, padding, margins, gaps,
+    // insets) at layout-unit precision, and rounds custom-measured leaves
+    // (text) up to the next layout unit. After layout, every element's outer
+    // box snaps by its absolute edges, which gives coincident edges one pixel
+    // column (closure) and matches where Chromium paints. A box's snapped
+    // size can differ by 1 dp as it moves, as in Chromium. Border widths
+    // alone snap before layout, to at least one device pixel, so a hairline
+    // stays a hairline; that is also what Chromium does.
 
     pub fn layout_bounds(&mut self, id: LayoutId, scale_factor: f32) -> Bounds<Pixels> {
         if let Some(layout) = self.absolute_layout_bounds.get(&id).cloned() {
@@ -380,8 +324,8 @@ impl TaffyLayoutEngine {
 
         let absolute_far = absolute_outer_origin + Point::from(Size::from(layout_size));
         let snapped_bounds = Bounds::from_corners(
-            absolute_outer_origin.map(round_half_toward_zero),
-            absolute_far.map(round_half_toward_zero),
+            absolute_outer_origin.map(snap_edge),
+            absolute_far.map(snap_edge),
         );
 
         let bounds = (snapped_bounds / scale_factor).map(Pixels);
@@ -420,8 +364,8 @@ impl From<LayoutId> for NodeId {
     }
 }
 
-fn snap_measured_size_to_device_pixels(size: Size<Pixels>, scale_factor: f32) -> Size<f32> {
-    size.map(|d| ceil_to_device_pixel(d.0.max(0.0), scale_factor))
+fn measured_size_in_layout_units(size: Size<Pixels>, scale_factor: f32) -> Size<f32> {
+    size.map(|d| ceil_to_layout_units(d.0.max(0.0), scale_factor))
 }
 
 fn border_widths_to_taffy(
@@ -533,7 +477,7 @@ impl ToTaffy<taffy::style::Style> for Style {
 
 impl ToTaffy<f32> for AbsoluteLength {
     fn to_taffy(&self, rem_size: Pixels, scale_factor: f32) -> f32 {
-        round_to_device_pixel(self.to_pixels(rem_size).0, scale_factor)
+        to_layout_units(self.to_pixels(rem_size).0, scale_factor)
     }
 }
 

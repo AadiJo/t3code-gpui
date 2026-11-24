@@ -3,7 +3,7 @@
 //! next and close. Enter goes to the next match, Shift+Enter to the
 //! previous, Escape closes. The web bar has no case or whole-word options.
 
-use gpui_kit::{
+use gpui_kit::{rems, 
     component::input::{Input, InputEvent, InputState},
     *,
 };
@@ -122,26 +122,26 @@ impl Render for ThreadFindBar {
             .occlude()
             // `top-3 right-3 w-[min(var(--thread-details-panel-width),calc(100%-1.5rem))]`
             .absolute()
-            .top(px(12.))
-            .left(px(12.))
-            .right(px(12.))
+            .top(rems(0.75))
+            .left(rems(0.75))
+            .right(rems(0.75))
             .flex()
             .justify_end()
             .child(
                 glass_surface(theme)
                     .w(theme.spacing.thread_details_panel_width)
                     .max_w_full()
-                    .h(px(36.))
+                    .h(rems(2.25))
                     .rounded(theme.radii.lg)
-                    .pl(px(10.))
-                    .pr(px(4.))
+                    .pl(rems(0.625))
+                    .pr(rems(0.25))
                     .flex_row()
                     .items_center()
-                    .gap(px(2.))
+                    .gap(rems(0.125))
                     .child(div().flex_1().min_w_0().child(Input::new(&self.input).appearance(false)))
                     .child(
                         div()
-                            .min_w(px(40.))
+                            .min_w(rems(2.5))
                             .text_center()
                             .ui_text(theme, TextSize::Xs, weight::NORMAL)
                             .text_color(if no_results { c.destructive() } else { c.muted_foreground })

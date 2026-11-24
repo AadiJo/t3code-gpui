@@ -2,7 +2,7 @@
 //! (`SettingsPageContainer`, `SettingsSection`, `SettingsRow`) and
 //! `SettingsGroup.tsx`.
 
-use gpui_kit::{AnyElement, App, Div, Global, IntoElement, ParentElement, RenderOnce, SharedString, Window, div, prelude::*, px};
+use gpui_kit::{AnyElement, App, Div, Global, IntoElement, ParentElement, Pixels, RenderOnce, SharedString, Window, div, prelude::*, px};
 
 use super::settings_search::SettingsPath;
 
@@ -126,6 +126,8 @@ impl RenderOnce for SettingsSection {
         let theme = cx.app_theme();
         let c = &theme.colors;
         let divider = with_alpha(c.border, 0.5);
+        let header_height = theme.sp(7.);
+        let header_gap = theme.sp(2.5);
         let header = (!self.hide_title).then(|| {
             div()
                 .flex()
@@ -134,7 +136,7 @@ impl RenderOnce for SettingsSection {
                 .justify_between()
                 .gap_x(theme.sp(4.))
                 .gap_y(theme.sp(1.))
-                .min_h(theme.sp(7.))
+                .min_h(header_height)
                 .px(theme.sp(4.))
                 .child(
                     div()
@@ -176,7 +178,7 @@ impl RenderOnce for SettingsSection {
                     div().when(ix > 0, |d| d.border_t_1().border_color(divider)).child(child).into_any_element()
                 }))
         };
-        div().flex().flex_col().gap(theme.sp(2.5)).children(header).child(group)
+        div().flex().flex_col().gap(if self.hide_title { theme.sp(2.5) } else { header_gap }).children(header).child(group)
     }
 }
 
@@ -296,17 +298,40 @@ impl ParentElement for SettingsRow {
     }
 }
 
+/// A settings row's vertical lengths: `pt-3`, one
+/// line of title (`min-h-5`, 2px taller with an inline icon), `gap-1`, then `pb-3` (`pb-1`
+/// above nested content). A wrapped description keeps its measured height.
+pub struct RowMetrics {
+    pub top: Pixels,
+    pub title_height: Pixels,
+    pub gap: Pixels,
+    pub bottom: Pixels,
+}
+
+impl RowMetrics {
+    pub fn new(theme: &crate::AppTheme, title_icon: bool, nested: bool) -> Self {
+        Self {
+            top: theme.sp(3.),
+            title_height: theme.sp(5.) + if title_icon { px(2.) } else { px(0.) },
+            gap: theme.sp(1.),
+            bottom: if nested { theme.sp(1.) } else { theme.sp(3.) },
+        }
+    }
+}
+
 impl RenderOnce for SettingsRow {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.app_theme();
         let c = &theme.colors;
         let has_children = !self.children.is_empty();
+        let RowMetrics { top, title_height, gap, bottom } =
+            RowMetrics::new(theme, self.title_icon.is_some(), has_children);
         div()
             .group(SETTINGS_ROW_GROUP)
             .px(theme.sp(4.))
             .when(self.disabled, |d| d.opacity(0.64))
-            .when(has_children, |d| d.pt(theme.sp(3.)).pb(theme.sp(1.)))
-            .when(!has_children, |d| d.py(theme.sp(3.)))
+            .pt(top)
+            .pb(bottom)
             .child(
                 div()
                     .flex()
@@ -318,20 +343,20 @@ impl RenderOnce for SettingsRow {
                             .flex_col()
                             .flex_1()
                             .min_w_0()
-                            .gap(theme.sp(1.))
+                            .gap(gap)
                             .child(
                                 div()
                                     .flex()
                                     .items_center()
                                     .gap(theme.sp(1.5))
-                                    .min_h(theme.sp(5.))
+                                    .h(title_height)
                                     .child(
                                         div()
                                             .flex()
                                             .items_center()
                                             .gap(theme.sp(2.))
                                             // An inline icon makes the web's `h3` 2px taller than its line.
-                                            .when(self.title_icon.is_some(), |d| d.min_h(theme.sp(5.) + px(2.)))
+                                            .h(title_height)
                                             .ui_text(theme, TextSize::Sm, weight::MEDIUM)
                                             .text_color(c.foreground())
                                             .children(self.title_icon.map(|icon| {

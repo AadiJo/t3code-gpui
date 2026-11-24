@@ -12,7 +12,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use gpui_kit::base::TestSupportExt as _;
-use gpui_kit::{
+use gpui_kit::{rems, 
     AnyView, App, AppContext as _, Context, Entity, EventEmitter, FocusHandle, FontWeight, InteractiveElement as _,
     IntoElement, KeyDownEvent, ParentElement as _, Pixels, Render, SharedString, StatefulInteractiveElement as _,
     Styled as _, Subscription, Task, Window, canvas, div, linear_color_stop, linear_gradient,
@@ -33,6 +33,7 @@ use crate::ActiveAppTheme as _;
 use crate::shortcuts::commands::FindInThread;
 use crate::thread_find_store::ThreadFindStore;
 
+use super::chat::thread_details_panel::ThreadDetailsMode;
 use super::chat::{
     chat_header::{ThreadActionsTrigger, chat_header},
     chat_style::{ChatColors, TEXT_SM, TEXT_XS, alpha},
@@ -43,7 +44,6 @@ use super::chat::{
 };
 
 /// The composer lane is 2rem wider than the message lane (fork, `index.css:132-133`).
-pub const COMPOSER_MAX_WIDTH: Pixels = px(768.);
 /// Composer overlay `pt-1.5 sm:pt-2`; spacer under it `h-[1.25rem]` on desktop.
 const COMPOSER_TOP_PAD: Pixels = px(8.);
 const COMPOSER_BOTTOM_SPACER: Pixels = px(20.);
@@ -62,6 +62,9 @@ const HERO_HEADLINE_LINE: Pixels = px(36.);
 const HERO_MIN_HEIGHT: Pixels = px(544.);
 /// A picked option moves to the next question after this (`ComposerPendingUserInputPanel`).
 const QUESTION_ADVANCE_DELAY: Duration = Duration::from_millis(200);
+/// The docked card's width (`THREAD_DETAILS_CARD_WIDTH`) and its inset from the canvas edges.
+const DETAILS_CARD_WIDTH: Pixels = px(280.);
+const DETAILS_CARD_GAP: Pixels = px(12.);
 /// The details popover's `alignOffset` from the pane's right edge
 /// (`THREAD_DETAILS_CARD_GAP - 8`); the popup's 0.5rem padding adds to it.
 const DETAILS_POPOVER_ALIGN_OFFSET: Pixels = px(4.);
@@ -80,6 +83,8 @@ pub enum ChatViewEvent {
     InsertReference(String),
     /// A click outside the thread details popover.
     CloseDetails,
+    /// The canvas's width moved the details card between docked and popover.
+    DetailsModeChanged(ThreadDetailsMode),
 }
 
 /// What the header's "Thread actions" menu needs to know about the shown thread.
@@ -137,8 +142,10 @@ pub struct ChatView {
     thread_menu: Option<HeaderThreadMenu>,
     /// The open "Thread actions" menu.
     header_menu: Option<ContextMenu>,
-    /// The thread details card, while open as a popover.
+    /// The thread details card, while open.
     details: Option<AnyView>,
+    /// Where the card shows at this canvas width (`resolveThreadDetailsCardLayout`).
+    details_mode: ThreadDetailsMode,
     /// The banner pinned over the top of the timeline (`ChatBannerLane`), while one shows.
     banner: Option<AnyView>,
     /// The breadcrumb's project icon (override and favicon); the monogram without one.
@@ -177,6 +184,7 @@ impl ChatView {
             thread_menu: None,
             header_menu: None,
             details: None,
+            details_mode: ThreadDetailsMode::Popover,
             banner: None,
             project_icon: None,
             thread_key: SharedString::default(),
@@ -364,7 +372,7 @@ impl ChatView {
     }
 
     /// The open header menu, below the title (`DropdownMenu` align start, 4px offset).
-    fn render_header_menu(&mut self, cx: &mut Context<Self>) -> Option<gpui_kit::AnyElement> {
+    fn render_header_menu(&mut self, _window: &Window, cx: &mut Context<Self>) -> Option<gpui_kit::AnyElement> {
         let menu = self.header_menu.clone()?;
         let colors = ShellColors::from_theme(cx.app_theme());
         let body = context_menu::menu_body(
@@ -378,7 +386,7 @@ impl ChatView {
             this.header_menu = None;
             cx.notify();
         }));
-        Some(gpui_kit::deferred(div().absolute().top_full().left_0().pt(px(4.)).child(body)).with_priority(2).into_any_element())
+        Some(gpui_kit::deferred(div().absolute().top_full().left_0().pt(rems(0.25)).child(body)).with_priority(2).into_any_element())
     }
 
     /// Mounts the branch toolbar under the composer.
@@ -387,7 +395,27 @@ impl ChatView {
         cx.notify();
     }
 
-    /// Shows the thread details card as a popover under the header, or hides it.
+    /// Where the details card shows now.
+    pub fn details_mode(&self) -> ThreadDetailsMode {
+        self.details_mode
+    }
+
+    /// `resolveThreadDetailsCardLayout`: the card docks when the canvas keeps the chat lane's
+    /// minimum width (`min-w-[40rem]` plus `sm:ps-12`) beside the 280px card, its 12px gap
+    /// and the 32px clearance, and has 160px of height under the header.
+    fn measure_canvas(&mut self, size: gpui_kit::Size<Pixels>, cx: &mut Context<Self>) {
+        let theme = crate::ActiveAppTheme::app_theme(&**cx);
+        let fits_width = size.width - DETAILS_CARD_WIDTH - DETAILS_CARD_GAP - px(32.) - theme.rem(3.) >= theme.rem(40.);
+        let fits_height = size.height - self.header_height - DETAILS_CARD_GAP * 2. >= px(160.);
+        let mode = if fits_width && fits_height { ThreadDetailsMode::Inline } else { ThreadDetailsMode::Popover };
+        if mode != self.details_mode {
+            self.details_mode = mode;
+            cx.emit(ChatViewEvent::DetailsModeChanged(mode));
+            cx.notify();
+        }
+    }
+
+    /// Shows the thread details card (docked or as a popover, by [`Self::details_mode`]), or hides it.
     pub fn set_details(&mut self, details: Option<AnyView>, cx: &mut Context<Self>) {
         self.details = details;
         cx.notify();
@@ -471,8 +499,8 @@ impl ChatView {
             .pb_4()
             .w_full()
             .text_center()
-            .text_size(HERO_HEADLINE_SIZE)
-            .line_height(HERO_HEADLINE_LINE)
+            .text_size(colors.r(HERO_HEADLINE_SIZE))
+            .line_height(colors.r(HERO_HEADLINE_LINE))
             .font_weight(FontWeight::NORMAL)
             .text_color(colors.theme.text)
             .child(t!("What should we work on?"))
@@ -483,15 +511,15 @@ impl ChatView {
         let outline = super::chat::timeline_row_parts::mix(colors.theme.canvas, colors.theme.input, 0.3);
         div()
             .w_full()
-            .h(COMPOSER_PLACEHOLDER_HEIGHT)
-            .rounded(px(16.))
+            .h(colors.r(COMPOSER_PLACEHOLDER_HEIGHT))
+            .rounded(rems(1.))
             .border_1()
             .border_color(outline)
             .glass(colors.composer_glass)
             .px_4()
             .pt_4()
             .text_size(TEXT_SM.size)
-            .line_height(px(22.75))
+            .line_height(rems(1.421875))
             .text_color(colors.theme.placeholder)
             .child(t!("Ask anything. @ files, $ skills, / commands"))
     }
@@ -500,7 +528,8 @@ impl ChatView {
 impl Render for ChatView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let colors = ChatColors::get(cx);
-        let gutter = if window.viewport_size().width >= SM_BREAKPOINT { TIMELINE_GUTTER } else { TIMELINE_GUTTER_NARROW };
+        let lane = crate::components::chat::chat_style::ChatLane::get(cx);
+        let gutter = colors.r(if window.viewport_size().width >= SM_BREAKPOINT { TIMELINE_GUTTER } else { TIMELINE_GUTTER_NARROW });
         let timeline = self.timeline.clone();
         let (show_scroll_button, pending_question) = {
             let timeline = self.timeline.read(cx);
@@ -542,7 +571,7 @@ impl Render for ChatView {
                         .on_click(cx.listener(|this, _, _, cx| this.advance_question(cx))),
                 )
         });
-        let hero = self.hero && window.viewport_size().height >= HERO_MIN_HEIGHT;
+        let hero = self.hero && window.viewport_size().height >= colors.r(HERO_MIN_HEIGHT);
 
         let composer_overlay = div()
             .absolute()
@@ -550,20 +579,20 @@ impl Render for ChatView {
             .right_0()
             .bottom_0()
             .when(hero, |d| d.top_0().flex().items_center())
-            .pt(COMPOSER_TOP_PAD)
+            .pt(colors.r(COMPOSER_TOP_PAD))
             .px(gutter)
             .child(
                 div()
                     .mx_auto()
                     .w_full()
-                    .max_w(COMPOSER_MAX_WIDTH)
+                    .when_some(lane.composer, |d, w| d.max_w(w))
                     .flex()
                     .flex_col()
                     .when(self.hero, |d| d.child(Self::hero_headline(&colors)))
                     .children(pending_question.as_ref().map(|question| {
                         div()
-                            .mx(px(16.))
-                            .rounded_t(px(12.))
+                            .mx(rems(1.))
+                            .rounded_t(rems(0.75))
                             .border_1()
                             .border_b_0()
                             .border_color(alpha(colors.theme.border, 0.8))
@@ -594,7 +623,7 @@ impl Render for ChatView {
                                 d.children(self.toolbar.clone())
                             }),
                     )
-                    .child(div().h(COMPOSER_BOTTOM_SPACER)),
+                    .child(div().h(colors.r(COMPOSER_BOTTOM_SPACER))),
             )
             .child(
                 canvas(
@@ -612,7 +641,7 @@ impl Render for ChatView {
                 div()
                     .id("scroll-to-end")
                     .mb(self.timeline.read(cx).composer_bottom() + SCROLL_BUTTON_GAP)
-                    .h(SCROLL_BUTTON_HEIGHT)
+                    .h(colors.r(SCROLL_BUTTON_HEIGHT))
                     .px(px(7.))
                     .flex()
                     .items_center()
@@ -637,7 +666,7 @@ impl Render for ChatView {
             .top_0()
             .left_0()
             .right(SCROLLBAR_LANE)
-            .h(TIMELINE_TOP_INSET)
+            .h(colors.r(TIMELINE_TOP_INSET))
             .bg(linear_gradient(
                 180.,
                 linear_color_stop(colors.theme.canvas, 0.),
@@ -646,7 +675,18 @@ impl Render for ChatView {
 
         let header_height = self.header_height;
         let details_padding = crate::ActiveAppTheme::app_theme(&**cx).rem(0.5);
+        let inline = self.details_mode == ThreadDetailsMode::Inline;
         let details = self.details.clone().map(|details| {
+            if inline {
+                return div()
+                    .id("thread-details-inline")
+                    .absolute()
+                    .top(header_height + DETAILS_CARD_GAP)
+                    .right(DETAILS_CARD_GAP)
+                    .bottom(DETAILS_CARD_GAP)
+                    .w(DETAILS_CARD_WIDTH)
+                    .child(details);
+            }
             div()
                 .id("thread-details-popover")
                 .occlude()
@@ -665,7 +705,7 @@ impl Render for ChatView {
         let thread_actions = self.thread_menu.is_some().then(|| ThreadActionsTrigger {
             open: self.header_menu.is_some(),
             on_click: Box::new(cx.listener(|this, _, _, cx| this.toggle_header_menu(cx))),
-            menu: self.render_header_menu(cx),
+            menu: self.render_header_menu(window, cx),
         });
         let find_bar = self.find_bar.as_ref().map(|(bar, _)| div().absolute().top(header_height).left_0().right_0().child(bar.clone()));
         div()
@@ -706,6 +746,15 @@ impl Render for ChatView {
             )
             .children(find_bar)
             .children(details)
+            .child({
+                let this = cx.entity();
+                gpui_kit::canvas(
+                    |bounds, _, _| bounds.size,
+                    move |_, size, _, cx| this.update(cx, |this, cx| this.measure_canvas(size, cx)),
+                )
+                .absolute()
+                .size_full()
+            })
     }
 }
 

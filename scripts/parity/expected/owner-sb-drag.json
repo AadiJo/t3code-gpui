@@ -1,0 +1,38 @@
+{
+ "default": {
+  "pinned label": {
+   "top": 272.5,
+   "left": 17.5,
+   "bottom": 281.5,
+   "right": 54.5,
+   "color": "#bbbbbb",
+   "bg": "#181819"
+  },
+  "active label": {
+   "top": 296.5,
+   "left": 17.0,
+   "bottom": 305.5,
+   "right": 51.5,
+   "color": "#f5f5f5",
+   "bg": "#181819"
+  }
+ },
+ "owner": {
+  "pinned label": {
+   "top": 272.5,
+   "left": 17.5,
+   "bottom": 281.5,
+   "right": 54.5,
+   "color": "#bbbbbb",
+   "bg": "#181819"
+  },
+  "active label": {
+   "top": 296.5,
+   "left": 17.0,
+   "bottom": 305.5,
+   "right": 51.5,
+   "color": "#f5f5f5",
+   "bg": "#181819"
+  }
+ }
+}

@@ -5,7 +5,7 @@
 
 use crate::components::icons::{Icon, IconName, IconSize};
 use gpui_kit::base::TestSupportExt as _;
-use gpui_kit::{
+use gpui_kit::{rems, 
     AnyElement, Context, FontWeight, InteractiveElement as _, IntoElement, ParentElement as _,
     StatefulInteractiveElement as _, Styled as _, Window, div, prelude::FluentBuilder as _, px,
 };
@@ -24,8 +24,8 @@ use crate::{
 };
 
 /// Changed-files card: `mt-4 rounded-lg`, header `px-3 py-2`, tree rows `h-7`.
-const CARD_MARGIN_TOP: gpui_kit::Pixels = px(16.);
-const TREE_ROW_HEIGHT: gpui_kit::Pixels = px(28.);
+const CARD_MARGIN_TOP: gpui_kit::Rems = gpui_kit::rems(1.0);
+const TREE_ROW_HEIGHT: gpui_kit::Rems = gpui_kit::rems(1.75);
 
 impl MessagesTimeline {
     pub(super) fn render_assistant_message(
@@ -40,7 +40,7 @@ impl MessagesTimeline {
         let group = format!("assistant-row-{}", row.key);
         let streaming = message.streaming;
         let body = if message.text.trim().is_empty() && !streaming {
-            div().text_color(colors.theme.muted_foreground).text_size(px(14.)).child("(empty response)").into_any_element()
+            div().text_color(colors.theme.muted_foreground).text_size(rems(0.875)).child("(empty response)").into_any_element()
         } else {
             let actions = self.markdown_actions();
             let parsed = self.message_markdown(&message.id.0, &message.text, streaming, MarkdownFlavor::ASSISTANT);
@@ -65,7 +65,7 @@ impl MessagesTimeline {
             .relative()
             .min_w_0()
             .px_1()
-            .py(px(2.))
+            .py(rems(0.125))
             .child(body)
             .children(message_row.diff_summary.as_ref().map(|summary| self.render_changed_files(row.key, summary, cx)))
             .children(message_row.show_meta.then(|| {
@@ -85,7 +85,7 @@ impl MessagesTimeline {
             .flex()
             .items_center()
             .gap_2()
-            .mt(if standalone { px(2.) } else { px(6.) })
+            .mt(if standalone { rems(0.125) } else { rems(0.375) })
             .text_size(TEXT_XS.size)
             .child(
                 xs_button(
@@ -134,7 +134,7 @@ impl MessagesTimeline {
             actions,
             find: self.find_highlight(),
         };
-        div().px_1().py(px(2.)).child(render_markdown(&view, window, cx)).into_any_element()
+        div().px_1().py(rems(0.125)).child(render_markdown(&view, window, cx)).into_any_element()
     }
 
     /// `ChangedFilesCard`: "N changed files" with diff stats, then the tree.
@@ -203,10 +203,10 @@ impl MessagesTimeline {
                             .test_support(),
                     ),
             );
-        let row = || div().h(TREE_ROW_HEIGHT).w_full().flex().items_center().gap_2().rounded(px(6.)).py(px(6.)).pr_2();
+        let row = || div().h(TREE_ROW_HEIGHT).w_full().flex().items_center().gap_2().rounded(rems(0.375)).py(rems(0.375)).pr_2();
         // `DiffStatLabel` aligned: two right-aligned 4ch columns, 8px apart.
         let stat = move |a: u32, d: u32| {
-            let column = |text: String, color| div().w(px(24.)).flex().justify_end().text_color(color).child(text);
+            let column = |text: String, color| div().w(rems(1.5)).flex().justify_end().text_color(color).child(text);
             div()
                 .ml_auto()
                 .flex()
@@ -227,18 +227,18 @@ impl MessagesTimeline {
                 rows.push(
                     row()
                         .id(gpui_kit::SharedString::from(format!("changed-dir-{key}-{folder}")))
-                        .pl(px(8.))
+                        .pl(rems(0.5))
                         .cursor_pointer()
                         .hover(|s| s.bg(alpha(colors.theme.accent_surface, 0.6)))
                         .on_click(cx.listener(move |this, _, _, cx| this.toggle_entry(toggle.clone(), cx)))
                         .child(
                             Icon::new(if expanded { IconName::ChevronDown } else { IconName::ChevronRight })
-                                .size(IconSize::Custom(px(14.)))
+                                .size(IconSize::Sm)
                                 .color(alpha(colors.theme.muted_foreground, 0.7)),
                         )
                         .child(
                             Icon::new(if expanded { IconName::Folder } else { IconName::FolderClosed })
-                                .size(IconSize::Custom(px(14.)))
+                                .size(IconSize::Sm)
                                 .color(alpha(colors.theme.muted_foreground, 0.75)),
                         )
                         .child(
@@ -264,8 +264,8 @@ impl MessagesTimeline {
                         .pl(px(8. + depth * 14.))
                         .cursor_pointer()
                         .hover(|s| s.bg(alpha(colors.theme.accent_surface, 0.6)))
-                        .when(has_folders, |d| d.child(div().size(px(14.)).flex_none()))
-                        .child(Icon::new(IconName::File).size(IconSize::Custom(px(14.))).color(alpha(colors.theme.muted_foreground, 0.7)))
+                        .when(has_folders, |d| d.child(div().size(rems(0.875)).flex_none()))
+                        .child(Icon::new(IconName::File).size(IconSize::Sm).color(alpha(colors.theme.muted_foreground, 0.7)))
                         .child(
                             div()
                                 .flex_1()
@@ -287,7 +287,7 @@ impl MessagesTimeline {
         }
         div()
             .mt(CARD_MARGIN_TOP)
-            .rounded(px(8.))
+            .rounded(rems(0.5))
             .bg(fill)
             .child(header)
             .child(div().p_2().flex().flex_col().children(rows))

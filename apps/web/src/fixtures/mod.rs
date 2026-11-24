@@ -341,8 +341,15 @@ impl FixtureStore {
         id
     }
 
+    /// Forgets a draft and its sidebar row.
     pub fn discard_draft(&mut self, id: &DraftId) {
         self.drafts.remove(id);
+        self.snapshot.drafts.retain(|d| d.id != id.0);
+    }
+
+    /// The fixture's unsent drafts (`SidebarDraftBlock`).
+    pub fn sidebar_drafts(&self) -> &[crate::components::sidebar::model::SidebarDraft] {
+        &self.snapshot.drafts
     }
 
     /// Sends `prompt` in `target`. A draft becomes a server thread first.

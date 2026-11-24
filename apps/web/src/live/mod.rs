@@ -34,7 +34,7 @@ use crate::components::diff_panel::DiffPanelInput;
 use crate::components::right_panel_tabs::{TerminalBackends, Workspace};
 use crate::components::sidebar::SidebarEvent;
 use crate::components::sidebar::context_menu::MenuCommand;
-use crate::components::sidebar::model::{ProjectRef, SidebarSnapshot, ThreadKey};
+use crate::components::sidebar::model::{ProjectRef, SidebarDraft, SidebarSnapshot, ThreadKey, TimestampMs};
 use crate::components::ui::toast::{ToastData, ToastKind, Toaster};
 use crate::composer_draft_store::{ComposerDraftKey, ComposerDraftStore};
 use crate::diff_panel_store::DiffPanelSelection;
@@ -60,6 +60,7 @@ use crate::components::usage::usage_source::{LiveUsageSource, UsageSource};
 /// A new thread that has no messages yet (`/draft/$draftId`).
 struct Draft {
     project: Option<ProjectRef>,
+    created_at: TimestampMs,
     workspace: draft_workspace::DraftWorkspace,
 }
 
@@ -221,7 +222,7 @@ impl AppData for LiveData {
 
     fn snapshot(&self, active: Option<&ThreadKey>, cx: &App) -> SidebarSnapshot {
         let shell = StateBridge::shell(cx);
-        SidebarSnapshot { active_thread: active.cloned(), ..shell.read(cx).snapshot().clone() }
+        SidebarSnapshot { active_thread: active.cloned(), drafts: self.drafts(cx), ..shell.read(cx).snapshot().clone() }
     }
 
     fn most_recent_project(&self, cx: &App) -> Option<ProjectRef> {
@@ -313,6 +314,7 @@ impl AppData for LiveData {
         let next = self.next_draft.get() + 1;
         self.next_draft.set(next);
         let id = DraftId(format!("draft-{}-{next}", uuid::Uuid::new_v4().simple()).into());
+        let created_at = TimestampMs(crate::timestamp_format::now_ms());
         let workspace = project
             .as_ref()
             .map(|p| {
@@ -320,7 +322,7 @@ impl AppData for LiveData {
                 draft_workspace::DraftWorkspace::new(&environment_id, &project_id, cx)
             })
             .unwrap_or_default();
-        self.drafts.borrow_mut().insert(id.clone(), Draft { project: project.clone(), workspace: workspace.clone() });
+        self.drafts.borrow_mut().insert(id.clone(), Draft { project: project.clone(), created_at, workspace: workspace.clone() });
         if let Some(project) = project {
             self.read_project_file(&id, &project, workspace, cx);
         }
@@ -353,6 +355,32 @@ impl AppData for LiveData {
 
     fn discard_draft(&self, key: &ThreadKey, cx: &mut App) {
         sidebar_actions::handle(&SidebarEvent::DiscardDraft(key.clone()), cx);
+    }
+
+    fn drafts(&self, cx: &App) -> Vec<SidebarDraft> {
+        let composers = StateBridge::drafts(cx).current();
+        self.drafts
+            .borrow()
+            .iter()
+            .filter_map(|(id, draft)| {
+                let prompt = &composers.drafts_by_thread_key.get(&format!("draft:{}", id.0))?.prompt;
+                let preview = prompt.trim().split('\n').next().filter(|line| !line.is_empty())?;
+                Some(SidebarDraft {
+                    id: id.0.clone(),
+                    project: draft.project.clone()?,
+                    preview: SharedString::from(preview.to_owned()),
+                    created_at: draft.created_at,
+                })
+            })
+            .collect()
+    }
+
+    fn discard_draft_session(&self, id: &DraftId, cx: &mut App) {
+        self.drafts.borrow_mut().remove(id);
+        let key = format!("draft:{}", id.0);
+        StateBridge::drafts(cx).update(|drafts| {
+            drafts.drafts_by_thread_key.remove(&key);
+        });
     }
 
     fn composer_state(&self, view: &ThreadView, base: &ComposerState, cx: &mut App) -> ComposerState {
@@ -578,7 +606,12 @@ impl AppData for LiveData {
             }
             TimelineAction::Fork(message) => self.fork_from(key, message, cx),
             TimelineAction::EditFrom(message) => return self.confirm_revert(key, message, cx),
-            TimelineAction::OpenDiff { .. } | TimelineAction::OpenImage { .. } | TimelineAction::OpenLink(_) | TimelineAction::Reply { .. } => {}
+            // The route view handles these itself.
+            TimelineAction::OpenDiff { .. }
+            | TimelineAction::OpenImage { .. }
+            | TimelineAction::OpenLink(_)
+            | TimelineAction::RunShellCommand(_)
+            | TimelineAction::Reply { .. } => {}
         }
         ActionOutcome::Done
     }

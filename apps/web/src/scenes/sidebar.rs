@@ -27,6 +27,7 @@ fn entry_for(sidebar: &Sidebar, prefix: &str) -> Option<usize> {
 pub fn build(window: &mut Window, cx: &mut App) -> AnyView {
     let inbox = cx.new(|cx| {
         let mut sidebar = Sidebar::new(fixtures::showcase_snapshot(), window, cx);
+        sidebar.use_snapshot_settings(cx);
         let hovered = entry_for(&sidebar, "Fix hero image");
         sidebar.set_hovered(hovered, cx);
         sidebar
@@ -39,6 +40,7 @@ pub fn build(window: &mut Window, cx: &mut App) -> AnyView {
             !id.starts_with('a') || ["a1", "a8", "a10"].contains(&id)
         });
         let mut sidebar = Sidebar::new(snapshot, window, cx);
+        sidebar.use_snapshot_settings(cx);
         sidebar.options_mut(cx, |o| {
             o.settled_expanded = true;
         });
@@ -53,6 +55,7 @@ pub fn build(window: &mut Window, cx: &mut App) -> AnyView {
     });
     let folders = cx.new(|cx| {
         let mut sidebar = Sidebar::new(fixtures::folders_snapshot(), window, cx);
+        sidebar.use_snapshot_settings(cx);
         let infra = sidebar
             .list()
             .groups
@@ -67,6 +70,7 @@ pub fn build(window: &mut Window, cx: &mut App) -> AnyView {
     let empty = cx.new(|cx| Sidebar::new(fixtures::empty_snapshot(), window, cx));
     let search_empty = cx.new(|cx| {
         let mut sidebar = Sidebar::new(fixtures::showcase_snapshot(), window, cx);
+        sidebar.use_snapshot_settings(cx);
         sidebar.options_mut(cx, |o| o.search = "zzz".into());
         sidebar
     });

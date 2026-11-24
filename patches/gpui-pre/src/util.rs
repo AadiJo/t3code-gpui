@@ -141,6 +141,28 @@ pub(crate) fn round_to_device_pixel(logical: f32, scale_factor: f32) -> f32 {
     round_half_toward_zero(logical * scale_factor)
 }
 
+/// Chromium's layout unit: 1/64 of a CSS (logical) pixel.
+pub(crate) const LAYOUT_UNITS_PER_PIXEL: f32 = 64.0;
+
+/// A logical length in device pixels, kept at layout-unit precision (nearest 1/64 logical px).
+#[inline]
+pub(crate) fn to_layout_units(logical: f32, scale_factor: f32) -> f32 {
+    (logical * LAYOUT_UNITS_PER_PIXEL).round() / LAYOUT_UNITS_PER_PIXEL * scale_factor
+}
+
+/// A measured logical length in device pixels, rounded up to the next layout unit.
+#[inline]
+pub(crate) fn ceil_to_layout_units(logical: f32, scale_factor: f32) -> f32 {
+    // A hair of tolerance so float noise in an exact measurement does not add a unit.
+    ((logical * LAYOUT_UNITS_PER_PIXEL - 1e-3).ceil() / LAYOUT_UNITS_PER_PIXEL).max(0.0) * scale_factor
+}
+
+/// Snaps a painted edge in device pixels the way Chromium does: nearest, ties up.
+#[inline]
+pub(crate) fn snap_edge(device: f32) -> f32 {
+    (device + 0.5).floor()
+}
+
 #[inline]
 pub(crate) fn round_stroke_to_device_pixel(logical: f32, scale_factor: f32) -> f32 {
     if logical == 0.0 {

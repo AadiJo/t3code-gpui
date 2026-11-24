@@ -194,7 +194,7 @@ impl SettingsRoute {
                 .items_center()
                 .gap(sp(2.))
                 .h(sp(8.))
-                .px(px(10.))
+                .px(sp(2.5))
                 .rounded(theme.radii.control)
                 .cursor_pointer()
                 .ui_text(theme, TextSize::Sm, weight::MEDIUM)
@@ -234,7 +234,7 @@ impl SettingsRoute {
                             .items_start()
                             .gap(sp(2.))
                             .min_h(sp(10.))
-                            .px(px(10.))
+                            .px(sp(2.5))
                             .py(sp(1.5))
                             .rounded(theme.radii.control)
                             .cursor_pointer()
@@ -275,31 +275,43 @@ impl SettingsRoute {
                 .flex()
                 .flex_col()
                 .gap(sp(4.))
-                .children(nav_groups().into_iter().enumerate().map(|(_, group)| {
-                    div()
-                        .flex()
-                        .flex_col()
-                        .gap(sp(1.))
-                        .children(group.heading.map(|heading| {
-                            div()
-                                .px(sp(2.))
-                                .ui_text(theme, TextSize::Xs, weight::MEDIUM)
-                                .text_color(with_alpha(c.sidebar_muted_foreground, 0.8))
-                                .child(heading)
-                        }))
-                        .children(group.paths.iter().map(|path| {
-                            let path = *path;
-                            row(
-                                SharedString::from(format!("settings-nav-{}", path.slug())),
-                                path.icon(),
-                                path.nav_label(),
-                                path == self.path,
-                            )
-                            .on_click(cx.listener(move |this, _, _, cx| this.navigate(path, cx)))
-                            .test_support()
-                        }))
-                        .into_any_element()
-                }))
+                .children({
+                    nav_groups()
+                        .into_iter()
+                        .map(|group| {
+                            let mut column = div().flex().flex_col();
+                            let mut first = true;
+                            if let Some(heading) = group.heading {
+                                column = column.child(
+                                    div()
+                                        .px(sp(2.))
+                                        .ui_text(theme, TextSize::Xs, weight::MEDIUM)
+                                        .text_color(with_alpha(c.sidebar_muted_foreground, 0.8))
+                                        .child(heading),
+                                );
+                                first = false;
+                            }
+                            for path in group.paths.iter().copied() {
+                                let gap = if first { px(0.) } else { sp(1.) };
+                                first = false;
+                                let height = sp(8.);
+                                column = column.child(
+                                    row(
+                                        SharedString::from(format!("settings-nav-{}", path.slug())),
+                                        path.icon(),
+                                        path.nav_label(),
+                                        path == self.path,
+                                    )
+                                    .mt(gap)
+                                    .h(height)
+                                    .on_click(cx.listener(move |this, _, _, cx| this.navigate(path, cx)))
+                                    .test_support(),
+                                );
+                            }
+                            column.into_any_element()
+                        })
+                        .collect::<Vec<_>>()
+                })
                 .into_any_element()
         };
         div()

@@ -7,6 +7,9 @@ pub mod context_menu;
 pub mod fixtures;
 pub mod model;
 pub mod sidebar_chrome;
+pub mod sidebar_draft_block;
+pub mod sidebar_drag;
+pub mod sidebar_project_scope;
 pub mod sidebar_list_markers;
 pub mod sidebar_notifications;
 pub mod sidebar_project_grouping;
@@ -81,6 +84,13 @@ pub enum SidebarEvent {
     /// A context-menu command on a project.
     ProjectCommand(ProjectRef, MenuCommand),
     DiscardDraft(ThreadKey),
+    /// Open a new-thread draft (`SidebarDraftBlock` row).
+    ActivateDraft(SharedString),
+    /// A draft's context menu command: `CopyPath`, `ProjectSettings`, or
+    /// `Delete` (discard the draft).
+    DraftCommand(SharedString, MenuCommand),
+    /// Discard a new-thread draft (its row's X button).
+    DiscardDraftSession(SharedString),
     /// The inline rename field committed a new, non-empty title.
     RenameThread(ThreadKey, String),
     /// The search field's text changed; the data source may add server matches.
@@ -129,6 +139,18 @@ pub struct Sidebar {
     /// Six-step phase of the terminal pulse.
     pub(crate) pulse: u8,
     pub(crate) renaming: Option<Renaming>,
+    /// Scenes that show several setting combinations at once keep the
+    /// snapshot's settings instead of the client settings.
+    snapshot_settings_only: bool,
+    /// The snapshot's own settings, which the client settings overlay.
+    base_settings: model::SidebarSettings,
+    /// Jump hints show: the jump modifier has been held 200ms.
+    pub(crate) jump_hints: bool,
+    /// The project filter popup, while open.
+    pub(crate) scope_menu: Option<sidebar_project_scope::ProjectScopeMenu>,
+    /// While dragging: the section under the pointer, shared with the drag preview.
+    pub(crate) drag_target: std::rc::Rc<std::cell::Cell<Option<super::sidebar_logic::SidebarSection>>>,
+    jump_hold: Option<Task<()>>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -151,6 +173,7 @@ impl Sidebar {
             }
         });
         let now = snapshot.now;
+        let snapshot_settings = snapshot.settings;
         let mut this = Self {
             snapshot,
             options: SidebarListOptions::default(),
@@ -176,8 +199,33 @@ impl Sidebar {
             now,
             pulse: 0,
             renaming: None,
+            snapshot_settings_only: false,
+            base_settings: snapshot_settings,
+            jump_hints: false,
+            scope_menu: None,
+            drag_target: Default::default(),
+            jump_hold: None,
             _subscriptions: vec![subscription],
         };
+        if cx.has_global::<crate::hooks::use_settings::ClientSettingsStore>() {
+            let settings = cx.observe_global_in::<crate::hooks::use_settings::ClientSettingsStore>(window, |this, _, cx| this.rebuild(cx));
+            this._subscriptions.push(settings);
+        }
+        if cx.has_global::<crate::shortcut_modifier_state::GlobalStore>() {
+            let store = crate::shortcut_modifier_state::ShortcutModifierStore::global(cx);
+            let hints = cx.observe(&store, |this, store, cx| {
+                let show = store.read(cx).show_thread_jump_hints();
+                this.jump_modifier_changed(show, cx);
+            });
+            this._subscriptions.push(hints);
+        }
+        if let Some(store) = cx.try_global::<crate::ui_state_store::UiStateStore>() {
+            let ui = &store.ui;
+            this.options.working_expanded = ui.sidebar_working_expanded;
+            this.options.snoozed_expanded = ui.sidebar_snoozed_expanded;
+            this.options.settled_expanded = ui.sidebar_settled_expanded;
+            this.options.project_scope = ui.sidebar_project_scope_keys.iter().map(|k| SharedString::from(k.clone())).collect();
+        }
         this.rebuild(cx);
         this
     }
@@ -185,6 +233,7 @@ impl Sidebar {
     /// Replaces the data. Rows are re-derived once here, not per frame.
     pub fn set_snapshot(&mut self, snapshot: SidebarSnapshot, cx: &mut Context<Self>) {
         self.now = snapshot.now;
+        self.base_settings = snapshot.settings;
         self.snapshot = snapshot;
         self.rebuild(cx);
     }
@@ -205,6 +254,18 @@ impl Sidebar {
         }
     }
 
+    /// Replaces the unsent drafts and marks the shown one. Rebuilds only when the drafts changed.
+    pub fn set_drafts(&mut self, drafts: Vec<model::SidebarDraft>, active: Option<SharedString>, cx: &mut Context<Self>) {
+        if self.snapshot.active_draft != active {
+            self.snapshot.active_draft = active;
+            cx.notify();
+        }
+        if self.snapshot.drafts != drafts {
+            self.snapshot.drafts = drafts;
+            self.rebuild(cx);
+        }
+    }
+
     /// Swaps the row's title for a focused field holding it, all selected (`startThreadRename`).
     /// Enter or leaving the field commits; Escape cancels.
     pub fn start_rename(&mut self, key: ThreadKey, window: &mut Window, cx: &mut Context<Self>) {
@@ -218,6 +279,7 @@ impl Sidebar {
             field.focus(window, cx);
             field.select_all(window, cx);
         });
+        self.hover_card = None;
         self.renaming = Some(Renaming { key, original: title, field, _subscription: subscription });
         cx.notify();
     }
@@ -265,6 +327,23 @@ impl Sidebar {
     /// Bounds of list entry `ix` from the last frame, if laid out.
     pub fn entry_bounds(&self, ix: usize) -> Option<Bounds<Pixels>> {
         self.list_state.bounds_for_item(ix)
+    }
+
+    /// Renders with the snapshot's settings, ignoring the client settings (scenes).
+    pub fn use_snapshot_settings(&mut self, cx: &mut Context<Self>) {
+        self.snapshot_settings_only = true;
+        self.rebuild(cx);
+    }
+
+    /// The data the sidebar renders.
+    pub fn snapshot(&self) -> &SidebarSnapshot {
+        &self.snapshot
+    }
+
+    /// Scrolls the list so entry `ix` is in view (scenes and checks).
+    pub fn reveal_entry(&mut self, ix: usize, cx: &mut Context<Self>) {
+        self.list_state.scroll_to_reveal_item(ix);
+        cx.notify();
     }
 
     /// The flattened list the sidebar draws.
@@ -342,14 +421,100 @@ impl Sidebar {
         })
     }
 
+    /// Applies the client settings the web sidebar reads with `useClientSettings`.
+    fn apply_client_settings(&mut self, cx: &App) {
+        use crate::hooks::use_settings::ClientSettingsStore;
+        use t3code_contracts::{SidebarProjectGroupingMode as G, SidebarProjectSortOrder as O};
+        self.snapshot.settings = self.base_settings;
+        if self.snapshot_settings_only || !cx.has_global::<ClientSettingsStore>() {
+            return;
+        }
+        let client = ClientSettingsStore::get(cx);
+        let grouping = |mode: &G| match mode {
+            G::RepositoryPath => model::ProjectGroupingMode::RepositoryPath,
+            G::Separate => model::ProjectGroupingMode::Separate,
+            _ => model::ProjectGroupingMode::Repository,
+        };
+        let settings = &mut self.snapshot.settings;
+        settings.project_folders = client.boring_sidebar_enabled;
+        settings.folder_rows_multiline = client.boring_sidebar_multiline_rows;
+        settings.working_shelf = client.sidebar_working_shelf_enabled;
+        settings.notification_inbox = client.notification_inbox_enabled;
+        settings.grouping_mode = grouping(&client.sidebar_project_grouping_mode);
+        settings.project_sort_order = match client.sidebar_project_sort_order {
+            O::CreatedAt => model::ProjectSortOrder::CreatedAt,
+            O::Manual => model::ProjectSortOrder::Manual,
+            _ => model::ProjectSortOrder::UpdatedAt,
+        };
+        self.options.grouping_overrides =
+            client.sidebar_project_grouping_overrides.iter().map(|(key, mode)| (key.clone(), grouping(mode))).collect();
+    }
+
+    /// `useThreadJumpHintsVisible`: hints appear once the thread-jump
+    /// modifier has been held for `THREAD_JUMP_HINT_SHOW_DELAY_MS` (200ms),
+    /// so a quick shortcut never flashes them, and hide on release.
+    fn jump_modifier_changed(&mut self, show: bool, cx: &mut Context<Self>) {
+        if !show {
+            self.jump_hold = None;
+            if std::mem::take(&mut self.jump_hints) {
+                cx.notify();
+            }
+            return;
+        }
+        if self.jump_hints || self.jump_hold.is_some() {
+            return;
+        }
+        self.jump_hold = Some(cx.spawn(async move |this, cx| {
+            cx.background_executor().timer(Duration::from_millis(200)).await;
+            this.update(cx, |this, cx| {
+                this.jump_hold = None;
+                this.jump_hints = true;
+                cx.notify();
+            })
+            .ok();
+        }));
+    }
+
+    /// The jump shortcut label for the thread at `key`, while hints show
+    /// (the first nine threads in list order).
+    pub(crate) fn jump_label(&self, key: &ThreadKey, cx: &App) -> Option<SharedString> {
+        use crate::keybindings::{shortcut_label_for_command, thread_jump_command_for_index};
+        use crate::shortcuts::keymap::ShortcutState;
+        if !self.jump_hints {
+            return None;
+        }
+        let index = self.list.thread_order.iter().position(|k| k == key)?;
+        let command = thread_jump_command_for_index(index)?;
+        let state = cx.try_global::<ShortcutState>()?;
+        shortcut_label_for_command(&state.config, &t3code_shared::keybindings::KeybindingCommand::Static(command), state.state, state.platform)
+    }
+
+    /// Saves shelf expansion and the project scope (`useLocalStorage`, `uiStateStore`).
+    fn persist_ui(&self, cx: &mut App) {
+        if !cx.has_global::<crate::ui_state_store::UiStateStore>() {
+            return;
+        }
+        let options = &self.options;
+        let (working, snoozed, settled) = (options.working_expanded, options.snoozed_expanded, options.settled_expanded);
+        let scope: Vec<String> = options.project_scope.iter().map(|k| k.to_string()).collect();
+        crate::ui_state_store::UiStateStore::update_ui(cx, |ui| {
+            ui.sidebar_working_expanded = working;
+            ui.sidebar_snoozed_expanded = snoozed;
+            ui.sidebar_settled_expanded = settled;
+            ui.sidebar_project_scope_keys = scope;
+        });
+    }
+
     pub(crate) fn rebuild(&mut self, cx: &mut Context<Self>) {
+        self.apply_client_settings(cx);
         self.list = build_sidebar_list(&self.snapshot, &self.options);
+        let rem_scale = ShellColors::from_theme(cx.app_theme()).rem_scale;
         self.heights = self
             .list
             .entries
             .iter()
             .enumerate()
-            .map(|(ix, entry)| entry_height(entry) + if ix > 0 { f32::from(LIST_GAP) } else { 0. })
+            .map(|(ix, entry)| entry_height(entry, rem_scale) + if ix > 0 { f32::from(LIST_GAP) } else { 0. })
             .collect();
         self.spacer_height = 0.;
         self.hovered = None;
@@ -427,7 +592,25 @@ impl Sidebar {
             Shelf::Settled => &mut self.options.settled_expanded,
         };
         *expanded = !*expanded;
+        self.persist_ui(cx);
         self.rebuild(cx);
+    }
+
+    /// Sets the project filter to `scope` (group keys; empty shows all).
+    pub(crate) fn set_project_scope(&mut self, scope: Vec<SharedString>, cx: &mut Context<Self>) {
+        self.options.project_scope = scope;
+        self.options.settled_visible = 0;
+        self.persist_ui(cx);
+        self.rebuild(cx);
+    }
+
+    /// Opens a draft. Only the active draft changes, so nothing is rebuilt.
+    pub(crate) fn activate_draft(&mut self, id: SharedString, cx: &mut Context<Self>) {
+        self.selected.clear();
+        self.snapshot.active_draft = Some(id.clone());
+        self.snapshot.active_thread = None;
+        cx.emit(SidebarEvent::ActivateDraft(id));
+        cx.notify();
     }
 
     pub(crate) fn toggle_folder(&mut self, group: usize, cx: &mut Context<Self>) {
@@ -503,6 +686,9 @@ impl Sidebar {
             self.list.entries.get(ix),
             None | Some(
                 SidebarListEntry::ShelfSpacer
+                    | SidebarListEntry::DraftDivider
+                    | SidebarListEntry::DragBoundary(_)
+                    | SidebarListEntry::DragPlaceholder
                     | SidebarListEntry::Empty(_)
                     | SidebarListEntry::SearchEmpty
             )
@@ -566,6 +752,7 @@ impl Sidebar {
         let Some(ix) = self.cursor else { return };
         match self.list.entries.get(ix).cloned() {
             Some(SidebarListEntry::Thread { thread, .. }) => self.activate_thread(thread.key.clone(), cx),
+            Some(SidebarListEntry::Draft(draft)) => self.activate_draft(draft.id.clone(), cx),
             Some(SidebarListEntry::ShelfHeader { shelf, .. }) => self.toggle_shelf(shelf, cx),
             Some(SidebarListEntry::FolderHeader { group, .. }) => self.toggle_folder(group, cx),
             Some(SidebarListEntry::ShowMore { .. }) => self.show_more_settled(cx),
@@ -617,7 +804,7 @@ impl Sidebar {
                             | super::sidebar_logic::ThreadStatus::Preparing
                     ),
                     project_label: label,
-                    project_filter_active: false,
+                    project_filter_active: !self.options.project_scope.is_empty(),
                     show_project_filter: true,
                     can_find: false,
                     auto_settle_enabled: !self.snapshot.auto_settle_disabled.contains(&thread.key),
@@ -630,6 +817,13 @@ impl Sidebar {
                     submenu: None,
                 }
             }
+            Some(SidebarListEntry::Draft(draft)) => ContextMenu {
+                target: MenuTarget::Draft(draft.id.clone()),
+                position,
+                items: context_menu::draft_menu_items(),
+                highlighted: None,
+                submenu: None,
+            },
             Some(SidebarListEntry::FolderHeader { group, .. }) => {
                 let Some(group) = self.list.groups.get(*group) else { return };
                 let Some(project) = group.member_refs.first().cloned() else { return };
@@ -687,11 +881,11 @@ impl Sidebar {
         true
     }
 
-    fn menu_confirm(&mut self, _: &mut Window, cx: &mut Context<Self>) {
+    fn menu_confirm(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(menu) = &self.context_menu else { return };
         let Some(ix) = menu.highlighted else { return };
         if menu.items[ix].children.is_empty() {
-            self.run_menu_item(ix, None, cx);
+            self.run_menu_item(ix, None, window, cx);
         } else if let Some(menu) = self.context_menu.as_mut() {
             menu.submenu = Some((ix, Some(0)));
             cx.notify();
@@ -699,14 +893,28 @@ impl Sidebar {
     }
 
     /// Runs a menu row (`child` picks a submenu row) and closes the menu.
-    pub(crate) fn run_menu_item(&mut self, ix: usize, child: Option<usize>, cx: &mut Context<Self>) {
+    pub(crate) fn run_menu_item(&mut self, ix: usize, child: Option<usize>, window: &mut Window, cx: &mut Context<Self>) {
         let Some(menu) = self.context_menu.take() else { return };
         if let Some(command) = context_menu::picked_command(&menu, ix, child) {
             match menu.target {
+                MenuTarget::Thread(key) if command == MenuCommand::Rename => self.start_rename(key, window, cx),
+                MenuTarget::Thread(key) if command == MenuCommand::FilterByProject => {
+                    let scope = if self.options.project_scope.is_empty() {
+                        let project = self.snapshot.threads.iter().find(|t| t.key == key).map(|t| t.project_ref());
+                        project
+                            .and_then(|p| self.list.groups.iter().find(|g| g.member_refs.contains(&p)))
+                            .map(|g| vec![g.key.clone()])
+                            .unwrap_or_default()
+                    } else {
+                        Vec::new()
+                    };
+                    self.set_project_scope(scope, cx);
+                }
                 MenuTarget::Thread(key) => {
                     let targets = self.command_targets(&key);
                     cx.emit(SidebarEvent::ThreadCommand(targets, command));
                 }
+                MenuTarget::Draft(id) => cx.emit(SidebarEvent::DraftCommand(id, command)),
                 MenuTarget::Project(project) => {
                     cx.emit(SidebarEvent::ProjectCommand(project, command));
                 }
@@ -722,6 +930,10 @@ impl Sidebar {
             return div().into_any_element();
         };
         let body = match entry {
+            SidebarListEntry::Draft(draft) => self.render_draft_row(ix, &draft, &colors, window, cx),
+            SidebarListEntry::DraftDivider => sidebar_draft_block::draft_divider(&colors),
+            SidebarListEntry::DragBoundary(marker) => self.render_drag_boundary(marker, &colors, cx),
+            SidebarListEntry::DragPlaceholder => self.render_drag_placeholder(&colors, cx),
             SidebarListEntry::Thread { thread, variant, section } => {
                 self.render_thread_row(ix, &thread, variant, section, &colors, window, cx)
             }
@@ -779,6 +991,10 @@ impl Sidebar {
 impl Render for Sidebar {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let colors = ShellColors::from_theme(cx.app_theme());
+        if self.options.dragging.is_some() && !cx.has_active_drag() {
+            // The drag ended outside any drop target.
+            cx.defer_in(window, |this, _, cx| this.end_drag(cx));
+        }
         self.update_spacer();
         let (fade_top, fade_bottom) = self.list_overflows();
         let fade = |top: bool| {
@@ -808,11 +1024,29 @@ impl Render for Sidebar {
             .on_action(cx.listener(Self::confirm))
             .on_action(cx.listener(Self::cancel))
             .on_action(cx.listener(Self::focus_search))
+
             .relative()
             .size_full()
             .flex()
             .flex_col()
             .text_color(colors.sidebar_foreground)
+            .on_drag_move(cx.listener(|this, event: &DragMoveEvent<sidebar_drag::DraggedThread>, _, cx| {
+                this.drag_moved(event.event.position, cx);
+            }))
+            .on_drop(cx.listener(|this, dragged: &sidebar_drag::DraggedThread, _, cx| {
+                match this.drag_target.get() {
+                    Some(target) => this.drop_into(dragged, target, cx),
+                    None => this.end_drag(cx),
+                }
+            }))
+            .on_mouse_up(MouseButton::Left, cx.listener(|this, _, window, cx| {
+                cx.defer_in(window, |this, _, cx| this.end_drag(cx));
+                let _ = this;
+            }))
+            .on_mouse_up_out(MouseButton::Left, cx.listener(|this, _, window, cx| {
+                cx.defer_in(window, |this, _, cx| this.end_drag(cx));
+                let _ = this;
+            }))
             .child(self.render_header_row(&colors, window, cx))
             .child(self.render_search_row(&colors, window, cx))
             .child(
@@ -821,8 +1055,8 @@ impl Render for Sidebar {
                     .relative()
                     .flex_1()
                     .min_h_0()
-                    .px(CONTENT_INSET)
-                    .pb(CONTENT_INSET)
+                    .px(colors.s(CONTENT_INSET))
+                    .pb(colors.s(CONTENT_INSET))
                     .child(
                         list(
                             self.list_state.clone(),

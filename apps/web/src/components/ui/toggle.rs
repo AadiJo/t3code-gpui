@@ -1,6 +1,6 @@
 //! Toggle button with an on state. Ports `toggle.tsx` at desktop width.
 
-use gpui_kit::{TestSupportExt as _, 
+use gpui_kit::{rems, TestSupportExt as _, 
     App, ClickEvent, ElementId, Hsla, IntoElement, Pixels, RenderOnce, SharedString, StyleRefinement,
     Window, div, prelude::*, px,
 };
@@ -245,7 +245,7 @@ impl RenderOnce for Toggle {
             .whitespace_nowrap()
             .when(outline && !pressed && !disabled, |t| t.control_highlight(theme))
             .children(self.icon.map(|name| {
-                div().mx(px(-2.)).child(
+                div().mx(rems(-0.125)).child(
                     Icon::new(name).size(icon).color(rest.text).opacity(icon_opacity).group_color(GROUP, hover.text),
                 )
             }))

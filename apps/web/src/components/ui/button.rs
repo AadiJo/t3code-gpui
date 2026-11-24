@@ -171,7 +171,7 @@ fn size_spec(size: ButtonSize, theme: &AppTheme) -> SizeSpec {
         padding_x: sp(3.) - px(1.),
         gap: sp(2.),
         text: ButtonText::Scale(TextSize::Sm),
-        icon: px(16.),
+        icon: theme.rem(1.),
         radius: r.control,
     };
     let square = |side: f32| SizeSpec { height: sp(side), padding_x: px(0.), ..base };
@@ -184,7 +184,7 @@ fn size_spec(size: ButtonSize, theme: &AppTheme) -> SizeSpec {
             padding_x: sp(2.) - px(1.),
             gap: sp(1.),
             text: ButtonText::Scale(TextSize::Xs),
-            icon: px(14.),
+            icon: theme.rem(0.875),
             ..base
         },
         ButtonSize::Compact => SizeSpec {
@@ -192,7 +192,7 @@ fn size_spec(size: ButtonSize, theme: &AppTheme) -> SizeSpec {
             padding_x: sp(2.) - px(1.),
             gap: sp(1.),
             text: ButtonText::Scale(TextSize::Xs),
-            icon: px(14.),
+            icon: theme.rem(0.875),
             radius: r.md,
             ..base
         },
@@ -201,7 +201,7 @@ fn size_spec(size: ButtonSize, theme: &AppTheme) -> SizeSpec {
             padding_x: sp(1.5) - px(1.),
             gap: sp(1.),
             text: ButtonText::Px(11.),
-            icon: px(12.),
+            icon: theme.rem(0.75),
             radius: r.sm,
             ..base
         },
@@ -210,17 +210,17 @@ fn size_spec(size: ButtonSize, theme: &AppTheme) -> SizeSpec {
             height: sp(10.),
             padding_x: sp(4.) - px(1.),
             text: ButtonText::Scale(TextSize::Base),
-            icon: px(18.),
+            icon: theme.rem(1.125),
             ..base
         },
         ButtonSize::Icon => square(8.),
         ButtonSize::IconSm => square(7.),
         ButtonSize::IconSmPill => SizeSpec { radius: r.full, ..square(7.) },
-        ButtonSize::IconXs => SizeSpec { icon: px(14.), ..square(6.) },
-        ButtonSize::IconMicro => SizeSpec { icon: px(12.), radius: r.sm, ..square(5.) },
-        ButtonSize::IconTiny => SizeSpec { icon: px(12.), ..square(4.) },
+        ButtonSize::IconXs => SizeSpec { icon: theme.rem(0.875), ..square(6.) },
+        ButtonSize::IconMicro => SizeSpec { icon: theme.rem(0.75), radius: r.sm, ..square(5.) },
+        ButtonSize::IconTiny => SizeSpec { icon: theme.rem(0.75), ..square(4.) },
         ButtonSize::IconLg => square(9.),
-        ButtonSize::IconXl => SizeSpec { icon: px(18.), ..square(10.) },
+        ButtonSize::IconXl => SizeSpec { icon: theme.rem(1.125), ..square(10.) },
     }
 }
 
@@ -508,7 +508,7 @@ impl RenderOnce for Button {
         }
         let ring = focus_ring_inset(theme, BORDER);
         let text_weight = weight::MEDIUM;
-        let icon_margin = if self.size.is_icon() { px(0.) } else { px(-2.) };
+        let icon_margin = if self.size.is_icon() { px(0.) } else { theme.rem(-0.125) };
         let icon = |name: IconSource, size: Option<IconSize>| {
             div().mx(icon_margin).child(
                 Icon::new(name)

@@ -34,6 +34,9 @@ pub fn ui_font_family() -> SharedString {
 /// The mono stack, in the order the browser tries it.
 const MONO_STACK: [&str; 6] = ["SF Mono", "SFMono-Regular", "Menlo", "Consolas", "Liberation Mono", "DejaVu Sans Mono"];
 
+/// Every installed family name, read once by [`load_fonts`].
+static INSTALLED: std::sync::OnceLock<std::collections::HashSet<String>> = std::sync::OnceLock::new();
+
 /// The first family of [`MONO_STACK`] that is installed, set by [`load_fonts`].
 static MONO_FAMILY: std::sync::OnceLock<SharedString> = std::sync::OnceLock::new();
 
@@ -100,15 +103,22 @@ static FAMILY_OVERRIDES: RwLock<ResolvedFamilies> =
 /// stripped, empty entries dropped), then the default family and its fallbacks.
 fn resolve(custom: Option<SharedString>, family: SharedString, fallbacks: &FontFallbacks) -> Resolved {
     let custom = custom?;
-    let mut names = custom
+    let mut list: Vec<String> = custom
         .split(',')
         .map(|name| name.trim().trim_matches(['"', '\'']).trim())
         .filter(|name| !name.is_empty())
-        .map(str::to_owned);
-    let first = names.next()?;
-    let mut list: Vec<String> = names.collect();
+        .map(str::to_owned)
+        .collect();
+    if list.is_empty() {
+        return None;
+    }
     list.push(family.to_string());
     list.extend(fallbacks.fallback_list().iter().cloned());
+    // The browser skips a family that is not installed; GPUI would draw a missing primary
+    // family in its default face, so the first installed one leads.
+    let installed = INSTALLED.get();
+    let lead = list.iter().position(|name| installed.is_none_or(|set| set.contains(name.as_str())))?;
+    let first = list.remove(lead);
     Some((first.into(), FontFallbacks::from_fonts(list)))
 }
 
@@ -163,6 +173,7 @@ pub fn load_fonts(cx: &mut App) -> anyhow::Result<()> {
         .collect::<anyhow::Result<Vec<_>>>()?;
     cx.text_system().add_fonts(fonts)?;
     let installed = cx.text_system().all_font_names();
+    INSTALLED.get_or_init(|| installed.iter().cloned().collect());
     if let Some(family) = MONO_STACK.iter().find(|f| installed.iter().any(|i| i == *f)) {
         MONO_FAMILY.get_or_init(|| SharedString::new_static(family));
     }

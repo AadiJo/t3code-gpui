@@ -54,9 +54,10 @@ impl TitlebarPlatform {
     }
 
     /// Left padding header content needs while the sidebar is collapsed
-    /// (`--workspace-titlebar-content-left`).
-    pub fn titlebar_content_left(self) -> Pixels {
-        self.controls_left() - px(1.) + TITLEBAR_CONTROL_SIZE + px(12.)
+    /// (`--workspace-titlebar-content-left`): the controls' inset, the 1.75rem toggle and the
+    /// 0.75rem gap, at `rem`.
+    pub fn titlebar_content_left(self, rem: Pixels) -> Pixels {
+        self.controls_left() - px(1.) + rem * 1.75 + rem * 0.75
     }
 }
 
@@ -109,6 +110,8 @@ pub struct AppSidebarLayout {
     right_motion: PanelTransition,
     /// The sidebar's drawn open fraction, kept for the header inset.
     sidebar_fraction: f32,
+    /// The Interface font size the titlebar's rem lengths follow.
+    rem: Pixels,
     /// A fullscreen macOS window has no traffic lights, so its controls use
     /// the default inset (`isMacosDesktop && !isWindowFullscreen`).
     fullscreen: bool,
@@ -150,6 +153,7 @@ impl AppSidebarLayout {
             sidebar_motion: PanelTransition::new(true),
             right_motion: PanelTransition::new(false),
             sidebar_fraction: 1.,
+            rem: px(16.),
             fullscreen: false,
             resizing: None,
             drag_pending: false,
@@ -174,7 +178,7 @@ impl AppSidebarLayout {
     fn sync_sidebar_chrome(&self, cx: &mut Context<Self>) {
         let (height, inset) = (
             self.platform.topbar_height(),
-            self.controls_platform().titlebar_content_left(),
+            self.controls_platform().titlebar_content_left(self.rem),
         );
         self.sidebar
             .update(cx, |sidebar, cx| sidebar.set_chrome_metrics(height, inset, cx));
@@ -243,6 +247,14 @@ impl AppSidebarLayout {
         self.right_width
     }
 
+    /// Sets the right panel's width (a thread's saved width); the next layout clamps it.
+    pub fn set_right_panel_width(&mut self, width: Pixels, cx: &mut Context<Self>) {
+        if self.right_width != width {
+            self.right_width = width;
+            cx.notify();
+        }
+    }
+
     /// Restores saved widths and the sidebar's open state.
     pub fn restore(&mut self, sidebar_open: bool, sidebar_width: Pixels, right_width: Pixels, cx: &mut Context<Self>) {
         self.sidebar_open = sidebar_open;
@@ -261,7 +273,7 @@ impl AppSidebarLayout {
     /// Leading inset of the right panel's tab row: it clears the floating
     /// sidebar toggle while maximized.
     pub fn right_panel_leading_inset(&self) -> Pixels {
-        if self.right_maximized { self.controls_platform().titlebar_content_left() } else { px(0.) }
+        if self.right_maximized { self.controls_platform().titlebar_content_left(self.rem) } else { px(0.) }
     }
 
     fn press(&mut self, toggle: PanelToggle, cx: &mut Context<Self>) {
@@ -315,9 +327,9 @@ impl AppSidebarLayout {
     /// Eases with the sidebar's transition (`transition-[padding-left]`).
     pub fn header_content_left(&self) -> Pixels {
         if self.sheet_mode {
-            self.controls_platform().titlebar_content_left()
+            self.controls_platform().titlebar_content_left(self.rem)
         } else {
-            self.controls_platform().titlebar_content_left() * (1. - self.sidebar_fraction)
+            self.controls_platform().titlebar_content_left(self.rem) * (1. - self.sidebar_fraction)
         }
     }
 
@@ -400,7 +412,7 @@ impl AppSidebarLayout {
         if self.sheet_mode { px(0.) } else { self.sidebar_width * self.sidebar_fraction }
     }
 
-    /// One 28x28 ghost titlebar toggle (fork: gray icon, no pressed fill unless `pressed`).
+    /// One 1.75rem ghost titlebar toggle (fork: gray icon, no pressed fill unless `pressed`).
     fn titlebar_toggle(
         &self,
         id: &'static str,
@@ -413,7 +425,7 @@ impl AppSidebarLayout {
         div()
             .id(id)
             .occlude()
-            .size(TITLEBAR_CONTROL_SIZE)
+            .size(colors.s(TITLEBAR_CONTROL_SIZE))
             .flex()
             .flex_none()
             .items_center()
@@ -422,7 +434,7 @@ impl AppSidebarLayout {
             .cursor_pointer()
             .when(pressed, |d| d.bg(colors.accent))
             .hover(move |s| s.bg(hover))
-            .child(Icon::new(glyph).size(IconSize::Custom(px(16.))).color(colors.titlebar_icon))
+            .child(Icon::new(glyph).size(IconSize::Custom(colors.r(16.))).color(colors.titlebar_icon))
             .tooltip(tooltip(label.into()))
     }
 
@@ -526,6 +538,11 @@ fn placeholder(label: &'static str, colors: &ShellColors) -> Div {
 impl Render for AppSidebarLayout {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let colors = ShellColors::from_theme(cx.app_theme());
+        let rem = px(cx.app_theme().fonts.interface);
+        if rem != self.rem {
+            self.rem = rem;
+            self.sync_sidebar_chrome(cx);
+        }
         let viewport = window.viewport_size();
         let topbar = self.platform.topbar_height();
         // `md` breakpoint (`sidebar.tsx:110`): the sheet starts closed each time.

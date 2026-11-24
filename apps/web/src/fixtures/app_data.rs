@@ -24,7 +24,7 @@ use crate::components::git_actions_control::GitActionsProps;
 use crate::components::git_actions_control_fixture::{FixtureGitSource, fixture_status};
 use crate::components::right_panel_tabs::{TerminalBackends, Workspace};
 use crate::components::sidebar::context_menu::MenuCommand;
-use crate::components::sidebar::model::{ProjectRef, SidebarSnapshot, ThreadKey};
+use crate::components::sidebar::model::{ProjectRef, SidebarDraft, SidebarSnapshot, ThreadKey};
 use crate::composer_draft_store::{ComposerDraftKey, ComposerDraftStore, InMemoryDraftStore};
 use crate::diff_panel_store::DiffPanelSelection;
 use crate::file_source::{DirectoryFiles, SharedWorkspaceFiles};
@@ -128,6 +128,14 @@ impl AppData for FixtureData {
 
     fn create_draft(&self, project: Option<ProjectRef>, cx: &mut App) -> DraftId {
         self.store.update(cx, |store, _| store.create_draft(project))
+    }
+
+    fn drafts(&self, cx: &App) -> Vec<SidebarDraft> {
+        self.store.read(cx).sidebar_drafts().to_vec()
+    }
+
+    fn discard_draft_session(&self, id: &DraftId, cx: &mut App) {
+        self.store.update(cx, |store, _| store.discard_draft(id));
     }
 
     fn composer_state(&self, view: &ThreadView, base: &ComposerState, cx: &mut App) -> ComposerState {

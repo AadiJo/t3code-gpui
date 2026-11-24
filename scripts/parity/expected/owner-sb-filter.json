@@ -1,0 +1,242 @@
+{
+ "default": {
+  "popup left/right edges": {
+   "start": "#1d1919",
+   "edges": [
+    {
+     "at": 169.0,
+     "color": "#222021"
+    },
+    {
+     "at": 170.0,
+     "color": "#222021"
+    },
+    {
+     "at": 244.5,
+     "color": "#1b1a1b"
+    },
+    {
+     "at": 438.0,
+     "color": "#101011"
+    },
+    {
+     "at": 439.0,
+     "color": "#101011"
+    }
+   ]
+  },
+  "popup top/bottom": {
+   "start": "#131314",
+   "edges": [
+    {
+     "at": 91.5,
+     "color": "#171719"
+    },
+    {
+     "at": 92.5,
+     "color": "#171719"
+    },
+    {
+     "at": 130.5,
+     "color": "#171719"
+    },
+    {
+     "at": 131.5,
+     "color": "#171719"
+    },
+    {
+     "at": 136.5,
+     "color": "#29292b"
+    },
+    {
+     "at": 166.5,
+     "color": "#171719"
+    },
+    {
+     "at": 179.0,
+     "color": "#58585a"
+    },
+    {
+     "at": 182.0,
+     "color": "#171719"
+    },
+    {
+     "at": 185.5,
+     "color": "#171719"
+    },
+    {
+     "at": 320.5,
+     "color": "#0c0c0d"
+    },
+    {
+     "at": 321.5,
+     "color": "#0c0c0d"
+    }
+   ],
+   "vertical": true
+  },
+  "search icon": {
+   "top": 108.0,
+   "left": 182.5,
+   "bottom": 120.0,
+   "right": 194.5,
+   "color": "#737272",
+   "bg": "#1e1c1d"
+  },
+  "search placeholder": {
+   "top": 108.5,
+   "left": 200.5,
+   "bottom": 121.0,
+   "right": 308.0,
+   "color": "#676767",
+   "bg": "#171719"
+  },
+  "highlighted row fill": {
+   "color": "#29292b"
+  },
+  "all projects label": {
+   "top": 146.5,
+   "left": 204.0,
+   "bottom": 159.5,
+   "right": 272.5,
+   "color": "#e9e9ea",
+   "bg": "#2a2a2b"
+  },
+  "row 2 label": {
+   "top": 176.5,
+   "left": 204.5,
+   "bottom": 189.5,
+   "right": 303.0,
+   "color": "#e8e8e8",
+   "bg": "#171719"
+  },
+  "row 6 label": {
+   "top": 296.5,
+   "left": 204.5,
+   "bottom": 312.0,
+   "right": 231.5,
+   "color": "#e8e8e8",
+   "bg": "#28282a"
+  }
+ },
+ "owner": {
+  "popup left/right edges": {
+   "start": "#1d1919",
+   "edges": [
+    {
+     "at": 169.0,
+     "color": "#222021"
+    },
+    {
+     "at": 170.0,
+     "color": "#222021"
+    },
+    {
+     "at": 244.5,
+     "color": "#1b1a1b"
+    },
+    {
+     "at": 438.0,
+     "color": "#101011"
+    },
+    {
+     "at": 439.0,
+     "color": "#101011"
+    }
+   ]
+  },
+  "popup top/bottom": {
+   "start": "#131314",
+   "edges": [
+    {
+     "at": 91.5,
+     "color": "#171719"
+    },
+    {
+     "at": 92.5,
+     "color": "#171719"
+    },
+    {
+     "at": 130.5,
+     "color": "#171719"
+    },
+    {
+     "at": 131.5,
+     "color": "#171719"
+    },
+    {
+     "at": 136.5,
+     "color": "#29292b"
+    },
+    {
+     "at": 166.5,
+     "color": "#171719"
+    },
+    {
+     "at": 179.0,
+     "color": "#58585a"
+    },
+    {
+     "at": 182.0,
+     "color": "#171719"
+    },
+    {
+     "at": 185.5,
+     "color": "#171719"
+    },
+    {
+     "at": 320.5,
+     "color": "#0c0c0d"
+    },
+    {
+     "at": 321.5,
+     "color": "#0c0c0d"
+    }
+   ],
+   "vertical": true
+  },
+  "search icon": {
+   "top": 108.0,
+   "left": 182.5,
+   "bottom": 120.0,
+   "right": 194.5,
+   "color": "#737272",
+   "bg": "#1e1c1d"
+  },
+  "search placeholder": {
+   "top": 108.5,
+   "left": 200.5,
+   "bottom": 121.0,
+   "right": 308.0,
+   "color": "#676767",
+   "bg": "#171719"
+  },
+  "highlighted row fill": {
+   "color": "#29292b"
+  },
+  "all projects label": {
+   "top": 146.5,
+   "left": 204.0,
+   "bottom": 159.5,
+   "right": 272.5,
+   "color": "#e9e9ea",
+   "bg": "#2a2a2b"
+  },
+  "row 2 label": {
+   "top": 176.5,
+   "left": 204.5,
+   "bottom": 189.5,
+   "right": 303.0,
+   "color": "#e8e8e8",
+   "bg": "#171719"
+  },
+  "row 6 label": {
+   "top": 296.5,
+   "left": 204.5,
+   "bottom": 312.0,
+   "right": 231.5,
+   "color": "#e8e8e8",
+   "bg": "#28282a"
+  }
+ }
+}

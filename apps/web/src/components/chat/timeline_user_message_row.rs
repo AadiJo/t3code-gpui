@@ -4,7 +4,7 @@
 
 use crate::components::icons::{Icon, IconName, IconSize};
 use gpui_kit::base::TestSupportExt as _;
-use gpui_kit::{
+use gpui_kit::{rems, 
     AnyElement, Context, InteractiveElement as _, IntoElement, ParentElement as _, StatefulInteractiveElement as _,
     Styled as _, Window, div, img, linear_color_stop, linear_gradient, px, relative,
 };
@@ -23,20 +23,20 @@ use crate::{
 };
 
 /// Bubble: `max-w-[80%] rounded-2xl p-3`; grouped corners tighten to 6px.
-const BUBBLE_RADIUS: gpui_kit::Pixels = px(16.);
-const BUBBLE_GROUPED_RADIUS: gpui_kit::Pixels = px(6.);
-const BUBBLE_PADDING: gpui_kit::Pixels = px(12.);
+const BUBBLE_RADIUS: gpui_kit::Rems = gpui_kit::rems(1.0);
+const BUBBLE_GROUPED_RADIUS: gpui_kit::Rems = gpui_kit::rems(0.375);
+const BUBBLE_PADDING: gpui_kit::Rems = gpui_kit::rems(0.75);
 const BUBBLE_MAX_WIDTH: f32 = 0.8;
 /// Long messages fold at `2 × 11rem` and clip to `max-h-44` with a 1.75rem fade.
 const FOLD_THRESHOLD: gpui_kit::Pixels = px(352.);
-const FOLD_CLIP: gpui_kit::Pixels = px(176.);
-const FOLD_FADE: gpui_kit::Pixels = px(28.);
+const FOLD_CLIP: gpui_kit::Rems = gpui_kit::rems(11.0);
+const FOLD_FADE: gpui_kit::Rems = gpui_kit::rems(1.75);
 /// Characters per wrapped line in a full-width bubble, for the fold estimate.
 const BUBBLE_CHARS_PER_LINE: f32 = 72.;
 /// Images inside a text bubble: two columns, `max-w-[210px]`, 4:3, radius 8px.
 const INLINE_MEDIA_WIDTH: gpui_kit::Pixels = px(210.);
 /// A lone image without text: `h-48`, radius 16px.
-const LONE_IMAGE_HEIGHT: gpui_kit::Pixels = px(192.);
+const LONE_IMAGE_HEIGHT: gpui_kit::Rems = gpui_kit::rems(12.0);
 
 impl MessagesTimeline {
     /// A message from another agent (`FoldedMessageHeader`): a bubble holding one
@@ -64,14 +64,14 @@ impl MessagesTimeline {
             .w_full()
             .min_w_0()
             .items_center()
-            .gap(px(6.))
-            .px(px(12.))
-            .py(px(8.))
+            .gap(rems(0.375))
+            .px(rems(0.75))
+            .py(rems(0.5))
             .rounded(BUBBLE_RADIUS)
             .cursor_pointer()
-            .text_size(px(14.))
-            .line_height(px(20.))
-            .child(Icon::new(IconName::MessagesSquare).size(IconSize::Custom(px(16.))).color(muted).stroke(2.))
+            .text_size(rems(0.875))
+            .line_height(rems(1.25))
+            .child(Icon::new(IconName::MessagesSquare).size(IconSize::Custom(colors.r(px(16.)))).color(muted).stroke(2.))
             .child({
                 let label = div().flex_none().text_color(muted).child(label);
                 // A thread title truncates at half the row; the generic label never does.
@@ -80,7 +80,7 @@ impl MessagesTimeline {
             .child(div().flex_1().min_w_0().truncate().child(summary))
             .child(
                 Icon::new(if expanded { IconName::ChevronDown } else { IconName::ChevronRight })
-                    .size(IconSize::Custom(px(14.)))
+                    .size(IconSize::Sm)
                     .color(muted),
             )
             .on_click(cx.listener(move |this, _, _, cx| this.toggle_message_fold(id.clone(), cx)))
@@ -110,7 +110,7 @@ impl MessagesTimeline {
             };
             let markdown = render_markdown(&view, window, cx);
             bubble = bubble.w(relative(BUBBLE_MAX_WIDTH)).child(
-                div().id(("agent-body", key)).px(px(12.)).pb(px(12.)).max_h(px(384.)).overflow_y_scroll().child(markdown),
+                div().id(("agent-body", key)).px(rems(0.75)).pb(rems(0.75)).max_h(rems(24.)).overflow_y_scroll().child(markdown),
             );
         }
         bubble.into_any_element()
@@ -158,9 +158,9 @@ impl MessagesTimeline {
                     .items_center()
                     .gap_1()
                     .text_size(TEXT_XS.size)
-                    .line_height(px(12.))
+                    .line_height(rems(0.75))
                     .text_color(colors.theme.muted_foreground)
-                    .child(Icon::new(IconName::Redo2).size(IconSize::Custom(SMALL_ICON)).color(colors.theme.muted_foreground))
+                    .child(Icon::new(IconName::Redo2).size(IconSize::Custom(colors.r(SMALL_ICON))).color(colors.theme.muted_foreground))
                     .child("Steer"),
             );
         }
@@ -172,7 +172,7 @@ impl MessagesTimeline {
             column = column.child(
                 div().id(("image", key)).cursor_pointer().on_click(open_image(0)).test_support().child(img(images[0].image_source())
                     .h(LONE_IMAGE_HEIGHT)
-                    .min_w(px(96.))
+                    .min_w(rems(6.))
                     .max_w_full()
                     .rounded(BUBBLE_RADIUS)
                     .border_1()
@@ -198,9 +198,9 @@ impl MessagesTimeline {
                     div().mb_2().max_w(INLINE_MEDIA_WIDTH).flex().flex_wrap().gap_2().children(images.iter().enumerate().map(|(index, image)| {
                         div().id(("image", key.wrapping_add(index as u64 + 1))).cursor_pointer().on_click(open_image(index)).test_support().child(
                             img(image.image_source())
-                                .w(px(101.))
-                                .h(px(75.75))
-                                .rounded(px(8.))
+                                .w(rems(6.3125))
+                                .h(rems(4.734375))
+                                .rounded(rems(0.5))
                                 .border_1()
                                 .border_color(alpha(colors.theme.border, 0.8)),
                         )
@@ -214,10 +214,10 @@ impl MessagesTimeline {
                         .items_center()
                         .gap_2()
                         .py_1()
-                        .text_size(px(14.))
-                        .child(Icon::new(IconName::FileText).size(IconSize::Custom(px(16.))).color(colors.theme.muted_foreground))
+                        .text_size(rems(0.875))
+                        .child(Icon::new(IconName::FileText).size(IconSize::Md).color(colors.theme.muted_foreground))
                         .child(div().flex_1().truncate().child(file.name.clone()))
-                        .child(Icon::new(IconName::Eye).size(IconSize::Custom(px(16.))).color(colors.theme.muted_foreground).stroke(2.))
+                        .child(Icon::new(IconName::Eye).size(IconSize::Custom(colors.r(px(16.)))).color(colors.theme.muted_foreground).stroke(2.))
                 })));
             }
             if has_text {
@@ -264,7 +264,7 @@ impl MessagesTimeline {
                 if foldable {
                     let id = message.id.0.clone();
                     bubble = bubble.child(
-                        div().mt(px(6.)).ml(px(-4.)).child(
+                        div().mt(rems(0.375)).ml(rems(-0.25)).child(
                             xs_button(
                                 ("fold", key),
                                 None,
@@ -294,7 +294,7 @@ impl MessagesTimeline {
             .max_w(relative(BUBBLE_MAX_WIDTH))
             .justify_end()
             .items_center()
-            .gap(px(2.))
+            .gap(rems(0.125))
             .pr_1()
             .text_size(TEXT_XS.size)
             .opacity(0.)

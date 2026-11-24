@@ -49,7 +49,8 @@ pub struct ShortcutModifierStore {
     jump_hints: bool,
 }
 
-struct GlobalStore(Entity<ShortcutModifierStore>);
+/// The global holding the shared store.
+pub struct GlobalStore(Entity<ShortcutModifierStore>);
 
 impl Global for GlobalStore {}
 

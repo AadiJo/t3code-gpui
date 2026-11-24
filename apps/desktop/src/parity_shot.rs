@@ -7,7 +7,9 @@
 // owner profile instead (parity_mac.rs); `--list` and `--list-mac` print the scene names.
 // The owner scenes read the owner's client settings from the JSON file named
 // by PARITY_CLIENT_SETTINGS (an Electron `client-settings.json`) and render at
-// the size in their table; without that variable they are skipped.
+// the size in their table; without that variable they are skipped. With it and
+// PARITY_AT_OWNER=1, every shared scene also renders at 1710x1074 with those
+// settings as `<scene>-mac` (and at 1100x780 as `<scene>-mac1100`).
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -18,6 +20,7 @@ use gpui_kit::*;
 use t3code_client_runtime::platform::{ClientPresentation, FileSecretStore};
 use t3code_web::app_root::{AppRootOptions, DataSource, WindowRoot};
 use t3code_web::components::app_sidebar_layout::TitlebarPlatform;
+use t3code_web::components::sidebar::Sidebar;
 use t3code_web::connection::{ConnectionRuntime, RuntimeConfig};
 use t3code_web::desktop_notifications::{DesktopNotification, DesktopNotificationKind, NotificationInbox};
 use t3code_web::fixtures::FixtureStore;
@@ -58,8 +61,18 @@ enum Step {
     ServerPages,
     /// Lets background work (a shell) run before the next step.
     Wait(u64),
+    /// Puts the sidebar in a state no single input reaches (shelves open).
+    Sidebar(fn(&mut Sidebar, &mut Window, &mut Context<Sidebar>)),
+    /// Holds a modifier (`cmd` on macOS, `ctrl` elsewhere) without a key.
+    HoldModifier,
+    /// Presses the left button at a point and drags it to another in ten moves, without releasing.
+    Drag(f32, f32, f32, f32),
+    /// Continues a [`Step::Drag`] (button still held) to another point.
+    DragOn(f32, f32, f32, f32),
     /// Changes app state directly (a setting the capture turned on).
     Run(fn(&mut App)),
+    /// Opens the thread details card unless it already shows (a wide canvas docks it open).
+    OpenDetails,
 }
 
 /// A reference view and how to reach it.
@@ -165,19 +178,21 @@ struct Profile {
     size: (f32, f32),
     /// The owner's settings file, applied instead of the fixed 45% glass.
     owner: Option<&'static std::path::Path>,
+    /// Renders the owner's sidebar fixture (`OWNER_SIDEBAR_SCENES`) instead of the reference store.
+    owner_sidebar: bool,
 }
 
-const SHARED: Profile = Profile { size: (1100., 780.), owner: None };
+const SHARED: Profile = Profile { size: (1100., 780.), owner: None, owner_sidebar: false };
 
 /// Scenes captured with the owner's real settings (interface 15, glass 40,
 /// contrast 95). Each is rendered at 1100x780 and at the owner's 1710x1074
 /// (`-wide`); the wide one's steps are the same, so they find their targets by id.
 const OWNER_SCENES: &[Scene] = &[
     Scene { name: "details", reference: "details", light: false, steps: DETAILS },
-    Scene { name: "details-open-in-menu", reference: "open-in-editor-menu", light: false, steps: &[Step::Action(|| Box::new(ToggleThreadPanel)), Step::Wait(300), Step::ClickId("open-in-menu-trigger")] },
-    Scene { name: "details-git-menu", reference: "git-menu", light: false, steps: &[Step::Action(|| Box::new(ToggleThreadPanel)), Step::Wait(300), Step::ClickId("git-menu-trigger")] },
-    Scene { name: "details-branch-picker", reference: "branch-picker", light: false, steps: &[Step::Action(|| Box::new(ToggleThreadPanel)), Step::Wait(300), Step::ClickId("branch-select")] },
-    Scene { name: "details-items-menu", reference: "details-items-menu", light: false, steps: &[Step::Action(|| Box::new(ToggleThreadPanel)), Step::Wait(300), Step::RightClickId("thread-details-card")] },
+    Scene { name: "details-open-in-menu", reference: "open-in-editor-menu", light: false, steps: &[Step::OpenDetails, Step::Wait(300), Step::ClickId("open-in-menu-trigger")] },
+    Scene { name: "details-git-menu", reference: "git-menu", light: false, steps: &[Step::OpenDetails, Step::Wait(300), Step::ClickId("git-menu-trigger")] },
+    Scene { name: "details-branch-picker", reference: "branch-picker", light: false, steps: &[Step::OpenDetails, Step::Wait(300), Step::ClickId("branch-select")] },
+    Scene { name: "details-items-menu", reference: "details-items-menu", light: false, steps: &[Step::OpenDetails, Step::Wait(300), Step::RightClickId("thread-details-card")] },
     Scene { name: "palette-root", reference: "palette-root", light: false, steps: &[Step::Action(|| Box::new(ToggleCommandPalette)), Step::Wait(200)] },
     Scene { name: "palette-query-sync", reference: "palette-query-sync", light: false, steps: &[Step::Action(|| Box::new(ToggleCommandPalette)), Step::Type("sync"), Step::Wait(400)] },
     Scene { name: "palette-messages", reference: "palette-messages", light: false, steps: &[Step::Action(|| Box::new(ToggleCommandPalette)), Step::Type("reconnect"), Step::Wait(600)] },
@@ -187,7 +202,7 @@ const OWNER_SCENES: &[Scene] = &[
     Scene { name: "palette-empty", reference: "palette-empty", light: false, steps: &[Step::Action(|| Box::new(ToggleCommandPalette)), Step::Type("zzqpv"), Step::Wait(300)] },
 ];
 
-const DETAILS: &[Step] = &[Step::Action(|| Box::new(ToggleThreadPanel)), Step::Wait(300)];
+const DETAILS: &[Step] = &[Step::OpenDetails, Step::Wait(300)];
 
 /// Views the app window cannot reach yet (their routes are not mounted in
 /// `AppRoot`), captured from their registered scenes instead: (image name, scene).
@@ -227,6 +242,37 @@ fn render_scene_view(name: &str, scene: &str, out: &std::path::Path) -> anyhow::
     println!("{} <- scene {scene}", file.display());
     Ok(())
 }
+
+/// The owner-configuration sidebar views: the owner's client settings
+/// (`PARITY_CLIENT_SETTINGS`) on `sidebar::fixtures::owner_snapshot`, at 1100x780 only
+/// (the captures were made at that size).
+const OWNER_THREAD: &str = "/env-local/o-sidebar";
+fn expand_shelves(sidebar: &mut Sidebar, _: &mut Window, cx: &mut Context<Sidebar>) {
+    sidebar.options_mut(cx, |o| {
+        o.working_expanded = true;
+        o.snoozed_expanded = true;
+        o.settled_expanded = true;
+    });
+}
+fn rename_tls(sidebar: &mut Sidebar, window: &mut Window, cx: &mut Context<Sidebar>) {
+    let key = sidebar.snapshot().threads.iter().find(|t| t.title.starts_with("Rotate relay TLS")).map(|t| t.key.clone());
+    if let Some(key) = key {
+        sidebar.start_rename(key, window, cx);
+    }
+}
+const OWNER_SIDEBAR_SCENES: &[Scene] = &[
+    Scene { name: "owner-sb-top", reference: "sb-top", light: false, steps: &[] },
+    Scene { name: "owner-sb-shelves-collapsed", reference: "sb-shelves-collapsed", light: false, steps: &[Step::Wheel(127., 400., -20_000.)] },
+    Scene { name: "owner-sb-shelves-expanded", reference: "sb-shelves-expanded", light: false, steps: &[Step::Sidebar(expand_shelves), Step::Wheel(127., 400., -20_000.), Step::Wheel(127., 400., -20_000.), Step::Wheel(127., 400., -20_000.), Step::Move(127., 715.)] },
+    Scene { name: "owner-sb-thread-menu", reference: "sb-thread-menu", light: false, steps: &[Step::RightClick(127., 520.)] },
+    Scene { name: "owner-sb-draft-menu", reference: "sb-draft-menu", light: false, steps: &[Step::RightClick(127., 213.)] },
+    Scene { name: "owner-sb-draft-hover", reference: "sb-draft-hover", light: false, steps: &[Step::Move(127.5, 213.), Step::Wait(100)] },
+    Scene { name: "owner-sb-rename", reference: "sb-rename", light: false, steps: &[Step::Move(127., 540.), Step::Sidebar(rename_tls), Step::Press("end"), Step::Type(" now")] },
+    Scene { name: "owner-sb-jump-hints", reference: "sb-jump-hints", light: false, steps: &[Step::HoldModifier, Step::Wait(1200)] },
+    Scene { name: "owner-sb-drag", reference: "sb-drag", light: false, steps: &[Step::Drag(107.5, 521.5, 107.5, 381.5), Step::Wait(300)] },
+    Scene { name: "owner-sb-drag-down", reference: "sb-drag-down", light: false, steps: &[Step::Drag(107.5, 521.5, 107.5, 381.5), Step::DragOn(107.5, 381.5, 107.5, 779.), Step::Wait(300)] },
+    Scene { name: "owner-sb-filter", reference: "sb-filter", light: false, steps: &[Step::Click(182., 74.5)] },
+];
 
 /// The reference inbox: the approval and the question, both unread.
 fn reference_inbox() -> Arc<[DesktopNotification]> {
@@ -292,18 +338,34 @@ fn render(scene: &Scene, profile: Profile, file_name: &str, out: &std::path::Pat
         match profile.owner {
             Some(path) => {
                 ClientSettingsStore::import_electron(path, cx)?;
+                if profile.owner_sidebar {
+                    // The capture server's relay-ops project, kept separate by a per-project override.
+                    ClientSettingsStore::update(cx, |s| {
+                        s.sidebar_project_grouping_overrides =
+                            [("env-local:/work/relay-ops".to_string(), t3code_contracts::SidebarProjectGroupingMode::Separate)].into();
+                    });
+                }
                 // The owner's Mac runs in dark appearance; "system" would follow this machine.
                 ThemeStore::set_appearance_mode(if scene.light { ThemeMode::Light } else { ThemeMode::Dark }, cx);
             }
-            None => ThemeSettings::set_glass_opacity(GlassOpacity::new(OWNER_GLASS_OPACITY), cx),
+            None => {
+                ThemeSettings::set_glass_opacity(GlassOpacity::new(OWNER_GLASS_OPACITY), cx);
+                // The reference captures ran with the fork's notification inbox on.
+                ClientSettingsStore::update(cx, |s| s.notification_inbox_enabled = true);
+            }
         }
         anyhow::Ok(())
     })?;
     cx.update(|cx| {
         ConnectionRuntime::init(config, cx)
     })?;
+    let store = if profile.owner_sidebar {
+        FixtureStore::from_sidebar(t3code_web::components::sidebar::fixtures::owner_snapshot())
+    } else {
+        FixtureStore::audit_reference()
+    };
     let options = AppRootOptions {
-        data: DataSource::Fixtures(FixtureStore::audit_reference()),
+        data: DataSource::Fixtures(store),
         platform: TitlebarPlatform::Mac,
         state_dir: StateDir(None),
     };
@@ -322,7 +384,7 @@ fn render(scene: &Scene, profile: Profile, file_name: &str, out: &std::path::Pat
         ThemeSettings::apply_env_overrides(cx);
         let timeline = root.read(cx).thread_view().read(cx).chat().read(cx).timeline().clone();
         timeline.update(cx, |t, _| t.set_now_millis(t3code_web::fixtures::timelines::NOW_MS));
-        root.update(cx, |root, cx| root.navigate(Route::parse(THREAD), cx));
+        root.update(cx, |root, cx| root.navigate(Route::parse(if profile.owner_sidebar { OWNER_THREAD } else { THREAD }), cx));
         NotificationInbox::set_items(reference_inbox(), cx);
         // Settings pages read a connected server's config, as the reference's had.
         if scene.name.starts_with("settings-") && scene.name != "settings-environments" {
@@ -368,8 +430,55 @@ fn render(scene: &Scene, profile: Profile, file_name: &str, out: &std::path::Pat
             Step::Action(action) => {
                 cx.update_window(window, |_, w, cx| w.dispatch_action(action(), cx)).ok();
             }
+            Step::Sidebar(edit) => {
+                let sidebar = cx.update(|cx| root.read(cx).sidebar().clone());
+                cx.update_window(window, |_, w, cx| sidebar.update(cx, |s, cx| edit(s, w, cx))).ok();
+            }
+            Step::Drag(x0, y0, x1, y1) | Step::DragOn(x0, y0, x1, y1) => {
+                let press = matches!(step, Step::Drag(..));
+                cx.update_window(window, |_, w, cx| {
+                    if !press {
+                        return;
+                    }
+                    let at = point(px(*x0), px(*y0));
+                    w.dispatch_event(MouseMoveEvent { position: at, pressed_button: None, modifiers: Modifiers::default() }.to_platform_input(), cx);
+                    w.dispatch_event(
+                        MouseDownEvent { button: MouseButton::Left, position: at, modifiers: Modifiers::default(), click_count: 1, first_mouse: false }
+                            .to_platform_input(),
+                        cx,
+                    );
+                })
+                .ok();
+                // A held drag past an edge keeps auto-scrolling, so DragOn lingers at its end.
+                let moves = if press { 10 } else { 40 };
+                for i in 1..=moves {
+                    let t = (i as f32 / 10.).min(1.);
+                    let at = point(px(x0 + (x1 - x0) * t), px(y0 + (y1 - y0) * t));
+                    cx.update_window(window, |_, w, cx| {
+                        w.dispatch_event(
+                            MouseMoveEvent { position: at, pressed_button: Some(MouseButton::Left), modifiers: Modifiers::default() }.to_platform_input(),
+                            cx,
+                        );
+                    })
+                    .ok();
+                    frame(&mut cx, window);
+                }
+            }
+            Step::HoldModifier => {
+                let modifiers = if cfg!(target_os = "macos") { Modifiers::command() } else { Modifiers::control() };
+                cx.update_window(window, |_, w, cx| {
+                    w.dispatch_event(ModifiersChangedEvent { modifiers, capslock: Default::default() }.to_platform_input(), cx);
+                })
+                .ok();
+            }
             Step::Navigate(route) => cx.update(|cx| root.update(cx, |root, cx| root.navigate(Route::parse(route), cx))),
             Step::Run(run) => cx.update(|cx| run(cx)),
+            Step::OpenDetails => {
+                let open = cx.update(|cx| root.read(cx).thread_view().read(cx).details_open());
+                if !open {
+                    cx.update_window(window, |_, w, cx| w.dispatch_action(Box::new(ToggleThreadPanel), cx)).ok();
+                }
+            }
             Step::ServerPages => cx.update(|cx| {
                 if let Some(settings) = shell.read(cx).settings().cloned() {
                     let (model, _) = t3code_web::scenes::settings_server::fixture_model(cx);
@@ -409,7 +518,8 @@ fn main() -> anyhow::Result<()> {
         }
         Some("--list") => {
             let owner = OWNER_SCENES.iter().flat_map(|s| [s.name.to_owned(), format!("{}-wide", s.name)]);
-            for name in SCENES.iter().map(|s| s.name.to_owned()).chain(SCENE_VIEWS.iter().map(|(n, _)| (*n).to_owned())).chain(owner) {
+            let owner_sidebar = OWNER_SIDEBAR_SCENES.iter().map(|s| s.name.to_owned());
+            for name in SCENES.iter().map(|s| s.name.to_owned()).chain(SCENE_VIEWS.iter().map(|(n, _)| (*n).to_owned())).chain(owner).chain(owner_sidebar) {
                 println!("{name}");
             }
             return Ok(());
@@ -435,15 +545,38 @@ fn main() -> anyhow::Result<()> {
     }
     let owner = std::env::var_os("PARITY_CLIENT_SETTINGS").map(|p| &*Box::leak(PathBuf::from(p).into_boxed_path()));
     match owner {
-        None => eprintln!("PARITY_CLIENT_SETTINGS unset: skipping {} owner scenes", OWNER_SCENES.len()),
+        None => eprintln!(
+            "PARITY_CLIENT_SETTINGS unset: skipping {} owner scenes",
+            OWNER_SCENES.len() * 2 + OWNER_SIDEBAR_SCENES.len()
+        ),
         Some(path) => {
+            // PARITY_AT_OWNER=1: every shared scene again at the owner's 1710x1074 with their
+            // settings (`<scene>-mac`), to measure against the Mac captures.
+            if std::env::var_os("PARITY_AT_OWNER").is_some() {
+                // The owner keeps the inbox off, so its bell is not there to click.
+                // `-mac1100` keeps the scenes' 1100x780 click targets, for views a 1710 window moves.
+                for (suffix, size) in [("-mac", (1710., 1074.)), ("-mac1100", (1100., 780.))] {
+                    for scene in SCENES.iter().filter(|s| wanted(&format!("{}{suffix}", s.name)) && s.name != "sidebar-inbox") {
+                        let profile = Profile { size, owner: Some(path), owner_sidebar: false };
+                        if let Err(error) = render(scene, profile, &format!("{}{suffix}", scene.name), &out, &data) {
+                            eprintln!("FAILED {}{suffix}: {error:#}", scene.name);
+                        }
+                    }
+                }
+            }
+            for scene in OWNER_SIDEBAR_SCENES.iter().filter(|s| wanted(s.name)) {
+                let profile = Profile { size: (1100., 780.), owner: Some(path), owner_sidebar: true };
+                if let Err(error) = render(scene, profile, scene.name, &out, &data) {
+                    eprintln!("FAILED {}: {error:#}", scene.name);
+                }
+            }
             for scene in OWNER_SCENES {
                 for (suffix, size) in [("", (1100., 780.)), ("-wide", (1710., 1074.))] {
                     let name = format!("{}{suffix}", scene.name);
                     if !wanted(&name) {
                         continue;
                     }
-                    if let Err(error) = render(scene, Profile { size, owner: Some(path) }, &name, &out, &data) {
+                    if let Err(error) = render(scene, Profile { size, owner: Some(path), owner_sidebar: false }, &name, &out, &data) {
                         eprintln!("FAILED {name}: {error:#}");
                     }
                 }

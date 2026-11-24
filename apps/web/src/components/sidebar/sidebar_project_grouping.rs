@@ -2,11 +2,15 @@
 //! `buildProjectGroups` half of `client-runtime/state/projectGrouping.ts`:
 //! projects on different servers (or checkouts) of one repository share a group.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use gpui_kit::SharedString;
 
 use super::model::{ProjectGroupingMode, ProjectRef, SidebarProject, TimestampMs};
+
+/// Per-project grouping overrides keyed by [`physical_project_key`]
+/// (`sidebarProjectGroupingOverrides`).
+pub type GroupingOverrides = BTreeMap<String, ProjectGroupingMode>;
 
 /// One sidebar project group (`SidebarProjectSnapshot`).
 #[derive(Clone, Debug)]
@@ -56,10 +60,49 @@ fn fresher(candidate: &SidebarProject, existing: &SidebarProject) -> bool {
     delta > 0 || (delta == 0 && candidate.project_ref.project_id > existing.project_ref.project_id)
 }
 
-/// Groups projects by logical key, in first-seen order.
+/// `deriveProjectGroupLabel`: a title every member shares wins when it was
+/// customised or is not just the repository's name; otherwise the shared
+/// repository display name, the shared repository name, and for a
+/// whole-repository group the representative's repository name.
+fn group_label(key: &str, representative: &SidebarProject, members: &[&SidebarProject]) -> SharedString {
+    fn unique<'a>(values: impl Iterator<Item = Option<&'a SharedString>>) -> Vec<&'a SharedString> {
+        let mut out: Vec<&SharedString> = Vec::new();
+        for value in values.flatten().filter(|v| !v.trim().is_empty()) {
+            if !out.contains(&value) {
+                out.push(value);
+            }
+        }
+        out
+    }
+    let titles = unique(members.iter().map(|m| Some(&m.title)));
+    let display_names = unique(members.iter().map(|m| m.repository_display_name.as_ref()));
+    let repository_names = unique(members.iter().map(|m| m.repository_name.as_ref()));
+    if let [title] = titles[..]
+        && (members.iter().any(|m| m.has_custom_title)
+            || (!display_names.contains(&title) && !repository_names.contains(&title)))
+    {
+        return title.clone();
+    }
+    if let [name] = display_names[..] {
+        return name.clone();
+    }
+    if let [name] = repository_names[..] {
+        return name.clone();
+    }
+    if representative.repository_key.as_deref() == Some(key) {
+        if let Some(name) = representative.repository_display_name.as_ref().or(representative.repository_name.as_ref()) {
+            return name.clone();
+        }
+    }
+    representative.title.clone()
+}
+
+/// Groups projects by logical key, in first-seen order. A project's own
+/// entry in `overrides` replaces `mode` for it.
 pub fn build_project_groups(
     projects: &[SidebarProject],
     mode: ProjectGroupingMode,
+    overrides: &GroupingOverrides,
 ) -> Vec<ProjectGroup> {
     let mut winners: Vec<(String, &SidebarProject)> = Vec::new();
     let mut winner_ix: HashMap<String, usize> = HashMap::new();
@@ -89,7 +132,7 @@ pub fn build_project_groups(
                 .max_by_key(|p| p.updated_at)
                 .unwrap_or(winner)
         };
-        let key = logical_project_key(identity, mode);
+        let key = logical_project_key(identity, overrides.get(physical).copied().unwrap_or(mode));
         logical_by_physical.insert(physical.clone(), key.clone());
         match group_ix.get(&key) {
             Some(&ix) => {
@@ -103,7 +146,7 @@ pub fn build_project_groups(
                 group_ix.insert(key.clone(), groups.len());
                 groups.push(ProjectGroup {
                     key: key.into(),
-                    label: winner.group_label.clone().unwrap_or_else(|| winner.title.clone()),
+                    label: SharedString::default(),
                     workspace_root: winner.workspace_root.clone(),
                     member_refs: Vec::new(),
                     pinned: winner.pinned,
@@ -116,11 +159,27 @@ pub fn build_project_groups(
             }
         }
     }
+    let mut members: Vec<Vec<&SidebarProject>> = vec![Vec::new(); groups.len()];
+    let mut representatives: Vec<Option<&SidebarProject>> = vec![None; groups.len()];
+    for (physical, winner) in &winners {
+        let ix = group_ix[&logical_by_physical[physical]];
+        members[ix].push(winner);
+        representatives[ix].get_or_insert(winner);
+    }
     for project in projects {
         let key = &logical_by_physical[&physical_project_key(project)];
         let group = &mut groups[group_ix[key]];
         if !group.member_refs.contains(&project.project_ref) {
             group.member_refs.push(project.project_ref.clone());
+        }
+    }
+    for (ix, group) in groups.iter_mut().enumerate() {
+        if let Some(representative) = representatives[ix] {
+            // The live layer names groups itself (`group_label`); fixtures derive it here.
+            group.label = representative
+                .group_label
+                .clone()
+                .unwrap_or_else(|| group_label(&group.key, representative, &members[ix]));
         }
     }
     groups

@@ -11,6 +11,7 @@ use crate::components::ui::GlassExt as _;
 use std::sync::Arc;
 
 use gpui_kit::{
+    FocusHandle,
     AnyElement, App, AppContext as _, Context, Anchor, Entity, EventEmitter, Focusable as _, Hsla, IntoElement,
     ParentElement as _, Pixels, Render, SharedString, Styled as _, Subscription, Window, anchored, deferred, div,
     canvas, point, prelude::*, px, relative, TestSupportExt as _,
@@ -182,6 +183,8 @@ pub struct BranchToolbar {
     /// A checkout or create is in flight.
     pending: bool,
     dismissed: DismissPress,
+    /// Where focus returns when the branch picker closes.
+    focus: FocusHandle,
 }
 
 impl EventEmitter<BranchToolbarEvent> for BranchToolbar {}
@@ -242,6 +245,7 @@ impl BranchToolbar {
             dismissed: DismissPress::default(),
             strip_width: None,
             compact: false,
+            focus: cx.focus_handle(),
         };
         if toolbar.refs.is_none() {
             toolbar.load_refs(cx);
@@ -407,17 +411,22 @@ impl BranchToolbar {
         let options = self.picker_options(cx);
         let refs = self.refs().to_vec();
         let picker = cx.new(|cx| BranchPicker::new(refs, value, options, cx));
-        let subscription = cx.subscribe(&picker, |this, _, event: &BranchPickerEvent, cx| match event {
+        // Closing hands focus back to the toolbar (Base UI's `finalFocus`): the
+        // picker's field goes away with it, and the window would otherwise fall
+        // back to the composer, where digit keys type instead of answering a question.
+        let subscription = cx.subscribe_in(&picker, window, |this, _, event: &BranchPickerEvent, window, cx| match event {
             BranchPickerEvent::Dismiss(at) => {
                 if let Some(at) = at {
                     this.dismissed.record(*at);
                 }
-                this.close(cx)
+                this.close(cx);
+                window.focus(&this.focus, cx);
             }
             BranchPickerEvent::StartFromOriginChanged(on) => cx.emit(BranchToolbarEvent::StartFromOriginChanged(*on)),
             BranchPickerEvent::Select(item) => {
                 let item = item.clone();
                 this.close(cx);
+                window.focus(&this.focus, cx);
                 this.select(item, cx);
             }
         });
@@ -962,6 +971,7 @@ impl BranchToolbar {
                 .size_full(),
             )
             .relative()
+            .track_focus(&self.focus)
             .into_any_element()
     }
 
@@ -1075,7 +1085,7 @@ impl BranchToolbar {
             }))
         });
         let picker = self.picker.as_ref().filter(|_| open).map(|(picker, _)| below_row(picker.clone()));
-        div().flex().flex_col().w_full().child(trigger.test_support()).children(picker).into_any_element()
+        div().track_focus(&self.focus).flex().flex_col().w_full().child(trigger.test_support()).children(picker).into_any_element()
     }
 }
 

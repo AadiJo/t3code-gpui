@@ -5,63 +5,54 @@
 //!
 //! The shared UI primitives will own most of this once they exist.
 
-use std::sync::OnceLock;
-
-use gpui_kit::{App, Font, FontFeatures, FontStyle, FontWeight, Hsla, Pixels, Rgba, SharedString, px};
+use gpui_kit::{AbsoluteLength, App, Font, FontFeatures, FontStyle, FontWeight, Hsla, Pixels, Rgba, SharedString, px, rems};
 
 use crate::{
     ActiveAppTheme as _,
     theme_palette::{Appearance, ThemePalette},
 };
 
-/// The interface font (`Inter Variable`, bundled on Linux and Windows).
+/// The interface font (`Inter`, bundled on Linux and Windows).
 pub const SANS_FAMILY: &str = "Inter";
-/// The web client's mono stack after a custom code font (`appearanceFonts.ts:17-18`),
-/// plus the Linux default; the first one installed wins.
-const MONO_STACK: [&str; 6] = ["SF Mono", "SFMono-Regular", "Menlo", "Consolas", "Liberation Mono", "DejaVu Sans Mono"];
-static MONO_FAMILY: OnceLock<SharedString> = OnceLock::new();
 
-/// The code font family resolved against installed fonts.
+/// The code font family, as the Appearance settings resolve it (the owner's custom family included).
 pub fn mono_family() -> SharedString {
-    MONO_FAMILY.get().cloned().unwrap_or_else(|| SharedString::new_static(MONO_STACK[4]))
+    crate::appearance_fonts::mono_font(FontWeight::NORMAL).family
 }
 
-/// A Tailwind type step: font size and line height, in pixels at a 16px root.
+/// A Tailwind type step: font size and line height. Rem steps resolve against the window's
+/// rem (the Interface size); the code step is the Code font size setting.
 #[derive(Clone, Copy, Debug)]
 pub struct TypeStep {
-    pub size: Pixels,
-    pub line_height: Pixels,
+    pub size: AbsoluteLength,
+    pub line_height: AbsoluteLength,
 }
 
-pub const TEXT_3XS: TypeStep = TypeStep { size: px(10.), line_height: px(14.) };
-pub const TEXT_2XS: TypeStep = TypeStep { size: px(11.), line_height: px(16.) };
-pub const TEXT_XS: TypeStep = TypeStep { size: px(12.), line_height: px(16.) };
-pub const TEXT_SM: TypeStep = TypeStep { size: px(14.), line_height: px(20.) };
+const fn step(size: f32, line_height: f32) -> TypeStep {
+    TypeStep { size: AbsoluteLength::Rems(rems(size / 16.)), line_height: AbsoluteLength::Rems(rems(line_height / 16.)) }
+}
+
+pub const TEXT_3XS: TypeStep = step(10., 14.);
+pub const TEXT_2XS: TypeStep = step(11., 16.);
+pub const TEXT_XS: TypeStep = step(12., 16.);
+pub const TEXT_SM: TypeStep = step(14., 20.);
 /// `text-sm leading-relaxed`: chat prose, work-log lines.
-pub const TEXT_SM_RELAXED: TypeStep = TypeStep { size: px(14.), line_height: px(22.75) };
-/// Code blocks: `--font-size-code` 13px with `leading-snug`.
-pub const TEXT_CODE: TypeStep = TypeStep { size: px(13.), line_height: px(17.875) };
+pub const TEXT_SM_RELAXED: TypeStep = step(14., 22.75);
+
+/// Code blocks: `--font-size-code` (the Code font size setting) with `leading-snug`.
+pub fn text_code(cx: &App) -> TypeStep {
+    let size = cx.app_theme().fonts.code;
+    TypeStep { size: px(size).into(), line_height: px(size * 1.375).into() }
+}
 
 /// The interface font at `weight`.
 pub fn sans(weight: FontWeight) -> Font {
-    Font {
-        family: SANS_FAMILY.into(),
-        features: FontFeatures::default(),
-        fallbacks: None,
-        weight,
-        style: FontStyle::Normal,
-    }
+    Font { family: SANS_FAMILY.into(), features: FontFeatures::default(), fallbacks: None, weight, style: FontStyle::Normal }
 }
 
 /// The code font.
 pub fn mono() -> Font {
-    Font {
-        family: mono_family(),
-        features: FontFeatures::default(),
-        fallbacks: None,
-        weight: FontWeight::NORMAL,
-        style: FontStyle::Normal,
-    }
+    crate::appearance_fonts::mono_font(FontWeight::NORMAL)
 }
 
 /// `0xRRGGBB` as a colour.
@@ -97,15 +88,40 @@ pub struct ChatColors {
     pub scrollbar_hover: Hsla,
     /// The composer card's glass at the user's glass opacity.
     pub composer_glass: crate::theme_tokens::Glass,
+    /// The rem against 16px (Interface size / 16): lengths written at a 16px root scale by it.
+    pub rem: f32,
+}
+
+/// The chat lane's widths at the Chat width setting: the message column
+/// (`--chat-content-max-width`: Comfortable 46rem, Wide 72rem, Full the pane) and the
+/// composer (`--chat-composer-max-width`, 2rem wider, never past the pane). `None` is the pane.
+#[derive(Clone, Copy, Debug)]
+pub struct ChatLane {
+    pub content: Option<Pixels>,
+    pub composer: Option<Pixels>,
+}
+
+impl ChatLane {
+    pub fn get(cx: &App) -> Self {
+        use crate::hooks::use_settings::ClientSettingsStore;
+        let rem = cx.app_theme().fonts.interface;
+        let width = cx.has_global::<ClientSettingsStore>().then(|| ClientSettingsStore::get(cx).chat_width);
+        let content = match width {
+            Some(t3code_contracts::ChatWidth::Full) => None,
+            Some(t3code_contracts::ChatWidth::Wide) => Some(px(72. * rem)),
+            _ => Some(px(46. * rem)),
+        };
+        Self { content, composer: content.map(|w| w + px(2. * rem)) }
+    }
 }
 
 impl ChatColors {
+    /// A length the web writes in rem, given at a 16px root.
+    pub fn r(&self, at16: Pixels) -> Pixels {
+        at16 * self.rem
+    }
+
     pub fn get(cx: &App) -> Self {
-        MONO_FAMILY.get_or_init(|| {
-            let installed = cx.text_system().all_font_names();
-            let family = MONO_STACK.iter().find(|f| installed.iter().any(|i| i == *f)).unwrap_or(&MONO_STACK[5]);
-            SharedString::new_static(family)
-        });
         let theme = cx.app_theme();
         let dark = theme.appearance == Appearance::Dark;
         Self {
@@ -122,6 +138,7 @@ impl ChatColors {
             scrollbar: if dark { alpha(rgb_hsla(0xffffff), 0.36) } else { rgb_hsla(0xd9d9d9) },
             scrollbar_hover: if dark { alpha(rgb_hsla(0xffffff), 0.45) } else { rgb_hsla(0xbfbfbf) },
             composer_glass: theme.derived.glass_composer,
+            rem: theme.fonts.interface / 16.,
         }
     }
 

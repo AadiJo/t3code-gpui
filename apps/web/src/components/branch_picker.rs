@@ -9,7 +9,7 @@
 
 use std::ops::Range;
 
-use gpui_kit::{
+use gpui_kit::{rems, 
     App, Context, EntityInputHandler, EventEmitter, FocusHandle, Focusable, IntoElement, KeyBinding,
     ParentElement as _, Pixels, Render, ScrollStrategy, SharedString, Styled as _, UTF16Selection,
     TestSupportExt as _, UniformListScrollHandle, Window, actions, div, prelude::*, px, uniform_list,
@@ -279,7 +279,7 @@ impl BranchPicker {
                 .flex()
                 .min_w_0()
                 .items_center()
-                .gap(px(8.))
+                .gap(rems(0.5))
                 .child(
                     Icon::new(self.options.host_icon.unwrap_or(IconName::GitPullRequestArrow.into()))
                         .size(IconSize::Custom(theme.rem(0.875)))
@@ -323,7 +323,7 @@ impl BranchPicker {
                     .min_w_0()
                     .items_center()
                     .justify_between()
-                    .gap(px(8.))
+                    .gap(rems(0.5))
                     .child(div().flex_1().min_w_0().truncate().child(r.name.clone()))
                     .children(badge.map(|badge| {
                         div()
@@ -416,7 +416,7 @@ impl Render for BranchPicker {
         );
         let list = if count == 0 && offset == 0 {
             div()
-                .p(px(12.))
+                .p(rems(0.75))
                 .text_center()
                 .ui_text(&theme, TextSize::Sm, weight::NORMAL)
                 .text_color(c.muted_foreground)
@@ -444,18 +444,18 @@ impl Render for BranchPicker {
                 .flex()
                 .items_center()
                 .justify_between()
-                .gap(px(12.))
+                .gap(rems(0.75))
                 .border_t_1()
                 .border_color(with_alpha(c.border, 0.6))
-                .px(px(12.))
-                .py(px(8.))
+                .px(rems(0.75))
+                .py(rems(0.5))
                 .ui_text(&theme, TextSize::Xs, weight::MEDIUM)
                 .tooltip(tooltip(t!("Uses the latest commit of the base branch’s tracked remote branch, even if its name differs. Otherwise uses the same-named branch on origin. Uses your local branch if that remote branch is missing.")))
                 .child(
                     div()
                         .flex()
                         .items_center()
-                        .gap(px(6.))
+                        .gap(rems(0.375))
                         .text_color(c.muted_foreground)
                         .child(Icon::new(IconName::RefreshCw).size(IconSize::Xs))
                         .child(t!("Start from remote")),
@@ -469,7 +469,7 @@ impl Render for BranchPicker {
                 }))
         });
         let status_line = |text: SharedString| {
-            div().px(px(12.)).py(px(6.)).ui_text(&theme, TextSize::Xs, weight::NORMAL).text_color(c.muted_foreground).child(text)
+            div().px(rems(0.75)).py(rems(0.375)).ui_text(&theme, TextSize::Xs, weight::NORMAL).text_color(c.muted_foreground).child(text)
         };
         glass_surface(&theme)
             .id("branch-picker")
@@ -483,7 +483,7 @@ impl Render for BranchPicker {
             .on_mouse_down_out(cx.listener(|_, event: &gpui_kit::MouseDownEvent, _, cx| {
                 cx.emit(BranchPickerEvent::Dismiss(Some(event.position)))
             }))
-            .w(self.options.width.unwrap_or(px(320.)))
+            .w(self.options.width.unwrap_or(theme.rem(20.)))
             .overflow_hidden()
             .child(search)
             .children(checkout_row)

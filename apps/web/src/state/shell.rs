@@ -262,6 +262,12 @@ fn map_project(
         workspace_root: SharedString::from(project.workspace_root.clone()),
         repository_key: (logical_key != physical).then(|| SharedString::from(logical_key.to_owned())),
         repository_relative_path: None,
+        repository_display_name: project.repository_identity.as_ref().and_then(|identity| match &identity.origin {
+            Some(origin) => Some(origin.display_name.clone().unwrap_or_else(|| origin.canonical_key.clone()).into()),
+            None => identity.display_name.clone().map(SharedString::from),
+        }),
+        repository_name: project.repository_identity.as_ref().and_then(|identity| identity.name.clone().map(SharedString::from)),
+        has_custom_title: project.has_custom_title.unwrap_or(false),
         created_at: TimestampMs(parse_ms(&project.created_at).unwrap_or_default()),
         updated_at: TimestampMs(parse_ms(&project.updated_at).unwrap_or_default()),
         pinned: project.pinned_at.is_some(),
@@ -519,6 +525,9 @@ impl LiveShell {
             now: TimestampMs(now),
             auto_settle_disabled: Default::default(),
             hover_details: Default::default(),
+            // `AppRoot` gives the sidebar its drafts with `set_drafts`.
+            drafts: Vec::new(),
+            active_draft: None,
             search_content_matches: self.search_matches.clone(),
             snooze_presets: std::sync::Arc::new(snooze_presets),
         };

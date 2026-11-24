@@ -30,10 +30,7 @@ use crate::model_selection::{
     display_model_name,
 };
 
-/// Row height in the virtualized list: a 32px option (`py-1` around the
-/// 24px icon-and-label content) and the list's 2px gap.
-pub const MODEL_ROW_HEIGHT: Pixels = px(34.);
-/// One option's own height.
+/// One option's own height (`py-1` around the 24px icon-and-label content), at a 16px rem.
 const MODEL_OPTION_HEIGHT: Pixels = px(32.);
 const PICKER_CONTEXT: &str = "ModelPicker";
 /// Footer: `py-2` around a 28px control, plus its 1px top border.
@@ -354,17 +351,17 @@ impl ModelPicker {
                 .id(id)
                 .relative()
                 .w_full()
-                .h(px(36.))
+                .h(c.r(px(36.)))
                 .flex()
                 .items_center()
                 .justify_center()
-                .rounded(px(6.))
+                .rounded(c.r(px(6.)))
                 .cursor_pointer()
                 .when(disabled, |el| el.opacity(0.5))
                 .when(!disabled, |el| el.hover(move |s| s.bg(c.row_hover)))
                 .child(content)
                 .when(selected, |el| {
-                    el.child(div().absolute().right(px(0.)).top(px(8.)).w(px(3.)).h(px(20.)).rounded_full().bg(c.primary))
+                    el.child(div().absolute().right(px(0.)).top(c.r(px(8.))).w(c.r(px(3.))).h(c.r(px(20.))).rounded_full().bg(c.primary))
                 })
                 .on_click(cx.listener(move |this, _, _, cx| {
                     if !disabled {
@@ -378,7 +375,7 @@ impl ModelPicker {
                 "picker-rail-favorites".into(),
                 self.tab == PickerTab::Favorites,
                 false,
-                Icon::new(IconName::StarFilled).size(IconSize::Custom(px(20.))).color(c.foreground).into_any_element(),
+                Icon::new(IconName::StarFilled).size(IconSize::Custom(c.r(px(20.)))).color(c.foreground).into_any_element(),
                 PickerTab::Favorites,
                 cx,
             )
@@ -390,11 +387,11 @@ impl ModelPicker {
             let model = (entry.instance_id == self.selection.instance_id).then(|| selected_model.as_ref());
             let mark = ProviderIcon::for_model(&entry.driver_kind, model);
             let content = div()
-                .size(px(24.))
+                .size(c.r(px(24.)))
                 .flex()
                 .items_center()
                 .justify_center()
-                .child(provider_icon(mark, px(20.), &entry.display_name, &c, cx))
+                .child(provider_icon(mark, c.r(px(20.)), &entry.display_name, &c, cx))
                 .into_any_element();
             children.push(
                 button(
@@ -413,10 +410,10 @@ impl ModelPicker {
             .flex_none()
             .h_full()
             .bg(c.muted.opacity(0.3))
-            .p(px(4.))
+            .p(c.r(px(4.)))
             .flex()
             .flex_col()
-            .gap(px(4.))
+            .gap(c.r(px(4.)))
             .children(children)
     }
 
@@ -426,21 +423,22 @@ impl ModelPicker {
         let hovered = self.hovered_row == Some(index);
         let base = div()
             .id(SharedString::from(format!("picker-row-{index}")))
-            .h(MODEL_ROW_HEIGHT)
+            // A rem-tall option and a 2px gap (the Mac capture's rows sit exactly 32px apart at a 15px rem).
+            .h(c.r(MODEL_OPTION_HEIGHT) + px(2.))
             .pb(px(2.))
             .child(
                 div()
-                    .h(MODEL_OPTION_HEIGHT)
-                    .px(px(8.))
+                    .h(c.r(MODEL_OPTION_HEIGHT))
+                    .px(c.r(px(8.)))
                     .flex()
                     .items_center()
-                    .gap(px(8.))
-                    .rounded(px(4.))
+                    .gap(c.r(px(8.)))
+                    .rounded(c.r(px(4.)))
                     .cursor_pointer()
                     .when(highlighted || hovered, |el| el.bg(c.foreground.opacity(0.09)))
                     .child(match row {
                         Row::Legacy { expanded } => div()
-                            .text_size(px(14.))
+                            .text_size(c.r(px(14.)))
                             .text_color(if highlighted { c.foreground } else { c.muted_foreground })
                             .child(if *expanded { "Show less" } else { "Show more" })
                             .into_any_element(),
@@ -472,41 +470,41 @@ impl ModelPicker {
             .flex_1()
             .min_w_0()
             .items_center()
-            .gap(px(8.))
-            .child(provider_icon(mark, px(16.), &item.entry.display_name, c, cx))
+            .gap(c.r(px(8.)))
+            .child(provider_icon(mark, c.r(px(16.)), &item.entry.display_name, c, cx))
             .child(
                 div()
                     .flex()
                     .flex_1()
                     .min_w_0()
                     .items_center()
-                    .gap(px(8.))
+                    .gap(c.r(px(8.)))
                     .child(
                         div()
                             .min_w_0()
                             .overflow_hidden()
                             .whitespace_nowrap()
                             .text_ellipsis()
-                            .text_size(px(14.))
-                            .line_height(px(19.25))
+                            .text_size(c.r(px(14.)))
+                            .line_height(c.r(px(19.25)))
                             .text_color(c.foreground)
                             .child(display_model_name(&item.model, false)),
                     )
-                    .when(selected, |el| el.child(Icon::new(IconName::Check).size(IconSize::Custom(px(14.))).color(c.foreground).stroke(1.8)))
+                    .when(selected, |el| el.child(Icon::new(IconName::Check).size(IconSize::Custom(c.r(px(14.)))).color(c.foreground).stroke(1.8)))
                     .when_some(item.model.sub_provider.clone(), |el, sub| {
-                        el.child(div().min_w_0().overflow_hidden().whitespace_nowrap().text_size(px(12.)).text_color(c.muted_foreground.opacity(0.7)).child(sub))
+                        el.child(div().min_w_0().overflow_hidden().whitespace_nowrap().text_size(c.r(px(12.))).text_color(c.muted_foreground.opacity(0.7)).child(sub))
                     })
                     .when(item.model.is_unavailable, |el| {
                         el.child(
                             div()
-                                .px(px(6.))
-                                .h(px(18.))
+                                .px(c.r(px(6.)))
+                                .h(c.r(px(18.)))
                                 .flex()
                                 .items_center()
-                                .rounded(px(4.))
+                                .rounded(c.r(px(4.)))
                                 .border_1()
                                 .border_color(c.border)
-                                .text_size(px(11.))
+                                .text_size(c.r(px(11.)))
                                 .text_color(c.muted_foreground)
                                 .child("Unavailable"),
                         )
@@ -517,21 +515,21 @@ impl ModelPicker {
                     .flex()
                     .flex_none()
                     .items_center()
-                    .gap(px(6.))
+                    .gap(c.r(px(6.)))
                     .child(
                         div()
                             .id(SharedString::from(format!("picker-star-{index}")))
-                            .size(px(24.))
+                            .size(c.r(px(24.)))
                             .flex()
                             .items_center()
                             .justify_center()
-                            .rounded(px(6.))
+                            .rounded(c.r(px(6.)))
                             .hover(move |s| s.bg(c.row_hover))
                             .when(show_star, |el| {
                                 el.child(if favorite {
-                                    Icon::new(IconName::StarFilled).size(IconSize::Custom(px(12.))).color(c.warning).into_any_element()
+                                    Icon::new(IconName::StarFilled).size(IconSize::Custom(c.r(px(12.)))).color(c.warning).into_any_element()
                                 } else {
-                                    Icon::new(IconName::Star).size(IconSize::Custom(px(12.))).color(c.muted_foreground).into_any_element()
+                                    Icon::new(IconName::Star).size(IconSize::Custom(c.r(px(12.)))).color(c.muted_foreground).into_any_element()
                                 })
                             })
                             .on_click(cx.listener(move |_, _, _, cx| {
@@ -552,7 +550,7 @@ impl ModelPicker {
         let heading: SharedString = descriptor.as_ref().map_or("Effort".into(), |d| d.label.clone());
         let current = self.selection.effort.clone();
         let rows: Vec<AnyElement> = match descriptor {
-            None => vec![div().px(px(8.)).h(px(32.)).flex().items_center().text_size(px(14.)).text_color(c.muted_foreground).child("No options").into_any_element()],
+            None => vec![div().px(c.r(px(8.))).h(c.r(px(32.))).flex().items_center().text_size(c.r(px(14.))).text_color(c.muted_foreground).child("No options").into_any_element()],
             Some(d) => d
                 .options
                 .iter()
@@ -562,23 +560,23 @@ impl ModelPicker {
                     let id = option.id.clone();
                     div()
                         .id(SharedString::from(format!("effort-{i}")))
-                        .h(px(32.))
+                        .h(c.r(px(32.)))
                         .flex_none()
                         .flex()
                         .items_center()
-                        .gap(px(8.))
-                        .px(px(8.))
-                        .rounded(px(4.))
+                        .gap(c.r(px(8.)))
+                        .px(c.r(px(8.)))
+                        .rounded(c.r(px(4.)))
                         .cursor_pointer()
                         .hover(move |s| s.bg(c.row_hover))
-                        .text_size(px(14.))
+                        .text_size(c.r(px(14.)))
                         .text_color(c.foreground)
                         .child(div().flex_1().min_w_0().overflow_hidden().whitespace_nowrap().text_ellipsis().child(option.label.clone()))
                         .map(|el| {
                             if selected {
-                                el.child(Icon::new(IconName::Check).size(IconSize::Custom(px(14.))).color(c.foreground).stroke(1.8))
+                                el.child(Icon::new(IconName::Check).size(IconSize::Custom(c.r(px(14.)))).color(c.foreground).stroke(1.8))
                             } else if option.is_default {
-                                el.child(div().text_size(px(12.)).text_color(c.muted_foreground.opacity(0.7)).child("Default"))
+                                el.child(div().text_size(c.r(px(12.))).text_color(c.muted_foreground.opacity(0.7)).child("Default"))
                             } else {
                                 el
                             }
@@ -602,21 +600,21 @@ impl ModelPicker {
             .border_color(c.border.opacity(0.7))
             .bg(c.muted.opacity(0.4))
             .child(
-                div().flex_none().px(px(12.)).pt(px(10.)).child(
+                div().flex_none().px(c.r(px(12.))).pt(c.r(px(10.))).child(
                     div()
-                        .h(px(33.))
+                        .h(c.r(px(33.)))
                         .flex()
                         .items_center()
-                        .gap(px(8.))
+                        .gap(c.r(px(8.)))
                         .border_b_1()
                         .border_color(c.border.opacity(0.7))
-                        .pb(px(6.))
-                        .text_size(px(14.))
+                        .pb(c.r(px(6.)))
+                        .text_size(c.r(px(14.)))
                         .child(div().text_color(c.muted_foreground).child(heading))
-                        .child(div().ml_auto().min_w_0().overflow_hidden().whitespace_nowrap().text_ellipsis().text_size(px(12.)).text_color(c.muted_foreground).child(label)),
+                        .child(div().ml_auto().min_w_0().overflow_hidden().whitespace_nowrap().text_ellipsis().text_size(c.r(px(12.))).text_color(c.muted_foreground).child(label)),
                 ),
             )
-            .child(div().flex().flex_col().gap(px(2.)).px(px(8.)).pt(px(10.)).pb(px(6.)).children(rows))
+            .child(div().flex().flex_col().gap(c.r(px(2.))).px(c.r(px(8.))).pt(c.r(px(10.))).pb(c.r(px(6.))).children(rows))
     }
 
     fn render_footer(&self, c: &ComposerColors, cx: &mut Context<Self>) -> impl IntoElement {
@@ -625,21 +623,21 @@ impl ModelPicker {
         let segment = |id: SharedString, checked: bool, content: AnyElement| {
             div()
                 .id(id)
-                .h(px(24.))
-                .px(px(8.))
+                .h(c.r(px(24.)))
+                .px(c.r(px(8.)))
                 .flex()
                 .items_center()
-                .gap(px(4.))
-                .rounded(px(6.))
+                .gap(c.r(px(4.)))
+                .rounded(c.r(px(6.)))
                 .cursor_pointer()
-                .text_size(px(12.))
+                .text_size(c.r(px(12.)))
                 .text_color(if checked { c.foreground } else { c.muted_foreground })
                 .when(checked, |el| el.bg(c.input.opacity(0.72)))
                 .child(content)
         };
         let speed = model.as_ref().and_then(|m| m.speed.clone()).map(|speed| {
             let current = self.selection.speed.clone();
-            div().flex().rounded(px(8.)).bg(c.input.opacity(0.4)).p(px(2.)).children(speed.options.into_iter().enumerate().map(|(i, option)| {
+            div().flex().rounded(c.r(px(8.))).bg(c.input.opacity(0.4)).p(c.r(px(2.))).children(speed.options.into_iter().enumerate().map(|(i, option)| {
                 let checked = current.as_ref() == Some(&option.id) || (current.is_none() && option.is_default);
                 let bolt = matches!(option.label.as_ref(), "Fast" | "Ultrafast");
                 let id = option.id.clone();
@@ -649,8 +647,8 @@ impl ModelPicker {
                     div()
                         .flex()
                         .items_center()
-                        .gap(px(4.))
-                        .when(bolt, |el| el.child(Icon::new(IconName::ZapFilled).size(IconSize::Custom(px(12.))).color(if checked { c.foreground } else { c.muted_foreground })))
+                        .gap(c.r(px(4.)))
+                        .when(bolt, |el| el.child(Icon::new(IconName::ZapFilled).size(IconSize::Custom(c.r(px(12.)))).color(if checked { c.foreground } else { c.muted_foreground })))
                         .child(option.label.clone())
                         .into_any_element(),
                 )
@@ -663,11 +661,11 @@ impl ModelPicker {
         });
         let ultracode = model.as_ref().filter(|m| m.ultracode).map(|_| {
             let on = self.selection.ultracode;
-            div().flex().rounded(px(8.)).bg(c.input.opacity(0.4)).p(px(2.)).child(
+            div().flex().rounded(c.r(px(8.))).bg(c.input.opacity(0.4)).p(c.r(px(2.))).child(
                 segment(
                     "ultracode".into(),
                     on,
-                    div().flex().items_center().gap(px(4.)).child(Icon::new(IconName::Workflow).size(IconSize::Custom(px(12.))).color(if on { c.foreground } else { c.muted_foreground })).child("Ultracode").into_any_element(),
+                    div().flex().items_center().gap(c.r(px(4.))).child(Icon::new(IconName::Workflow).size(IconSize::Custom(c.r(px(12.)))).color(if on { c.foreground } else { c.muted_foreground })).child("Ultracode").into_any_element(),
                 )
                 .on_click(cx.listener(move |this, _, _, cx| {
                     this.selection.ultracode = !this.selection.ultracode;
@@ -679,15 +677,15 @@ impl ModelPicker {
         let mode = self.runtime_mode;
         div()
             .flex()
-            .h(FOOTER_HEIGHT)
+            .h(c.r(FOOTER_HEIGHT))
             .flex_none()
             .items_center()
-            .gap(px(8.))
+            .gap(c.r(px(8.)))
             .border_t_1()
             .border_color(c.border.opacity(0.7))
             .bg(c.muted.opacity(0.4))
-            .px(px(12.))
-            .py(px(8.))
+            .px(c.r(px(12.)))
+            .py(c.r(px(8.)))
             .children(speed)
             .children(ultracode)
             .child(
@@ -695,19 +693,19 @@ impl ModelPicker {
                     .id("picker-permissions")
                     .relative()
                     .ml_auto()
-                    .h(px(28.))
-                    .px(px(8.))
+                    .h(c.r(px(28.)))
+                    .px(c.r(px(8.)))
                     .flex()
                     .items_center()
-                    .gap(px(6.))
-                    .rounded(px(6.))
+                    .gap(c.r(px(6.)))
+                    .rounded(c.r(px(6.)))
                     .cursor_pointer()
-                    .text_size(px(12.))
+                    .text_size(c.r(px(12.)))
                     .text_color(c.muted_foreground)
                     .hover(move |s| s.bg(c.row_hover).text_color(c.foreground))
-                    .child(Icon::new(runtime_mode_icon(mode)).size(IconSize::Custom(px(14.))).color(c.muted_foreground).stroke(composer_icon_stroke(runtime_mode_icon(mode))))
+                    .child(Icon::new(runtime_mode_icon(mode)).size(IconSize::Custom(c.r(px(14.)))).color(c.muted_foreground).stroke(composer_icon_stroke(runtime_mode_icon(mode))))
                     .child(mode.label())
-                    .child(Icon::new(IconName::ChevronUp).size(IconSize::Custom(px(12.))).color(c.muted_foreground))
+                    .child(Icon::new(IconName::ChevronUp).size(IconSize::Custom(c.r(px(12.)))).color(c.muted_foreground))
                     .when(self.permissions_open, |d| d.bg(c.row_hover).text_color(c.foreground))
                     .on_click(cx.listener(|this, _, _, cx| {
                         this.permissions_open = !this.permissions_open;
@@ -734,17 +732,17 @@ impl ModelPicker {
                 .id(("permission-mode", i))
                 .flex()
                 .flex_1()
-                .h(px(24.))
+                .h(c.r(px(24.)))
                 .items_center()
                 .justify_center()
                 .cursor_pointer()
-                .when(i == 0, |d| d.rounded_l(px(6.)))
-                .when(last, |d| d.rounded_r(px(6.)))
+                .when(i == 0, |d| d.rounded_l(c.r(px(6.))))
+                .when(last, |d| d.rounded_r(c.r(px(6.))))
                 .when(checked, |d| d.bg(c.input.opacity(0.72)))
                 .when(!checked, |d| d.hover(move |s| s.bg(c.accent)))
                 .child(
                     Icon::new(runtime_mode_icon(mode))
-                        .size(IconSize::Custom(px(14.)))
+                        .size(IconSize::Custom(c.r(px(14.))))
                         .color(if checked { c.foreground } else { c.muted_foreground })
                         .stroke(composer_icon_stroke(runtime_mode_icon(mode))),
                 )
@@ -770,52 +768,52 @@ impl ModelPicker {
             .border_color(c.popup_border)
             .glass(c.popup_background)
             .shadow(popup_shadow(&c))
-            .p(px(4.))
+            .p(c.r(px(4.)))
             .on_mouse_down_out(cx.listener(|this, _, _, cx| {
                 this.permissions_open = false;
                 cx.notify();
             }))
             .child(
                 div()
-                    .w(px(288.))
+                    .w(c.r(px(288.)))
                     .flex()
                     .flex_col()
-                    .gap(px(6.))
-                    .px(px(8.))
-                    .py(px(6.))
+                    .gap(c.r(px(6.)))
+                    .px(c.r(px(8.)))
+                    .py(c.r(px(6.)))
                     .child(
                         div()
-                            .text_size(px(12.))
-                            .line_height(px(16.))
+                            .text_size(c.r(px(12.)))
+                            .line_height(c.r(px(16.)))
                             .font_weight(FontWeight::MEDIUM)
                             .text_color(c.muted_foreground)
                             .child(crate::i18n::t!("Permissions")),
                     )
-                    .child(div().flex().rounded(px(8.)).bg(c.input.opacity(0.4)).p(px(2.)).children(segments))
+                    .child(div().flex().rounded(c.r(px(8.))).bg(c.input.opacity(0.4)).p(c.r(px(2.))).children(segments))
                     .child(
                         div()
                             .flex()
                             .flex_col()
-                            .gap(px(2.))
+                            .gap(c.r(px(2.)))
                             .child(
                                 div()
-                                    .text_size(px(14.))
-                                    .line_height(px(20.))
+                                    .text_size(c.r(px(14.)))
+                                    .line_height(c.r(px(20.)))
                                     .text_color(if shown == current { c.foreground } else { c.muted_foreground })
                                     .child(shown.label()),
                             )
                             .child(
                                 div()
-                                    .min_h(px(32.))
-                                    .text_size(px(12.))
-                                    .line_height(px(16.))
+                                    .min_h(c.r(px(32.)))
+                                    .text_size(c.r(px(12.)))
+                                    .line_height(c.r(px(16.)))
                                     .text_color(c.muted_foreground)
                                     .child(shown.description()),
                             ),
                     ),
             );
         Some(
-            gpui_kit::deferred(div().absolute().bottom_full().right_0().pb(px(4.)).child(panel))
+            gpui_kit::deferred(div().absolute().bottom_full().right_0().pb(c.r(px(4.))).child(panel))
                 .with_priority(3)
                 .into_any_element(),
         )
@@ -825,15 +823,15 @@ impl ModelPicker {
 /// A `Kbd` hint: `h-5 min-w-5 rounded px-1 text-xs font-medium`.
 pub fn kbd(label: impl Into<SharedString>, c: ComposerColors) -> impl IntoElement {
     div()
-        .h(px(20.))
-        .min_w(px(20.))
-        .px(px(4.))
+        .h(c.r(px(20.)))
+        .min_w(c.r(px(20.)))
+        .px(c.r(px(4.)))
         .flex()
         .items_center()
         .justify_center()
-        .rounded(px(4.))
+        .rounded(c.r(px(4.)))
         .bg(c.kbd_background)
-        .text_size(px(12.))
+        .text_size(c.r(px(12.)))
         .font_weight(FontWeight::MEDIUM)
         .text_color(c.muted_foreground)
         .child(label.into())
@@ -870,28 +868,28 @@ impl Render for ModelPicker {
         )
         .track_scroll(&self.scroll)
         .flex_1()
-        .py(px(6.))
-        .px(px(4.));
-        let search = div().flex_none().px(px(12.)).pt(px(10.)).child(
+        .py(c.r(px(6.)))
+        .px(c.r(px(4.)));
+        let search = div().flex_none().px(c.r(px(12.))).pt(c.r(px(10.))).child(
             div()
                 .border_b_1()
                 .border_color(if search_focused { c.ring } else { c.border.opacity(0.7) })
-                .pb(px(6.))
+                .pb(c.r(px(6.)))
                 .relative()
-                .h(px(26.) + px(7.))
+                .h(c.r(px(26.)) + c.r(px(7.)))
                 .flex()
                 .items_center()
-                .child(div().absolute().left(px(0.)).child(Icon::new(IconName::Search).size(IconSize::Custom(px(16.))).color(c.muted_foreground.opacity(0.55))))
+                .child(div().absolute().left(px(0.)).child(Icon::new(IconName::Search).size(IconSize::Custom(c.r(px(16.)))).color(c.muted_foreground.opacity(0.55))))
                 .child(
                     div()
-                        .pl(px(20.))
-                        .h(px(26.))
+                        .pl(c.r(px(20.)))
+                        .h(c.r(px(26.)))
                         .flex()
                         .items_center()
-                        .text_size(px(14.))
+                        .text_size(c.r(px(14.)))
                         .text_color(if query.is_empty() { c.placeholder } else { c.foreground })
                         .child(if query.is_empty() { SharedString::from("Search models...") } else { query.clone().into() })
-                        .when(!query.is_empty(), |el| el.child(div().w(px(1.5)).h(px(17.)).bg(c.foreground))),
+                        .when(!query.is_empty(), |el| el.child(div().w(c.r(px(1.5))).h(c.r(px(17.))).bg(c.foreground))),
                 ),
         );
         div()
@@ -939,7 +937,7 @@ impl Render for ModelPicker {
                                     .child(search)
                                     .map(|el| {
                                         if empty {
-                                            el.child(div().p(px(12.)).text_size(px(12.)).text_color(c.muted_foreground).child(empty_label))
+                                            el.child(div().p(c.r(px(12.))).text_size(c.r(px(12.))).text_color(c.muted_foreground).child(empty_label))
                                         } else {
                                             el.child(list)
                                         }

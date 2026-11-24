@@ -155,7 +155,7 @@ impl From<MenuItem> for MenuEntry {
 #[derive(IntoElement, Clone, Default)]
 pub struct MenuPopup {
     entries: Vec<MenuEntry>,
-    min_width: Option<Pixels>,
+    min_width: Option<gpui_kit::AbsoluteLength>,
     dismiss: Option<Action>,
     context: bool,
 }
@@ -183,8 +183,8 @@ impl MenuPopup {
     }
 
     /// At least this wide; a select's list matches its trigger.
-    pub fn min_width(mut self, width: Pixels) -> Self {
-        self.min_width = Some(width);
+    pub fn min_width(mut self, width: impl Into<gpui_kit::AbsoluteLength>) -> Self {
+        self.min_width = Some(width.into());
         self
     }
 
@@ -225,7 +225,7 @@ fn menu_switch(theme: &AppTheme, on: bool) -> impl IntoElement {
         )
 }
 
-fn render_item(theme: &AppTheme, index: usize, item: MenuItem, dismiss: Option<Action>, context: bool) -> AnyElement {
+fn render_item(theme: &AppTheme, index: usize, item: MenuItem, height: Pixels, dismiss: Option<Action>, context: bool) -> AnyElement {
     let c = &theme.colors;
     let text = if item.destructive {
         c.destructive_foreground()
@@ -245,9 +245,10 @@ fn render_item(theme: &AppTheme, index: usize, item: MenuItem, dismiss: Option<A
         .flex()
         .items_center()
         .gap(theme.sp(2.))
-        .min_h(theme.sp(7.))
+        // `min-h-7 py-1` around one line.
+        .h(height)
+        .flex_none()
         .px(theme.sp(2.))
-        .py(theme.sp(1.))
         .rounded(theme.radii.sm)
         .text_color(text)
         .ui_text(theme, TextSize::Sm, weight::NORMAL)
@@ -258,7 +259,7 @@ fn render_item(theme: &AppTheme, index: usize, item: MenuItem, dismiss: Option<A
         .when(item.disabled, |r| r.opacity(DISABLED_OPACITY));
     let row = if leading_check {
         row.child(div().w(theme.sp(4.)).flex_none().when(item.kind == MenuItemKind::Checkbox(true), |slot| {
-            slot.child(svg().path("icons/ui/menu-check.svg").size(px(16.)).text_color(text))
+            slot.child(svg().path("icons/ui/menu-check.svg").size(theme.sp(4.)).text_color(text))
         }))
     } else {
         // `MenuRadioItem` leaves its icons in the text colour at full opacity.
@@ -329,20 +330,37 @@ impl RenderOnce for MenuPopup {
         let theme = cx.app_theme();
         let c = &theme.colors;
         let dismiss = self.dismiss.clone();
-        let rows = self.entries.into_iter().enumerate().map(|(index, entry)| match entry {
-            MenuEntry::Item(item) => render_item(theme, index, item, dismiss.clone(), self.context),
-            MenuEntry::Label(label) => div()
-                .px(theme.sp(2.))
-                .py(theme.sp(1.5))
-                .ui_text(theme, TextSize::Xs, weight::MEDIUM)
-                .text_color(c.muted_foreground)
-                .child(label)
-                .into_any_element(),
-            MenuEntry::Separator => div().mx(theme.sp(2.)).my(theme.sp(1.)).h(px(1.)).bg(c.border).into_any_element(),
-        });
+        let top = theme.sp(1.);
+        let rows: Vec<AnyElement> = self
+            .entries
+            .into_iter()
+            .enumerate()
+            .map(|(index, entry)| match entry {
+                MenuEntry::Item(item) => render_item(theme, index, item, theme.sp(7.), dismiss.clone(), self.context),
+                // `px-2 py-1.5` around a 1rem line.
+                MenuEntry::Label(label) => div()
+                    .flex()
+                    .items_center()
+                    .flex_none()
+                    .h(theme.sp(1.5) * 2. + theme.rem(1.))
+                    .px(theme.sp(2.))
+                    .ui_text(theme, TextSize::Xs, weight::MEDIUM)
+                    .text_color(c.muted_foreground)
+                    .child(label)
+                    .into_any_element(),
+                MenuEntry::Separator => {
+                    let above = theme.sp(1.);
+                    let below = theme.sp(1.);
+                    div().mx(theme.sp(2.)).mt(above).mb(below).h(px(1.)).flex_none().bg(c.border).into_any_element()
+                }
+            })
+            .collect();
+        let bottom = theme.sp(1.);
         glass_surface(theme)
-            .min_w(self.min_width.unwrap_or(theme.rem(if self.context { 8. } else { 10. })))
-            .p(theme.sp(1.))
+            .min_w(self.min_width.unwrap_or(theme.rem(if self.context { 8. } else { 10. }).into()))
+            .px(theme.sp(1.))
+            .pt(top)
+            .pb(bottom)
             .control_highlight(theme)
             .children(rows)
     }
@@ -399,7 +417,7 @@ impl RenderOnce for ContextMenu {
             let close = open_state.clone();
             let mut popup = (self.menu)(window, cx).on_dismiss(move |_, cx| PopupOpen::set(&close, false, None, cx));
             // The fork's fallback context menu: `min-w-32`, kept 4px inside the window.
-            popup.min_width.get_or_insert(cx.app_theme().rem(8.));
+            popup.min_width.get_or_insert(cx.app_theme().rem(8.).into());
             root = root.child(
                 deferred(
                     anchored()

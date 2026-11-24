@@ -22,6 +22,11 @@ pub struct UiState {
     pub project_expanded_by_id: HashMap<String, bool>,
     pub project_order: Vec<String>,
     pub sidebar_project_scope_keys: Vec<String>,
+    /// The sidebar's Working, Snoozed and Settled shelves are open
+    /// (`t3code:sidebar:{working,snoozed,settled}-expanded`).
+    pub sidebar_working_expanded: bool,
+    pub sidebar_snoozed_expanded: bool,
+    pub sidebar_settled_expanded: bool,
     /// ISO-8601 visit time per scoped thread key.
     pub thread_last_visited_at_by_id: HashMap<String, String>,
     pub thread_changed_files_expanded_by_id: HashMap<String, HashMap<String, bool>>,

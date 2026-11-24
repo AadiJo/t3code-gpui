@@ -1195,6 +1195,7 @@ impl PullRequestDetailPanel {
             this.update(cx, |this, cx| {
                 match action {
                     MarkdownAction::OpenLink(url) => cx.emit(PullRequestDetailEvent::OpenUrl(url)),
+                    MarkdownAction::RunShellCommand(_) => {}
                     MarkdownAction::ToggleDetails(k) => {
                         if !this.markdown_state.open_details.remove(&k) {
                             this.markdown_state.open_details.insert(k);

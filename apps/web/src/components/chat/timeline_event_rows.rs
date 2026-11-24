@@ -7,7 +7,7 @@
 use crate::components::icons::{Icon, IconName, IconSize};
 use crate::components::chat::chat_style::chat_icon_stroke;
 use gpui_kit::base::TestSupportExt as _;
-use gpui_kit::{
+use gpui_kit::{rems, 
     AnyElement, Context, FontWeight, Hsla, InteractiveElement as _, IntoElement, ParentElement as _,
     StatefulInteractiveElement as _, Styled as _, Window, div, linear_color_stop, linear_gradient, px,
 };
@@ -29,11 +29,11 @@ use crate::{
 };
 
 /// Subagent avatar `size-6` with a `size-2` status dot.
-const AVATAR: gpui_kit::Pixels = px(24.);
-const STATUS_DOT: gpui_kit::Pixels = px(8.);
+const AVATAR: gpui_kit::Rems = gpui_kit::rems(1.5);
+const STATUS_DOT: gpui_kit::Rems = gpui_kit::rems(0.5);
 /// Plan card body clips at `max-h-104` with a 6rem fade.
-const PLAN_CLIP: gpui_kit::Pixels = px(416.);
-const PLAN_FADE: gpui_kit::Pixels = px(96.);
+const PLAN_CLIP: gpui_kit::Rems = gpui_kit::rems(26.0);
+const PLAN_FADE: gpui_kit::Rems = gpui_kit::rems(6.0);
 
 impl MessagesTimeline {
     pub(super) fn render_event(
@@ -65,11 +65,11 @@ impl MessagesTimeline {
             .flex()
             .items_center()
             .gap_1()
-            .max_w(px(320.))
+            .max_w(rems(20.))
             .rounded_full()
             .px_2()
             .py_1()
-            .child(Icon::new(glyph).size(IconSize::Custom(SMALL_ICON)).color(colors.theme.muted_foreground).stroke(chat_icon_stroke(glyph)))
+            .child(Icon::new(glyph).size(IconSize::Custom(colors.r(SMALL_ICON))).color(colors.theme.muted_foreground).stroke(chat_icon_stroke(glyph)))
             .child(div().font_weight(FontWeight::MEDIUM).child(divider.label.clone()))
             .children(divider.detail.as_ref().map(|detail| div().opacity(0.7).truncate().child(format!("· {detail}"))));
         if divider.action {
@@ -77,7 +77,7 @@ impl MessagesTimeline {
                 .border_1()
                 .border_color(alpha(colors.theme.border, 0.7))
                 .bg(colors.theme.canvas)
-                .px(px(10.));
+                .px(rems(0.625));
         }
         div()
             .flex()
@@ -101,10 +101,10 @@ impl MessagesTimeline {
             .flex()
             .w_full()
             .items_center()
-            .gap(px(10.))
-            .rounded(px(6.))
+            .gap(rems(0.625))
+            .rounded(rems(0.375))
             .px_2()
-            .py(px(6.))
+            .py(rems(0.375))
             .hover(|s| s.bg(alpha(colors.theme.accent_surface, 0.2)))
             .child(avatar(subagent, &colors))
             .child(
@@ -123,7 +123,7 @@ impl MessagesTimeline {
                     .child(
                         div()
                             .text_size(TEXT_2XS.size)
-                            .line_height(px(17.875))
+                            .line_height(rems(1.117188))
                             .text_color(if failed { colors.destructive() } else { colors.theme.muted_foreground })
                             .truncate()
                             .child(subagent.detail.clone().unwrap_or_else(|| status_label(subagent.status).into())),
@@ -132,7 +132,7 @@ impl MessagesTimeline {
             .children(subagent.elapsed_ms.map(|ms| {
                 div().text_size(TEXT_XS.size).text_color(colors.theme.muted_foreground).child(format_duration(ms))
             }))
-            .child(Icon::new(IconName::ChevronRight).size(IconSize::Custom(px(14.))).color(alpha(colors.theme.muted_foreground, 0.6)))
+            .child(Icon::new(IconName::ChevronRight).size(IconSize::Sm).color(alpha(colors.theme.muted_foreground, 0.6)))
             .into_any_element()
     }
 
@@ -153,16 +153,16 @@ impl MessagesTimeline {
         let header = div()
             .flex()
             .items_center()
-            .gap(px(10.))
+            .gap(rems(0.625))
             .py_2()
-            .pr(px(13.))
+            .pr(rems(0.8125))
             .opacity(if active == 0 && !expanded { 0.55 } else { 1. })
             .child(
                 div().flex().children(subagents.iter().take(3).enumerate().map(|(i, s)| {
-                    div().ml(if i == 0 { px(0.) } else { px(-6.) }).child(avatar(s, &colors))
+                    div().ml(if i == 0 { rems(0.) } else { rems(-0.375) }).child(avatar(s, &colors))
                 })).children((subagents.len() > 3).then(|| {
                     div()
-                        .ml(px(-6.))
+                        .ml(rems(-0.375))
                         .size(AVATAR)
                         .rounded_full()
                         .bg(colors.theme.muted)
@@ -187,7 +187,7 @@ impl MessagesTimeline {
                     )
                     .child(div().text_size(TEXT_3XS.size).text_color(summary_color).child(summary)),
             )
-            .child(Icon::new(if expanded { IconName::ChevronDown } else { IconName::ChevronRight }).size(IconSize::Custom(px(14.))).color(colors.theme.muted_foreground).stroke(chat_icon_stroke(if expanded { IconName::ChevronDown } else { IconName::ChevronRight })));
+            .child(Icon::new(if expanded { IconName::ChevronDown } else { IconName::ChevronRight }).size(IconSize::Custom(colors.r(px(14.)))).color(colors.theme.muted_foreground).stroke(chat_icon_stroke(if expanded { IconName::ChevronDown } else { IconName::ChevronRight })));
         let id = row.id.clone();
         let mut column = div()
             .id(("subagent-group", row.key))
@@ -199,7 +199,7 @@ impl MessagesTimeline {
                 div()
                     .mt_1()
                     .mb_1()
-                    .rounded(px(8.))
+                    .rounded(rems(0.5))
                     .border_1()
                     .border_color(alpha(colors.theme.border, 0.6))
                     .bg(alpha(colors.theme.surface, 0.3))
@@ -235,11 +235,11 @@ impl MessagesTimeline {
         };
         let code = div()
             .id(("approval-detail", key))
-            .max_h(px(160.))
+            .max_h(rems(10.))
             .overflow_y_scroll()
             .font_family(mono().family)
             .text_size(TEXT_XS.size)
-            .line_height(px(20.))
+            .line_height(rems(1.25))
             .text_color(colors.theme.text)
             .child(detail.clone());
         div()
@@ -247,7 +247,7 @@ impl MessagesTimeline {
             .child(work_log_line(Some(tool_icon(glyph, &colors, false)), code.into_any_element(), Vec::new(), &colors))
             .child(
                 div()
-                    .ml(px(30.))
+                    .ml(rems(1.875))
                     .flex()
                     .flex_col()
                     .gap_1()
@@ -260,7 +260,7 @@ impl MessagesTimeline {
                             .flex()
                             .items_center()
                             .gap_1()
-                            .child(Icon::new(IconName::Shield).size(IconSize::Custom(SMALL_ICON)).color(colors.theme.warning))
+                            .child(Icon::new(IconName::Shield).size(IconSize::Custom(colors.r(SMALL_ICON))).color(colors.theme.warning))
                             .child(div().text_color(colors.theme.warning).child("Waiting for approval"))
                             .child(div().text_color(colors.theme.muted_foreground).child("·"))
                             .child(text_button("decline", "Decline", colors.theme.muted_foreground).on_click({
@@ -317,7 +317,7 @@ impl MessagesTimeline {
                     .child(
                         div()
                             .max_w(gpui_kit::relative(0.8))
-                            .rounded(px(16.))
+                            .rounded(rems(1.))
                             .border_1()
                             .border_dashed()
                             .border_color(border)
@@ -332,7 +332,7 @@ impl MessagesTimeline {
                         div()
                             .flex()
                             .items_center()
-                            .gap(px(2.))
+                            .gap(rems(0.125))
                             .pr_1()
                             .text_size(TEXT_XS.size)
                             .text_color(colors.theme.muted_foreground)
@@ -391,7 +391,7 @@ impl MessagesTimeline {
         };
         let card = alpha(colors.theme.surface, 0.7);
         div()
-            .rounded(px(16.))
+            .rounded(rems(1.))
             .border_1()
             .border_color(alpha(colors.theme.border, 0.8))
             .bg(card)
@@ -423,13 +423,13 @@ impl MessagesTimeline {
     pub(super) fn render_worktree_setup(&mut self, setup: &WorktreeSetup) -> AnyElement {
         let colors = self.colors;
         div()
-            .rounded(px(8.))
+            .rounded(rems(0.5))
             .border_1()
             .border_color(alpha(colors.theme.border, 0.6))
             .px_3()
             .py_2()
             .text_size(TEXT_XS.size)
-            .line_height(px(20.))
+            .line_height(rems(1.25))
             .child(
                 div()
                     .font_weight(FontWeight::MEDIUM)
@@ -461,17 +461,17 @@ impl MessagesTimeline {
             .flex()
             .items_center()
             .gap_2()
-            .rounded(px(12.))
+            .rounded(rems(0.75))
             .border_1()
             .border_color(alpha(colors.theme.border, 0.8))
             .bg(alpha(colors.theme.surface, 0.5))
             .px_3()
-            .py(px(10.))
+            .py(rems(0.625))
             .text_size(TEXT_SM.size)
-            .child(Icon::new(IconName::CodeXml).size(IconSize::Custom(px(16.))).color(colors.theme.muted_foreground).stroke(2.))
+            .child(Icon::new(IconName::CodeXml).size(IconSize::Custom(colors.r(px(16.)))).color(colors.theme.muted_foreground).stroke(2.))
             .child(div().text_color(colors.theme.muted_foreground).child(kind))
             .child(div().flex_1().truncate().font_weight(FontWeight::MEDIUM).text_color(colors.theme.text).child(title.clone()))
-            .child(Icon::new(IconName::ExternalLink).size(IconSize::Custom(px(14.))).color(colors.theme.muted_foreground))
+            .child(Icon::new(IconName::ExternalLink).size(IconSize::Sm).color(colors.theme.muted_foreground))
             .into_any_element()
     }
 }

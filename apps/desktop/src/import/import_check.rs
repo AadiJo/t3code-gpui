@@ -225,6 +225,24 @@ fn check_owner_install(owner: &Path, out: &Path, log: &mut String) -> anyhow::Re
     ensure!(again.client_settings_path.is_none() && again.local_storage_keys.is_empty(), "a second launch with nothing changed imports nothing");
     writeln!(log, "second launch: nothing to import")?;
 
+    // The sidebar's width, open state and shelves reach the window's UI state store.
+    let store = t3code_web::ui_state_store::UiStateStore::load(t3code_web::ui_state_store::StateDir(Some(ui.clone())));
+    let (layout, ui_state) = (&store.layout, &store.ui);
+    writeln!(
+        log,
+        "window ui state: sidebar {}px open {}, shelves working {} snoozed {} settled {}, {} project expansions, {} thread visits",
+        layout.sidebar_width,
+        layout.sidebar_open,
+        ui_state.sidebar_working_expanded,
+        ui_state.sidebar_snoozed_expanded,
+        ui_state.sidebar_settled_expanded,
+        ui_state.project_expanded_by_id.len(),
+        ui_state.thread_last_visited_at_by_id.len()
+    )?;
+    if keys.iter().any(|k| k == "chat_thread_sidebar_width") {
+        ensure!(report.layout && layout.sidebar_width != t3code_web::ui_state_store::LayoutState::default().sidebar_width, "the saved sidebar width reaches the layout");
+    }
+
     let local: serde_json::Map<String, serde_json::Value> = serde_json::from_slice(&std::fs::read(data.join("local-storage.json"))?)?;
     let theme = local.get("t3code:theme").and_then(|v| v.as_str()).map(str::to_owned);
     writeln!(log, "theme preference present: {}", theme.is_some())?;

@@ -211,6 +211,10 @@ pub fn build(env: &EnvironmentId) -> ReferenceWorld {
                 workspace_root: p.workspace_root.clone().into(),
                 repository_key: key.map(SharedString::from),
                 repository_relative_path: relative.map(SharedString::from),
+                // The group's name comes from `group_label`, as the live layer gives it.
+                repository_display_name: None,
+                repository_name: None,
+                has_custom_title: false,
                 created_at: ms(&p.created_at),
                 updated_at: ms(&p.updated_at),
                 pinned: false,
@@ -310,6 +314,8 @@ pub fn build(env: &EnvironmentId) -> ReferenceWorld {
         hover_details,
         search_content_matches: None,
         snooze_presets: Default::default(),
+        drafts: Vec::new(),
+        active_draft: None,
     };
     ReferenceWorld { snapshot, threads, checkout: Arc::new(world.workspace) }
 }

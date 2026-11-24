@@ -10,7 +10,8 @@
 # it the scenes use contrast 100 and glass 45 against the "default" values.
 # Needs CARGO_TARGET_DIR (and the dev sysroot env) set as for any build.
 # PARITY_CLIENT_SETTINGS=<client-settings.json> also renders the owner scenes
-# (thread details, palette, inbox at interface 15, 1100x780 and 1710x1074);
+# (thread details, palette, inbox at interface 15, 1100x780 and 1710x1074; the
+# owner-sb-* sidebar views at 1100x780);
 # without it they are skipped and reported missing.
 # Writes <out-dir>/port/*.png, <out-dir>/report/report.md and results.json,
 # and side-by-side images when the reference PNGs are given.
