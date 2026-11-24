@@ -112,6 +112,9 @@ pub struct Sidebar {
     pub(crate) list: SidebarList,
     /// Fixed height of each entry, gap included.
     heights: Vec<f32>,
+    /// Unrounded top of each entry, with the shelf spacer at zero height.
+    tops: Vec<f32>,
+    spacer_ix: Option<usize>,
     pub(crate) list_state: ListState,
     spacer_height: f32,
     pub(crate) hovered: Option<usize>,
@@ -179,6 +182,8 @@ impl Sidebar {
             options: SidebarListOptions::default(),
             list: SidebarList::default(),
             heights: Vec::new(),
+            tops: Vec::new(),
+            spacer_ix: None,
             list_state: ListState::new(0, ListAlignment::Top, px(200.)),
             spacer_height: 0.,
             hovered: None,
@@ -516,6 +521,16 @@ impl Sidebar {
             .enumerate()
             .map(|(ix, entry)| entry_height(entry, rem_scale) + if ix > 0 { f32::from(LIST_GAP) } else { 0. })
             .collect();
+        self.tops = self
+            .heights
+            .iter()
+            .scan(0., |top, height| {
+                let this = *top;
+                *top += height;
+                Some(this)
+            })
+            .collect();
+        self.spacer_ix = self.list.entries.iter().position(|e| matches!(e, SidebarListEntry::ShelfSpacer));
         self.spacer_height = 0.;
         self.hovered = None;
         self.cursor = self.cursor.filter(|&c| c < self.list.entries.len());
@@ -526,6 +541,17 @@ impl Sidebar {
     /// Sum of entry heights, without the shelf spacer.
     fn content_height(&self) -> f32 {
         self.heights.iter().sum()
+    }
+
+    /// Entry `ix`'s height between its top and bottom edges snapped to whole pixels.
+    /// Rem-scaled rows are fractional (77.875px at 15px); Chromium keeps the fraction
+    /// and snaps each row edge to a whole pixel, so rows drift the way GPUI's rounding
+    /// of each row on its own would not.
+    fn snapped_height(&self, ix: usize) -> Option<f32> {
+        let top = self.tops.get(ix)? + self.spacer_ix.filter(|&s| s < ix).map_or(0., |s| self.spacer_height - self.heights[s]);
+        let height = if self.spacer_ix == Some(ix) { self.spacer_height } else { self.heights[ix] };
+        let snap = |y: f32| y.round();
+        Some(snap(top + height) - snap(top))
     }
 
     /// Height of entry `ix` as drawn, including the spacer's current height.
@@ -959,29 +985,24 @@ impl Sidebar {
             } => self.render_folder_header(ix, group, collapsed, hidden_count, dot, first, &colors, window, cx),
             SidebarListEntry::ShowMore { count } => self.render_show_more(ix, count, &colors, window, cx),
             SidebarListEntry::ShelfSpacer => {
-                return div().h(px(self.spacer_height)).into_any_element();
+                return div().h(px(self.snapped_height(ix).unwrap_or(self.spacer_height))).into_any_element();
             }
             SidebarListEntry::Empty(state) => self.render_empty(&state, &colors, cx),
             SidebarListEntry::SearchEmpty => sidebar_list_markers::search_empty(&colors),
         };
-        div().pt(gap).child(body).into_any_element()
+        let snapped = self.snapped_height(ix);
+        div().pt(gap).when_some(snapped, |d, h| d.h(px(h))).child(body).into_any_element()
     }
 
     /// Recomputes the `mt-auto` spacer from the viewport height.
     fn update_spacer(&mut self) {
-        let Some(spacer_ix) = self
-            .list
-            .entries
-            .iter()
-            .position(|e| matches!(e, SidebarListEntry::ShelfSpacer))
-        else {
-            return;
-        };
+        let Some(spacer_ix) = self.spacer_ix else { return };
         let viewport = f32::from(self.list_state.viewport_bounds().size.height);
-        let wanted = (viewport - self.content_height()).max(0.).floor();
-        if (wanted - self.spacer_height).abs() >= 1. {
+        // The spacer draws without the list gap its `heights` entry counts.
+        let wanted = (viewport - self.content_height() + self.heights[spacer_ix]).max(0.);
+        if (wanted - self.spacer_height).abs() >= 0.01 {
             self.spacer_height = wanted;
-            self.list_state.remeasure_items(spacer_ix..spacer_ix + 1);
+            self.list_state.remeasure_items(spacer_ix..self.list.entries.len());
         }
     }
 
