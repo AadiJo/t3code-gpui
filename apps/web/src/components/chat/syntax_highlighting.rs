@@ -23,7 +23,7 @@ use syntect::{
     util::LinesWithEndings,
 };
 
-static SYNTAXES: LazyLock<SyntaxSet> = LazyLock::new(two_face::syntax::extra_newlines);
+pub(crate) static SYNTAXES: LazyLock<SyntaxSet> = LazyLock::new(two_face::syntax::extra_newlines);
 
 /// Highlighted ranges of a piece of code, by Zed highlight name.
 pub type Highlights = Arc<[(Range<usize>, &'static str)]>;

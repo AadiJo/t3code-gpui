@@ -23,6 +23,7 @@ use crate::components::files::file_tree::FileReferenceDrag;
 use crate::components::icons::{Icon, IconName, IconSize};
 use crate::components::ui::button::{Button, ButtonSize, ButtonVariant};
 use crate::composer_editor_mentions::format_context_reference;
+use crate::hooks::use_settings::ActiveClientSettings as _;
 use crate::i18n::t;
 use crate::shortcuts::commands::FindInThread;
 use crate::thread_find_store::ThreadFindStore;
@@ -110,6 +111,7 @@ impl ChatView {
     pub fn new(cx: &mut Context<Self>) -> Self {
         let timeline = cx.new(MessagesTimeline::new);
         cx.observe(&timeline, |_, _, cx| cx.notify()).detach();
+        cx.observe_global::<crate::hooks::use_settings::ClientSettingsStore>(|_, cx| cx.notify()).detach();
         let actions = cx.subscribe(&timeline, |_, _, action: &TimelineAction, cx| cx.emit(ChatViewEvent::Timeline(action.clone())));
         let counted = cx.subscribe(&timeline, |this, timeline, _: &FindUpdated, cx| {
             let (count, counting) = (timeline.read(cx).find_count(), timeline.read(cx).find_counting());
@@ -443,7 +445,11 @@ impl Render for ChatView {
                                 Some(composer) => composer.clone().into_any_element(),
                                 None => Self::composer_placeholder(&colors).into_any_element(),
                             })
-                            .children(self.toolbar.clone()),
+                            // `shouldShowComposerContextStrip`: a new thread always shows the
+                            // strip; a started one only with "persist context strip" on.
+                            .when(self.hero || cx.client_settings().persist_composer_context_strip, |d| {
+                                d.children(self.toolbar.clone())
+                            }),
                     )
                     .child(div().h(COMPOSER_BOTTOM_SPACER)),
             )

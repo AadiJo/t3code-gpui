@@ -776,7 +776,7 @@ fn code_title(title: Option<&SharedString>, language: Option<&SharedString>, col
 }
 
 /// `syntheticFileNameForLanguageId` (`pierre-icons.ts`).
-fn synthetic_file_name(language: &str) -> String {
+pub(crate) fn synthetic_file_name(language: &str) -> String {
     let language = language.to_lowercase();
     if language == "dockerfile" {
         return "Dockerfile".into();
