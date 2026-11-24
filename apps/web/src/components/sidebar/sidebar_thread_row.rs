@@ -383,7 +383,7 @@ impl Sidebar {
                     .flex()
                     .flex_none()
                     .gap_1()
-                    .font_family("monospace")
+                    .font_family(crate::appearance_fonts::mono_font(FontWeight::NORMAL).family)
                     .child(div().text_color(colors.diff_addition).child(format!("+{}", diff.insertions)))
                     .child(div().text_color(colors.diff_deletion).child(format!("−{}", diff.deletions))),
             );

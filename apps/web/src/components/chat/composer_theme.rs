@@ -63,14 +63,6 @@ pub fn ui_font_family() -> SharedString {
 pub fn mono_font_family() -> SharedString {
     crate::appearance_fonts::mono_font(FontWeight::NORMAL).family
 }
-/// Monospace family for code.
-pub const MONO_FONT_FAMILY: &str = if cfg!(target_os = "macos") {
-    "Menlo"
-} else if cfg!(target_os = "windows") {
-    "Consolas"
-} else {
-    "DejaVu Sans Mono"
-};
 
 /// Mixes `color` over `base` at `amount` (0..1), in sRGB like `color-mix(in srgb, ...)`.
 pub fn mix(color: Hsla, base: Hsla, amount: f32) -> Hsla {
