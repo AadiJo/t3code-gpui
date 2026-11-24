@@ -50,6 +50,9 @@ pub struct ScheduledTaskEditor {
     fields: Fields,
     /// The Prompt textarea, created on first render.
     prompt: Option<Entity<TextareaState>>,
+    scroll: gpui_kit::ScrollHandle,
+    /// Where the Schedule row sits among the form's rows, for [`Self::reveal_schedule`].
+    schedule_row: usize,
     errors: Vec<SharedString>,
     saving: bool,
 }
@@ -58,7 +61,17 @@ impl EventEmitter<ScheduledTaskEditorEvent> for ScheduledTaskEditor {}
 
 impl ScheduledTaskEditor {
     pub fn new(model: Entity<ServerPanelsModel>, draft: DraftState) -> Self {
-        Self { model, draft, fields: Fields::default(), prompt: None, errors: Vec::new(), saving: false }
+        Self { model, draft, fields: Fields::default(), prompt: None, scroll: gpui_kit::ScrollHandle::new(), schedule_row: 0, errors: Vec::new(), saving: false }
+    }
+
+    /// Scrolls the form so the Schedule row is in view.
+    pub fn reveal_schedule(&self) {
+        self.scroll.scroll_to_item(self.schedule_row);
+    }
+
+    /// Scrolls the form to its last row (the Enabled switch).
+    pub fn reveal_end(&self) {
+        self.scroll.scroll_to_item(self.schedule_row + 1);
     }
 
     /// Switches the schedule kind.
@@ -402,49 +415,49 @@ impl Render for ScheduledTaskEditor {
         }).size(SelectSize::Sm));
         let schedule = self.render_schedule(window, cx);
         let new_thread = d.thread_mode == ScheduledTaskThreadMode::NewThread;
-        let mut body = div()
-            .flex()
-            .flex_col()
-            .gap(theme.sp(5.))
-            .child(self.labeled(t!("Runs on"), runs_on, cx))
-            .child(self.labeled(t!("Name"), field_input(&title, false, false, false), cx))
-            .child(self.labeled(t!("Destination"), div().flex().flex_col().gap(theme.sp(2.)).child(destination).child(div().ui_text(theme, TextSize::Sm, weight::NORMAL).text_color(c.muted_foreground).child(thread_modes[thread_ix].2.clone())), cx));
+        let mut body: Vec<AnyElement> = vec![
+            self.labeled(t!("Runs on"), runs_on, cx),
+            self.labeled(t!("Name"), field_input(&title, false, false, false), cx),
+            self.labeled(t!("Destination"), div().flex().flex_col().gap(theme.sp(2.)).child(destination).child(div().ui_text(theme, TextSize::Sm, weight::NORMAL).text_color(c.muted_foreground).child(thread_modes[thread_ix].2.clone())), cx),
+        ];
         if new_thread {
-            body = body.child(
+            body.push(
                 div()
                     .flex()
                     .gap(theme.sp(3.))
                     .child(div().flex_1().min_w_0().child(self.labeled(t!("Project"), project_select, cx)))
-                    .child(div().flex_1().min_w_0().child(self.labeled(t!("Workspace"), workspace, cx))),
+                    .child(div().flex_1().min_w_0().child(self.labeled(t!("Workspace"), workspace, cx)))
+                    .into_any_element(),
             );
             match d.workspace_mode {
                 WorkspaceMode::Worktree => {
                     let base = self.input("baseRef", d.base_ref.clone(), "main", window, cx);
-                    body = body.child(self.labeled(t!("Base branch"), field_input(&base, false, false, false), cx));
+                    body.push(self.labeled(t!("Base branch"), field_input(&base, false, false, false), cx));
                 }
                 WorkspaceMode::ExistingWorktree => {
                     let path = self.input("checkoutPath", d.existing_worktree_path.clone(), "", window, cx);
-                    body = body.child(self.labeled(t!("Checkout path"), field_input(&path, false, false, false), cx));
+                    body.push(self.labeled(t!("Checkout path"), field_input(&path, false, false, false), cx));
                 }
                 WorkspaceMode::Root => {}
             }
         }
-        body = body.child(self.labeled(t!("Prompt"), TextArea::new(&prompt), cx));
+        body.push(self.labeled(t!("Prompt"), TextArea::new(&prompt), cx));
         if new_thread {
-            body = body.child(self.labeled(t!("Model"), model_select, cx));
+            body.push(self.labeled(t!("Model"), model_select, cx));
         }
         let enabled = d.enabled;
-        body = body
-            .child(
+        self.schedule_row = body.len();
+        body.push(
                 div()
                     .flex()
                     .flex_col()
                     .gap(theme.sp(3.))
                     .child(div().flex().flex_wrap().items_center().justify_between().gap(theme.sp(2.)).child(div().ui_text(theme, TextSize::Sm, weight::MEDIUM).child(t!("Schedule"))).child(kinds))
                     .children(webhook_denied.map(|r| hint(r, cx)))
-                    .child(schedule),
-            )
-            .child(
+                    .child(schedule)
+                    .into_any_element(),
+        );
+        body.push(
                 div()
                     .flex()
                     .items_center()
@@ -466,9 +479,10 @@ impl Render for ScheduledTaskEditor {
                                 cx.notify();
                             }).ok();
                         }
-                    })),
-            )
-            .children(self.errors.iter().map(|e| tinted(e.clone(), c.destructive(), cx)));
+                    }))
+                    .into_any_element(),
+        );
+        body.extend(self.errors.iter().map(|e| tinted(e.clone(), c.destructive(), cx)));
         let editing = d.editing_id.is_some();
         dialog_glass(theme)
             .id("scheduled-task-editor")
@@ -491,7 +505,19 @@ impl Render for ScheduledTaskEditor {
                     .right(theme.sp(2.))
                     .child(Button::new("task-close").variant(ButtonVariant::Ghost).size(ButtonSize::IconSm).icon(IconName::X).on_click(cx.listener(|_, _, _, cx| cx.emit(ScheduledTaskEditorEvent::Close)))),
             )
-            .child(div().id("scheduled-task-editor-body").max_h(px(560.)).overflow_y_scroll().px(theme.sp(6.)).pb(theme.sp(6.)).child(body))
+            .child(
+                div()
+                    .id("scheduled-task-editor-body")
+                    .max_h(px(560.))
+                    .overflow_y_scroll()
+                    .track_scroll(&self.scroll)
+                    .flex()
+                    .flex_col()
+                    .gap(theme.sp(5.))
+                    .px(theme.sp(6.))
+                    .pb(theme.sp(6.))
+                    .children(body),
+            )
             .child(
                 div()
                     .flex()

@@ -3,7 +3,7 @@
 //! `ProjectSettingsPanel` page (Name, Project icon, Pin, Archive, actions,
 //! Danger), each change sent with `projects.mutate`.
 
-use gpui_kit::{AppContext as _, Context, Entity, IntoElement, Render, SharedString, Subscription, Window, div, prelude::*, px};
+use gpui_kit::{TestSupportExt as _, AppContext as _, Context, Entity, IntoElement, Render, SharedString, Subscription, Window, div, prelude::*, px};
 use t3code_contracts::{CommandId, ProjectMutation, ProjectMutationProjectUpdate};
 
 use super::provider_settings_panel::toast_error;
@@ -116,6 +116,7 @@ impl ProjectsSettingsPanel {
                         .child(div().truncate().ui_text(theme, TextSize::Xs, weight::NORMAL).text_color(c.muted_foreground).child(secondary)),
                 )
                 .child(Icon::new(IconName::ChevronRight).size(IconSize::Md).color(c.muted_foreground))
+                .test_support()
                 .into_any_element()
         });
         page_container(cx).child(

@@ -99,6 +99,25 @@ impl Harness {
         }
     }
 
+    /// Clicks the `index`th item of the open menu.
+    fn click_menu_item(&mut self, index: usize, label: &str) {
+        self.frame();
+        let id = gpui_kit::ElementId::from(("menu-item", index));
+        let found = self.cx.update_window(self.handle, |_, window, cx| {
+            if window.try_find(id.clone()).is_some() {
+                window.click(id.clone(), cx);
+                true
+            } else {
+                false
+            }
+        });
+        self.frame();
+        match found {
+            Ok(true) => self.note(format!("click menu item {label}")),
+            _ => self.fail(format!("click menu item {label}: not found")),
+        }
+    }
+
     fn type_into(&mut self, field: Option<Entity<InputState>>, text: &str, label: &str) {
         let Some(field) = field else { return self.fail(format!("type {label}: no field")) };
         let text = text.to_owned();
@@ -247,10 +266,21 @@ fn main() -> anyhow::Result<()> {
     h.note("== terminal sign-in");
     h.script_auth("claudeAgent", vec![auth("waiting", json!({ "type": "terminal", "id": "t-1", "output": "Welcome to Claude Code\nPaste the code from your browser:\n" }))]);
     h.click("auth-start-claudeAgent");
-    let field = h.cx.update(|cx| providers.read(cx).field("claudeAgent:auth:terminal"));
-    h.type_into(field, "ABC123", "terminal line");
+    // The login runs in an embedded terminal: type into it as a user would.
+    let surface = h.cx.update(|cx| providers.read(cx).auth_terminal_surface("claudeAgent"));
+    h.expect(surface.is_some(), "terminal flow shows a terminal");
+    if let Some(surface) = surface {
+        h.cx.update_window(h.handle, |_, window, cx| {
+            let focus = surface.read(cx).focus_handle().clone();
+            window.focus(&focus, cx);
+            window.input("ABC123", cx);
+            window.press("enter", cx);
+        })
+        .ok();
+        h.frame();
+        h.note("type terminal = \"ABC123\" + enter");
+    }
     h.shot("check-08-terminal")?;
-    h.click("auth-terminal-send-claudeAgent");
     let calls = h.calls();
     h.expect(calls.iter().any(|c| c == "provider.auth.respond claudeAgent"), "terminal line sent with provider.auth.respond");
 
@@ -259,10 +289,14 @@ fn main() -> anyhow::Result<()> {
     h.navigate(SettingsPath::ScheduledTasks);
     h.click("task-new");
     let tasks = h.page::<ScheduledTasksSettingsPanel>(SettingsPath::ScheduledTasks).context("tasks page")?;
+    h.cx.update(|cx| tasks.read(cx).editor().map(|e| e.read(cx).reveal_schedule()));
+    h.frame();
     for (id, name) in [("schedule-kind-Fixed", "fixed"), ("schedule-kind-Once", "once"), ("schedule-kind-Interval", "interval"), ("schedule-kind-Webhook", "webhook")] {
         h.click(id);
         h.shot(&format!("check-09-task-{name}"))?;
     }
+    h.cx.update(|cx| tasks.read(cx).editor().map(|e| e.read(cx).reveal_end()));
+    h.frame();
     h.click("filter-add");
     h.click("task-save");
     let errors = h.cx.update(|cx| tasks.read(cx).editor().map(|e| e.read(cx).draft.title.is_empty()));
@@ -276,7 +310,8 @@ fn main() -> anyhow::Result<()> {
     // Device host editor.
     h.note("== device host editor");
     h.navigate(SettingsPath::Devices);
-    h.click("device-host-add");
+    h.click("device-source-add-trigger");
+    h.click_menu_item(0, "Machine over SSH");
     h.shot("check-11-device-host")?;
     let devices = h.page::<DevicesSettingsPanel>(SettingsPath::Devices).context("devices page")?;
     let _ = devices;
@@ -285,25 +320,28 @@ fn main() -> anyhow::Result<()> {
     // GitHub device-code sign-in.
     h.note("== source control sign-in");
     h.navigate(SettingsPath::SourceControl);
-    h.click("sc-sign-in-github.com");
+    h.click("sc-details-github");
+    h.click("sc-sign-in");
     let calls = h.calls();
     h.expect(calls.iter().any(|c| c == "sourceControl.signInStart github.com"), "sourceControl.signInStart sent");
     h.expect(calls.iter().any(|c| c == "sourceControl.signInWait github.com"), "sourceControl.signInWait sent");
     h.shot("check-12-github-device-code")?;
-    h.click("sc-cancel-github.com");
+    h.click("sc-cancel");
     let calls = h.calls();
     h.expect(calls.iter().any(|c| c == "sourceControl.signInCancel github.com"), "sourceControl.signInCancel sent");
 
     // Add to another machine: folder browser.
     h.note("== add project to machine");
     h.navigate(SettingsPath::Projects);
-    h.click("project-add-to-machine");
+    let projects = h.page::<ProjectsSettingsPanel>(SettingsPath::Projects).context("projects page")?;
+    h.click("project-row-proj-web");
+    h.cx.update_window(h.handle, |_, window, cx| projects.update(cx, |p, cx| p.open_add_to_machine(window, cx))).ok();
+    h.frame();
     let calls = h.calls();
     h.expect(calls.iter().any(|c| c.starts_with("filesystem.browse")), "filesystem.browse on open");
     h.click("folder-~/t3code");
     let calls = h.calls();
     h.expect(calls.iter().any(|c| c == "filesystem.browse ~/t3code/"), "picking a folder browses into it");
-    let projects = h.page::<ProjectsSettingsPanel>(SettingsPath::Projects).context("projects page")?;
     let open: Option<Entity<AddProjectToMachineDialog>> = h.cx.update(|cx| projects.read(cx).dialog().cloned());
     h.expect(open.is_some(), "dialog open");
     h.shot("check-13-add-to-machine")?;

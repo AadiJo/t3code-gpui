@@ -137,4 +137,9 @@ impl ProviderSettingsPanel {
         }
         terminal.surface.clone()
     }
+
+    /// The sign-in terminal shown for `instance`, if a terminal flow is on screen.
+    pub fn auth_terminal_surface(&self, instance: &str) -> Option<Entity<TerminalSurface>> {
+        self.auth_terminals.get(instance).map(|t| t.surface.clone())
+    }
 }
