@@ -222,14 +222,11 @@ pub fn slash_facts(row: Option<&ThreadRow>, thread: &LiveThread, environment: &L
         EntryKind::Message(m) => m.role == MessageRole::User && (m.text.trim().to_lowercase() != "/compact" || !m.attachments.is_empty()),
         _ => false,
     }) || (thread.state().history.has_more_history && row.is_some_and(|r| r.latest_user_message_at.is_some()));
-    let compact_provider = config
-        .and_then(|c| c.providers.iter().find(|p| p.instance_id == instance_id))
-        .is_some_and(|p| p.slash_commands.iter().flatten().any(|c| c.name == "compact"));
     SlashFacts {
         instance_id: Some(instance_id.to_owned()),
         side_chat,
         fresh_session: fresh_session_available(input, environment) && !pending,
-        compact: connected && row.is_some() && compactable && compact_provider && !input.is_working && !worktree_pending && !pending,
+        compact: connected && row.is_some() && compactable && !input.is_working && !worktree_pending && !pending,
         show_skills,
         pull_requests,
     }
@@ -822,7 +819,8 @@ pub struct SlashFacts {
     pub side_chat: Option<Option<SharedString>>,
     /// `/clear` is offered (`freshSessionCommandAvailable`).
     pub fresh_session: bool,
-    /// The thread itself could compact now (`!compactThreadUnavailable`).
+    /// The thread itself could compact now (`!compactThreadUnavailable` without the provider
+    /// check, which the `/` list makes against the composer's current pick).
     pub compact: bool,
     /// `showSkillsInSlashMenu`.
     pub show_skills: bool,
@@ -1261,8 +1259,12 @@ impl LiveMenuSource {
         let config = self.config.borrow();
         let at_start = trigger.range.start == 0;
         let prompt = context.prompt;
+        let provider = selected_provider(config.as_deref(), Some(context.instance_id.0.as_ref()));
+        // `providerSupportsManualCompaction`: the sending provider lists `compact`.
+        let compacts = provider.is_some_and(|p| p.slash_commands.iter().flatten().any(|c| c.name == "compact"));
         let compact_available = prompt.get(..trigger.range.start).is_some_and(|s| s.trim().is_empty())
             && facts.compact
+            && compacts
             && prompt.get(trigger.range.end..).is_some_and(|s| s.trim().is_empty())
             && !context.has_attachments;
         let builtin = |command: SlashCommand, word: &'static str, description: SharedString| SlashCandidate {
@@ -1285,7 +1287,6 @@ impl LiveMenuSource {
         if facts.fresh_session {
             candidates.push(builtin(SlashCommand::Clear, "clear", t!("Start a fresh session; earlier messages stay visible")));
         }
-        let provider = selected_provider(config.as_deref(), Some(context.instance_id.0.as_ref()));
         let skills: Vec<&ProviderSkill> = match provider.filter(|_| facts.show_skills) {
             Some(provider) => crate::provider_skill_search::dedupe_provider_skills_by_name(
                 provider_skills_for_cwd(provider, self.cwd.as_deref()).iter().filter(|s| crate::provider_skill_search::is_provider_skill_user_invocable(s)),

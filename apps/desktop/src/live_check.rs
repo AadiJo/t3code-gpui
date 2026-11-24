@@ -48,7 +48,7 @@
 //            `import-check`, encrypted with the fixture macOS key): the launch import runs,
 //            the window explains the Keychain read, environments and settings arrive
 //
-// Usage: live-check <seed|drive|restart|import|send|sidebar|notify|details|mentions|heic|wheel|workspace|banner|sidebardata|probe> <out-dir>
+// Usage: live-check <seed|drive|restart|import|send|sidebar|notify|details|mentions|heic|wheel|workspace|banner|sidebardata|composer|composer-restart|probe> <out-dir>
 #[allow(dead_code)]
 #[path = "import/mod.rs"]
 mod import;
@@ -488,7 +488,7 @@ fn key_of(state: &Seeded, thread: &str) -> ThreadKey {
 
 fn main() -> anyhow::Result<()> {
     let mut args = std::env::args().skip(1);
-    let usage = "usage: live-check <seed|drive|restart|import|send|sidebar|notify|details|mentions|heic|wheel|workspace|banner|sidebardata|probe> <out-dir> | live-check timeline <projections-dir> <out-dir> | live-check commands <corpus.json> <out.json>";
+    let usage = "usage: live-check <seed|drive|restart|import|send|sidebar|notify|details|mentions|heic|wheel|workspace|banner|sidebardata|composer|composer-restart|probe> <out-dir> | live-check timeline <projections-dir> <out-dir> | live-check commands <corpus.json> <out.json>";
     let phase = args.next().context(usage)?;
     let out = PathBuf::from(args.next().context(usage)?);
     if phase == "timeline" {
@@ -517,6 +517,8 @@ fn main() -> anyhow::Result<()> {
         "workspace" => run_workspace(&mut check),
         "banner" => run_banner(&mut check),
         "sidebardata" => run_sidebar_data(&mut check),
+        "composer" => run_composer(&mut check),
+        "composer-restart" => run_composer_restart(&mut check),
         other => Err(anyhow::anyhow!("unknown phase {other}")),
     };
     check.finish(&phase, result)
@@ -2379,7 +2381,13 @@ fn run_heic(check: &mut Check) -> anyhow::Result<()> {
     image::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpeg, 80).encode_image(&image)?;
     std::fs::write(&photo, &jpeg)?;
     let composer = composer_of(check);
+    let started = Instant::now();
     check.cx.update(|cx| composer.update(cx, |c, cx| c.attach_paths(vec![photo.clone()], cx)));
+    let returned = started.elapsed();
+    let c1 = composer.clone();
+    check.pump(move |c| c.cx.update(|cx| !c1.read(cx).attachments().is_empty()), Duration::from_secs(30), "the converted photo joins the draft")?;
+    // Decoding a 12-megapixel photo takes far longer than a frame; the drop returns at once.
+    check.check("the conversion runs off the UI thread", returned < Duration::from_millis(50), format!("attach returned after {:.1} ms, photo ready after {:.0} ms", ms(returned), ms(started.elapsed())));
     let attached = check.cx.update(|cx| {
         composer.read(cx).attachments().first().map(|a| match &a.kind {
             ComposerAttachmentKind::Image { bytes, mime } => (a.name.to_string(), mime.to_string(), image::load_from_memory(bytes).map(|i| (i.width(), i.height())).ok()),
@@ -2403,6 +2411,7 @@ fn run_heic(check: &mut Check) -> anyhow::Result<()> {
     std::fs::write(&broken, b"not an image")?;
     let before = check.cx.update(|cx| composer.read(cx).attachments().len());
     check.cx.update(|cx| composer.update(cx, |c, cx| c.attach_paths(vec![broken.clone()], cx)));
+    check.wait(Duration::from_millis(800));
     let after = check.cx.update(|cx| composer.read(cx).attachments().len());
     check.check("an unreadable HEIC is refused", before == after, format!("{before} -> {after}"));
     check.shot("91-heic-refused.png")
@@ -2952,4 +2961,244 @@ fn run_sidebar_data(check: &mut Check) -> anyhow::Result<()> {
         format!("word at {word:?}, prefix at {prefix:?} of {}", order.len()),
     );
     Ok(())
+}
+
+/// The `/`, `$` or `#` menu for `text` typed into the shown composer: (id, label, description,
+/// badge) per item, and the empty text.
+fn menu_for(check: &mut Check, text: &str) -> (Vec<(String, String, String, String)>, Option<String>) {
+    let composer = composer_of(check);
+    let editor = check.cx.update(|cx| composer.read(cx).editor().clone());
+    check.focus_composer();
+    check.cx.update(|cx| editor.update(cx, |e, cx| e.set_text(String::new(), cx)));
+    check.type_text(text);
+    check.wait(Duration::from_millis(400));
+    let found = check.cx.update(|cx| {
+        composer.read(cx).menu().map(|m| {
+            let items = m
+                .items
+                .iter()
+                .map(|i| {
+                    let label = format!("{}{}", i.label_prefix.as_deref().unwrap_or(""), i.label);
+                    (i.id.to_string(), label, i.description.to_string(), i.badge.as_deref().unwrap_or("").to_owned())
+                })
+                .collect();
+            (items, m.empty.as_ref().map(|e| e.to_string()))
+        })
+    });
+    found.unwrap_or_default()
+}
+
+/// Puts the shown composer on `instance` (its first model), as a picker choice does.
+fn pick_instance(check: &mut Check, instance: &str) -> bool {
+    use t3code_web::components::chat::composer::ComposerEvent;
+    let composer = composer_of(check);
+    let instance = instance.to_owned();
+    check.cx.update(|cx| {
+        composer.update(cx, |c, cx| {
+            let mut state = c.state().clone();
+            let id = t3code_web::model_selection::ProviderInstanceId(instance.clone().into());
+            let Some(model) = state.catalog.models.get(&id).and_then(|m| m.first()).map(|m| m.slug.clone()) else { return false };
+            state.selection.instance_id = id;
+            state.selection.model = model;
+            let selection = state.selection.clone();
+            c.set_state(state, cx);
+            cx.emit(ComposerEvent::ModelChanged(selection));
+            true
+        })
+    })
+}
+
+/// The `composer` phase (item 1 of the live details work): the `/` list with provider commands,
+/// `/compact` and `/skill`, mid-prompt filtering and ranking; `$` skills with their source badge;
+/// `#` on a project with no host repository; attachments kept in a draft (checked after a
+/// restart by `composer-restart`) and restored by edit from here; a project's `t3.json` mode and
+/// "Previous worktree" on a new draft. Needs a server whose Claude provider lists `compact` and
+/// the `quokka-notes` skill (scripts/start-server.sh with the stand-in CLI). Writes
+/// `composer-record.json`.
+fn run_composer(check: &mut Check) -> anyhow::Result<()> {
+    use t3code_web::components::branch_toolbar::BranchToolbarEvent;
+    use t3code_web::components::branch_toolbar_logic::EnvMode;
+    use t3code_web::composer_draft_store::{ComposerAttachmentKind, UploadState};
+    let mut state = load_state(&check.out)?;
+    check.pump(|c| c.connected(), Duration::from_secs(30), "connected")?;
+    check.cx.update(|cx| t3code_web::hooks::use_settings::ClientSettingsStore::update(cx, |s| s.show_skills_in_slash_menu = true));
+    let key = thread_with_turn(check, &state, "Slash commands")?;
+    check.go(&key);
+    check.pump(|c| c.shown_input().entries.len() >= 2, Duration::from_secs(20), "slash thread shown")?;
+    let picked = pick_instance(check, "claudeAgent");
+    check.check("the composer can pick the Claude instance", picked, picked);
+    let (all, _) = menu_for(check, "/");
+    let ids: Vec<&str> = all.iter().map(|(id, ..)| id.as_str()).collect();
+    check.note(format!("/ lists {all:?}"));
+    check.check(
+        "/ lists the built-ins, the provider's commands with /compact, then /skill: entries",
+        ids.first() == Some(&"slash:model")
+            && ids.contains(&"slash:side")
+            && ids.contains(&"provider-slash-command:compact")
+            && all.iter().any(|(id, label, ..)| id.starts_with("skill:") && label == "/skill:quokka-notes"),
+        format!("{ids:?}"),
+    );
+    check.check("/ leaves out /usage-limits (no popover here)", !ids.iter().any(|id| id.ends_with(":usage-limits")), format!("{ids:?}"));
+    check.shot("c0-slash-menu.png")?;
+    let (ranked, _) = menu_for(check, "/comp");
+    check.check("/comp ranks /compact first", ranked.first().is_some_and(|(id, ..)| id == "provider-slash-command:compact"), format!("{ranked:?}"));
+    let (mid, _) = menu_for(check, "tell me /");
+    let mid_ids: Vec<&str> = mid.iter().map(|(id, ..)| id.as_str()).collect();
+    check.check(
+        "mid-prompt / offers only /model and skills",
+        mid_ids.contains(&"slash:model") && mid_ids.iter().all(|id| *id == "slash:model" || id.starts_with("skill:")),
+        format!("{mid_ids:?}"),
+    );
+    let (compact_with_text, _) = menu_for(check, "/compact trailing");
+    check.note(format!("/compact with text after the trigger: {compact_with_text:?}"));
+    let (skill_query, _) = menu_for(check, "/skill:quo");
+    check.check("/skill:quo finds the skill", skill_query.first().is_some_and(|(id, ..)| id.starts_with("skill:quokka")), format!("{skill_query:?}"));
+    let (dollar, _) = menu_for(check, "$quo");
+    check.check(
+        "$ lists the skill by name (it has no display name) with its source badge",
+        dollar.first().is_some_and(|(_, label, _, badge)| label == "quokka-notes" && badge == "Personal Skill"),
+        format!("{dollar:?}"),
+    );
+    check.shot("c1-dollar-menu.png")?;
+    pick_instance(check, "devReplay");
+    let (replay, _) = menu_for(check, "/");
+    check.check(
+        "on the Replay instance / has no /compact",
+        !replay.iter().any(|(id, ..)| id.ends_with(":compact")),
+        format!("{:?}", replay.iter().map(|r| r.0.clone()).collect::<Vec<_>>()),
+    );
+    let (prs, empty) = menu_for(check, "#12");
+    check.check(
+        "# on a project without a host repository says so",
+        prs.is_empty() && empty.as_deref() == Some("Pull requests are not available for this project."),
+        format!("{prs:?} {empty:?}"),
+    );
+    check.shot("c2-pull-request-menu.png")?;
+    let composer = composer_of(check);
+    let editor = check.cx.update(|cx| composer.read(cx).editor().clone());
+    check.cx.update(|cx| editor.update(cx, |e, cx| e.set_text(String::new(), cx)));
+
+    // Edit from here gives back the message's image.
+    let (png, _) = attachment_fixtures(&check.out)?;
+    check.cx.update(|cx| composer.update(cx, |c, cx| c.attach_paths(vec![png.clone()], cx)));
+    let c2 = composer.clone();
+    check.pump(move |c| c.cx.update(|cx| { let a = c2.read(cx).attachments(); !a.is_empty() && a.iter().all(|a| a.upload == UploadState::Uploaded) }), Duration::from_secs(30), "image uploaded")?;
+    check.focus_composer();
+    check.type_text("Look at this probe image.");
+    check.press("enter");
+    settled_runs(check, &key, 2, "image turn settled")?;
+    let target = check.shown_input().entries.iter().rev().find_map(|e| match &e.kind {
+        EntryKind::Message(m) if m.text.contains("probe image") => Some(m.id.clone()),
+        _ => None,
+    });
+    let turns = target.as_ref().and_then(|id| check.shown_input().revert_turn_counts.get(&id.0).copied());
+    check.check("the image message offers edit from here", target.is_some() && turns.is_some(), format!("{target:?} {turns:?}"));
+    if let Some(message) = target {
+        let root = check.root.clone();
+        check.cx.update(|cx| {
+            let view = root.read(cx).thread_view().clone();
+            let timeline = view.read(cx).chat().read(cx).timeline().clone();
+            timeline.update(cx, |_, cx| cx.emit(TimelineAction::EditFrom(message.clone())));
+        });
+        check.wait(Duration::from_millis(300));
+        check.cx.update(|cx| {
+            let view = root.read(cx).thread_view().clone();
+            view.update(cx, |view, cx| view.resolve_revert(Some(false), cx));
+        });
+        let c3 = composer.clone();
+        let restored = check.pump(move |c| c.cx.update(|cx| !c3.read(cx).attachments().is_empty()), Duration::from_secs(30), "the image is back in the composer");
+        let tiles = check.cx.update(|cx| {
+            composer.read(cx).attachments().iter().map(|a| match &a.kind {
+                ComposerAttachmentKind::Image { bytes, mime } => format!("{} {mime} {:?}", a.name, image::load_from_memory(bytes).map(|i| (i.width(), i.height())).ok()),
+                _ => format!("{} not an image", a.name),
+            }).collect::<Vec<_>>()
+        });
+        check.check("edit from here restores the image attachment", restored.is_ok() && tiles.len() == 1 && tiles[0].starts_with("probe.png image/png Some((2000, 1000))"), format!("{tiles:?}"));
+        let c4 = composer.clone();
+        let uploaded = check.pump(move |c| c.cx.update(|cx| c4.read(cx).attachments().iter().all(|a| a.upload == UploadState::Uploaded)), Duration::from_secs(30), "restored image uploads");
+        check.check("the restored image uploads again", uploaded.is_ok(), format!("{uploaded:?}"));
+        check.shot("c3-edit-from-here-image.png")?;
+    }
+    // Leave the draft (text and image) for `composer-restart`.
+    check.cx.update(|cx| editor.update(cx, |e, cx| e.set_text("Kept across restarts", cx)));
+    check.wait(Duration::from_millis(600));
+    let kept = check.cx.update(|cx| composer.read(cx).attachments().iter().map(|a| a.context_id.to_string()).collect::<Vec<_>>());
+    state.last_thread = Some(key.thread_id.0.to_string());
+    save_state(&check.out, &state)?;
+    std::fs::write(check.out.join("composer-kept.json"), serde_json::to_vec(&kept)?)?;
+
+    // t3.json decides a new draft's mode; "Previous worktree" offers the last worktree.
+    let root_dir = state.project_root.clone();
+    std::fs::write(Path::new(&root_dir).join("t3.json"), "{\"defaultThreadEnvMode\":\"worktree\"}\n")?;
+    let project = check
+        .cx
+        .update(|cx| StateBridge::shell(cx).read(cx).snapshot().projects.iter().find(|p| p.workspace_root.as_ref() == root_dir).map(|p| p.project_ref.clone()))
+        .context("seeded project")?;
+    let root = check.root.clone();
+    check.cx.update(|cx| {
+        let data = root.read(cx).data().clone();
+        let draft = data.create_draft(Some(project), cx);
+        root.update(cx, |root, cx| root.navigate(Route::Draft(draft), cx));
+    });
+    check.pump(|c| c.read(|root, cx| root.thread_view().read(cx).branch_strip().is_some()), Duration::from_secs(10), "draft branch strip")?;
+    let strip = check.read(|root, cx| root.thread_view().read(cx).branch_strip().cloned()).context("strip")?;
+    let s = strip.clone();
+    let followed = check.pump(move |c| strip_props(c, &s).env_mode == EnvMode::Worktree, Duration::from_secs(10), "the draft follows t3.json");
+    let mode = strip_props(check, &strip).env_mode;
+    check.check("a new draft takes t3.json's worktree mode", followed.is_ok(), format!("{mode:?}"));
+    check.shot("c4-t3-json-worktree.png")?;
+    let seed = strip_props(check, &strip).previous_worktree;
+    let worktrees = check.cx.update(|cx| {
+        StateBridge::shell(cx).read(cx).snapshot().threads.iter().filter_map(|t| StateBridge::shell(cx).read(cx).row(&t.key)?.source.worktree_path.clone()).collect::<Vec<_>>()
+    });
+    check.note(format!("previous worktree {seed:?}; worktrees {worktrees:?}"));
+    match seed {
+        Some(seed) => {
+            emit_strip(check, &strip, BranchToolbarEvent::UsePreviousWorktree);
+            let props = strip_props(check, &strip);
+            check.check(
+                "Use previous worktree puts the draft in that worktree",
+                props.worktree_path.as_deref() == Some(seed.worktree_path.as_str()) && props.thread_branch == seed.branch,
+                format!("{:?} {:?}", props.worktree_path, props.thread_branch),
+            );
+            check.shot("c5-previous-worktree.png")?;
+        }
+        None => check.check("a project with a worktree thread offers the previous worktree", worktrees.is_empty(), format!("{worktrees:?}")),
+    }
+    std::fs::remove_file(Path::new(&root_dir).join("t3.json"))?;
+    std::fs::write(
+        check.out.join("composer-record.json"),
+        serde_json::to_vec_pretty(&serde_json::json!({ "slash": all, "ranked": ranked, "midPrompt": mid, "dollar": dollar, "pullRequestEmpty": empty, "kept": kept }))?,
+    )?;
+    Ok(())
+}
+
+/// The `composer-restart` phase: the draft `composer` left (prompt and image) is back after a
+/// restart, its upload reused, and it sends.
+fn run_composer_restart(check: &mut Check) -> anyhow::Result<()> {
+    use t3code_web::composer_draft_store::UploadState;
+    let state = load_state(&check.out)?;
+    check.pump(|c| c.connected(), Duration::from_secs(30), "connected")?;
+    let key = key_of(&state, state.last_thread.as_deref().context("run composer first")?);
+    let kept: Vec<String> = serde_json::from_slice(&std::fs::read(check.out.join("composer-kept.json"))?)?;
+    check.go(&key);
+    check.pump(|c| !c.shown_input().entries.is_empty(), Duration::from_secs(20), "thread shown")?;
+    let composer = composer_of(check);
+    let (text, ids, states) = check.cx.update(|cx| {
+        let c = composer.read(cx);
+        (c.editor().read(cx).text().to_owned(), c.attachments().iter().map(|a| a.context_id.to_string()).collect::<Vec<_>>(), c.attachments().iter().map(|a| a.upload).collect::<Vec<_>>())
+    });
+    check.check("the draft's prompt survives a restart", text == "Kept across restarts", &text);
+    check.check("the draft's image survives a restart with its id", ids == kept && !ids.is_empty(), format!("{ids:?} vs {kept:?}"));
+    check.check("its finished upload is reused", states.iter().all(|s| *s == UploadState::Uploaded), format!("{states:?}"));
+    check.shot("c6-restored-draft.png")?;
+    check.focus_composer();
+    check.press("enter");
+    let sent = check.pump(
+        |c| c.shown_input().entries.iter().any(|e| matches!(&e.kind, EntryKind::Message(m) if m.text.contains("Kept across restarts") && !m.attachments.is_empty())),
+        Duration::from_secs(30),
+        "the restored draft sends with its image",
+    );
+    check.check("the restored draft sends with its image", sent.is_ok(), format!("{sent:?}"));
+    check.shot("c7-restored-sent.png")
 }

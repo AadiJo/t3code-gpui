@@ -83,6 +83,16 @@ impl ComposerMenuSource for ShownMenu {
         let source = self.0.borrow().clone();
         source.map(|source| source.items(trigger)).unwrap_or_default()
     }
+
+    fn slash_items(&self, trigger: &ComposerTrigger, context: &crate::components::chat::composer_command_menu::SlashMenuContext) -> Option<(Vec<ComposerCommandItem>, bool)> {
+        let source = self.0.borrow().clone();
+        source.and_then(|source| source.slash_items(trigger, context))
+    }
+
+    fn empty_text(&self, trigger: &ComposerTrigger) -> Option<SharedString> {
+        let source = self.0.borrow().clone();
+        source.and_then(|source| source.empty_text(trigger))
+    }
 }
 
 /// One thread's source control model and the controls drawn on it.
