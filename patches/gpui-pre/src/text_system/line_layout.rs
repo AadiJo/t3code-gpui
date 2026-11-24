@@ -464,7 +464,8 @@ impl WrappedLineLayout {
                 line_start_ix = line_end_ix;
                 continue;
             } else {
-                let line_start_x = self.unwrapped_layout.x_for_index(line_start_ix);
+                // The first line starts at 0, as painting and hit testing take it, even when its first run is padded.
+                let line_start_x = if ix == 0 { Pixels::ZERO } else { self.unwrapped_layout.x_for_index(line_start_ix) };
                 let x = self.unwrapped_layout.x_for_index(index) - line_start_x;
                 return Some(point(x, line_y));
             }

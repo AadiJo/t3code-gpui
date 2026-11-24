@@ -24,7 +24,7 @@ use crate::components::ui::TextStyleExt as _;
 use crate::components::ui::spinner::{Spinner, SpinnerSize};
 use crate::components::ui::tooltip::{TooltipAnchor, TooltipSide, TooltipSurface, TooltipVariant, tooltip};
 use crate::i18n::{t, t_rich};
-use crate::state::thread_relationships::{
+use crate::state::thread_relationships::{SpeedIcon, 
     AgentClock, PhaseStatus, ProviderMark, RelationshipGroup, RelationshipIcon, RelationshipRow, RelationshipsInput, SubagentCard, WorkflowMember,
     WorkflowRow,
 };
@@ -135,11 +135,11 @@ fn probe(id: String) -> Option<AnyElement> {
 
 /// Rows open their tooltips after 200ms (`delay={200}`).
 const ROW_TOOLTIP_DELAY: Duration = Duration::from_millis(200);
+const STOP_TOOLTIP_DELAY: Duration = Duration::from_millis(600);
 
-/// `ThreadDetailsControl`: a row control with its 1px transparent border, which insets the
-/// content by a pixel.
+/// `ThreadDetailsControl`: a row control.
 fn control(id: impl Into<gpui_kit::ElementId>, theme: &AppTheme, disabled: bool, open: bool) -> gpui_kit::Stateful<gpui_kit::Div> {
-    row_base(id, theme, disabled, open).border_1().border_color(gpui_kit::transparent_black())
+    row_base(id, theme, disabled, open)
 }
 
 /// `threadRelationshipStatusLabel`.
@@ -194,7 +194,15 @@ fn format_compact_elapsed(ms: i64) -> SharedString {
 /// The driver's mark, or its initials, in `size` (`ProviderInstanceIcon`).
 fn provider_mark(theme: &AppTheme, mark: &ProviderMark, size: gpui_kit::Pixels, color: Hsla) -> AnyElement {
     let dark = theme.is_dark();
-    let icon: AnyElement = match crate::components::settings::provider_settings_panel::driver_brand(&mark.driver, dark) {
+    // `usesMetaModelIcon`, `usesGrokModelIcon`, `usesGeminiModelIcon`: the model's own brand.
+    let model = mark.model.as_deref().unwrap_or_default();
+    let model_brand = match mark.driver.as_ref() {
+        "opencode" if model.starts_with("opencode/muse-spark-") => Some(crate::components::icons::BrandIcon::Meta),
+        "cursor" if model.starts_with("grok-") => Some(crate::components::icons::BrandIcon::Grok),
+        "cursor" if model.starts_with("gemini-") => Some(crate::components::icons::BrandIcon::Gemini),
+        _ => None,
+    };
+    let icon: AnyElement = match model_brand.or_else(|| crate::components::settings::provider_settings_panel::driver_brand(&mark.driver, dark)) {
         Some(brand) => Icon::new(brand).size(IconSize::Custom(size)).color(color).into_any_element(),
         None => div()
             .ui_text(theme, TextSize::Xs3, weight::SEMIBOLD)
@@ -359,7 +367,24 @@ fn subagent_card(card: &SubagentCard) -> TooltipSurface {
             .gap(theme.rem(0.25))
             .text_color(with_alpha(theme.colors.foreground(), 0.75))
             .child(div().min_w_0().truncate().child(card.model.clone()))
-            .children(card.effort.clone().map(|effort| div().flex_none().child(SharedString::from(format!(" · {effort}")))));
+            .when(card.effort.is_some() || card.speed.is_some(), |d| {
+                let line_color = with_alpha(theme.colors.foreground(), 0.75);
+                // `TraitsSpeedIcon size="xs"`: `size-3`, filled, current colour at 80%.
+                let speed = card.speed.map(|speed| match speed {
+                    SpeedIcon::Fast => Icon::new(IconName::ZapFilled).size(IconSize::Custom(small)).color(with_alpha(line_color, 0.8)),
+                    SpeedIcon::Ultrafast => Icon::new(crate::components::icons::BrandIcon::Ultrafast).size(IconSize::Custom(small)).color(with_alpha(line_color, 0.8)),
+                });
+                d.child(
+                    div()
+                        .flex()
+                        .flex_none()
+                        .items_center()
+                        .gap(theme.rem(0.25))
+                        .children(card.effort.is_some().then_some(" · "))
+                        .children(speed)
+                        .children(card.effort.clone()),
+                )
+            });
         let elapsed = card.clock.elapsed_ms(t3code_client_runtime::state::models::now_ms()).map(format_elapsed);
         let status = div()
             .flex()
@@ -463,6 +488,9 @@ fn stop_button(rc: &RowCx<'_>, id: SharedString, group: SharedString, label: Sha
         .opacity(0.)
         .group_hover(group, |d| d.opacity(1.))
         .child(anchor.measure())
+        // Base UI's default open delay (`OPEN_DELAY`): the row's hover card stays up until this
+        // replaces it.
+        .tooltip_show_delay(STOP_TOOLTIP_DELAY)
         .tooltip(anchor.tooltip(label, TooltipSide::Left))
         // It sits over the row's link: the click stops here. (Occluding it would end the row's
         // group hover, which is what shows the button.)
@@ -541,7 +569,7 @@ fn relationship_row(rc: &RowCx<'_>, section: &'static str, index: usize, row: &R
     let Some(merge) = merge else {
         let stop_id: SharedString = format!("relationship-{section}-stop-{index}").into();
         let fill = rc.view.stop_hovered.as_ref() != Some(&stop_id);
-        let control = content(row_base_hovering(link_id, theme, false, false, fill).border_1().border_color(gpui_kit::transparent_black()).w_full())
+        let control = content(row_base_hovering(link_id, theme, false, false, fill).w_full())
             .children(probe(format!("relationship-row-{}", row.thread_id)))
             .tooltip_show_delay(ROW_TOOLTIP_DELAY)
             .tooltip(anchor.tooltip(tip, TooltipSide::Left))

@@ -36,6 +36,8 @@ pub mod thread_error_banner;
 pub mod thread_details_panel_styles;
 pub mod timeline_entries;
 pub mod timeline_fixtures;
+pub mod timeline_link_favicons;
+pub mod timeline_minimap;
 pub mod timeline_row_parts;
 pub mod timeline_viewport;
 pub mod virtual_list;

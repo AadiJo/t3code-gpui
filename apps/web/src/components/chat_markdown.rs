@@ -21,7 +21,8 @@ use gpui_kit::{
 
 use super::chat::{
     chat_style::{ChatColors, TEXT_2XS, TEXT_SM_RELAXED, TEXT_XS, alpha, mono, sans, text_code},
-    rich_text::{InlineFontBox, LinkHandler, RichText, TextBox, TextIcon},
+    rich_text::{IconPaint, InlineFontBox, LinkHandler, RichText, TextBox, TextIcon},
+    timeline_link_favicons::{LINK_FAVICON_PLACEHOLDER, LinkFavicon, external_link_host, link_favicon},
     syntax_highlighting::{highlight, highlight_or_schedule, is_plain_language},
     syntax_theme::SyntaxTheme,
 };
@@ -142,10 +143,14 @@ struct Renderer<'a> {
     link_handler: LinkHandler,
     /// Find matches drawn so far in this message.
     find_seen: usize,
+    /// Measures table cells for the auto table layout.
+    text_system: Rc<gpui_kit::WindowTextSystem>,
+    /// Link hosts whose favicon nobody asked for yet, requested once the render is done.
+    wanted_favicons: Vec<String>,
 }
 
 /// Renders a message's markdown as one column.
-pub fn render_markdown(view: &MarkdownView<'_>, _window: &mut Window, cx: &mut App) -> Div {
+pub fn render_markdown(view: &MarkdownView<'_>, window: &mut Window, cx: &mut App) -> Div {
     let actions = view.actions.clone();
     let mut renderer = Renderer {
         view,
@@ -156,6 +161,8 @@ pub fn render_markdown(view: &MarkdownView<'_>, _window: &mut Window, cx: &mut A
         text_color: if view.user { view.colors.theme.message_foreground } else { view.colors.prose() },
         link_handler: Rc::new(move |target, window, cx| actions(MarkdownAction::OpenLink(target.clone()), window, cx)),
         find_seen: 0,
+        text_system: window.text_system().clone(),
+        wanted_favicons: Vec::new(),
     };
     let mut rendered = Vec::new();
     let last_piece = view.pieces.len().saturating_sub(1);
@@ -170,6 +177,10 @@ pub fn render_markdown(view: &MarkdownView<'_>, _window: &mut Window, cx: &mut A
             rendered.push(block);
         }
     }
+    let wanted = std::mem::take(&mut renderer.wanted_favicons);
+    let text_color = renderer.text_color;
+    drop(renderer);
+    super::chat::timeline_link_favicons::request(wanted, cx);
     let stacked = stack(rendered);
     div()
         .w_full()
@@ -178,7 +189,7 @@ pub fn render_markdown(view: &MarkdownView<'_>, _window: &mut Window, cx: &mut A
         .flex_col()
         .text_size(TEXT_SM_RELAXED.size)
         .line_height(TEXT_SM_RELAXED.line_height)
-        .text_color(renderer.text_color)
+        .text_color(text_color)
         .children(stacked.0)
 }
 
@@ -326,6 +337,88 @@ impl Renderer<'_> {
         }
     }
 
+    /// A table cell's (longest word, whole text) width on one line, with its styles.
+    fn cell_widths(&self, cell: &Inlines, header: bool) -> (Pixels, Pixels) {
+        let base = InlineBase {
+            weight: if header { FontWeight::SEMIBOLD } else { FontWeight::NORMAL },
+            color: self.text_color,
+        };
+        let runs = style_inlines(cell, base, self.view.colors, self.view.user).runs;
+        let text = cell.text.as_ref();
+        if text.is_empty() {
+            return (px(0.), px(0.));
+        }
+        let line = self.text_system.layout_line(text, self.view.colors.r(px(14.)), &runs, None);
+        let mut longest = px(0.);
+        let mut start = 0;
+        for (index, c) in text.char_indices().chain([(text.len(), ' ')]) {
+            if c.is_whitespace() {
+                if index > start {
+                    // A word that opens the cell starts at 0, before any padding of its run.
+                    let from = if start == 0 { px(0.) } else { line.x_for_index(start) };
+                    longest = longest.max(line.x_for_index(index) - from);
+                }
+                start = index + c.len_utf8();
+            }
+        }
+        (longest, line.width)
+    }
+
+    /// `MarkdownExternalLinkContent`: the inlines with a favicon slot opening each external web
+    /// link that has text, and the icons painted over the slots; `None` without such a link.
+    fn link_favicons(&mut self, inlines: &Inlines) -> Option<(Inlines, Vec<TextIcon>)> {
+        let colors = self.view.colors;
+        let mut slots: Vec<(usize, LinkFavicon)> = inlines
+            .spans
+            .iter()
+            .filter_map(|span| match &span.style {
+                InlineStyle::Link(target) if !span.range.is_empty() => {
+                    let host = external_link_host(target)?;
+                    Some((span.range.start, link_favicon(&host, &mut self.wanted_favicons, self.app)))
+                }
+                _ => None,
+            })
+            .collect();
+        if slots.is_empty() {
+            return None;
+        }
+        slots.sort_by_key(|(at, _)| *at);
+        slots.dedup_by_key(|(at, _)| *at);
+        let width = LINK_FAVICON_PLACEHOLDER.len();
+        let positions: Vec<usize> = slots.iter().map(|(at, _)| *at).collect();
+        let shift = |at: usize| at + width * positions.iter().take_while(|slot| **slot < at).count();
+        let mut text = String::with_capacity(inlines.text.len() + width * slots.len());
+        let mut cursor = 0;
+        for (at, _) in &slots {
+            text.push_str(&inlines.text[cursor..*at]);
+            text.push_str(LINK_FAVICON_PLACEHOLDER);
+            cursor = *at;
+        }
+        text.push_str(&inlines.text[cursor..]);
+        let spans = inlines
+            .spans
+            .iter()
+            .map(|span| crate::markdown_pipeline::InlineSpan { range: shift(span.range.start)..shift(span.range.end), ..span.clone() })
+            .collect();
+        let em = colors.r(px(14.));
+        let icons = slots
+            .into_iter()
+            .map(|(at, favicon)| TextIcon {
+                index: shift(at),
+                // `size-[14px]`, a pixel literal, after `ms-[0.25em]`.
+                size: px(14.),
+                inset: em * 0.25,
+                below_baseline: Some(em * 0.125),
+                paint: match favicon {
+                    LinkFavicon::Mark(path) => IconPaint::Svg { path: path.into(), color: colors.info_foreground },
+                    LinkFavicon::Image(image) => IconPaint::Image { image, radius: colors.r(px(4.)) },
+                    LinkFavicon::Loading => IconPaint::Empty,
+                },
+            })
+            .collect();
+        Some((Inlines { text: text.into(), spans }, icons))
+    }
+
     /// A paragraph of inline content as one selectable text run.
     fn paragraph(&mut self, inlines: &Inlines, weight: Option<FontWeight>, color: Option<Hsla>) -> AnyElement {
         let (_, id) = self.element_id("p");
@@ -333,7 +426,10 @@ impl Renderer<'_> {
             weight: weight.unwrap_or(FontWeight::NORMAL),
             color: color.unwrap_or(self.text_color),
         };
-        let styled = style_inlines(inlines, base, self.view.colors, self.view.user);
+        let favicons = self.link_favicons(inlines);
+        let inlines = favicons.as_ref().map_or(inlines, |(inlines, _)| inlines);
+        let mut styled = style_inlines(inlines, base, self.view.colors, self.view.user);
+        styled.icons.extend(favicons.as_ref().into_iter().flat_map(|(_, icons)| icons.iter().cloned()));
         let runs = self.find_runs(&inlines.text, styled.runs);
         let mut text = RichText::new(id, inlines.text.clone(), runs)
             .boxes(styled.boxes)
@@ -509,12 +605,12 @@ impl Renderer<'_> {
                     .flex()
                     .gap(self.view.colors.r(px(2.)))
                     .child(
-                        icon_button(("wrap", key), IconName::TextWrap, header_color, colors)
+                        icon_button(("wrap", key), IconName::TextWrap, if wrapped { colors.theme.secondary_foreground } else { colors.theme.muted_foreground }, colors)
                             .when_active(wrapped, colors)
                             .on_click(move |_, window, cx| wrap_actions(MarkdownAction::ToggleWrap(key), window, cx)),
                     )
                     .children(run_command.map(|command| {
-                        icon_button(("run", key), IconName::Play, header_color, colors)
+                        icon_button(("run", key), IconName::Play, colors.theme.muted_foreground, colors)
                             .tooltip(crate::components::ui::tooltip::tooltip(crate::i18n::t!("Run in terminal")))
                             .on_click(move |_, window, cx| run_actions(MarkdownAction::RunShellCommand(command.clone()), window, cx))
                     }))
@@ -522,7 +618,7 @@ impl Renderer<'_> {
                         icon_button(
                             ("copy", key),
                             if copied { IconName::Check } else { IconName::Copy },
-                            if copied { colors.theme.message_action } else { header_color },
+                            colors.theme.muted_foreground,
                             colors,
                         )
                         .on_click(move |_, window, cx| {
@@ -570,16 +666,22 @@ impl Renderer<'_> {
     fn table(&mut self, table: &Table) -> AnyElement {
         let colors = self.view.colors;
         let columns = table.header.len().max(table.rows.iter().map(Vec::len).max().unwrap_or(0));
-        // Auto table layout, approximated: columns grow in proportion to their longest cell.
-        let weights: Vec<f32> = (0..columns)
+        let pad_x = colors.r(CELL_PAD_X);
+        let side_padding = |column: usize| match (column == 0, column + 1 == columns) {
+            (true, true) => px(0.),
+            (true, false) | (false, true) => pad_x,
+            (false, false) => pad_x * 2.,
+        };
+        // Each column's (min-content, max-content) width with its padding: the longest word
+        // and the whole cell on one line, the widest cell of the column for each.
+        let measured: Vec<(Pixels, Pixels)> = (0..columns)
             .map(|column| {
-                let longest = std::iter::once(&table.header)
-                    .chain(table.rows.iter())
-                    .filter_map(|row| row.get(column))
-                    .map(|cell| cell.text.chars().count())
-                    .max()
-                    .unwrap_or(1);
-                ((longest as f32 * 7.5 + 24.) * self.view.colors.rem).min(f32::from(self.view.colors.r(CELL_MAX_WIDTH)))
+                let (min, max) = std::iter::once((&table.header, true))
+                    .chain(table.rows.iter().map(|row| (row, false)))
+                    .filter_map(|(row, header)| row.get(column).map(|cell| self.cell_widths(cell, header)))
+                    .fold((px(0.), px(0.)), |(a, b), (min, max)| (a.max(min), b.max(max)));
+                let cap = colors.r(CELL_MAX_WIDTH);
+                (min.min(cap) + side_padding(column), max.min(cap) + side_padding(column))
             })
             .collect();
         let rule = alpha(colors.theme.border, 0.6);
@@ -600,16 +702,20 @@ impl Renderer<'_> {
                         .get(column)
                         .map(|cell| this.paragraph(cell, header.then_some(FontWeight::SEMIBOLD), None));
                     let align = table.align.get(column).copied().unwrap_or(TableAlign::None);
+                    // Auto table layout at `width: 100%`: columns start at their max-content
+                    // width and share spare or missing width in proportion to it, never
+                    // narrower than their min-content width.
+                    let (min, max) = measured[column];
                     let mut cell = div()
-                        .flex_grow(1.)
-                        .flex_basis(px(weights[column]))
-                        .min_w(px(weights[column] * 0.5))
-                        .max_w(self.view.colors.r(CELL_MAX_WIDTH))
+                        .flex_basis(max)
+                        .flex_grow(f32::from(max).max(1.))
+                        .flex_shrink(1.)
+                        .min_w(min)
                         .pt(pad_top)
                         .pb(pad_bottom)
                         .flex()
                         .children(content);
-                    cell = if column == 0 { cell.pr(self.view.colors.r(CELL_PAD_X)) } else if column + 1 == columns { cell.pl(self.view.colors.r(CELL_PAD_X)) } else { cell.px(self.view.colors.r(CELL_PAD_X)) };
+                    cell = if column == 0 { cell.pr(pad_x) } else if column + 1 == columns { cell.pl(pad_x) } else { cell.px(pad_x) };
                     match align {
                         TableAlign::Center => cell.text_center(),
                         TableAlign::Right => cell.text_right(),
@@ -638,7 +744,7 @@ impl Renderer<'_> {
                     icon_button(
                         ("table-copy", key),
                         if copied { IconName::Check } else { IconName::Copy },
-                        if copied { colors.theme.message_action } else { colors.theme.muted_foreground },
+                        colors.theme.muted_foreground,
                         colors,
                     )
                     .on_click(move |_, window, cx| actions(MarkdownAction::Copy { key, text: markdown.clone() }, window, cx)),
@@ -743,7 +849,13 @@ fn style_inlines(inlines: &Inlines, base: InlineBase, colors: &ChatColors, user:
                         [layer] => (layer.asset.into(), layer.tint.color(colors.appearance, colors.theme.muted_foreground)),
                         _ => (IconName::File.path().into(), file_ink),
                     };
-                    styled.icons.push(TextIcon { index: span.range.start, path, size: colors.r(px(14.)), color });
+                    styled.icons.push(TextIcon {
+                        index: span.range.start,
+                        size: colors.r(px(14.)),
+                        inset: px(0.),
+                        below_baseline: None,
+                        paint: IconPaint::Svg { path, color },
+                    });
                 }
                 styled.links.push((span.range.clone(), target.clone()));
             }
@@ -925,7 +1037,7 @@ pub fn rotated_chevron(open: bool, size: Pixels, color: Hsla) -> AnyElement {
     }
 }
 
-/// A 24px square ghost button with a 12px icon (`Button size=icon-xs`).
+/// A 24px square `ghost-muted` button with a 12px icon (`Button size=icon-xs`) drawn in `color`.
 pub fn icon_button(
     id: impl Into<ElementId>,
     glyph: IconName,

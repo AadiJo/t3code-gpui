@@ -167,6 +167,7 @@ pub struct ChatView {
     banner: Option<AnyView>,
     /// The breadcrumb's project icon (override and favicon); the monogram without one.
     project_icon: Option<crate::components::project_favicon::ProjectIconSource>,
+    parent_crumb: Option<crate::components::chat::chat_header::ParentCrumb>,
     thread_key: SharedString,
     find_bar: Option<(Entity<ThreadFindBar>, Subscription)>,
     /// Every question of the pending request.
@@ -205,6 +206,7 @@ impl ChatView {
             details_mode: ThreadDetailsMode::Popover,
             banner: None,
             project_icon: None,
+            parent_crumb: None,
             thread_key: SharedString::default(),
             find_bar: None,
             questions: Arc::from([]),
@@ -451,6 +453,12 @@ impl ChatView {
         self.project_icon.as_ref()
     }
 
+    /// The breadcrumb's parent crumb, for a provider subagent thread.
+    pub fn set_parent_crumb(&mut self, crumb: Option<crate::components::chat::chat_header::ParentCrumb>, cx: &mut Context<Self>) {
+        self.parent_crumb = crumb;
+        cx.notify();
+    }
+
     /// The breadcrumb's project icon source.
     pub fn set_project_icon(&mut self, icon: Option<crate::components::project_favicon::ProjectIconSource>, cx: &mut Context<Self>) {
         if self.project_icon != icon {
@@ -622,13 +630,13 @@ impl Render for ChatView {
                     .when(self.hero, |d| d.child(Self::hero_headline(&colors)))
                     .children(pending_question.as_ref().map(|question| {
                         div()
-                            .mx(rems(1.))
+                            .mx(rems(1.375))
                             .rounded_t(rems(0.75))
                             .border_1()
                             .border_b_0()
                             .border_color(alpha(colors.theme.border, 0.8))
                             .glass(colors.composer_glass)
-                            .pb_2()
+                            .pb(rems(0.25))
                             .child(pending_user_input_panel(question, selected, on_pick.clone(), &colors))
                             .children(question_nav)
                     }))
@@ -760,7 +768,7 @@ impl Render for ChatView {
                     .min_w_0()
                     .min_h_0()
                     .when(!self.embedded, |d| {
-                        d.child(chat_header(&self.project, self.project_icon.as_ref(), &self.title, self.header_height, self.header_inset, &colors, thread_actions))
+                        d.child(chat_header(&self.project, self.project_icon.as_ref(), &self.title, self.header_height, self.header_inset, &colors, self.parent_crumb.as_ref(), thread_actions))
                     })
                     .child(
                         div()

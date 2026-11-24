@@ -193,6 +193,7 @@ impl StateBridge {
             (runtime, ClientStore::<Drafts>::open(&data_dir), ClientStore::<UiState>::open(&data_dir))
         };
         let runtime = Arc::new(runtime);
+        crate::components::chat::timeline_link_favicons::init(&data_dir, cx);
         let environments = cx.new(|_| Environments::default());
         let drafts = Rc::new(drafts);
         let ui_state = Rc::new(ui_state);

@@ -210,6 +210,7 @@ impl LiveData {
         let mut timeline: TimelineInput = thread.input().clone();
         timeline.supports_rollback = supports_rollback && !timeline.revert_turn_counts.is_empty();
         let questions = thread.projection().map(|p| crate::session_logic::pending_questions(p)).unwrap_or_default();
+        let parent_subagent = thread_relationships::parent_subagent_crumb(key, cx);
         let cwd = source
             .as_ref()
             .and_then(|row| row.source.worktree_path.clone())
@@ -233,6 +234,7 @@ impl LiveData {
             branch: row.as_ref().and_then(|r| r.branch.clone()),
             project_id: project_ref.map(|r| r.project_id),
             project_icon,
+            parent_subagent,
         }
     }
 
@@ -337,6 +339,7 @@ impl AppData for LiveData {
                     branch: branch.map(SharedString::from),
                     project_id: project.map(|p| p.project_id),
                     project_icon,
+                    parent_subagent: None,
                 })
             }
         }

@@ -55,6 +55,8 @@ pub struct ThreadView {
     pub project_id: Option<ProjectId>,
     /// The project's icon override and fetched favicon, for the header breadcrumb.
     pub project_icon: Option<crate::components::project_favicon::ProjectIconSource>,
+    /// The parent of a provider subagent thread and its title, for the header's parent crumb.
+    pub parent_subagent: Option<(crate::components::sidebar::model::ThreadKey, SharedString)>,
 }
 
 /// A change the views apply.

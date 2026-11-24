@@ -143,7 +143,8 @@ pub struct MessagesTimeline {
     pub(super) markdown: HashMap<SharedString, MessageMarkdown>,
     pub(super) colors: ChatColors,
     /// The message column's width at the Chat width setting.
-    lane: super::chat_style::ChatLane,
+    pub(super) lane: super::chat_style::ChatLane,
+    pub(super) minimap: super::timeline_minimap::MinimapState,
     /// Advances every [`ANIMATION_STEP`] while something animates on screen.
     pub(super) animation_step: u64,
     animation_task: Option<Task<()>>,
@@ -201,6 +202,7 @@ impl MessagesTimeline {
             markdown: HashMap::new(),
             colors: ChatColors::get(cx),
             lane: super::chat_style::ChatLane::get(cx),
+            minimap: Default::default(),
             animation_step: 0,
             animation_task: None,
             copied_task: None,
@@ -231,6 +233,7 @@ impl MessagesTimeline {
             self.scroll_memory.insert(previous.clone(), self.list.memory());
             self.remember_rows(previous);
         }
+        self.list.settle();
         self.expansion = TimelineExpansion::default();
         self.expanded_entries.clear();
         self.find = None;
@@ -458,9 +461,11 @@ impl MessagesTimeline {
         t3code_client_runtime::state::models::now_ms() + self.clock_offset
     }
 
-    /// The composer overlay's measured height; the list reserves it at the bottom.
+    /// The composer overlay's measured height, rounded up to a whole pixel as
+    /// `publishComposerOverlayHeight` does; the list reserves it at the bottom.
     pub fn set_composer_inset(&mut self, height: Pixels, cx: &mut Context<Self>) {
-        if (self.composer_inset - height).abs() < px(0.5) {
+        let height = height.ceil();
+        if self.composer_inset == height {
             return;
         }
         self.composer_inset = height;
@@ -751,14 +756,15 @@ impl MessagesTimeline {
         hasher.finish()
     }
 
-    /// Bottom padding of a row (`MessagesTimeline.tsx:1660-1683`).
+    /// Bottom padding of a row at a 16px root (`MessagesTimeline.tsx:1660-1683`); the caller
+    /// scales it by the interface size.
     fn row_bottom_padding(row: &TimelineRow) -> Pixels {
         match &row.kind {
             RowKind::Work { .. } | RowKind::WorkLive { .. } | RowKind::WorkToggle { .. } | RowKind::Thinking { .. } => px(0.),
             RowKind::WorkGroupDetails { .. } => px(0.),
             RowKind::Event { event: super::timeline_entries::TimelineEvent::Subagent(_), .. } => px(0.),
             RowKind::TurnFold { .. } | RowKind::Working { .. } => px(6.),
-            RowKind::Message(m) if m.message.role == MessageRole::User && m.grouped_with_next => px(4.),
+            RowKind::Message(m) if m.grouped_with_next => px(4.),
             RowKind::Message(m) if m.message.role == MessageRole::Assistant && !m.show_meta => px(8.),
             RowKind::WorktreeSetup(_)
             | RowKind::Event { .. }
@@ -767,8 +773,7 @@ impl MessagesTimeline {
             | RowKind::SentMessage { .. }
             | RowKind::McpApp { .. }
             | RowKind::ViewedImages { .. }
-            | RowKind::PendingApproval { .. }
-            | RowKind::AssistantMeta { .. } => px(8.),
+            | RowKind::PendingApproval { .. } => px(8.),
             RowKind::QueuedMessages { .. } => px(0.),
             _ => px(16.),
         }
@@ -839,6 +844,7 @@ impl Render for MessagesTimeline {
         self.colors = ChatColors::get(cx);
         self.lane = super::chat_style::ChatLane::get(cx);
         self.apply_insets();
+        self.list.set_smooth_follow(self.input.is_working && !crate::components::ui::motion::prefers_reduced_motion(cx));
         self.now = Instant::now().max(self.now);
         let weak = self.weak.clone();
         let colors = self.colors;
@@ -854,12 +860,12 @@ impl Render for MessagesTimeline {
                 .child("Send a message to start the conversation.")
                 .into_any_element();
         }
-        virtual_list("messages-timeline", self.list.clone(), move |index, window, cx| {
+        let list = virtual_list("messages-timeline", self.list.clone(), move |index, window, cx| {
             weak.update(cx, |this, cx| this.render_row(index, window, cx))
                 .unwrap_or_else(|_| div().into_any_element())
         })
-        .scrollbar_colors(colors.scrollbar, colors.scrollbar_hover)
-        .into_any_element()
+        .scrollbar_colors(colors.scrollbar, colors.scrollbar_hover);
+        div().relative().size_full().child(list).children(self.render_minimap(cx)).into_any_element()
     }
 }
 

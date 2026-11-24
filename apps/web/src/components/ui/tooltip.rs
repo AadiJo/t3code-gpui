@@ -160,6 +160,8 @@ struct Placement {
 
 /// `sideOffset`.
 const SIDE_OFFSET: Pixels = px(4.);
+/// Base UI's `collisionPadding`: a shifted popup keeps this far inside the window.
+const COLLISION_PADDING: Pixels = px(5.);
 
 struct TooltipView {
     surface: TooltipSurface,
@@ -190,43 +192,49 @@ impl Render for TooltipView {
             return Transition::STANDARD.fade_in("tooltip-enter", div().pb(px(4.)).child(self.surface.clone()));
         };
         // GPUI places the root at `origin` and sizes it to its content, so the root stays empty
-        // and the card hangs off it: a box beside the trigger, as wide as the widest tooltip
-        // (insets on both sides give it a definite width), aligns the card to the trigger.
-        let span = window.viewport_size().width.max(window.viewport_size().height);
-        let (left, right, top, bottom) = match side {
-            TooltipSide::Left => {
-                let edge = trigger.left() - SIDE_OFFSET;
-                (edge - span - origin.x, origin.x - edge, trigger.top() - origin.y, origin.y - trigger.bottom())
-            }
-            TooltipSide::Right => {
-                let edge = trigger.right() + SIDE_OFFSET;
-                (edge - origin.x, origin.x - edge - span, trigger.top() - origin.y, origin.y - trigger.bottom())
-            }
-            TooltipSide::Top => {
-                let edge = trigger.top() - SIDE_OFFSET;
-                let center = trigger.center().x;
-                (center - span - origin.x, origin.x - center - span, edge - span - origin.y, origin.y - edge)
-            }
-            TooltipSide::Bottom => {
-                let edge = trigger.bottom() + SIDE_OFFSET;
-                let center = trigger.center().x;
-                (center - span - origin.x, origin.x - center - span, edge - origin.y, origin.y - edge - span)
-            }
+        // and the card hangs off it, beside the trigger and centred on it. Base UI shifts a
+        // popup along that axis to stay `COLLISION_PADDING` inside the window: the card sits
+        // between two spacers whose bases are the room on either side of the trigger's centre,
+        // and their shrink weights (inverse to the bases) take equal amounts from both, so the
+        // card stays centred until one side runs out of room and then rests against that edge.
+        let window_size = window.viewport_size();
+        let (low, high) = (COLLISION_PADDING, |extent: Pixels| extent - COLLISION_PADDING);
+        let spacer = |room: Pixels| {
+            let room = room.max(px(0.));
+            div().flex_basis(room).flex_shrink(1. / f32::from(room).max(0.01)).min_w_0().min_h_0()
+        };
+        let card = div().flex_none().child(self.surface.clone());
+        let vertical = matches!(side, TooltipSide::Left | TooltipSide::Right);
+        let (center, extent) = if vertical { (trigger.center().y, window_size.height) } else { (trigger.center().x, window_size.width) };
+        let along = div()
+            .flex()
+            .when(vertical, |d| d.flex_col())
+            .size_full()
+            .child(spacer(center - low))
+            .child(card)
+            .child(spacer(high(extent) - center));
+        // The frame: from the trigger's edge outward on the main axis, the window less its
+        // padding on the cross axis, in coordinates relative to the root at `origin`.
+        let (x0, x1, y0, y1) = match side {
+            TooltipSide::Left => (low, trigger.left() - SIDE_OFFSET, low, high(window_size.height)),
+            TooltipSide::Right => (trigger.right() + SIDE_OFFSET, high(window_size.width), low, high(window_size.height)),
+            TooltipSide::Top => (low, high(window_size.width), low, trigger.top() - SIDE_OFFSET),
+            TooltipSide::Bottom => (low, high(window_size.width), trigger.bottom() + SIDE_OFFSET, high(window_size.height)),
         };
         let frame = div()
             .absolute()
-            .left(left)
-            .right(right)
-            .top(top)
-            .bottom(bottom)
+            .left(x0 - origin.x)
+            .top(y0 - origin.y)
+            .w((x1 - x0).max(px(0.)))
+            .h((y1 - y0).max(px(0.)))
             .flex()
             .map(|d| match side {
-                TooltipSide::Left => d.justify_end().items_center(),
-                TooltipSide::Right => d.justify_start().items_center(),
-                TooltipSide::Top => d.justify_center().items_end(),
-                TooltipSide::Bottom => d.justify_center().items_start(),
+                TooltipSide::Left => d.justify_end(),
+                TooltipSide::Right => d.justify_start(),
+                TooltipSide::Top => d.flex_col().justify_end(),
+                TooltipSide::Bottom => d.flex_col().justify_start(),
             })
-            .child(div().flex_none().child(self.surface.clone()));
+            .child(div().flex().flex_none().when(vertical, |d| d.h_full()).when(!vertical, |d| d.w_full()).child(along));
         Transition::STANDARD.fade_in("tooltip-enter", div().size_0().child(frame))
     }
 }

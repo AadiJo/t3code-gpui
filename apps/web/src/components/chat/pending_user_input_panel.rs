@@ -5,17 +5,17 @@
 use crate::components::icons::{Icon, IconName, IconSize};
 use std::rc::Rc;
 
-use gpui_kit::{rems, 
+use gpui_kit::{rems, prelude::FluentBuilder as _, 
     AnyElement, App, FontWeight, InteractiveElement as _, IntoElement, ParentElement as _,
     StatefulInteractiveElement as _, Styled as _, Window, div, px,
 };
 
 use super::{
-    chat_style::{ChatColors, TEXT_2XS, TEXT_SM, TEXT_XS, alpha},
+    chat_style::{ChatColors, TEXT_2XS, TEXT_SM, TEXT_SM_RELAXED, TEXT_XS, alpha},
     timeline_entries::PendingQuestion,
 };
 
-/// Option radio: 16px circle with a 6px dot when chosen.
+/// Option radio: `sm:size-4` circle with a `sm:size-1.5` dot when chosen.
 const RADIO: gpui_kit::Rems = gpui_kit::rems(1.0);
 const RADIO_DOT: gpui_kit::Rems = gpui_kit::rems(0.375);
 
@@ -30,28 +30,47 @@ pub fn pending_user_input_panel(
     on_pick: OnPick,
     colors: &ChatColors,
 ) -> AnyElement {
+    // `ComposerBanner.Root`: `px-1 py-1` around the rows. The mount's 1px outline takes
+    // layout space here, unlike the fork's `::before` outline, so it comes off the padding.
+    let root_pad = rems(0.25).to_pixels(gpui_kit::px(colors.rem * 16.)) - px(1.);
     let header = div()
         .flex()
         .items_center()
-        .gap_2()
+        .gap(rems(0.25))
         .px_4()
         .py(rems(0.375))
         .text_size(TEXT_XS.size)
+        .line_height(TEXT_XS.line_height)
         .text_color(colors.theme.muted_foreground)
-        .child(div().flex_1().child(question.header.clone()))
-        .child(format!("{}/{}", question.index + 1, question.count))
-        .child(Icon::new(IconName::ChevronDown).size(IconSize::Sm).color(colors.theme.muted_foreground));
+        .child(div().flex_1().min_w_0().pl(rems(0.375)).truncate().child(question.header.clone()))
+        .child(
+            div()
+                .flex()
+                .flex_none()
+                .items_center()
+                .gap_1()
+                .when(question.count > 1, |d| {
+                    d.child(
+                        div()
+                            .min_w(rems(1.5))
+                            .flex()
+                            .justify_center()
+                            .font_weight(FontWeight::MEDIUM)
+                            .child(format!("{}/{}", question.index + 1, question.count)),
+                    )
+                })
+                .child(
+                    div()
+                        .size(rems(1.5))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .child(Icon::new(IconName::ChevronDown).size(IconSize::Custom(colors.r(px(14.)))).color(colors.theme.muted_foreground)),
+                ),
+        );
     let options = question.options.iter().enumerate().map(|(index, (label, description))| {
         let chosen = selected == Some(index);
-        let radio = div()
-            .mt(rems(0.125))
-            .size(RADIO)
-            .flex_none()
-            .rounded_full()
-            .border_1()
-            .flex()
-            .items_center()
-            .justify_center();
+        let radio = div().size(RADIO).flex_none().rounded_full().border_1().flex().items_center().justify_center();
         let radio = if chosen {
             radio.border_color(colors.theme.message_action).bg(colors.theme.message_action).child(
                 div().size(RADIO_DOT).rounded_full().bg(colors.theme.message_action_foreground),
@@ -63,6 +82,8 @@ pub fn pending_user_input_panel(
         };
         let on_pick = on_pick.clone();
         let hover = alpha(colors.theme.muted, 0.3);
+        // The `h-5` slots match the label's line box, so the radio and key stay on its first line.
+        let slot = || div().h(rems(1.25)).flex().flex_none().items_center();
         div()
             .id(("question-option", index))
             .flex()
@@ -76,36 +97,58 @@ pub fn pending_user_input_panel(
             .py(rems(0.375))
             .pl(rems(0.375))
             .text_color(if chosen { colors.theme.text } else { alpha(colors.theme.text, 0.7) })
-            .child(radio)
+            .child(slot().child(radio))
             .child(
                 div()
                     .flex_1()
-                    .child(div().text_size(TEXT_SM.size).font_weight(FontWeight::MEDIUM).child(label.clone()))
-                    .child(div().text_size(TEXT_2XS.size).text_color(colors.theme.secondary_label).child(description.clone())),
-            )
-            .child(
-                div()
-                    .w(rems(1.5))
-                    .h(rems(1.25))
+                    .min_w_0()
                     .flex()
-                    .items_center()
-                    .justify_center()
-                    .rounded(rems(0.25))
-                    .bg(alpha(colors.theme.text, 0.07))
-                    .text_size(TEXT_XS.size)
-                    .text_color(colors.theme.muted_foreground)
-                    .child((index + 1).to_string()),
+                    .flex_col()
+                    .gap(rems(0.125))
+                    .child(div().text_size(TEXT_SM.size).line_height(TEXT_SM.line_height).font_weight(FontWeight::MEDIUM).child(label.clone()))
+                    .when(!description.is_empty() && description != label, |d| {
+                        d.child(div().text_size(TEXT_2XS.size).line_height(TEXT_2XS.line_height).text_color(colors.theme.secondary_label).child(description.clone()))
+                    }),
             )
+            .when(index < 9, |d| {
+                d.child(
+                    slot().w(rems(1.5)).justify_center().child(
+                        div()
+                            .h(rems(1.25))
+                            .min_w(rems(1.25))
+                            .px(rems(0.25))
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .rounded(rems(0.25))
+                            .bg(alpha(colors.theme.text, 0.07))
+                            .text_size(TEXT_XS.size)
+                            .line_height(TEXT_XS.line_height)
+                            .font_weight(FontWeight::MEDIUM)
+                            .text_color(colors.theme.muted_foreground)
+                            .child((index + 1).to_string()),
+                    ),
+                )
+            })
     });
     div()
         .w_full()
+        .px(root_pad)
+        .pt(root_pad)
         .child(header)
         .child(
             div()
                 .pl(rems(1.375))
                 .pr_4()
                 .pb_1()
-                .child(div().pt(rems(0.125)).text_size(TEXT_SM.size).text_color(alpha(colors.theme.text, 0.85)).child(question.question.clone()))
+                .child(
+                    div()
+                        .pt(rems(0.125))
+                        .text_size(TEXT_SM_RELAXED.size)
+                        .line_height(TEXT_SM_RELAXED.line_height)
+                        .text_color(alpha(colors.theme.text, 0.85))
+                        .child(question.question.clone()),
+                )
                 .child(div().mt(rems(0.375)).ml(rems(-0.375)).flex().flex_col().children(options)),
         )
         .into_any_element()

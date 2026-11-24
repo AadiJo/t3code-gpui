@@ -23,6 +23,13 @@ const HEADER_TOGGLE_CLEARANCE: gpui_kit::Pixels = px(96.);
 const CRUMB_GAP: gpui_kit::Pixels = px(12.);
 const PROJECT_CRUMB_GAP: gpui_kit::Pixels = px(6.);
 
+/// The parent crumb of a provider subagent thread ("Open parent thread: <title>").
+#[derive(Clone)]
+pub struct ParentCrumb {
+    pub title: SharedString,
+    pub on_click: std::rc::Rc<dyn Fn(&mut Window, &mut App)>,
+}
+
 /// The thread title as the "Thread actions for <title>" menu trigger, with
 /// the open menu drawn below it.
 pub struct ThreadActionsTrigger {
@@ -31,9 +38,10 @@ pub struct ThreadActionsTrigger {
     pub menu: Option<AnyElement>,
 }
 
-/// The header row: project crumb, separator, thread title. `height` is the
-/// window's topbar height; `leading_inset` clears the floating sidebar
-/// toggle while the sidebar is collapsed.
+/// The header row: project crumb, separator, the parent crumb of a subagent thread and its
+/// separator, thread title. `height` is the window's topbar height; `leading_inset` is the left
+/// padding that clears the floating sidebar toggle while the sidebar is collapsed
+/// (`--workspace-titlebar-content-left`).
 pub fn chat_header(
     project: &SharedString,
     project_icon: Option<&crate::components::project_favicon::ProjectIconSource>,
@@ -41,8 +49,10 @@ pub fn chat_header(
     height: gpui_kit::Pixels,
     leading_inset: gpui_kit::Pixels,
     colors: &ChatColors,
+    parent: Option<&ParentCrumb>,
     actions: Option<ThreadActionsTrigger>,
 ) -> AnyElement {
+    let separator = || div().flex_none().font_weight(FontWeight::NORMAL).text_color(colors.theme.icon_muted).child("/");
     div()
         .flex_none()
         .h(height)
@@ -50,7 +60,9 @@ pub fn chat_header(
         .flex()
         .items_center()
         .px(colors.r(HEADER_PADDING))
-        .pl(colors.r(HEADER_PADDING) + leading_inset)
+        // A collapsed sidebar's titlebar inset replaces the padding (`workspaceTitlebar.ts`);
+        // while it animates in, the larger of the two holds.
+        .pl(colors.r(HEADER_PADDING).max(leading_inset))
         .bg(colors.theme.toolbar)
         .child(
             div()
@@ -77,7 +89,26 @@ pub fn chat_header(
                         .child(ProjectFavicon::new(project.clone()).source(project_icon).size(colors.r(px(14.))))
                         .child(project.clone()),
                 )
-                .child(div().font_weight(FontWeight::NORMAL).text_color(colors.theme.icon_muted).child("/"))
+                .child(separator())
+                .when_some(parent.cloned(), |d, parent| {
+                    let on_click = parent.on_click.clone();
+                    d.child(
+                        div()
+                            .id("parent-crumb")
+                            .flex()
+                            .flex_shrink(1.)
+                            .min_w_0()
+                            .items_center()
+                            .rounded(rems(0.25))
+                            .cursor_pointer()
+                            .text_color(colors.theme.muted_foreground)
+                            .hover(|s| s.text_color(colors.theme.text))
+                            .child(div().min_w_0().truncate().child(parent.title.clone()))
+                            .tooltip(crate::components::ui::tooltip::tooltip(parent.title.clone()))
+                            .on_click(move |_, window, cx| on_click(window, cx)),
+                    )
+                    .child(separator())
+                })
                 .child({
                     let open = actions.as_ref().is_some_and(|a| a.open);
                     let (on_click, menu) = actions.map(|a| (a.on_click, a.menu)).unzip();

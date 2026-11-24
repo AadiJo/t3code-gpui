@@ -42,14 +42,30 @@ pub struct InlineFontBox {
     pub border: Pixels,
 }
 
-/// An icon painted over a placeholder glyph, such as the file icon of a file chip.
-#[derive(Clone, Debug)]
+/// An icon painted over a placeholder glyph, such as the file icon of a file chip or a
+/// link's favicon.
+#[derive(Clone)]
 pub struct TextIcon {
     /// Byte offset of the placeholder the icon covers.
     pub index: usize,
-    pub path: SharedString,
     pub size: Pixels,
-    pub color: Hsla,
+    /// Space between the placeholder's start and the icon.
+    pub inset: Pixels,
+    /// `None` centres the icon on the line; `Some(drop)` sets its bottom this far below the
+    /// baseline (`vertical-align: -0.125em`).
+    pub below_baseline: Option<Pixels>,
+    pub paint: IconPaint,
+}
+
+/// What a [`TextIcon`] draws.
+#[derive(Clone)]
+pub enum IconPaint {
+    /// A monochrome SVG in `color`.
+    Svg { path: SharedString, color: Hsla },
+    /// A colour image, with rounded corners.
+    Image { image: std::sync::Arc<gpui_kit::RenderImage>, radius: Pixels },
+    /// Keeps the space and draws nothing (an icon still loading).
+    Empty,
 }
 
 /// Called with a link target when a link is clicked.
@@ -225,16 +241,25 @@ impl Element for RichText {
             let Some(origin) = layout.position_for_index(text_icon.index) else {
                 continue;
             };
-            let top = origin.y + (line_height - text_icon.size) / 2.;
-            let icon_bounds = Bounds::new(point(origin.x, top), gpui_kit::size(text_icon.size, text_icon.size));
-            let _ = window.paint_svg(
-                icon_bounds,
-                text_icon.path.clone(),
-                None,
-                gpui_kit::TransformationMatrix::unit(),
-                text_icon.color,
-                cx,
-            );
+            let top = match text_icon.below_baseline {
+                None => origin.y + (line_height - text_icon.size) / 2.,
+                Some(drop) => {
+                    let baseline = layout.line_layout_for_index(text_icon.index).map_or(line_height, |line| {
+                        line_baseline_offset(line_height, line.ascent(), line.descent())
+                    });
+                    origin.y + baseline + drop - text_icon.size
+                }
+            };
+            let icon_bounds = Bounds::new(point(origin.x + text_icon.inset, top), gpui_kit::size(text_icon.size, text_icon.size));
+            match &text_icon.paint {
+                IconPaint::Svg { path, color } => {
+                    let _ = window.paint_svg(icon_bounds, path.clone(), None, gpui_kit::TransformationMatrix::unit(), *color, cx);
+                }
+                IconPaint::Image { image, radius } => {
+                    let _ = window.paint_image(icon_bounds, icon_bounds, Corners::all(*radius), image.clone(), 0, false);
+                }
+                IconPaint::Empty => {}
+            }
         }
 
         if self.links.is_empty() {

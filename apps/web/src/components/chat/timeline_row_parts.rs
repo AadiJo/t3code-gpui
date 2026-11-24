@@ -197,3 +197,57 @@ pub fn diff_stat(additions: u32, deletions: u32, colors: &ChatColors, size: impl
         .child(div().text_color(colors.diff_addition).child(format!("+{additions}")))
         .child(div().text_color(colors.diff_deletion).child(format!("-{deletions}")))
 }
+
+/// `ProviderInstanceIcon` as the composer's model button draws it (`size-4`, the compact
+/// badge `h-3 min-w-3 px-0.5 text-5xs` hanging 0.125rem off its corner on `bg-card`, ringed
+/// in `--contrast-input`). An ACP registry agent shows the registry mark in the muted
+/// foreground, as `AcpRegistryAgentIcon` does before an agent icon loads. The badge shows
+/// when another enabled instance shares the driver (`shouldShowInstanceBadge`; the catalog
+/// carries neither accent colours nor registry agent ids, so those cases are not told apart).
+pub fn composer_provider_icon(
+    entry: Option<&crate::model_selection::ProviderInstanceEntry>,
+    catalog: &crate::model_selection::ModelCatalog,
+    model: &str,
+    c: &super::composer_theme::ComposerColors,
+    cx: &gpui_kit::App,
+) -> AnyElement {
+    use crate::model_selection::ProviderIcon;
+    use gpui_kit::prelude::FluentBuilder as _;
+    let size = c.r(px(16.));
+    let Some(entry) = entry else {
+        return super::composer_icons::provider_icon(ProviderIcon::Initials, size, "", c, cx);
+    };
+    let mark = if entry.driver_kind.as_str() == "acpRegistry" {
+        Icon::new(crate::components::icons::BrandIcon::AcpRegistry).size(IconSize::Custom(size)).color(c.muted_foreground).into_any_element()
+    } else {
+        let icon = ProviderIcon::for_model(&entry.driver_kind, Some(model));
+        super::composer_icons::provider_icon(icon, size, &entry.display_name, c, cx)
+    };
+    let shared = catalog.instances.iter().filter(|other| other.driver_kind == entry.driver_kind).count() > 1;
+    let theme = crate::ActiveAppTheme::app_theme(cx);
+    div().relative().flex().flex_none().size(size).items_center().justify_center().child(mark).when(shared, |d| {
+        d.child(
+            div()
+                .absolute()
+                .right(c.r(px(-2.)))
+                .bottom(c.r(px(-2.)))
+                .flex()
+                .h(c.r(px(12.)))
+                .min_w(c.r(px(12.)))
+                .px(c.r(px(2.)))
+                .items_center()
+                .justify_center()
+                .rounded_full()
+                .border_1()
+                .border_color(c.input)
+                .bg(theme.colors.card())
+                .shadow(theme.shadows.sm5.clone())
+                .text_size(c.r(px(7.)))
+                .line_height(c.r(px(7.)))
+                .font_weight(FontWeight::SEMIBOLD)
+                .text_color(c.muted_foreground)
+                .child(crate::provider_instances::provider_instance_initials(&entry.display_name)),
+        )
+    })
+    .into_any_element()
+}
