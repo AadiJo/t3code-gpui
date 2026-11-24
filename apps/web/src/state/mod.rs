@@ -19,6 +19,7 @@ pub mod attachments;
 pub mod composer;
 pub mod favicons;
 pub mod favorites;
+pub mod memory;
 pub mod notifications;
 pub mod palette;
 pub mod pull_request_mentions;
