@@ -549,6 +549,7 @@ fn main() -> anyhow::Result<()> {
         "mentions" => run_mentions(&mut check),
         "heic" => run_heic(&mut check),
         "probe" => run_probe(&mut check),
+        "favicons" => run_favicons(&mut check),
         "wheel" => run_wheel(&mut check),
         "workspace" => run_workspace(&mut check),
         "banner" => run_banner(&mut check),
@@ -2469,6 +2470,59 @@ fn run_heic(check: &mut Check) -> anyhow::Result<()> {
 
 /// Prints what each layer holds for the sidebar over the first seconds (environments, their shells,
 /// the joined snapshot, the drawn list), for diagnosing restores.
+/// Link favicons on a live thread: a thread titled "Favicon links" whose first message links
+/// docs.rs and github.com (made beforehand with the server CLI). The docs.rs icon is fetched once
+/// and kept on disk; GitHub draws its brand mark and is never asked for.
+fn run_favicons(check: &mut Check) -> anyhow::Result<()> {
+    let state = load_state(&check.out)?;
+    let environment_id = t3code_contracts::EnvironmentId::new(state.environment_id.as_str());
+    check.pump(|c| c.connected(), Duration::from_secs(30), "connected")?;
+    let find = |check: &mut Check| {
+        let environment_id = environment_id.clone();
+        check.cx.update(|cx| {
+            let shell = StateBridge::environment(&environment_id, cx)?.read(cx).shell.clone();
+            shell.snapshot.as_ref()?.threads.iter().find(|t| t.title == "Favicon links").map(|t| t.id.clone())
+        })
+    };
+    check.pump(|c| find(c).is_some(), Duration::from_secs(20), "the link thread is listed")?;
+    let key = thread_key(&environment_id, &find(check).context("link thread")?);
+    let dir = check.cx.update(|cx| ConnectionRuntime::global(cx).data_dir().join("link-favicons"));
+    let kept = |dir: &std::path::Path| std::fs::read_dir(dir).map(|d| d.flatten().map(|e| e.path()).collect::<Vec<_>>()).unwrap_or_default();
+    for file in kept(&dir) {
+        std::fs::remove_file(file)?;
+    }
+    check.click_row(&key, "link thread")?;
+    check.pump(|c| !c.shown_input().entries.is_empty(), Duration::from_secs(20), "link thread timeline")?;
+    // A message the user writes renders as markdown, so its links get favicons.
+    let composer = composer_of(check);
+    check.focus_composer();
+    check.type_text("Read [the docs](https://docs.rs/tokio) and [the repo](https://github.com/tokio-rs/tokio) first.");
+    check.cx.update(|cx| {
+        composer.update(cx, |c, cx| c.submit(t3code_web::composer_logic::ComposerSubmissionIntent::Foreground, cx))
+    });
+    let has_links = |c: &mut Check| {
+        c.shown_input().entries.iter().any(|e| matches!(&e.kind, t3code_web::components::chat::timeline_entries::EntryKind::Message(m) if m.text.contains("docs.rs")))
+    };
+    check.pump(has_links, Duration::from_secs(20), "the message with links shows")?;
+    check.shot("f0-opened.png")?;
+    let fetched = check.pump(|_| !kept(&dir).is_empty(), Duration::from_secs(20), "the docs.rs icon is fetched");
+    check.wait(Duration::from_millis(600));
+    check.shot("f1-favicons.png")?;
+    let files = kept(&dir);
+    check.check("one icon is fetched and kept on disk", fetched.is_ok() && files.len() == 1, format!("{files:?}"));
+    let decodes = files.first().and_then(|f| std::fs::read(f).ok()).is_some_and(|bytes| image::load_from_memory(&bytes).is_ok());
+    check.check("the kept icon is an image", decodes, "");
+    let written = files.first().and_then(|f| std::fs::metadata(f).ok()?.modified().ok());
+    let other = key_of(&state, &state.long_thread);
+    check.click_row(&other, "another thread")?;
+    check.click_row(&key, "link thread again")?;
+    check.wait(Duration::from_millis(1500));
+    let again = kept(&dir);
+    let rewritten = again.first().and_then(|f| std::fs::metadata(f).ok()?.modified().ok());
+    check.check("showing the thread again fetches nothing", again.len() == 1 && rewritten == written, format!("{again:?}"));
+    Ok(())
+}
+
 fn run_probe(check: &mut Check) -> anyhow::Result<()> {
     for step in 0..12 {
         let line = check.cx.update(|cx| {
