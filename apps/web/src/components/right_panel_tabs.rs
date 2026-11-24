@@ -12,7 +12,6 @@
 //! and a closed panel renders nothing.
 
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::rc::Rc;
 
 use gpui_kit::prelude::FluentBuilder as _;
@@ -24,9 +23,9 @@ use crate::components::diff_panel_shell::DiffPanelLoadingState;
 use crate::components::files::file_preview_panel::{FilesPanel, FilesPanelEvent};
 use crate::components::thread_terminal_drawer::{BackendFactory, TerminalLaunch, next_terminal_id};
 use crate::diff_panel_store::{DiffPanelSelection, DiffPanelStore};
-use crate::file_source::{DirectoryFiles, SharedWorkspaceFiles};
-use crate::fixtures::FixtureStore;
+use crate::file_source::SharedWorkspaceFiles;
 use crate::router::ThreadTarget;
+use crate::state::app_data::SharedAppData;
 use crate::terminal::backend::TerminalBackend;
 use crate::terminal::surface::{TerminalSurface, TerminalSurfaceEvent};
 use crate::terminal_ui_state_store::ThreadKey as TerminalThreadKey;
@@ -110,15 +109,17 @@ pub struct RightPanel {
     /// The scoped thread key whose panel shows.
     thread: Option<SharedString>,
     target: Option<ThreadTarget>,
-    data: Entity<FixtureStore>,
+    data: SharedAppData,
     diff: Option<(Entity<DiffPanel>, Subscription)>,
     /// The thread and scope the diff view holds; anything else is stale.
     diff_shown: Option<(SharedString, DiffPanelSelection)>,
     diff_load_scheduled: bool,
     diff_fallback: Option<Task<()>>,
+    /// The scope being loaded and its request; a newer request replaces it.
+    diff_requested: Option<(SharedString, DiffPanelSelection)>,
+    diff_loading: Option<Task<()>>,
     /// A file to reveal once the diff loads.
     pending_reveal: Option<SharedString>,
-    workspaces: HashMap<SharedString, Workspace>,
     files: HashMap<SharedString, (Entity<FilesPanel>, Subscription)>,
     files_requests: Vec<FilesRequest>,
     backends: TerminalBackends,
@@ -231,7 +232,7 @@ impl RightPanel {
     pub fn new(
         store: Entity<RightPanelStore>,
         layout: WeakEntity<AppSidebarLayout>,
-        data: Entity<FixtureStore>,
+        data: SharedAppData,
         backends: TerminalBackends,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -246,8 +247,9 @@ impl RightPanel {
             diff_shown: None,
             diff_load_scheduled: false,
             diff_fallback: None,
+            diff_requested: None,
+            diff_loading: None,
             pending_reveal: None,
-            workspaces: HashMap::new(),
             files: HashMap::new(),
             files_requests: Vec::new(),
             backends,
@@ -276,7 +278,7 @@ impl RightPanel {
     }
 
     /// The Files panel of the shown thread's project, once built.
-    pub fn files_panel(&mut self, cx: &App) -> Option<Entity<FilesPanel>> {
+    pub fn files_panel(&mut self, cx: &mut App) -> Option<Entity<FilesPanel>> {
         let key = self.workspace(cx)?.key;
         self.files.get(&key).map(|(panel, _)| panel.clone())
     }
@@ -292,16 +294,10 @@ impl RightPanel {
         self.diff.is_some() && !self.diff_stale(cx)
     }
 
-    /// The shown thread's project workspace, written on first use.
-    pub fn workspace(&mut self, cx: &App) -> Option<Workspace> {
+    /// The shown thread's project workspace.
+    pub fn workspace(&mut self, cx: &mut App) -> Option<Workspace> {
         let target = self.target.clone()?;
-        let fixture = self.data.read(cx).workspace(&target)?;
-        let workspace = self.workspaces.entry(fixture.project_key.clone()).or_insert_with(|| Workspace {
-            key: fixture.project_key.clone(),
-            name: fixture.name.clone(),
-            files: DirectoryFiles::new(PathBuf::from(&fixture.root)) as SharedWorkspaceFiles,
-        });
-        Some(workspace.clone())
+        self.data.workspace(&target, cx)
     }
 
     /// Opens the Diff tab on a turn (its reply id) or the branch, revealing `file`.
@@ -460,20 +456,33 @@ impl RightPanel {
         else {
             return;
         };
-        let diff = diff.clone();
-        let Some(input) = self.data.update(cx, |store, _| store.diff_input(&target, &selection)) else { return };
-        diff.update(cx, |diff, cx| diff.set_input(input, cx));
-        self.diff_shown = Some((thread, selection));
-        if let Some(path) = self.pending_reveal.take() {
-            diff.update(cx, |diff, cx| diff.reveal_path(&path, cx));
-        }
-        cx.notify();
+        let diff = diff.downgrade();
+        self.diff_requested = Some((thread.clone(), selection.clone()));
+        let input = self.data.diff_input(&target, &selection, cx);
+        self.diff_loading = Some(cx.spawn(async move |this, cx| {
+            let Some(input) = input.await else { return };
+            this.update(cx, |this, cx| {
+                // A thread or scope switch while it loaded makes the reply stale.
+                if this.diff_selection(cx).as_ref() != Some(&(thread.clone(), selection.clone())) {
+                    return;
+                }
+                let Some(diff) = diff.upgrade() else { return };
+                diff.update(cx, |diff, cx| diff.set_input(input, cx));
+                this.diff_shown = Some((thread, selection));
+                if let Some(path) = this.pending_reveal.take() {
+                    diff.update(cx, |diff, cx| diff.reveal_path(&path, cx));
+                }
+                cx.notify();
+            })
+            .ok();
+        }));
     }
 
     fn on_diff_event(&mut self, event: &DiffPanelEvent, window: &mut Window, cx: &mut Context<Self>) {
         match event {
             DiffPanelEvent::SelectionChanged(_) | DiffPanelEvent::Refresh | DiffPanelEvent::IgnoreWhitespaceChanged(_) => {
                 self.diff_shown = None;
+                self.diff_requested = None;
                 cx.notify();
             }
             DiffPanelEvent::OpenFile(path) => self.open_file(path.clone(), None, window, cx),
@@ -495,7 +504,7 @@ impl RightPanel {
                 }
                 if self.diff_stale(cx) {
                     // The patch loads after this frame, so showing a thread never waits on it.
-                    if !self.diff_load_scheduled {
+                    if !self.diff_load_scheduled && self.diff_requested != self.diff_selection(cx) {
                         self.diff_load_scheduled = true;
                         cx.on_next_frame(window, |this, _, cx| this.load_diff(cx));
                         // A window that draws no next frame (hidden, headless) still loads.

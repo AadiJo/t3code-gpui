@@ -11,7 +11,7 @@ use anyhow::Context as _;
 use gpui_kit::test::TestWindowExt as _;
 use gpui_kit::*;
 use t3code_client_runtime::platform::{ClientPresentation, FileSecretStore};
-use t3code_web::app_root::{AppRootOptions, WindowRoot, local_shell_backend, local_script_backend};
+use t3code_web::app_root::{AppRootOptions, DataSource, WindowRoot};
 use t3code_web::components::app_sidebar_layout::TitlebarPlatform;
 use t3code_web::connection::{ConnectionRuntime, RuntimeConfig};
 use t3code_web::desktop_notifications::{DesktopNotification, DesktopNotificationKind, NotificationInbox};
@@ -171,11 +171,9 @@ fn render(scene: &Scene, out: &std::path::Path, data: &std::path::Path) -> anyho
         ConnectionRuntime::init(config, cx)
     })?;
     let options = AppRootOptions {
-        store: FixtureStore::reference(),
+        data: DataSource::Fixtures(FixtureStore::reference()),
         platform: TitlebarPlatform::Mac,
         state_dir: StateDir(None),
-        terminal_backend: local_shell_backend(),
-        script_backend: local_script_backend(),
     };
     let (window, parts) = cx.update(|cx| {
         let window_options = WindowOptions {

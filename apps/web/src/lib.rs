@@ -40,6 +40,7 @@ pub mod markdown_pipeline;
 pub mod right_panel_store;
 pub mod router;
 pub mod keybindings;
+pub mod live;
 pub mod navigation_history;
 pub mod project_identity;
 pub mod provider_auth_delivery;
