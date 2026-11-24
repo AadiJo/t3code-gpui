@@ -287,8 +287,10 @@ pub struct ElectronImport {
 
 /// Reads and decrypts `connection-catalog.json` and keeps what is portable:
 /// relay targets, bearer routes with bearer credentials, learned routes that
-/// borrow one of those or use T3 Connect. Drops DPoP credentials, relay
-/// tokens, SSH routes and credentials with no target.
+/// borrow one of those or use T3 Connect. Bearer routes whose credential is
+/// bound to the desktop's own key (DPoP) or missing come over without one and
+/// are listed in `skipped` as needing pairing again. Drops relay tokens, SSH
+/// routes and credentials with no target.
 pub fn read_electron_catalog(paths: &ElectronPaths, key: &SafeStorageKey) -> Result<ElectronImport, ImportError> {
     let bytes = read(&paths.catalog_path())?;
     let envelope: CatalogEnvelope = serde_json::from_slice(&bytes).map_err(|error| ImportError::Parse(error.to_string()))?;
@@ -336,10 +338,16 @@ fn parse_catalog(plain: &[u8]) -> Result<ElectronImport, ImportError> {
                             }
                             routes.push(route.clone());
                         }
+                        // Kept without a credential: the route shows signed out until it is
+                        // paired again, as the web app shows a route whose credential is gone.
                         Some(Ok(ConnectionCredential::Dpop { .. })) => {
-                            import.skipped.push(skip(SkipReason::DeviceBoundCredential))
+                            import.skipped.push(skip(SkipReason::DeviceBoundCredential));
+                            routes.push(route.clone());
                         }
-                        Some(Err(())) | None => import.skipped.push(skip(SkipReason::MissingCredential)),
+                        Some(Err(())) | None => {
+                            import.skipped.push(skip(SkipReason::MissingCredential));
+                            routes.push(route.clone());
+                        }
                     }
                 }
             }

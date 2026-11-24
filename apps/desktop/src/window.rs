@@ -45,8 +45,11 @@ impl SavedWindowState {
     }
 }
 
-/// `<data dir>/t3code-gpui`: window bounds, layout, panels and UI state.
+/// `<data dir>/t3code-gpui` (or `T3CODE_DATA_DIR`): window bounds, layout, panels and UI state.
 pub fn data_dir() -> Option<PathBuf> {
+    if let Some(dir) = std::env::var_os("T3CODE_DATA_DIR") {
+        return Some(PathBuf::from(dir).join("ui"));
+    }
     Some(dirs::data_dir()?.join("t3code-gpui"))
 }
 
@@ -108,11 +111,11 @@ pub fn main_window_options(cx: &App) -> WindowOptions {
 }
 
 /// Opens the main window and keeps its bounds saved. `fixtures` loads the
-/// showcase data; without it the app starts empty (first-run state until an
-/// environment is saved). Needs the connection runtime.
+/// showcase data; without it the app runs on the saved environments (the
+/// first-run state while none is saved). Needs the connection runtime.
 pub fn open_main_window(options: WindowOptions, fixtures: bool, cx: &mut App) -> anyhow::Result<(AnyWindowHandle, WindowRoot)> {
     let platform = TitlebarPlatform::current();
-    let app = if fixtures { AppRootOptions::fixtures(platform) } else { AppRootOptions::without_fixtures(platform) };
+    let app = if fixtures { AppRootOptions::fixtures(platform) } else { AppRootOptions::live(platform) };
     let app = AppRootOptions { state_dir: StateDir(data_dir()), ..app };
     follow_os_reduced_motion(cx);
     let (handle, root) = WindowRoot::open_window(options, app, cx)?;

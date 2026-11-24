@@ -106,6 +106,38 @@ impl EnvironmentLink {
         Ok(MediaAccess { http_base: session.prepared.http_base_url.clone(), ticket: ticket.ticket })
     }
 
+    /// Sends `body` to a server-relative URL (a signed asset or upload URL, query included)
+    /// with the session's HTTP credential, and returns the response bytes.
+    pub async fn fetch_relative(
+        &self,
+        method: reqwest::Method,
+        relative_url: &str,
+        body: Option<(Vec<u8>, String)>,
+    ) -> Result<Vec<u8>, LinkError> {
+        let session = self.session(Duration::from_secs(10)).await?;
+        let url = session.prepared.http_base_url.join(relative_url).map_err(|error| LinkError::Request(error.to_string()))?;
+        let authorization = self
+            .supervisor
+            .http_authorization
+            .borrow()
+            .clone()
+            .unwrap_or_else(|| session.prepared.http_authorization.clone());
+        let mut request = authorization.apply(http_client().request(method.clone(), url.clone()), method.as_str(), &url, self.auth.key());
+        if let Some((bytes, content_type)) = body {
+            request = request.header(reqwest::header::CONTENT_TYPE, content_type).body(bytes);
+        }
+        let response = tokio::time::timeout(Duration::from_secs(60), request.send())
+            .await
+            .map_err(|_| LinkError::Request("the request timed out".into()))?
+            .map_err(|error| LinkError::Request(error.to_string()))?;
+        let status = response.status();
+        let bytes = response.bytes().await.map_err(|error| LinkError::Request(error.to_string()))?;
+        if !status.is_success() {
+            return Err(LinkError::Request(format!("{status}: {}", String::from_utf8_lossy(&bytes[..bytes.len().min(200)]))));
+        }
+        Ok(bytes.to_vec())
+    }
+
     /// `GET /api/auth/session`: the session's grants.
     pub async fn session_state(&self) -> Result<AuthSessionState, LinkError> {
         let session = self.session(Duration::from_secs(10)).await?;

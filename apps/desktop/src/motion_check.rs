@@ -12,7 +12,7 @@ use anyhow::ensure;
 use gpui_kit::test::TestWindowExt as _;
 use gpui_kit::*;
 use t3code_client_runtime::platform::{ClientPresentation, FileSecretStore};
-use t3code_web::app_root::{AppRootOptions, WindowRoot, local_script_backend, local_shell_backend};
+use t3code_web::app_root::{AppRootOptions, DataSource, WindowRoot};
 use t3code_web::components::app_sidebar_layout::TitlebarPlatform;
 use t3code_web::components::ui::toast::{ToastData, ToastKind, Toaster};
 use t3code_web::connection::{ConnectionRuntime, RuntimeConfig};
@@ -144,11 +144,9 @@ fn open(out: &Path, data: &Path) -> anyhow::Result<Check> {
         ConnectionRuntime::init(config, cx)
     })?;
     let options = AppRootOptions {
-        store: FixtureStore::reference(),
+        data: DataSource::Fixtures(FixtureStore::reference()),
         platform: TitlebarPlatform::Mac,
         state_dir: StateDir(None),
-        terminal_backend: local_shell_backend(),
-        script_backend: local_script_backend(),
     };
     let (window, _parts) = cx.update(|cx| {
         let window_options = WindowOptions {

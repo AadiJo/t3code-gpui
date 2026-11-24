@@ -217,6 +217,7 @@ impl Sidebar {
             })
             .text_color(title_color)
             .child(thread.title.clone());
+        let title = self.rename_field(thread, colors, cx).unwrap_or_else(|| title.into_any_element());
         let line2 = div()
             .mt_1()
             .flex()
@@ -474,7 +475,7 @@ impl Sidebar {
             .when(thread.has_unsent_draft, |d| {
                 d.child(Icon::new(IconName::SquarePen).size(IconSize::Custom(px(12.))).color(colors.warning_foreground))
             })
-            .child(
+            .child(self.rename_field(thread, colors, cx).unwrap_or_else(|| {
                 div()
                     .flex_1()
                     .min_w_0()
@@ -487,8 +488,9 @@ impl Sidebar {
                         FontWeight::MEDIUM
                     })
                     .text_color(title_color)
-                    .child(thread.title.clone()),
-            )
+                    .child(thread.title.clone())
+                    .into_any_element()
+            }))
             .when(thread.pinned_at.is_some(), |d| d.child(self.pin_indicator(ix, thread, colors, cx)))
             .when(thread.running_terminal_count > 0, |d| {
                 d.child(terminal_status_icon(Some(self.pulse), colors))
@@ -659,5 +661,37 @@ pub(crate) fn middle_truncate(value: &SharedString) -> Div {
             .child(div().min_w_0().flex_shrink(1.).truncate().child(head))
             .child(div().flex_none().child(tail)),
         None => row.child(div().min_w_0().truncate().child(value.clone())),
+    }
+}
+
+impl Sidebar {
+    /// `ThreadRenameInput` in place of the title while this row is renamed.
+    fn rename_field(&self, thread: &SidebarThread, colors: &ShellColors, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let renaming = self.renaming.as_ref().filter(|r| r.key == thread.key)?;
+        let card = cx.app_theme().colors.card();
+        Some(
+            div()
+                .id("thread-rename")
+                .flex_1()
+                .min_w_0()
+                .mx(px(-4.))
+                .px_1()
+                .rounded(px(2.))
+                .bg(card)
+                .border_1()
+                .border_color(colors.foreground)
+                .text_sm()
+                .font_weight(FontWeight::MEDIUM)
+                .text_color(colors.foreground)
+                .on_click(|_, _, cx| cx.stop_propagation())
+                .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
+                    cx.stop_propagation();
+                    if event.keystroke.key == "escape" {
+                        this.cancel_rename(window, cx);
+                    }
+                }))
+                .child(gpui_kit::component::input::Input::new(&renaming.field).appearance(false))
+                .into_any_element(),
+        )
     }
 }

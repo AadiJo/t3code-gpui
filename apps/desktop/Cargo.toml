@@ -32,7 +32,8 @@ path = "src/settings/connections_check.rs"
 required-features = ["headless"]
 
 # Imports made-up Electron catalogs encrypted with the Windows and macOS
-# safeStorage schemes. Usage: import-check <out-dir>
+# safeStorage schemes, and runs the first-launch file import over a stand-in
+# install built around copied owner files. Usage: import-check <out-dir> [owner-dir]
 [[bin]]
 name = "import-check"
 path = "src/import/import_check.rs"
@@ -69,6 +70,7 @@ futures.workspace = true
 jiff.workspace = true
 url.workspace = true
 uuid.workspace = true
+rusty-leveldb.workspace = true
 
 [build-dependencies]
 embed-resource.workspace = true

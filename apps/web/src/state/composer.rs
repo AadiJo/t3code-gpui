@@ -106,6 +106,18 @@ fn prompt_history(input: &TimelineInput) -> Arc<Vec<PromptHistoryEntry>> {
     )
 }
 
+/// The first instance's first model: what a thread with no saved choice starts on.
+pub fn default_selection(catalog: &ModelCatalog) -> ModelSelection {
+    let instance = catalog.instances.first();
+    ModelSelection {
+        instance_id: instance.map(|i| i.instance_id.clone()).unwrap_or_else(|| crate::model_selection::ProviderInstanceId(SharedString::default())),
+        model: instance.and_then(|i| catalog.models.get(&i.instance_id)).and_then(|m| m.first()).map(|m| m.slug.clone()).unwrap_or_default(),
+        effort: None,
+        speed: None,
+        ultracode: false,
+    }
+}
+
 /// The composer's state for a thread.
 pub fn composer_state(key: &ThreadKey, row: Option<&ThreadRow>, thread: &LiveThread, environment: &LiveEnvironment, catalog: Arc<ModelCatalog>) -> ComposerState {
     let input = thread.input();
@@ -113,16 +125,7 @@ pub fn composer_state(key: &ThreadKey, row: Option<&ThreadRow>, thread: &LiveThr
     let wire_selection = row
         .map(|row| row.source.model_selection.clone())
         .or_else(|| projection_thread.as_ref().map(|t| t.model_selection.clone()));
-    let selection = wire_selection.as_ref().map(from_wire).unwrap_or_else(|| {
-        let instance = catalog.instances.first();
-        ModelSelection {
-            instance_id: instance.map(|i| i.instance_id.clone()).unwrap_or_else(|| crate::model_selection::ProviderInstanceId(SharedString::default())),
-            model: instance.and_then(|i| catalog.models.get(&i.instance_id)).and_then(|m| m.first()).map(|m| m.slug.clone()).unwrap_or_default(),
-            effort: None,
-            speed: None,
-            ultracode: false,
-        }
-    });
+    let selection = wire_selection.as_ref().map(from_wire).unwrap_or_else(|| default_selection(&catalog));
     let mode = row.map(|row| row.source.runtime_mode).or_else(|| projection_thread.as_ref().map(|t| t.runtime_mode));
     let default_mode = environment.config.as_ref().and_then(|c| c.settings.default_runtime_mode).unwrap_or(WireRuntimeMode::FullAccess);
     let connected = environment.store.session().is_some();
