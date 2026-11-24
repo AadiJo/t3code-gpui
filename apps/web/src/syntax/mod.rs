@@ -4,12 +4,14 @@
 
 mod highlighter;
 mod language;
+mod lexer;
 mod palette;
+mod pierre_tables;
 mod text_lines;
 
 pub use highlighter::{DocKey, HighlightStats, SyntaxStore, TokenSpan};
 pub use language::{LanguageId, language_for_path};
-/// For the file editor's incremental highlighter.
-pub(crate) use language::{SYNTAXES, scope_token};
-pub use palette::{SyntaxPalette, SyntaxToken, hex};
+pub use lexer::{Lexer, MAX_LINE_BYTES, highlight_line};
+pub use palette::{SyntaxPalette, hex};
+pub use pierre_tables::SyntaxToken;
 pub use text_lines::TextLines;

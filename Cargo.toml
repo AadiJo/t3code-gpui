@@ -72,6 +72,8 @@ syntect = { version = "5.3", default-features = false, features = ["parsing", "d
 unicode-segmentation = "1"
 markdown = "=1.0.0"
 two-face = { version = "0.4.5", default-features = false, features = ["syntect-fancy"] }
+wasmi = { version = "0.51", default-features = false, features = ["std", "simd"] }
+unicode-ident = "1"
 regex = "1"
 unicode-width = "0.2"
 aes = "0.8"
@@ -116,6 +118,11 @@ gpui-pre-wgpu = { opt-level = 3 }
 gpui-pre-linux = { opt-level = 3 }
 syntect = { opt-level = 3 }
 fancy-regex = { opt-level = 3 }
+# The syntax lexers run in wasmi, in the file editor on every keystroke.
+wasmi = { opt-level = 3 }
+wasmi_core = { opt-level = 3 }
+wasmi_ir = { opt-level = 3 }
+wasmparser = { opt-level = 3 }
 regex-automata = { opt-level = 3 }
 regex-syntax = { opt-level = 3 }
 unicode-segmentation = { opt-level = 3 }

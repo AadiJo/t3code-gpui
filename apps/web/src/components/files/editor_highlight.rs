@@ -1,185 +1,102 @@
-//! Incremental syntax highlighting for the file editor. The shared
+//! Syntax highlighting for the file editor. The shared
 //! [`SyntaxStore`](crate::syntax::SyntaxStore) keys documents by content, so
-//! every keystroke would parse the file from the top. Here the parser state is
-//! kept at every [`CHECKPOINT`]th line: an edit re-parses from the checkpoint
-//! above it, only as far as the viewport needs, and stops early when the
-//! parser state at a later checkpoint matches what it was before the edit.
+//! here the editor's own document is re-lexed after each edit instead. The
+//! web's lexers take a few microseconds a line, so a file up to
+//! [`SYNC_LINES`] lines is lexed in the frame; a longer one is lexed on a
+//! worker thread while the previous colours stay on screen.
 
-use std::{collections::HashMap, time::Instant};
+use std::sync::mpsc::{Receiver, TryRecvError, channel};
 
-use syntect::parsing::{ParseState, Scope, ScopeStack, ScopeStackOp};
+use crate::syntax::{LanguageId, Lexer, TokenSpan};
 
-use crate::syntax::{LanguageId, SyntaxToken, TokenSpan};
+pub use crate::syntax::highlight_line;
 
-/// Lines between stored parser states. An edit re-parses its block of this
-/// many lines (syntect with fancy-regex takes ~0.1ms a line), and the states
-/// cost a few hundred bytes each.
-const CHECKPOINT: usize = 4;
-/// Longer lines stay plain, as the shared highlighter leaves them.
-const MAX_LINE_BYTES: usize = 2_000;
+/// Files up to this many lines are re-lexed in the frame (~7ms at worst).
+const SYNC_LINES: usize = 2_000;
 
-#[derive(Clone, PartialEq, Eq)]
-struct State {
-    parser: ParseState,
-    scopes: ScopeStack,
+thread_local! {
+    /// The UI thread's lexer for in-frame jobs.
+    static LEXER: std::cell::RefCell<Option<Lexer>> = const { std::cell::RefCell::new(None) };
 }
 
 /// Highlight spans for an editable document.
 pub struct EditorHighlighter {
     language: LanguageId,
     spans: Vec<Box<[TokenSpan]>>,
-    /// Parser state at the start of line `i * CHECKPOINT`.
-    checkpoints: Vec<State>,
-    /// Lines `< valid` have spans that match the text.
-    valid: usize,
-    /// Checkpoints from before the last edit that may still match, for resyncing.
-    stale_from: usize,
-    stale_valid: usize,
-    tokens: HashMap<Scope, Option<SyntaxToken>>,
+    /// True when `spans` predate the latest edit.
+    stale: bool,
+    /// Bumped on every edit; a worker result for an older edit is dropped.
+    generation: u64,
+    job: Option<(u64, Receiver<Vec<Box<[TokenSpan]>>>)>,
 }
 
 impl EditorHighlighter {
     pub fn new(language: LanguageId) -> Self {
-        let start = State { parser: ParseState::new(language.syntax()), scopes: ScopeStack::new() };
-        Self {
-            language,
-            spans: Vec::new(),
-            checkpoints: vec![start],
-            valid: 0,
-            stale_from: usize::MAX,
-            stale_valid: 0,
-            tokens: HashMap::new(),
-        }
+        Self { language, spans: Vec::new(), stale: true, generation: 0, job: None }
     }
 
     pub fn language(&self) -> LanguageId {
         self.language
     }
 
-    /// Spans for a line, when it has been parsed since its last change.
+    /// Spans for a line. During a re-lex these are the previous colours.
     pub fn line(&self, index: usize) -> Option<&[TokenSpan]> {
-        (index < self.valid).then(|| &*self.spans[index])
+        self.spans.get(index).map(|spans| &**spans)
     }
 
     /// Records that lines `start..start + removed` became `inserted` lines.
     pub fn edited(&mut self, start: usize, removed: usize, inserted: usize) {
-        let checkpoint = start / CHECKPOINT;
-        let old_valid = self.valid;
-        self.valid = self.valid.min(checkpoint * CHECKPOINT);
-        if removed == inserted {
-            // Same line count: later checkpoints keep their lines and may still match.
-            self.stale_from = checkpoint + 1;
-            self.stale_valid = old_valid;
-        } else {
-            self.checkpoints.truncate(checkpoint + 1);
-            self.stale_from = usize::MAX;
-            let keep = (checkpoint * CHECKPOINT).min(self.spans.len());
-            self.spans.truncate(keep);
-        }
+        let start = start.min(self.spans.len());
+        let end = (start + removed).min(self.spans.len());
+        self.spans.splice(start..end, std::iter::repeat_with(Box::default).take(inserted));
+        self.stale = true;
+        self.generation += 1;
     }
 
-    /// Parses until line `through` has spans or `budget_ms` passes. Returns
-    /// true when `through` is covered.
-    pub fn ensure(&mut self, lines: &[String], through: usize, budget_ms: f32) -> bool {
-        let through = through.min(lines.len().saturating_sub(1));
-        if lines.is_empty() || self.valid > through {
+    /// Brings the spans up to date with `lines`. Returns false while a worker
+    /// is still lexing, so the caller draws again next frame.
+    pub fn ensure(&mut self, lines: &[String], _through: usize, _budget_ms: f32) -> bool {
+        if let Some((generation, receiver)) = &self.job {
+            match receiver.try_recv() {
+                Ok(spans) => {
+                    if *generation == self.generation {
+                        self.spans = spans;
+                        self.stale = false;
+                    }
+                    self.job = None;
+                }
+                Err(TryRecvError::Empty) => return false,
+                Err(TryRecvError::Disconnected) => self.job = None,
+            }
+        }
+        if !self.stale {
             return true;
         }
-        let started = Instant::now();
-        // Resume at the stored state at or before the first line without spans.
-        let mut index = (self.valid / CHECKPOINT).min(self.checkpoints.len() - 1);
-        let mut line = index * CHECKPOINT;
-        let mut state = self.checkpoints[index].clone();
-        let mut buffer = String::new();
-        while line <= through && line < lines.len() {
-            let spans = parse_line(&lines[line], &mut state, &mut buffer, &mut self.tokens);
-            if line < self.spans.len() {
-                self.spans[line] = spans;
-            } else {
-                self.spans.push(spans);
-            }
-            line += 1;
-            self.valid = self.valid.max(line);
-            if line % CHECKPOINT == 0 {
-                index = line / CHECKPOINT;
-                if index >= self.stale_from && index < self.checkpoints.len() && self.checkpoints[index] == state {
-                    // Same state as before the edit: the spans after it still hold.
-                    self.stale_from = usize::MAX;
-                    self.valid = self.stale_valid.max(line).min(lines.len());
-                    if self.valid > through {
-                        return true;
-                    }
-                    index = (self.valid / CHECKPOINT).min(self.checkpoints.len() - 1);
-                    line = index * CHECKPOINT;
-                    state = self.checkpoints[index].clone();
-                    continue;
+        let language = self.language;
+        if lines.len() <= SYNC_LINES {
+            let spans = LEXER.with_borrow_mut(|lexer| {
+                if lexer.is_none() {
+                    *lexer = Lexer::new();
                 }
-                if index < self.checkpoints.len() {
-                    self.checkpoints[index] = state.clone();
-                } else {
-                    self.checkpoints.push(state.clone());
-                }
-            }
-            if line % 32 == 0 && started.elapsed().as_secs_f32() * 1000. > budget_ms {
-                return line > through;
-            }
+                lexer.as_mut()?.lex(language, lines.iter().map(String::as_str))
+            });
+            self.spans = spans.unwrap_or_else(|| vec![Box::default(); lines.len()]);
+            self.stale = false;
+            return true;
         }
-        true
+        let (sender, receiver) = channel();
+        let text = lines.to_vec();
+        std::thread::spawn(move || {
+            if let Some(spans) = Lexer::new().and_then(|mut lexer| lexer.lex(language, text.iter().map(String::as_str))) {
+                sender.send(spans).ok();
+            }
+        });
+        self.job = Some((self.generation, receiver));
+        false
     }
 
-    /// Bytes held, for memory reports (spans only; parser states are small).
+    /// Bytes held, for memory reports.
     pub fn heap_size(&self) -> usize {
         self.spans.iter().map(|s| s.len() * std::mem::size_of::<TokenSpan>() + 16).sum()
     }
-}
-
-fn parse_line(
-    text: &str,
-    state: &mut State,
-    buffer: &mut String,
-    tokens: &mut HashMap<Scope, Option<SyntaxToken>>,
-) -> Box<[TokenSpan]> {
-    if text.len() > MAX_LINE_BYTES {
-        return Box::default();
-    }
-    buffer.clear();
-    buffer.push_str(text);
-    buffer.push('\n');
-    let Ok(ops) = state.parser.parse_line(buffer, &crate::syntax::SYNTAXES) else {
-        return Box::default();
-    };
-    let mut spans: Vec<TokenSpan> = Vec::new();
-    let mut cursor = 0usize;
-    let mut push = |end: usize, scopes: &ScopeStack, spans: &mut Vec<TokenSpan>| {
-        let end = end.min(text.len());
-        if end <= cursor {
-            return;
-        }
-        let token = scopes
-            .scopes
-            .iter()
-            .rev()
-            .find_map(|scope| *tokens.entry(*scope).or_insert_with(|| crate::syntax::scope_token(*scope)));
-        if let Some(token) = token {
-            match spans.last_mut() {
-                Some(last) if last.end as usize == cursor && last.token == token => last.end = end as u32,
-                _ => spans.push(TokenSpan { start: cursor as u32, end: end as u32, token }),
-            }
-        }
-        cursor = end;
-    };
-    for (offset, op) in ops {
-        push(offset, &state.scopes, &mut spans);
-        if !matches!(op, ScopeStackOp::Noop) {
-            state.scopes.apply(&op).ok();
-        }
-    }
-    push(text.len(), &state.scopes, &mut spans);
-    spans.into_boxed_slice()
-}
-
-/// Highlights one line on its own, as search results do (no context from the lines above).
-pub fn highlight_line(language: LanguageId, text: &str) -> Box<[TokenSpan]> {
-    let mut state = State { parser: ParseState::new(language.syntax()), scopes: ScopeStack::new() };
-    parse_line(text, &mut state, &mut String::new(), &mut HashMap::new())
 }

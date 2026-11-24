@@ -1671,6 +1671,8 @@ impl CodeView {
         };
         let collapsed = file.collapsed;
         let hovered = self.hovered_header == Some(index as u32);
+        // The copy button shows while the pointer is over this file (index.css `data-diff-copy-path`).
+        let file_hovered = hovered || self.hovered.is_some_and(|(file, _, _)| file == index as u32);
         let path = diff.path.clone();
         let copied = self.copied_path.as_ref() == Some(&diff.path);
         let mono = self.font.family.clone();
@@ -1757,6 +1759,7 @@ impl CodeView {
                 div()
                     .id(("diff-copy", index))
                     .test_support()
+                    .when(!file_hovered && !copied, |el| el.opacity(0.))
                     .size(px(20.))
                     .flex()
                     .flex_none()
