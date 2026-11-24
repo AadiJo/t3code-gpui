@@ -65,6 +65,11 @@ pub fn apply_contrast(
     appearance: Appearance,
     contrast: AppearanceContrast,
 ) -> (ThemePalette, ContrastForegrounds) {
+    if contrast == AppearanceContrast::default() {
+        // Every `--contrast-*` variable is its source token at 100.
+        let foregrounds = ContrastForegrounds { card: raw.text, popover: raw.text };
+        return (*raw, foregrounds);
+    }
     let (base, boost, border_boost) = (contrast.base(), contrast.boost(), contrast.border_boost());
     let target = if appearance.is_dark() { white() } else { black() };
     let text = |fg: Hsla, on: Hsla| mix_oklab_twice(fg, base, on, target, boost);
