@@ -376,7 +376,7 @@ impl AppearanceSettings {
                     cx.stop_propagation();
                     assign_half(mode, card_id.clone(), cx);
                 })
-                .child(theme_sphere(colors, mode, ring, backdrop))
+                .child(theme_sphere(colors, mode, ring, backdrop, theme.rem(3.5)))
                 .when(is_picked, |d| {
                     d.child(div().absolute().inset_0().rounded_full().shadow(vec![inset_ring(c.ring(), px(2.))]))
                         .child(
