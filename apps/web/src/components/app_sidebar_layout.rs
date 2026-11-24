@@ -109,6 +109,9 @@ pub struct AppSidebarLayout {
     right_motion: PanelTransition,
     /// The sidebar's drawn open fraction, kept for the header inset.
     sidebar_fraction: f32,
+    /// A fullscreen macOS window has no traffic lights, so its controls use
+    /// the default inset (`isMacosDesktop && !isWindowFullscreen`).
+    fullscreen: bool,
     resizing: Option<Resize>,
     /// Pressed on the drag strip; the next move starts a window move.
     drag_pending: bool,
@@ -147,6 +150,7 @@ impl AppSidebarLayout {
             sidebar_motion: PanelTransition::new(true),
             right_motion: PanelTransition::new(false),
             sidebar_fraction: 1.,
+            fullscreen: false,
             resizing: None,
             drag_pending: false,
             window_moves: 0,
@@ -162,10 +166,15 @@ impl AppSidebarLayout {
         this
     }
 
+    /// The platform whose control insets apply: a fullscreen Mac window has none.
+    fn controls_platform(&self) -> TitlebarPlatform {
+        if self.fullscreen { TitlebarPlatform::Overlay } else { self.platform }
+    }
+
     fn sync_sidebar_chrome(&self, cx: &mut Context<Self>) {
         let (height, inset) = (
             self.platform.topbar_height(),
-            self.platform.titlebar_content_left(),
+            self.controls_platform().titlebar_content_left(),
         );
         self.sidebar
             .update(cx, |sidebar, cx| sidebar.set_chrome_metrics(height, inset, cx));
@@ -252,7 +261,7 @@ impl AppSidebarLayout {
     /// Leading inset of the right panel's tab row: it clears the floating
     /// sidebar toggle while maximized.
     pub fn right_panel_leading_inset(&self) -> Pixels {
-        if self.right_maximized { self.platform.titlebar_content_left() } else { px(0.) }
+        if self.right_maximized { self.controls_platform().titlebar_content_left() } else { px(0.) }
     }
 
     fn press(&mut self, toggle: PanelToggle, cx: &mut Context<Self>) {
@@ -306,9 +315,9 @@ impl AppSidebarLayout {
     /// Eases with the sidebar's transition (`transition-[padding-left]`).
     pub fn header_content_left(&self) -> Pixels {
         if self.sheet_mode {
-            self.platform.titlebar_content_left()
+            self.controls_platform().titlebar_content_left()
         } else {
-            self.platform.titlebar_content_left() * (1. - self.sidebar_fraction)
+            self.controls_platform().titlebar_content_left() * (1. - self.sidebar_fraction)
         }
     }
 
@@ -526,6 +535,11 @@ impl Render for AppSidebarLayout {
             self.sheet_open = false;
         }
         let sidebar_visible = if sheet_mode { self.sheet_open } else { self.sidebar_open };
+        let fullscreen = self.platform == TitlebarPlatform::Mac && window.is_fullscreen();
+        if fullscreen != self.fullscreen {
+            self.fullscreen = fullscreen;
+            self.sync_sidebar_chrome(cx);
+        }
         self.sidebar_motion.follow(self.sidebar_open && !sheet_mode, cx);
         self.sidebar_fraction = self.sidebar_motion.fraction(window, cx);
         let sidebar_present = !sheet_mode && self.sidebar_motion.present();
@@ -762,7 +776,7 @@ impl Render for AppSidebarLayout {
         let sidebar_toggle = div()
             .absolute()
             .top_0()
-            .left(self.platform.controls_left())
+            .left(self.controls_platform().controls_left())
             .h(topbar)
             .flex()
             .items_center()
