@@ -17,7 +17,7 @@ use t3code_contracts::{
 use super::provider_settings_panel::toast_error;
 use super::scheduled_tasks_settings_logic::{
     DraftState, FilterOp, ScheduleMode, WorkspaceMode, empty_webhook_filter_draft, remove_webhook_filter_draft,
-    schedule_draft_errors, schedule_from_draft, schedule_label, task_to_draft, weekday_short_label,
+    schedule_draft_errors, schedule_from_draft, schedule_label, task_to_draft,
 };
 use super::server_settings_controls::{Fields, field_input, hint, tinted};
 use super::server_settings_data::ServerPanelsModel;
@@ -89,7 +89,10 @@ impl ScheduledTaskEditor {
         if let Some(v) = text("title", cx, f) { d.title = v; }
         if let Some(v) = self.prompt.as_ref().map(|p| p.read(cx).value().to_string()) { d.prompt = v; }
         if let Some(v) = text("checkoutPath", cx, f) { d.existing_worktree_path = v; }
-        if let Some(v) = text("time", cx, f) { d.time_of_day = v; }
+        // The field shows the time as a native time input does ("09:00 AM" on a 12-hour clock).
+        if let Some((hour, minute)) = text("time", cx, f).as_deref().and_then(super::threads_settings_snooze::parse_time) {
+            d.time_of_day = format!("{hour:02}:{minute:02}");
+        }
         if let Some(v) = text("runAt", cx, f) { d.run_at = v; }
         if let Some(v) = text("interval", cx, f) { d.interval_minutes = v; }
         if let Some(v) = text("sigHeader", cx, f) { d.signature_header = v; }
@@ -184,7 +187,8 @@ impl ScheduledTaskEditor {
 
     fn labeled(&self, label: SharedString, control: impl IntoElement, cx: &Context<Self>) -> AnyElement {
         let theme = cx.app_theme();
-        div().flex().flex_col().gap(theme.sp(2.)).child(div().ui_text(theme, TextSize::Sm, weight::MEDIUM).child(label)).child(control).into_any_element()
+        // `Field`: `space-y-1.5`.
+        div().flex().flex_col().gap(theme.sp(1.5)).child(div().ui_text(theme, TextSize::Sm, weight::MEDIUM).child(label)).child(control).into_any_element()
     }
 
     fn input(&mut self, key: &str, value: String, placeholder: impl Into<SharedString>, window: &mut Window, cx: &mut Context<Self>) -> Entity<InputState> {
@@ -196,13 +200,14 @@ impl ScheduledTaskEditor {
         let d = self.draft.clone();
         match d.schedule_mode {
             ScheduleMode::Fixed => {
-                let time = self.input("time", d.time_of_day.clone(), "09:00", window, cx);
+                let hour12 = crate::timestamp_format::resolve_hour12(crate::hooks::settings_bridge::timestamp_format(cx));
+                let time = self.input("time", super::threads_settings_snooze::time_field_text(&d.time_of_day, hour12), "", window, cx);
                 let zone = self.model.read(cx).snapshot().scheduled_task_time_zone.clone();
                 let zone = super::scheduled_tasks_settings_logic::schedule_time_zone_label(zone.as_deref(), None).unwrap_or_default();
                 let days = div().flex().children([1u64, 2, 3, 4, 5, 6, 0].into_iter().map(|day| {
                     let on = d.weekdays.contains(&day);
                     Toggle::new(SharedString::from(format!("weekday-{day}")))
-                        .label(weekday_short_label(day))
+                        .label(two_letter_weekday(day))
                         .variant(ToggleVariant::Outline)
                         .size(ToggleSize::Sm)
                         .pressed(on)
@@ -227,7 +232,7 @@ impl ScheduledTaskEditor {
                             .items_center()
                             .gap(theme.sp(2.))
                             .child(div().ui_text(theme, TextSize::Sm, weight::MEDIUM).child(t!("Run at")))
-                            .child(div().w(theme.sp(32.)).child(field_input(&time, false, false, false)))
+                            .child(div().w(theme.sp(32.)).child(field_input(&time, false, false, false).trailing_icon(IconName::Clock)))
                             .child(hint(zone, cx))
                             .child(hint(t!("on"), cx)),
                     )
@@ -367,7 +372,14 @@ impl Render for ScheduledTaskEditor {
                     }
                 })
         }));
-        let runs_on = Select::new("task-environment", vec![SharedString::from(snapshot.environment_label.clone())], 0, |_, _, _| {}).size(SelectSize::Sm);
+        let environment_id = t3code_client_runtime::environment::EnvironmentId::new(snapshot.environment_id.to_string());
+        let runs_on = Select::new("task-environment", vec![SharedString::from(snapshot.environment_label.clone())], 0, |_, _, _| {})
+            .size(SelectSize::Sm)
+            .leading(super::settings_controls::environment_machine_icon(
+                super::settings_controls::environment_machine_kind(&environment_id, cx),
+                theme.sp(4.),
+                c.foreground(),
+            ));
         let thread_modes = [
             (ScheduledTaskThreadMode::NewThread, t!("New thread each run"), t!("Each run starts a new thread with the workspace and model below.")),
             (ScheduledTaskThreadMode::Continue, t!("One thread, continuing the conversation"), t!("Each run continues this conversation, in its workspace and with its current model.")),
@@ -401,18 +413,22 @@ impl Render for ScheduledTaskEditor {
                 cx.notify();
             }).ok();
         }).size(SelectSize::Sm);
+        // `ProviderModelPicker` with the settings trigger: the saved model, else the first one offered.
         let options = model_options(self.model.read(cx));
-        let model_ix = options.iter().position(|(s, _)| format!("{}:{}", s.instance_id, s.model) == d.model_key).unwrap_or(0);
+        let shown = options.iter().find(|(s, _)| format!("{}:{}", s.instance_id, s.model) == d.model_key).or(options.first()).map(|(s, _)| s.clone());
+        let catalog = {
+            let panels = self.model.read(cx).snapshot();
+            std::sync::Arc::new(crate::provider_models_live::model_catalog_for(panels.providers.iter().map(|p| p.as_ref()), &panels.settings))
+        };
         let this = cx.entity().downgrade();
-        let opts = options.clone();
-        let model_select = div().w(theme.sp(56.)).child(Select::new("task-model", options.iter().map(|(_, l)| l.clone()).collect::<Vec<_>>(), model_ix, move |ix, _, cx| {
-            let selection = opts[ix].0.clone();
+        let model_select = div().flex().child(super::settings_model_picker::SettingsModelPicker::new("task-model", catalog, shown, move |selection, cx| {
             this.update(cx, |this, cx| {
                 this.draft.model_key = format!("{}:{}", selection.instance_id, selection.model);
                 this.draft.base_model_selection = Some(selection);
                 cx.notify();
-            }).ok();
-        }).size(SelectSize::Sm));
+            })
+            .ok();
+        }));
         let schedule = self.render_schedule(window, cx);
         let new_thread = d.thread_mode == ScheduledTaskThreadMode::NewThread;
         let mut body: Vec<AnyElement> = vec![
@@ -484,9 +500,14 @@ impl Render for ScheduledTaskEditor {
         );
         body.extend(self.errors.iter().map(|e| tinted(e.clone(), c.destructive(), cx)));
         let editing = d.editing_id.is_some();
+        // `DialogPopup max-h-full`: the dialog stops at the viewport's padding and the panel scrolls.
+        let max_height = window.viewport_size().height - theme.sp(6.) * 2.;
         dialog_glass(theme)
             .id("scheduled-task-editor")
             .relative()
+            .flex()
+            .flex_col()
+            .max_h(max_height)
             .w(theme.rem(36.))
             .child(
                 div()
@@ -495,7 +516,12 @@ impl Render for ScheduledTaskEditor {
                     .gap(theme.sp(2.))
                     .p(theme.sp(6.))
                     .pb(theme.sp(4.))
-                    .child(div().ui_text(theme, TextSize::Xl, weight::SEMIBOLD).child(if editing { t!("Edit task") } else { t!("New task") }))
+                    .child(
+                        div()
+                            .ui_text(theme, TextSize::Xl, weight::SEMIBOLD)
+                            .line_height(px(TextSize::Xl.size(theme.fonts.interface) * 1.375))
+                            .child(if editing { t!("Edit task") } else { t!("New task") }),
+                    )
                     .child(div().ui_text(theme, TextSize::Sm, weight::NORMAL).text_color(c.muted_foreground).child(t!("Run a prompt automatically on an interval, at a fixed time, once at a set date, or when a webhook is called."))),
             )
             .child(
@@ -508,7 +534,8 @@ impl Render for ScheduledTaskEditor {
             .child(
                 div()
                     .id("scheduled-task-editor-body")
-                    .max_h(px(560.))
+                    .flex_1()
+                    .min_h_0()
                     .overflow_y_scroll()
                     .track_scroll(&self.scroll)
                     .flex()
@@ -634,5 +661,18 @@ impl Render for ScheduledTasksSettingsPanel {
             })
         });
         div().relative().size_full().child(page_container(cx).child(list)).children(editor)
+    }
+}
+
+/// `WEEKDAY_SHORT`: the weekday buttons' two-letter names, Sunday 0.
+fn two_letter_weekday(day: u64) -> SharedString {
+    match day {
+        0 => t!("Su", context = "two-letter Sunday"),
+        1 => t!("Mo", context = "two-letter Monday"),
+        2 => t!("Tu", context = "two-letter Tuesday"),
+        3 => t!("We", context = "two-letter Wednesday"),
+        4 => t!("Th", context = "two-letter Thursday"),
+        5 => t!("Fr", context = "two-letter Friday"),
+        _ => t!("Sa", context = "two-letter Saturday"),
     }
 }

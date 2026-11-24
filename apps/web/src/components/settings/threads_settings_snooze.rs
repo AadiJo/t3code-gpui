@@ -132,7 +132,7 @@ fn twelve_hour(hour: i8) -> (i8, &'static str) {
 
 /// A stored "HH:MM" as a native time input shows it: "06:00 PM" on a
 /// 12-hour clock, "18:00" on a 24-hour one.
-fn time_field_text(time: &str, hour12: bool) -> String {
+pub(super) fn time_field_text(time: &str, hour12: bool) -> String {
     match parse_time(time) {
         Some((hour, minute)) if hour12 => {
             let (h12, suffix) = twelve_hour(hour as i8);
@@ -143,7 +143,7 @@ fn time_field_text(time: &str, hour12: bool) -> String {
 }
 
 /// Reads "18:00", "6:00 PM" or "6pm" back to (hour, minute).
-fn parse_time(text: &str) -> Option<(u8, u8)> {
+pub(super) fn parse_time(text: &str) -> Option<(u8, u8)> {
     let text = text.trim().to_ascii_lowercase();
     let (clock, meridiem) = match text.strip_suffix("am").or_else(|| text.strip_suffix("a")) {
         Some(rest) => (rest.trim().to_owned(), Some(false)),
