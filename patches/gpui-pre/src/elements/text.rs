@@ -744,11 +744,7 @@ impl TextLayout {
                     // Up to Blink's 1/64px layout unit, not a whole pixel; the margin keeps a
                     // re-wrap at this width from breaking the last word on float error.
                     size.width = crate::px(((f32::from(size.width.max(line_size.width)) * 64. + 0.001).ceil()) / 64.);
-                    size.width = size.width.max(line_size.width);
                 }
-                // Chromium keeps text widths in 1/64px layout units; a whole-pixel ceiling
-                // pushes right-aligned text up to 1px left.
-                size.width = Pixels((size.width.0 * 64.).ceil() / 64.);
 
                 element_state.0.borrow_mut().replace(TextLayoutInner {
                     lines,
