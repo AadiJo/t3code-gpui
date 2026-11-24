@@ -471,7 +471,7 @@ impl Render for SettingsRoute {
             .border_1()
             .border_color(theme.colors.border)
             .bg(theme.colors.background())
-            .shadow(theme.shadows.dialog.clone())
+            .shadow(theme.shadows.app_modal.clone())
             .text_color(theme.colors.foreground())
             .child(nav)
             .child(content)

@@ -385,6 +385,8 @@ pub struct Shadows {
     pub menu: Vec<BoxShadow>,
     /// `dialog-glass`.
     pub dialog: Vec<BoxShadow>,
+    /// `shadow-2xl/40`: the Settings and Usage route modal (`AppRouteModal`).
+    pub app_modal: Vec<BoxShadow>,
     /// The 1px `before:` highlight a control draws across its top border in
     /// dark mode (white 6%) or bottom border in light mode (black 4%).
     pub control_highlight: ControlHighlight,
@@ -435,6 +437,7 @@ impl Shadows {
             } else {
                 vec![shadow(0., 24., 64., -24., shade(0.65))]
             },
+            app_modal: vec![shadow(0., 25., 50., -12., shade(0.40))],
             control_highlight: ControlHighlight {
                 color: if dark { with_alpha(white(), 0.06) } else { shade(0.04) },
                 top: dark,
