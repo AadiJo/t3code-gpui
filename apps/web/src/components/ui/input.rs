@@ -164,9 +164,10 @@ impl RenderOnce for TextInput {
                 .prefix(
                     crate::components::icons::Icon::new(icon)
                         .size(crate::components::icons::IconSize::Custom(sp(4.)))
-                        .color(theme.colors.muted_foreground),
+                        .color(theme.colors.foreground().opacity(0.8)),
                 )
-                .gap(sp(1.5)),
+                // `opacity-80` on the addon's svg; the placeholder starts where the web's control text does.
+                .gap(sp(1.5) + px(1.)),
             None => field,
         };
         let field = match self.leading_icon {

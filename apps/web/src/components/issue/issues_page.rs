@@ -341,7 +341,7 @@ impl Render for IssuesPage {
             .size_full()
             .flex()
             .flex_col()
-            .bg(theme.colors.background())
+            .bg(theme.colors.canvas)
             .child(div().flex().flex_none().items_center().h(theme.spacing.workspace_topbar_height).px(theme.spacing.workspace_gutter).ui_text(&theme, TextSize::Sm, weight::MEDIUM).text_color(theme.colors.text).child(t!("Issues")))
             .child(
                 div()

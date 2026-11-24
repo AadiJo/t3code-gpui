@@ -1118,7 +1118,7 @@ impl Render for PullRequestsPage {
             .size_full()
             .flex()
             .flex_col()
-            .bg(theme.colors.background())
+            .bg(theme.colors.canvas)
             .child(
                 div()
                     .flex()

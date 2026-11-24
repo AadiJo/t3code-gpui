@@ -108,6 +108,45 @@ const SCENES: &[Scene] = &[
     Scene { name: "right-panel-diff", reference: "right-panel-diff", light: false, steps: &[Step::Action(|| Box::new(ToggleDiff)), Step::Wait(300)] },
 ];
 
+/// Views the app window cannot reach yet (their routes are not mounted in
+/// `AppRoot`), captured from their registered scenes instead: (image name, scene).
+const SCENE_VIEWS: &[(&str, &str)] = &[("usage-limits-empty", "usage-empty"), ("pull-requests-toolbar", "pull-requests"), ("issues-toolbar", "issues")];
+
+/// Renders a registered scene at the reference size with the owner's glass opacity.
+fn render_scene_view(name: &str, scene: &str, out: &std::path::Path) -> anyhow::Result<()> {
+    let build = t3code_web::scenes::scene(scene).with_context(|| format!("unknown scene {scene}"))?;
+    let mut cx = headless();
+    cx.update(|cx| {
+        t3code_web::init(cx);
+        ThemeSettings::set_mode(ThemeMode::Dark, cx);
+        ThemeSettings::set_glass_opacity(GlassOpacity::new(OWNER_GLASS_OPACITY), cx);
+    });
+    struct Host(AnyView);
+    impl Render for Host {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            self.0.clone()
+        }
+    }
+    let window = cx.update(|cx| {
+        let options = WindowOptions {
+            window_bounds: Some(WindowBounds::centered(None, size(px(1100.), px(780.)), cx)),
+            show: false,
+            focus: false,
+            ..component::TitleBar::window_options()
+        };
+        gpui_kit::open_window(options, cx, |window, cx| {
+            let view = build(window, cx);
+            cx.new(|_| Host(view))
+        })
+    })?;
+    let (window, _host) = window;
+    frame(&mut cx, window);
+    let file = out.join(format!("{name}.png"));
+    cx.capture_screenshot(window)?.save(&file)?;
+    println!("{} <- scene {scene}", file.display());
+    Ok(())
+}
+
 /// The reference inbox: the approval and the question, both unread.
 fn reference_inbox() -> Arc<[DesktopNotification]> {
     let item = |thread: &str, title: &str, project: &str, kind| DesktopNotification {
@@ -259,6 +298,11 @@ fn main() -> anyhow::Result<()> {
     for scene in SCENES.iter().filter(|s| filter.as_deref().is_none_or(|f| s.name.contains(f))) {
         if let Err(error) = render(scene, &out, &data) {
             eprintln!("FAILED {}: {error:#}", scene.name);
+        }
+    }
+    for (name, scene) in SCENE_VIEWS.iter().filter(|(name, _)| filter.as_deref().is_none_or(|f| name.contains(f))) {
+        if let Err(error) = render_scene_view(name, scene, &out) {
+            eprintln!("FAILED {name}: {error:#}");
         }
     }
     std::fs::remove_dir_all(&data).ok();
