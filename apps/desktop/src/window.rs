@@ -198,3 +198,14 @@ fn os_prefers_reduced_motion() -> bool {
         .output()
         .is_ok_and(|out| String::from_utf8_lossy(&out.stdout).trim() == "false")
 }
+
+/// This app's URL scheme. It is not the Electron app's `t3code://`, so the
+/// two can be installed side by side.
+pub const URL_SCHEME: &str = "t3code-gpui";
+
+/// The route a `t3code-gpui://threads/<env>/<thread>` link opens, read with
+/// the web's `t3code://` deep-link rules.
+pub fn route_from_url(url: &str) -> Option<t3code_web::router::Route> {
+    let rest = url.strip_prefix(URL_SCHEME)?.strip_prefix("://")?;
+    t3code_web::router::route_from_deep_link(&format!("t3code://{rest}"))
+}
