@@ -74,8 +74,10 @@ impl TextMetricsScene {
         Font { family, features: FontFeatures::default(), fallbacks: None, weight: FontWeight(style.weight), style: FontStyle::Normal }
     }
 
-    fn line_height(style: &Style, ascent: Pixels, descent: Pixels) -> Pixels {
-        style.line_height.map(px).unwrap_or_else(|| px(f32::from(ascent).round() + f32::from(descent).round()))
+    /// The style's line height; CSS `normal` is the ascent plus descent, each rounded to
+    /// device pixels as Blink rounds them.
+    fn line_height(style: &Style, ascent: Pixels, descent: Pixels, scale: f32) -> Pixels {
+        style.line_height.map(px).unwrap_or_else(|| px(((f32::from(ascent) * scale).round() + (f32::from(descent) * scale).round()) / scale))
     }
 
     /// Shapes every row as the text element would and writes the measurements once.
@@ -89,13 +91,13 @@ impl TextMetricsScene {
                 let style = &self.table.styles[row.style];
                 let run = TextRun { len: row.text.len(), font: Self::font(style), color: white(), background_color: None, underline: None, strikethrough: None };
                 let line = window.text_system().shape_line(row.text.clone(), px(style.size), &[run], None);
-                let line_height = Self::line_height(style, line.ascent, line.descent);
+                let line_height = Self::line_height(style, line.ascent, line.descent, window.scale_factor());
                 Measured {
                     width: f32::from(line.width),
                     ascent: f32::from(line.ascent),
                     descent: f32::from(line.descent),
                     line_height: f32::from(line_height),
-                    baseline: f32::from(line_baseline_offset(line_height, line.ascent, line.descent)),
+                    baseline: f32::from(line_baseline_offset(line_height, line.ascent, line.descent, window.scale_factor())),
                 }
             })
             .collect();
@@ -128,7 +130,7 @@ impl Render for TextMetricsScene {
                 .font_family(font.family)
                 .font_weight(font.weight)
                 .text_size(px(style.size))
-                .line_height(Self::line_height(style, ascent, descent))
+                .line_height(Self::line_height(style, ascent, descent, window.scale_factor()))
                 .child(row.text.clone())
         }))
     }

@@ -276,7 +276,7 @@ impl Element for &'static str {
         _window: &mut Window,
         _cx: &mut App,
     ) {
-        text_layout.prepaint(bounds, self)
+        text_layout.prepaint(bounds, window.unsnapped_origin(bounds), self)
     }
 
     fn paint(
@@ -342,7 +342,7 @@ impl Element for SharedString {
         _window: &mut Window,
         _cx: &mut App,
     ) {
-        text_layout.prepaint(bounds, self.as_ref())
+        text_layout.prepaint(bounds, window.unsnapped_origin(bounds), self.as_ref())
     }
 
     fn paint(
@@ -560,7 +560,7 @@ impl Element for StyledText {
         _window: &mut Window,
         _cx: &mut App,
     ) {
-        self.layout.prepaint(bounds, &self.text)
+        self.layout.prepaint(bounds, window.unsnapped_origin(bounds), &self.text)
     }
 
     fn paint(
@@ -596,6 +596,10 @@ struct TextLayoutInner {
     truncate_width: Option<Pixels>,
     size: Option<Size<Pixels>>,
     bounds: Option<Bounds<Pixels>>,
+    /// Where the lines are painted from: the layout box's origin before it snapped to
+    /// device pixels. Blink rounds each line's top once (`ComputePhysicalBoxGeometry`);
+    /// starting from the snapped origin would round a fractional line twice.
+    paint_origin: Point<Pixels>,
 }
 
 impl TextLayout {
@@ -733,6 +737,7 @@ impl TextLayout {
                         truncate_width,
                         size: Some(Size::default()),
                         bounds: None,
+                        paint_origin: Point::default(),
                     });
                     return Size::default();
                 };
@@ -752,6 +757,7 @@ impl TextLayout {
                     truncate_width,
                     size: Some(size),
                     bounds: None,
+                    paint_origin: Point::default(),
                 });
 
                 size
@@ -759,13 +765,14 @@ impl TextLayout {
         })
     }
 
-    fn prepaint(&self, bounds: Bounds<Pixels>, text: &str) {
+    fn prepaint(&self, bounds: Bounds<Pixels>, paint_origin: Point<Pixels>, text: &str) {
         let mut element_state = self.0.borrow_mut();
         let element_state = element_state
             .as_mut()
             .with_context(|| format!("measurement has not been performed on {text}"))
             .unwrap();
         element_state.bounds = Some(bounds);
+        element_state.paint_origin = paint_origin;
     }
 
     fn paint(&self, text: &str, window: &mut Window, cx: &mut App) {
@@ -801,7 +808,7 @@ impl TextLayout {
             .context("prepaint has not been performed")?;
 
         let line_height = element_state.line_height;
-        let mut line_origin = bounds.origin;
+        let mut line_origin = element_state.paint_origin;
         let text_style = window.text_style();
         for line in &element_state.lines {
             if matches!(pass, TextPaintPass::All | TextPaintPass::Background) {

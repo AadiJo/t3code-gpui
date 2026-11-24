@@ -1250,6 +1250,9 @@ pub struct Window {
     rem_size_override_stack: SmallVec<[Pixels; 8]>,
     pub(crate) viewport_size: Size<Pixels>,
     layout_engine: Option<TaffyLayoutEngine>,
+    /// The bounds [`Self::layout_bounds`] last returned and that box's origin before
+    /// snapping, for [`Self::unsnapped_origin`].
+    last_layout_origin: Option<(Bounds<Pixels>, Point<Pixels>)>,
     pub(crate) root: Option<AnyView>,
     pub(crate) element_id_stack: ElementIdStack,
     pub(crate) text_style_stack: Vec<TextStyleRefinement>,
@@ -2445,6 +2448,7 @@ impl Window {
             rem_size_override_stack: SmallVec::new(),
             viewport_size: content_size,
             layout_engine: Some(TaffyLayoutEngine::new()),
+            last_layout_origin: None,
             root: None,
             element_id_stack: ElementIdStack::default(),
             text_style_stack: Vec::new(),
@@ -5823,7 +5827,25 @@ impl Window {
             .map(Into::into);
         let snapped_offset = self.pixel_snap_point(self.element_offset());
         bounds.origin += snapped_offset;
+        let unsnapped = self
+            .layout_engine
+            .as_ref()
+            .unwrap()
+            .unsnapped_origin(layout_id, scale_factor)
+            .map_or(bounds.origin, |origin| origin + snapped_offset);
+        self.last_layout_origin = Some((bounds, unsnapped));
         bounds
+    }
+
+    /// The origin of the element with `bounds` before layout snapped it to device pixels,
+    /// when `bounds` are the ones [`Self::layout_bounds`] just returned, which is the case
+    /// at the start of an element's prepaint; otherwise `bounds.origin`. Text paints its
+    /// lines from here, so each line's top rounds once, as in Blink.
+    pub fn unsnapped_origin(&self, bounds: Bounds<Pixels>) -> Point<Pixels> {
+        match self.last_layout_origin {
+            Some((last, unsnapped)) if last == bounds => unsnapped,
+            _ => bounds.origin,
+        }
     }
 
     /// This method should be called during `prepaint`. You can use

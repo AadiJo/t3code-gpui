@@ -57,17 +57,31 @@ const UNDERLINE_DESCENT_OFFSET_FACTOR: f32 = 0.618;
 
 /// The baseline's offset from the top of a line box, as Blink places it: ascent and
 /// descent each round to whole pixels (`FontMetrics::AscentDescentWithHacks`), and the
-/// leading above the text is floored (`CalculateLeadingSpace`), so a baseline always sits
-/// a whole number of logical pixels below its line's top.
-pub fn line_baseline_offset(line_height: Pixels, ascent: Pixels, descent: Pixels) -> Pixels {
-    let ascent = ascent.0.round();
-    let descent = descent.0.round();
-    px(((line_height.0 - ascent - descent) / 2.).floor() + ascent)
+/// leading above the text is floored (`CalculateLeadingSpace`). On a display with a device
+/// scale factor Blink lays the page out zoomed by it and shapes fonts at the zoomed size,
+/// so those pixels are device pixels: at 2x a baseline can sit on a half logical pixel.
+pub fn line_baseline_offset(
+    line_height: Pixels,
+    ascent: Pixels,
+    descent: Pixels,
+    scale_factor: f32,
+) -> Pixels {
+    let ascent = (ascent.0 * scale_factor).round();
+    let descent = (descent.0 * scale_factor).round();
+    // A line height is a layout unit, 1/64 of a (zoomed) pixel.
+    let line_height = (line_height.0 * scale_factor * 64.).round() / 64.;
+    px((((line_height - ascent - descent) / 2.).floor() + ascent) / scale_factor)
 }
 
 /// Returns the vertical offset used to paint an underline within a line.
-pub fn underline_y_offset(line_height: Pixels, ascent: Pixels, descent: Pixels) -> Pixels {
-    line_baseline_offset(line_height, ascent, descent) + descent * UNDERLINE_DESCENT_OFFSET_FACTOR
+pub fn underline_y_offset(
+    line_height: Pixels,
+    ascent: Pixels,
+    descent: Pixels,
+    scale_factor: f32,
+) -> Pixels {
+    line_baseline_offset(line_height, ascent, descent, scale_factor)
+        + descent * UNDERLINE_DESCENT_OFFSET_FACTOR
 }
 
 const MAX_REPORTED_MISSING_GLYPHS: usize = 1024;
@@ -493,17 +507,19 @@ impl TextSystem {
         self.read_metrics(font_id, |metrics| metrics.descent(font_size))
     }
 
-    /// Get the recommended baseline offset for the given font and line height.
+    /// Get the recommended baseline offset for the given font and line height on a display
+    /// with `scale_factor` (see [`line_baseline_offset`]).
     pub fn baseline_offset(
         &self,
         font_id: FontId,
         font_size: Pixels,
         line_height: Pixels,
+        scale_factor: f32,
     ) -> Pixels {
         let ascent = self.ascent(font_id, font_size);
         // Font metrics give the descent as a negative offset below the baseline.
         let descent = self.descent(font_id, font_size).abs();
-        line_baseline_offset(line_height, ascent, descent)
+        line_baseline_offset(line_height, ascent, descent, scale_factor)
     }
 
     fn read_metrics<T>(&self, font_id: FontId, read: impl FnOnce(&FontMetrics) -> T) -> T {

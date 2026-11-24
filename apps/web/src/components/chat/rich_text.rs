@@ -190,7 +190,7 @@ impl Element for RichText {
                 let descent = text_system.descent(font_id, size).abs().round();
                 let extra = size * inline.pad_y_em + inline.border;
                 let baseline = layout.line_layout_for_index(text_box.range.start).map_or(line_height, |line| {
-                    line_baseline_offset(line_height, line.ascent(), line.descent())
+                    line_baseline_offset(line_height, line.ascent(), line.descent(), window.scale_factor())
                 });
                 (baseline - ascent - extra, baseline + descent + extra, size * inline.pad_x_em + inline.border)
             });

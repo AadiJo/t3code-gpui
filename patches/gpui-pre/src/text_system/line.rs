@@ -544,11 +544,20 @@ fn paint_line(
     ),
 ) -> Result<()> {
     window.paint_layer(|window| {
+        let scale_factor = window.scale_factor();
         let baseline_offset = point(
             px(0.),
-            line_baseline_offset(line_height, layout.ascent, layout.descent),
+            line_baseline_offset(line_height, layout.ascent, layout.descent, scale_factor),
         );
-        let underline_y_offset = underline_y_offset(line_height, layout.ascent, layout.descent);
+        let underline_y_offset =
+            underline_y_offset(line_height, layout.ascent, layout.descent, scale_factor);
+        // Each wrapped line's top snaps to a device pixel from the unsnapped origin, once,
+        // as Blink rounds each line box's top when it paints (`ComputePhysicalBoxGeometry`).
+        let line_top = |line: usize| {
+            px(crate::util::snap_edge((origin.y + line_height * line as f32).0 * scale_factor)
+                / scale_factor)
+        };
+        let mut line_ix = 0;
         let mut decoration_runs = decoration_runs.iter();
         let mut wraps = wrap_boundaries.iter().peekable();
         let mut run_end = 0;
@@ -565,7 +574,7 @@ fn paint_line(
                 layout,
                 wraps.peek(),
             ),
-            origin.y,
+            line_top(0),
         );
         let mut prev_glyph_position = Point::default();
         let mut max_glyph_size = size(px(0.), px(0.));
@@ -628,7 +637,8 @@ fn paint_line(
                         layout,
                         wraps.peek(),
                     );
-                    glyph_origin.y += line_height;
+                    line_ix += 1;
+                    glyph_origin.y = line_top(line_ix);
                 }
                 prev_glyph_position = glyph.position;
 
@@ -1107,7 +1117,7 @@ mod tests {
                     )
                     .unwrap();
                     let start = px(origin_x + offset);
-                    let y = origin.y + underline_y_offset(line_height, line.ascent, line.descent);
+                    let y = origin.y + underline_y_offset(line_height, line.ascent, line.descent, window.scale_factor());
                     assert_eq!(
                         strokes,
                         [
@@ -1193,7 +1203,7 @@ mod tests {
                 / 2.;
             let origin = point(px(40.25), px(10.25));
             let line_height = px(20.);
-            let y = origin.y + underline_y_offset(line_height, line.ascent, line.descent);
+            let y = origin.y + underline_y_offset(line_height, line.ascent, line.descent, window.scale_factor());
             for (align, offset) in [
                 (TextAlign::Left, 0.),
                 (TextAlign::Center, 16.),
@@ -1262,7 +1272,7 @@ mod tests {
                     / 2.;
                 let origin = point(px(40.25), px(10.25));
                 let line_height = px(20.);
-                let y = origin.y + underline_y_offset(line_height, line.ascent, line.descent);
+                let y = origin.y + underline_y_offset(line_height, line.ascent, line.descent, window.scale_factor());
                 let wrapped = WrappedLine {
                     layout: Arc::new(WrappedLineLayout {
                         unwrapped_layout: line.layout,
