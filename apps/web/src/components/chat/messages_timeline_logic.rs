@@ -194,15 +194,27 @@ fn is_pending_approval(work: &WorkLogEntry, pending: &HashSet<&str>) -> bool {
 
 /// The last assistant message of each run (`deriveTerminalAssistantMessageIds`).
 fn terminal_assistant_ids(entries: &[TimelineEntry]) -> HashSet<SharedString> {
-    let mut last_by_run: HashMap<Option<RunId>, SharedString> = HashMap::new();
+    // Replies without a run are keyed by the user messages before them.
+    let mut last_by_response: HashMap<Result<RunId, usize>, SharedString> = HashMap::new();
+    let mut unkeyed = 0;
     for entry in entries {
-        if let EntryKind::Message(m) = &entry.kind
-            && m.role == MessageRole::Assistant
-        {
-            last_by_run.insert(m.run_id.clone(), m.id.0.clone());
+        let EntryKind::Message(m) = &entry.kind else { continue };
+        match m.role {
+            MessageRole::User => unkeyed += 1,
+            MessageRole::Assistant => {
+                last_by_response.insert(m.run_id.clone().ok_or(unkeyed), m.id.0.clone());
+            }
         }
     }
-    last_by_run.into_values().collect()
+    last_by_response.into_values().collect()
+}
+
+/// `isCompactionCommandMessage`: a user's bare `/compact` with no attachments, inside a run.
+fn is_compaction_command(message: &super::timeline_entries::ChatMessage) -> bool {
+    message.role == MessageRole::User
+        && message.run_id.is_some()
+        && message.text.trim().eq_ignore_ascii_case("/compact")
+        && message.attachments.is_empty()
 }
 
 /// The run still in flight (`deriveUnsettledRunId`).
@@ -831,6 +843,32 @@ pub fn derive_timeline_rows(input: &TimelineInput, expansion: &TimelineExpansion
                         entry.id.0.clone(),
                         Some(entry.created_at),
                         RowKind::Event { event: event.clone(), subagents: Arc::from([]) },
+                    ));
+                }
+            }
+            // A bare `/compact` turn is the compaction itself: its row stands in for the prompt
+            // until the compaction item arrives, then the prompt hides (`isCompactionCommandMessage`).
+            EntryKind::Message(message) if is_compaction_command(message) => {
+                let run = message.run_id.clone().expect("guarded");
+                let compacted =
+                    entries.iter().any(|e| matches!(&e.kind, EntryKind::Work(w) if is_compaction(e) && w.run_id.as_ref() == Some(&run)));
+                if !compacted {
+                    let pending = input.is_working && unsettled.as_ref() == Some(&run);
+                    let reason = input.item_sources.get(entry.id.as_str()).and_then(|item| match &**item {
+                        t3code_contracts::OrchestrationV2TurnItem::UserMessage(user) => user.idle_compaction.clone(),
+                        _ => None,
+                    });
+                    use t3code_contracts::OrchestrationV2IdleCompaction as Idle;
+                    let label = match (pending, reason) {
+                        (true, Some(Idle::BeforeCacheExpires)) => crate::i18n::t!("Compacting before the cache expires…"),
+                        (true, Some(_)) => crate::i18n::t!("Compacting…"),
+                        (true, None) => crate::i18n::t!("Compacting context"),
+                        (false, _) => crate::i18n::t!("Context compaction"),
+                    };
+                    rows.push(row(
+                        format!("compaction:{}", run.as_str()),
+                        Some(entry.created_at),
+                        RowKind::ContextCompaction { label, tokens: None, active: pending, failed: false },
                     ));
                 }
             }
