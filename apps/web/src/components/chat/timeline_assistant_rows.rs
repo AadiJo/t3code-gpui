@@ -140,26 +140,19 @@ impl MessagesTimeline {
         div().px_1().py(rems(0.125)).child(render_markdown(&view, window, cx)).into_any_element()
     }
 
-    /// `ChangedFilesCard`: "N changed files" with diff stats, then the tree.
-    /// Folders start collapsed (`allDirectoriesExpanded` defaults to false);
-    /// the header's chevrons button expands or collapses them all.
+    /// `ChangedFilesCard`: "N changed files" with diff stats, then the tree
+    /// `buildTurnDiffTree` builds. Folders start collapsed (`allDirectoriesExpanded`
+    /// defaults to false); the header's chevrons button expands or collapses them all and
+    /// drops the per-folder overrides, as the fork's tree remounts on that key.
     fn render_changed_files(&mut self, key: u64, summary: &TurnDiffSummary, cx: &mut Context<Self>) -> AnyElement {
         let colors = self.colors;
         let turn = summary.assistant_message_id.clone();
         let (additions, deletions) = summary.files.iter().fold((0, 0), |(a, d), f| (a + f.additions, d + f.deletions));
         let fill = if colors.is_dark() { alpha(colors.theme.input, 0.2) } else { colors.theme.secondary };
-        let toggle = EntryId(format!("changed-files:{}", summary.assistant_message_id.0).into());
-        let expanded = self.expanded_entries.contains(&toggle);
-        // Group files under their folder, as the tree's first level does.
-        let mut folders: Vec<(String, Vec<&super::timeline_entries::FileChange>)> = Vec::new();
-        for file in summary.files.iter() {
-            let folder = file.path.rsplit_once('/').map_or(String::new(), |(dir, _)| dir.to_owned());
-            match folders.iter_mut().find(|(name, _)| *name == folder) {
-                Some((_, list)) => list.push(file),
-                None => folders.push((folder, vec![file])),
-            }
-        }
-        let has_folders = folders.iter().any(|(name, _)| !name.is_empty());
+        let all_toggle = EntryId(format!("changed-files:{}", turn.0).into());
+        let all_expanded = self.expanded_entries.contains(&all_toggle);
+        let tree = build_turn_diff_tree(&summary.files);
+        let has_folders = tree.iter().any(|node| matches!(node, DiffNode::Dir { .. }));
         let header = div()
             .flex()
             .items_center()
@@ -180,7 +173,7 @@ impl MessagesTimeline {
                         1 => "1 changed file".to_owned(),
                         n => format!("{n} changed files"),
                     })
-                    .child(diff_stat(additions, deletions, &colors, TEXT_XS.size)),
+                    .when(additions > 0 || deletions > 0, |d| d.child(diff_stat(additions, deletions, &colors, TEXT_XS.size))),
             )
             .child(
                 div()
@@ -189,19 +182,22 @@ impl MessagesTimeline {
                     .items_center()
                     .gap_1()
                     .when(has_folders, |d| {
-                        let toggle = toggle.clone();
-                        let glyph = if expanded { IconName::ChevronsDownUp } else { IconName::ChevronsUpDown };
+                        let glyph = if all_expanded { IconName::ChevronsDownUp } else { IconName::ChevronsUpDown };
+                        let (all_toggle, prefix) = (all_toggle.clone(), dir_toggle_prefix(&turn.0));
                         d.child(
                             xs_button(("expand-all", key), Some(glyph), None, colors.theme.muted_foreground, &colors)
-                                .on_click(cx.listener(move |this, _, _, cx| this.toggle_entry(toggle.clone(), cx)))
+                                .on_click(cx.listener(move |this, _, _, cx| {
+                                    this.expanded_entries.retain(|id| !id.0.starts_with(prefix.as_str()));
+                                    this.toggle_entry(all_toggle.clone(), cx)
+                                }))
                                 .test_support(),
                         )
                     })
                     .child(
                         xs_button(("open-diff-turn", key), Some(IconName::FileDiff), Some("Open diff".into()), colors.theme.muted_foreground, &colors)
                             .on_click({
-                                let turn = turn.clone();
-                                cx.listener(move |_, _, _, cx| cx.emit(TimelineAction::OpenDiff { turn: Some(turn.clone()), file: None }))
+                                let (turn, first) = (turn.clone(), summary.files.first().map(|f| f.path.clone()));
+                                cx.listener(move |_, _, _, cx| cx.emit(TimelineAction::OpenDiff { turn: Some(turn.clone()), file: first.clone() }))
                             })
                             .test_support(),
                     ),
@@ -221,71 +217,76 @@ impl MessagesTimeline {
                 .child(column(format!("+{a}"), colors.diff_addition))
                 .child(column(format!("-{d}"), colors.diff_deletion))
         };
+        let icon_size = colors.r(px(14.));
         let mut rows = Vec::new();
-        for (folder, files) in folders {
-            let depth = if folder.is_empty() { 0. } else { 1. };
-            if !folder.is_empty() {
-                let (a, d) = files.iter().fold((0, 0), |(a, d), f| (a + f.additions, d + f.deletions));
-                let toggle = toggle.clone();
-                rows.push(
-                    row()
-                        .id(gpui_kit::SharedString::from(format!("changed-dir-{key}-{folder}")))
-                        .pl(rems(0.5))
-                        .cursor_pointer()
-                        .hover(|s| s.bg(alpha(colors.theme.accent_surface, 0.6)))
-                        .on_click(cx.listener(move |this, _, _, cx| this.toggle_entry(toggle.clone(), cx)))
-                        .child(
-                            Icon::new(if expanded { IconName::ChevronDown } else { IconName::ChevronRight })
-                                .size(IconSize::Sm)
-                                .color(alpha(colors.theme.muted_foreground, 0.7)),
-                        )
-                        .child(
-                            Icon::new(if expanded { IconName::Folder } else { IconName::FolderClosed })
-                                .size(IconSize::Sm)
-                                .color(alpha(colors.theme.muted_foreground, 0.75)),
-                        )
-                        .child(
-                            div()
-                                .truncate()
-                                .font_family(mono().family)
-                                .text_size(TEXT_2XS.size)
-                                .text_color(alpha(colors.theme.muted_foreground, 0.9))
-                                .child(folder.clone()),
-                        )
-                        .child(stat(a, d))
-                        .into_any_element(),
-                );
-                if !expanded {
-                    continue;
+        let mut stack: Vec<(&[DiffNode], usize)> = vec![(&tree, 0)];
+        while let Some((nodes, depth)) = stack.pop() {
+            let Some((node, rest)) = nodes.split_first() else { continue };
+            stack.push((rest, depth));
+            let left = px(8. + depth as f32 * 14.);
+            match node {
+                DiffNode::Dir { name, path, additions, deletions, children } => {
+                    let toggle = EntryId(format!("{}{path}", dir_toggle_prefix(&turn.0)).into());
+                    let expanded = all_expanded != self.expanded_entries.contains(&toggle);
+                    rows.push(
+                        row()
+                            .id(gpui_kit::SharedString::from(format!("changed-dir-{key}-{path}")))
+                            .pl(left)
+                            .cursor_pointer()
+                            .hover(|s| s.bg(alpha(colors.theme.accent_surface, 0.6)))
+                            .on_click(cx.listener(move |this, _, _, cx| this.toggle_entry(toggle.clone(), cx)))
+                            .child(
+                                Icon::new(if expanded { IconName::ChevronDown } else { IconName::ChevronRight })
+                                    .size(IconSize::Custom(icon_size))
+                                    .color(alpha(colors.theme.muted_foreground, 0.7)),
+                            )
+                            .child(
+                                Icon::new(if expanded { IconName::Folder } else { IconName::FolderClosed })
+                                    .size(IconSize::Custom(icon_size))
+                                    .color(alpha(colors.theme.muted_foreground, 0.75)),
+                            )
+                            .child(
+                                div()
+                                    .truncate()
+                                    .font_family(mono().family)
+                                    .text_size(TEXT_2XS.size)
+                                    .text_color(alpha(colors.theme.muted_foreground, 0.9))
+                                    .child(name.clone()),
+                            )
+                            .when(*additions > 0 || *deletions > 0, |d| d.child(stat(*additions, *deletions)))
+                            .into_any_element(),
+                    );
+                    if expanded {
+                        stack.push((children, depth + 1));
+                    }
                 }
-            }
-            for file in files {
-                let name = file.path.rsplit('/').next().unwrap_or(&file.path).to_owned();
-                rows.push(
-                    row()
-                        .id(gpui_kit::SharedString::from(format!("changed-{}", file.path)))
-                        .pl(px(8. + depth * 14.))
-                        .cursor_pointer()
-                        .hover(|s| s.bg(alpha(colors.theme.accent_surface, 0.6)))
-                        .when(has_folders, |d| d.child(div().size(rems(0.875)).flex_none()))
-                        .child(Icon::new(IconName::File).size(IconSize::Sm).color(alpha(colors.theme.muted_foreground, 0.7)))
-                        .child(
-                            div()
-                                .flex_1()
-                                .truncate()
-                                .font_family(mono().family)
-                                .text_size(TEXT_XS.size)
-                                .text_color(alpha(colors.theme.text, 0.85))
-                                .child(name),
-                        )
-                        .child(stat(file.additions, file.deletions))
-                        .on_click({
-                            let (turn, path) = (turn.clone(), file.path.clone());
-                            cx.listener(move |_, _, _, cx| cx.emit(TimelineAction::OpenDiff { turn: Some(turn.clone()), file: Some(path.clone()) }))
-                        })
-                        .test_support()
-                        .into_any_element(),
-                );
+                DiffNode::File { name, file } => {
+                    rows.push(
+                        row()
+                            .id(gpui_kit::SharedString::from(format!("changed-{}", file.path)))
+                            .pl(left)
+                            .cursor_pointer()
+                            .hover(|s| s.bg(alpha(colors.theme.accent_surface, 0.6)))
+                            .when(has_folders || depth > 0, |d| d.child(div().size(icon_size).flex_none()))
+                            .child(changed_file_icon(&file.path, icon_size, &colors))
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .truncate()
+                                    .font_family(mono().family)
+                                    .text_size(TEXT_XS.size)
+                                    .text_color(alpha(colors.theme.text, 0.85))
+                                    .child(name.to_string()),
+                            )
+                            .child(stat(file.additions, file.deletions))
+                            .on_click({
+                                let (turn, path) = (turn.clone(), file.path.clone());
+                                cx.listener(move |_, _, _, cx| cx.emit(TimelineAction::OpenDiff { turn: Some(turn.clone()), file: Some(path.clone()) }))
+                            })
+                            .test_support()
+                            .into_any_element(),
+                    );
+                }
             }
         }
         div()
@@ -295,5 +296,123 @@ impl MessagesTimeline {
             .child(header)
             .child(div().p_2().flex().flex_col().children(rows))
             .into_any_element()
+    }
+}
+
+/// The id prefix of one turn's per-folder expansion overrides.
+fn dir_toggle_prefix(turn: &str) -> String {
+    format!("changed-dir:{turn}:")
+}
+
+/// `PierreEntryIcon` for a file at 14px: Pierre's icon in its token colour, or Lucide's
+/// generic file in `text-icon-muted` when Pierre has nothing specific.
+fn changed_file_icon(path: &str, size: gpui_kit::Pixels, colors: &super::chat_style::ChatColors) -> AnyElement {
+    let icon = crate::pierre_icons::resolve_file_icon(path);
+    if icon.is_default() {
+        Icon::new(IconName::File).size(IconSize::Custom(size)).color(alpha(colors.theme.muted_foreground, 0.7)).into_any_element()
+    } else {
+        crate::pierre_icons::pierre_icon(icon, size, colors.appearance, colors.theme.muted_foreground).into_any_element()
+    }
+}
+
+/// A node of `buildTurnDiffTree`: a folder with its summed counts, or a changed file.
+enum DiffNode<'a> {
+    Dir { name: String, path: String, additions: u32, deletions: u32, children: Vec<DiffNode<'a>> },
+    File { name: &'a str, file: &'a super::timeline_entries::FileChange },
+}
+
+/// `buildTurnDiffTree`: folders before files, each sorted by name the way
+/// `Intl.Collator(undefined, { numeric: true, sensitivity: "base" })` orders them, and a
+/// folder whose only child is a folder merged into one `a/b` row.
+fn build_turn_diff_tree(files: &[super::timeline_entries::FileChange]) -> Vec<DiffNode<'_>> {
+    #[derive(Default)]
+    struct Folder<'a> {
+        additions: u32,
+        deletions: u32,
+        folders: Vec<(&'a str, Folder<'a>)>,
+        files: Vec<(&'a str, &'a super::timeline_entries::FileChange)>,
+    }
+    fn into_nodes<'a>(folder: Folder<'a>, parent: &str) -> Vec<DiffNode<'a>> {
+        let mut folders = folder.folders;
+        folders.sort_by(|a, b| compare_names(a.0, b.0));
+        let mut files = folder.files;
+        files.sort_by(|a, b| compare_names(a.0, b.0));
+        let mut nodes: Vec<DiffNode<'a>> = folders
+            .into_iter()
+            .map(|(name, sub)| {
+                let path = if parent.is_empty() { name.to_owned() } else { format!("{parent}/{name}") };
+                let (additions, deletions) = (sub.additions, sub.deletions);
+                let mut node = DiffNode::Dir { name: name.to_owned(), children: into_nodes(sub, &path), path, additions, deletions };
+                // `compactDirectoryNode`: fold single-folder chains into one row.
+                while let DiffNode::Dir { name, children, .. } = &mut node
+                    && children.len() == 1
+                    && matches!(children[0], DiffNode::Dir { .. })
+                {
+                    let DiffNode::Dir { name: child, path, additions, deletions, children: grand } = children.pop().unwrap() else { unreachable!() };
+                    node = DiffNode::Dir { name: format!("{name}/{child}"), path, additions, deletions, children: grand };
+                }
+                node
+            })
+            .collect();
+        nodes.extend(files.into_iter().map(|(name, file)| DiffNode::File { name, file }));
+        nodes
+    }
+    let mut root = Folder::default();
+    for file in files {
+        let mut segments: Vec<&str> = file.path.split('/').filter(|s| !s.is_empty()).collect();
+        let Some(name) = segments.pop() else { continue };
+        let mut folder = &mut root;
+        folder.additions += file.additions;
+        folder.deletions += file.deletions;
+        for segment in segments {
+            let index = match folder.folders.iter().position(|(n, _)| *n == segment) {
+                Some(index) => index,
+                None => {
+                    folder.folders.push((segment, Folder::default()));
+                    folder.folders.len() - 1
+                }
+            };
+            folder = &mut folder.folders[index].1;
+            folder.additions += file.additions;
+            folder.deletions += file.deletions;
+        }
+        folder.files.push((name, file));
+    }
+    into_nodes(root, "")
+}
+
+/// Case-insensitive name order with digit runs compared by value, the order of a
+/// `numeric: true, sensitivity: "base"` collator for plain file names.
+fn compare_names(a: &str, b: &str) -> std::cmp::Ordering {
+    let (mut a, mut b) = (a.chars().peekable(), b.chars().peekable());
+    loop {
+        match (a.peek().copied(), b.peek().copied()) {
+            (None, None) => return std::cmp::Ordering::Equal,
+            (None, Some(_)) => return std::cmp::Ordering::Less,
+            (Some(_), None) => return std::cmp::Ordering::Greater,
+            (Some(x), Some(y)) if x.is_ascii_digit() && y.is_ascii_digit() => {
+                let mut number = |it: &mut std::iter::Peekable<std::str::Chars>| {
+                    let mut digits = String::new();
+                    while let Some(c) = it.peek().copied().filter(char::is_ascii_digit) {
+                        digits.push(c);
+                        it.next();
+                    }
+                    let trimmed = digits.trim_start_matches('0').to_owned();
+                    (trimmed.len(), trimmed)
+                };
+                let ordering = number(&mut a).cmp(&number(&mut b));
+                if ordering.is_ne() {
+                    return ordering;
+                }
+            }
+            (Some(x), Some(y)) => {
+                let ordering = x.to_lowercase().cmp(y.to_lowercase());
+                if ordering.is_ne() {
+                    return ordering;
+                }
+                a.next();
+                b.next();
+            }
+        }
     }
 }
