@@ -72,11 +72,30 @@ fn floor_char_boundary(text: &str, index: usize) -> usize {
     (0..=index).rev().find(|&i| text.is_char_boundary(i)).unwrap_or(0)
 }
 
+/// `Number.prototype.toFixed`: an exact tie rounds away from zero (Rust's formatter rounds it
+/// to even), so 1.125 reads 1.13 as in the web.
+pub fn to_fixed(value: f64, digits: usize) -> String {
+    let exact = format!("{:.60}", value.abs());
+    let tie = exact.split_once('.').is_some_and(|(_, fraction)| {
+        fraction.get(digits..digits + 1) == Some("5") && fraction[digits + 1..].bytes().all(|b| b == b'0')
+    });
+    if !tie {
+        return format!("{value:.digits$}");
+    }
+    let scale = 10f64.powi(digits as i32);
+    let rounded = ((value.abs() * scale).floor() + 1.0) / scale;
+    format!("{}{rounded:.digits$}", if value < 0.0 { "-" } else { "" })
+}
+
 fn trim_number(value: f64) -> String {
     let abs = value.abs();
     let digits = if abs >= 100.0 { 0 } else if abs >= 10.0 { 1 } else { 2 };
-    let text = format!("{value:.digits$}");
-    if text.contains('.') { text.trim_end_matches('0').trim_end_matches('.').to_owned() } else { text }
+    let text = to_fixed(value, digits);
+    // Only an all-zero fraction goes (`/\.0+$/`): 1.90 stays 1.90, 2.00 reads 2.
+    match text.split_once('.') {
+        Some((whole, fraction)) if fraction.bytes().all(|b| b == b'0') => whole.to_owned(),
+        _ => text,
+    }
 }
 
 /// A token count with K/M/B suffixes (`formatTokens`).

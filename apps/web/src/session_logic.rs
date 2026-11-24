@@ -37,10 +37,44 @@ use crate::components::chat::timeline_entries::{
     TimelineEvent, TimelineInput, TodoState, ToolStatus, TurnDiffSummary, WebResult, WorkItem, WorkLogEntry,
 };
 use crate::i18n::t;
+use crate::work_entry_labels::{Lifecycle, SourceActivityKind, Tone, WorkFacts, WorkSource, format_read_tool_label, format_search_tool_label};
+use t3code_client_runtime::work_log::t3_tools::{read_t3_tool_result, t3_tool_id};
+use t3code_client_runtime::work_log::tool_activity::{ToolActivityAction, classify_tool_activity, collect_tool_file_paths};
 
 /// `WORKSPACE_PREPARATION_INPUT` and the failure code of `turnItemIsWorkspacePreparation`.
 const WORKSPACE_PREPARATION_INPUT: &str = "Preparing workspace";
 const WORKSPACE_PREPARATION_FAILURE_CODE: &str = "workspace_preparation_failed";
+
+/// The completed T3 tool output a row reads (`compactDynamicToolOutput`), for the tools whose
+/// output replaces their work row; OpenCode's code mode reports them as `execute`.
+fn tool_output_data(tool: &t3code_contracts::OrchestrationV2TurnItemDynamicTool, tool_id: &str) -> Option<serde_json::Map<String, Value>> {
+    let name = tool.tool_name.as_deref();
+    if name != Some("execute") && t3_tool_id(name) != Some(tool_id) {
+        return None;
+    }
+    let result = read_t3_tool_result(tool.output.as_ref()?);
+    if result.failed { None } else { result.data }
+}
+
+/// The text `send_to_user` showed the user (`sentMessageFromToolItem`).
+fn sent_message(tool: &t3code_contracts::OrchestrationV2TurnItemDynamicTool) -> Option<String> {
+    let data = tool_output_data(tool, "send_to_user")?;
+    let text = data.get("sentMessage")?.as_str()?;
+    (!text.trim().is_empty() && text.encode_utf16().count() <= 4_000).then(|| text.to_owned())
+}
+
+/// The title of the page `html_render` rendered (`htmlRenderFromToolItem`, `readHtmlRenderReference`).
+fn html_render_title(tool: &t3code_contracts::OrchestrationV2TurnItemDynamicTool) -> Option<String> {
+    let data = tool_output_data(tool, "html_render")?;
+    let reference = data.get("htmlRender")?.as_object()?;
+    let attachment = reference.get("attachmentId")?.as_str()?;
+    let title = reference.get("title")?.as_str()?;
+    if attachment.is_empty() || attachment.encode_utf16().count() > 256 || !reference.get("height")?.as_f64()?.is_finite() {
+        return None;
+    }
+    let title: String = title.trim().chars().take(200).collect();
+    Some(if title.is_empty() { "HTML".to_owned() } else { title })
+}
 
 /// Base fields every turn item variant has but the shared accessor trait does not expose.
 macro_rules! base {
@@ -125,19 +159,9 @@ fn attachments(list: &[ChatAttachment]) -> Arc<[Attachment]> {
         .collect()
 }
 
-/// The bare tool name of a t3 MCP tool (`t3-code.send_to_user`, `mcp__t3-code__send_to_user`).
-fn t3_tool(tool_name: Option<&str>) -> Option<&str> {
-    let name = tool_name?;
-    if !name.contains("t3") {
-        return None;
-    }
-    let tail = name.rsplit(['.', '/']).next()?;
-    Some(tail.rsplit("__").next().unwrap_or(tail))
-}
-
 fn dynamic_tool_kind(tool_name: Option<&str>) -> DynamicToolKind {
     let lower = tool_name.unwrap_or_default().to_lowercase();
-    let tool = t3_tool(Some(&lower)).unwrap_or(&lower).to_owned();
+    let tool = t3_tool_id(tool_name).map_or(lower, str::to_owned);
     if tool.starts_with("preview_") || tool.contains("browser") {
         DynamicToolKind::Browser
     } else if tool.starts_with("device_") {
@@ -212,8 +236,205 @@ fn todo_state(status: Step) -> TodoState {
     }
 }
 
+/// The lifecycle the web gives an item (`projectedWorkEntryStatus`).
+fn lifecycle(status: Status) -> Lifecycle {
+    match status {
+        Status::Pending | Status::Running | Status::Waiting => Lifecycle::InProgress,
+        Status::Completed => Lifecycle::Completed,
+        Status::Idle => Lifecycle::Idle,
+        Status::Failed => Lifecycle::Failed,
+        Status::Cancelled | Status::Interrupted => Lifecycle::Stopped,
+    }
+}
+
+/// `projectedWorkEntryTone`.
+fn tone(item: &Item) -> Tone {
+    match item {
+        Item::Reasoning(_) => Tone::Thinking,
+        Item::CommandExecution(_)
+        | Item::FileChange(_)
+        | Item::FileSearch(_)
+        | Item::WebSearch(_)
+        | Item::DynamicTool(_)
+        | Item::Subagent(_)
+        | Item::ThreadCreated(_)
+        | Item::UserInputRequest(_)
+        | Item::ApprovalRequest(_) => Tone::Tool,
+        _ => Tone::Info,
+    }
+}
+
+/// `providerErrorPresentation`'s detail: the failure, then the retry delay while retrying.
+fn provider_error_detail(error: &t3code_contracts::OrchestrationV2TurnItemError) -> String {
+    let delay = error.retry.as_ref().filter(|_| error.status == Status::Running).and_then(|retry| retry.retry_delay_ms).filter(|ms| *ms > 0);
+    match delay {
+        Some(ms) if ms < 1_000 => format!("{} {}", error.failure.message, t!("Retrying in {delay}ms.", delay = ms)),
+        Some(ms) => {
+            let seconds = t3code_client_runtime::work_log::presentation::to_fixed(ms as f64 / 1_000.0, 1);
+            let seconds = seconds.strip_suffix(".0").unwrap_or(&seconds).to_owned();
+            format!("{} {}", error.failure.message, t!("Retrying in {delay}s.", delay = seconds))
+        }
+        None => error.failure.message.clone(),
+    }
+}
+
+fn is_image_preview_path(path: &str) -> bool {
+    const EXTENSIONS: &[&str] =
+        &[".avif", ".bmp", ".gif", ".ico", ".heic", ".heif", ".jpeg", ".jpg", ".png", ".svg", ".tif", ".tiff", ".webp"];
+    let lower = path.to_lowercase();
+    EXTENSIONS.iter().any(|extension| lower.ends_with(extension))
+}
+
+/// The fields `projectedWorkEntry` keeps for one item: label, detail, command, changed files,
+/// tool title, tone, lifecycle and the tool's source (`extractToolActivityPresentation`).
+fn work_facts(item: &Arc<Item>) -> WorkFacts {
+    let title = item_title(item).map(shared);
+    let mut facts = WorkFacts {
+        item: Arc::clone(item),
+        tone: tone(item),
+        lifecycle: item.item_status().map(lifecycle),
+        label: SharedString::default(),
+        detail: None,
+        command: None,
+        changed_files: Arc::from([]),
+        tool_title: None,
+        source_activity_kind: None,
+        tool_source: None,
+        viewed_image_path: None,
+    };
+    facts.label = match &**item {
+        Item::ThreadCreated(_) => t!("Created thread"),
+        Item::Compaction(compaction) => {
+            facts.source_activity_kind = Some(SourceActivityKind::ContextCompaction);
+            facts.detail = compaction.summary.clone().filter(|s| !s.is_empty()).map(shared);
+            compaction_label(compaction)
+        }
+        Item::Reasoning(reasoning) => {
+            facts.detail = (!reasoning.text.is_empty()).then(|| shared(reasoning.text.clone()));
+            title.clone().unwrap_or_else(|| t!("Thinking", context = "status of an agent reasoning"))
+        }
+        Item::CommandExecution(command) => {
+            facts.command = Some(shared(command.input.clone()));
+            facts.tool_title = Some(title.clone().unwrap_or_else(|| t!("Command", context = "noun, a shell command tool")));
+            title.clone().unwrap_or_else(|| t!("Ran command"))
+        }
+        Item::FileChange(change) => {
+            let changes = change.changes.as_deref().unwrap_or_default();
+            facts.changed_files = if changes.is_empty() {
+                Arc::from([shared(change.file_name.clone())])
+            } else {
+                changes.iter().map(|c| shared(c.path.clone())).collect()
+            };
+            facts.tool_title = Some(title.clone().unwrap_or_else(|| t!("File change", context = "noun, a tool title")));
+            title.clone().unwrap_or_else(|| {
+                if changes.len() > 1 {
+                    t!("{count, plural, one {Changed {count} file} other {Changed {count} files}}", count = changes.len())
+                } else {
+                    t!("Changed {fileName}", fileName = change.file_name.clone())
+                }
+            })
+        }
+        Item::FileSearch(search) => {
+            facts.detail = search.pattern.clone().filter(|p| !p.is_empty()).map(shared);
+            facts.tool_title = Some(title.clone().unwrap_or_else(|| t!("File search", context = "noun, a tool title")));
+            let record = serde_json::to_value(&**item).unwrap_or(Value::Null);
+            title.clone().or_else(|| format_search_tool_label(record.as_object())).unwrap_or_else(|| t!("Searched files"))
+        }
+        Item::WebSearch(search) => {
+            facts.detail = search.patterns.as_ref().filter(|p| !p.is_empty()).map(|p| shared(p.join(", ")));
+            facts.tool_title = Some(title.clone().unwrap_or_else(|| t!("Web search", context = "noun, a tool title")));
+            title.clone().unwrap_or_else(|| t!("Searched the web"))
+        }
+        Item::SystemNotice(notice) => {
+            if notice.level != Some(OrchestrationV2TurnItemSystemNoticeLevel::Info) {
+                facts.source_activity_kind = Some(SourceActivityKind::RuntimeWarning);
+            }
+            shared(notice.message.clone())
+        }
+        Item::Error(error) => {
+            facts.detail = Some(shared(provider_error_detail(error)));
+            facts.source_activity_kind = if error.failure.class == FailureClass::UsageLimit && error.status != Status::Completed {
+                Some(SourceActivityKind::RuntimeWarning)
+            } else if error.retry.is_none() {
+                Some(SourceActivityKind::RuntimeError)
+            } else {
+                None
+            };
+            provider_error_label(error)
+        }
+        Item::DynamicTool(tool) => {
+            let tool_name = tool.tool_name.as_deref().filter(|n| !n.is_empty());
+            let mut data = serde_json::Map::new();
+            if let Some(name) = tool_name {
+                data.insert("toolName".into(), Value::String(name.to_owned()));
+            }
+            data.insert("input".into(), tool.input.clone());
+            let classified = classify_tool_activity(Some("dynamic_tool_call"), None, Some(&data));
+            let read_path = collect_tool_file_paths(&serde_json::json!({ "input": tool.input })).into_iter().next();
+            facts.tool_title = Some(title.clone().or_else(|| tool_name.map(shared)).unwrap_or_else(|| t!("Tool", context = "noun, a tool title")));
+            let fallback = || tool_name.map(shared).unwrap_or_else(|| t!("Tool call", context = "noun"));
+            title.clone().unwrap_or_else(|| match classified {
+                ToolActivityAction::Read => format_read_tool_label(read_path.as_deref().unwrap_or_default(), 0),
+                ToolActivityAction::Search => {
+                    let record = serde_json::json!({ "input": tool.input });
+                    format_search_tool_label(record.as_object()).unwrap_or_else(fallback)
+                }
+                _ => fallback(),
+            })
+        }
+        Item::TodoList(todo) => {
+            let done = todo.steps.iter().filter(|step| step.status == Step::Completed).count();
+            let total = todo.steps.len();
+            let current = todo.steps.iter().find(|step| step.status == Step::Running).or_else(|| todo.steps.iter().find(|step| step.status == Step::Pending));
+            match current {
+                Some(current) => t!("Tasks {done}/{total} · {current}", done = done, total = total, current = current.text.clone()),
+                None => t!("Tasks {done}/{total}", done = done, total = total),
+            }
+        }
+        Item::ApprovalRequest(request) => {
+            facts.detail = Some(shared(request.prompt.clone().unwrap_or_else(|| request.request_kind.as_str().to_owned())));
+            title.clone().unwrap_or_else(|| t!("Approval requested"))
+        }
+        Item::UserInputRequest(request) => title.clone().unwrap_or_else(|| {
+            if request.question_answer.is_some() { t!("Answered questions") } else { t!("Input requested") }
+        }),
+        Item::Notification(notification) => {
+            // Notifications map without a lifecycle or tool fields.
+            facts.lifecycle = None;
+            return WorkFacts { label: shared(notification.summary.clone()), ..facts };
+        }
+        other => title.clone().unwrap_or_else(|| shared(other.type_name().replace('_', " "))),
+    };
+    if let Item::DynamicTool(tool) = &**item {
+        let computer = tool.tool_surface.as_ref().is_some_and(|s| s.as_str() == "computer")
+            || tool.tool_source.as_ref().is_some_and(|s| s.kind.as_str() == "computer")
+            || (tool.tool_surface.is_none()
+                && tool.tool_source.is_none()
+                && t3code_client_runtime::work_log::tool_activity::dynamic_tool_drives_computer(tool.tool_name.as_deref(), &tool.input));
+        facts.tool_source = if computer && tool.tool_source.as_ref().is_none_or(|s| s.kind.as_str() != "computer") {
+            Some(t3code_contracts::ToolActivitySource {
+                key: "computer-use".into(),
+                name: "Computer Use".into(),
+                kind: t3code_contracts::ToolActivitySourceKind::Computer,
+                icon: None,
+            })
+        } else {
+            tool.tool_source.clone()
+        };
+        facts.viewed_image_path = tool
+            .viewed_image_path
+            .as_deref()
+            .map(str::trim)
+            .filter(|p| !p.is_empty() && !p.contains(['\r', '\n']) && is_image_preview_path(p))
+            .map(|p| shared(p.to_owned()));
+    }
+    facts
+}
+
 /// The work-log entry of one item (`projectedWorkEntry`).
-fn work_entry(item: &Item, created_at: Timestamp, superseded_attempt: Option<AttemptId>) -> WorkLogEntry {
+fn work_entry(source_item: &Arc<Item>, created_at: Timestamp, superseded_attempt: Option<AttemptId>) -> WorkLogEntry {
+    let item: &Item = source_item;
+    let source = Arc::new(WorkSource::new(work_facts(source_item)));
     let title = item_title(item);
     let mut status = tool_status(item.item_status());
     let (label, work) = match item {
@@ -419,14 +640,16 @@ fn work_entry(item: &Item, created_at: Timestamp, superseded_attempt: Option<Att
             (label.clone(), WorkItem::Notification { text: label })
         }
     };
+    let _ = label;
     WorkLogEntry {
         id: EntryId(id_of(&item.item_id())),
         run_id: item.item_run_id().map(|run| RunId(id_of(run))),
         created_at,
         status,
-        label,
+        label: source.facts.label.clone(),
         item: work,
         superseded_attempt,
+        source: Some(source),
     }
 }
 
@@ -534,17 +757,16 @@ fn map_row(row: &VisibleTurnItem, superseded_attempt: Option<AttemptId>, folded_
                 .unwrap_or_else(|| t!("Proposed plan")),
             markdown: shared(plan.markdown.clone()),
         }),
-        Item::DynamicTool(tool) if tool.status == Status::Completed && t3_tool(tool.tool_name.as_deref()) == Some("send_to_user") => {
-            let text = str_field(&tool.input, "message").or_else(|| str_field(&tool.input, "text")).unwrap_or_default();
-            EntryKind::SentMessage { run_id, text: shared(text) }
+        Item::DynamicTool(tool) if tool.status == Status::Completed && html_render_title(tool).is_some() => {
+            EntryKind::HtmlRender { run_id, title: shared(html_render_title(tool).unwrap_or_default()) }
         }
-        Item::DynamicTool(tool) if tool.status == Status::Completed && t3_tool(tool.tool_name.as_deref()) == Some("html_render") => {
-            EntryKind::HtmlRender { run_id, title: shared(str_field(&tool.input, "title").unwrap_or_default()) }
+        Item::DynamicTool(tool) if tool.status == Status::Completed && sent_message(tool).is_some() => {
+            EntryKind::SentMessage { run_id, text: shared(sent_message(tool).unwrap_or_default()) }
         }
         Item::Subagent(subagent) => EntryKind::Event(TimelineEvent::Subagent(Subagent {
             id: id_of(&subagent.subagent_id),
             run_id,
-            provider_turn_id: None,
+            provider_turn_id: subagent.provider_turn_id.as_ref().map(id_of),
             title: item_title(item).map(shared).unwrap_or_else(|| shared(first_line(&subagent.prompt))),
             detail: subagent.progress.clone().or_else(|| subagent.result.clone()).map(|text| shared(first_line(&text))),
             status: subagent_status(subagent.status),
@@ -575,7 +797,7 @@ fn map_row(row: &VisibleTurnItem, superseded_attempt: Option<AttemptId>, folded_
             detail: handoff.summary.clone().map(shared),
             action: false,
         })),
-        _ => EntryKind::Work(work_entry(item, created_at, superseded_attempt)),
+        _ => EntryKind::Work(work_entry(&row.item, created_at, superseded_attempt)),
     };
     // A message entry is keyed by its message id, as in the TypeScript.
     let id = match &kind {
@@ -801,6 +1023,19 @@ pub fn pending_questions(projection: &ThreadProjection) -> Vec<(PendingQuestion,
 /// Everything the timeline derives its rows from, for one projection.
 pub fn timeline_input(mapper: &mut TimelineMapper, projection: &ThreadProjection, optimistic: &[OptimisticMessage]) -> TimelineInput {
     let entries = mapper.entries(projection, optimistic);
+    // Entries are keyed by message id for messages and item id otherwise.
+    let item_sources: HashMap<SharedString, Arc<Item>> = projection
+        .visible_turn_items
+        .iter()
+        .map(|row| {
+            let key = match &*row.item {
+                Item::UserMessage(user) => id_of(&user.message_id),
+                Item::AssistantMessage(reply) => id_of(&reply.message_id),
+                other => id_of(&other.item_id()),
+            };
+            (key, Arc::clone(&row.item))
+        })
+        .collect();
     let requests = pending_requests(projection);
     let active = active_run(projection);
     let latest = projection.runs.iter().filter(|run| run.status != Run::Queued).max_by_key(|run| run.ordinal);
@@ -841,6 +1076,21 @@ pub fn timeline_input(mapper: &mut TimelineMapper, projection: &ThreadProjection
             })
             .collect(),
         pending_question: pending_question(&requests),
+        superseded_attempts: Arc::new(
+            superseded_attempts(projection)
+                .into_iter()
+                .filter_map(|(item_id, attempt)| {
+                    let row = projection.visible_turn_items.iter().find(|row| row.item.item_id() == item_id)?;
+                    let key = match &*row.item {
+                        Item::UserMessage(user) => id_of(&user.message_id),
+                        Item::AssistantMessage(reply) => id_of(&reply.message_id),
+                        other => id_of(&other.item_id()),
+                    };
+                    Some((key, attempt))
+                })
+                .collect(),
+        ),
+        item_sources: Arc::new(item_sources),
     }
 }
 

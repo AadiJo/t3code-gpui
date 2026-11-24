@@ -167,6 +167,17 @@ fn is_compaction(entry: &TimelineEntry) -> bool {
 
 /// Work entries that always stand alone instead of joining a tool group.
 fn stands_alone(work: &WorkLogEntry, pending: &HashSet<&str>) -> bool {
+    if let Some(source) = &work.source {
+        use crate::work_entry_labels::{SourceActivityKind, Tone};
+        use t3code_contracts::OrchestrationV2TurnItem as Item;
+        let facts = &source.facts;
+        return is_pending_approval(work, pending)
+            || matches!(&*facts.item, Item::Error(_)) && work.status == ToolStatus::Failed
+            || facts.tone == Tone::Error
+            || facts.source_activity_kind == Some(SourceActivityKind::RuntimeError)
+            || matches!(&*facts.item, Item::SystemNotice(_) | Item::Notification(_) | Item::TodoList(_))
+            || has_question_answer(work);
+    }
     matches!(
         work.item,
         WorkItem::Error { .. }
@@ -183,15 +194,27 @@ fn is_pending_approval(work: &WorkLogEntry, pending: &HashSet<&str>) -> bool {
 
 /// The last assistant message of each run (`deriveTerminalAssistantMessageIds`).
 fn terminal_assistant_ids(entries: &[TimelineEntry]) -> HashSet<SharedString> {
-    let mut last_by_run: HashMap<Option<RunId>, SharedString> = HashMap::new();
+    // Replies without a run are keyed by the user messages before them.
+    let mut last_by_response: HashMap<Result<RunId, usize>, SharedString> = HashMap::new();
+    let mut unkeyed = 0;
     for entry in entries {
-        if let EntryKind::Message(m) = &entry.kind
-            && m.role == MessageRole::Assistant
-        {
-            last_by_run.insert(m.run_id.clone(), m.id.0.clone());
+        let EntryKind::Message(m) = &entry.kind else { continue };
+        match m.role {
+            MessageRole::User => unkeyed += 1,
+            MessageRole::Assistant => {
+                last_by_response.insert(m.run_id.clone().ok_or(unkeyed), m.id.0.clone());
+            }
         }
     }
-    last_by_run.into_values().collect()
+    last_by_response.into_values().collect()
+}
+
+/// `isCompactionCommandMessage`: a user's bare `/compact` with no attachments, inside a run.
+fn is_compaction_command(message: &super::timeline_entries::ChatMessage) -> bool {
+    message.role == MessageRole::User
+        && message.run_id.is_some()
+        && message.text.trim().eq_ignore_ascii_case("/compact")
+        && message.attachments.is_empty()
 }
 
 /// The run still in flight (`deriveUnsettledRunId`).
@@ -210,7 +233,93 @@ struct TurnFold {
     label: SharedString,
 }
 
-/// Folds each settled turn's work behind "Worked for …" (`deriveTurnFolds`).
+/// Whether a question row carries its answer (`entry.questionAnswer !== undefined`).
+fn has_question_answer(entry: &WorkLogEntry) -> bool {
+    match &entry.source {
+        Some(source) => matches!(&*source.facts.item, t3code_contracts::OrchestrationV2TurnItem::UserInputRequest(r) if r.question_answer.is_some()),
+        None => matches!(&entry.item, WorkItem::QuestionAnswer { pairs } if !pairs.is_empty()),
+    }
+}
+
+/// Fork cards stay answerable and visible inside folds (`timelineEntryIsPersistentResourceCard`).
+fn is_persistent_card(entry: &TimelineEntry) -> bool {
+    matches!(&entry.kind, EntryKind::Event(TimelineEvent::Divider(d)) if d.kind == super::timeline_entries::DividerKind::Forked)
+}
+
+/// Subagent cards of a batch with a live child stay visible (`liveSubagentCardEntryIds`).
+fn live_subagent_entry_ids(entries: &[TimelineEntry]) -> HashSet<SharedString> {
+    let mut visible = HashSet::new();
+    let mut batch: Vec<(&TimelineEntry, &super::timeline_entries::Subagent)> = Vec::new();
+    let mut flush = |batch: &mut Vec<(&TimelineEntry, &super::timeline_entries::Subagent)>| {
+        if batch.iter().any(|(_, s)| s.status.is_live()) {
+            visible.extend(batch.iter().map(|(e, _)| e.id.0.clone()));
+        }
+        batch.clear();
+    };
+    for entry in entries {
+        let EntryKind::Event(TimelineEvent::Subagent(subagent)) = &entry.kind else {
+            flush(&mut batch);
+            continue;
+        };
+        if let Some((_, previous)) = batch.last()
+            && (previous.run_id != subagent.run_id || previous.provider_turn_id != subagent.provider_turn_id)
+        {
+            flush(&mut batch);
+        }
+        batch.push((entry, subagent));
+    }
+    flush(&mut batch);
+    visible
+}
+
+/// Final answers always stay in view (`retainedAssistantReplyEntryIds`, the phase rule).
+fn retained_reply_ids(input: &TimelineInput) -> HashSet<SharedString> {
+    use t3code_contracts::{OrchestrationV2TurnItem as Item, OrchestrationV2TurnItemAssistantMessagePhase as Phase};
+    input
+        .entries
+        .iter()
+        .filter(|entry| {
+            input.item_sources.get(entry.id.as_str()).is_some_and(|item| matches!(&**item, Item::AssistantMessage(m) if m.phase == Some(Phase::FinalAnswer)))
+        })
+        .map(|entry| entry.id.0.clone())
+        .collect()
+}
+
+/// The run an entry folds under, or the runless key of its prompt (`timelineEntryFoldRunId`).
+fn fold_run_id(entry: &TimelineEntry, runless: Option<&RunId>) -> Option<RunId> {
+    match &entry.kind {
+        EntryKind::Work(w) if matches!(w.item, WorkItem::SystemNotice { .. }) => None,
+        EntryKind::Message(m) if m.role == MessageRole::Assistant => m.run_id.clone().or_else(|| runless.cloned()),
+        EntryKind::Work(w) => w.run_id.clone().or_else(|| runless.cloned()),
+        EntryKind::Event(TimelineEvent::Subagent(s)) => s.run_id.clone().or_else(|| runless.cloned()),
+        EntryKind::Event(event @ TimelineEvent::Divider(_)) if is_persistent_card(entry) => event.run_id().cloned().or_else(|| runless.cloned()),
+        _ => None,
+    }
+}
+
+/// `responseBoundaryRunId`.
+fn boundary_run_id(entry: &TimelineEntry) -> Option<RunId> {
+    match &entry.kind {
+        EntryKind::Message(m) => m.run_id.clone(),
+        EntryKind::Work(w) => w.run_id.clone(),
+        _ => None,
+    }
+}
+
+/// A top-level failed provider error (`timelineEntryFailedItem`).
+fn is_failed_error(entry: &TimelineEntry) -> bool {
+    match &entry.kind {
+        EntryKind::Work(w) => match &w.source {
+            Some(source) => matches!(&*source.facts.item, t3code_contracts::OrchestrationV2TurnItem::Error(e)
+                if e.status == t3code_contracts::OrchestrationV2TurnItemStatus::Failed && e.parent_item_id.is_none()),
+            None => matches!(w.item, WorkItem::Error { .. }) && w.status == ToolStatus::Failed,
+        },
+        _ => false,
+    }
+}
+
+/// Folds each settled turn's work behind "Worked for …", and the work after each steer behind
+/// "Continued for …" (`deriveTurnFolds`).
 fn derive_turn_folds(
     entries: &[TimelineEntry],
     terminal_ids: &HashSet<SharedString>,
@@ -223,9 +332,16 @@ fn derive_turn_folds(
         streaming: bool,
         start: Option<Timestamp>,
         anchor: SharedString,
+        steers: Vec<(usize, &'a TimelineEntry)>,
     }
     let mut interrupted: HashSet<RunId> = HashSet::new();
-    for entry in entries {
+    let mut prompt_index: HashMap<RunId, usize> = HashMap::new();
+    for (index, entry) in entries.iter().enumerate() {
+        if starts_response(entry)
+            && let Some(run) = boundary_run_id(entry)
+        {
+            prompt_index.entry(run).or_insert(index);
+        }
         if let EntryKind::Event(TimelineEvent::Divider(d)) = &entry.kind
             && d.kind == super::timeline_entries::DividerKind::RunInterrupted
             && let Some(run) = &d.run_id
@@ -233,28 +349,51 @@ fn derive_turn_folds(
             interrupted.insert(run.clone());
         }
     }
+    let live_subagents = live_subagent_entry_ids(entries);
+    let retained = retained_reply_ids(input);
     let mut order: Vec<RunId> = Vec::new();
     let mut groups: HashMap<RunId, Group> = HashMap::new();
+    let mut runless_failed: HashSet<RunId> = HashSet::new();
+    let mut runless_key: Option<RunId> = None;
+    let mut response_key: Option<RunId> = None;
     let mut pending_boundary: Option<(Timestamp, SharedString)> = None;
     for (index, entry) in entries.iter().enumerate() {
         if starts_response(entry) {
             pending_boundary = entries.get(index + 1).map(|next| (entry.created_at, next.id.0.clone()));
+            let boundary = boundary_run_id(entry);
+            runless_key = boundary.is_none().then(|| RunId::new(format!("runless:{}", entry.id.as_str())));
+            response_key = boundary.or_else(|| runless_key.clone());
             continue;
         }
         if is_steer(entry) {
+            let steer_run = match &entry.kind {
+                EntryKind::Message(m) => m.run_id.clone().or_else(|| response_key.clone()),
+                _ => None,
+            };
+            if let Some(group) = steer_run.and_then(|run| groups.get_mut(&run))
+                && !group.entries.is_empty()
+            {
+                // Back-to-back steers split once, after the last of them.
+                if group.steers.last().is_some_and(|(start, _)| *start == group.entries.len()) {
+                    group.steers.pop();
+                }
+                group.steers.push((group.entries.len(), entry));
+            }
             continue;
         }
-        let run = match &entry.kind {
-            EntryKind::Message(m) if m.role == MessageRole::Assistant => m.run_id.clone(),
-            EntryKind::Work(w) if !matches!(w.item, WorkItem::SystemNotice { .. }) => w.run_id.clone(),
-            EntryKind::Event(TimelineEvent::Subagent(s)) => s.run_id.clone(),
-            _ => None,
+        let Some(own) = fold_run_id(entry, runless_key.as_ref()) else { continue };
+        // Resumed subagents keep their position and fold with their original turn.
+        let run = match &response_key {
+            Some(key) if prompt_index.get(&own).is_some_and(|&p| p > index) => key.clone(),
+            _ => own,
         };
-        let Some(run) = run else { continue };
+        if Some(&run) == runless_key.as_ref() && is_failed_error(entry) {
+            runless_failed.insert(run.clone());
+        }
         let group = groups.entry(run.clone()).or_insert_with(|| {
             order.push(run.clone());
             let (start, anchor) = pending_boundary.take().map_or((None, entry.id.0.clone()), |(t, a)| (Some(t), a));
-            Group { entries: Vec::new(), terminal: None, streaming: false, start, anchor }
+            Group { entries: Vec::new(), terminal: None, streaming: false, start, anchor, steers: Vec::new() }
         });
         group.entries.push(entry);
         if let EntryKind::Message(m) = &entry.kind {
@@ -268,55 +407,96 @@ fn derive_turn_folds(
     let mut folds = HashMap::new();
     for run in order {
         let group = &groups[&run];
-        if unfolded.contains(&run) || interrupted.contains(&run) || group.streaming {
+        if unfolded.contains(&run) || interrupted.contains(&run) || runless_failed.contains(&run) || group.streaming {
             continue;
         }
-        let terminal_index = group
-            .terminal
-            .and_then(|t| group.entries.iter().position(|e| e.id == t.id))
-            .unwrap_or(group.entries.len());
+        let terminal_index =
+            group.terminal.and_then(|t| group.entries.iter().position(|e| e.id == t.id)).unwrap_or(group.entries.len());
+        // Folded dividers lose their place in the turn, so only the latest stays visible.
         let visible_compaction = group.entries.iter().rev().find(|e| is_compaction(e)).map(|e| e.id.0.clone());
         let mut hidden = HashSet::new();
         for (index, entry) in group.entries.iter().enumerate() {
-            if Some(entry.id.0.clone()) == group.terminal.map(|t| t.id.0.clone()) {
+            if group.terminal.is_some_and(|t| t.id == entry.id) {
                 continue;
             }
-            let foldable_trailing = matches!(&entry.kind, EntryKind::Work(w)
-                if w.status != ToolStatus::InProgress && !indicates_failure(w));
+            let foldable_trailing =
+                matches!(&entry.kind, EntryKind::Work(w) if w.status != ToolStatus::InProgress && !indicates_failure(w));
             if !is_compaction(entry) && index > terminal_index && !foldable_trailing {
                 continue;
             }
-            if Some(entry.id.0.clone()) == visible_compaction {
+            if Some(&entry.id.0) == visible_compaction.as_ref()
+                || is_persistent_card(entry)
+                || live_subagents.contains(&entry.id.0)
+                || retained.contains(&entry.id.0)
+            {
                 continue;
             }
-            if matches!(&entry.kind, EntryKind::Event(TimelineEvent::Subagent(s)) if s.status.is_live()) {
-                continue;
-            }
+            // Notifications and answered questions stay in view; an open question folds.
             if matches!(&entry.kind, EntryKind::Work(w)
-                if matches!(w.item, WorkItem::Notification { .. } | WorkItem::QuestionAnswer { .. }))
+                if matches!(w.item, WorkItem::Notification { .. }) || has_question_answer(w))
             {
                 continue;
             }
             hidden.insert(entry.id.0.clone());
         }
-        if !group.entries.iter().any(|e| hidden.contains(&e.id.0) && !is_compaction(e)) {
+        let hides_work = |list: &[&TimelineEntry]| list.iter().any(|e| hidden.contains(&e.id.0) && !is_compaction(e));
+        if !hides_work(&group.entries) {
             continue;
         }
         let first = group.entries[0];
-        let last = group.entries[group.entries.len() - 1];
+        // A subagent card after the terminal reply was spawned once the turn settled; it adds no time.
+        let late_subagent = |index: usize, entry: &TimelineEntry| {
+            index > terminal_index && matches!(entry.kind, EntryKind::Event(TimelineEvent::Subagent(_)))
+        };
+        let last_turn = group.entries.iter().enumerate().rev().find(|(i, e)| !late_subagent(*i, e)).map_or(group.entries[group.entries.len() - 1], |(_, e)| *e);
         let start = group.start.unwrap_or(first.created_at);
-        let end = group.terminal.map_or(last.end(), |t| t.end().max(last.end()));
+        let end = group.terminal.map_or(last_turn.end(), |t| t.end().max(last_turn.end()));
         let elapsed = match &input.latest_run {
             Some(latest) if latest.run_id == run => match (latest.started_at, latest.completed_at) {
-                (Some(s), Some(c)) => c.millis_since(s),
-                _ => end.millis_since(start),
+                (Some(s), Some(c)) => c.millis_since(s).max(0),
+                _ => end.millis_since(start).max(0),
             },
-            _ => end.millis_since(start),
+            _ => end.millis_since(start).max(0),
         };
         let stopped = input.latest_run.as_ref().is_some_and(|l| l.run_id == run && l.status == RunStatus::Interrupted);
         let duration = format_duration(elapsed);
-        let label = if stopped { format!("You stopped after {duration}") } else { format!("Worked for {duration}") };
-        folds.insert(group.anchor.clone(), TurnFold { run_id: run, created_at: start, hidden, label: label.into() });
+        let label = if stopped {
+            crate::i18n::t!("You stopped after {duration}", duration = duration)
+        } else {
+            crate::i18n::t!("Worked for {duration}", duration = duration)
+        };
+        let segment_end = group.steers.first().map_or(group.entries.len(), |(start, _)| *start);
+        let segment_hidden = |list: &[&TimelineEntry]| list.iter().filter(|e| hidden.contains(&e.id.0)).map(|e| e.id.0.clone()).collect();
+        folds.insert(
+            group.anchor.clone(),
+            TurnFold { run_id: run.clone(), created_at: start, hidden: segment_hidden(&group.entries[..segment_end]), label },
+        );
+        // The top row keeps the whole turn's time; work after each steer folds on its own.
+        for (index, (start_index, steer)) in group.steers.iter().enumerate() {
+            let end_index = group.steers.get(index + 1).map_or(group.entries.len(), |(s, _)| *s);
+            let segment = &group.entries[*start_index..end_index];
+            let Some(anchor) = segment.first() else { continue };
+            if !hides_work(segment) {
+                continue;
+            }
+            let segment_end = segment
+                .iter()
+                .enumerate()
+                .filter(|(i, e)| !late_subagent(start_index + i, e))
+                .map(|(_, e)| e.end())
+                .max()
+                .unwrap_or(steer.created_at);
+            let duration = format_duration(segment_end.millis_since(steer.created_at).max(0));
+            folds.insert(
+                anchor.id.0.clone(),
+                TurnFold {
+                    run_id: RunId::new(format!("{}:steer:{}", run.as_str(), steer.id.as_str())),
+                    created_at: steer.created_at,
+                    hidden: segment_hidden(segment),
+                    label: crate::i18n::t!("Continued for {duration}", duration = duration),
+                },
+            );
+        }
     }
     folds
 }
@@ -366,10 +546,33 @@ pub fn derive_timeline_rows(input: &TimelineInput, expansion: &TimelineExpansion
     let mut attempt_anchor: HashMap<SharedString, (AttemptId, Timestamp)> = HashMap::new();
     let mut attempt_hidden: HashSet<SharedString> = HashSet::new();
     let mut seen_attempts: HashSet<AttemptId> = HashSet::new();
+    // `deriveSupersededAttemptFolds`: every output of a superseded attempt folds, except the
+    // user's own messages, cards that stay answerable, live subagents and notices; an attempt
+    // that produced a final answer stays in view.
+    let live_subagents = live_subagent_entry_ids(entries);
+    let retained_replies = retained_reply_ids(input);
+    let attempt_of = |entry: &TimelineEntry| -> Option<AttemptId> {
+        match &entry.kind {
+            EntryKind::Work(w) => w.superseded_attempt.clone(),
+            _ => input.superseded_attempts.get(entry.id.as_str()).cloned(),
+        }
+    };
+    let retained_attempts: HashSet<AttemptId> =
+        entries.iter().filter(|e| retained_replies.contains(&e.id.0)).filter_map(|e| attempt_of(e)).collect();
     for entry in entries {
-        if let EntryKind::Work(w) = &entry.kind
-            && let Some(attempt) = &w.superseded_attempt
-        {
+        let excluded = match &entry.kind {
+            EntryKind::Message(m) => m.role == MessageRole::User,
+            EntryKind::Event(TimelineEvent::Divider(d)) => d.kind == super::timeline_entries::DividerKind::Handoff,
+            EntryKind::HtmlRender { .. } | EntryKind::McpApp { .. } | EntryKind::SentMessage { .. } => true,
+            EntryKind::Work(w) => matches!(w.item, WorkItem::SystemNotice { .. }),
+            _ => false,
+        } || is_persistent_card(entry)
+            || live_subagents.contains(&entry.id.0);
+        if excluded {
+            continue;
+        }
+        if let Some(attempt) = attempt_of(entry).filter(|a| !retained_attempts.contains(a)) {
+            let attempt = &attempt;
             if seen_attempts.insert(attempt.clone()) {
                 attempt_anchor.insert(entry.id.0.clone(), (attempt.clone(), entry.created_at));
             }
@@ -587,7 +790,12 @@ pub fn derive_timeline_rows(input: &TimelineInput, expansion: &TimelineExpansion
                     }
                 } else if visible.len() == 1 && is_tool_like(&visible[0]) {
                     let only = visible[0].clone();
-                    let display_label = (tool_action(&only) == ToolAction::Edit).then(|| summarize_tool_group(&visible));
+                    // An edit reads as its group summary, anything else as `singleToolCallLabel`.
+                    let display_label = if tool_action(&only) == ToolAction::Edit {
+                        Some(summarize_tool_group(&visible))
+                    } else {
+                        only.source.as_ref().map(|source| source.single_call_label.clone())
+                    };
                     rows.push(row(entry.id.0.clone(), Some(entry.created_at), RowKind::Work { entry: only, display_label }));
                 } else if !visible.is_empty() {
                     let expanded = expansion.work_groups.contains(&group);
@@ -600,7 +808,10 @@ pub fn derive_timeline_rows(input: &TimelineInput, expansion: &TimelineExpansion
                             run_id: work.run_id.clone(),
                             count: visible.len(),
                             expanded,
-                            summary: summarize_tool_group(&visible),
+                            summary: match visible.as_slice() {
+                                [single] if !is_tool_like(single) => single.label.clone(),
+                                _ => summarize_tool_group(&visible),
+                            },
                             summary_kind: summary_kind(&visible),
                             has_failure,
                         },
@@ -655,6 +866,32 @@ pub fn derive_timeline_rows(input: &TimelineInput, expansion: &TimelineExpansion
                         entry.id.0.clone(),
                         Some(entry.created_at),
                         RowKind::Event { event: event.clone(), subagents: Arc::from([]) },
+                    ));
+                }
+            }
+            // A bare `/compact` turn is the compaction itself: its row stands in for the prompt
+            // until the compaction item arrives, then the prompt hides (`isCompactionCommandMessage`).
+            EntryKind::Message(message) if is_compaction_command(message) => {
+                let run = message.run_id.clone().expect("guarded");
+                let compacted =
+                    entries.iter().any(|e| matches!(&e.kind, EntryKind::Work(w) if is_compaction(e) && w.run_id.as_ref() == Some(&run)));
+                if !compacted {
+                    let pending = input.is_working && unsettled.as_ref() == Some(&run);
+                    let reason = input.item_sources.get(entry.id.as_str()).and_then(|item| match &**item {
+                        t3code_contracts::OrchestrationV2TurnItem::UserMessage(user) => user.idle_compaction.clone(),
+                        _ => None,
+                    });
+                    use t3code_contracts::OrchestrationV2IdleCompaction as Idle;
+                    let label = match (pending, reason) {
+                        (true, Some(Idle::BeforeCacheExpires)) => crate::i18n::t!("Compacting before the cache expires…"),
+                        (true, Some(_)) => crate::i18n::t!("Compacting…"),
+                        (true, None) => crate::i18n::t!("Compacting context"),
+                        (false, _) => crate::i18n::t!("Context compaction"),
+                    };
+                    rows.push(row(
+                        format!("compaction:{}", run.as_str()),
+                        Some(entry.created_at),
+                        RowKind::ContextCompaction { label, tokens: None, active: pending, failed: false },
                     ));
                 }
             }
@@ -730,6 +967,12 @@ fn attach_trailing_meta(rows: Vec<TimelineRow>) -> Vec<TimelineRow> {
                 }
                 RowKind::Work { entry, .. } if entry.run_id.as_ref() == Some(run) => {
                     has_group |= is_tool_like(entry) || matches!(entry.item, WorkItem::Error { .. });
+                    if has_group {
+                        last_trailing = Some(index);
+                    }
+                }
+                // An open group's list belongs to its header: the meta row follows both.
+                RowKind::WorkGroupDetails { entries, .. } if entries.iter().any(|e| e.run_id.as_ref() == Some(run)) => {
                     if has_group {
                         last_trailing = Some(index);
                     }

@@ -52,6 +52,7 @@ pub mod provider_skill_search;
 pub mod routes;
 pub mod scenes;
 pub mod session_logic;
+pub mod work_entry_labels;
 pub mod provider_models_live;
 pub mod state;
 pub mod thread_sync;

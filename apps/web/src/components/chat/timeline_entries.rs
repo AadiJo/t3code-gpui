@@ -219,6 +219,9 @@ pub struct WorkLogEntry {
     pub item: WorkItem,
     /// Set when a steer superseded the attempt this entry belongs to.
     pub superseded_attempt: Option<AttemptId>,
+    /// The web's presentation of the turn item this entry came from (labels, action,
+    /// failure, summaries). Live entries carry it; fixtures leave it `None`.
+    pub source: Option<std::sync::Arc<crate::work_entry_labels::WorkSource>>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -413,4 +416,9 @@ pub struct TimelineInput {
     pub worktree_setup: Option<WorktreeSetup>,
     pub queued: Arc<[QueuedMessage]>,
     pub pending_question: Option<PendingQuestion>,
+    /// The turn item behind each live entry, by entry id; row rules that read item fields
+    /// (an assistant message's phase) use it. Empty for fixtures.
+    pub item_sources: Arc<std::collections::HashMap<SharedString, Arc<t3code_contracts::OrchestrationV2TurnItem>>>,
+    /// The superseded attempt of each live entry that belongs to one, by entry id.
+    pub superseded_attempts: Arc<std::collections::HashMap<SharedString, AttemptId>>,
 }

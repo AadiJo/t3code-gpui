@@ -105,6 +105,7 @@ impl Builder {
                 label: s(label),
                 item,
                 superseded_attempt: attempt.map(AttemptId::new),
+                source: None,
             }),
         });
         self
@@ -421,6 +422,8 @@ pub fn fixture_thread() -> TimelineInput {
             index: 0,
             count: 2,
         }),
+        item_sources: Default::default(),
+        superseded_attempts: Default::default(),
     }
 }
 

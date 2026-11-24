@@ -385,9 +385,15 @@ fn key_of(state: &Seeded, thread: &str) -> ThreadKey {
 
 fn main() -> anyhow::Result<()> {
     let mut args = std::env::args().skip(1);
-    let usage = "usage: live-check <seed|drive|restart|import> <out-dir>";
+    let usage = "usage: live-check <seed|drive|restart|import> <out-dir> | live-check timeline <projections-dir> <out-dir> | live-check commands <corpus.json> <out.json>";
     let phase = args.next().context(usage)?;
     let out = PathBuf::from(args.next().context(usage)?);
+    if phase == "timeline" {
+        return timeline_dump::run(&out, &PathBuf::from(args.next().context(usage)?));
+    }
+    if phase == "commands" {
+        return timeline_dump::commands(&out, &PathBuf::from(args.next().context(usage)?));
+    }
     let key = (phase == "import").then(|| SafeStorageKey::from_mac_password(b"fixture keychain password"));
     let mut check = Check::open(&out, key)?;
     check.note(format!("phase {phase}, data dir {}", data_dir()?.display()));
@@ -934,4 +940,283 @@ fn run_import(check: &mut Check) -> anyhow::Result<()> {
     })?;
     check.wait(Duration::from_millis(300));
     check.shot("32-import-environments.png")
+}
+
+/// `live-check timeline <projections-dir> <out-dir>`: each projection file (a JSON array of
+/// wire-encoded thread projections) through the live timeline mapping and row derivation,
+/// written in the shape the web-side dump uses so the two compare row by row.
+mod timeline_dump {
+    use std::path::Path;
+
+    use serde_json::{Value, json};
+    use t3code_shared::thread_projection::ThreadProjection;
+    use t3code_web::components::chat::messages_timeline_logic::{RowKind, TimelineExpansion, TimelineRow, derive_timeline_rows};
+    use t3code_web::components::chat::timeline_entries::{
+        DividerKind, EntryKind, MessageRole, SubagentStatus, TimelineEntry, TimelineEvent, TimelineInput, ToolStatus, WorkItem,
+        WorkLogEntry,
+    };
+    use t3code_web::components::chat::work_log_presentation::{entry_label, live_entry_label};
+    use t3code_web::session_logic::{TimelineMapper, timeline_input};
+
+    fn status(status: ToolStatus) -> &'static str {
+        match status {
+            ToolStatus::InProgress => "inProgress",
+            ToolStatus::Completed => "completed",
+            ToolStatus::Failed => "failed",
+            ToolStatus::Declined => "declined",
+            ToolStatus::Stopped => "stopped",
+        }
+    }
+
+    /// The first 120 UTF-16 units, as `text.slice(0, 120)` in the web dump.
+    fn preview(text: &str) -> String {
+        String::from_utf16_lossy(&text.encode_utf16().take(120).collect::<Vec<u16>>())
+    }
+
+    /// The entry's `detail` as the web keeps it.
+    fn detail(entry: &WorkLogEntry) -> Value {
+        entry.source.as_ref().and_then(|s| s.facts.detail.as_ref()).map_or(Value::Null, |d| Value::from(d.to_string()))
+    }
+
+    /// The web's lifecycle status, `null` for notifications.
+    fn entry_status(entry: &WorkLogEntry) -> Value {
+        use t3code_web::work_entry_labels::Lifecycle;
+        match entry.source.as_ref().map(|s| s.facts.lifecycle) {
+            Some(None) => Value::Null,
+            Some(Some(lifecycle)) => Value::from(match lifecycle {
+                Lifecycle::InProgress => "inProgress",
+                Lifecycle::Completed => "completed",
+                Lifecycle::Failed => "failed",
+                Lifecycle::Declined => "declined",
+                Lifecycle::Stopped => "stopped",
+                Lifecycle::Idle => "idle",
+            }),
+            None => Value::from(status(entry.status)),
+        }
+    }
+
+    fn item_type(entry: &WorkLogEntry) -> &'static str {
+        match &entry.item {
+            WorkItem::Command { .. } => "command_execution",
+            WorkItem::FileChange { .. } => "file_change",
+            WorkItem::FileRead { .. } | WorkItem::ViewedImage { .. } | WorkItem::DynamicTool { .. } => "dynamic_tool",
+            WorkItem::FileSearch { .. } => "file_search",
+            WorkItem::WebSearch { .. } => "web_search",
+            WorkItem::Reasoning { .. } => "reasoning",
+            WorkItem::TodoList { .. } => "todo_list",
+            WorkItem::Approval { .. } => "approval_request",
+            WorkItem::QuestionAnswer { .. } => "user_input_request",
+            WorkItem::SystemNotice { .. } => "system_notice",
+            WorkItem::Notification { .. } => "notification",
+            WorkItem::Error { .. } => "error",
+            WorkItem::Compaction { .. } => "compaction",
+        }
+    }
+
+    fn work(entry: &WorkLogEntry) -> Value {
+        json!({
+            "id": entry.id.as_str(),
+            "label": entry_label(entry).as_ref(),
+            "rawLabel": entry.label.as_ref(),
+            "detail": detail(entry),
+            "status": entry_status(entry),
+            "itemType": item_type(entry),
+        })
+    }
+
+    fn entry(entry: &TimelineEntry) -> Value {
+        match &entry.kind {
+            EntryKind::Work(work) => json!({
+                "id": entry.id.as_str(), "kind": "work", "label": work.label.as_ref(), "detail": detail(work),
+                "status": entry_status(work), "display": entry_label(work).as_ref(),
+            }),
+            EntryKind::Message(message) => json!({
+                "id": entry.id.as_str(), "kind": "message",
+                "label": if message.role == MessageRole::User { "user" } else { "assistant" },
+                "detail": preview(&message.text),
+            }),
+            EntryKind::Event(event) => {
+                json!({ "id": entry.id.as_str(), "kind": "event", "label": event_type(event), "status": event_status(event) })
+            }
+            EntryKind::ProposedPlan(_) => json!({ "id": entry.id.as_str(), "kind": "proposed-plan" }),
+            EntryKind::SentMessage { text, .. } => json!({ "id": entry.id.as_str(), "kind": "sent-message", "detail": text.as_ref() }),
+            EntryKind::HtmlRender { .. } => json!({ "id": entry.id.as_str(), "kind": "html-render" }),
+            EntryKind::McpApp { .. } => json!({ "id": entry.id.as_str(), "kind": "mcp-app" }),
+        }
+    }
+
+    /// The turn item type an event came from, as the web dump names it.
+    fn event_type(event: &TimelineEvent) -> &'static str {
+        match event {
+            TimelineEvent::Subagent(_) => "subagent",
+            TimelineEvent::Divider(divider) => match divider.kind {
+                DividerKind::RunInterrupted => "run_interrupt_result",
+                DividerKind::Forked => "fork",
+                DividerKind::Handoff => "handoff",
+                DividerKind::ParentLink => "thread_created",
+                DividerKind::NewSession => "new_session",
+            },
+        }
+    }
+
+    /// A subagent card's status; dividers draw none.
+    fn event_status(event: &TimelineEvent) -> Value {
+        match event {
+            TimelineEvent::Subagent(subagent) => Value::from(match subagent.status {
+                SubagentStatus::Queued => "pending",
+                SubagentStatus::Running => "running",
+                SubagentStatus::Waiting => "waiting",
+                SubagentStatus::Completed => "completed",
+                SubagentStatus::Failed => "failed",
+                SubagentStatus::Idle => "idle",
+                SubagentStatus::Stopped => "cancelled",
+            }),
+            TimelineEvent::Divider(_) => Value::Null,
+        }
+    }
+
+    fn row(row: &TimelineRow) -> Value {
+        let id = row.id.as_ref();
+        match &row.kind {
+            RowKind::Work { entry, display_label } => json!({
+                "id": id, "kind": "work", "label": display_label.clone().unwrap_or_else(|| entry_label(entry)).as_ref(), "entries": [work(entry)],
+            }),
+            RowKind::WorkGroupDetails { entries, .. } => {
+                json!({ "id": id, "kind": "work", "label": null, "entries": entries.iter().map(work).collect::<Vec<_>>() })
+            }
+            RowKind::WorkLive { entry, entries, active, .. } => json!({
+                "id": id, "kind": "work-live", "label": live_entry_label(entry, *active).as_ref(),
+                "entries": entries.iter().map(work).collect::<Vec<_>>(),
+            }),
+            RowKind::WorkToggle { summary, count, has_failure, .. } => json!({
+                "id": id, "kind": "work-toggle", "label": summary.as_ref(), "detail": count.to_string(),
+                "status": if *has_failure { Value::from("failed") } else { Value::Null },
+            }),
+            RowKind::Message(message) => json!({
+                "id": id, "kind": "message",
+                "label": if message.message.role == MessageRole::User { "user" } else { "assistant" },
+                "detail": preview(&message.message.text), "showMeta": message.show_meta,
+                "status": message.diff_summary.as_ref().filter(|d| !d.files.is_empty()).map(|d| {
+                    format!("diff:{}", d.files.iter().map(|f| format!("{}+{}-{}", f.path, f.additions, f.deletions)).collect::<Vec<_>>().join(","))
+                }),
+            }),
+            RowKind::ContextCompaction { label, failed, active, .. } => json!({
+                "id": id, "kind": "context-compaction", "label": label.as_ref(),
+                "status": if *failed { Value::from("failed") } else if *active { Value::from("active") } else { Value::Null },
+            }),
+            RowKind::TurnFold { label, .. } => json!({ "id": id, "kind": "turn-fold", "label": label.as_ref() }),
+            RowKind::AttemptFold { label, .. } => json!({ "id": id, "kind": "attempt-fold", "label": label.as_ref() }),
+            RowKind::Event { event, subagents } => json!({
+                "id": id, "kind": "event", "label": event_type(event), "status": event_status(event),
+                "detail": if subagents.is_empty() { Value::Null } else { Value::from(subagents.len().to_string()) },
+            }),
+            RowKind::SentMessage { text } => json!({ "id": id, "kind": "sent-message", "detail": text.as_ref() }),
+            RowKind::Thinking { label } => json!({ "id": id, "kind": "thinking", "label": label.as_ref().map(|l| l.to_string()) }),
+            other => json!({ "id": id, "kind": kind_name(other) }),
+        }
+    }
+
+    fn kind_name(kind: &RowKind) -> &'static str {
+        match kind {
+            RowKind::WorktreeSetup(_) => "worktree-setup",
+            RowKind::Working { .. } => "working",
+            RowKind::ViewedImages { .. } => "viewed-images",
+            RowKind::AssistantMeta { .. } => "assistant-meta",
+            RowKind::ProposedPlan(_) => "proposed-plan",
+            RowKind::HtmlRender { .. } => "html-render",
+            RowKind::McpApp { .. } => "mcp-app",
+            RowKind::PendingApproval { .. } => "pending-approval",
+            RowKind::QueuedMessages { .. } => "queued-messages",
+            _ => "other",
+        }
+    }
+
+    fn expanded(input: &TimelineInput, projection: &ThreadProjection) -> Vec<TimelineRow> {
+        let mut expansion = TimelineExpansion::default();
+        expansion.runs = projection.runs.iter().map(|run| t3code_web::components::chat::timeline_entries::RunId::new(run.id.to_string())).collect();
+        expansion.attempts =
+            projection.attempts.iter().map(|a| t3code_web::components::chat::timeline_entries::AttemptId::new(a.id.to_string())).collect();
+        let mut rows = derive_timeline_rows(input, &expansion);
+        for _ in 0..5 {
+            let before = expansion.work_groups.len();
+            for row in &rows {
+                if let RowKind::WorkToggle { group_id, .. } | RowKind::WorkLive { group_id, .. } = &row.kind {
+                    expansion.work_groups.insert(group_id.clone());
+                }
+            }
+            if expansion.work_groups.len() == before {
+                break;
+            }
+            rows = derive_timeline_rows(input, &expansion);
+        }
+        rows
+    }
+
+    /// `live-check commands <corpus.json> <out.json>`: the command labeller over a list of
+    /// command strings, in the shape of the web-side dump.
+    pub fn commands(corpus: &Path, out: &Path) -> anyhow::Result<()> {
+        use t3code_client_runtime::work_log::command_label::{
+            CommandLanguage, command_display_text, command_highlight_language, command_program_name,
+        };
+        let corpus: Vec<String> = serde_json::from_slice(&std::fs::read(corpus)?)?;
+        let rows: Vec<Value> = corpus
+            .iter()
+            .map(|command| {
+                json!({
+                    "command": command,
+                    "display": command_display_text(command),
+                    "program": command_program_name(command),
+                    "language": match command_highlight_language(command) {
+                        CommandLanguage::PowerShell => "powershell",
+                        CommandLanguage::ShellScript => "shellscript",
+                    },
+                })
+            })
+            .collect();
+        std::fs::write(out, serde_json::to_vec_pretty(&rows)?)?;
+        Ok(())
+    }
+
+    pub fn run(input_dir: &Path, out_dir: &Path) -> anyhow::Result<()> {
+        std::fs::create_dir_all(out_dir)?;
+        let mut names: Vec<_> = std::fs::read_dir(input_dir)?
+            .filter_map(|e| e.ok().map(|e| e.file_name().to_string_lossy().into_owned()))
+            .filter(|n| n.ends_with(".json"))
+            .collect();
+        names.sort();
+        let mut failures = 0;
+        for name in &names {
+            let raw: Vec<Value> = serde_json::from_slice(&std::fs::read(input_dir.join(name))?)?;
+            let mut threads = Vec::new();
+            for (index, value) in raw.into_iter().enumerate() {
+                let projection: ThreadProjection = match serde_json::from_value(value) {
+                    Ok(p) => p,
+                    Err(error) => {
+                        failures += 1;
+                        eprintln!("{name}[{index}]: decode failed: {error}");
+                        threads.push(json!({ "index": index, "decodeError": error.to_string() }));
+                        continue;
+                    }
+                };
+                let input = timeline_input(&mut TimelineMapper::default(), &projection, &[]);
+                let rows = derive_timeline_rows(&input, &TimelineExpansion::default());
+                let expanded_rows = expanded(&input, &projection);
+                threads.push(json!({
+                    "index": index,
+                    "threadId": projection.thread.id.to_string(),
+                    "entries": input.entries.iter().map(entry).collect::<Vec<_>>(),
+                    "checkpoints": t3code_web::session_logic::checkpoint_summaries(&projection).iter().map(|c| json!({
+                        "assistantMessageId": c.assistant_message_id.as_ref().map(|i| i.to_string()),
+                        "turnCount": c.turn_count,
+                        "files": c.files.iter().map(|f| format!("{}:{}+{}-{}", f.operation, f.path, f.additions, f.deletions)).collect::<Vec<_>>(),
+                    })).collect::<Vec<_>>(),
+                    "rows": rows.iter().map(row).collect::<Vec<_>>(),
+                    "expandedRows": expanded_rows.iter().map(row).collect::<Vec<_>>(),
+                }));
+            }
+            std::fs::write(out_dir.join(name), serde_json::to_vec_pretty(&threads)?)?;
+        }
+        println!("{} files, {failures} projections failed to decode", names.len());
+        Ok(())
+    }
 }
