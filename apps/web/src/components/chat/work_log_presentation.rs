@@ -257,12 +257,8 @@ fn lowercase_first(label: &str) -> String {
 }
 
 /// The program a shell command runs: `pnpm test` → `pnpm` (`commandProgramName`).
-pub fn command_program(command: &str) -> Option<&str> {
-    command
-        .split_whitespace()
-        .find(|token| !token.contains('=') && !matches!(*token, "sudo" | "env" | "time" | "exec"))
-        .map(|token| token.rsplit('/').next().unwrap_or(token))
-        .filter(|program| program.chars().next().is_some_and(|c| c.is_ascii_alphanumeric() || c == '.'))
+pub fn command_program(command: &str) -> Option<String> {
+    t3code_client_runtime::work_log::command_label::command_program_name(command)
 }
 
 fn basename(path: &str) -> &str {
