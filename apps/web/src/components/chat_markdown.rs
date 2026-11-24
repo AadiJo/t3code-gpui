@@ -79,6 +79,8 @@ pub enum MarkdownAction {
     ToggleWrap(u64),
     ToggleDetails(u64),
     OpenLink(SharedString),
+    /// A closed shell code block's Run button: run the command in a terminal.
+    RunShellCommand(SharedString),
 }
 
 /// Handles markdown actions for the view that rendered it.
@@ -93,6 +95,8 @@ pub struct MarkdownUiState {
     /// Code blocks the reader switched to horizontal scrolling.
     pub unwrapped: HashSet<u64>,
     pub open_details: HashSet<u64>,
+    /// The owner can run shell code blocks in a terminal (the chat timeline).
+    pub run_shell_commands: bool,
 }
 
 /// Everything one render of a message's markdown needs.
@@ -469,6 +473,10 @@ impl Renderer<'_> {
         let actions = self.view.actions.clone();
         let copy_text: SharedString = source.trim_end_matches('\n').to_owned().into();
         let wrap_actions = self.view.actions.clone();
+        let run_command = (self.view.state.run_shell_commands && !self.growing && code.closed)
+            .then(|| runnable_command(&language, &source))
+            .flatten();
+        let run_actions = self.view.actions.clone();
         let header = div()
             .flex()
             .justify_between()
@@ -498,6 +506,11 @@ impl Renderer<'_> {
                             .when_active(wrapped, colors)
                             .on_click(move |_, window, cx| wrap_actions(MarkdownAction::ToggleWrap(key), window, cx)),
                     )
+                    .children(run_command.map(|command| {
+                        icon_button(("run", key), IconName::Play, header_color, colors)
+                            .tooltip(crate::components::ui::tooltip::tooltip(crate::i18n::t!("Run in terminal")))
+                            .on_click(move |_, window, cx| run_actions(MarkdownAction::RunShellCommand(command.clone()), window, cx))
+                    }))
                     .child(
                         icon_button(
                             ("copy", key),
@@ -756,6 +769,22 @@ fn code_runs(
         runs.push(run(0, base, foreground));
     }
     runs
+}
+
+/// `MarkdownCodeBlock.tsx` `canRun`: a shell-language block whose command is
+/// one line, non-empty, does not end in a line continuation and holds no control or
+/// invisible format characters (they could make the shown command differ
+/// from what the terminal receives). Returns the trimmed command.
+fn runnable_command(language: &str, code: &str) -> Option<SharedString> {
+    const SHELLS: [&str; 7] = ["sh", "bash", "zsh", "fish", "shell", "powershell", "pwsh"];
+    let command = code.trim();
+    let format_char = |c: char| matches!(c, '\u{00AD}' | '\u{0600}'..='\u{0605}' | '\u{061C}' | '\u{06DD}' | '\u{070F}' | '\u{180E}' | '\u{200B}'..='\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2060}'..='\u{2064}' | '\u{2066}'..='\u{206F}' | '\u{FEFF}' | '\u{FFF9}'..='\u{FFFB}');
+    (SHELLS.contains(&language)
+        && !command.is_empty()
+        && !command.ends_with('\\')
+        // `\p{Cc}` includes line breaks and tabs: only one-line commands run.
+        && !code.chars().any(|c| c.is_control() || format_char(c)))
+    .then(|| command.to_owned().into())
 }
 
 /// `MarkdownCodeBlockTitleContent`: a fence title gets its file icon and name;

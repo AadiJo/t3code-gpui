@@ -435,6 +435,21 @@ impl ThreadRouteView {
                 return cx.emit(ThreadRouteEvent::OpenImage { attachments: attachments.clone(), index: *index });
             }
             (TimelineAction::OpenLink(target), _) => return cx.emit(ThreadRouteEvent::OpenLink(target.clone())),
+            // `runShellCommand`: an ad-hoc "Chat code block" script in a terminal tab.
+            (TimelineAction::RunShellCommand(command), _) => {
+                return cx.emit(ThreadRouteEvent::RunScript(t3code_contracts::ProjectScript {
+                    id: "chat-code-block".into(),
+                    name: crate::i18n::t!("Chat code block").to_string(),
+                    command: command.to_string(),
+                    icon: t3code_contracts::ProjectScriptIcon::Play,
+                    run_on_worktree_create: false,
+                    run_on_settle: None,
+                    stop_on_settle: None,
+                    r#async: None,
+                    preview_url: None,
+                    auto_open_preview: None,
+                }));
+            }
             (TimelineAction::Reply { message, text }, _) => {
                 // `responseContextRecord`: a chip naming the reply by its opening words.
                 let opening: String = text.lines().find(|l| !l.trim().is_empty()).unwrap_or_default().chars().take(48).collect();
@@ -467,7 +482,11 @@ impl ThreadRouteView {
             TimelineAction::RemoveQueued(id) => {
                 self.store.update(cx, |store, cx| store.remove_queued(&key, &id, cx));
             }
-            TimelineAction::OpenDiff { .. } | TimelineAction::OpenImage { .. } | TimelineAction::OpenLink(_) | TimelineAction::Reply { .. } => {}
+            TimelineAction::OpenDiff { .. }
+            | TimelineAction::OpenImage { .. }
+            | TimelineAction::OpenLink(_)
+            | TimelineAction::RunShellCommand(_)
+            | TimelineAction::Reply { .. } => {}
         }
     }
 

@@ -975,6 +975,7 @@ impl FilesPanel {
                             }
                         }
                         MarkdownAction::OpenLink(target) => cx.open_url(&target),
+                        MarkdownAction::RunShellCommand(_) => {}
                     }
                     cx.notify();
                 })

@@ -78,6 +78,9 @@ pub struct CodeBlock {
     /// A `title=`/`file=` meta value or a filename token from the fence.
     pub title: Option<SharedString>,
     pub code: SharedString,
+    /// A fenced block whose closing fence was written (`isClosedCodeFence`):
+    /// only those offer Run.
+    pub closed: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -275,7 +278,7 @@ impl Converter<'_> {
                     .collect(),
             }),
             Node::Blockquote(quote) => self.blockquote(quote, depth),
-            Node::Code(code) => Block::Code(code_block(code)),
+            Node::Code(code) => Block::Code(code_block(code, self.source)),
             Node::Math(math) => Block::Math(math.value.clone().into()),
             Node::ThematicBreak(_) => Block::Rule,
             Node::Table(table) => Block::Table(self.table(table)),
@@ -516,7 +519,7 @@ fn is_image_or_space(node: &Node) -> bool {
     }
 }
 
-fn code_block(code: &mdast::Code) -> CodeBlock {
+fn code_block(code: &mdast::Code, source: &str) -> CodeBlock {
     let meta = code.meta.as_deref().unwrap_or("");
     let title = meta.split_whitespace().find_map(|token| {
         token
@@ -529,7 +532,25 @@ fn code_block(code: &mdast::Code) -> CodeBlock {
         language: code.lang.clone().filter(|l| !l.is_empty()).map(Into::into),
         title: title.map(|t| SharedString::from(t.to_owned())),
         code: code.value.clone().into(),
+        closed: code.position.as_ref().and_then(|p| source.get(p.start.offset..p.end.offset)).is_some_and(fence_is_closed),
     }
+}
+
+/// Whether a fenced block's source ends with a closing fence at least as
+/// long as its opening one (indented blocks are never "closed").
+fn fence_is_closed(block: &str) -> bool {
+    let opening = block.trim_start();
+    let Some(marker) = opening.chars().next().filter(|c| *c == '`' || *c == '~') else { return false };
+    let length = opening.chars().take_while(|c| *c == marker).count();
+    if length < 3 {
+        return false;
+    }
+    let mut lines = block.trim_end().lines();
+    lines.next();
+    lines.next_back().is_some_and(|last| {
+        let last = last.trim();
+        last.chars().take_while(|c| *c == marker).count() >= length && last.chars().all(|c| c == marker)
+    })
 }
 
 /// The `<summary>` text when `html` opens a `<details>` block.

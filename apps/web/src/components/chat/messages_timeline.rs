@@ -79,6 +79,8 @@ pub enum TimelineAction {
     OpenImage { attachments: Arc<[Attachment]>, index: usize },
     /// A markdown link or file chip that is not a web URL.
     OpenLink(SharedString),
+    /// A code block's Run button: run this shell command in a terminal.
+    RunShellCommand(SharedString),
 }
 
 /// The open find's query and where it stands.
@@ -184,7 +186,7 @@ impl MessagesTimeline {
             unfolded_messages: HashSet::new(),
             list,
             group_lists: HashMap::new(),
-            markdown_state: MarkdownUiState::default(),
+            markdown_state: MarkdownUiState { run_shell_commands: true, ..Default::default() },
             markdown: HashMap::new(),
             colors: ChatColors::get(cx),
             animation_step: 0,
@@ -578,6 +580,7 @@ impl MessagesTimeline {
                     self.markdown_state.open_details.insert(key);
                 }
             }
+            MarkdownAction::RunShellCommand(command) => cx.emit(TimelineAction::RunShellCommand(command)),
             MarkdownAction::OpenLink(target) => {
                 if target.contains("://") {
                     cx.open_url(&target);
