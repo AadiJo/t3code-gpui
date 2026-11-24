@@ -20,6 +20,7 @@ use super::server_settings_controls::{
     Fields, advanced_fold, bool_setting, field_input, hint, lock_reason, save_patch, select_row, status_mark, tinted,
 };
 use super::server_settings_data::ServerPanelsModel;
+use super::source_control_host_settings::{BITBUCKET_SETTINGS, GITCAFE_SETTINGS, SourceControlHostSettings};
 use super::source_control_token_settings::{GITHUB_CREDENTIALS, SourceControlTokenSettings};
 use super::settings_layout::{SettingsRow, SettingsSection, page_container};
 use super::threads_settings::model_select_row;
@@ -51,6 +52,8 @@ pub struct SourceControlSettingsPanel {
     trackers: Option<Arc<IssueTrackerConnectionList>>,
     /// GitHub's token form, kept so a draft survives re-renders.
     github_token: Entity<SourceControlTokenSettings>,
+    /// The settings forms of hosts without token credentials (Bitbucket, GitCafe).
+    host_forms: Vec<(&'static str, Entity<SourceControlHostSettings>)>,
     model: Entity<ServerPanelsModel>,
     fields: Fields,
     sign_in: Option<SignIn>,
@@ -90,7 +93,12 @@ impl SourceControlSettingsPanel {
     pub fn new(model: Entity<ServerPanelsModel>, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let observe = cx.observe(&model, |_, _, cx| cx.notify());
         let github_token = cx.new(|cx| SourceControlTokenSettings::new(model.clone(), &GITHUB_CREDENTIALS, window, cx));
+        let host_forms = [&BITBUCKET_SETTINGS, &GITCAFE_SETTINGS]
+            .into_iter()
+            .map(|definition| (definition.kind, cx.new(|cx| SourceControlHostSettings::new(model.clone(), definition, window, cx))))
+            .collect();
         let mut this = Self {
+            host_forms,
             discovery: None,
             trackers: None,
             github_token,
@@ -462,8 +470,11 @@ impl SourceControlSettingsPanel {
     }
 
     /// `hostSettingsPanel`: a host with credentials shows its app sign-in (when offered), then
-    /// the token form. Other hosts have no details here.
+    /// the token form; a host with a settings schema shows its form; others have no details.
     fn host_details(&mut self, item: &SourceControlProviderDiscoveryItem, cx: &mut Context<Self>) -> Option<AnyElement> {
+        if let Some((_, form)) = self.host_forms.iter().find(|(kind, _)| *kind == item.kind.as_str()) {
+            return Some(form.clone().into_any_element());
+        }
         if item.kind.as_str() != GITHUB_CREDENTIALS.kind {
             return (item.app_sign_in == Some(true)).then(|| self.render_app_sign_in(item, cx));
         }

@@ -10,12 +10,12 @@ use t3code_contracts::{SnoozePresetSetting, SnoozePresetSettingAfter};
 use t3code_web::hooks::use_settings::ServerSettingsStore;
 use t3code_web::router::SettingsPanel;
 
-/// Clicks the centre of the visible element `id`, scrolling the settings page down with the
-/// wheel until it is laid out in view.
+/// Clicks the centre of the visible element `id`, scrolling the settings page with the wheel
+/// (down, then back up) until it is laid out in view.
 fn click_id(check: &mut Check, id: &str) -> anyhow::Result<()> {
     let element = ElementId::from(SharedString::from(id.to_owned()));
     let mut found = None;
-    for _ in 0..12 {
+    for step in 0..30 {
         let size = check.cx.update_window(check.window, |_, w, _| w.viewport_size()).unwrap_or_default();
         found = check
             .cx
@@ -29,7 +29,7 @@ fn click_id(check: &mut Check, id: &str) -> anyhow::Result<()> {
         let wheel_at = point(size.width * 0.6, size.height * 0.5);
         check.cx.update_window(check.window, |_, w, cx| {
             w.dispatch_event(
-                ScrollEvent { position: wheel_at, delta: ScrollDelta::Pixels(point(px(0.), px(-240.))), modifiers: Modifiers::default(), touch_phase: TouchPhase::Moved, source: ScrollSource::Pointer }
+                ScrollEvent { position: wheel_at, delta: ScrollDelta::Pixels(point(px(0.), px(if step < 12 { -240. } else { 240. }))), modifiers: Modifiers::default(), touch_phase: TouchPhase::Moved, source: ScrollSource::Pointer }
                     .to_platform_input(),
                 cx,
             );
@@ -223,5 +223,27 @@ pub(super) fn run_settings(check: &mut Check) -> anyhow::Result<()> {
     check.pump(move |c| github_token(c, &env).is_none(), Duration::from_secs(15), "Remove clears the GitHub token")?;
     check.check("Remove clears the GitHub token", true, "");
     check.shot("s12-token-removed.png")?;
+
+    // Bitbucket's details hold its settings form: the email saves on Enter, Remove clears it.
+    let bitbucket_email = |c: &mut Check, env: &t3code_contracts::EnvironmentId| {
+        server_settings(c, env)
+            .and_then(|s| s.source_control_hosts)
+            .and_then(|hosts| hosts.get("bitbucket").and_then(|b| b.get("email")).and_then(|e| e.as_str()).map(str::to_owned))
+            .filter(|email| !email.is_empty())
+    };
+    click_id(check, "sc-details-bitbucket")?;
+    check.wait(Duration::from_millis(300));
+    click_id(check, "host-field-bitbucket-email")?;
+    check.type_text("dev@example.test");
+    check.press("enter");
+    let env = environment_id.clone();
+    check.pump(move |c| bitbucket_email(c, &env).is_some(), Duration::from_secs(15), "the Bitbucket email reaches the server")?;
+    let email = bitbucket_email(check, &environment_id);
+    check.check("Enter saves the Bitbucket email", email.as_deref() == Some("dev@example.test"), format!("{email:?}"));
+    check.shot("s13-bitbucket-saved.png")?;
+    click_id(check, "host-remove-bitbucket")?;
+    let env = environment_id.clone();
+    check.pump(move |c| bitbucket_email(c, &env).is_none(), Duration::from_secs(15), "Remove clears the Bitbucket settings")?;
+    check.check("Remove clears the Bitbucket settings", true, "");
     Ok(())
 }
