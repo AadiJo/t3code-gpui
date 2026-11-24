@@ -110,6 +110,7 @@ pub fn scenes() -> &'static [(&'static str, SceneBuilder)] {
         ("usage-day-breakdown", usage::build_time_breakdown),
         ("usage-model", usage::build_model),
         ("usage-loading", usage::build_loading),
+        ("usage-empty", usage::build_empty),
         ("pull-requests", pull_requests::build),
         ("pull-requests-light", pull_requests::build),
         ("pull-requests-summary", pull_requests::build_summary),
