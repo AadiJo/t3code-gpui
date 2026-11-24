@@ -187,6 +187,8 @@ pub fn select_row(id: impl Into<ElementId>, theme: &AppTheme, content: impl Into
                 .flex_none()
                 .h_full()
                 .w(split_secondary_width(theme))
+                // `-me-px`: the chevron half reaches over the row's right border.
+                .mr(px(-1.))
                 .items_center()
                 .justify_center()
                 .rounded_r(theme.radii.lg)
