@@ -6,6 +6,7 @@
 
 use std::{
     collections::{HashMap, HashSet},
+    rc::Rc,
     sync::Arc,
 };
 
@@ -25,7 +26,10 @@ use crate::{
     diff_file_kind::is_test_changed_file,
     diff_panel_store::{DiffLayout, DiffPanelSelection, DiffPanelStore, GitScope},
     diff_patch::{FileContents, FileDiff, ParsedPatch, RenderablePatch},
+    i18n::t,
 };
+use super::ui::menu::{MenuItem, MenuItemKind, MenuPopup};
+use super::ui::tooltip::tooltip;
 
 /// A completed turn the scope menu lists, newest first.
 #[derive(Clone, Debug)]
@@ -114,6 +118,13 @@ pub enum DiffPanelEvent {
     DeleteReviewComment(SharedString),
 }
 
+/// The scope menu's submenus.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ScopeSubmenu {
+    Turn,
+    Commits,
+}
+
 /// The diff panel view.
 pub struct DiffPanel {
     input: DiffPanelInput,
@@ -122,6 +133,9 @@ pub struct DiffPanel {
     files: Vec<(Arc<FileDiff>, SharedString)>,
     test_file_count: usize,
     scope_menu_open: bool,
+    scope_submenu: Option<ScopeSubmenu>,
+    /// Where the scope trigger was painted, so the menu opens under it.
+    scope_trigger: Option<Bounds<Pixels>>,
     wrap_override: Option<bool>,
     /// The panel's width last frame, for the header's narrow layout.
     width: f32,
@@ -147,6 +161,8 @@ impl DiffPanel {
             files: Vec::new(),
             test_file_count: 0,
             scope_menu_open: false,
+            scope_submenu: None,
+            scope_trigger: None,
             wrap_override: None,
             width: 0.,
             _subscriptions: subscriptions,
@@ -185,13 +201,13 @@ impl DiffPanel {
 
     fn scope_label(&self, cx: &App) -> SharedString {
         match self.selection(cx) {
-            DiffPanelSelection::ToolCall { .. } => "Tool call".into(),
+            DiffPanelSelection::ToolCall { .. } => t!("Tool call"),
             DiffPanelSelection::Turn { turn_id, .. } => {
                 let latest = self.input.turns.first().is_some_and(|t| t.turn_id.as_ref() == turn_id);
                 match self.input.turns.iter().find(|t| t.turn_id.as_ref() == turn_id) {
-                    _ if latest => "Latest turn".into(),
-                    Some(turn) => format!("Turn {}", turn.turn_count).into(),
-                    None => "Turn ?".into(),
+                    _ if latest => t!("Latest turn"),
+                    Some(turn) => t!("Turn {count}", count = turn.turn_count),
+                    None => t!("Turn", context = "agent turn"),
                 }
             }
             DiffPanelSelection::Commit { sha, .. } => self
@@ -200,9 +216,9 @@ impl DiffPanel {
                 .iter()
                 .find(|c| c.sha.as_ref() == sha)
                 .map(|c| c.subject.clone())
-                .unwrap_or_else(|| format!("Commit {}", &sha[..sha.len().min(7)]).into()),
-            DiffPanelSelection::Unstaged => "Uncommitted".into(),
-            DiffPanelSelection::Branch { .. } => "Changes".into(),
+                .unwrap_or_else(|| t!("Commit", context = "a git commit")),
+            DiffPanelSelection::Unstaged => t!("Uncommitted"),
+            DiffPanelSelection::Branch { .. } => t!("Changes"),
         }
     }
 
@@ -390,6 +406,7 @@ impl DiffPanel {
         let Some(thread) = self.input.thread_key.clone() else { return };
         apply(cx.global_mut::<DiffPanelStore>(), &thread);
         self.scope_menu_open = false;
+        self.scope_submenu = None;
         let selection = self.selection(cx);
         cx.emit(DiffPanelEvent::SelectionChanged(selection));
         cx.notify();
@@ -484,14 +501,35 @@ impl DiffPanel {
                     .hover(|el| el.bg(colors.secondary.opacity(0.9)))
                     .on_click(cx.listener(|this, _, _, cx| {
                         this.scope_menu_open = !this.scope_menu_open;
+                        this.scope_submenu = None;
                         cx.notify();
                     }))
+                    .child({
+                        let panel = cx.entity();
+                        canvas(
+                            move |bounds, _, cx| {
+                                panel.update(cx, |panel, cx| {
+                                    if panel.scope_trigger != Some(bounds) {
+                                        panel.scope_trigger = Some(bounds);
+                                        if panel.scope_menu_open {
+                                            cx.notify();
+                                        }
+                                    }
+                                });
+                            },
+                            |_, _, _, _| {},
+                        )
+                        .absolute()
+                        .top_0()
+                        .left_0()
+                        .size_full()
+                    })
                     .child(div().min_w_0().overflow_hidden().whitespace_nowrap().text_ellipsis().child(label))
                     .child(svg().path("icons/diffs/chevron-down.svg").size(px(14.)).flex_none().text_color(colors.secondary_foreground.opacity(0.7))),
             )
             .when(git_scope && self.input.head_ref.is_some(), |el| {
                 let head = self.input.head_ref.clone().unwrap_or_default();
-                let base = self.input.base_ref.clone().unwrap_or_else(|| "Automatic".into());
+                let base = self.input.base_ref.clone().unwrap_or_else(|| t!("Automatic", context = "compare against the default base ref"));
                 el.child(
                     div()
                         .flex()
@@ -529,7 +567,7 @@ impl DiffPanel {
                 )
             })
             .when(self.input.can_refresh, |el| {
-                el.child(toggle("diff-refresh", "icons/diffs/refresh-cw.svg", false).on_click(cx.listener(|_, _, _, cx| cx.emit(DiffPanelEvent::Refresh))))
+                el.child(toggle("diff-refresh", "icons/diffs/refresh-cw.svg", false).tooltip(tooltip(if self.input.refreshing { t!("Refreshing diff…") } else { t!("Refresh diff") })).on_click(cx.listener(|_, _, _, cx| cx.emit(DiffPanelEvent::Refresh))))
             })
             .when(has_files, |el| {
                 el.child(
@@ -538,6 +576,7 @@ impl DiffPanel {
                         if all_collapsed { "icons/diffs/chevrons-up-down.svg" } else { "icons/diffs/chevrons-down-up.svg" },
                         false,
                     )
+                    .tooltip(tooltip(if all_collapsed { t!("Expand all files") } else { t!("Collapse all files") }))
                     .on_click(cx.listener(|this, _, _, cx| this.toggle_all_files(cx))),
                 )
             })
@@ -558,24 +597,24 @@ impl DiffPanel {
                         this.sync_options(cx);
                     }))),
             )
-            .child(toggle("diff-wrap", "icons/diffs/text-wrap.svg", wrap).on_click(cx.listener(move |this, _, _, cx| {
+            .child(toggle("diff-wrap", "icons/diffs/text-wrap.svg", wrap).tooltip(tooltip(if wrap { t!("Disable line wrapping") } else { t!("Enable line wrapping") })).on_click(cx.listener(move |this, _, _, cx| {
                 this.wrap_override = Some(!wrap);
                 this.sync_options(cx);
             })))
-            .child(toggle("diff-whitespace", "icons/diffs/pilcrow.svg", ignore_whitespace).on_click(cx.listener(move |_, _, _, cx| {
+            .child(toggle("diff-whitespace", "icons/diffs/pilcrow.svg", ignore_whitespace).tooltip(tooltip(if ignore_whitespace { t!("Show whitespace changes") } else { t!("Hide whitespace changes") })).on_click(cx.listener(move |_, _, _, cx| {
                 cx.global_mut::<DiffPanelStore>().ignore_whitespace = Some(!ignore_whitespace);
                 cx.emit(DiffPanelEvent::IgnoreWhitespaceChanged(!ignore_whitespace));
                 cx.notify();
             })))
             .when(self.test_file_count > 0, |el| {
-                el.child(toggle("diff-hide-tests", "icons/diffs/flask-conical-off.svg", hide_tests).on_click(cx.listener(move |this, _, _, cx| {
+                el.child(toggle("diff-hide-tests", "icons/diffs/flask-conical-off.svg", hide_tests).tooltip(tooltip(if hide_tests { t!("{count, plural, one {Show {count} hidden test file} other {Show {count} hidden test files}}", count = self.test_file_count) } else { t!("Hide test files") })).on_click(cx.listener(move |this, _, _, cx| {
                     cx.global_mut::<DiffPanelStore>().hide_test_files = !hide_tests;
                     this.rebuild_files(cx);
                     cx.notify();
                 })))
             })
             .when(has_files, |el| {
-                el.child(toggle("diff-file-tree-toggle", "icons/diffs/folder-tree.svg", tree_open).on_click(cx.listener(move |_, _, _, cx| {
+                el.child(toggle("diff-file-tree-toggle", "icons/diffs/folder-tree.svg", tree_open).tooltip(tooltip(if tree_open { t!("Hide file tree") } else { t!("Show file tree") })).on_click(cx.listener(move |_, _, _, cx| {
                     cx.global_mut::<DiffPanelStore>().file_tree_open = !tree_open;
                     cx.notify();
                 })))
@@ -583,103 +622,173 @@ impl DiffPanel {
         div().flex().flex_1().min_w_0().items_center().justify_between().gap(px(8.)).child(left).child(right).into_any_element()
     }
 
+    /// Opens the scope menu, with the Turn (`turns`) or Commits submenu open. Used by scenes.
+    pub fn open_scope_menu(&mut self, submenu: Option<bool>, cx: &mut Context<Self>) {
+        self.scope_menu_open = true;
+        self.scope_submenu = submenu.map(|turns| if turns { ScopeSubmenu::Turn } else { ScopeSubmenu::Commits });
+        cx.notify();
+    }
+
+    /// The scope menu (`DiffPanel.tsx` header): Changes, Uncommitted and Latest turn,
+    /// then the Turn and Commits submenus, which open on hover beside their row.
     fn render_scope_menu(&mut self, cx: &mut Context<Self>) -> Option<AnyElement> {
         if !self.scope_menu_open {
             return None;
         }
-        let colors = cx.app_theme().colors;
+        let trigger = self.scope_trigger?;
+        let theme = cx.app_theme();
         let selection = self.selection(cx);
-        let item = |id: SharedString, label: SharedString, trailing: Option<SharedString>, checked: bool| {
-            div()
-                .id(id)
-                .test_support()
-                .min_h(px(28.))
-                .px(px(8.))
-                .py(px(4.))
-                .flex()
-                .items_center()
-                .gap(px(8.))
-                .rounded(px(4.))
-                .text_size(px(14.))
-                .when(checked, |el| el.bg(colors.text.opacity(0.08)))
-                .hover(|el| el.bg(colors.toolbar_control_hover))
-                .child(div().flex_1().min_w_0().overflow_hidden().whitespace_nowrap().text_ellipsis().child(label))
-                .when_some(trailing, |el, t| el.child(div().flex_none().text_size(px(12.)).text_color(colors.muted_foreground).child(t)))
+        let this = cx.weak_entity();
+        let pick = {
+            let this = this.clone();
+            move |apply: Rc<dyn Fn(&mut DiffPanelStore, &str)>| {
+                let this = this.clone();
+                move |_: &mut Window, cx: &mut App| {
+                    let apply = apply.clone();
+                    this.update(cx, |panel, cx| panel.select(move |store, thread| apply(store, thread), cx)).ok();
+                }
+            }
         };
-        let section = |label: &'static str| {
-            div().px(px(8.)).pt(px(6.)).pb(px(4.)).text_size(px(12.)).font_weight(FontWeight::MEDIUM).text_color(colors.muted_foreground).child(label)
+        let hover = {
+            let this = this.clone();
+            move |submenu: Option<ScopeSubmenu>| {
+                let this = this.clone();
+                move |hovered: &bool, _: &mut Window, cx: &mut App| {
+                    if *hovered {
+                        this.update(cx, |panel, cx| {
+                            if panel.scope_submenu != submenu {
+                                panel.scope_submenu = submenu;
+                                cx.notify();
+                            }
+                        })
+                        .ok();
+                    }
+                }
+            }
         };
         let latest = self.input.turns.first().map(|t| t.turn_id.clone());
-        let mut menu = div()
-            .id("diff-scope-menu")
-            .test_support()
-            .occlude()
-            .absolute()
-            .top(px(36.))
-            .left(px(12.))
-            .w(px(280.))
-            .max_h(px(420.))
-            .overflow_y_scroll()
-            .p(px(4.))
-            .rounded(px(8.))
-            .border_1()
-            .border_color(colors.text.opacity(0.1))
-            .bg(colors.surface_overlay)
-            .shadow_lg()
-            .text_color(colors.text)
-            .on_mouse_down_out(cx.listener(|this, _, _, cx| {
-                this.scope_menu_open = false;
-                cx.notify();
-            }))
-            .child(item("scope-branch".into(), "Changes".into(), None, matches!(selection, DiffPanelSelection::Branch { .. })).on_click(
-                cx.listener(|this, _, _, cx| this.select(|store, thread| store.select_git_scope(thread, GitScope::Branch), cx)),
-            ))
-            .child(item("scope-unstaged".into(), "Uncommitted".into(), None, selection == DiffPanelSelection::Unstaged).on_click(
-                cx.listener(|this, _, _, cx| this.select(|store, thread| store.select_git_scope(thread, GitScope::Unstaged), cx)),
-            ));
-        if let Some(latest) = latest.clone() {
-            let checked = matches!(&selection, DiffPanelSelection::Turn { turn_id, .. } if latest.as_ref() == turn_id);
-            menu = menu.child(item("scope-latest".into(), "Latest turn".into(), None, checked).on_click(cx.listener(move |this, _, _, cx| {
-                let latest = latest.clone();
-                this.select(move |store, thread| store.select_turn(thread, &latest, None), cx)
-            })));
-        }
-        if !self.input.turns.is_empty() {
-            menu = menu.child(section("Turns"));
-            for turn in self.input.turns.clone() {
-                let checked = matches!(&selection, DiffPanelSelection::Turn { turn_id, .. } if turn.turn_id.as_ref() == turn_id);
-                let id = turn.turn_id.clone();
-                menu = menu.child(
-                    item(format!("scope-turn-{id}").into(), format!("Turn {}", turn.turn_count).into(), Some(turn.completed_label.clone()), checked)
-                        .on_click(cx.listener(move |this, _, _, cx| {
-                            let id = id.clone();
-                            this.select(move |store, thread| store.select_turn(thread, &id, None), cx)
-                        })),
-                );
-            }
-        }
-        menu = menu.child(section("Commits"));
-        if self.input.commits.is_empty() {
-            menu = menu.child(div().px(px(8.)).py(px(4.)).text_size(px(14.)).text_color(colors.muted_foreground).child("No commits on this branch."));
-        }
-        for commit in self.input.commits.clone() {
-            let checked = matches!(&selection, DiffPanelSelection::Commit { sha, .. } if commit.sha.as_ref() == sha);
-            let sha = commit.sha.clone();
-            menu = menu.child(
-                item(format!("scope-commit-{sha}").into(), commit.subject.clone(), Some(commit.relative_label.clone()), checked).on_click(cx.listener(
-                    move |this, _, _, cx| {
-                        let sha = sha.clone();
-                        this.select(move |store, thread| store.select_commit(thread, &sha), cx)
-                    },
-                )),
+        let latest_checked = matches!((&selection, &latest), (DiffPanelSelection::Turn { turn_id, .. }, Some(latest)) if latest.as_ref() == turn_id);
+        let mut menu = MenuPopup::new()
+            .item(
+                MenuItem::new(t!("Changes"))
+                    .kind(MenuItemKind::Radio(matches!(selection, DiffPanelSelection::Branch { .. })))
+                    .on_hover(hover(None))
+                    .on_select(pick(Rc::new(|store, thread| store.select_git_scope(thread, GitScope::Branch)))),
+            )
+            .item(
+                MenuItem::new(t!("Uncommitted"))
+                    .kind(MenuItemKind::Radio(selection == DiffPanelSelection::Unstaged))
+                    .on_hover(hover(None))
+                    .on_select(pick(Rc::new(|store, thread| store.select_git_scope(thread, GitScope::Unstaged)))),
             );
+        let mut latest_item = MenuItem::new(t!("Latest turn")).kind(MenuItemKind::Radio(latest_checked)).on_hover(hover(None));
+        if let Some(latest) = latest {
+            latest_item = latest_item.on_select(pick(Rc::new(move |store, thread| store.select_turn(thread, &latest, None))));
         }
-        Some(menu.into_any_element())
+        menu = menu.item(latest_item);
+        let submenu_trigger = |label: SharedString, submenu: ScopeSubmenu| {
+            let toggle = this.clone();
+            let mut item = MenuItem::new(label).kind(MenuItemKind::Submenu).on_hover(hover(Some(submenu)));
+            if self.scope_submenu == Some(submenu) {
+                item = item.highlighted();
+            }
+            // A click opens the submenu too; it must not close the menu.
+            item.on_select(move |_, cx| {
+                toggle
+                    .update(cx, |panel, cx| {
+                        panel.scope_menu_open = true;
+                        panel.scope_submenu = Some(submenu);
+                        cx.notify();
+                    })
+                    .ok();
+            })
+        };
+        menu = menu
+            .item(submenu_trigger(t!("Turn", context = "agent turn"), ScopeSubmenu::Turn))
+            .item(submenu_trigger(t!("Commits"), ScopeSubmenu::Commits));
+
+        let submenu = self.scope_submenu.map(|submenu| {
+            let mut popup = MenuPopup::new();
+            match submenu {
+                ScopeSubmenu::Turn => {
+                    for turn in &self.input.turns {
+                        let checked = matches!(&selection, DiffPanelSelection::Turn { turn_id, .. } if turn.turn_id.as_ref() == turn_id);
+                        let id = turn.turn_id.clone();
+                        popup = popup.item(
+                            MenuItem::new(t!("Turn {count}", count = turn.turn_count))
+                                .kind(MenuItemKind::Radio(checked))
+                                .detail(turn.completed_label.clone())
+                                .on_select(pick(Rc::new(move |store, thread| store.select_turn(thread, &id, None)))),
+                        );
+                    }
+                }
+                ScopeSubmenu::Commits => {
+                    for commit in &self.input.commits {
+                        let checked = matches!(&selection, DiffPanelSelection::Commit { sha, .. } if commit.sha.as_ref() == sha);
+                        let sha = commit.sha.clone();
+                        let short: SharedString = commit.sha.chars().take(7).collect::<String>().into();
+                        popup = popup.item(
+                            MenuItem::new(commit.subject.clone())
+                                .kind(MenuItemKind::Radio(checked))
+                                .detail(format!("{}  {short}", commit.relative_label))
+                                .on_select(pick(Rc::new(move |store, thread| store.select_commit(thread, &sha)))),
+                        );
+                    }
+                    if self.input.commits.is_empty() {
+                        popup = popup.item(MenuItem::new(t!("No commits on this branch.")).disabled(true));
+                    }
+                }
+            }
+            let index = match submenu {
+                ScopeSubmenu::Turn => 3.,
+                ScopeSubmenu::Commits => 4.,
+            };
+            // Base UI's sub popup: inline-end, aligned to its trigger row 5px up.
+            div()
+                .mt(px(1.) + theme.sp(1.) + theme.sp(7.) * index - px(5.))
+                .max_h(px(320.))
+                .max_w(px(384.))
+                .child(popup)
+        });
+        let close = cx.listener(|this, _: &MouseDownEvent, _, cx| {
+            this.scope_menu_open = false;
+            this.scope_submenu = None;
+            cx.notify();
+        });
+        let at = point(trigger.left(), trigger.bottom() + px(4.));
+        Some(
+            deferred(
+                anchored().position(at).snap_to_window_with_margin(px(8.)).child(
+                    div()
+                        .id("diff-scope-menu")
+                        .test_support()
+                        .occlude()
+                        .flex()
+                        .items_start()
+                        .on_mouse_down_out(close)
+                        .child(menu.on_dismiss({
+                            let this = this.clone();
+                            move |_, cx| {
+                                this.update(cx, |panel, cx| {
+                                    if panel.scope_submenu.is_none() {
+                                        panel.scope_menu_open = false;
+                                    }
+                                    cx.notify();
+                                })
+                                .ok();
+                            }
+                        }))
+                        .children(submenu),
+                ),
+            )
+            .with_priority(5)
+            .into_any_element(),
+        )
     }
 
     fn render_body(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let colors = cx.app_theme().colors;
-        let message = |text: &'static str| {
+        let message = |text: SharedString| {
             div()
                 .flex_1()
                 .flex()
@@ -692,9 +801,9 @@ impl DiffPanel {
                 .into_any_element()
         };
         match self.input.content.clone() {
-            DiffPanelContent::NoThread => message("Select a thread to inspect turn diffs."),
-            DiffPanelContent::NotGitRepo => message("Turn diffs are unavailable because this project is not a git repository."),
-            DiffPanelContent::NoTurns => message("No completed turns yet."),
+            DiffPanelContent::NoThread => message(t!("Select a thread to inspect turn diffs.")),
+            DiffPanelContent::NotGitRepo => message(t!("Turn diffs are unavailable because this project is not a git repository.")),
+            DiffPanelContent::NoTurns => message(t!("No completed turns yet.")),
             DiffPanelContent::Loading(label) => DiffPanelLoadingState::new(label).into_any_element(),
             DiffPanelContent::Error(error) => div()
                 .px(px(12.))
@@ -704,7 +813,7 @@ impl DiffPanel {
                 .child(error)
                 .into_any_element(),
             DiffPanelContent::Empty { no_net_changes } => {
-                message(if no_net_changes { "No net changes in this selection." } else { "No patch available for this selection." })
+                message(if no_net_changes { t!("No net changes in this selection.") } else { t!("No patch available for this selection.") })
             }
             DiffPanelContent::Patch { patch, notices, .. } => {
                 let banners = notices.into_iter().map(|notice| {

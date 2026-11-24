@@ -1,7 +1,8 @@
 //! Scene `diffs`: the diff panel over a fixture patch with every file status
 //! and a 5,000-line file. `T3_DIFFS_SCENE` picks a variant as a comma list:
 //! `light`, `split`, `nowrap`, `expanded`, `tree`, `find`, `context`,
-//! `perf` (300 files, 60,000 changed lines), `file` (the plain code view).
+//! `perf` (300 files, 60,000 changed lines), `file` (the plain code view),
+//! `menu`, `menu-turn`, `menu-commits` (the scope menu on the latest turn).
 
 use std::{collections::HashSet, fmt::Write as _, sync::Arc};
 
@@ -82,6 +83,17 @@ pub fn build(window: &mut Window, cx: &mut App) -> AnyView {
             view.expand_gap(0, 1, true, false, cx);
             view.expand_gap(0, 1, false, false, cx);
         });
+    }
+    if flags.contains("menu") || flags.contains("menu-turn") || flags.contains("menu-commits") {
+        cx.global_mut::<DiffPanelStore>().select_turn("env-local:thread-fixture", "turn-3", None);
+        let submenu = if flags.contains("menu-turn") {
+            Some(true)
+        } else if flags.contains("menu-commits") {
+            Some(false)
+        } else {
+            None
+        };
+        panel.update(cx, |panel, cx| panel.open_scope_menu(submenu, cx));
     }
     if flags.contains("find") {
         let view = panel.read(cx).code_view().clone();

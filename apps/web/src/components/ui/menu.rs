@@ -42,7 +42,9 @@ pub struct MenuItem {
     disabled: bool,
     inset: bool,
     highlighted: bool,
+    detail: Option<SharedString>,
     on_select: Option<Action>,
+    on_hover: Option<Rc<dyn Fn(&bool, &mut Window, &mut App) + 'static>>,
 }
 
 impl MenuItem {
@@ -56,7 +58,9 @@ impl MenuItem {
             disabled: false,
             inset: false,
             highlighted: false,
+            detail: None,
             on_select: None,
+            on_hover: None,
         }
     }
 
@@ -100,6 +104,18 @@ impl MenuItem {
 
     pub fn on_select(mut self, action: impl Fn(&mut Window, &mut App) + 'static) -> Self {
         self.on_select = Some(Rc::new(action));
+        self
+    }
+
+    /// Trailing muted text (`ml-auto text-xs text-muted-foreground`), such as a time.
+    pub fn detail(mut self, detail: impl Into<SharedString>) -> Self {
+        self.detail = Some(detail.into());
+        self
+    }
+
+    /// Runs when the pointer enters (`true`) or leaves the row; submenu triggers open on hover.
+    pub fn on_hover(mut self, hover: impl Fn(&bool, &mut Window, &mut App) + 'static) -> Self {
+        self.on_hover = Some(Rc::new(hover));
         self
     }
 }
@@ -241,6 +257,15 @@ fn render_item(theme: &AppTheme, index: usize, item: MenuItem, dismiss: Option<A
         ),
         _ => row,
     };
+    let row = row.children(item.detail.map(|detail| {
+        div()
+            .ml_auto()
+            .pl(theme.sp(2.))
+            .flex_none()
+            .ui_text(theme, TextSize::Xs, weight::NORMAL)
+            .text_color(c.muted_foreground)
+            .child(detail)
+    }));
     let row = row.children(item.shortcut.map(|keys| {
         div()
             .ml_auto()
@@ -253,6 +278,10 @@ fn render_item(theme: &AppTheme, index: usize, item: MenuItem, dismiss: Option<A
     if item.disabled {
         return row.into_any_element();
     }
+    let row = match item.on_hover.clone() {
+        Some(hover) => row.on_hover(move |hovered, window, cx| hover(hovered, window, cx)),
+        None => row,
+    };
     let action = item.on_select.clone();
     let (hover_bg, hover_text) = (c.highlight(), if item.destructive { text } else { c.highlight_foreground() });
     row.cursor_pointer()

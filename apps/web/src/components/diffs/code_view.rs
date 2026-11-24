@@ -42,7 +42,7 @@ pub const CONTEXT: &str = "DiffCodeView";
 
 actions!(
     diff_code_view,
-    [CopySelection, SelectAllLines, OpenFind, CloseFind, NextHunk, PreviousHunk, NextFile, PreviousFile]
+    [CopySelection, SelectAllLines, OpenFind, CloseFind]
 );
 
 /// Registers the code view's key bindings.
@@ -52,10 +52,6 @@ pub fn init(cx: &mut App) {
         KeyBinding::new(copy, CopySelection, Some(CONTEXT)),
         KeyBinding::new(find, OpenFind, Some(CONTEXT)),
         KeyBinding::new("escape", CloseFind, Some(CONTEXT)),
-        KeyBinding::new("alt-down", NextHunk, Some(CONTEXT)),
-        KeyBinding::new("alt-up", PreviousHunk, Some(CONTEXT)),
-        KeyBinding::new("alt-shift-down", NextFile, Some(CONTEXT)),
-        KeyBinding::new("alt-shift-up", PreviousFile, Some(CONTEXT)),
     ]);
 }
 
@@ -267,7 +263,6 @@ pub struct PaintPlan {
 
 const DRAFT_HEIGHT: f32 = 120.;
 const SCROLLBAR_WIDTH: f32 = 6.;
-const STICKY_SCROLL_MARGIN: f32 = 4.;
 
 /// The code surface. Create with [`CodeView::new`], feed it files with [`CodeView::set_files`].
 pub struct CodeView {
@@ -888,14 +883,6 @@ impl CodeView {
     // --- navigation -------------------------------------------------------
 
     /// Scrolls so content offset `y` sits just under the sticky header.
-    fn scroll_to(&mut self, y: f32, cx: &mut Context<Self>) {
-        self.ensure_layout();
-        self.scroll.y = (y - if self.mode == ViewMode::Diff { HEADER_HEIGHT } else { 0. } - STICKY_SCROLL_MARGIN).max(0.);
-        self.clamp_scroll();
-        cx.emit(CodeViewEvent::Scrolled { offset: self.scroll.y });
-        cx.notify();
-    }
-
     /// Expands a file and scrolls its header to the top. Returns false for an unknown key.
     pub fn reveal_file(&mut self, key: &str, cx: &mut Context<Self>) -> bool {
         let Some(index) = self.files.iter().position(|f| f.key.as_ref() == key) else { return false };
@@ -932,52 +919,6 @@ impl CodeView {
         self.scroll.y = top - f32::from(self.bounds.size.height) / 2.;
         self.clamp_scroll();
         cx.notify();
-    }
-
-    fn hunk_offsets(&self) -> Vec<f32> {
-        let mut out = Vec::new();
-        for (index, file) in self.files.iter().enumerate() {
-            if let Some((_, layout)) = file.layout.as_ref().filter(|_| !file.collapsed) {
-                out.extend(layout.hunk_starts.iter().map(|&row| self.body_top(index) + layout.rows[row as usize].top));
-            }
-        }
-        out
-    }
-
-    fn current_anchor(&self) -> f32 {
-        self.scroll.y + if self.mode == ViewMode::Diff { HEADER_HEIGHT } else { 0. } + STICKY_SCROLL_MARGIN
-    }
-
-    fn next_hunk(&mut self, _: &NextHunk, _: &mut Window, cx: &mut Context<Self>) {
-        let anchor = self.current_anchor() + 1.;
-        if let Some(y) = self.hunk_offsets().into_iter().find(|y| *y > anchor) {
-            self.scroll_to(y, cx);
-        }
-    }
-
-    fn previous_hunk(&mut self, _: &PreviousHunk, _: &mut Window, cx: &mut Context<Self>) {
-        let anchor = self.current_anchor() - 1.;
-        if let Some(y) = self.hunk_offsets().into_iter().rev().find(|y| *y < anchor) {
-            self.scroll_to(y, cx);
-        }
-    }
-
-    fn next_file(&mut self, _: &NextFile, _: &mut Window, cx: &mut Context<Self>) {
-        let target = self.file_tops.iter().take(self.files.len()).copied().find(|top| *top > self.scroll.y + 1.);
-        if let Some(top) = target {
-            self.scroll.y = top;
-            self.clamp_scroll();
-            cx.notify();
-        }
-    }
-
-    fn previous_file(&mut self, _: &PreviousFile, _: &mut Window, cx: &mut Context<Self>) {
-        let target = self.file_tops.iter().take(self.files.len()).copied().rev().find(|top| *top < self.scroll.y - 1.);
-        if let Some(top) = target {
-            self.scroll.y = top;
-            self.clamp_scroll();
-            cx.notify();
-        }
     }
 
     // --- files ------------------------------------------------------------
@@ -2255,10 +2196,6 @@ impl Render for CodeView {
             .on_action(cx.listener(Self::select_all_lines))
             .on_action(cx.listener(Self::open_find))
             .on_action(cx.listener(Self::close_find))
-            .on_action(cx.listener(Self::next_hunk))
-            .on_action(cx.listener(Self::previous_hunk))
-            .on_action(cx.listener(Self::next_file))
-            .on_action(cx.listener(Self::previous_file))
             .size_full()
             .relative()
             .overflow_hidden()
