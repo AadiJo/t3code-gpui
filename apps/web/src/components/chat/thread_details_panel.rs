@@ -15,11 +15,17 @@ use gpui_kit::{
 };
 use std::rc::Rc;
 
+use gpui_kit::SharedString;
+
 use t3code_contracts::{PullRequestMergeMethod, ThreadIssueLink};
 
 use super::open_in_picker::OpenInPicker;
 use super::thread_details_items::{ThreadDetailsItem, ThreadDetailsItemSettings};
 use super::thread_details_panel_styles::{row, row_icon, section};
+use super::thread_details_sections::{
+    ContextWindowRow, SERVER_PAGE_COUNT, SectionEmit, ThreadAutomationRow, ThreadDetailsSectionEvent, ThreadServerRow,
+    automations_section, context_section, servers_section,
+};
 use super::thread_details_pr_row::{
     PullRequestRowAction, PullRequestRowData, PullRequestRowHandlers, checks_popover, issue_row, merge_method_key,
     pull_request_row, resolve_row_action,
@@ -72,6 +78,19 @@ pub struct ThreadDetailsInput {
     /// The branch's pull request, or the thread's linked one.
     pub pull_request: Option<PullRequestRowData>,
     pub issues: Vec<ThreadIssueLink>,
+    /// A draft has no servers, automations or lineage yet.
+    pub is_draft: bool,
+    pub servers: Vec<ThreadServerRow>,
+    /// The port a forward or stop is waiting on.
+    pub server_busy: Option<u16>,
+    pub automations: Vec<ThreadAutomationRow>,
+    /// The scheduled tasks query failed with this message.
+    pub automations_error: Option<SharedString>,
+    /// The session may run and pause scheduled tasks.
+    pub can_operate_automations: bool,
+    /// The task whose toggle or run is waiting.
+    pub automation_busy: Option<SharedString>,
+    pub context_window: Option<ContextWindowRow>,
     /// The card's height limit (`max-h-[min(100dvh-6.5rem, …)]`).
     pub max_height: Option<Pixels>,
 }
@@ -85,6 +104,8 @@ pub enum ThreadDetailsEvent {
     Merge(PullRequestMergeMethod),
     /// Stop watching the pull request.
     StopWatching,
+    /// A server, automation or context row was used.
+    Section(ThreadDetailsSectionEvent),
 }
 
 /// The card and the controls it hosts.
@@ -101,6 +122,8 @@ pub struct ThreadDetailsPanel {
     checks: Option<bool>,
     /// "Merge pull request?" is showing.
     confirming_merge: bool,
+    /// Servers shown before "Show N more".
+    server_page: usize,
 }
 
 impl EventEmitter<ThreadDetailsEvent> for ThreadDetailsPanel {}
@@ -116,7 +139,7 @@ impl ThreadDetailsPanel {
         cx: &mut Context<Self>,
     ) -> Self {
         cx.observe_global::<ThreadDetailsItemSettings>(|_, cx| cx.notify()).detach();
-        Self { input, workspace, branch, git, scripts, open_in, items_menu: None, checks: None, confirming_merge: false }
+        Self { input, workspace, branch, git, scripts, open_in, items_menu: None, checks: None, confirming_merge: false, server_page: SERVER_PAGE_COUNT }
     }
 
     pub fn set_input(&mut self, input: ThreadDetailsInput, cx: &mut Context<Self>) {
@@ -373,6 +396,43 @@ impl ThreadDetailsPanel {
         let has_workspace = !workspace.is_empty();
         out.extend(section(theme, false, workspace));
         out.extend(section(theme, has_workspace && density == ThreadDetailsDensity::Full, version_control));
+        let full = density == ThreadDetailsDensity::Full && !self.input.is_draft;
+        let this = cx.weak_entity();
+        let emit: SectionEmit = Rc::new(move |event, _, cx| {
+            this.update(cx, |_, cx| cx.emit(ThreadDetailsEvent::Section(event))).ok();
+        });
+        if full && visible(ThreadDetailsItem::Servers) {
+            let page = cx.weak_entity();
+            out.extend(servers_section(
+                theme,
+                &self.input.servers,
+                self.server_page,
+                self.input.server_busy,
+                move |next, _, cx| {
+                    page.update(cx, |this, cx| {
+                        this.server_page = next;
+                        cx.notify();
+                    })
+                    .ok();
+                },
+                emit.clone(),
+            ));
+        }
+        if full && visible(ThreadDetailsItem::Automations) {
+            out.extend(automations_section(
+                theme,
+                &self.input.automations,
+                self.input.automations_error.clone(),
+                self.input.can_operate_automations,
+                self.input.automation_busy.as_deref(),
+                emit,
+            ));
+        }
+        if visible(ThreadDetailsItem::Context)
+            && let Some(usage) = &self.input.context_window
+        {
+            out.push(context_section(theme, usage));
+        }
         out
     }
 }

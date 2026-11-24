@@ -363,10 +363,20 @@ pub struct GitPanelScene {
 
 impl GitPanelScene {
     /// `source` answers every call; give it a `fail_with` to see failures.
-    pub fn new(mut source: FixtureGitSource, window: &mut Window, cx: &mut Context<Self>) -> Self {
+    pub fn new(source: FixtureGitSource, window: &mut Window, cx: &mut Context<Self>) -> Self {
+        Self::with_items(source, false, window, cx)
+    }
+
+    /// `all_items` turns every details item on and fills Servers, Automations
+    /// and Context window, and the pull request is watched.
+    pub fn with_items(mut source: FixtureGitSource, all_items: bool, window: &mut Window, cx: &mut Context<Self>) -> Self {
         // The owner's setting: Usage hidden (the default) and Project scripts hidden.
         let mut settings = ThreadDetailsItemSettings::default();
-        settings.set(crate::components::chat::thread_details_items::ThreadDetailsItem::Scripts, false);
+        if all_items {
+            settings.usage_enabled = true;
+        } else {
+            settings.set(crate::components::chat::thread_details_items::ThreadDetailsItem::Scripts, false);
+        }
         cx.set_global(settings);
 
         let branch_name = source.status.ref_name.clone();
@@ -374,7 +384,18 @@ impl GitPanelScene {
         source.pull_request = Some(fixture_pull_request_detail(false, true));
         let model = cx.new(|cx| SourceControlModel::new(Arc::new(source.clone()), PROJECT_CWD, cx));
         let arc: Arc<dyn GitActionsSource> = Arc::new(source.clone());
-        let props = fixture_toolbar_props(branch_name.as_deref());
+        let mut props = fixture_toolbar_props(branch_name.as_deref());
+        if all_items {
+            props.pull_request_badge = Some(crate::components::branch_toolbar::StripPullRequestBadge {
+                number: 418,
+                url: "https://github.com/example/t3code/pull/418".into(),
+                title: "feat(web): thread details panel with git actions and the branch picker".into(),
+                state: t3code_contracts::PullRequestState::Open,
+                is_draft: false,
+                others: 0,
+                label: "PR #418 open".into(),
+            });
+        }
         let workspace = cx.new(|cx| BranchToolbar::new(BranchToolbarLayout::PanelWorkspace, model.clone(), props.clone(), cx));
         let branch = cx.new(|cx| BranchToolbar::new(BranchToolbarLayout::PanelBranch, model.clone(), props.clone(), cx));
         let strip = cx.new(|cx| BranchToolbar::new(BranchToolbarLayout::Composer, model.clone(), props, cx));
@@ -390,10 +411,15 @@ impl GitPanelScene {
             offers_git: true,
             is_git_repo: true,
             show_open_in: true,
-            pull_request: has_pr.then(|| fixture_pull_request_row(source.pull_request.clone())),
+            pull_request: has_pr.then(|| {
+                let mut row = fixture_pull_request_row(source.pull_request.clone());
+                row.watching = all_items;
+                row
+            }),
             issues: vec![fixture_issue()],
             ..Default::default()
         };
+        let input = if all_items { with_all_sections(input) } else { input };
         let panel = cx.new(|cx| ThreadDetailsPanel::new(input, workspace.clone(), branch.clone(), git.clone(), Some(scripts.clone()), Some(open_in), cx));
         let mut subscriptions = Vec::new();
         for toolbar in [&workspace, &branch, &strip] {
@@ -486,6 +512,42 @@ pub fn build_light(window: &mut Window, cx: &mut App) -> AnyView {
 }
 
 /// The panel scene on a dirty branch with an open pull request.
+/// Servers, automations and a context window for the every-item scene.
+fn with_all_sections(input: ThreadDetailsInput) -> ThreadDetailsInput {
+    use crate::components::chat::thread_details_sections::{
+        AutomationRunStatus, ContextWindowRow, ThreadAutomationRow, ThreadServerRow,
+    };
+    ThreadDetailsInput {
+        servers: vec![
+            ThreadServerRow { port: 5173, process_name: Some("vite".into()), from_terminal: false, forwarded_to: Some(5173), can_stop: true, can_forward: true },
+            ThreadServerRow { port: 3000, process_name: Some("node".into()), from_terminal: true, forwarded_to: None, can_stop: true, can_forward: true },
+        ],
+        automations: vec![ThreadAutomationRow {
+            id: "task-nightly".into(),
+            title: "Nightly dependency check".into(),
+            schedule_line: "Every day at 9:00 AM".into(),
+            last_run: AutomationRunStatus::Succeeded,
+            enabled: true,
+            webhook: false,
+        }],
+        can_operate_automations: true,
+        context_window: Some(ContextWindowRow {
+            used_tokens: 84_200,
+            max_tokens: Some(200_000),
+            used_percentage: Some(42.1),
+            auto_compact_threshold: Some(160_000),
+        }),
+        ..input
+    }
+}
+
+/// The thread details card with every item turned on and filled.
+pub fn build_panel_all(window: &mut Window, cx: &mut App) -> AnyView {
+    let mut status = fixture_status(Some("feature/thread-details"), true, true, 0, 0);
+    status.pr = Some(fixture_open_pr());
+    cx.new(|cx| GitPanelScene::with_items(FixtureGitSource::new(status), true, window, cx)).into()
+}
+
 pub fn build_panel(window: &mut Window, cx: &mut App) -> AnyView {
     let mut status = fixture_status(Some("feature/thread-details"), true, true, 0, 0);
     status.pr = Some(fixture_open_pr());
