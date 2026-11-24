@@ -136,10 +136,9 @@ fn probe(id: String) -> Option<AnyElement> {
 /// Rows open their tooltips after 200ms (`delay={200}`).
 const ROW_TOOLTIP_DELAY: Duration = Duration::from_millis(200);
 
-/// `ThreadDetailsControl`: a row control with its 1px transparent border, which insets the
-/// content by a pixel.
+/// `ThreadDetailsControl`: a row control.
 fn control(id: impl Into<gpui_kit::ElementId>, theme: &AppTheme, disabled: bool, open: bool) -> gpui_kit::Stateful<gpui_kit::Div> {
-    row_base(id, theme, disabled, open).border_1().border_color(gpui_kit::transparent_black())
+    row_base(id, theme, disabled, open)
 }
 
 /// `threadRelationshipStatusLabel`.
@@ -541,7 +540,7 @@ fn relationship_row(rc: &RowCx<'_>, section: &'static str, index: usize, row: &R
     let Some(merge) = merge else {
         let stop_id: SharedString = format!("relationship-{section}-stop-{index}").into();
         let fill = rc.view.stop_hovered.as_ref() != Some(&stop_id);
-        let control = content(row_base_hovering(link_id, theme, false, false, fill).border_1().border_color(gpui_kit::transparent_black()).w_full())
+        let control = content(row_base_hovering(link_id, theme, false, false, fill).w_full())
             .children(probe(format!("relationship-row-{}", row.thread_id)))
             .tooltip_show_delay(ROW_TOOLTIP_DELAY)
             .tooltip(anchor.tooltip(tip, TooltipSide::Left))

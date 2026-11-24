@@ -21,7 +21,7 @@ pub fn row_height(theme: &AppTheme) -> Pixels {
     theme.rem(2.)
 }
 
-/// Row gap and side padding (`gap-2.5 px-2.5`).
+/// Row gap and side padding (`gap-2.5 px-2.5`), inside the 1px transparent border.
 pub fn row_inset(theme: &AppTheme) -> Pixels {
     theme.rem(0.625)
 }
@@ -90,6 +90,9 @@ pub fn row_base_hovering(id: impl Into<ElementId>, theme: &AppTheme, disabled: b
         .h(row_height(theme))
         .gap(row_inset(theme))
         .px(row_inset(theme))
+        // `Button`'s 1px transparent border, inside the row's 2rem.
+        .border_1()
+        .border_color(gpui_kit::transparent_black())
         .rounded(theme.radii.lg)
         .text_color(row_text(theme))
         .when(open, |r| r.bg(hover))
@@ -212,6 +215,8 @@ pub fn locked_row(theme: &AppTheme, content: impl IntoElement) -> Div {
         .h(row_height(theme))
         .gap(row_inset(theme))
         .px(row_inset(theme))
+        .border_1()
+        .border_color(gpui_kit::transparent_black())
         .text_color(row_text(theme))
         .child(content)
 }

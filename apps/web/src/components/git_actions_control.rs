@@ -606,7 +606,9 @@ impl GitActionsControl {
                     .flex()
                     .flex_1()
                     .min_w_0()
-                    .items_baseline()
+                    // Every part has the row's line height, so the fork's baseline alignment
+                    // leaves them at one top; centring keeps that with fonts of other ascents.
+                    .items_center()
                     .gap(theme.rem(0.375))
                     .child(div().flex_none().child(t!("Changes")))
                     .children(base_label.map(|label| {
@@ -617,7 +619,7 @@ impl GitActionsControl {
                             .ml_auto()
                             .flex()
                             .flex_none()
-                            .items_baseline()
+                            .items_center()
                             .gap(theme.rem(0.5))
                             .pl(theme.rem(0.5))
                             .font(mono_font(weight::MEDIUM))
