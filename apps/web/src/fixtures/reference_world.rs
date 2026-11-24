@@ -309,6 +309,7 @@ pub fn build(env: &EnvironmentId) -> ReferenceWorld {
         auto_settle_disabled: Default::default(),
         hover_details,
         search_content_matches: None,
+        snooze_presets: Default::default(),
     };
     ReferenceWorld { snapshot, threads, checkout: Arc::new(world.workspace) }
 }
