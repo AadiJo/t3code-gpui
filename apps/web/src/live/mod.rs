@@ -117,8 +117,14 @@ impl LiveData {
         if !cx.has_global::<crate::port_discovery_state::PortForwards>() {
             crate::port_discovery_state::PortForwards::init(cx);
         }
+        // The palette's Forwarded ports page follows forwards that start and stop.
+        let ports = {
+            let palette = palette.clone();
+            cx.observe_global::<crate::port_discovery_state::PortForwards>(move |cx| palette.refresh_ports(cx))
+        };
         let details = cx.new(|_| thread_details::DetailsFeed::default());
         let followed = thread_details::follow_changes(&details, &events, cx);
+        events.update(cx, |events, _| events._subscriptions.push(ports));
         events.update(cx, |events, _| {
             events._subscriptions.push(subscription);
             events._subscriptions.extend(followed);

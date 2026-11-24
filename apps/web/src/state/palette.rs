@@ -49,6 +49,11 @@ struct PaletteData {
     /// Where `Triage an issue` runs (`pickTriageEnvironment`), when that server offers it.
     triage: Option<t3code_contracts::EnvironmentId>,
     environments: Vec<PaletteEnvironment>,
+    /// The Forwarded ports page (`PortForwards::palette_ports`).
+    ports: Vec<PalettePort>,
+    /// Every settings page and control the palette can open (`SETTINGS_SEARCH_ITEMS`), and
+    /// whether an environment was connected when they were listed.
+    settings: Option<(bool, Arc<[PaletteSetting]>)>,
     now_ms: i64,
     memo: HashMap<ThreadKey, (Arc<SidebarThread>, Arc<PaletteThread>)>,
     mentions: Arc<[Arc<MentionCandidate>]>,
@@ -98,8 +103,14 @@ impl LivePaletteSource {
         self.data.borrow().mentions.clone()
     }
 
+    /// Re-reads the forwarded and discovered ports.
+    pub fn refresh_ports(&self, cx: &App) {
+        self.data.borrow_mut().ports = crate::port_discovery_state::PortForwards::palette_ports(cx);
+    }
+
     /// Takes the shell's current rows if they changed since the last refresh.
     pub fn refresh(&self, shell: &LiveShell, cx: &App) {
+        self.refresh_ports(cx);
         let mut data = self.data.borrow_mut();
         if data.revision == shell.revision() && data.revision != 0 {
             return;
@@ -172,6 +183,11 @@ impl LivePaletteSource {
                 }
             })
             .collect();
+        let has_environment = !data.environments.is_empty();
+        if data.settings.as_ref().is_none_or(|(had, _)| *had != has_environment) {
+            let availability = crate::components::settings::settings_search::SearchAvailability { has_environment, has_cloud: true };
+            data.settings = Some((has_environment, crate::components::settings::settings_search::palette_settings(availability)));
+        }
         data.revision = shell.revision();
     }
 }
@@ -200,17 +216,22 @@ impl CommandPaletteSource for LivePaletteSource {
     }
 
     fn ports(&self) -> Vec<PalettePort> {
-        Vec::new()
+        self.data.borrow().ports.clone()
     }
 
     fn settings(&self) -> Arc<[PaletteSetting]> {
-        Arc::from([])
+        self.data.borrow().settings.as_ref().map_or_else(|| Arc::from([]), |(_, settings)| settings.clone())
     }
 
     fn supports(&self, feature: PaletteFeature) -> bool {
         let data = self.data.borrow();
         match feature {
-            PaletteFeature::NewProject | PaletteFeature::ProjectSettings | PaletteFeature::RestartAgentSession => true,
+            PaletteFeature::NewProject
+            | PaletteFeature::ProjectSettings
+            | PaletteFeature::RestartAgentSession
+            | PaletteFeature::PortForwarding
+            | PaletteFeature::UseInAnotherApp => true,
+            PaletteFeature::PromptLinks => data.active_thread.is_some(),
             PaletteFeature::LinkPullRequest => data.active_can_link,
             PaletteFeature::PullRequests => data.pull_requests,
             PaletteFeature::Issues => data.issues,

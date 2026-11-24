@@ -41,7 +41,7 @@ use crate::components::thread_route_view::{ThreadRouteEvent, ThreadRouteView};
 use crate::components::thread_terminal_drawer::{BackendFactory, TerminalLaunch};
 use crate::components::sidebar::context_menu::MenuCommand;
 use crate::components::command_palette::CommandPalette;
-use crate::components::command_palette_logic::PaletteEvent;
+use crate::components::command_palette_logic::{AddProjectStep, PaletteEvent};
 use crate::components::command_palette_lookups::CommandPaletteSource;
 use crate::components::sidebar_logic::SidebarListEntry;
 use crate::components::thread_notification_coordinator::{NotificationInput, ThreadNotificationCoordinator};
@@ -1003,7 +1003,18 @@ impl AppRoot {
             SidebarEvent::ProjectCommand(project, MenuCommand::ProjectSettings) => self.open_project_settings(project, cx),
             SidebarEvent::SearchChanged(query) => self.data.search_threads(query.clone(), cx),
             SidebarEvent::SettledShelf(request) => self.data.show_older_settled(request.clone(), cx),
-            SidebarEvent::AddProject | SidebarEvent::OpenProjectFilter | SidebarEvent::ProjectCommand(..) => return Wiring::Dropped,
+            // `openAddProjectCommandPalette`.
+            SidebarEvent::AddProject => self.open_palette(OpenIntent::AddProject, window, cx),
+            SidebarEvent::ProjectCommand(project, MenuCommand::NewThread) => self.new_thread(Some(project.clone()), window, cx),
+            SidebarEvent::ProjectCommand(project, MenuCommand::CopyPath) => {
+                let snapshot = self.sidebar.read(cx).snapshot();
+                if let Some(root) = snapshot.projects.iter().find(|p| p.project_ref == *project).map(|p| p.workspace_root.to_string()) {
+                    cx.write_to_clipboard(ClipboardItem::new_string(root));
+                }
+            }
+            SidebarEvent::ProjectCommand(project, MenuCommand::PinProject | MenuCommand::UnpinProject) => self.toggle_project_pin(project, cx),
+            // Nothing emits these: the sidebar filters by project itself.
+            SidebarEvent::OpenProjectFilter | SidebarEvent::ProjectCommand(..) => return Wiring::Dropped,
         }
         Wiring::Ran
     }
@@ -1210,16 +1221,78 @@ impl AppRoot {
                 }
             }
             PaletteEvent::Triage => self.start_triage(cx),
-            // Need the sync layer or server features the fixture store does not have.
-            PaletteEvent::CopyPromptLink { .. }
-            | PaletteEvent::ShareWithGuest
-            | PaletteEvent::NewProject
-            | PaletteEvent::AddProject(_)
-            | PaletteEvent::UseInAnotherApp
-            | PaletteEvent::ToggleProjectPin(_)
-            | PaletteEvent::PortForward(_) => return Wiring::Dropped,
+            PaletteEvent::CopyPromptLink { with_context } => self.copy_prompt_link(*with_context, cx),
+            PaletteEvent::AddProject(AddProjectStep::ConnectEnvironment) => {
+                self.navigate(Route::Settings { panel: SettingsPanel::Connections, query: SharedString::default() }, cx)
+            }
+            PaletteEvent::ToggleProjectPin(project) => self.toggle_project_pin(project, cx),
+            PaletteEvent::PortForward(request) => {
+                if StateBridge::is_running(cx) {
+                    crate::port_discovery_state::PortForwards::handle(request.clone(), cx);
+                }
+            }
+            PaletteEvent::ShareWithGuest | PaletteEvent::UseInAnotherApp => return self.not_built_yet(t!("Sharing"), "sharing", cx),
+            PaletteEvent::NewProject => return self.not_built_yet(t!("New project"), "palette views", cx),
+            PaletteEvent::AddProject(AddProjectStep::BrowseFolders(_)) => return self.not_built_yet(t!("Local folder"), "palette views", cx),
+            PaletteEvent::AddProject(AddProjectStep::CloneRepository(_)) => return self.not_built_yet(t!("Git URL"), "palette views", cx),
         }
         Wiring::Ran
+    }
+
+    /// A row whose feature this app does not have yet says so instead of doing nothing.
+    fn not_built_yet(&self, feature: SharedString, owner: &'static str, cx: &mut Context<Self>) -> Wiring {
+        Toaster::push(ToastData::new(ToastKind::Info, t!("{feature} is not available in this app yet", feature = feature.as_ref())), cx);
+        Wiring::Unavailable(owner)
+    }
+
+    /// Pins or unpins `project`'s group on every machine (`toggleProjectGroupPin`).
+    fn toggle_project_pin(&self, project: &ProjectRef, cx: &mut Context<Self>) {
+        let snapshot = self.sidebar.read(cx).snapshot();
+        let groups = crate::components::sidebar::sidebar_project_grouping::build_project_groups(
+            &snapshot.projects,
+            snapshot.settings.grouping_mode,
+            &Default::default(),
+        );
+        let Some(group) = groups.iter().find(|g| g.member_refs.contains(project)) else { return };
+        if StateBridge::is_running(cx) {
+            crate::state::sidebar_actions::set_projects_pinned(&group.member_refs, !group.pinned, cx);
+        }
+    }
+
+    /// Copies a link that opens a new thread with the composer's prompt on the hosted app
+    /// (`composerPromptLink`, `buildNewThreadLink`); `with_context` adds the GitHub repository
+    /// and the selected provider and model.
+    fn copy_prompt_link(&self, with_context: bool, cx: &mut Context<Self>) {
+        /// `PROMPT_LINK_MAX_PROMPT_LENGTH`.
+        const MAX_PROMPT: usize = 8_000;
+        let composer = self.composer(cx);
+        let prompt = composer.read(cx).editor().read(cx).text().trim().to_owned();
+        if prompt.is_empty() || prompt.encode_utf16().count() > MAX_PROMPT {
+            return;
+        }
+        let mut url = url::Url::parse("https://app.t3.codes/new").expect("static url");
+        {
+            let mut query = url.query_pairs_mut();
+            query.append_pair("prompt", &prompt);
+            if with_context {
+                let repository = self
+                    .shown_key()
+                    .filter(|_| StateBridge::is_running(cx))
+                    .and_then(|key| crate::state::palette::link_project(&key, cx))
+                    .filter(|project| project.host == "github.com")
+                    .map(|project| project.repository);
+                if let Some(repository) = repository {
+                    query.append_pair("repo", &repository);
+                }
+                let state = composer.read(cx).state();
+                let driver = state.catalog.instances.iter().find(|i| i.instance_id == state.selection.instance_id).map(|i| i.driver_kind.as_str().to_owned());
+                if let Some(driver) = driver {
+                    query.append_pair("provider", &driver);
+                    query.append_pair("model", &state.selection.model);
+                }
+            }
+        }
+        cx.write_to_clipboard(ClipboardItem::new_string(url.to_string()));
     }
 
     /// Opens "Link pull request" for the thread on screen (`openLinkPullRequestDialog`).

@@ -76,6 +76,53 @@ pub fn rename(key: &ThreadKey, title: String, cx: &mut App) {
     });
 }
 
+/// Pins or unpins every checkout of a project group, one machine at a time, and toasts the
+/// first failure (`useProjectPin` → `updateProjectGroup`).
+pub fn set_projects_pinned(projects: &[ProjectRef], pinned: bool, cx: &mut App) {
+    let targets: Vec<_> = projects
+        .iter()
+        .filter_map(|project| {
+            let environment_id = t3code_contracts::EnvironmentId::new(project.environment_id.0.as_ref());
+            let commands = StateBridge::environment(&environment_id, cx)?.read(cx).commands.clone();
+            Some((commands, t3code_contracts::ProjectId::new(project.project_id.0.as_ref())))
+        })
+        .collect();
+    let task = StateBridge::spawn(
+        async move {
+            for (commands, project_id) in targets {
+                let update = t3code_contracts::ProjectMutationProjectUpdate {
+                    command_id: t3code_client_runtime::operations::commands::new_command_id(),
+                    project_id,
+                    title: None,
+                    workspace_root: None,
+                    default_model_selection: None,
+                    auto_pull: None,
+                    project_icon: None,
+                    favicon_path: None,
+                    default_thread_env_mode: None,
+                    scripts: None,
+                    pinned: Some(pinned),
+                    archived: None,
+                };
+                if let Err(error) = commands.mutate_project(t3code_contracts::ProjectMutation::ProjectUpdate(update)).await {
+                    return Some(error);
+                }
+            }
+            None
+        },
+        cx,
+    );
+    cx.spawn(async move |cx| {
+        if let Some(Some(error)) = task.await {
+            cx.update(|cx| {
+                let title = if pinned { t!("Failed to pin project") } else { t!("Failed to unpin project") };
+                Toaster::push(ToastData::new(ToastKind::Error, title).description(SharedString::from(error.to_string())), cx);
+            });
+        }
+    })
+    .detach();
+}
+
 /// Snoozes threads until a time.
 pub fn snooze(keys: &[ThreadKey], until: &Zoned, cx: &mut App) {
     let until = format_ms(until.timestamp().as_millisecond());

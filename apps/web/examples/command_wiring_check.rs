@@ -259,8 +259,9 @@ fn main() -> anyhow::Result<()> {
         reset(&mut c, &key);
     }
 
-    c.note("== sidebar: project menu, Add project, project filter");
-    let mut sidebar_events = vec![SidebarEvent::AddProject, SidebarEvent::OpenProjectFilter];
+    c.note("== sidebar: project menu and Add project");
+    // `OpenProjectFilter` is left out: nothing emits it (rows filter by project in the sidebar).
+    let mut sidebar_events = vec![SidebarEvent::AddProject];
     for pinned in [false, true] {
         for item in project_menu_items(pinned) {
             if let Some(command) = item.command {
