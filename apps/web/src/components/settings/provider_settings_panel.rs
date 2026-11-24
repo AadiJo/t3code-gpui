@@ -238,6 +238,8 @@ pub struct ProviderSettingsPanel {
     updating: BTreeSet<String>,
     /// Per-instance sign-in UI state (chosen method, last error).
     pub(super) auth_ui: HashMap<String, super::provider_authentication_section::AuthUi>,
+    /// Sign-in terminals by instance, while a terminal flow runs.
+    pub(super) auth_terminals: HashMap<String, super::provider_auth_terminal::AuthTerminal>,
     /// One accent picker per instance, created on first render of its editor.
     accent_pickers: HashMap<String, Entity<ProviderAccentColorPicker>>,
     /// Instances whose "Add custom model" field is open.
@@ -262,6 +264,7 @@ impl ProviderSettingsPanel {
             confirm: None,
             updating: BTreeSet::new(),
             auth_ui: HashMap::new(),
+            auth_terminals: HashMap::new(),
             accent_pickers: HashMap::new(),
             adding_model: BTreeSet::new(),
             model_error: HashMap::new(),

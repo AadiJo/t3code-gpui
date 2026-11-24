@@ -216,6 +216,8 @@ pub enum Variant {
     Providers,
     ProvidersAdd,
     ProvidersClaude,
+    /// Claude signing in through a login running in a terminal.
+    ProvidersTerminal,
     Threads,
     SourceControl,
     TaskEditor,
@@ -224,9 +226,23 @@ pub enum Variant {
 
 /// Builds the scene entity (also used by the scripted check).
 pub fn build_scene(variant: Variant, window: &mut Window, cx: &mut App) -> Entity<ServerSettingsScene> {
-    let (model, source) = fixture_model(cx);
+    let (model, source) = if variant == Variant::ProvidersTerminal {
+        let mut snapshot = fixture_snapshot();
+        let state: ProviderAuthState = decode(json!({
+            "instanceId": "claudeAgent", "phase": "waiting", "flowId": "flow-2", "authorizationUrl": null, "expiresAt": null, "message": null,
+            "interaction": { "type": "terminal", "id": "t-1", "outputOffset": 0,
+                "output": "\u{1b}[1mWelcome to Claude Code\u{1b}[0m\r\n\r\nSelect login method:\r\n\r\n \u{1b}[36m\u{276f} 1. Claude account with subscription\u{1b}[0m\r\n   2. Anthropic Console account\r\n\r\n" }
+        }));
+        let mut auth = (*snapshot.provider_auth).clone();
+        auth.insert("claudeAgent".into(), state);
+        snapshot.provider_auth = Arc::new(auth);
+        let source = Arc::new(FixtureServerSettings::new(snapshot));
+        (cx.new(|_| ServerPanelsModel::new(source.clone())), source)
+    } else {
+        fixture_model(cx)
+    };
     let path = match variant {
-        Variant::Providers | Variant::ProvidersAdd | Variant::ProvidersClaude => SettingsPath::Providers,
+        Variant::Providers | Variant::ProvidersAdd | Variant::ProvidersClaude | Variant::ProvidersTerminal => SettingsPath::Providers,
         Variant::Threads => SettingsPath::Threads,
         Variant::SourceControl => SettingsPath::SourceControl,
         Variant::TaskEditor => SettingsPath::ScheduledTasks,
@@ -251,7 +267,7 @@ pub fn build_scene(variant: Variant, window: &mut Window, cx: &mut App) -> Entit
                 panel.update(cx, |panel, cx| panel.open_add_dialog(window, cx));
             }
         }
-        Variant::ProvidersClaude => {
+        Variant::ProvidersClaude | Variant::ProvidersTerminal => {
             if let Some(panel) = pages.read(cx).typed::<ProviderSettingsPanel>(SettingsPath::Providers) {
                 panel.update(cx, |panel, cx| panel.select("claudeAgent", cx));
             }
@@ -288,6 +304,9 @@ pub fn build_light(window: &mut Window, cx: &mut App) -> AnyView {
 }
 pub fn build_claude(window: &mut Window, cx: &mut App) -> AnyView {
     scene(Variant::ProvidersClaude, false, window, cx)
+}
+pub fn build_signin_terminal(window: &mut Window, cx: &mut App) -> AnyView {
+    scene(Variant::ProvidersTerminal, false, window, cx)
 }
 pub fn build_claude_light(window: &mut Window, cx: &mut App) -> AnyView {
     scene(Variant::ProvidersClaude, true, window, cx)

@@ -426,6 +426,24 @@ impl ServerSettingsSource for FixtureServerSettings {
     fn respond_provider_auth(&self, input: ProviderAuthRespondInput) -> Reply<ProviderAuthState> {
         self.log(format!("provider.auth.respond {}", input.instance_id));
         let id = input.instance_id.to_string();
+        // A terminal flow behaves like a pty: the login keeps waiting and echoes what is typed.
+        let scripted = self.auth_script.lock().expect("auth script").get(&id).is_some_and(|q| !q.is_empty());
+        if let (false, t3code_contracts::ProviderAuthResponse::Terminal(response)) = (scripted, &input.response) {
+            let state = self.with(|s| {
+                let mut auth = (*s.provider_auth).clone();
+                let state = auth.get_mut(&id).map(|state| {
+                    if let Some(t3code_contracts::ProviderAuthInteraction::Terminal(terminal)) = state.interaction.as_mut() {
+                        terminal.output.push_str(&response.data.replace('\r', "\r\n"));
+                    }
+                    state.clone()
+                });
+                s.provider_auth = Arc::new(auth);
+                state
+            });
+            if let Some(state) = state {
+                return ready(Ok(state));
+            }
+        }
         ready(Ok(self.next_auth(&id, Self::idle_auth(&id, ProviderAuthStatePhase::Verifying))))
     }
 

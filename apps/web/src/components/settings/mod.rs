@@ -19,6 +19,7 @@ pub mod server_settings_data;
 pub mod server_settings_controls;
 pub mod add_provider_instance_dialog;
 pub mod provider_accent_color_picker;
+pub mod provider_auth_terminal;
 pub mod provider_authentication_section;
 pub mod provider_settings_panel;
 pub mod connections_settings_access;
