@@ -267,6 +267,7 @@ pub fn showcase_snapshot() -> SidebarSnapshot {
         hover_details: Default::default(),
         search_content_matches: None,
         now: FIXTURE_NOW,
+        snooze_presets: Default::default(),
     }
 }
 
@@ -364,6 +365,7 @@ pub fn large_snapshot(thread_count: usize, project_count: usize) -> SidebarSnaps
         auto_settle_disabled: Default::default(),
         hover_details: Default::default(),
         search_content_matches: None,
+        snooze_presets: Default::default(),
     }
 }
 
@@ -427,6 +429,7 @@ pub fn reference_snapshot() -> SidebarSnapshot {
         auto_settle_disabled: Default::default(),
         hover_details: reference_hover_details(),
         search_content_matches: None,
+        snooze_presets: Default::default(),
     }
 }
 

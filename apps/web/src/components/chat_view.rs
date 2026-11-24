@@ -141,6 +141,8 @@ pub struct ChatView {
     details: Option<AnyView>,
     /// The banner pinned over the top of the timeline (`ChatBannerLane`), while one shows.
     banner: Option<AnyView>,
+    /// The breadcrumb's project icon (override and favicon); the monogram without one.
+    project_icon: Option<crate::components::project_favicon::ProjectIconSource>,
     thread_key: SharedString,
     find_bar: Option<(Entity<ThreadFindBar>, Subscription)>,
     /// Every question of the pending request.
@@ -176,6 +178,7 @@ impl ChatView {
             header_menu: None,
             details: None,
             banner: None,
+            project_icon: None,
             thread_key: SharedString::default(),
             find_bar: None,
             questions: Arc::from([]),
@@ -388,6 +391,19 @@ impl ChatView {
     pub fn set_details(&mut self, details: Option<AnyView>, cx: &mut Context<Self>) {
         self.details = details;
         cx.notify();
+    }
+
+    /// The breadcrumb's project icon source, as drawn.
+    pub fn project_icon(&self) -> Option<&crate::components::project_favicon::ProjectIconSource> {
+        self.project_icon.as_ref()
+    }
+
+    /// The breadcrumb's project icon source.
+    pub fn set_project_icon(&mut self, icon: Option<crate::components::project_favicon::ProjectIconSource>, cx: &mut Context<Self>) {
+        if self.project_icon != icon {
+            self.project_icon = icon;
+            cx.notify();
+        }
     }
 
     /// Shows a banner over the top of the timeline, or none. While one shows the timeline's top
@@ -672,7 +688,7 @@ impl Render for ChatView {
                     .flex_1()
                     .min_w_0()
                     .min_h_0()
-                    .child(chat_header(&self.project, &self.title, self.header_height, self.header_inset, &colors, thread_actions))
+                    .child(chat_header(&self.project, self.project_icon.as_ref(), &self.title, self.header_height, self.header_inset, &colors, thread_actions))
                     .child(
                         div()
                             .relative()

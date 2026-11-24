@@ -226,7 +226,9 @@ impl ThreadRouteView {
         });
         let hero = view.is_draft && view.timeline.entries.is_empty();
         let thread_menu = self.thread_menu(&target, cx);
+        let project_icon = view.project_icon.clone();
         self.chat.update(cx, |chat, cx| {
+            chat.set_project_icon(project_icon, cx);
             chat.set_hero(hero, cx);
             chat.set_questions(view.questions.clone(), cx);
             chat.set_thread_menu(thread_menu, cx);
@@ -671,7 +673,13 @@ impl ThreadRouteView {
                 }
             }
             // The server's last error arrives on the thread's shell row.
-            DataEvent::SnapshotChanged => self.sync_banner(cx),
+            DataEvent::SnapshotChanged => {
+                self.sync_banner(cx);
+                if let Some(target) = self.target.clone() {
+                    let icon = self.data.project_icon(&target, cx);
+                    self.chat.update(cx, |chat, cx| chat.set_project_icon(icon, cx));
+                }
+            }
             DataEvent::ThreadChanged(_) | DataEvent::OpenThread(_) => {}
         }
     }

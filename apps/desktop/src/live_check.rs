@@ -41,11 +41,14 @@
 //   banner   the thread error banner: a thread whose provider fails shows the server's last
 //            error, dismiss hides it for the session; a send the server refuses shows its error
 //            and puts the prompt back in the composer (dark, at the T3CODE_* theme overrides)
+//   sidebardata  the server's snooze presets reach the sidebar snapshot and resolve to the
+//            menu; the header breadcrumb draws the project's icon source; message search results
+//            rank a word match above a newer prefix match, as the web ranks them
 //   import   a fresh data directory and a stand-in install (`T3CODE_IMPORT_HOME`, made by
 //            `import-check`, encrypted with the fixture macOS key): the launch import runs,
 //            the window explains the Keychain read, environments and settings arrive
 //
-// Usage: live-check <seed|drive|restart|import|send|sidebar|notify|details|mentions|heic|wheel|workspace|banner|probe> <out-dir>
+// Usage: live-check <seed|drive|restart|import|send|sidebar|notify|details|mentions|heic|wheel|workspace|banner|sidebardata|probe> <out-dir>
 #[allow(dead_code)]
 #[path = "import/mod.rs"]
 mod import;
@@ -485,7 +488,7 @@ fn key_of(state: &Seeded, thread: &str) -> ThreadKey {
 
 fn main() -> anyhow::Result<()> {
     let mut args = std::env::args().skip(1);
-    let usage = "usage: live-check <seed|drive|restart|import|send|sidebar|notify|details|mentions|heic|wheel|workspace|banner|probe> <out-dir> | live-check timeline <projections-dir> <out-dir> | live-check commands <corpus.json> <out.json>";
+    let usage = "usage: live-check <seed|drive|restart|import|send|sidebar|notify|details|mentions|heic|wheel|workspace|banner|sidebardata|probe> <out-dir> | live-check timeline <projections-dir> <out-dir> | live-check commands <corpus.json> <out.json>";
     let phase = args.next().context(usage)?;
     let out = PathBuf::from(args.next().context(usage)?);
     if phase == "timeline" {
@@ -513,6 +516,7 @@ fn main() -> anyhow::Result<()> {
         "wheel" => run_wheel(&mut check),
         "workspace" => run_workspace(&mut check),
         "banner" => run_banner(&mut check),
+        "sidebardata" => run_sidebar_data(&mut check),
         other => Err(anyhow::anyhow!("unknown phase {other}")),
     };
     check.finish(&phase, result)
@@ -2820,5 +2824,132 @@ fn run_banner(check: &mut Check) -> anyhow::Result<()> {
     check.frame();
     let hidden = banner_input(check).is_none();
     check.check("dismiss clears the send error", hidden, "");
+    Ok(())
+}
+
+/// Sidebar data from the server: snooze presets, the breadcrumb's project icon, search ranking.
+fn run_sidebar_data(check: &mut Check) -> anyhow::Result<()> {
+    let state = load_state(&check.out)?;
+    check.pump(|c| c.connected(), Duration::from_secs(30), "connected")?;
+    let environment_id = t3code_contracts::EnvironmentId::new(state.environment_id.as_str());
+    let sidebar_env = t3code_web::components::sidebar::model::EnvironmentId(state.environment_id.clone().into());
+    let commands = commands_of(check, &environment_id)?;
+
+    // Snooze presets: saved on the server, carried by the snapshot, resolved as the menu.
+    let model = check.read(|root, _| root.data().clone()).server_settings_model(check)?;
+    let source = check.cx.update(|cx| model.read(cx).source().clone());
+    let presets = serde_json::json!([{ "kind": "after", "minutes": 45 }, { "kind": "after", "minutes": 120 }, { "kind": "at", "day": "tomorrow", "time": "08:30" }]);
+    let patch: t3code_contracts::ServerUpdateSettingsPayload = serde_json::from_value(serde_json::json!({ "patch": { "snoozePresets": presets } }))?;
+    let s = source.clone();
+    let saved = check.block(async move { s.update_settings(patch).await })?;
+    check.check("snooze presets saved on the server", saved.is_ok(), format!("{:?}", saved.as_ref().err()));
+    let env = sidebar_env.clone();
+    check.pump(
+        move |c| c.cx.update(|cx| StateBridge::shell(cx).read(cx).snapshot().snooze_presets.get(&env).is_some_and(|p| p.len() == 3)),
+        Duration::from_secs(15),
+        "the sidebar snapshot carries the server's presets",
+    )?;
+    let env = sidebar_env.clone();
+    let settings = check.cx.update(|cx| StateBridge::shell(cx).read(cx).snapshot().snooze_presets.get(&env).cloned());
+    let now = jiff::ZonedDateTime::now();
+    let menu = t3code_web::state::sidebar_actions::resolve_snooze_presets(settings.as_deref(), &now);
+    let labels: Vec<String> = menu.iter().map(|p| format!("{} ({}) [{}]", p.label, p.when, p.id)).collect();
+    check.check(
+        "the snooze menu resolves the server's presets, soonest first",
+        menu.len() == 3 && menu[0].id.as_ref() == "after:45" && menu[1].id.as_ref() == "after:120" && menu[2].id.as_ref() == "at:tomorrow:08:30",
+        labels.join(", "),
+    );
+    let patch: t3code_contracts::ServerUpdateSettingsPayload = serde_json::from_value(serde_json::json!({ "patch": { "snoozePresets": serde_json::Value::Null } }))?;
+    let s = source.clone();
+    let _ = check.block(async move { s.update_settings(patch).await })?;
+
+    // The header breadcrumb's project icon is the one the sidebar draws for the project, here a
+    // favicon the server finds in the checkout.
+    let favicon = PathBuf::from(&state.project_root).join("favicon.svg");
+    if !favicon.exists() {
+        std::fs::write(&favicon, r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><rect width="16" height="16" rx="3" fill="#e5484d"/></svg>"##)?;
+    }
+    let root_dir = state.project_root.clone();
+    check
+        .pump(
+            move |c| c.cx.update(|cx| StateBridge::shell(cx).read(cx).snapshot().projects.iter().any(|p| p.workspace_root.as_ref() == root_dir && p.favicon.is_some())),
+            Duration::from_secs(20),
+            "the project's favicon loaded",
+        )
+        .ok();
+    let key = key_of(&state, &state.long_thread);
+    check.go(&key);
+    check.wait(Duration::from_millis(300));
+    check.frame();
+    let shown = check.read(|root, cx| root.thread_view().read(cx).chat().read(cx).project_icon().cloned());
+    let sidebar = check.cx.update(|cx| {
+        StateBridge::shell(cx).read(cx).snapshot().projects.iter().find(|p| p.workspace_root.as_ref() == state.project_root).map(|p| (p.icon.clone(), p.favicon.clone()))
+    });
+    check.check(
+        "the breadcrumb draws the project's icon source",
+        shown.as_ref().is_some_and(|s| s.favicon.is_some()) && shown.as_ref().map(|s| (s.icon.clone(), s.favicon.clone())) == sidebar,
+        format!("header {:?}, sidebar {:?}", shown.as_ref().map(|s| s.favicon.is_some()), sidebar.as_ref().map(|s| s.1.is_some())),
+    );
+    check.shot("s0-breadcrumb.png")?;
+
+    // Search ranking: a word match above a newer prefix match.
+    // Letters only: a digit next to a letter starts a new word for the server's matcher.
+    let tag: String = format!("{}", now_ms() % 1_000_000).chars().map(|c| (b'j' + c.to_digit(10).unwrap_or(0) as u8) as char).collect();
+    let project = check
+        .cx
+        .update(|cx| {
+            let shell = StateBridge::environment(&environment_id, cx)?.read(cx).shell.clone();
+            shell.snapshot.as_ref()?.projects.iter().find(|p| p.workspace_root == state.project_root).map(|p| p.id.clone())
+        })
+        .context("seeded project")?;
+    let mut made = Vec::new();
+    for (title, text) in [("Search word", format!("quokka{tag} lives here")), ("Search prefix", format!("quokka{tag}ish is longer"))] {
+        let thread_id = ThreadId::new(uuid::Uuid::new_v4().to_string());
+        let input = CreateThread {
+            thread_id: thread_id.clone(),
+            project_id: project.clone(),
+            title: title.into(),
+            model_selection: ModelSelection { instance_id: "devReplay".into(), model: "multi-turn".into(), options: None },
+            runtime_mode: RuntimeMode::FullAccess,
+            interaction_mode: ProviderInteractionMode::Default,
+            branch: None,
+            worktree_path: None,
+        };
+        let c = commands.clone();
+        check.block(async move { c.create_thread(input).await })?.map_err(|e| anyhow::anyhow!("{e}"))?;
+        let message = SendMessage::text(thread_id.clone(), text);
+        let c = commands.clone();
+        check.block(async move { c.send_message(message).await })?.map_err(|e| anyhow::anyhow!("{e}"))?;
+        made.push(thread_key(&environment_id, &thread_id));
+        check.wait(Duration::from_millis(1200));
+    }
+    let query: SharedString = format!("quokka{tag}").into();
+    let data = check.read(|root, _| root.data().clone());
+    let q = query.clone();
+    check.cx.update(|cx| data.search_threads(q, cx));
+    let q = query.clone();
+    check.pump(
+        move |c| c.cx.update(|cx| StateBridge::shell(cx).read(cx).snapshot().search_content_matches.as_ref().is_some_and(|m| m.query == q && m.threads.len() >= 2)),
+        Duration::from_secs(20),
+        "message matches for both threads",
+    )?;
+    let order = check.cx.update(|cx| StateBridge::shell(cx).read(cx).snapshot().search_content_matches.as_ref().map(|m| m.threads.to_vec())).unwrap_or_default();
+    let link = check.cx.update(|cx| ConnectionRuntime::global(cx).environment_link(&environment_id)).context("link")?;
+    let raw_query = query.to_string();
+    let raw = check.block(async move {
+        let session = link.session(Duration::from_secs(5)).await.ok()?;
+        let input = t3code_contracts::OrchestrationV2SearchThreadsInput { query: raw_query, limit: None, older_settled_before: None, project_ids: None, environment_label: None, titles_only: None };
+        session.client.call::<t3code_contracts::rpc::methods::OrchestrationSearchThreads>(input).await.ok()
+    })?;
+    for m in raw.iter().flat_map(|r| r.matches.iter()) {
+        check.note(format!("server match {} quality {:?} hits {:?} at {:?} snippet {:?}", m.thread_id, m.quality, m.hits, m.message_created_at, m.snippet));
+    }
+    let word = order.iter().position(|k| *k == made[0]);
+    let prefix = order.iter().position(|k| *k == made[1]);
+    check.check(
+        "the word match ranks above the newer prefix match",
+        matches!((word, prefix), (Some(w), Some(p)) if w < p),
+        format!("word at {word:?}, prefix at {prefix:?} of {}", order.len()),
+    );
     Ok(())
 }

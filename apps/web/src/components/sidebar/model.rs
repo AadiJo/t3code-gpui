@@ -325,6 +325,10 @@ pub struct SidebarSnapshot {
     pub hover_details: std::collections::HashMap<ThreadKey, crate::components::thread_hover_card::ThreadHoverDetails>,
     /// Threads the server found by their messages for a search (`useThreadSearch`), in its order.
     pub search_content_matches: Option<SearchContentMatches>,
+    /// Each environment's snooze menu settings (`ServerSettings.snoozePresets`); an environment
+    /// without an entry uses the defaults. Resolve a menu with
+    /// `state::sidebar_actions::resolve_snooze_presets` when it opens.
+    pub snooze_presets: Arc<std::collections::HashMap<EnvironmentId, Arc<[t3code_contracts::SnoozePresetSetting]>>>,
 }
 
 /// Server message matches for one search query.

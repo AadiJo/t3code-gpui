@@ -191,6 +191,14 @@ impl LiveData {
             .map(|p| (p.title.clone(), p.workspace_root.clone()))
     }
 
+    /// A project's icon override and fetched favicon, as its sidebar rows draw them.
+    fn project_icon_of(&self, project: &ProjectRef, cx: &App) -> Option<crate::components::project_favicon::ProjectIconSource> {
+        let shell = StateBridge::shell(cx);
+        let shell = shell.read(cx);
+        let p = shell.snapshot().projects.iter().find(|p| p.project_ref == *project)?;
+        Some(crate::components::project_favicon::ProjectIconSource { icon: p.icon.clone(), favicon: p.favicon.clone() })
+    }
+
     fn catalog(&self, environment: &LiveEnvironment, cx: &App) -> Arc<crate::model_selection::ModelCatalog> {
         let legacy = &crate::hooks::use_settings::ClientSettingsStore::get(cx).favorites;
         self.catalogs.borrow_mut().entry(environment.environment_id().clone()).or_default().get(environment.config.as_ref(), legacy)
@@ -250,6 +258,7 @@ impl AppData for LiveData {
                 let row = shell.read(cx).snapshot().threads.iter().find(|t| t.key == *key).cloned();
                 let source = shell.read(cx).row(key).cloned();
                 let project = row.as_ref().and_then(|row| self.project(&row.project_ref(), cx));
+                let project_icon = row.as_ref().and_then(|row| self.project_icon_of(&row.project_ref(), cx));
                 let supports_rollback = self.supports_rollback(key, cx);
                 let thread = thread.read(cx);
                 let mut timeline: TimelineInput = thread.input().clone();
@@ -272,6 +281,7 @@ impl AppData for LiveData {
                     questions: questions.into_iter().map(|(question, _)| question).collect(),
                     branch: row.as_ref().and_then(|r| r.branch.clone()),
                     project_id: row.as_ref().map(|r| r.project_id.clone()),
+                    project_icon,
                 })
             }
             ThreadTarget::Draft(id) => {
@@ -281,6 +291,7 @@ impl AppData for LiveData {
                     (draft.project.clone(), draft.workspace.branch.clone())
                 };
                 let info = project.as_ref().and_then(|p| self.project(p, cx));
+                let project_icon = project.as_ref().and_then(|p| self.project_icon_of(p, cx));
                 Some(ThreadView {
                     key: format!("draft:{}", id.0).into(),
                     project: info.as_ref().map(|(title, _)| title.clone()).unwrap_or_default(),
@@ -292,6 +303,7 @@ impl AppData for LiveData {
                     questions: Arc::from([]),
                     branch: branch.map(SharedString::from),
                     project_id: project.map(|p| p.project_id),
+                    project_icon,
                 })
             }
         }
@@ -310,6 +322,14 @@ impl AppData for LiveData {
             .unwrap_or_default();
         self.drafts.borrow_mut().insert(id.clone(), Draft { project, workspace });
         id
+    }
+
+    fn project_icon(&self, target: &ThreadTarget, cx: &mut App) -> Option<crate::components::project_favicon::ProjectIconSource> {
+        let project = match target {
+            ThreadTarget::Server(key) => StateBridge::shell(cx).read(cx).snapshot().threads.iter().find(|t| t.key == *key).map(|row| row.project_ref())?,
+            ThreadTarget::Draft(id) => self.drafts.borrow().get(id)?.project.clone()?,
+        };
+        self.project_icon_of(&project, cx)
     }
 
     fn draft_workspace_event(&self, draft: &DraftId, event: &crate::components::branch_toolbar::BranchToolbarEvent, cx: &mut App) {
@@ -597,7 +617,7 @@ impl AppData for LiveData {
             if weak.upgrade().is_none_or(|token| token.get() != generation) {
                 return;
             }
-            let mut keys = Vec::new();
+            let mut found = Vec::new();
             for link in links {
                 let environment_id = link.environment_id().clone();
                 let input = t3code_contracts::OrchestrationV2SearchThreadsInput {
@@ -609,14 +629,34 @@ impl AppData for LiveData {
                     titles_only: None,
                 };
                 if let Ok(result) = link.call::<t3code_contracts::rpc::methods::OrchestrationSearchThreads>(input).await {
-                    keys.extend(result.matches.iter().map(|m| thread_key(&environment_id, &m.thread_id)));
+                    found.extend(result.matches.into_iter().map(|m| (thread_key(&environment_id, &m.thread_id), m)));
                 }
             }
             if weak.upgrade().is_none_or(|token| token.get() != generation) {
                 return;
             }
-            let matches = crate::components::sidebar::model::SearchContentMatches { query: query.clone(), threads: Arc::new(keys) };
-            cx.update(|cx| shell.update(cx, |shell, cx| shell.set_search_matches(Some(matches), cx)));
+            cx.update(|cx| {
+                // Ranked across environments as the palette ranks them (`rankMessageMatches`).
+                let subjects: HashMap<ThreadKey, t3code_shared::palette_search::ThreadSearchSubject> = found
+                    .iter()
+                    .filter_map(|(key, _)| {
+                        let row = StateBridge::shell(cx).read(cx).row(key)?.clone();
+                        let mut subject = t3code_shared::palette_search::ThreadSearchSubject::new(row.title()).with_branch(row.source.branch.as_deref());
+                        subject.id = Some(Arc::clone(&row.source.id.0));
+                        subject.activity_at = row.latest_user_message_at.or(row.updated_at).or(row.created_at);
+                        Some((key.clone(), subject))
+                    })
+                    .collect();
+                let ranked = t3code_client_runtime::state::thread_search::rank_message_matches(
+                    found.iter().map(|(key, m)| (key.clone(), m)),
+                    |key| subjects.get(key),
+                    t3code_client_runtime::state::models::now_ms(),
+                );
+                let mut seen = std::collections::HashSet::new();
+                let keys: Vec<ThreadKey> = ranked.into_iter().filter(|key| seen.insert(key.clone())).collect();
+                let matches = crate::components::sidebar::model::SearchContentMatches { query: query.clone(), threads: Arc::new(keys) };
+                shell.update(cx, |shell, cx| shell.set_search_matches(Some(matches), cx))
+            });
         })
         .detach();
     }
