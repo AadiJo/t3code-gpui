@@ -83,6 +83,18 @@ actions!(
     ]
 );
 
+/// What an app-level event or menu row did. The command wiring check reads it, so an arm that
+/// does nothing says so instead of passing silently.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Wiring {
+    /// It ran.
+    Ran,
+    /// Another part of the app owns it and is not built yet; the user is told so.
+    Unavailable(&'static str),
+    /// Nothing handles it.
+    Dropped,
+}
+
 /// The right panel's width for a thread with none saved (`PREVIEW_PANEL_DEFAULT_WIDTH`).
 const RIGHT_PANEL_DEFAULT_WIDTH: f32 = 540.;
 
@@ -372,7 +384,9 @@ impl AppRoot {
             cx.subscribe_in(&router, window, |this, _, event: &RouteChanged, window, cx| {
                 this.apply_route(event.route.clone(), window, cx)
             }),
-            cx.subscribe_in(&sidebar, window, Self::on_sidebar_event),
+            cx.subscribe_in(&sidebar, window, |this, _, event: &SidebarEvent, window, cx| {
+                this.run_sidebar_event(event, window, cx);
+            }),
             cx.subscribe_in(&layout, window, Self::on_layout_event),
             // Drags end wherever the pointer is released, so widths are saved as they change.
             cx.observe(&layout, |_, layout, cx| Self::persist_layout(&layout, cx)),
@@ -462,6 +476,11 @@ impl AppRoot {
         &self.right_panel
     }
 
+    /// The Usage page, while its route shows.
+    pub fn usage_route(&self) -> Option<&Entity<UsageRoute>> {
+        self.usage.as_ref().map(|(usage, _)| usage)
+    }
+
     /// The media viewer, while open.
     pub fn expanded_image(&self) -> Option<&Entity<ExpandedImageDialog>> {
         self.expanded.as_ref().map(|(dialog, _)| dialog)
@@ -490,7 +509,9 @@ impl AppRoot {
 
     /// Handles what the window's command palette asks for.
     pub fn attach_palette(&mut self, palette: &Entity<CommandPalette>, window: &mut Window, cx: &mut Context<Self>) {
-        let subscription = cx.subscribe_in(palette, window, Self::on_palette_event);
+        let subscription = cx.subscribe_in(palette, window, |this, _, event: &PaletteEvent, window, cx| {
+            this.run_palette_event(event, window, cx);
+        });
         self._subscriptions.push(subscription);
     }
 
@@ -929,7 +950,8 @@ impl AppRoot {
         }
     }
 
-    fn on_sidebar_event(&mut self, _: &Entity<Sidebar>, event: &SidebarEvent, window: &mut Window, cx: &mut Context<Self>) {
+    /// Runs a sidebar event.
+    pub fn run_sidebar_event(&mut self, event: &SidebarEvent, window: &mut Window, cx: &mut Context<Self>) -> Wiring {
         match event {
             SidebarEvent::ActivateThread(key) => self.navigate(Route::Thread(key.clone()), cx),
             SidebarEvent::NewThread(project) => self.new_thread(project.clone(), window, cx),
@@ -945,13 +967,14 @@ impl AppRoot {
             SidebarEvent::ActivateDraft(id) => self.navigate(Route::Draft(DraftId(id.clone())), cx),
             SidebarEvent::DiscardDraftSession(id) => self.discard_draft_session(DraftId(id.clone()), cx),
             SidebarEvent::DraftCommand(id, command) => self.draft_command(DraftId(id.clone()), *command, cx),
-            SidebarEvent::ThreadCommand(keys, command) => self.thread_command(keys, *command, window, cx),
+            SidebarEvent::ThreadCommand(keys, command) => return self.thread_command(keys, *command, window, cx),
             SidebarEvent::RenameThread(key, title) => self.data.rename_thread(key, title.clone(), cx),
             SidebarEvent::ProjectCommand(project, MenuCommand::ProjectSettings) => self.open_project_settings(project, cx),
             SidebarEvent::SearchChanged(query) => self.data.search_threads(query.clone(), cx),
             SidebarEvent::SettledShelf(request) => self.data.show_older_settled(request.clone(), cx),
-            SidebarEvent::AddProject | SidebarEvent::OpenProjectFilter | SidebarEvent::ProjectCommand(..) => {}
+            SidebarEvent::AddProject | SidebarEvent::OpenProjectFilter | SidebarEvent::ProjectCommand(..) => return Wiring::Dropped,
         }
+        Wiring::Ran
     }
 
     /// Discards a new-thread draft; when it is the one shown, the index route takes its place.
@@ -1005,13 +1028,15 @@ impl AppRoot {
         (self.data.drafts(cx), active)
     }
 
-    /// Runs a sidebar row or context-menu command on threads.
-    fn thread_command(&mut self, keys: &[ThreadKey], command: MenuCommand, window: &mut Window, cx: &mut Context<Self>) {
+    /// Runs a sidebar row, chat header or shortcut command on threads.
+    pub fn thread_command(&mut self, keys: &[ThreadKey], command: MenuCommand, window: &mut Window, cx: &mut Context<Self>) -> Wiring {
         match self.data.thread_command(keys, command, cx) {
+            CommandOutcome::Done if command == MenuCommand::SnoozeCustom => return Wiring::Dropped,
             CommandOutcome::Done => {}
             CommandOutcome::Rename(key) => self.sidebar.update(cx, |sidebar, cx| sidebar.start_rename(key, window, cx)),
             CommandOutcome::NewThread(project) => self.new_thread(project, window, cx),
         }
+        Wiring::Ran
     }
 
     /// Starts a draft in `project` (or the most recent one) and shows it (`chat.new`).
@@ -1052,7 +1077,8 @@ impl AppRoot {
         }
     }
 
-    fn on_palette_event(&mut self, _: &Entity<CommandPalette>, event: &PaletteEvent, window: &mut Window, cx: &mut Context<Self>) {
+    /// Runs what a palette row asks for.
+    pub fn run_palette_event(&mut self, event: &PaletteEvent, window: &mut Window, cx: &mut Context<Self>) -> Wiring {
         match event {
             PaletteEvent::OpenThread { thread, .. } => self.navigate(Route::Thread(thread.clone()), cx),
             PaletteEvent::NewThreadIn(project) => self.new_thread(Some(project.clone()), window, cx),
@@ -1082,8 +1108,9 @@ impl AppRoot {
             | PaletteEvent::AddProject(_)
             | PaletteEvent::UseInAnotherApp
             | PaletteEvent::ToggleProjectPin(_)
-            | PaletteEvent::PortForward(_) => {}
+            | PaletteEvent::PortForward(_) => return Wiring::Dropped,
         }
+        Wiring::Ran
     }
 
     /// Opens "Link pull request" for the thread on screen (`openLinkPullRequestDialog`).

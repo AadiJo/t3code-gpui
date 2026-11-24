@@ -17,6 +17,7 @@ use std::sync::Arc;
 use gpui_kit::*;
 use t3code_contracts::{ProjectId, ProjectScript};
 
+use crate::app_root::Wiring;
 use crate::components::chat::thread_error_banner::{ThreadErrorBanner, ThreadErrorBannerEvent};
 use crate::state::thread_errors::ThreadErrors;
 use crate::components::branch_toolbar::{BranchToolbar, BranchToolbarEvent, BranchToolbarLayout, BranchToolbarProps};
@@ -605,6 +606,11 @@ impl ThreadRouteView {
     }
 
     fn on_chat_event(&mut self, _: &Entity<ChatView>, event: &ChatViewEvent, window: &mut Window, cx: &mut Context<Self>) {
+        self.run_chat_event(event, window, cx);
+    }
+
+    /// Runs what the chat view asks for (its header menu, the timeline's buttons, questions).
+    pub fn run_chat_event(&mut self, event: &ChatViewEvent, window: &mut Window, cx: &mut Context<Self>) -> Wiring {
         match event {
             ChatViewEvent::AnswerQuestions(answers) => {
                 if let Some(ThreadTarget::Server(key)) = self.target.clone() {
@@ -624,8 +630,9 @@ impl ThreadRouteView {
             }
             ChatViewEvent::Timeline(action) => self.on_timeline_action(action.clone(), window, cx),
             // The header menu runs the sidebar's thread commands; they are wired with the live store.
-            ChatViewEvent::ThreadCommand(..) => {}
+            ChatViewEvent::ThreadCommand(..) => return Wiring::Dropped,
         }
+        Wiring::Ran
     }
 
     /// Runs a timeline button against the store, as the web app's handlers do.

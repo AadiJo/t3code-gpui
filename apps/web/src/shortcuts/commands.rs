@@ -198,6 +198,12 @@ command_registry! {
     ThreadJump9 => JumpToThread9, Thread, t!("Thread: Jump: {n}", n = 9);
 }
 
+/// The package that builds a command whose app-level handler only says it is not available yet,
+/// for the commands that reach such a notice. The wiring check reads it.
+pub fn pending_command_owner(_command: StaticCommand) -> Option<&'static str> {
+    None
+}
+
 /// The action a command dispatches.
 pub fn command_action(command: &KeybindingCommand) -> Box<dyn Action> {
     match command {

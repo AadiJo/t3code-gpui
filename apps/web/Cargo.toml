@@ -74,6 +74,12 @@ required-features = ["test-support"]
 name = "palette_check"
 required-features = ["test-support"]
 
+# Walks every command, palette event and menu row against the real window root and fails on any
+# that reaches no handler; writes wiring.txt.
+[[example]]
+name = "command_wiring_check"
+required-features = ["test-support"]
+
 # Clicks through the git actions, branch picker, dialogs and menus headlessly and screenshots each step.
 [[example]]
 name = "git_actions_check"
