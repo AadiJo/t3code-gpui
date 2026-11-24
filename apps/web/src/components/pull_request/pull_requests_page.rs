@@ -255,6 +255,8 @@ pub struct PullRequestsPage {
     page_size: u64,
     loading_more: bool,
     views_menu: Entity<SavedViewsMenu<PullRequestSavedViews>>,
+    /// The list column's width, for the `@lg/pr-list` container query.
+    list_width: Rc<std::cell::Cell<Pixels>>,
     /// Fixed clock for scenes; `None` reads the system clock.
     pub now_ms: Option<i64>,
     pub last_filter: FilterTiming,
@@ -333,6 +335,7 @@ impl PullRequestsPage {
             page_size: PAGE_SIZE,
             loading_more: false,
             views_menu,
+            list_width: Default::default(),
             now_ms: None,
             last_filter: FilterTiming::default(),
             focus: cx.focus_handle(),
@@ -1001,7 +1004,11 @@ impl PullRequestsPage {
             .flex_wrap()
             .items_center()
             .gap(theme.sp(2.))
-            .child(div().id("pr-search").min_w_0().flex_1().child(TextInput::new(&self.search).size(InputSize::Lg).leading_icon(IconName::Search)))
+            .child({
+                // `basis-full @lg/pr-list:basis-0 @lg/pr-list:flex-1`.
+                let wide = self.list_width.get() >= theme.rem(32.);
+                div().id("pr-search").min_w_0().when(wide, |d| d.flex_1()).when(!wide, |d| d.w_full()).child(TextInput::new(&self.search).size(InputSize::Lg).leading_icon(IconName::Search))
+            })
             .child(sort_menu)
             .child(filters_menu)
             .child(self.views_menu.clone())
@@ -1533,6 +1540,8 @@ impl Render for PullRequestsPage {
         div()
             .id("pull-requests-page")
             .test_support()
+            .relative()
+            .child(width_probe(cx.entity().downgrade(), self.list_width.clone()))
             .key_context(KEY_CONTEXT)
             .track_focus(&self.focus)
             .on_action(cx.listener(|this, _: &SelectNext, _, cx| this.move_selection(1, cx)))
@@ -1641,6 +1650,22 @@ fn render_load_more(page: &Entity<PullRequestsPage>, theme: &AppTheme, loading: 
         }
         None => row.child(t!("Narrow your search to find more pull requests.")).into_any_element(),
     }
+}
+
+/// Records the page's width each frame and re-renders when it changes, standing in for the
+/// web's container queries (`@lg/pr-list`, `@lg/issue-list`).
+pub fn width_probe<V: 'static>(view: gpui_kit::WeakEntity<V>, width: Rc<std::cell::Cell<Pixels>>) -> impl IntoElement {
+    gpui_kit::canvas(
+        move |bounds, _, cx| {
+            if width.get() != bounds.size.width {
+                width.set(bounds.size.width);
+                view.update(cx, |_, cx| cx.notify()).ok();
+            }
+        },
+        |_, _, _, _| {},
+    )
+    .absolute()
+    .size_full()
 }
 
 /// `PullRequestListGhost`: placeholder rows while the first read travels. The fork pulses
