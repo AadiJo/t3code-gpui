@@ -71,6 +71,7 @@ impl Sidebar {
                     .child(
                         div()
                             .font_weight(FontWeight::NORMAL)
+                            .font_features(super::style::tabular_figures())
                             .child(count.to_string()),
                     )
                     .child(chevron(expanded, tone, colors))

@@ -19,8 +19,8 @@ use crate::{
     i18n::t,
 };
 
-/// `max-w-xl`.
-pub const PALETTE_WIDTH: f32 = 576.;
+/// `max-w-xl`, in rem so it follows the Interface size.
+pub const PALETTE_WIDTH_REM: f32 = 36.;
 
 /// The popup frame; `height` fixes it (`h-105` for content search).
 pub fn palette_frame(theme: &AppTheme, width: Pixels, height: Option<Pixels>) -> Div {

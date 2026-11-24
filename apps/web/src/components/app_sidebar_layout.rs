@@ -45,11 +45,12 @@ impl TitlebarPlatform {
         }
     }
 
-    /// x of the sidebar toggle (`--workspace-controls-left` + `ml-px`).
-    pub fn controls_left(self) -> Pixels {
+    /// x of the sidebar toggle (`--workspace-controls-left` + `ml-px`), at `rem`.
+    pub fn controls_left(self, rem: Pixels) -> Pixels {
+        let inset = rem * 0.75 + px(1.);
         match self {
-            Self::Mac => MAC_CONTROLS_LEFT,
-            Self::Overlay => OVERLAY_CONTROLS_LEFT,
+            Self::Mac => MAC_TRAFFIC_LIGHTS_WIDTH + inset,
+            Self::Overlay => inset,
         }
     }
 
@@ -57,7 +58,30 @@ impl TitlebarPlatform {
     /// (`--workspace-titlebar-content-left`): the controls' inset, the 1.75rem toggle and the
     /// 0.75rem gap, at `rem`.
     pub fn titlebar_content_left(self, rem: Pixels) -> Pixels {
-        self.controls_left() - px(1.) + rem * 1.75 + rem * 0.75
+        self.controls_left(rem) - px(1.) + rem * 1.75 + rem * 0.75
+    }
+}
+
+/// Which titlebar panel controls the shown route has (`PanelLayoutControls` per page).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum TitlebarControls {
+    /// A thread (or no thread): maximize while the panel is open, details, terminal, right panel.
+    #[default]
+    Thread,
+    /// The issues page: the right panel toggle alone, inside the page header's padding.
+    Issues,
+    /// The pull requests page: the right panel toggle alone, at the window's controls inset.
+    PullRequests,
+}
+
+impl TitlebarControls {
+    /// The controls `route` shows.
+    pub fn for_route(route: &crate::router::Route) -> Self {
+        match route {
+            crate::router::Route::Issues { .. } => Self::Issues,
+            crate::router::Route::PullRequests { .. } => Self::PullRequests,
+            _ => Self::Thread,
+        }
     }
 }
 
@@ -105,6 +129,7 @@ pub struct AppSidebarLayout {
     terminal_open: bool,
     terminal_height: Pixels,
     details_open: bool,
+    titlebar_controls: TitlebarControls,
     /// The sidebar's and right panel's open and close transitions.
     sidebar_motion: PanelTransition,
     right_motion: PanelTransition,
@@ -150,6 +175,7 @@ impl AppSidebarLayout {
             terminal_open: false,
             terminal_height: TERMINAL_DEFAULT_HEIGHT,
             details_open: false,
+            titlebar_controls: TitlebarControls::Thread,
             sidebar_motion: PanelTransition::new(true),
             right_motion: PanelTransition::new(false),
             sidebar_fraction: 1.,
@@ -223,6 +249,14 @@ impl AppSidebarLayout {
         let next = (right_open, right_open && right_maximized, terminal_open);
         if (self.right_open, self.right_maximized, self.terminal_open) != next {
             (self.right_open, self.right_maximized, self.terminal_open) = next;
+            cx.notify();
+        }
+    }
+
+    /// Sets the titlebar controls for the shown route.
+    pub fn set_titlebar_controls(&mut self, controls: TitlebarControls, cx: &mut Context<Self>) {
+        if self.titlebar_controls != controls {
+            self.titlebar_controls = controls;
             cx.notify();
         }
     }
@@ -323,7 +357,8 @@ impl AppSidebarLayout {
         self.sidebar_width
     }
 
-    /// Left padding the main pane's header needs to clear the floating toggle.
+    /// Left padding the main pane's header needs to clear the floating toggle. It replaces the
+    /// header's own padding (`workspaceTitlebar.ts`), so headers take the larger of the two.
     /// Eases with the sidebar's transition (`transition-[padding-left]`).
     pub fn header_content_left(&self) -> Pixels {
         if self.sheet_mode {
@@ -653,8 +688,8 @@ impl Render for AppSidebarLayout {
             .h(topbar)
             .flex()
             .items_center()
-            .px_5()
-            .pl(px(20.) + self.header_content_left())
+            .px(self.rem * 1.25)
+            .pl((self.rem * 1.25).max(self.header_content_left()))
             .border_b_1()
             .border_color(colors.border)
             .text_xs()
@@ -793,7 +828,7 @@ impl Render for AppSidebarLayout {
         let sidebar_toggle = div()
             .absolute()
             .top_0()
-            .left(self.controls_platform().controls_left())
+            .left(self.controls_platform().controls_left(self.rem))
             .h(topbar)
             .flex()
             .items_center()
@@ -812,15 +847,22 @@ impl Render for AppSidebarLayout {
                 .on_click(cx.listener(|this, _, _, cx| this.toggle_sidebar(cx))),
             );
 
+        let list_page = self.titlebar_controls != TitlebarControls::Thread;
+        // The issues page's toggle sits in its header's `px-5`, not at the window inset.
+        let controls_right = if self.titlebar_controls == TitlebarControls::Issues {
+            self.rem * 1.25
+        } else {
+            colors.s(CONTROLS_RIGHT - px(1.)) + px(1.)
+        };
         let right_controls = div()
             .absolute()
             .top_0()
-            .right(colors.s(CONTROLS_RIGHT - px(1.)) + px(1.) + caption_width)
+            .right(controls_right + caption_width)
             .h(topbar)
             .flex()
             .items_center()
             .gap(colors.s(TITLEBAR_CONTROL_GAP))
-            .when(self.right_open, |d| {
+            .when(self.right_open && !list_page, |d| {
                 d.child(
                     self.titlebar_toggle(
                         "toggle-maximize-panel",
@@ -836,7 +878,7 @@ impl Render for AppSidebarLayout {
                     .on_click(cx.listener(|this, _, _, cx| this.press(PanelToggle::Maximize, cx))),
                 )
             })
-            .child(
+            .when(!list_page, |d| d.child(
                 self.titlebar_toggle(
                     "toggle-details",
                     IconName::SquareMenu,
@@ -845,8 +887,8 @@ impl Render for AppSidebarLayout {
                     &colors,
                 )
                     .on_click(cx.listener(|this, _, _, cx| this.press(PanelToggle::Details, cx))),
-            )
-            .child(
+            ))
+            .when(!list_page, |d| d.child(
                 self.titlebar_toggle(
                     "toggle-terminal",
                     if self.terminal_open {
@@ -859,7 +901,7 @@ impl Render for AppSidebarLayout {
                     &colors,
                 )
                 .on_click(cx.listener(|this, _, _, cx| this.press(PanelToggle::Terminal, cx))),
-            )
+            ))
             .child(
                 self.titlebar_toggle(
                     "toggle-right-panel",
@@ -872,6 +914,8 @@ impl Render for AppSidebarLayout {
                     false,
                     &colors,
                 )
+                // A list page has no surface until a row is picked (`disabled:opacity-64`).
+                .when(list_page && !self.right_open, |d| d.opacity(0.64))
                 .on_click(cx.listener(|this, _, _, cx| this.press(PanelToggle::RightPanel, cx))),
             );
 

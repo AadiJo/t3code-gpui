@@ -46,9 +46,9 @@ impl RenderOnce for ProjectMonogram {
         let glyphs: Vec<&str> = self.text.graphemes(true).take(2).collect();
         // `textLength` spreads the glyphs evenly over 6 or 12 units centred on x=8:
         // GPUI cannot stretch a glyph, so each one is centred in its share instead.
-        // Glyph centres sit 6.5 units apart: unstretched glyphs need the extra
-        // half unit to cover the same 11-unit ink width.
-        let pitch = CELL + 0.5;
+        // Glyph centres sit 7.5 units apart: unstretched glyphs need the extra
+        // unit and a half to match the stretched pair's ink width on the Mac.
+        let pitch = CELL + 1.5;
         let first_centre = VIEWBOX / 2. - pitch / 2. * (glyphs.len() as f32 - 1.);
         let font_size = FONT_SIZE * scale;
         // A line box as tall as the font puts the baseline about 0.68em down.

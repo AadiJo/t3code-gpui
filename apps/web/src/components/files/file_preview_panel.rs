@@ -1109,14 +1109,15 @@ impl Render for FilesPanel {
             let breadcrumbs = self.render_breadcrumbs(&open.path, cx).into_any_element();
             let actions = self.render_actions(open, cx);
             div()
-                .h(rems(2.5))
+                .h(rems(1.75))
+                .mb(rems(0.75))
                 .flex_none()
                 .flex()
                 .items_center()
                 .gap(rems(0.5))
                 .px(rems(0.75))
                 .border_b_1()
-                .border_color(colors.border.opacity(0.6))
+                .border_color(gpui_kit::transparent_black())
                 .bg(colors.canvas)
                 .child(breadcrumbs)
                 .children(actions)

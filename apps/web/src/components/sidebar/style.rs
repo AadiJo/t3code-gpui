@@ -14,10 +14,8 @@ pub const TOPBAR_HEIGHT_OVERLAY: Pixels = px(40.);
 pub const TITLEBAR_CONTROL_SIZE: Pixels = px(28.);
 /// Gap between the right-hand titlebar toggles (`gap-1`), at a 16px rem.
 pub const TITLEBAR_CONTROL_GAP: Pixels = px(4.);
-/// macOS: 70px traffic lights + 12px + `ml-px`.
-pub const MAC_CONTROLS_LEFT: Pixels = px(83.);
-/// Overlay platforms: 12px + `ml-px`.
-pub const OVERLAY_CONTROLS_LEFT: Pixels = px(13.);
+/// macOS traffic lights: `--desktop-window-controls-inset` is 70px plus the 0.75rem gap.
+pub const MAC_TRAFFIC_LIGHTS_WIDTH: Pixels = px(70.);
 /// 0.75rem + `mr-px` from the right edge at a 16px rem (plus caption width on overlay platforms).
 pub const CONTROLS_RIGHT: Pixels = px(13.);
 /// One native caption button on Windows.
@@ -196,4 +194,11 @@ pub fn mix(a: Hsla, b: Hsla, weight: f32) -> Hsla {
         a: lerp(a.a, b.a),
     }
     .into()
+}
+
+/// `font-variant-numeric: tabular-nums`, as the row status slot and shelf counts set it.
+pub fn tabular_figures() -> gpui_kit::FontFeatures {
+    static FEATURES: std::sync::LazyLock<gpui_kit::FontFeatures> =
+        std::sync::LazyLock::new(|| gpui_kit::FontFeatures(std::sync::Arc::new(vec![("tnum".into(), 1)])));
+    FEATURES.clone()
 }

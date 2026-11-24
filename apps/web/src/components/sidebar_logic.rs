@@ -567,6 +567,8 @@ pub enum RowVariant {
     Folder,
     /// Two-line row inside a project folder (`folder-multiline`).
     FolderMultiline,
+    /// A thread search result (`SidebarSearchResultRow`): `min-h-9`, title and time.
+    SearchResult,
 }
 
 /// A shelf at the bottom of the list.
@@ -814,7 +816,7 @@ pub fn build_sidebar_list(snapshot: &SidebarSnapshot, options: &SidebarListOptio
         }
         for thread in &results {
             let section = resolve_section(thread, snapshot.now, working_shelf);
-            push_thread(&mut list, thread, RowVariant::Card, section);
+            push_thread(&mut list, thread, RowVariant::SearchResult, section);
         }
         list.groups = groups;
         return list;

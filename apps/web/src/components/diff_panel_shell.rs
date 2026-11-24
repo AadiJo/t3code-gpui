@@ -1,5 +1,6 @@
-//! The diff panel frame: a 40px header row over the body, and the loading
-//! skeleton. Ports `DiffPanelShell.tsx` for the non-drag-region modes.
+//! The diff panel frame: a header row over the body, and the loading skeleton. Ports
+//! `DiffPanelShell.tsx` in the `embedded` mode inside the inline right panel, where
+//! `index.css` makes every surface subheader `h-7 mb-3` with a transparent rule.
 
 use gpui_kit::*;
 
@@ -30,15 +31,16 @@ impl RenderOnce for DiffPanelShell {
             .text_color(colors.text)
             .child(
                 div()
-                    .h(rems(2.5))
+                    .h(rems(1.75))
+                    .mb(rems(0.75))
                     .flex_none()
                     .flex()
                     .items_center()
                     .justify_between()
                     .gap(rems(0.5))
-                    .px(rems(1.))
+                    .px(rems(0.5))
                     .border_b_1()
-                    .border_color(colors.border.opacity(0.6))
+                    .border_color(gpui_kit::transparent_black())
                     .child(self.header),
             )
             .child(div().flex_1().min_h_0().flex().flex_col().child(self.body))

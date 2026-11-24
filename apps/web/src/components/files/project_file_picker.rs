@@ -18,7 +18,7 @@ use t3code_contracts::{ProjectEntry, ProjectEntryKind};
 
 use crate::{
     ActiveAppTheme as _,
-    components::search::palette_shell::{PALETTE_WIDTH, highlighted_text, palette_footer, palette_frame, palette_input},
+    components::search::palette_shell::{PALETTE_WIDTH_REM, highlighted_text, palette_footer, palette_frame, palette_input},
     file_source::{SharedWorkspaceFiles, normalize_path_query},
     i18n::t,
     pierre_icons::file_icon,
@@ -26,9 +26,8 @@ use crate::{
 
 /// `PROJECT_FILE_PICKER_RESULT_LIMIT`.
 pub const PICKER_LIMIT: u64 = 200;
-const ROW_HEIGHT: f32 = 44.;
-/// `max-h-[min(34rem,76vh)]`, inside the popup's `max-h-105` less the field and footer.
-const LIST_MAX_HEIGHT: f32 = 328.;
+/// A `CommandItem` with a description: `py-1.5`, an 18.75px title line and a 15px path line, in rem.
+const ROW_HEIGHT_REM: f32 = 3.;
 
 /// One shown result with its highlight positions (byte offsets).
 #[derive(Clone, Debug)]
@@ -255,12 +254,13 @@ impl ProjectFilePicker {
                 let row = div()
                     .id(("file-picker-row", index))
                     .w_full()
-                    .h(px(ROW_HEIGHT))
+                    .h(theme.rem(ROW_HEIGHT_REM))
                     .px(rems(0.5))
+                    .py(rems(0.375))
                     .flex()
-                    .items_center()
-                    .gap(rems(0.625))
-                    .rounded(theme.radii.lg)
+                    .items_start()
+                    .gap(rems(0.5))
+                    .rounded(theme.radii.sm)
                     .cursor_pointer()
                     .when(active, |el| el.bg(colors.accent_surface))
                     .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
@@ -273,17 +273,19 @@ impl ProjectFilePicker {
                         this.selected = index;
                         this.open_selected(cx);
                     }))
-                    .child(file_icon(&found.path, theme.rem(1.), cx))
+                    // The icon centres on the title line.
+                    .child(div().flex_none().mt(rems(0.1875)).child(file_icon(&found.path, theme.rem(1.), cx)))
                     .child(
                         div()
                             .flex_1()
                             .min_w_0()
                             .flex()
                             .flex_col()
-                            .child(div().text_size(px(13.)).text_color(colors.text).whitespace_nowrap().overflow_hidden().text_ellipsis().child(highlighted_text(&found.name, &name_indices, colors.text)))
+                            .child(div().text_size(rems(0.875)).line_height(rems(1.25)).text_color(colors.text).whitespace_nowrap().overflow_hidden().text_ellipsis().child(highlighted_text(&found.name, &name_indices, colors.text)))
                             .child(
                                 div()
-                                    .text_size(px(11.))
+                                    .text_size(rems(0.75))
+                                    .line_height(rems(1.))
                                     .text_color(colors.muted_foreground)
                                     .whitespace_nowrap()
                                     .overflow_hidden()
@@ -291,7 +293,7 @@ impl ProjectFilePicker {
                                     .child(highlighted_text(&found.path, &path_indices, colors.text)),
                             ),
                     );
-                div().w_full().px(rems(0.5)).child(row).into_any_element()
+                row.into_any_element()
             })
             .collect()
     }
@@ -313,30 +315,37 @@ impl Render for ProjectFilePicker {
             };
             div().h(px(120.)).flex().items_center().justify_center().text_size(px(13.)).text_color(colors.muted_foreground).child(message).into_any_element()
         } else {
-            let height = (self.matches.len() as f32 * ROW_HEIGHT + 40.).min(LIST_MAX_HEIGHT);
+            // `CommandList p-2` around one group: its `h-7` label, then the rows; the popup's
+            // `max-h-105` caps it.
+            let height = theme.rem(1.75 + ROW_HEIGHT_REM * self.matches.len() as f32 + 1.);
             div()
-                .h(px(height))
+                .h(height)
+                .min_h_0()
+                .flex_shrink(1.)
                 .flex()
                 .flex_col()
+                .p(rems(0.5))
                 .child(
                     div()
-                        .px(rems(1.))
-                        .pt(rems(0.5))
-                        .pb(rems(0.25))
-                        .text_size(px(11.))
+                        .flex_none()
+                        .px(rems(0.5))
+                        .py(rems(0.375))
+                        .text_size(rems(0.75))
+                        .line_height(rems(1.))
                         .font_weight(gpui_kit::FontWeight::MEDIUM)
                         .text_color(colors.muted_foreground)
                         .child(self.project_name.clone()),
                 )
-                .child(uniform_list("file-picker-rows", self.matches.len(), cx.processor(Self::render_rows)).track_scroll(&self.scroll).flex_1().pb(rems(0.5)))
+                .child(uniform_list("file-picker-rows", self.matches.len(), cx.processor(Self::render_rows)).track_scroll(&self.scroll).flex_1())
                 .into_any_element()
         };
-        palette_frame(&theme, px(PALETTE_WIDTH), None)
+        palette_frame(&theme, theme.rem(PALETTE_WIDTH_REM), None)
+            .flex()
+            .flex_col()
             .id("project-file-picker")
             .track_focus(&self.focus_handle)
             .on_key_down(cx.listener(Self::on_key_down))
             .child(palette_input(&theme, &self.input, None))
-            .child(div().h(px(1.)).bg(colors.border.opacity(0.6)))
             .child(body)
             .child(palette_footer(&theme, t!("Open file"), t!("Back", context = "button, leaves the file picker")))
     }

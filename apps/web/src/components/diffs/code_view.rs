@@ -1679,7 +1679,8 @@ impl CodeView {
             .absolute()
             .top(px(y))
             .left_0()
-            .right(px(SCROLLBAR_WIDTH))
+            // The scrollbar overlays the header, as Chromium's overlay scrollbar does.
+            .right_0()
             .h(px(HEADER_HEIGHT))
             .flex()
             .items_center()

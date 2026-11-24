@@ -207,7 +207,8 @@ impl RenderOnce for Toggle {
             ToggleSize::Xs => (sp(6.), sp(1.) - px(1.), r.md, TextSize::Sm, IconSize::Md),
             ToggleSize::Compact => (sp(7.), sp(1.) - px(1.), r.md, TextSize::Xs, IconSize::Sm),
             ToggleSize::Lg => (sp(9.), sp(2.5) - px(1.), r.lg, TextSize::Sm, IconSize::Md),
-            ToggleSize::Segmented => (sp(6.), sp(2.5), r.md, TextSize::Xs, IconSize::Md),
+            // The base `sm:text-sm` outranks the size's `text-xs` at desktop widths.
+            ToggleSize::Segmented => (sp(6.), sp(2.5), r.md, TextSize::Sm, IconSize::Md),
         };
         let (radius, padding) = match self.variant {
             ToggleVariant::Pill => (r.full, sp(3.)),

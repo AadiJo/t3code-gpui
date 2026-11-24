@@ -77,7 +77,8 @@ struct Session {
     /// Where focus was when the palette opened; commands run from there.
     return_focus: Option<FocusHandle>,
     root_groups: Vec<PaletteGroup>,
-    nested_items: Vec<Rc<PaletteItem>>,
+    /// The root actions; their submenu options join a query's search (`buildNestedSearchItems`).
+    actions: Vec<Rc<PaletteItem>>,
     thread_items: Vec<Rc<PaletteItem>>,
     project_items: Vec<Rc<PaletteItem>>,
     settings_items: Vec<Rc<PaletteItem>>,
@@ -217,8 +218,7 @@ impl CommandPalette {
             }
         }
         let actions: Vec<Rc<PaletteItem>> = actions.into_iter().map(Rc::new).collect();
-        let nested_items = build_nested_search_items(&actions, "");
-        let root_groups = build_root_groups(actions, recent);
+        let root_groups = build_root_groups(actions.clone(), recent);
         let settings_items = source
             .settings()
             .iter()
@@ -270,7 +270,7 @@ impl CommandPalette {
             input,
             return_focus,
             root_groups,
-            nested_items,
+            actions,
             thread_items,
             project_items: project_search_items(&projects, &source.environments()),
             settings_items,
@@ -527,12 +527,14 @@ impl CommandPalette {
             Some(view) => (&view.groups, true),
             None => (&session.root_groups, false),
         };
+        // Built per query: a query that only names a submenu keeps the submenu row itself.
+        let nested_items = build_nested_search_items(&session.actions, &session.search.query);
         let shown = filter_command_palette_groups(&FilterInput {
             active_groups,
             query: &session.search.query,
             is_in_submenu: in_submenu,
             root_groups: in_submenu.then_some(session.root_groups.as_slice()),
-            nested_items: &session.nested_items,
+            nested_items: &nested_items,
             project_items: &session.project_items,
             settings_items: &session.settings_items,
             thread_items: &session.thread_items,

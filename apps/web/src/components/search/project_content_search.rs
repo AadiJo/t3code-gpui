@@ -16,7 +16,7 @@ use t3code_contracts::ProjectContentMatch;
 
 use super::{
     highlighted_search_line::highlighted_search_line,
-    palette_shell::{PALETTE_WIDTH, palette_footer, palette_frame, palette_input},
+    palette_shell::{PALETTE_WIDTH_REM, palette_footer, palette_frame, palette_input},
 };
 use crate::{
     ActiveAppTheme as _,
@@ -435,7 +435,7 @@ impl Render for ProjectContentSearch {
                 .children(sticky)
                 .into_any_element()
         };
-        palette_frame(&theme, px(PALETTE_WIDTH), Some(px(DIALOG_HEIGHT)))
+        palette_frame(&theme, theme.rem(PALETTE_WIDTH_REM), Some(px(DIALOG_HEIGHT)))
             .id("project-content-search")
             .track_focus(&self.focus_handle)
             .on_key_down(cx.listener(Self::on_key_down))

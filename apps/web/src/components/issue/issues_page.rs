@@ -514,20 +514,37 @@ impl Render for IssuesPage {
                 _ => None,
             })
             .collect();
-        let mut list = div().flex().flex_col().gap(rems(1.));
+        let mut list = div().flex().flex_col().gap(rems(1.5));
+        let filtered = !self.query.trim().is_empty();
         for group in &self.groups {
-            let mut column = div().flex().flex_col().child(
+            let (provider_name, provider_icon) = super::issue_presentation::issue_tracker_presentation(group.tracker.tracker.as_str());
+            let projects = t!("{count, plural, one {{count} project} other {{count} projects}}", count = group.tracker.project_count);
+            let mut column = div().flex().flex_col().gap(rems(0.25)).child(
                 div()
                     .flex()
                     .items_center()
                     .gap(rems(0.375))
                     .px(rems(0.75))
-                    .pb(rems(0.375))
                     .ui_text(&theme, TextSize::Xs, weight::MEDIUM)
                     .text_color(theme.colors.muted_foreground)
-                    .child(SharedString::from(format!("{} · {}", group.tracker.tracker.as_str(), group.tracker.host)))
-                    .child(group.rows.len().to_string()),
+                    .child(Icon::new(provider_icon).size(IconSize::Custom(theme.rem(0.875))).color(theme.colors.muted_foreground))
+                    .when(provider_name.to_lowercase() == group.tracker.host, |el| el.child(provider_name.clone()))
+                    .when(provider_name.to_lowercase() != group.tracker.host, |el| {
+                        el.child(provider_name.clone()).child(div().font_weight(weight::NORMAL).child(SharedString::from(format!("· {}", group.tracker.host))))
+                    })
+                    .child(div().font_weight(weight::NORMAL).child(SharedString::from(format!("· {projects}")))),
             );
+            if !group.tracker.configured {
+                let detail = group.tracker.detail.clone().map(SharedString::from).unwrap_or_else(|| t!("This tracker cannot be read right now."));
+                column = column.child(div().px(rems(0.75)).ui_text(&theme, TextSize::Sm, weight::NORMAL).text_color(theme.colors.muted_foreground).child(detail));
+            }
+            for error in &group.errors {
+                column = column.child(div().px(rems(0.75)).ui_text(&theme, TextSize::Xs, weight::NORMAL).text_color(theme.colors.destructive()).child(SharedString::from(format!("{}: {}", error.project_title, error.message))));
+            }
+            if group.tracker.configured && group.rows.is_empty() && group.errors.is_empty() {
+                let empty = if filtered { t!("Nothing matches that.") } else { t!("No issues under these filters.") };
+                column = column.child(div().px(rems(0.75)).ui_text(&theme, TextSize::Sm, weight::NORMAL).text_color(theme.colors.muted_foreground).child(empty));
+            }
             for row in &group.rows {
                 let entry = row.entry.clone();
                 let env = row.environment_id.clone();
@@ -580,9 +597,6 @@ impl Render for IssuesPage {
                                 ),
                         ),
                 );
-            }
-            for error in &group.errors {
-                column = column.child(div().px(rems(0.75)).ui_text(&theme, TextSize::Xs, weight::NORMAL).text_color(theme.colors.muted_foreground).child(SharedString::from(format!("{}: {}", error.project_title, error.message))));
             }
             for env in group.more.clone() {
                 let host = group.tracker.host.clone();
@@ -679,9 +693,6 @@ impl Render for IssuesPage {
                                             .description(t!("Add a project whose remote is on a supported tracker.")),
                                     ),
                                 )
-                            })
-                            .when(!self.groups.is_empty() && self.groups.iter().all(|g| g.rows.is_empty()) && !self.loads.values().any(|l| matches!(l, Load::Loading)), |el| {
-                                el.child(div().py(rems(2.)).flex().justify_center().text_color(theme.colors.muted_foreground).child(t!("No issues under these filters.")))
                             })
                             .child(list),
                     ),

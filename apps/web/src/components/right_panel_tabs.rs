@@ -180,18 +180,18 @@ fn surface_icon(kind: RightPanelKind) -> IconName {
         RightPanelKind::Diff => IconName::FileDiff,
         RightPanelKind::Files => IconName::Files,
         RightPanelKind::File => IconName::File,
-        RightPanelKind::Preview => IconName::Globe,
+        RightPanelKind::Preview => IconName::Earth,
         RightPanelKind::Device => IconName::Smartphone,
         RightPanelKind::Terminal => IconName::SquareTerminal,
         RightPanelKind::PullRequest => IconName::GitPullRequestArrow,
-        RightPanelKind::PullRequests => IconName::Link,
+        RightPanelKind::PullRequests => IconName::Link2,
         RightPanelKind::Issue => IconName::CircleDot,
         RightPanelKind::SideChat => IconName::MessagesSquare,
     }
 }
 
 /// One launcher entry: a kind the `+` menu and the empty panel offer.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 enum Launch {
     Surface(SingletonKind),
     Terminal,
@@ -856,10 +856,13 @@ impl RightPanel {
     }
 
     fn render_launcher(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        // Linked items need a linked pull request or issue (`SURFACE_UNAVAILABLE_HINTS`).
+        let linked_items = self.data.palette_source().active_thread_has_linked_items();
         let theme = cx.app_theme();
         let c = &theme.colors;
         let hover = c.accent_surface.opacity(0.6);
         let rows = Launch::ALL.into_iter().enumerate().map(|(index, launch)| {
+            let available = launch != Launch::Surface(SingletonKind::PullRequests) || linked_items;
             div()
                 .id(("launch", index))
                 .h(rems(2.))
@@ -869,14 +872,15 @@ impl RightPanel {
                 .gap(rems(0.625))
                 .px(rems(0.625))
                 .rounded(theme.radii.control)
-                .cursor_pointer()
-                .hover(move |s| s.bg(hover))
                 .ui_text(theme, TextSize::Sm, weight::NORMAL)
                 .text_color(c.text)
-                .child(Icon::new(launch.icon()).size(IconSize::Md).color(c.muted_foreground))
-                .child(div().flex_1().child(launch.label()))
-                .child(div().ui_text(theme, TextSize::Xs, weight::NORMAL).text_color(c.muted_foreground).child(launch.shortcut()))
-                .on_click(cx.listener(move |this, _, _, cx| this.launch(launch, cx)))
+                .child(Icon::new(launch.icon()).size(IconSize::Md).color(c.text))
+                .child(div().flex_1().min_w_0().truncate().child(launch.label()))
+                .child(crate::components::ui::kbd::Kbd::new(launch.shortcut()))
+                .when(!available, |d| d.opacity(0.5))
+                .when(available, |d| {
+                    d.cursor_pointer().hover(move |s| s.bg(hover)).on_click(cx.listener(move |this, _, _, cx| this.launch(launch, cx)))
+                })
         });
         div()
             .flex_1()

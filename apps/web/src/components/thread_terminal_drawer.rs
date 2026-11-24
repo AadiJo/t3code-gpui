@@ -497,21 +497,25 @@ impl ThreadTerminalDrawer {
             let activate_id = terminal_id.clone();
             let icon = div()
                 .id(SharedString::from(format!("terminal-row-close-{terminal_id}")))
-                .size(rems(0.75))
+                // `PanelTabCloseButton` is `size-4` around the `size-3` glyph.
+                .size(if self.can_operate { rems(1.) } else { rems(0.75) })
                 .flex_none()
+                .flex()
+                .items_center()
+                .justify_center()
                 .relative()
                 .child(svg().path(IconName::SquareTerminal.path()).size(rems(0.75)).text_color(text).group_hover(row_id.clone(), |style| style.invisible()))
                 .when(self.can_operate, |icon| {
                     icon.child(
-                        svg()
-                            .path(IconName::X.path())
+                        div()
                             .absolute()
-                            .top_0()
-                            .left_0()
-                            .size(rems(0.75))
-                            .text_color(text)
+                            .inset_0()
+                            .flex()
+                            .items_center()
+                            .justify_center()
                             .invisible()
-                            .group_hover(row_id.clone(), |style| style.visible()),
+                            .group_hover(row_id.clone(), |style| style.visible())
+                            .child(svg().path(IconName::X.path()).size(rems(0.75)).text_color(text)),
                     )
                     .cursor_pointer()
                     .tooltip(tooltip(close_label))
