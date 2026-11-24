@@ -247,7 +247,7 @@ impl ConnectionRuntime {
         handle.spawn(watch_registry(registry.clone(), events.clone()));
         handle.spawn(detect_wake(registry.clone()));
         if let Some(cloud) = &cloud {
-            handle.spawn(watch_account(cloud.clerk.clone(), registry.clone(), auth.clone(), events.clone()));
+            handle.spawn(watch_account(cloud.clerk.clone(), cloud.relay.clone(), registry.clone(), auth.clone(), events.clone()));
             handle.spawn(restore_account(cloud.clerk.clone()));
         }
         apply_events(state.clone(), receiver, cx);
@@ -434,46 +434,8 @@ impl ConnectionRuntime {
     /// Lists the account's environments and checks each one's tunnel.
     pub fn refresh_relay(&self, cx: &App) {
         let Some(cloud) = &self.cloud else { return };
-        let (clerk, relay, events) = (cloud.clerk.clone(), cloud.relay.clone(), self.events.clone());
         let previous = self.state.read(cx).cloud.as_ref().map(|c| c.discovery.environments.clone()).unwrap_or_default();
-        self.handle.spawn(async move {
-            let send = |discovery| _ = events.unbounded_send(BridgeEvent::Discovery(discovery));
-            send(RelayDiscovery { refreshing: true, error: None, environments: previous.clone() });
-            let jwt = match clerk.template_token().await {
-                Ok(Some(jwt)) => jwt,
-                Ok(None) => return send(RelayDiscovery::default()),
-                Err(error) => {
-                    return send(RelayDiscovery { refreshing: false, error: Some(error.to_string().into()), environments: previous });
-                }
-            };
-            let records = match relay.list_environments(&jwt).await {
-                Ok(records) => records,
-                Err(error) => {
-                    return send(RelayDiscovery { refreshing: false, error: Some(error.to_string().into()), environments: previous });
-                }
-            };
-            let checking = records
-                .iter()
-                .map(|record| RelayEnvironment { record: record.clone(), availability: RelayAvailability::Checking })
-                .collect();
-            send(RelayDiscovery { refreshing: false, error: None, environments: checking });
-            let statuses =
-                futures::future::join_all(records.iter().map(|record| relay.environment_status(&jwt, &record.environment_id)))
-                    .await;
-            let environments = records
-                .into_iter()
-                .zip(statuses)
-                .map(|(record, status)| RelayEnvironment {
-                    record,
-                    availability: match status {
-                        Ok(status) if status.status == "online" => RelayAvailability::Online,
-                        Ok(_) => RelayAvailability::Offline,
-                        Err(_) => RelayAvailability::Error,
-                    },
-                })
-                .collect();
-            send(RelayDiscovery { refreshing: false, error: None, environments });
-        });
+        self.handle.spawn(discover_relay(cloud.clerk.clone(), cloud.relay.clone(), self.events.clone(), previous));
     }
 
     /// Saves a T3 Connect route for an environment found on the account.
@@ -696,6 +658,51 @@ async fn watch_supervisor(id: EnvironmentId, handle: SupervisorHandle, events: m
     }
 }
 
+/// Lists the account's environments and checks each one's tunnel. A
+/// failure keeps `previous` on screen with the error.
+async fn discover_relay(
+    clerk: Arc<ClerkSession>,
+    relay: Arc<RelayClient>,
+    events: mpsc::UnboundedSender<BridgeEvent>,
+    previous: Vec<RelayEnvironment>,
+) {
+    let send = |discovery| _ = events.unbounded_send(BridgeEvent::Discovery(discovery));
+    send(RelayDiscovery { refreshing: true, error: None, environments: previous.clone() });
+    let jwt = match clerk.template_token().await {
+        Ok(Some(jwt)) => jwt,
+        Ok(None) => return send(RelayDiscovery::default()),
+        Err(error) => {
+            return send(RelayDiscovery { refreshing: false, error: Some(error.to_string().into()), environments: previous });
+        }
+    };
+    let records = match relay.list_environments(&jwt).await {
+        Ok(records) => records,
+        Err(error) => {
+            return send(RelayDiscovery { refreshing: false, error: Some(error.to_string().into()), environments: previous });
+        }
+    };
+    let checking = records
+        .iter()
+        .map(|record| RelayEnvironment { record: record.clone(), availability: RelayAvailability::Checking })
+        .collect();
+    send(RelayDiscovery { refreshing: false, error: None, environments: checking });
+    let statuses =
+        futures::future::join_all(records.iter().map(|record| relay.environment_status(&jwt, &record.environment_id))).await;
+    let environments = records
+        .into_iter()
+        .zip(statuses)
+        .map(|(record, status)| RelayEnvironment {
+            record,
+            availability: match status {
+                Ok(status) if status.status == "online" => RelayAvailability::Online,
+                Ok(_) => RelayAvailability::Offline,
+                Err(_) => RelayAvailability::Error,
+            },
+        })
+        .collect();
+    send(RelayDiscovery { refreshing: false, error: None, environments });
+}
+
 /// Loads the stored T3 Connect sign-in. While Clerk cannot be reached the
 /// account stays `Loading` (relay routes wait, nothing is cleaned up) and the
 /// load is retried with backoff, as clerk-js keeps retrying `GET /client`.
@@ -718,9 +725,11 @@ async fn restore_account(clerk: Arc<ClerkSession>) {
 /// Mirrors the account into the UI and, like the web's cloud account
 /// service, cleans up when Clerk confirms a sign-out or the account changes:
 /// T3 Connect routes are removed and relay tokens forgotten, so nothing
-/// keeps connecting as the previous account.
+/// keeps connecting as the previous account. Each sign-in lists the
+/// account's environments.
 async fn watch_account(
     clerk: Arc<ClerkSession>,
+    relay: Arc<RelayClient>,
     registry: ConnectionRegistry,
     auth: Arc<RemoteAuthorization>,
     events: mpsc::UnboundedSender<BridgeEvent>,
@@ -747,6 +756,10 @@ async fn watch_account(
             if let Err(error) = registry.remove_relay_environments().await {
                 tracing::warn!(%error, "could not remove the previous account's T3 Connect routes");
             }
+        }
+        let signed_in_now = user(&current).is_some() && previous.as_ref().and_then(user) != user(&current);
+        if signed_in_now {
+            tokio::spawn(discover_relay(clerk.clone(), relay.clone(), events.clone(), Vec::new()));
         }
         if !matches!(current, CloudAccountState::Loading) {
             previous = Some(current);

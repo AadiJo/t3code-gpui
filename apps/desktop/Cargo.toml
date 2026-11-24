@@ -31,6 +31,13 @@ name = "connections-check"
 path = "src/settings/connections_check.rs"
 required-features = ["headless"]
 
+# T3 Connect end to end against a stand-in relay and Clerk in front of a real
+# server. Usage: relay-check <connect|approval> <out-dir> <data-dir>
+[[bin]]
+name = "relay-check"
+path = "src/relay_check.rs"
+required-features = ["headless"]
+
 # Imports made-up Electron catalogs encrypted with the Windows and macOS
 # safeStorage schemes, and runs the first-launch file import over a stand-in
 # install built around copied owner files. Usage: import-check <out-dir> [owner-dir]

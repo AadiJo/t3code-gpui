@@ -149,11 +149,9 @@ impl ConnectionsSettings {
                 this.dialog = None;
                 cx.notify();
             }
+            // The runtime lists the account's environments on every sign-in.
             T3ConnectSignInEvent::SignedIn => {
                 this.dialog = None;
-                if let Some(runtime) = cx.try_global::<ConnectionRuntime>() {
-                    runtime.refresh_relay(cx);
-                }
                 cx.notify();
             }
         });
