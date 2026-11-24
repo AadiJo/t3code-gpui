@@ -4,9 +4,9 @@
 //! and `TypographySettings.tsx`.
 //!
 //! Contrast, Glass opacity and font smoothing write the client settings the
-//! theme reads. Not built: the theme editor (Create theme and Duplicate add
-//! a copy instead of opening it; custom themes have no Edit), the
-//! installed-font picker, and the live font previews under the font rows.
+//! theme reads. Create theme, Duplicate and a custom theme's Edit open the
+//! theme editor (`theme_editor_panel`). Not built: the installed-font picker
+//! and the live font previews under the font rows.
 
 use std::rc::Rc;
 
@@ -19,6 +19,7 @@ use t3code_contracts::{ChatWidth, EffortDisplay, EnvironmentIdentificationMode};
 
 use super::settings_controls::{SelectWidth, client_row, client_select, client_switch, reset_button, sized_select};
 use super::settings_slider::{SettingsSlider, slider_value};
+use super::theme_editor_panel::{ThemeEditorSession, ThemeEditorStore, duplicate_theme, edit_theme};
 use super::theme_sphere::{SphereColors, standard_sphere_colors, theme_sphere};
 use super::settings_layout::{SettingsRow, SettingsSection, page_container};
 use super::settings_panels::advanced_settings;
@@ -400,7 +401,9 @@ impl AppearanceSettings {
         let removable = card.source == ThemeSource::Custom;
         let remove_card = card.clone();
         let remove_handle = cx.entity();
-        let duplicate_id = id.clone();
+        // The standard theme's copy starts from the standard palette, as the fork seeds it with none.
+        let duplicate_seed = (card.source != ThemeSource::BuiltIn || id != standard_theme().id()).then(|| id.clone());
+        let duplicate_label = card.document.name.clone();
         let duplicate = div()
             .id(SharedString::from(format!("theme-duplicate-tip-{id}")))
             .tooltip(tooltip(t!("Duplicate theme")))
@@ -409,9 +412,23 @@ impl AppearanceSettings {
                     .variant(ButtonVariant::Ghost)
                     .size(ButtonSize::IconXs)
                     .icon(IconName::Copy)
-                    .on_click(move |_, _, cx| {
+                    .on_click(move |_, window, cx| {
                         cx.stop_propagation();
-                        duplicate_theme(&duplicate_id, cx);
+                        duplicate_theme(duplicate_seed.as_deref(), &duplicate_label, window, cx);
+                    }),
+            );
+        let edit_id = id.clone();
+        let edit = div()
+            .id(SharedString::from(format!("theme-edit-tip-{id}")))
+            .tooltip(tooltip(t!("Edit theme")))
+            .child(
+                Button::new(SharedString::from(format!("theme-edit-{id}")))
+                    .variant(ButtonVariant::Ghost)
+                    .size(ButtonSize::IconXs)
+                    .icon(IconName::PenLine)
+                    .on_click(move |_, window, cx| {
+                        cx.stop_propagation();
+                        edit_theme(&edit_id, window, cx);
                     }),
             );
         let export_id = id.clone();
@@ -453,7 +470,7 @@ impl AppearanceSettings {
                     .pt(theme.sp(2.))
                     .child(div().flex_1().min_w_0().truncate().ui_text(theme, TextSize::Sm, weight::MEDIUM).text_color(c.foreground()).child(SharedString::from(card.document.name.clone())))
                     .child(div().flex().flex_none().items_center().gap(theme.sp(1.)).child(duplicate).when(removable, |d| {
-                        d.child(export).child(
+                        d.child(edit).child(export).child(
                             div().id(SharedString::from(format!("theme-remove-tip-{id}"))).tooltip(tooltip(t!("Remove theme"))).child(
                                 Button::new(SharedString::from(format!("theme-remove-{id}")))
                                     .variant(ButtonVariant::GhostDestructive)
@@ -500,9 +517,10 @@ impl AppearanceSettings {
                     .into_any_element(),
             );
         }
-        let create = Button::new("theme-create").variant(ButtonVariant::Outline).size(ButtonSize::Xs).icon(IconName::Paintbrush).label(t!("Create theme")).on_click(|_, _, cx| {
-            let seed = owner_id(cx.app_theme().appearance, cx).unwrap_or_else(|| standard_theme().id().to_owned());
-            duplicate_theme(&seed, cx);
+        let create = Button::new("theme-create").variant(ButtonVariant::Outline).size(ButtonSize::Xs).icon(IconName::Paintbrush).label(t!("Create theme")).on_click(|_, window, cx| {
+            let appearance = cx.app_theme().appearance;
+            let seed = owner_id(appearance, cx);
+            ThemeEditorStore::open(ThemeEditorSession { editing_id: None, seed_id: seed, seed_name: None, initial_appearance: appearance }, window, cx);
         });
         div()
             .flex()
@@ -1188,8 +1206,6 @@ fn panel_animations_preview(cx: &App) -> AnyElement {
         .into_any_element()
 }
 
-/// Copies a theme as a custom theme and uses it. The web opens the theme
-/// editor seeded with it instead; this app has no editor.
 /// `downloadThemeFile`: asks where to save `<id>.json`, then writes the theme file.
 fn export_theme(id: &str, cx: &mut App) {
     let Some(contents) = ThemeStore::export_custom(id, cx) else { return };
@@ -1201,19 +1217,6 @@ fn export_theme(id: &str, cx: &mut App) {
         }
     })
     .detach();
-}
-
-fn duplicate_theme(id: &str, cx: &mut App) {
-    match ThemeStore::duplicate(id, cx) {
-        Ok(new_id) => {
-            if let Some(theme) = ThemeStore::find(&new_id, cx) {
-                use_imported(&new_id, &theme.document.name.clone(), cx);
-            }
-        }
-        Err(error) => {
-            Toaster::push(ToastData::new(ToastKind::Error, t!("Could not create the theme.")).description(error.to_string()), cx);
-        }
-    }
 }
 
 /// The width of a settings section's card on the current page: the modal's

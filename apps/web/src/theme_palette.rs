@@ -63,7 +63,7 @@ theme_roles! {
 }
 
 /// Light or dark: which half of a theme is drawn.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Appearance {
     Dark,

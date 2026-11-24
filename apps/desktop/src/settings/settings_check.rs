@@ -159,6 +159,42 @@ fn run(check: &mut Check, data_dir: &Path) -> anyhow::Result<()> {
     let (window, route) = settings_window(check, SettingsPath::Appearance)?;
     check.shot(window, "01-appearance-default.png")?;
 
+    // Theme editor: Create theme, a red accent typed into its hex field, Create; then the new
+    // card's Edit, a green accent, Save changes. Each save is read back from the theme store.
+    let accent_of = |cx: &mut App, id: &str| {
+        let file = ThemeStore::theme_file(id, cx)?;
+        let appearance = file["appearance"].as_str()?.to_owned();
+        let colors = if t3code_web::ActiveAppTheme::app_theme(cx).appearance.is_dark() == (appearance == "dark") { &file["colors"] } else { &file["variants"][if appearance == "dark" { "light" } else { "dark" }] };
+        t3code_web::vscode_theme_import::theme_color_to_hex(colors["accent"].as_str()?)
+    };
+    let set_accent = |check: &mut Check, color: &str| -> anyhow::Result<()> {
+        // Advanced mode lists Accent under Brand & content, below the fold.
+        check.cx.update_window(window, |_, w, cx| w.scroll("theme-editor-body", ScrollDelta::Pixels(point(px(0.), px(-600.))), cx))?;
+        check.frame(window)?;
+        check.click(window, "theme-hex-accent")?;
+        check.cx.update_window(window, |_, w, cx| w.press("ctrl-a", cx))?;
+        let text = color.to_owned();
+        check.cx.update_window(window, |_, w, cx| w.input(&text, cx))?;
+        check.frame(window)
+    };
+    check.click(window, "theme-create")?;
+    check.shot(window, "03a-theme-editor-open.png")?;
+    check.cx.update_window(window, |_, w, cx| w.input("Check Theme", cx))?;
+    set_accent(check, "#ff0000")?;
+    check.shot(window, "03b-theme-editor-create.png")?;
+    check.click(window, "theme-editor-submit")?;
+    let created = check.cx.update(|cx| (ThemeStore::global(cx).preference().to_string(), accent_of(cx, "check-theme")));
+    check.note(format!("after Create theme: preference {}, accent {:?}", created.0, created.1));
+    ensure!(created.0 == "check-theme" && created.1.as_deref() == Some("#ff0000"), "the created theme was not saved and used");
+    check.click(window, "theme-edit-check-theme")?;
+    set_accent(check, "#00ff00")?;
+    check.shot(window, "03c-theme-editor-edit.png")?;
+    check.click(window, "theme-editor-submit")?;
+    let edited = check.cx.update(|cx| accent_of(cx, "check-theme"));
+    check.note(format!("after Edit theme: accent {edited:?}"));
+    ensure!(edited.as_deref() == Some("#00ff00"), "the edited theme was not saved");
+    check.shot(window, "03d-theme-edited.png")?;
+
     // Interface font size: the + stepper three times, 16 → 19.
     check.scroll(window, -2400.)?;
     for _ in 0..3 {
@@ -177,6 +213,7 @@ fn run(check: &mut Check, data_dir: &Path) -> anyhow::Result<()> {
     check.note(format!("theme preference = {}, drawn theme = {}", theme.0, theme.1));
     ensure!(theme.1 == "ember", "theme did not apply");
     check.shot(window, "03-appearance-ember.png")?;
+
 
     // Diff layout: the diff panel before and after, through the settings store.
     let diffs = open_window(&mut check.cx, 1200., 800., |window, cx| {

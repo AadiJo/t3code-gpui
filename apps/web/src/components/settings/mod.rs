@@ -40,5 +40,7 @@ pub mod threads_settings_snooze;
 pub mod worktrees_settings;
 pub mod settings_search_catalog;
 pub mod snap_shot_settings;
+pub mod theme_color_picker;
+pub mod theme_editor_panel;
 pub mod theme_sphere;
 pub mod voice_settings_panel;

@@ -158,3 +158,26 @@ pub fn build_archived(window: &mut Window, cx: &mut App) -> AnyView {
 pub fn build_about(window: &mut Window, cx: &mut App) -> AnyView {
     page(SettingsPath::About)(window, cx)
 }
+
+/// Appearance with the theme editor open on a new theme (Simple mode).
+pub fn build_theme_editor(window: &mut Window, cx: &mut App) -> AnyView {
+    open_theme_editor(None, window, cx)
+}
+
+/// Appearance with the theme editor seeded from Graphite, which opens in Advanced mode.
+pub fn build_theme_editor_advanced(window: &mut Window, cx: &mut App) -> AnyView {
+    open_theme_editor(Some("graphite"), window, cx)
+}
+
+fn open_theme_editor(seed: Option<&str>, window: &mut Window, cx: &mut App) -> AnyView {
+    use crate::components::settings::theme_editor_panel::{ThemeEditorSession, ThemeEditorStore};
+    let (view, _) = open(SettingsPath::Appearance, window, cx);
+    let session = ThemeEditorSession {
+        editing_id: None,
+        seed_id: seed.map(str::to_owned),
+        seed_name: seed.map(|_| "Graphite copy".to_owned()),
+        initial_appearance: crate::theme_palette::Appearance::Dark,
+    };
+    ThemeEditorStore::open(session, window, cx);
+    view
+}

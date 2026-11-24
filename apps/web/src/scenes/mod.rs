@@ -96,6 +96,8 @@ pub fn scenes() -> &'static [(&'static str, SceneBuilder)] {
         ("settings-server-signin-terminal", settings_server::build_signin_terminal),
         ("settings", settings::build),
         ("settings-appearance", settings::build_appearance),
+        ("settings-theme-editor", settings::build_theme_editor),
+        ("settings-theme-editor-advanced", settings::build_theme_editor_advanced),
         ("settings-chat", settings::build_chat),
         ("settings-diffs", settings::build_diffs),
         ("settings-keybindings", settings::build_keybindings),

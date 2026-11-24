@@ -341,6 +341,25 @@ impl ThemeStore {
         }
     }
 
+    /// The stored theme file of a custom or bundled theme, as the theme editor reads it.
+    pub fn theme_file(id: &str, cx: &App) -> Option<Value> {
+        if let Some(theme) = cx.global::<Self>().custom.iter().find(|theme| theme.document.id == id) {
+            return Some(theme.source.clone());
+        }
+        let file = BUILT_IN_FILES.iter().zip(BUILT_IN.iter()).find(|(_, theme)| theme.document.id == id).map(|(file, _)| file)?;
+        serde_json::from_slice(&Assets::get(&format!("themes/{file}.json"))?).ok()
+    }
+
+    /// Every custom theme's stored file.
+    pub fn custom_theme_files(cx: &App) -> Vec<Value> {
+        cx.global::<Self>().custom.iter().map(|theme| theme.source.clone()).collect()
+    }
+
+    /// Redraws the stored theme, as after a theme editor preview.
+    pub fn refresh(cx: &mut App) {
+        Self::apply(true, cx);
+    }
+
     /// `serializeThemeFile`: a custom theme as the T3 theme file the fork
     /// exports (`version`, `id`, `name`, `appearance`, `colors`, `variants`),
     /// pretty-printed with a trailing newline.
