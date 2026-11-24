@@ -161,6 +161,9 @@ pub struct MessagesTimeline {
     pub(super) now: Instant,
     /// Wall-clock milliseconds the fixtures treat as "now", for running timers.
     pub(super) now_millis: i64,
+    /// The list's top spacer: the header fade's height, or a side chat's `pt-2` above its
+    /// "Context from" divider (the web's list header swaps the spacer for the divider block).
+    top_inset: Pixels,
     weak: WeakEntity<Self>,
 }
 
@@ -204,6 +207,7 @@ impl MessagesTimeline {
             rendering_row: 0,
             now: Instant::now(),
             now_millis: 0,
+            top_inset: TIMELINE_TOP_INSET,
             weak,
         }
     }
@@ -423,7 +427,14 @@ impl MessagesTimeline {
             return;
         }
         self.composer_inset = height;
-        self.list.set_insets(TIMELINE_TOP_INSET, height + TIMELINE_BOTTOM_PAD);
+        self.list.set_insets(self.top_inset, height + TIMELINE_BOTTOM_PAD);
+        cx.notify();
+    }
+
+    /// Replaces the top spacer (see `top_inset`).
+    pub fn set_top_inset(&mut self, inset: Pixels, cx: &mut Context<Self>) {
+        self.top_inset = inset;
+        self.list.set_insets(inset, self.composer_inset + TIMELINE_BOTTOM_PAD);
         cx.notify();
     }
 

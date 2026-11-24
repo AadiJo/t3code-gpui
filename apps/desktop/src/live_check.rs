@@ -3499,12 +3499,11 @@ fn run_sidechats_ref(check: &mut Check) -> anyhow::Result<()> {
     };
     let close_panel = |check: &mut Check, key: &ThreadKey| {
         let panel_key = t3code_web::fixtures::scoped_key(key);
-        let store = check.read(|root, _| root.right_panels().clone());
-        check.cx.update(|cx| store.update(cx, |s, cx| {
-            s.close(&panel_key);
-            cx.notify();
-        }));
-        check.frame();
+        let open = check.read(|root, cx| root.right_panels().read(cx).is_open(&panel_key));
+        if open {
+            check.action(t3code_web::shortcuts::commands::ToggleRightPanel);
+            check.wait(Duration::from_millis(400));
+        }
     };
     show(check, &fork)?;
     check.note("closing the panel");

@@ -9,7 +9,7 @@ use crate::components::chat::composer::{ChatComposer, ComposerEvent, ComposerSta
 use crate::components::chat::composer_command_menu::{ComposerCommandItem, ComposerMenuSource, SlashMenuContext};
 use crate::components::chat::messages_timeline::TimelineAction;
 use crate::components::chat_view::{ChatView, ChatViewEvent};
-use crate::components::icons::{IconName, IconSize};
+use crate::components::icons::IconName;
 use crate::components::sidebar::model::ThreadKey;
 use crate::components::ui::TextStyleExt as _;
 use crate::components::ui::button::{Button, ButtonSize, ButtonVariant};
@@ -123,7 +123,11 @@ impl SideChatPane {
         self.shown = true;
         *self.menu.0.borrow_mut() = Some(self.data.menu_source(&view, &self.composer, cx));
         let timeline = self.chat.read(cx).timeline().clone();
-        timeline.update(cx, |timeline, _| timeline.set_now_millis(t3code_client_runtime::state::models::now_ms()));
+        let top = crate::ActiveAppTheme::app_theme(&**cx).rem(0.5);
+        timeline.update(cx, |timeline, cx| {
+            timeline.set_now_millis(t3code_client_runtime::state::models::now_ms());
+            timeline.set_top_inset(top, cx);
+        });
         self.chat.update(cx, |chat, cx| {
             chat.set_thread(view.key.clone(), view.project.clone(), view.title.clone(), view.timeline.clone(), cx);
             chat.set_questions(view.questions.clone(), cx);
@@ -331,7 +335,6 @@ impl Render for SideChatPane {
                         .variant(ButtonVariant::Ghost)
                         .size(ButtonSize::IconXs)
                         .icon(IconName::Trash2)
-                        .icon_size(IconSize::Custom(theme.rem(1.)))
                         .disabled(facts.is_none() || self.deleting)
                         .on_click(cx.listener(|this, _, _, cx| this.request_delete(cx))),
                 ),
@@ -342,7 +345,6 @@ impl Render for SideChatPane {
                         .variant(ButtonVariant::Ghost)
                         .size(ButtonSize::IconXs)
                         .icon(IconName::X)
-                        .icon_size(IconSize::Custom(theme.rem(1.)))
                         .on_click(cx.listener(|_, _, _, cx| cx.emit(SideChatPaneEvent::Close))),
                 ),
             );
