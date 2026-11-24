@@ -254,12 +254,18 @@ pub fn input(feed: &Entity<DetailsFeed>, view: &ThreadView, base: ThreadDetailsI
     }
 }
 
-/// `ThreadDetailsUsage`'s rows: the thread's provider instance's own limit snapshot.
+/// `ThreadDetailsUsage`'s rows: the instance's entry of the report merged across instances and
+/// limit hubs reporting the same login, else the instance's own snapshot (the report keeps one
+/// instance per login; another entry may be a different login or workspace).
 fn usage_limits(row: Option<&ThreadRow>, config: Option<&t3code_contracts::ServerConfig>, cx: &App) -> Option<UsageLimitsInput> {
-    use t3code_shared::usage_limits::{LimitPace, limits_notice_reason, pace_of, pace_remaining_percent, remaining_percent};
+    use t3code_shared::usage_limits::{LimitPace, collect_provider_usage_limits, limits_notice_reason, pace_of, pace_remaining_percent, remaining_percent};
     let instance = &row?.source.model_selection.instance_id;
-    let provider = config?.providers.iter().find(|provider| provider.instance_id == *instance)?;
-    let limits = provider.usage_limits.as_ref()?;
+    let config = config?;
+    let sources = config.usage_limit_sources.as_deref().unwrap_or_default();
+    let report = collect_provider_usage_limits(instance, &config.providers, sources);
+    let merged = report.as_ref().and_then(|report| report.accounts.iter().find(|entry| entry.instance_id.as_ref().is_some_and(|id| id.as_str() == instance.as_str())).map(|entry| &entry.limits));
+    let own = config.providers.iter().find(|provider| provider.instance_id == *instance).and_then(|provider| provider.usage_limits.as_ref());
+    let limits = merged.or(own)?;
     if let Some(reason) = limits_notice_reason(limits) {
         return Some(UsageLimitsInput::Notice(crate::components::usage::usage_limits::limits_notice(reason)));
     }
