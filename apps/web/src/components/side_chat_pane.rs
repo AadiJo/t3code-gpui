@@ -130,7 +130,6 @@ impl SideChatPane {
         *self.menu.0.borrow_mut() = Some(self.data.menu_source(&view, &self.composer, cx));
         let timeline = self.chat.read(cx).timeline().clone();
         timeline.update(cx, |timeline, cx| {
-            timeline.set_now_millis(t3code_client_runtime::state::models::now_ms());
             timeline.set_top_inset(px(8.), cx);
         });
         self.chat.update(cx, |chat, cx| {
@@ -148,8 +147,6 @@ impl SideChatPane {
         let Some(view) = self.data.side_chat_view(&self.key, cx) else { return };
         let timeline = self.chat.read(cx).timeline().clone();
         timeline.update(cx, |timeline, cx| {
-            // Running timers ("Working for 8s") read wall-clock milliseconds.
-            timeline.set_now_millis(t3code_client_runtime::state::models::now_ms());
             timeline.update_input(view.timeline.clone(), cx);
             if anchor {
                 timeline.anchor_latest_user_message(cx);

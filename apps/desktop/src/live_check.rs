@@ -64,7 +64,9 @@
 //   sidepane  a side chat's reply shows no "Fork from here" (the main pane keeps it); the side
 //            chat deleted from outside the pane reads "This side chat was deleted."
 //   delete-thread  deletes `T3_DELETE_THREAD`, as another client would
-// Usage: live-check <seed|drive|restart|import|send|sidebar|notify|details|mentions|heic|wheel|workspace|banner|sidebardata|composer|composer-restart|sidechats|sidechats-ref|lineage|lineage-ref|sidepane|delete-thread|probe> <out-dir>
+//   timer    the main pane's "Working for" on a running turn matches the server's run start and
+//            advances with the wall clock
+// Usage: live-check <seed|drive|restart|import|send|sidebar|notify|details|mentions|heic|wheel|workspace|banner|sidebardata|composer|composer-restart|sidechats|sidechats-ref|lineage|lineage-ref|sidepane|delete-thread|timer|probe> <out-dir>
 #[allow(dead_code)]
 #[path = "import/mod.rs"]
 mod import;
@@ -549,6 +551,7 @@ fn main() -> anyhow::Result<()> {
         "lineage-ref" => run_lineage_ref(&mut check),
         "sidepane" => run_sidepane(&mut check),
         "delete-thread" => run_delete_thread(&mut check),
+        "timer" => run_timer(&mut check),
         other => Err(anyhow::anyhow!("unknown phase {other}")),
     };
     check.finish(&phase, result)
@@ -3854,5 +3857,44 @@ fn run_delete_thread(check: &mut Check) -> anyhow::Result<()> {
     let commands = commands_of(check, &t3code_contracts::EnvironmentId::new(id.as_str()))?;
     check.block(async move { commands.delete(&thread, false).await })?.map_err(|e| anyhow::anyhow!("{e}"))?;
     check.check("deleted", true, "");
+    Ok(())
+}
+
+/// The `timer` phase: the main pane's "Working for" on a running turn ("Native fan-out
+/// <T3_LINEAGE_TAG>", held by its fx subagents) reads the wall clock: it matches the time since
+/// the server started the run and advances with real time between two reads.
+fn run_timer(check: &mut Check) -> anyhow::Result<()> {
+    let tag = std::env::var("T3_LINEAGE_TAG").context("T3_LINEAGE_TAG")?;
+    let paired = check.cx.update(|cx| !ConnectionRuntime::state(cx).read(cx).environments.is_empty());
+    if !paired {
+        let request = parse_pairing_url(&std::env::var("T3_PAIRING_URL").context("T3_PAIRING_URL")?)?;
+        let pairing = check.cx.update(|cx| ConnectionRuntime::global(cx).pair(request, None, cx));
+        check.wait_task(pairing)?.map_err(|e| anyhow::anyhow!("{}", e.0))?;
+    }
+    check.pump(|c| c.connected(), Duration::from_secs(30), "connected")?;
+    let id = check.cx.update(|cx| ConnectionRuntime::state(cx).read(cx).environments[0].entry.environment_id.to_string());
+    let environment_id = t3code_contracts::EnvironmentId::new(id.as_str());
+    let env = environment_id.clone();
+    let title = format!("Native fan-out {tag}");
+    check.pump(move |c| thread_titled(c, &env, &title, None).is_some(), Duration::from_secs(20), "the running thread is listed")?;
+    let key = thread_titled(check, &environment_id, &format!("Native fan-out {tag}"), None).context("thread")?;
+    check.go(&key);
+    let elapsed = |c: &mut Check| c.read(|root, cx| root.thread_view().read(cx).chat().read(cx).timeline().read(cx).working_elapsed_ms());
+    check.pump(move |c| elapsed(c).is_some(), Duration::from_secs(20), "the Working row shows")?;
+    let started = shell_thread(check, &key).and_then(|t| t.activity_run_started_at.clone().or(t.latest_run_started_at.clone()));
+    let server_ms = started.as_deref().and_then(t3code_shared::usage_format::parse_instant_ms).map(|at| now_ms() - at);
+    let first = elapsed(check).unwrap_or_default();
+    check.check(
+        "Working for matches the time since the server started the run",
+        server_ms.is_some_and(|s| (s - first).abs() < 1500),
+        format!("shown {first} ms, server {server_ms:?} ms"),
+    );
+    let wall = Instant::now();
+    check.shot("t0-working.png")?;
+    check.wait(Duration::from_millis(2500));
+    let second = elapsed(check).unwrap_or_default();
+    let real = wall.elapsed().as_millis() as i64;
+    check.check("Working for advances with the wall clock", ((second - first) - real).abs() < 150, format!("{first} -> {second} ms over {real} ms"));
+    check.shot("t1-working-later.png")?;
     Ok(())
 }
