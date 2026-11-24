@@ -3,6 +3,7 @@
 //! this whenever an environment is saved.
 
 pub mod diff;
+pub mod draft_workspace;
 pub mod git;
 pub mod rpc;
 pub mod sources;
@@ -41,6 +42,7 @@ use crate::i18n::t;
 use crate::provider_models_live::{model_catalog, to_wire};
 use crate::router::{DraftId, ThreadTarget};
 use crate::components::chat::thread_details_panel::{ThreadDetailsEvent, ThreadDetailsInput};
+use crate::state::thread_errors::ThreadErrors;
 use crate::state::app_data::{ActionOutcome, AppData, CommandOutcome, DataEvent, DataEvents, DetailsOutcome, GitControlsSetup, ThreadView};
 use crate::state::composer::{self as live_composer, CatalogCache, LiveDraftStore, LiveMenuSource, composer_state};
 use crate::state::palette::LivePaletteSource;
@@ -59,6 +61,7 @@ use crate::components::usage::usage_source::{LiveUsageSource, UsageSource};
 struct Draft {
     project: Option<ProjectRef>,
     created_at: TimestampMs,
+    workspace: draft_workspace::DraftWorkspace,
 }
 
 /// The window's data on live state. See the module docs.
@@ -136,6 +139,12 @@ impl LiveData {
         })
     }
 
+    /// The workspace choice of the draft `view` shows.
+    pub(crate) fn draft_workspace(&self, view: &ThreadView) -> Option<draft_workspace::DraftWorkspace> {
+        let id = view.key.strip_prefix("draft:")?;
+        self.drafts.borrow().get(&DraftId(id.to_owned().into())).map(|d| d.workspace.clone())
+    }
+
     fn emit(&self, event: DataEvent, cx: &mut App) {
         self.events.update(cx, |_, cx| cx.emit(event));
     }
@@ -181,6 +190,14 @@ impl LiveData {
             .iter()
             .find(|p| p.project_ref == *project)
             .map(|p| (p.title.clone(), p.workspace_root.clone()))
+    }
+
+    /// A project's icon override and fetched favicon, as its sidebar rows draw them.
+    fn project_icon_of(&self, project: &ProjectRef, cx: &App) -> Option<crate::components::project_favicon::ProjectIconSource> {
+        let shell = StateBridge::shell(cx);
+        let shell = shell.read(cx);
+        let p = shell.snapshot().projects.iter().find(|p| p.project_ref == *project)?;
+        Some(crate::components::project_favicon::ProjectIconSource { icon: p.icon.clone(), favicon: p.favicon.clone() })
     }
 
     fn catalog(&self, environment: &LiveEnvironment, cx: &App) -> Arc<crate::model_selection::ModelCatalog> {
@@ -242,6 +259,7 @@ impl AppData for LiveData {
                 let row = shell.read(cx).snapshot().threads.iter().find(|t| t.key == *key).cloned();
                 let source = shell.read(cx).row(key).cloned();
                 let project = row.as_ref().and_then(|row| self.project(&row.project_ref(), cx));
+                let project_icon = row.as_ref().and_then(|row| self.project_icon_of(&row.project_ref(), cx));
                 let supports_rollback = self.supports_rollback(key, cx);
                 let thread = thread.read(cx);
                 let mut timeline: TimelineInput = thread.input().clone();
@@ -264,11 +282,17 @@ impl AppData for LiveData {
                     questions: questions.into_iter().map(|(question, _)| question).collect(),
                     branch: row.as_ref().and_then(|r| r.branch.clone()),
                     project_id: row.as_ref().map(|r| r.project_id.clone()),
+                    project_icon,
                 })
             }
             ThreadTarget::Draft(id) => {
-                let project = self.drafts.borrow().get(id)?.project.clone();
+                let (project, branch) = {
+                    let drafts = self.drafts.borrow();
+                    let draft = drafts.get(id)?;
+                    (draft.project.clone(), draft.workspace.branch.clone())
+                };
                 let info = project.as_ref().and_then(|p| self.project(p, cx));
+                let project_icon = project.as_ref().and_then(|p| self.project_icon_of(p, cx));
                 Some(ThreadView {
                     key: format!("draft:{}", id.0).into(),
                     project: info.as_ref().map(|(title, _)| title.clone()).unwrap_or_default(),
@@ -278,20 +302,51 @@ impl AppData for LiveData {
                     is_draft: true,
                     running: false,
                     questions: Arc::from([]),
-                    branch: None,
+                    branch: branch.map(SharedString::from),
                     project_id: project.map(|p| p.project_id),
+                    project_icon,
                 })
             }
         }
     }
 
-    fn create_draft(&self, project: Option<ProjectRef>, _: &mut App) -> DraftId {
+    fn create_draft(&self, project: Option<ProjectRef>, cx: &mut App) -> DraftId {
         let next = self.next_draft.get() + 1;
         self.next_draft.set(next);
         let id = DraftId(format!("draft-{}-{next}", uuid::Uuid::new_v4().simple()).into());
         let created_at = TimestampMs(crate::timestamp_format::now_ms());
-        self.drafts.borrow_mut().insert(id.clone(), Draft { project, created_at });
+        let workspace = project
+            .as_ref()
+            .map(|p| {
+                let (environment_id, project_id) = draft_ids(p);
+                draft_workspace::DraftWorkspace::new(&environment_id, &project_id, cx)
+            })
+            .unwrap_or_default();
+        self.drafts.borrow_mut().insert(id.clone(), Draft { project, created_at, workspace });
         id
+    }
+
+    fn project_icon(&self, target: &ThreadTarget, cx: &mut App) -> Option<crate::components::project_favicon::ProjectIconSource> {
+        let project = match target {
+            ThreadTarget::Server(key) => StateBridge::shell(cx).read(cx).snapshot().threads.iter().find(|t| t.key == *key).map(|row| row.project_ref())?,
+            ThreadTarget::Draft(id) => self.drafts.borrow().get(id)?.project.clone()?,
+        };
+        self.project_icon_of(&project, cx)
+    }
+
+    fn draft_workspace_event(&self, draft: &DraftId, event: &crate::components::branch_toolbar::BranchToolbarEvent, cx: &mut App) {
+        let changed = {
+            let mut drafts = self.drafts.borrow_mut();
+            let Some(entry) = drafts.get_mut(draft) else { return };
+            let Some(project) = entry.project.clone() else { return };
+            let (environment_id, project_id) = draft_ids(&project);
+            let before = entry.workspace.clone();
+            entry.workspace.apply(event, &environment_id, &project_id, cx);
+            entry.workspace != before
+        };
+        if changed {
+            self.emit(DataEvent::ThreadChanged(ThreadTarget::Draft(draft.clone())), cx);
+        }
     }
 
     fn discard_draft(&self, key: &ThreadKey, cx: &mut App) {
@@ -446,7 +501,16 @@ impl AppData for LiveData {
                     _ => {}
                 }
                 let ComposerEvent::Submit { prompt, model, attachments, .. } = event else { return None };
-                let project = self.drafts.borrow().get(id)?.project.clone()?;
+                let (project, workspace) = {
+                    let drafts = self.drafts.borrow();
+                    let draft = drafts.get(id)?;
+                    (draft.project.clone()?, draft.workspace.clone())
+                };
+                let draft_key: SharedString = format!("draft:{}", id.0).into();
+                let Ok(workspace_strategy) = workspace.strategy() else {
+                    ThreadErrors::set(&draft_key, Some(t!("Select a base branch before sending in New worktree mode.")), cx);
+                    return None;
+                };
                 let (environment_id, project_id) = (
                     t3code_contracts::EnvironmentId::new(project.environment_id.0.as_ref()),
                     t3code_contracts::ProjectId::new(project.project_id.0.as_ref()),
@@ -464,9 +528,11 @@ impl AppData for LiveData {
                     .or_else(|| config.as_ref().and_then(|c| c.settings.default_runtime_mode))
                     .unwrap_or(WireRuntimeMode::FullAccess);
                 let Some(turn) = crate::state::attachments::turn_attachments(&environment_id, attachments) else {
-                    toast_error(t!("Failed to send message."), t!("Retry or remove failed uploads before sending."), cx);
+                    ThreadErrors::set(&draft_key, Some(t!("Retry or remove failed uploads before sending.")), cx);
                     return None;
                 };
+                ThreadErrors::set(&draft_key, None, cx);
+                let restore = SharedString::from(prompt.to_owned());
                 let title = live_composer::title_seed(prompt.trim(), attachments);
                 let text = match prompt.trim() {
                     "" if !attachments.is_empty() => crate::state::attachments::ATTACHMENT_ONLY_PROMPT.to_owned(),
@@ -485,9 +551,7 @@ impl AppData for LiveData {
                     model_selection: to_wire(model, &catalog, config.as_deref()),
                     runtime_mode,
                     interaction_mode: ProviderInteractionMode::Default,
-                    workspace_strategy: OrchestrationV2ThreadLaunchWorkspaceStrategy::Root(
-                        OrchestrationV2ThreadLaunchWorkspaceStrategyRoot { branch: None },
-                    ),
+                    workspace_strategy,
                     initial_message: Some(OrchestrationV2ThreadLaunchInputInitialMessage {
                         message_id: Some(message.message_id.clone()),
                         text,
@@ -496,8 +560,11 @@ impl AppData for LiveData {
                     }),
                 };
                 let task = StateBridge::spawn(async move { commands.launch_thread(input).await }, cx);
+                let thread_view_key = crate::fixtures::scoped_key(&thread_key(&environment_id, &thread_id));
                 cx.spawn(async move |cx| match task.await {
-                    Some(Err(error)) => cx.update(|cx| toast_error(t!("Failed to send message."), error, cx)),
+                    Some(Err(error)) => cx.update(|cx| {
+                        ThreadErrors::send_failed(&thread_view_key, crate::state::composer::send_error(&error), restore, cx)
+                    }),
                     Some(Ok(_)) => crate::state::attachments::AttachmentUploads::forget_sent(sent),
                     None => {}
                 })
@@ -583,7 +650,7 @@ impl AppData for LiveData {
             if weak.upgrade().is_none_or(|token| token.get() != generation) {
                 return;
             }
-            let mut keys = Vec::new();
+            let mut found = Vec::new();
             for link in links {
                 let environment_id = link.environment_id().clone();
                 let input = t3code_contracts::OrchestrationV2SearchThreadsInput {
@@ -595,14 +662,34 @@ impl AppData for LiveData {
                     titles_only: None,
                 };
                 if let Ok(result) = link.call::<t3code_contracts::rpc::methods::OrchestrationSearchThreads>(input).await {
-                    keys.extend(result.matches.iter().map(|m| thread_key(&environment_id, &m.thread_id)));
+                    found.extend(result.matches.into_iter().map(|m| (thread_key(&environment_id, &m.thread_id), m)));
                 }
             }
             if weak.upgrade().is_none_or(|token| token.get() != generation) {
                 return;
             }
-            let matches = crate::components::sidebar::model::SearchContentMatches { query: query.clone(), threads: Arc::new(keys) };
-            cx.update(|cx| shell.update(cx, |shell, cx| shell.set_search_matches(Some(matches), cx)));
+            cx.update(|cx| {
+                // Ranked across environments as the palette ranks them (`rankMessageMatches`).
+                let subjects: HashMap<ThreadKey, t3code_shared::palette_search::ThreadSearchSubject> = found
+                    .iter()
+                    .filter_map(|(key, _)| {
+                        let row = StateBridge::shell(cx).read(cx).row(key)?.clone();
+                        let mut subject = t3code_shared::palette_search::ThreadSearchSubject::new(row.title()).with_branch(row.source.branch.as_deref());
+                        subject.id = Some(Arc::clone(&row.source.id.0));
+                        subject.activity_at = row.latest_user_message_at.or(row.updated_at).or(row.created_at);
+                        Some((key.clone(), subject))
+                    })
+                    .collect();
+                let ranked = t3code_client_runtime::state::thread_search::rank_message_matches(
+                    found.iter().map(|(key, m)| (key.clone(), m)),
+                    |key| subjects.get(key),
+                    t3code_client_runtime::state::models::now_ms(),
+                );
+                let mut seen = std::collections::HashSet::new();
+                let keys: Vec<ThreadKey> = ranked.into_iter().filter(|key| seen.insert(key.clone())).collect();
+                let matches = crate::components::sidebar::model::SearchContentMatches { query: query.clone(), threads: Arc::new(keys) };
+                shell.update(cx, |shell, cx| shell.set_search_matches(Some(matches), cx))
+            });
         })
         .detach();
     }
@@ -968,4 +1055,9 @@ impl ComposerSettings {
     fn apply(self, state: ComposerState) -> ComposerState {
         ComposerState { follow_up: self.follow_up, send_shortcut: self.send_shortcut, rich_text: self.rich_text, ..state }
     }
+}
+
+/// The wire ids of a draft's project.
+fn draft_ids(project: &ProjectRef) -> (t3code_contracts::EnvironmentId, t3code_contracts::ProjectId) {
+    (t3code_contracts::EnvironmentId::new(project.environment_id.0.as_ref()), t3code_contracts::ProjectId::new(project.project_id.0.as_ref()))
 }

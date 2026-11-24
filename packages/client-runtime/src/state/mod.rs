@@ -27,6 +27,7 @@ pub mod thread_detail;
 pub mod thread_history_merge;
 pub mod thread_inbox;
 pub mod thread_lifecycle;
+pub mod thread_search;
 pub mod thread_settled;
 pub mod thread_shell;
 pub mod thread_sort;

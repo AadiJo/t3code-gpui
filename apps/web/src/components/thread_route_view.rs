@@ -17,6 +17,8 @@ use std::sync::Arc;
 use gpui_kit::*;
 use t3code_contracts::{ProjectId, ProjectScript};
 
+use crate::components::chat::thread_error_banner::{ThreadErrorBanner, ThreadErrorBannerEvent};
+use crate::state::thread_errors::ThreadErrors;
 use crate::components::branch_toolbar::{BranchToolbar, BranchToolbarEvent, BranchToolbarLayout, BranchToolbarProps};
 use crate::components::chat::composer::{ChatComposer, ComposerEvent, ComposerState};
 use crate::components::chat::messages_timeline::TimelineAction;
@@ -110,6 +112,8 @@ pub struct ThreadRouteView {
     base: ComposerState,
     /// Most recently shown first; the front is the shown thread's.
     git: VecDeque<GitControls>,
+    /// The thread error banner over the timeline (`ChatBannerLane`).
+    banner: Entity<ThreadErrorBanner>,
     details_open: bool,
     /// The open "Edit from here?" confirmation.
     pending_revert: Option<PendingRevert>,
@@ -140,12 +144,32 @@ impl ThreadRouteView {
         let chat = cx.new(ChatView::new);
         let focus = composer.focus_handle(cx);
         chat.update(cx, |chat, cx| chat.set_composer(composer.clone().into(), focus, cx));
+        let banner = cx.new(|_| ThreadErrorBanner::new());
+        let errors = ThreadErrors::entity(cx);
         let subscriptions = vec![
             cx.subscribe(&composer, Self::on_composer_event),
             cx.subscribe_in(&chat, window, Self::on_chat_event),
             cx.subscribe(&data.events(), Self::on_data_event),
+            cx.subscribe(&banner, |this, _, _: &ThreadErrorBannerEvent, cx| {
+                if let Some((key, thread)) = this.error_key() {
+                    ThreadErrors::dismiss(&key, thread.as_ref(), cx);
+                }
+            }),
+            cx.observe(&errors, |this, _, cx| this.sync_banner(cx)),
         ];
-        Self { data, menu, chat, composer, target: None, base, git: VecDeque::new(), details_open: false, pending_revert: None, _subscriptions: subscriptions }
+        Self {
+            data,
+            menu,
+            chat,
+            composer,
+            target: None,
+            base,
+            git: VecDeque::new(),
+            banner,
+            details_open: false,
+            pending_revert: None,
+            _subscriptions: subscriptions,
+        }
     }
 
     pub fn chat(&self) -> &Entity<ChatView> {
@@ -204,7 +228,9 @@ impl ThreadRouteView {
         });
         let hero = view.is_draft && view.timeline.entries.is_empty();
         let thread_menu = self.thread_menu(&target, cx);
+        let project_icon = view.project_icon.clone();
         self.chat.update(cx, |chat, cx| {
+            chat.set_project_icon(project_icon, cx);
             chat.set_hero(hero, cx);
             chat.set_questions(view.questions.clone(), cx);
             chat.set_thread_menu(thread_menu, cx);
@@ -212,6 +238,35 @@ impl ThreadRouteView {
         self.sync_composer(&view, cx);
         self.sync_git_props(&view, cx);
         self.sync_details(&view, cx);
+        self.sync_banner(cx);
+    }
+
+    /// The shown target's error key (`draft:<id>` or the thread's scoped key) and server thread.
+    fn error_key(&self) -> Option<(SharedString, Option<ThreadKey>)> {
+        match self.target.as_ref()? {
+            ThreadTarget::Draft(draft) => Some((format!("draft:{}", draft.0).into(), None)),
+            ThreadTarget::Server(key) => Some((crate::fixtures::scoped_key(key), Some(key.clone()))),
+        }
+    }
+
+    /// Shows the shown target's error in the banner, and puts a failed send's prompt back in an
+    /// empty composer.
+    fn sync_banner(&mut self, cx: &mut Context<Self>) {
+        let Some((key, thread)) = self.error_key() else { return };
+        let input = ThreadErrors::banner(&key, thread.as_ref(), cx);
+        let shown = input.is_some();
+        self.banner.update(cx, |banner, cx| banner.set_input(input, cx));
+        let banner: Option<AnyView> = shown.then(|| self.banner.clone().into());
+        self.chat.update(cx, |chat, cx| chat.set_banner(banner, cx));
+        if let Some(text) = ThreadErrors::take_restore(&key, cx) {
+            let editor = self.composer.read(cx).editor().clone();
+            editor.update(cx, |editor, cx| {
+                if editor.text().trim().is_empty() {
+                    editor.set_text(text.to_string(), cx);
+                    editor.set_cursor(text.len(), cx);
+                }
+            });
+        }
     }
 
     fn sync_composer(&mut self, view: &ThreadView, cx: &mut Context<Self>) {
@@ -360,6 +415,12 @@ impl ThreadRouteView {
     }
 
     fn on_branch_event(&mut self, key: &SharedString, event: &BranchToolbarEvent, cx: &mut Context<Self>) {
+        // A draft keeps its workspace choice for its first send.
+        if let Some(ThreadTarget::Draft(draft)) = self.target.clone()
+            && key.strip_prefix("draft:") == Some(draft.0.as_ref())
+        {
+            return self.data.draft_workspace_event(&draft, event, cx);
+        }
         match event {
             BranchToolbarEvent::ThreadBranchChanged { branch, .. } => self.set_branch(key, branch.clone().into(), cx),
             BranchToolbarEvent::OpenPullRequest(url) => cx.open_url(url),
@@ -412,6 +473,11 @@ impl ThreadRouteView {
     /// The shown thread's details card, once built.
     pub fn details(&self) -> Option<&Entity<ThreadDetailsPanel>> {
         self.git.front().and_then(|g| g.panel.as_ref())
+    }
+
+    /// The thread error banner (shown over the timeline while it has an input).
+    pub fn error_banner(&self) -> &Entity<ThreadErrorBanner> {
+        &self.banner
     }
 
     /// The shown thread's branch strip.
@@ -631,7 +697,15 @@ impl ThreadRouteView {
                     cx.emit(ThreadRouteEvent::Promoted(target));
                 }
             }
-            DataEvent::ThreadChanged(_) | DataEvent::SnapshotChanged | DataEvent::OpenThread(_) => {}
+            // The server's last error arrives on the thread's shell row.
+            DataEvent::SnapshotChanged => {
+                self.sync_banner(cx);
+                if let Some(target) = self.target.clone() {
+                    let icon = self.data.project_icon(&target, cx);
+                    self.chat.update(cx, |chat, cx| chat.set_project_icon(icon, cx));
+                }
+            }
+            DataEvent::ThreadChanged(_) | DataEvent::OpenThread(_) => {}
         }
     }
 }

@@ -146,6 +146,10 @@ pub struct ChatView {
     details: Option<AnyView>,
     /// Where the card shows at this canvas width (`resolveThreadDetailsCardLayout`).
     details_mode: ThreadDetailsMode,
+    /// The banner pinned over the top of the timeline (`ChatBannerLane`), while one shows.
+    banner: Option<AnyView>,
+    /// The breadcrumb's project icon (override and favicon); the monogram without one.
+    project_icon: Option<crate::components::project_favicon::ProjectIconSource>,
     thread_key: SharedString,
     find_bar: Option<(Entity<ThreadFindBar>, Subscription)>,
     /// Every question of the pending request.
@@ -181,6 +185,8 @@ impl ChatView {
             header_menu: None,
             details: None,
             details_mode: ThreadDetailsMode::Popover,
+            banner: None,
+            project_icon: None,
             thread_key: SharedString::default(),
             find_bar: None,
             questions: Arc::from([]),
@@ -413,6 +419,28 @@ impl ChatView {
     pub fn set_details(&mut self, details: Option<AnyView>, cx: &mut Context<Self>) {
         self.details = details;
         cx.notify();
+    }
+
+    /// The breadcrumb's project icon source, as drawn.
+    pub fn project_icon(&self) -> Option<&crate::components::project_favicon::ProjectIconSource> {
+        self.project_icon.as_ref()
+    }
+
+    /// The breadcrumb's project icon source.
+    pub fn set_project_icon(&mut self, icon: Option<crate::components::project_favicon::ProjectIconSource>, cx: &mut Context<Self>) {
+        if self.project_icon != icon {
+            self.project_icon = icon;
+            cx.notify();
+        }
+    }
+
+    /// Shows a banner over the top of the timeline, or none. While one shows the timeline's top
+    /// fade is off (`topFadeEnabled={!hasTimelineTopBanner}`).
+    pub fn set_banner(&mut self, banner: Option<AnyView>, cx: &mut Context<Self>) {
+        if self.banner.as_ref().map(|b| b.entity_id()) != banner.as_ref().map(|b| b.entity_id()) {
+            self.banner = banner;
+            cx.notify();
+        }
     }
 
     /// Digit keys pick a question option when focus is not in a text field.
@@ -700,7 +728,7 @@ impl Render for ChatView {
                     .flex_1()
                     .min_w_0()
                     .min_h_0()
-                    .child(chat_header(&self.project, &self.title, self.header_height, self.header_inset, &colors, thread_actions))
+                    .child(chat_header(&self.project, self.project_icon.as_ref(), &self.title, self.header_height, self.header_inset, &colors, thread_actions))
                     .child(
                         div()
                             .relative()
@@ -711,8 +739,9 @@ impl Render for ChatView {
                             .when(!self.hero, |d| {
                                 d.child(div().flex().flex_col().flex_1().min_h_0().child(self.timeline.clone()))
                             })
-                            .when(!self.hero, |d| d.child(top_fade).children(scroll_button))
-                            .child(composer_overlay),
+                            .when(!self.hero, |d| d.when(self.banner.is_none(), |d| d.child(top_fade)).children(scroll_button))
+                            .child(composer_overlay)
+                            .children(self.banner.clone().map(|banner| div().absolute().top_0().left_0().right_0().child(banner))),
                     ),
             )
             .children(find_bar)

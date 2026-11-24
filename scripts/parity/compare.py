@@ -10,7 +10,8 @@
                                           the reference PNGs are available
 
 `PARITY_MODE=owner` records and judges the capture at the owner's settings (contrast 95,
-glass 40) instead of the shared one (`default`).
+glass 40) instead of the shared one (`default`). `PARITY_MODE=mac` records and judges every view
+of the owner's Mac capture, text included (see mac.py; expected values in expected/mac/).
 
 The spec (gen_spec.py, one module per area under specs/) lists, per scene, the elements to measure (see measure.py) with a name,
 optionally `blur: true` on a scan across backdrop-blurred glass (judged like any
@@ -246,6 +247,16 @@ def compare(port_dir, out_dir, ref_dir=None):
 
 if __name__ == "__main__":
     command, *args = sys.argv[1:] or ["help"]
+    if MODE == "mac":
+        import mac
+
+        if command == "record":
+            mac.record(*args)
+        elif command == "compare":
+            sys.exit(1 if mac.compare(*args) else 0)
+        else:
+            print(mac.__doc__)
+        sys.exit(0)
     if command == "record":
         record(*args)
     elif command == "compare":

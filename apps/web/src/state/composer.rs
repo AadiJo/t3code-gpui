@@ -23,6 +23,7 @@ use t3code_contracts::{
     RuntimeMode as WireRuntimeMode, RuntimeRequestId, ServerConfig,
 };
 
+use super::thread_errors::ThreadErrors;
 use super::shell::{runtime_ids, thread_key};
 use super::{LiveEnvironment, StateBridge};
 use crate::components::chat::composer::{BannerTone, ChatComposer, ComposerBanner, ComposerContextStrip, ComposerEvent, ComposerState, FollowUpBehavior};
@@ -221,6 +222,16 @@ impl FreshSessionArms {
     }
 }
 
+/// A send failure's banner text (`thrownErrorMessage`, else "Failed to send message."): a
+/// refusal is the server's own message.
+pub fn send_error(error: &t3code_client_runtime::operations::CommandError) -> SharedString {
+    let text = match error {
+        t3code_client_runtime::operations::CommandError::Refused(message) => message.clone(),
+        other => other.to_string(),
+    };
+    if text.trim().is_empty() { t!("Failed to send message.") } else { text.into() }
+}
+
 fn toast_error(title: SharedString, error: impl ToString, cx: &mut App) {
     Toaster::push(ToastData::new(ToastKind::Error, title).description(SharedString::from(error.to_string())), cx);
 }
@@ -401,10 +412,13 @@ struct SendInput<'a> {
 /// message with its attachments, context records, model selection and title seed.
 fn send_turn(input: SendInput<'_>, commands: EnvironmentCommands, config: Option<Arc<ServerConfig>>, cx: &mut App) {
     let (environment_id, thread_id) = runtime_ids(&input.key);
+    let view_key = crate::fixtures::scoped_key(&input.key);
     let Some(turn) = super::attachments::turn_attachments(&environment_id, input.attachments) else {
-        toast_error(t!("Failed to send message."), t!("Retry or remove failed uploads before sending."), cx);
+        ThreadErrors::set(&view_key, Some(t!("Retry or remove failed uploads before sending.")), cx);
         return;
     };
+    ThreadErrors::set(&view_key, None, cx);
+    let prompt = SharedString::from(input.prompt.to_owned());
     let text = input.prompt.trim();
     let text = if text.is_empty() && !input.attachments.is_empty() { super::attachments::ATTACHMENT_ONLY_PROMPT } else { text };
     let mut message = SendMessage::text(thread_id.clone(), text);
@@ -444,7 +458,7 @@ fn send_turn(input: SendInput<'_>, commands: EnvironmentCommands, config: Option
             }
             Some(Err(error)) => {
                 _ = thread.update(cx, |thread, cx| thread.remove_optimistic(&message_id, cx));
-                toast_error(t!("Failed to send message."), error, cx);
+                ThreadErrors::send_failed(&view_key, send_error(&error), prompt, cx);
             }
             None => {}
         });

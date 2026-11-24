@@ -23,6 +23,7 @@ pub mod notifications;
 pub mod palette;
 pub mod shell;
 pub mod sidebar_actions;
+pub mod thread_errors;
 pub mod threads;
 
 use std::cell::RefCell;

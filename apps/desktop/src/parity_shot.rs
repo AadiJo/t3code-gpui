@@ -3,6 +3,8 @@
 // titlebar, Graphite, glass opacity 45%), driven into each reference view by
 // real input events, then captured at 1100x780 @2x.
 // Usage: parity-shot <out-dir> [scene-filter]
+// `parity-shot --mac <out-dir> [scene]` renders every view of the owner's Mac reference under the
+// owner profile instead (parity_mac.rs); `--list` and `--list-mac` print the scene names.
 // The owner scenes read the owner's client settings from the JSON file named
 // by PARITY_CLIENT_SETTINGS (an Electron `client-settings.json`) and render at
 // the size in their table; without that variable they are skipped. With it and
@@ -30,6 +32,9 @@ use t3code_web::shortcuts::commands::{ToggleCommandPalette, ToggleDiff, ToggleTe
 use t3code_web::theme_palette::{ThemeMode, ThemeSettings};
 use t3code_web::theme_tokens::GlassOpacity;
 use t3code_web::ui_state_store::StateDir;
+
+#[path = "parity_mac.rs"]
+mod mac;
 
 /// The owner's Glass opacity setting.
 const OWNER_GLASS_OPACITY: u8 = 45;
@@ -377,7 +382,7 @@ fn render(scene: &Scene, profile: Profile, file_name: &str, out: &std::path::Pat
     let store = if profile.owner_sidebar {
         FixtureStore::from_sidebar(t3code_web::components::sidebar::fixtures::owner_snapshot())
     } else {
-        FixtureStore::reference()
+        FixtureStore::audit_reference()
     };
     let options = AppRootOptions {
         data: DataSource::Fixtures(store),
@@ -521,13 +526,32 @@ fn render(scene: &Scene, profile: Profile, file_name: &str, out: &std::path::Pat
 }
 
 fn main() -> anyhow::Result<()> {
-    let mut args = std::env::args().skip(1);
+    let mut args = std::env::args().skip(1).peekable();
+    match args.peek().map(String::as_str) {
+        Some("--mac") => {
+            args.next();
+            return mac::main(args);
+        }
+        Some("--list-mac") => {
+            mac::list();
+            return Ok(());
+        }
+        Some("--list") => {
+            let owner = OWNER_SCENES.iter().flat_map(|s| [s.name.to_owned(), format!("{}-wide", s.name)]);
+            for name in SCENES.iter().map(|s| s.name.to_owned()).chain(SCENE_VIEWS.iter().map(|(n, _)| (*n).to_owned())).chain(owner) {
+                println!("{name}");
+            }
+            return Ok(());
+        }
+        _ => {}
+    }
     let out = PathBuf::from(args.next().context("usage: parity-shot <out-dir> [scene-filter]")?);
     let filter = args.next();
     std::fs::create_dir_all(&out)?;
     let data = out.join(".runtime");
     std::fs::create_dir_all(&data)?;
-    let wanted = |name: &str| filter.as_deref().is_none_or(|f| name.contains(f));
+    // `=name` renders exactly that scene; otherwise every scene whose name contains the filter.
+    let wanted = |name: &str| filter.as_deref().is_none_or(|f| f.strip_prefix('=').map_or(name.contains(f), |exact| name == exact));
     for scene in SCENES.iter().filter(|s| wanted(s.name)) {
         if let Err(error) = render(scene, SHARED, scene.name, &out, &data) {
             eprintln!("FAILED {}: {error:#}", scene.name);

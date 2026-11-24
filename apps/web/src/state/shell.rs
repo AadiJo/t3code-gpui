@@ -461,6 +461,13 @@ impl LiveShell {
         self.mapped = next;
         let (settings, grouping) = sidebar_settings(cx);
         let supported = envs.iter().any(|env| env.config_loaded());
+        let snooze_presets: std::collections::HashMap<_, std::sync::Arc<[t3code_contracts::SnoozePresetSetting]>> = envs
+            .iter()
+            .filter_map(|env| {
+                let presets = env.config.as_ref()?.settings.snooze_presets.clone()?;
+                Some((model::EnvironmentId(env.environment_id().as_str().to_owned().into()), presets.into()))
+            })
+            .collect();
         let (projects, wanted) = {
         let all: Vec<(t3code_contracts::EnvironmentId, &OrchestrationProjectShell)> = envs
             .iter()
@@ -522,6 +529,7 @@ impl LiveShell {
             drafts: Vec::new(),
             active_draft: None,
             search_content_matches: self.search_matches.clone(),
+            snooze_presets: std::sync::Arc::new(snooze_presets),
         };
         self.revision += 1;
         self.rebuilds += 1;

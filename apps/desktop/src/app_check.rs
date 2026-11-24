@@ -677,8 +677,8 @@ impl Run {
 
     /// Lets timers (question auto-advance, streams) run for `ms`.
     fn wait(&mut self, ms: u64) {
-        let until = Instant::now() + Duration::from_millis(ms);
-        while Instant::now() < until {
+        // A fixed number of steps, so a loaded machine still advances the test clock by `ms`.
+        for _ in 0..ms.div_ceil(20) {
             std::thread::sleep(Duration::from_millis(20));
             self.cx.advance_clock(Duration::from_millis(20));
             self.frame();

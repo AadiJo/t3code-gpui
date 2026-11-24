@@ -272,6 +272,7 @@ pub fn showcase_snapshot() -> SidebarSnapshot {
         active_draft: None,
         search_content_matches: None,
         now: FIXTURE_NOW,
+        snooze_presets: Default::default(),
     }
 }
 
@@ -371,6 +372,7 @@ pub fn large_snapshot(thread_count: usize, project_count: usize) -> SidebarSnaps
         drafts: Vec::new(),
         active_draft: None,
         search_content_matches: None,
+        snooze_presets: Default::default(),
     }
 }
 
@@ -436,6 +438,7 @@ pub fn reference_snapshot() -> SidebarSnapshot {
         drafts: Vec::new(),
         active_draft: None,
         search_content_matches: None,
+        snooze_presets: Default::default(),
     }
 }
 
@@ -599,5 +602,6 @@ pub fn owner_snapshot() -> SidebarSnapshot {
         drafts,
         active_draft: None,
         search_content_matches: None,
+        snooze_presets: Default::default(),
     }
 }

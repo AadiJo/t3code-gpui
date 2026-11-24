@@ -185,3 +185,50 @@ pub fn handle(event: &SidebarEvent, cx: &mut App) -> SidebarOutcome {
 pub fn now_iso() -> String {
     format_ms(now_ms())
 }
+
+/// One snooze menu choice: `id` is `snoozePresetId`, `when` the wake time as shown.
+#[derive(Clone, Debug)]
+pub struct ResolvedSnoozePreset {
+    pub id: SharedString,
+    pub label: SharedString,
+    pub when: SharedString,
+    pub wake: Zoned,
+}
+
+/// `snoozePresetId`.
+pub fn snooze_preset_id(setting: &t3code_contracts::SnoozePresetSetting) -> SharedString {
+    match setting {
+        t3code_contracts::SnoozePresetSetting::After(a) => format!("after:{}", a.minutes).into(),
+        t3code_contracts::SnoozePresetSetting::At(at) => {
+            let day = serde_json::to_value(&at.day).ok().and_then(|v| v.as_str().map(str::to_owned)).unwrap_or_default();
+            format!("at:{day}:{}", at.time).into()
+        }
+        t3code_contracts::SnoozePresetSetting::Unknown(_) => SharedString::default(),
+    }
+}
+
+/// `resolveSnoozePresets`: an environment's snooze menu at `now` (its settings, else the
+/// defaults), soonest first, one choice per wake minute.
+pub fn resolve_snooze_presets(settings: Option<&[t3code_contracts::SnoozePresetSetting]>, now: &Zoned) -> Vec<ResolvedSnoozePreset> {
+    use crate::components::settings::threads_settings_snooze::{default_presets, resolve};
+    let defaults;
+    let settings = match settings {
+        Some(settings) => settings,
+        None => {
+            defaults = default_presets();
+            &defaults
+        }
+    };
+    let mut presets: Vec<ResolvedSnoozePreset> = settings
+        .iter()
+        .filter_map(|setting| {
+            let resolved = resolve(setting, now)?;
+            Some(ResolvedSnoozePreset { id: snooze_preset_id(setting), label: resolved.label, when: resolved.when.into(), wake: resolved.wake })
+        })
+        .collect();
+    let minute = |p: &ResolvedSnoozePreset| p.wake.timestamp().as_second().div_euclid(60);
+    presets.sort_by_key(minute);
+    let mut seen = std::collections::HashSet::new();
+    presets.retain(|p| seen.insert(minute(p)));
+    presets
+}

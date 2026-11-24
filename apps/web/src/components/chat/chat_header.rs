@@ -35,6 +35,7 @@ pub struct ThreadActionsTrigger {
 /// toggle while the sidebar is collapsed.
 pub fn chat_header(
     project: &SharedString,
+    project_icon: Option<&crate::components::project_favicon::ProjectIconSource>,
     title: &SharedString,
     height: gpui_kit::Pixels,
     leading_inset: gpui_kit::Pixels,
@@ -72,7 +73,7 @@ pub fn chat_header(
                         .cursor_pointer()
                         .text_color(colors.theme.muted_foreground)
                         .hover(|s| s.text_color(colors.theme.text))
-                        .child(ProjectFavicon::new(project.clone()).size(colors.r(px(14.))))
+                        .child(ProjectFavicon::new(project.clone()).source(project_icon).size(colors.r(px(14.))))
                         .child(project.clone()),
                 )
                 .child(div().font_weight(FontWeight::NORMAL).text_color(colors.theme.icon_muted).child("/"))

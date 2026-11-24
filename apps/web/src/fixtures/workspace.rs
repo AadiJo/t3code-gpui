@@ -153,3 +153,22 @@ pub fn diff_input(
         content,
     }
 }
+
+/// The Diff tab's input for the Mac reference world: the checkout's uncommitted changes in every
+/// scope, with no turns or commits (the reference thread's turns changed no tracked files).
+pub fn reference_diff_input(thread_key: SharedString, workspace_root: SharedString, branch: Option<SharedString>, patch: &str) -> DiffPanelInput {
+    let content = match renderable_patch(patch) {
+        Some(patch) => DiffPanelContent::Patch { patch: Arc::new(patch), notices: Vec::new(), stats: None },
+        None => DiffPanelContent::Empty { no_net_changes: true },
+    };
+    DiffPanelInput {
+        thread_key: Some(thread_key),
+        workspace_root: Some(workspace_root),
+        commits_status: crate::components::diff_panel::CommitsStatus::Loaded { truncated: false },
+        head_ref: branch.or(Some("main".into())),
+        base_ref: Some("origin/main".into()),
+        can_refresh: true,
+        content,
+        ..DiffPanelInput::default()
+    }
+}
