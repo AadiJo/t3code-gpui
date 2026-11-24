@@ -273,7 +273,7 @@ impl AccessSettingsPanel {
             div().border_t_1().border_color(divider).children(sessions.into_iter().enumerate().map(|(ix, session)| {
                 let label = session.client.label.clone().or(session.client.os.clone()).unwrap_or_else(|| session.subject.clone());
                 let state = if session.current {
-                    t!("This client")
+                    t!("This device")
                 } else if session.connected {
                     t!("Connected")
                 } else {
