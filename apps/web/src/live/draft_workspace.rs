@@ -30,7 +30,7 @@ pub struct DraftWorkspace {
 pub struct MissingBaseBranch;
 
 /// The project's workspace settings: server settings under the project's overrides
-/// (`resolveProjectOverrides`). The `.t3/project.json` fallback is not read here.
+/// (`resolveProjectOverrides`). The `t3.json` fallback is read by [`project_file_env_mode`].
 struct ProjectWorkspaceSettings {
     env_mode: Option<ThreadEnvMode>,
     /// Whether the env mode came from the environment's own setting (not a project override).
@@ -59,7 +59,43 @@ fn is_new_project_folder(new_projects_root: &str, workspace_root: &str) -> bool 
     workspace_root.len() > prefix.len() && workspace_root.starts_with(&prefix) && !workspace_root[prefix.len()..].contains(separator)
 }
 
+/// `T3_PROJECT_FILE_NAME`: the repository's shared T3 Code settings at the workspace root.
+pub const PROJECT_FILE: &str = "t3.json";
+
+/// The workspace root whose `t3.json` decides a new draft's mode: only when neither the project
+/// nor the environment sets one, and the environment is connected (`consultProjectFile`).
+pub fn project_file_root(environment_id: &EnvironmentId, project: &ProjectId, cx: &App) -> Option<String> {
+    let environment = StateBridge::environment(environment_id, cx)?;
+    let environment = environment.read(cx);
+    let config = environment.config.as_ref()?;
+    environment.store.session()?;
+    let shell_project = environment.shell.snapshot.as_ref()?.projects.iter().find(|p| &p.id == project)?;
+    let settings = project_settings(&config.settings, project, shell_project.default_thread_env_mode.clone());
+    settings.env_mode.is_none().then(|| shell_project.workspace_root.clone())
+}
+
+/// The `defaultThreadEnvMode` of a `t3.json` (`parseT3ProjectFile`); `None` for a file that is
+/// not a JSON object or holds another value there.
+pub fn project_file_env_mode(contents: &str) -> Option<ThreadEnvMode> {
+    let value: serde_json::Value = serde_json::from_str(contents).ok()?;
+    match value.as_object()?.get("defaultThreadEnvMode")?.as_str()? {
+        "worktree" => Some(ThreadEnvMode::Worktree),
+        "local" => Some(ThreadEnvMode::Local),
+        _ => None,
+    }
+}
+
 impl DraftWorkspace {
+    /// The workspace a `t3.json` mode gives a draft whose project and environment set none. A
+    /// mode from the file is not overridden by the new-project-folder rule.
+    pub fn from_project_file(mode: ThreadEnvMode, environment_id: &EnvironmentId, project: &ProjectId, cx: &App) -> Self {
+        let start_from_origin = StateBridge::environment(environment_id, cx)
+            .and_then(|env| env.read(cx).config.as_ref().map(|c| project_settings(&c.settings, project, None).start_from_origin))
+            .unwrap_or(true);
+        let env_mode = if mode == ThreadEnvMode::Worktree { EnvMode::Worktree } else { EnvMode::Local };
+        Self { env_mode, start_from_origin: env_mode == EnvMode::Worktree && start_from_origin, ..Self::default() }
+    }
+
     /// A new draft's workspace in `project` (`useHandleNewThread.resolveDefaultEnvMode`).
     pub fn new(environment_id: &EnvironmentId, project: &ProjectId, cx: &App) -> Self {
         let Some(environment) = StateBridge::environment(environment_id, cx) else { return Self::default() };
@@ -82,7 +118,15 @@ impl DraftWorkspace {
     }
 
     /// Applies a branch toolbar event the way the web writes it to its draft thread.
-    pub fn apply(&mut self, event: &BranchToolbarEvent, environment_id: &EnvironmentId, project: &ProjectId, cx: &App) {
+    /// `previous_seed` is the "Previous worktree" the toolbar offered, for `UsePreviousWorktree`.
+    pub fn apply(
+        &mut self,
+        event: &BranchToolbarEvent,
+        environment_id: &EnvironmentId,
+        project: &ProjectId,
+        previous_seed: Option<crate::components::branch_toolbar_logic::PreviousWorktreeSeed>,
+        cx: &App,
+    ) {
         match event {
             BranchToolbarEvent::EnvModeChanged(mode) => {
                 let start_from_origin = StateBridge::environment(environment_id, cx)
@@ -95,6 +139,14 @@ impl DraftWorkspace {
                 }
             }
             BranchToolbarEvent::StartFromOriginChanged(value) => self.start_from_origin = *value,
+            BranchToolbarEvent::UsePreviousWorktree => {
+                // The toolbar offers the seed it was given; read it again from the same shells.
+                if let Some(seed) = previous_seed {
+                    self.branch = seed.branch;
+                    self.worktree_path = Some(seed.worktree_path);
+                    self.env_mode = EnvMode::Worktree;
+                }
+            }
             BranchToolbarEvent::ThreadBranchChanged { branch, worktree_path } => {
                 self.env_mode =
                     resolve_draft_env_mode_after_branch_change(worktree_path.as_deref(), self.worktree_path.as_deref(), self.env_mode);

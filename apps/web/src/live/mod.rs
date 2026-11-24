@@ -67,7 +67,7 @@ struct Draft {
 pub struct LiveData {
     events: Entity<DataEvents>,
     palette: Rc<LivePaletteSource>,
-    drafts: RefCell<HashMap<DraftId, Draft>>,
+    drafts: Rc<RefCell<HashMap<DraftId, Draft>>>,
     next_draft: std::cell::Cell<usize>,
     draft_store: Rc<RefCell<dyn ComposerDraftStore>>,
     catalogs: RefCell<HashMap<t3code_contracts::EnvironmentId, CatalogCache>>,
@@ -122,7 +122,7 @@ impl LiveData {
         Rc::new(Self {
             events,
             palette,
-            drafts: RefCell::default(),
+            drafts: Rc::default(),
             next_draft: std::cell::Cell::new(0),
             draft_store: Rc::new(RefCell::new(LiveDraftStore::new(StateBridge::drafts(cx)))),
             catalogs: RefCell::default(),
@@ -320,7 +320,10 @@ impl AppData for LiveData {
                 draft_workspace::DraftWorkspace::new(&environment_id, &project_id, cx)
             })
             .unwrap_or_default();
-        self.drafts.borrow_mut().insert(id.clone(), Draft { project, workspace });
+        self.drafts.borrow_mut().insert(id.clone(), Draft { project: project.clone(), workspace: workspace.clone() });
+        if let Some(project) = project {
+            self.read_project_file(&id, &project, workspace, cx);
+        }
         id
     }
 
@@ -339,7 +342,8 @@ impl AppData for LiveData {
             let Some(project) = entry.project.clone() else { return };
             let (environment_id, project_id) = draft_ids(&project);
             let before = entry.workspace.clone();
-            entry.workspace.apply(event, &environment_id, &project_id, cx);
+            let seed = git::previous_worktree(&environment_id, project_id.as_str(), entry.workspace.worktree_path.as_deref(), cx);
+            entry.workspace.apply(event, &environment_id, &project_id, seed, cx);
             entry.workspace != before
         };
         if changed {
@@ -942,6 +946,39 @@ impl LiveData {
     }
 
     /// The checkpoint "Edit from here" rewinds to (`findRevertCheckpoint`).
+    /// Reads the project's `t3.json` when it decides a new draft's mode, and applies the mode
+    /// unless the draft's workspace was changed meanwhile. The web waits for the file before it
+    /// opens the draft; here the draft opens at once and its mode follows the file.
+    fn read_project_file(&self, draft: &DraftId, project: &ProjectRef, initial: draft_workspace::DraftWorkspace, cx: &mut App) {
+        let (environment_id, project_id) = draft_ids(project);
+        let Some(root) = draft_workspace::project_file_root(&environment_id, &project_id, cx) else { return };
+        let Some(link) = crate::live::rpc::RpcLink::new(&environment_id, cx) else { return };
+        let input = t3code_contracts::ProjectReadFileInput { cwd: root, relative_path: draft_workspace::PROJECT_FILE.into(), allow_missing: Some(true) };
+        let read = link.call::<t3code_contracts::rpc::methods::ProjectsReadFile>(input);
+        let (drafts, draft, events) = (Rc::downgrade(&self.drafts), draft.clone(), self.events.downgrade());
+        cx.spawn(async move |cx| {
+            let Ok(file) = read.await else { return };
+            if file.exists == Some(false) || file.truncated {
+                return;
+            }
+            let Some(mode) = draft_workspace::project_file_env_mode(&file.contents) else { return };
+            cx.update(|cx| {
+                let Some(drafts) = drafts.upgrade() else { return };
+                let workspace = draft_workspace::DraftWorkspace::from_project_file(mode, &environment_id, &project_id, cx);
+                {
+                    let mut drafts = drafts.borrow_mut();
+                    let Some(entry) = drafts.get_mut(&draft) else { return };
+                    if entry.workspace != initial || entry.workspace == workspace {
+                        return;
+                    }
+                    entry.workspace = workspace;
+                }
+                _ = events.update(cx, |_, cx| cx.emit(DataEvent::ThreadChanged(ThreadTarget::Draft(draft))));
+            });
+        })
+        .detach();
+    }
+
     fn revert_checkpoint(projection: &t3code_shared::thread_projection::ThreadProjection, turn_count: usize) -> Option<Arc<t3code_contracts::OrchestrationV2Checkpoint>> {
         use t3code_contracts::OrchestrationV2CheckpointStatus as Status;
         projection
