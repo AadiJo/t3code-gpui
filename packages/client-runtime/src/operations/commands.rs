@@ -151,7 +151,7 @@ impl EnvironmentCommands {
     }
 
     /// The live session, waiting a while for one if the environment is reconnecting.
-    async fn session(&self) -> Result<Arc<RpcSession>, CommandError> {
+    pub(crate) async fn session(&self) -> Result<Arc<RpcSession>, CommandError> {
         let mut sessions = self.store.context().supervisor.session.clone();
         let wait = async {
             loop {

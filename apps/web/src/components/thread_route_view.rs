@@ -96,7 +96,18 @@ pub struct ThreadRouteView {
     /// Most recently shown first; the front is the shown thread's.
     git: VecDeque<GitControls>,
     details_open: bool,
+    /// The open "Edit from here?" confirmation.
+    pending_revert: Option<PendingRevert>,
     _subscriptions: Vec<Subscription>,
+}
+
+/// An "Edit from here" waiting for its confirmation (`RevertConfirmHost`).
+#[derive(Clone)]
+struct PendingRevert {
+    key: ThreadKey,
+    message: MessageId,
+    turn_count: usize,
+    restore_files: bool,
 }
 
 impl EventEmitter<ThreadRouteEvent> for ThreadRouteView {}
@@ -119,7 +130,7 @@ impl ThreadRouteView {
             cx.subscribe_in(&chat, window, Self::on_chat_event),
             cx.subscribe(&data.events(), Self::on_data_event),
         ];
-        Self { data, menu, chat, composer, target: None, base, git: VecDeque::new(), details_open: false, _subscriptions: subscriptions }
+        Self { data, menu, chat, composer, target: None, base, git: VecDeque::new(), details_open: false, pending_revert: None, _subscriptions: subscriptions }
     }
 
     pub fn chat(&self) -> &Entity<ChatView> {
@@ -428,7 +439,68 @@ impl ThreadRouteView {
             ActionOutcome::Done => {}
             ActionOutcome::OpenThread(thread) => cx.emit(ThreadRouteEvent::OpenThread(thread)),
             ActionOutcome::LoadComposer(text) => self.load_composer(&text, window, cx),
+            ActionOutcome::ConfirmRevert { message, turn_count, restore_files } => {
+                self.pending_revert = Some(PendingRevert { key, message, turn_count, restore_files });
+                cx.notify();
+            }
         }
+    }
+
+    /// Closes the confirmation; with `restore_files` set, rewinds (`onConfirmRevert`) and puts
+    /// the message back in the composer.
+    pub fn resolve_revert(&mut self, choice: Option<bool>, cx: &mut Context<Self>) {
+        let Some(pending) = self.pending_revert.take() else { return };
+        cx.notify();
+        let Some(restore_files) = choice else { return };
+        if restore_files && !pending.restore_files {
+            return;
+        }
+        let task = self.data.revert(&pending.key, &pending.message, pending.turn_count, restore_files, cx);
+        cx.spawn(async move |this, cx| {
+            let Some(prompt) = task.await else { return };
+            _ = this.update(cx, |this, cx| {
+                if this.target.as_ref() != Some(&ThreadTarget::Server(pending.key.clone())) {
+                    return;
+                }
+                let editor = this.composer.read(cx).editor().clone();
+                editor.update(cx, |editor, cx| {
+                    let current = editor.text().to_owned();
+                    let next = match (current.is_empty(), prompt.is_empty()) {
+                        (_, true) => current,
+                        (true, false) => prompt.to_string(),
+                        (false, false) => format!("{current}\n\n{prompt}"),
+                    };
+                    let end = next.len();
+                    editor.set_text(next, cx);
+                    editor.set_cursor(end, cx);
+                });
+            });
+        })
+        .detach();
+    }
+
+    /// "Edit from here?" with Cancel, "Revert files too" (only where files can be restored)
+    /// and "Revert and keep changes".
+    fn render_revert_confirm(&self, cx: &mut Context<Self>) -> Option<impl IntoElement + use<>> {
+        use crate::components::ui::button::{Button, ButtonSize, ButtonVariant};
+        use crate::components::ui::dialog::{DialogSurface, Modal};
+        let pending = self.pending_revert.as_ref()?;
+        let dialog = DialogSurface::new(t!("Edit from here?"))
+            .description(t!("Rewind chat to before this message. Your prompt and attachments return to the composer. “Revert files too” also undoes your own edits."))
+            .footer(Button::new("revert-cancel").variant(ButtonVariant::Outline).size(ButtonSize::Default).label(t!("Cancel")).on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.resolve_revert(None, cx))))
+            .footer(
+                Button::new("revert-files")
+                    .variant(ButtonVariant::DestructiveOutline)
+                    .size(ButtonSize::Default)
+                    .label(t!("Revert files too"))
+                    .disabled(!pending.restore_files)
+                    .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.resolve_revert(Some(true), cx))),
+            )
+            .footer(Button::new("revert-keep").variant(ButtonVariant::Default).size(ButtonSize::Default).label(t!("Revert and keep changes")).on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.resolve_revert(Some(false), cx))));
+        let this = cx.weak_entity();
+        Some(Modal::dialog("revert-confirm-dialog", dialog, move |_, cx| {
+            this.update(cx, |this, cx| this.resolve_revert(None, cx)).ok();
+        }))
     }
 
     fn on_data_event(&mut self, _: Entity<crate::state::app_data::DataEvents>, event: &DataEvent, cx: &mut Context<Self>) {
@@ -451,13 +523,13 @@ impl ThreadRouteView {
                     cx.emit(ThreadRouteEvent::Promoted(target));
                 }
             }
-            DataEvent::ThreadChanged(_) | DataEvent::SnapshotChanged => {}
+            DataEvent::ThreadChanged(_) | DataEvent::SnapshotChanged | DataEvent::OpenThread(_) => {}
         }
     }
 }
 
 impl Render for ThreadRouteView {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        self.chat.clone()
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        div().size_full().child(self.chat.clone()).children(self.render_revert_confirm(cx))
     }
 }

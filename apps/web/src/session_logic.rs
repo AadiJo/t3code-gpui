@@ -148,9 +148,13 @@ fn tool_status(status: Option<Status>) -> ToolStatus {
 fn attachments(list: &[ChatAttachment]) -> Arc<[Attachment]> {
     list.iter()
         .filter_map(|attachment| match attachment {
-            ChatAttachment::Image(image) => {
-                Some(Attachment { name: shared(image.name.clone()), kind: AttachmentKind::Image, source: SharedString::default() })
-            }
+            ChatAttachment::Image(image) => Some(Attachment {
+                name: shared(image.name.clone()),
+                kind: AttachmentKind::Image,
+                source: crate::state::attachments::cached_image(&image.id)
+                    .map(|path| SharedString::from(path.to_string_lossy().into_owned()))
+                    .unwrap_or_default(),
+            }),
             ChatAttachment::File(file) => {
                 Some(Attachment { name: shared(file.name.clone()), kind: AttachmentKind::File, source: SharedString::default() })
             }
@@ -1061,6 +1065,7 @@ pub fn timeline_input(mapper: &mut TimelineMapper, projection: &ThreadProjection
             .filter_map(|summary| Some(TurnDiffSummary { assistant_message_id: MessageId(summary.assistant_message_id?), files: summary.files }))
             .collect(),
         supports_rollback: false,
+        revert_turn_counts: Arc::new(revert_turn_counts(projection)),
         worktree_setup: None,
         queued: user_queued_runs(projection)
             .into_iter()
@@ -1107,4 +1112,89 @@ pub fn changed_message_text(previous: &[TimelineEntry], next: &[TimelineEntry]) 
             _ => None,
         })
         .collect()
+}
+
+/// The turn count "Edit from here" rewinds each user message to
+/// (`deriveRevertTurnCountByUserMessageId` with `deriveAvailableRevertTurnCounts`): the
+/// checkpoint of the run before the message's run, or 0 for the thread's first run when its
+/// start checkpoint exists; only turns the provider conversation can roll back to.
+pub fn revert_turn_counts(projection: &ThreadProjection) -> HashMap<SharedString, usize> {
+    use t3code_contracts::OrchestrationV2CheckpointStatus as Checkpoint;
+    let rewindable = |status: Checkpoint| matches!(status, Checkpoint::Ready | Checkpoint::Missing);
+    let available = available_revert_turn_counts(projection);
+    let mut turn_by_run: HashMap<&str, u64> = HashMap::new();
+    for checkpoint in projection.checkpoints.iter().filter(|c| rewindable(c.status)) {
+        if let (Some(run), Some(ordinal)) = (checkpoint.run_id.as_ref(), checkpoint.app_run_ordinal) {
+            turn_by_run.insert(run.as_ref(), ordinal);
+        }
+    }
+    let start_available = projection
+        .checkpoints
+        .iter()
+        .any(|c| rewindable(c.status) && c.ordinal_within_scope == 0 && c.app_run_ordinal.is_none());
+    let unsettled = active_run(projection).map(|r| r.id.as_ref());
+    let mut target_by_run: HashMap<&str, Option<u64>> = HashMap::new();
+    let mut previous: Option<&str> = None;
+    let mut out = HashMap::new();
+    let thread_id = &projection.thread.id;
+    for row in projection.visible_turn_items.iter().filter(|row| row.is_local_to(thread_id)) {
+        let (run, user) = match &*row.item {
+            Item::UserMessage(user) => (user.run_id.as_ref(), Some(user)),
+            Item::AssistantMessage(reply) => (reply.run_id.as_ref(), None),
+            _ => continue,
+        };
+        let Some(run) = run.map(|r| r.as_ref()) else { continue };
+        target_by_run.entry(run).or_insert_with(|| {
+            let target = match previous {
+                None => start_available.then_some(0),
+                Some(prev) => turn_by_run.get(prev).copied(),
+            };
+            previous = Some(run);
+            target
+        });
+        let Some(user) = user else { continue };
+        if Some(run) == unsettled || !matches!(user.input_intent, Intent::TurnStart | Intent::QueuedTurn) {
+            continue;
+        }
+        if let Some(Some(target)) = target_by_run.get(run)
+            && available.contains(target)
+        {
+            out.insert(id_of(&user.message_id), *target as usize);
+        }
+    }
+    out
+}
+
+/// Turns whose run left the active provider conversation at a known point.
+fn available_revert_turn_counts(projection: &ThreadProjection) -> std::collections::HashSet<u64> {
+    let mut available = std::collections::HashSet::new();
+    let thread = &projection.thread;
+    let Some(provider_thread) = projection.provider_threads.iter().find(|p| Some(&p.id) == thread.active_provider_thread_id.as_ref()) else {
+        return available;
+    };
+    if provider_thread.provider_session_id.is_none() || provider_thread.provider_instance_id.as_str() != thread.model_selection.instance_id.as_str() {
+        return available;
+    }
+    available.insert(0);
+    let mut latest_by_attempt: HashMap<&str, &t3code_contracts::OrchestrationV2ProviderTurn> = HashMap::new();
+    for turn in projection.provider_turns.iter() {
+        if let Some(attempt) = turn.run_attempt_id.as_ref() {
+            let entry = latest_by_attempt.entry(attempt.as_ref()).or_insert(turn);
+            if turn.ordinal > entry.ordinal {
+                *entry = turn;
+            }
+        }
+    }
+    for run in projection.runs.iter() {
+        let Some(attempt_id) = run.active_attempt_id.as_ref() else { continue };
+        let turn = latest_by_attempt.get(attempt_id.as_ref()).copied().or_else(|| {
+            let attempt = projection.attempts.iter().find(|a| &a.id == attempt_id)?;
+            let turn_id = attempt.provider_turn_id.as_ref()?;
+            projection.provider_turns.iter().find(|t| &t.id == turn_id).map(|t| &**t)
+        });
+        if turn.is_some_and(|t| t.provider_thread_id == provider_thread.id) {
+            available.insert(run.ordinal);
+        }
+    }
+    available
 }

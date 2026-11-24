@@ -65,6 +65,8 @@ pub enum DataEvent {
     Text { thread: ThreadKey, changes: Arc<[(MessageId, SharedString, bool)]> },
     /// A draft got its first message and is now a server thread.
     DraftPromoted { draft: DraftId, thread: ThreadKey },
+    /// Show this thread (a fork or side chat that just arrived).
+    OpenThread(ThreadKey),
 }
 
 /// The emitter every [`AppData`] publishes on. It also owns the source's subscriptions.
@@ -84,6 +86,9 @@ pub enum ActionOutcome {
     OpenThread(ThreadKey),
     /// Put this text in the composer (edit from here, edit a queued message).
     LoadComposer(SharedString),
+    /// Ask "Edit from here?" before rewinding to `turn_count`; `restore_files` says whether
+    /// "Revert files too" is offered.
+    ConfirmRevert { message: MessageId, turn_count: usize, restore_files: bool },
 }
 
 /// What a sidebar thread command left for the app to do.
@@ -154,6 +159,12 @@ pub trait AppData: 'static {
 
     /// Runs a timeline button (approvals, fork, edit from here, the queue) on `key`.
     fn timeline_action(&self, key: &ThreadKey, action: &TimelineAction, cx: &mut App) -> ActionOutcome;
+
+    /// Rewinds to before `message` ("Edit from here" confirmed); resolves with the text to put
+    /// back in the composer.
+    fn revert(&self, _key: &ThreadKey, _message: &MessageId, _turn_count: usize, _restore_files: bool, _cx: &mut App) -> Task<Option<SharedString>> {
+        Task::ready(None)
+    }
 
     /// Answers every question of the pending request: `answers[i]` is question `i`'s option.
     fn answer_questions(&self, key: &ThreadKey, answers: &[usize], cx: &mut App);

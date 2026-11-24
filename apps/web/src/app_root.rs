@@ -991,6 +991,9 @@ impl AppRoot {
     }
 
     fn on_data_event(&mut self, _: &Entity<DataEvents>, event: &DataEvent, window: &mut Window, cx: &mut Context<Self>) {
+        if let DataEvent::OpenThread(key) = event {
+            return self.navigate(Route::Thread(key.clone()), cx);
+        }
         if let DataEvent::SnapshotChanged = event {
             let route = self.router.read(cx).current().clone();
             if self.shown.is_none()

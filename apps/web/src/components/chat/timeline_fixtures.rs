@@ -400,6 +400,7 @@ pub fn fixture_thread() -> TimelineInput {
             },
         ]),
         supports_rollback: true,
+        revert_turn_counts: Default::default(),
         worktree_setup: Some(WorktreeSetup {
             started_at: at(3_598),
             running: false,

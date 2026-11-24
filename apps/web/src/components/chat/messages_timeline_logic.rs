@@ -941,7 +941,7 @@ pub fn derive_timeline_rows(input: &TimelineInput, expansion: &TimelineExpansion
     }
 
     let mut rows = attach_trailing_meta(rows);
-    assign_revert_counts(&mut rows, input.supports_rollback);
+    assign_revert_counts(&mut rows, input.supports_rollback, &input.revert_turn_counts);
     finish_grouping(&mut rows);
     rows
 }
@@ -1008,8 +1008,18 @@ fn attach_trailing_meta(rows: Vec<TimelineRow>) -> Vec<TimelineRow> {
 }
 
 /// Every user message can revert the turns after it when rollback is supported.
-fn assign_revert_counts(rows: &mut [TimelineRow], supports_rollback: bool) {
+fn assign_revert_counts(rows: &mut [TimelineRow], supports_rollback: bool, live: &std::collections::HashMap<SharedString, usize>) {
     if !supports_rollback {
+        return;
+    }
+    if !live.is_empty() {
+        for current in rows.iter_mut() {
+            if let RowKind::Message(message) = &mut current.kind
+                && message.message.role == MessageRole::User
+            {
+                message.revert_turn_count = live.get(&message.message.id.0).copied();
+            }
+        }
         return;
     }
     let total = rows

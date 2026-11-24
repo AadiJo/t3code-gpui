@@ -413,6 +413,9 @@ pub struct TimelineInput {
     pub active_turn_started_at: Option<Timestamp>,
     pub turn_diff_summaries: Arc<[TurnDiffSummary]>,
     pub supports_rollback: bool,
+    /// Live data: the turn count each user message's "Edit from here" rewinds to, by message
+    /// id; empty means every user message gets one (fixtures).
+    pub revert_turn_counts: Arc<std::collections::HashMap<SharedString, usize>>,
     pub worktree_setup: Option<WorktreeSetup>,
     pub queued: Arc<[QueuedMessage]>,
     pub pending_question: Option<PendingQuestion>,
