@@ -148,7 +148,7 @@ impl InboxHost for DesktopInbox {
         );
         let Some(native) = self.native.as_ref().filter(|_| notifications) else { return };
         // A focused window shows its own alerts; the inbox still records these.
-        if cx.active_window().is_some() {
+        if any_window_focused(cx) {
             return;
         }
         for item in added {
@@ -165,11 +165,18 @@ impl InboxHost for DesktopInbox {
     }
 
     fn update(&self, command: DesktopNotificationCommand, cx: &mut App) {
-        match self.store.borrow_mut().update(&command) {
+        // The store's borrow must end before `publish` reads it.
+        let result = self.store.borrow_mut().update(&command);
+        match result {
             Ok(commit) => self.publish(commit, cx),
             Err(error) => eprintln!("could not save notifications: {error}"),
         }
     }
+}
+
+/// Whether any of the app's windows has focus (`BrowserWindow.getAllWindows().some(isFocused)`).
+fn any_window_focused(cx: &mut App) -> bool {
+    cx.windows().into_iter().any(|window| window.update(cx, |_, window, _| window.is_window_active()).unwrap_or(false))
 }
 
 /// Activates the main window and opens the clicked notification's thread.
@@ -195,6 +202,12 @@ fn activate(activation: Activation, cx: &mut App) {
 /// Installs native notifications, the inbox (macOS, Windows) and the badge.
 /// Call once after `t3code_web::init`.
 pub fn install(cx: &mut App) {
+    install_with(INBOX_PLATFORM, store::default_path(), cx);
+}
+
+/// [`install`] with the inbox on or off and its file at `path`; checks run the inbox on Linux
+/// this way (the coordinator must have been created with the same `inbox`).
+pub fn install_with(inbox: bool, path: Option<std::path::PathBuf>, cx: &mut App) {
     let (activations, mut clicks) = unbounded();
     let native = backend(activations);
     if let Some(native) = &native {
@@ -206,10 +219,10 @@ pub fn install(cx: &mut App) {
         }
     })
     .detach();
-    if !INBOX_PLATFORM {
+    if !inbox {
         return;
     }
-    let Some(path) = store::default_path() else { return };
+    let Some(path) = path else { return };
     let store = match InboxStore::load(path) {
         Ok(store) => store,
         Err(error) => return eprintln!("could not load notifications: {error}"),
