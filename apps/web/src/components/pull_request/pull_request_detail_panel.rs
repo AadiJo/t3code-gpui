@@ -45,7 +45,7 @@ use crate::components::ui::button::{Button, ButtonSize, ButtonVariant};
 use crate::components::ui::input::TextInput;
 use crate::components::ui::menu::{MenuItem, MenuItemKind, MenuPopup, dropdown_menu};
 use crate::diff_patch::{FileDiff, HunkBlock, parse_patch};
-use crate::i18n::t;
+use crate::i18n::{t, t_rich};
 use crate::markdown_pipeline::{MarkdownFlavor, ParsedBlocks};
 use crate::{ActiveAppTheme as _, AppTheme};
 
@@ -141,6 +141,8 @@ pub struct PullRequestDetailPanel {
     breakdown: Option<PullRequestChangeBreakdownValue>,
     /// `pullRequests.linkedThreads`: `None` before the first answer, `Err` when it failed.
     linked_threads: Option<Result<Vec<ThreadId>, SharedString>>,
+    /// Conversations the timeline shows, newest first (`COMMENT_PAGE` at a time).
+    shown_conversations: usize,
     _picker_events: Vec<Subscription>,
     /// Fixed clock for scenes; `None` reads the system clock.
     pub now_ms: Option<i64>,
@@ -207,6 +209,7 @@ impl PullRequestDetailPanel {
             confirm_delete_branch: false,
             breakdown: None,
             linked_threads: None,
+            shown_conversations: COMMENT_PAGE,
             _picker_events: Vec::new(),
             now_ms: None,
         };
@@ -1352,6 +1355,9 @@ fn tour_file(file: &FileDiff) -> tour::FileDiff {
     }
 }
 
+/// Conversations shown per page (`COMMENT_PAGE`).
+const COMMENT_PAGE: usize = 10;
+
 /// `ChangeBreakdownGrid` in a tooltip: lines per kind of file, then the total.
 struct BreakdownTooltip {
     breakdown: PullRequestChangeBreakdownValue,
@@ -2155,6 +2161,13 @@ impl PullRequestDetailPanel {
             filter_pull_request_conversation_items(&items, self.show_bots, self.show_resolved).iter().flat_map(|i| i.comments().into_iter().map(|c| c.id.clone())).collect()
         };
         let now = self.now();
+        // `pagePullRequestConversationItems`: the oldest conversations past the page stay hidden.
+        let conversations = events
+            .iter()
+            .filter(|e| matches!(e.kind, TimelineEventKind::Comment | TimelineEventKind::Review) && e.comment.as_ref().is_some_and(|c| visible.contains(&c.id)))
+            .count();
+        let hidden = conversations.saturating_sub(self.shown_conversations);
+        let mut skipped = 0;
         let mut column = div().flex().flex_col().gap(px(16.)).p(px(20.));
         column = column.child(
             div()
@@ -2174,6 +2187,26 @@ impl PullRequestDetailPanel {
                 TimelineEventKind::Comment | TimelineEventKind::Review => {
                     let Some(comment) = event.comment.clone() else { continue };
                     if !visible.contains(&comment.id) {
+                        continue;
+                    }
+                    if skipped < hidden {
+                        skipped += 1;
+                        if skipped == hidden {
+                            column = column.child(
+                                Button::new("tl-show-older")
+                                    .size(ButtonSize::Sm)
+                                    .variant(ButtonVariant::Outline)
+                                    .label(t!(
+                                        "{count, plural, one {Show {shown} older conversation ({count} hidden)} other {Show {shown} older conversations ({count} hidden)}}",
+                                        count = hidden,
+                                        shown = hidden.min(COMMENT_PAGE)
+                                    ))
+                                    .on_click(cx.listener(|this, _, _, cx| {
+                                        this.shown_conversations += COMMENT_PAGE;
+                                        cx.notify();
+                                    })),
+                            );
+                        }
                         continue;
                     }
                     let mut card = div().flex().flex_col().gap(px(10.)).child(self.render_comment(&comment, event.thread.as_ref(), theme, window, cx));
@@ -2245,6 +2278,40 @@ impl PullRequestDetailPanel {
                             .child(header)
                             .child(card)
                             .child(replies)
+                            .when(thread.has_more_replies, |el| {
+                                // `PullRequestMoreReplies`: how many replies the host kept back, and where to read them.
+                                let url = thread.url.clone();
+                                el.child(
+                                    div()
+                                        .pl(px(34.))
+                                        .flex()
+                                        .flex_wrap()
+                                        .items_baseline()
+                                        .gap(theme.sp(2.))
+                                        .py(theme.sp(1.))
+                                        .ui_text(theme, TextSize::Xs, weight::NORMAL)
+                                        .text_color(theme.colors.muted_foreground)
+                                        .child(if thread.more_replies > 0 {
+                                            t!(
+                                                "{count, plural, one {{formatted} more reply} other {{formatted} more replies}}",
+                                                count = thread.more_replies,
+                                                formatted = crate::i18n::number_format::format_count(thread.more_replies as f64, None).as_str()
+                                            )
+                                        } else {
+                                            t!("More replies")
+                                        })
+                                        .when_some(url, |el, url| {
+                                            el.child(
+                                                div()
+                                                    .id(SharedString::from(format!("more-replies-{id}")))
+                                                    .cursor_pointer()
+                                                    .hover(|s| s.underline().text_color(theme.colors.foreground()))
+                                                    .child(t!("View on host"))
+                                                    .on_click(cx.listener(move |_, _, _, cx| cx.emit(PullRequestDetailEvent::OpenUrl(url.clone().into())))),
+                                            )
+                                        }),
+                                )
+                            })
                             .child(div().pl(px(34.)).child(reply_box));
                     }
                     column = column.child(card);
@@ -2275,6 +2342,18 @@ impl PullRequestDetailPanel {
                     );
                 }
             }
+        }
+        if self.shown_conversations > COMMENT_PAGE {
+            column = column.child(
+                Button::new("tl-show-recent")
+                    .size(ButtonSize::Sm)
+                    .variant(ButtonVariant::Ghost)
+                    .label(SharedString::from(t_rich!("Show only {COMMENT_PAGE} recent conversations", COMMENT_PAGE = COMMENT_PAGE).plain()))
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.shown_conversations = COMMENT_PAGE;
+                        cx.notify();
+                    })),
+            );
         }
         column.into_any_element()
     }
