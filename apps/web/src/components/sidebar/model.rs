@@ -237,6 +237,12 @@ pub struct SidebarProject {
     pub updated_at: TimestampMs,
     pub pinned: bool,
     pub archived: bool,
+    /// The name its group shows when the data source derives it (`deriveProjectGroupLabel`).
+    pub group_label: Option<SharedString>,
+    /// The project's icon override (`projectIcon`).
+    pub icon: Option<t3code_contracts::OrchestrationProjectShellProjectIcon>,
+    /// The project's fetched favicon image on disk, once loaded.
+    pub favicon: Option<std::sync::Arc<std::path::Path>>,
 }
 
 /// Sidebar-affecting client settings.

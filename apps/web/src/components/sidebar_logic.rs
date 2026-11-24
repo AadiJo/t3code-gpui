@@ -644,6 +644,8 @@ pub struct SidebarList {
     pub groups: Vec<ProjectGroup>,
     /// Project display name by project ref, for card rows.
     pub project_labels: HashMap<ProjectRef, SharedString>,
+    /// Project icon override and favicon by project ref, from its group.
+    pub project_icons: HashMap<ProjectRef, crate::components::project_favicon::ProjectIconSource>,
     /// Thread keys in visual order, for keyboard and shortcut traversal.
     pub thread_order: Vec<ThreadKey>,
 }
@@ -698,16 +700,22 @@ pub fn build_sidebar_list(snapshot: &SidebarSnapshot, options: &SidebarListOptio
 
     let mut group_of: HashMap<ProjectRef, usize> = HashMap::new();
     let mut project_labels = HashMap::new();
+    let mut project_icons = HashMap::new();
     for (ix, group) in groups.iter().enumerate() {
         for member in &group.member_refs {
             group_of.insert(member.clone(), ix);
             project_labels.insert(member.clone(), group.label.clone());
+            if group.icon.is_some() || group.favicon.is_some() {
+                let source = crate::components::project_favicon::ProjectIconSource { icon: group.icon.clone(), favicon: group.favicon.clone() };
+                project_icons.insert(member.clone(), source);
+            }
         }
     }
 
     let mut list = SidebarList {
         groups: Vec::new(),
         project_labels,
+        project_icons,
         ..Default::default()
     };
     let push_thread = |list: &mut SidebarList, thread: &Arc<SidebarThread>, variant, section| {

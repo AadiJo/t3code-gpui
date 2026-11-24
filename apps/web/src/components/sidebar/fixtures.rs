@@ -31,6 +31,9 @@ fn project(id: &str, title: &str, age_days: i64) -> SidebarProject {
         updated_at: FIXTURE_NOW.minus(DAY),
         pinned: false,
         archived: false,
+        group_label: None,
+        icon: None,
+        favicon: None,
     }
 }
 

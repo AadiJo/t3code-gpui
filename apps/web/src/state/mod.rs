@@ -17,6 +17,7 @@
 pub mod app_data;
 pub mod attachments;
 pub mod composer;
+pub mod favicons;
 pub mod favorites;
 pub mod palette;
 pub mod shell;
@@ -164,6 +165,7 @@ impl StateBridge {
         let tokio = connection.tokio().clone();
         let data_dir = connection.data_dir().to_owned();
         attachments::init_image_cache(&data_dir);
+        favicons::init(&data_dir);
         let (runtime, drafts, ui_state) = {
             let _guard = tokio.enter();
             let runtime = StateRuntime::start(connection.registry().clone(), Arc::clone(connection.auth()), &data_dir);
