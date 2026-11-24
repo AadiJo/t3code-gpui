@@ -256,6 +256,9 @@ impl ConnectionRuntime {
         let (events, receiver) = mpsc::unbounded();
         handle.spawn(watch_registry(registry.clone(), events.clone()));
         handle.spawn(detect_wake(registry.clone()));
+        if runtime_metrics_enabled() {
+            handle.spawn(log_runtime_metrics(handle.clone()));
+        }
         if let Some(cloud) = &cloud {
             handle.spawn(watch_account(cloud.clerk.clone(), cloud.relay.clone(), registry.clone(), auth.clone(), events.clone()));
             handle.spawn(restore_account(cloud.clerk.clone()));
@@ -626,9 +629,15 @@ async fn watch_supervisor(id: EnvironmentId, handle: SupervisorHandle, events: m
     let mut probe = tokio::time::interval(LATENCY_PROBE_INTERVAL);
     probe.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     let mut probed_generation = 0;
+    let mut logged_phase = None;
     loop {
         let current = status.borrow_and_update().clone();
         let connected = current.phase == ConnectionPhase::Connected;
+        if runtime_metrics_enabled() && logged_phase != Some(current.phase) {
+            logged_phase = Some(current.phase);
+            let detail = current.last_failure.as_ref().map(|f| f.detail.as_str()).unwrap_or("");
+            eprintln!("runtime-phase t={} env={id} phase={:?} generation={} {detail}", epoch_ms(), current.phase, current.generation);
+        }
         let session = connected.then(|| handle.session.borrow().clone()).flatten();
         let server_version = session
             .as_ref()
@@ -704,6 +713,32 @@ async fn discover_relay(
         })
         .collect();
     send(RelayDiscovery { refreshing: false, error: None, environments });
+}
+
+/// `T3CODE_RUNTIME_METRICS=1` prints the tokio runtime's task counts every
+/// 30 s and each environment's phase changes to stderr, for soak runs.
+fn runtime_metrics_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| std::env::var("T3CODE_RUNTIME_METRICS").is_ok_and(|v| v == "1"))
+}
+
+fn epoch_ms() -> u128 {
+    SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0)
+}
+
+async fn log_runtime_metrics(handle: tokio::runtime::Handle) {
+    let mut tick = tokio::time::interval(Duration::from_secs(30));
+    loop {
+        tick.tick().await;
+        let metrics = handle.metrics();
+        eprintln!(
+            "runtime-metrics t={} alive_tasks={} workers={} global_queue={}",
+            epoch_ms(),
+            metrics.num_alive_tasks(),
+            metrics.num_workers(),
+            metrics.global_queue_depth()
+        );
+    }
 }
 
 /// Loads the stored T3 Connect sign-in. While Clerk cannot be reached the
@@ -788,6 +823,9 @@ async fn detect_wake(registry: ConnectionRegistry) {
         let now = SystemTime::now();
         if now.duration_since(last).unwrap_or_default() > WAKE_GAP {
             tracing::info!("woke from sleep; waking supervisors");
+            if runtime_metrics_enabled() {
+                eprintln!("runtime-wake t={} gap_ms={}", epoch_ms(), now.duration_since(last).unwrap_or_default().as_millis());
+            }
             registry.broadcast(SupervisorSignal::Wakeup);
         }
         last = now;
