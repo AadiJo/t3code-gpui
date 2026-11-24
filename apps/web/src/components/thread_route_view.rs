@@ -687,6 +687,13 @@ impl ThreadRouteView {
                     cx.emit(ThreadRouteEvent::Promoted(target));
                 }
             }
+            DataEvent::DraftLaunchFailed { draft, thread } => {
+                if self.target.as_ref() == Some(&ThreadTarget::Server(thread.clone())) {
+                    let target = ThreadTarget::Draft(draft.clone());
+                    self.target = Some(target.clone());
+                    cx.emit(ThreadRouteEvent::Promoted(target));
+                }
+            }
             // The server's last error arrives on the thread's shell row.
             DataEvent::SnapshotChanged => {
                 self.sync_banner(cx);

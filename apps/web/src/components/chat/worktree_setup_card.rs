@@ -5,7 +5,7 @@
 
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    AnyElement, Context, Div, Hsla, InteractiveElement as _, IntoElement, ParentElement as _, SharedString,
+    AnyElement, Context, Div, Hsla, IntoElement, ParentElement as _, SharedString,
     Styled as _, Window, div,
 };
 
@@ -133,7 +133,7 @@ impl MessagesTimeline {
         let stage_row = |stage: &SetupStage| -> AnyElement {
             let trailing_text = match stage.status {
                 Status::Pending => None,
-                Status::Skipped => Some(stage.detail.clone().unwrap_or_else(|| t!("skipped"))),
+                Status::Skipped => Some(stage.detail.clone().unwrap_or_else(|| t!("skipped", context = "worktree setup stage status"))),
                 Status::Running if stage.id == SetupStageId::Checkout && stage.percent.is_some() => {
                     stage.percent.map(|percent| SharedString::from(format!("{percent}%")))
                 }
@@ -276,9 +276,9 @@ impl MessagesTimeline {
         let details_list = details_open.then(|| {
             let rows: Vec<(SharedString, SharedString, bool)> = [
                 (t!("Branch"), setup.branch.clone(), true),
-                (t!("Base"), setup.base_ref.clone(), true),
+                (t!("Base", context = "git base branch"), setup.base_ref.clone(), true),
                 (t!("Path"), setup.worktree_path.clone(), true),
-                (t!("Setup"), setup.setup_script.as_ref().map(|script| script.command.clone()), false),
+                (t!("Setup", context = "setup script"), setup.setup_script.as_ref().map(|script| script.command.clone()), false),
             ]
             .into_iter()
             .filter_map(|(label, value, middle)| Some((label, value?, middle)))

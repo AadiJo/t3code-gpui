@@ -50,10 +50,12 @@
 //
 //   setup    the worktree setup row against the server's setup stream: running, cancelled,
 //            finished (`live_check_setup.rs`)
+//   draft-banner  a draft launch the server refuses returns to the draft with the banner and
+//            the prompt (`live_check_setup.rs`)
 //   families-seed, families  older settled pages and thread families on two servers
 //            (`live_check_families.rs`)
 //
-// Usage: live-check <setup|families-seed|families|seed|drive|restart|import|send|sidebar|notify|details|mentions|heic|wheel|workspace|banner|sidebardata|composer|composer-restart|probe> <out-dir>
+// Usage: live-check <draft-banner|setup|families-seed|families|seed|drive|restart|import|send|sidebar|notify|details|mentions|heic|wheel|workspace|banner|sidebardata|composer|composer-restart|probe> <out-dir>
 #[allow(dead_code)]
 #[path = "import/mod.rs"]
 mod import;
@@ -529,6 +531,7 @@ fn main() -> anyhow::Result<()> {
         "families-seed" => live_check_families::run_families_seed(&mut check),
         "families" => live_check_families::run_families(&mut check),
         "setup" => live_check_setup::run_setup(&mut check),
+        "draft-banner" => live_check_setup::run_draft_banner(&mut check),
         other => Err(anyhow::anyhow!("unknown phase {other}")),
     };
     check.finish(&phase, result)

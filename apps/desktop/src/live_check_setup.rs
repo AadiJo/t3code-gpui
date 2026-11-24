@@ -195,3 +195,45 @@ pub(super) fn run_setup(check: &mut Check) -> anyhow::Result<()> {
     );
     check.shot("setup-02-finished.png")
 }
+
+/// `draft-banner`: a draft whose launch the server refuses (a provider instance it does not have)
+/// stays a draft, as the web keeps it: the route returns to the draft, the banner shows the
+/// server's message there and the prompt is back in its composer.
+pub(super) fn run_draft_banner(check: &mut Check) -> anyhow::Result<()> {
+    check.pump(|c| c.connected(), Duration::from_secs(30), "connected")?;
+    let router = check.read(|root, _| root.router().clone());
+    check.cx.update(|cx| router.update(cx, |router, cx| router.navigate(Route::Index, cx)));
+    check.pump(|c| matches!(c.route(), Route::Draft(_)), Duration::from_secs(10), "a draft opens")?;
+    let Route::Draft(draft) = check.route() else { bail!("no draft") };
+    check.pump(|c| c.read(|root, cx| root.thread_view().read(cx).branch_strip().is_some()), Duration::from_secs(10), "draft shown")?;
+    let composer = composer_of(check);
+    let prompt = "This launch is refused by the server.";
+    check.cx.update(|cx| {
+        composer.update(cx, |_, cx| {
+            cx.emit(t3code_web::components::chat::composer::ComposerEvent::Submit {
+                prompt: prompt.into(),
+                attachments: Vec::new(),
+                model: t3code_web::model_selection::ModelSelection {
+                    instance_id: t3code_web::model_selection::ProviderInstanceId("no-such-instance".into()),
+                    model: "nothing".into(),
+                    effort: None,
+                    speed: None,
+                    ultracode: false,
+                },
+                intent: t3code_web::composer_logic::ComposerSubmissionIntent::Foreground,
+                dispatch: None,
+            })
+        })
+    });
+    let d = draft.clone();
+    check.pump(move |c| c.route() == Route::Draft(d.clone()) && banner_input(c).is_some(), Duration::from_secs(20), "the refused launch lands back on the draft")?;
+    let shown = banner_input(check);
+    let composer = composer_of(check);
+    let restored = check.cx.update(|cx| composer.read(cx).editor().read(cx).text().to_owned());
+    let route = check.route();
+    check.check("the draft route is back", route == Route::Draft(draft.clone()), format!("{route:?}"));
+    check.check("the draft's banner shows the server's message", shown.as_ref().is_some_and(|b| !b.error.is_empty()), format!("{:?}", shown.map(|b| b.error)));
+    check.check("the refused prompt is back in the draft's composer", restored.trim() == prompt, format!("{restored:?}"));
+    check.shot("draft-banner-00.png")
+}
+

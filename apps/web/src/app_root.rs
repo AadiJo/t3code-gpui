@@ -711,9 +711,11 @@ impl AppRoot {
     fn on_thread_event(&mut self, _: &Entity<ThreadRouteView>, event: &ThreadRouteEvent, window: &mut Window, cx: &mut Context<Self>) {
         match event {
             ThreadRouteEvent::Promoted(target) => {
-                if let ThreadTarget::Server(key) = target {
-                    self.router.update(cx, |router, cx| router.replace(Route::Thread(key.clone()), cx));
-                }
+                let route = match target {
+                    ThreadTarget::Server(key) => Route::Thread(key.clone()),
+                    ThreadTarget::Draft(draft) => Route::Draft(draft.clone()),
+                };
+                self.router.update(cx, |router, cx| router.replace(route, cx));
             }
             ThreadRouteEvent::OpenThread(key) => self.navigate(Route::Thread(key.clone()), cx),
             ThreadRouteEvent::OpenDiff { turn, file } => {

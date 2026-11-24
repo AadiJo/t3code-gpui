@@ -550,17 +550,23 @@ impl AppData for LiveData {
                     }),
                 };
                 let task = StateBridge::spawn(async move { commands.launch_thread(input).await }, cx);
-                let thread_view_key = crate::fixtures::scoped_key(&thread_key(&environment_id, &thread_id));
+                // A launch the server refused created no thread: as the web does, the draft comes
+                // back with the error and its prompt, and the route returns to it.
+                let removed = self.drafts.borrow_mut().remove(id);
+                let key = thread_key(&environment_id, &thread_id);
+                let (drafts, events, draft_id, failed_thread) = (Rc::clone(&self.drafts), self.events.clone(), id.clone(), key.clone());
                 cx.spawn(async move |cx| match task.await {
                     Some(Err(error)) => cx.update(|cx| {
-                        ThreadErrors::send_failed(&thread_view_key, crate::state::composer::send_error(&error), restore, cx)
+                        if let Some(draft) = removed {
+                            drafts.borrow_mut().insert(draft_id.clone(), draft);
+                        }
+                        ThreadErrors::send_failed(&draft_key, crate::state::composer::send_error(&error), restore, cx);
+                        events.update(cx, |_, cx| cx.emit(DataEvent::DraftLaunchFailed { draft: draft_id, thread: failed_thread }));
                     }),
                     Some(Ok(_)) => crate::state::attachments::AttachmentUploads::forget_sent(sent),
                     None => {}
                 })
                 .detach();
-                self.drafts.borrow_mut().remove(id);
-                let key = thread_key(&environment_id, &thread_id);
                 self.emit(DataEvent::DraftPromoted { draft: id.clone(), thread: key.clone() }, cx);
                 Some(key)
             }
