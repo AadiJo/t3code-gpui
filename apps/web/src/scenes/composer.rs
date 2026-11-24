@@ -302,6 +302,7 @@ pub fn build_composer(state: SceneState, store: Rc<RefCell<dyn ComposerDraftStor
                 title: "Environment disconnected. Messages send when it reconnects.".into(),
                 description: None,
                 action: Some("Retry".into()),
+                secondary_action: None,
                 dismiss: None,
                 body: None,
             }];

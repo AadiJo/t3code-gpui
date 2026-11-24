@@ -13,7 +13,7 @@ use gpui_kit::{Focusable as _, StyledImage as _,
 
 use super::composer::{ChatComposer, ComposerEvent};
 use super::composer_icons::composer_icon_stroke;
-use super::composer_theme::{ATTACHMENT_OVERLAP, BORDER, ComposerColors, DRAWER_INSET, SURFACE_RADIUS};
+use super::composer_theme::{BORDER, ComposerColors, DRAWER_INSET, SURFACE_RADIUS};
 use crate::components::icons::{Icon, IconName, IconSize};
 use crate::components::ui::GlassExt as _;
 use crate::components::ui::button::{Button, ButtonSize, ButtonVariant};
@@ -319,10 +319,11 @@ impl ChatComposer {
                 .flex_none()
                 .px(c.r(px(4.)) - BORDER)
                 .pt(c.r(px(5.)) - BORDER)
-                .pb(c.r(px(5.)) + c.r(ATTACHMENT_OVERLAP) - BORDER)
+                .pb(c.r(px(5.)))
                 .rounded_t(c.r(SURFACE_RADIUS))
                 .glass(c.glass_surface)
                 .border_1()
+                .border_b_0()
                 .border_color(c.outline)
                 .text_size(c.r(px(12.)))
                 .line_height(c.r(px(16.)))
@@ -382,13 +383,13 @@ impl ChatComposer {
                 .left(c.r(DRAWER_INSET))
                 .right(c.r(DRAWER_INSET))
                 .bottom(gpui_kit::relative(1.))
-                .mb(-c.r(ATTACHMENT_OVERLAP))
-                .pb(c.r(ATTACHMENT_OVERLAP) + c.r(px(4.)) - BORDER)
+                .pb(c.r(px(4.)))
                 .pt(c.r(px(4.)) - BORDER)
                 .px(c.r(px(4.)) - BORDER)
                 .rounded_t(c.r(SURFACE_RADIUS))
                 .glass(c.glass_surface)
                 .border_1()
+                .border_b_0()
                 .border_color(c.outline)
                 .text_size(c.r(px(12.)))
                 .line_height(c.r(px(16.)))

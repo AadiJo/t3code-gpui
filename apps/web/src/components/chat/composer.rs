@@ -109,6 +109,8 @@ pub struct ComposerBanner {
     /// Muted text after the title, truncated first (`ComposerBannerStackItem.description`).
     pub description: Option<SharedString>,
     pub action: Option<SharedString>,
+    /// A second action after `action`; its click raises `BannerAction("<id>#secondary")`.
+    pub secondary_action: Option<SharedString>,
     /// Shows the dismiss button (`ComposerBanner.Dismiss`) with this accessible label.
     pub dismiss: Option<SharedString>,
     /// Drawn under the row (`ComposerBannerStackItem.children`).
@@ -1418,13 +1420,14 @@ impl ChatComposer {
         }
         // `ComposerBanner.Scroll`: `max-h-[min(24rem,40dvh)]`.
         let max_body = c.r(px(384.)).min(window.viewport_size().height * 0.4);
-        let count = self.state.banners.len();
-        let cards = self.state.banners.iter().enumerate().map(|(index, banner)| {
+                let cards = self.state.banners.iter().enumerate().map(|(index, banner)| {
             // `variantColors`: warning and error cards take a tinted outline and an 8% wash.
-            let (tint, ink, outline) = match banner.tone {
-                BannerTone::Neutral => (None, c.muted_foreground, c.outline),
-                BannerTone::Warning => (Some(c.warning), c.warning, c.warning.opacity(0.28)),
-                BannerTone::Error => (Some(c.error), c.error_foreground, c.error.opacity(0.32)),
+            // `ComposerBanner.Icon` is muted whatever the tone.
+            let ink = c.muted_foreground;
+            let (tint, outline) = match banner.tone {
+                BannerTone::Neutral => (None, c.outline),
+                BannerTone::Warning => (Some(c.warning), c.warning.opacity(0.28)),
+                BannerTone::Error => (Some(c.error), c.error.opacity(0.32)),
             };
             // `min-h-(--composer-banner-icon-column)`: spacing(6) from `sm` up.
             let row = div()
@@ -1452,7 +1455,14 @@ impl ChatComposer {
                 )
                 .when_some(banner.action.clone(), |el, action| {
                     let id = banner.id.clone();
-                    el.child(div().id(SharedString::from(format!("banner-action-{id}"))).px(c.r(px(8.))).h(c.r(px(24.))).flex().items_center().rounded(c.r(px(8.))).text_size(c.r(px(12.))).text_color(c.foreground).cursor_pointer().hover({
+                    el.child(div().id(SharedString::from(format!("banner-action-{id}"))).px(c.r(px(8.))).h(c.r(px(24.))).flex().items_center().rounded(c.r(px(8.))).text_size(c.r(px(12.))).font_weight(FontWeight::MEDIUM).text_color(c.foreground).cursor_pointer().hover({
+                        let h = c.foreground.opacity(0.05);
+                        move |s| s.bg(h)
+                    }).on_click(cx.listener(move |_, _, _, cx| cx.emit(ComposerEvent::BannerAction(id.clone())))).child(action))
+                })
+                .when_some(banner.secondary_action.clone(), |el, action| {
+                    let id = SharedString::from(format!("{}#secondary", banner.id));
+                    el.child(div().id(SharedString::from(format!("banner-action-{id}"))).px(c.r(px(8.))).h(c.r(px(24.))).flex().items_center().rounded(c.r(px(8.))).text_size(c.r(px(12.))).font_weight(FontWeight::MEDIUM).text_color(c.foreground).cursor_pointer().hover({
                         let h = c.foreground.opacity(0.05);
                         move |s| s.bg(h)
                     }).on_click(cx.listener(move |_, _, _, cx| cx.emit(ComposerEvent::BannerAction(id.clone())))).child(action))
@@ -1474,22 +1484,33 @@ impl ChatComposer {
             // `ComposerBanner.Children`: the body under the row.
             let body = banner.body.as_ref().map(|body| self.render_usage_limits_body(&banner.id, body, c, max_body, cx));
             // Each notice is its own attached card (`NoticeCard`); a card below another joins it
-            // edge to edge, square-topped with no top border, and the last tucks under the composer.
+            // edge to edge, square-topped with no top border. The web tucks each card 1rem under the
+            // next one and masks that part away; here a card simply ends where the next begins.
             let joined = index > 0;
             div()
                 .relative()
                 .w_full()
-                .when(index + 1 < count, |el| el.mb(-c.r(ATTACHMENT_OVERLAP)))
-                .pb(c.r(ATTACHMENT_OVERLAP) + c.r(px(5.)) - BORDER)
+                .pb(c.r(px(5.)))
                 .px(c.r(px(4.)) - BORDER)
                 .pt(c.r(px(5.)) - if joined { px(0.) } else { BORDER })
                 .when(!joined, |el| el.rounded_t(c.r(SURFACE_RADIUS)))
                 .glass(c.glass_surface)
                 .border_1()
+                .border_b_0()
                 .when(joined, |el| el.border_t_0())
                 .border_color(outline)
                 .when_some(tint, |el, t| {
-                    el.child(div().absolute().inset_0().when(!joined, |d| d.rounded_t(c.r(SURFACE_RADIUS))).bg(t.opacity(0.08)))
+                    // The web's wash spans the border box, so the outline blends over it too.
+                    el.child(
+                        div()
+                            .absolute()
+                            .top(if joined { px(0.) } else { -BORDER })
+                            .left(-BORDER)
+                            .right(-BORDER)
+                            .bottom(px(0.))
+                            .when(!joined, |d| d.rounded_t(c.r(SURFACE_RADIUS)))
+                            .bg(t.opacity(0.08)),
+                    )
                 })
                 .child(div().relative().flex().flex_col().child(row).children(body))
         });
@@ -1498,7 +1519,6 @@ impl ChatComposer {
         Some(
             div()
                 .mx(c.r(DRAWER_INSET))
-                .mb(-c.r(ATTACHMENT_OVERLAP))
                 .flex()
                 .items_end()
                 .gap(c.r(px(4.)))

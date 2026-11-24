@@ -7,6 +7,12 @@
 //! `live-check stash`: the prompt stash through Mod+S and the drawer's keys, with a file's upload
 //! kept across stash and restore, the stored `t3code:prompt-stash:v2` document, and shots of the
 //! badge and drawer at the owner's look for the fork comparison.
+//!
+//! `live-check env-banner`: the machine banner while the server is down. The phase writes
+//! `env-banner.stop` when the thread is shown (the runner then stops the server) and
+//! `env-banner.start` after Disconnect (the runner restarts it), and checks the reconnect grace,
+//! Retry now, the 20 s Disconnect server, Reconnect switching the machine back on, and the
+//! banner leaving once connected.
 
 use std::time::Duration;
 
@@ -327,5 +333,75 @@ pub(super) fn run_stash(check: &mut Check) -> anyhow::Result<()> {
     let closed = stash_menu(check).is_none();
     check.check("typing closes the stash", closed, "");
     set_prompt(check, "");
+    Ok(())
+}
+
+fn env_banner(check: &mut Check) -> Option<t3code_web::components::chat::composer::ComposerBanner> {
+    let composer = composer_of(check);
+    check.cx.update(|cx| composer.read(cx).state().banners.iter().find(|b| b.id.starts_with("environment-unavailable:")).cloned())
+}
+
+fn emit_banner_action(check: &mut Check, id: String) {
+    use t3code_web::components::chat::composer::ComposerEvent;
+    let composer = composer_of(check);
+    check.cx.update(|cx| composer.update(cx, |_, cx| cx.emit(ComposerEvent::BannerAction(id.into()))));
+    check.frame();
+}
+
+pub(super) fn run_env_banner(check: &mut Check) -> anyhow::Result<()> {
+    check.cx.update(|cx| {
+        t3code_web::theme_palette::ThemeSettings::apply_env_overrides(cx);
+        t3code_web::hooks::use_theme::ThemeStore::set_appearance_mode(t3code_web::theme_palette::ThemeMode::Dark, cx);
+    });
+    let state = load_state(&check.out)?;
+    check.pump(|c| c.connected(), Duration::from_secs(30), "connected")?;
+    let key = super::key_of(&state, &state.edit_thread);
+    check.go(&key);
+    check.pump(|c| c.shown_input().entries.len() >= 2, Duration::from_secs(20), "thread shown")?;
+    let none = env_banner(check).is_none();
+    check.check("no machine banner while connected", none, "");
+    std::fs::write(check.out.join("env-banner.stop"), "")?;
+    check.pump(|c| !c.connected(), Duration::from_secs(60), "the server went away")?;
+    let lost = std::time::Instant::now();
+    check.wait(Duration::from_millis(1000));
+    let early = env_banner(check);
+    check.check("a reconnect shows no banner during its 2 s grace", early.is_none(), format!("{early:?}"));
+    check.pump(|c| env_banner(c).is_some(), Duration::from_secs(10), "machine banner")?;
+    let banner = env_banner(check).expect("banner");
+    let shown_after = lost.elapsed();
+    check.check(
+        "after the grace the banner says the machine is reconnecting, with Retry now",
+        banner.title.ends_with("is reconnecting") && banner.action.as_deref() == Some("Retry now") && banner.secondary_action.is_none(),
+        format!("{:?} {:?} {:?} after {shown_after:?}", banner.title, banner.action, banner.description),
+    );
+    check.shot("e0-env-reconnecting.png")?;
+    emit_banner_action(check, banner.id.to_string());
+    let kept = env_banner(check).is_some();
+    check.check("Retry now keeps the banner while the server is down", kept, "");
+    check.pump(|c| env_banner(c).is_some_and(|b| b.secondary_action.is_some()), Duration::from_secs(30), "Disconnect server offered")?;
+    check.check("Disconnect server appears once the machine stayed unavailable 20 s", lost.elapsed() >= Duration::from_secs(19), format!("{:?}", lost.elapsed()));
+    check.shot("e1-env-disconnect.png")?;
+    let id = banner.id.to_string();
+    emit_banner_action(check, format!("{id}#secondary"));
+    let environment = key.environment_id.0.to_string();
+    let enabled = |c: &mut Check| {
+        let environment = environment.clone();
+        c.cx.update(|cx| {
+            t3code_web::connection::ConnectionRuntime::state(cx).read(cx).environments.iter().find(|e| e.id().as_str() == environment).map(|e| e.entry.enabled)
+        })
+    };
+    check.pump(|c| enabled(c) == Some(false), Duration::from_secs(10), "machine switched off")?;
+    check.check("Disconnect server switches the machine off", true, "");
+    std::fs::write(check.out.join("env-banner.start"), "")?;
+    check.wait(Duration::from_secs(8));
+    // The fork leaves the thread after Disconnect; switch the machine back on as Settings does.
+    let environment_id = t3code_client_runtime::environment::EnvironmentId::new(environment.as_str());
+    let task = check.cx.update(|cx| t3code_web::connection::ConnectionRuntime::global(cx).set_enabled(environment_id, true, cx));
+    check.cx.background_executor.spawn(async move { _ = task.await; }).detach();
+    let _ = id;
+    check.pump(|c| enabled(c) == Some(true), Duration::from_secs(10), "machine switched on")?;
+    check.pump(|c| c.connected(), Duration::from_secs(60), "reconnected")?;
+    check.pump(|c| env_banner(c).is_none(), Duration::from_secs(10), "banner gone")?;
+    check.check("switched back on, the banner leaves once connected", true, "");
     Ok(())
 }
