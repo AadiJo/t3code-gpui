@@ -1193,6 +1193,9 @@ impl AppRoot {
         if let DataEvent::OpenThread(key) = event {
             return self.navigate(Route::Thread(key.clone()), cx);
         }
+        if let DataEvent::NewThread(project) = event {
+            return self.new_thread(project.clone(), window, cx);
+        }
         // A draft launch refused after the user went elsewhere (`stackedThreadToast`); on its own
         // route the draft simply comes back.
         if let DataEvent::DraftLaunchFailed { draft, thread, error } = event {

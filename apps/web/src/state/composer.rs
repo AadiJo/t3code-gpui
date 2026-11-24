@@ -36,7 +36,7 @@ use crate::components::sidebar::model::ThreadKey;
 use crate::components::ui::toast::{ToastData, ToastKind, Toaster};
 use crate::composer_draft_store::{ComposerAttachment, ComposerAttachmentKind, ComposerDraft, ComposerDraftKey, ComposerDraftStore};
 use crate::composer_editor_mentions::serialize_file_link;
-use crate::composer_logic::{ComposerTrigger, ComposerTriggerKind, SendShortcut};
+use crate::composer_logic::{ComposerSubmissionIntent, ComposerTrigger, ComposerTriggerKind, SendShortcut};
 use crate::i18n::t;
 use crate::model_selection::{ModelCatalog, ModelSelection};
 use crate::provider_models_live::{from_wire, model_catalog, to_wire};
@@ -370,7 +370,7 @@ pub fn handle_event(event: &ComposerEvent, thread: &Entity<LiveThread>, composer
     let drafts = StateBridge::drafts(cx);
     let draft_key_text = draft_key(&key).0.to_string();
     match event {
-        ComposerEvent::Submit { prompt, attachments, model, dispatch, .. } => {
+        ComposerEvent::Submit { prompt, attachments, model, dispatch, intent } => {
             // Sending resumes quota-spending work (`clearUsageLimitsFor`).
             UsagePanels::clear(&key, cx);
             let mode = match dispatch {
@@ -383,6 +383,14 @@ pub fn handle_event(event: &ComposerEvent, thread: &Entity<LiveThread>, composer
             let thread_mode = StateBridge::shell(cx).read(cx).row(&key).map(|row| row.source.runtime_mode);
             let set_mode = draft_mode.filter(|mode| Some(*mode) != thread_mode);
             send_turn(SendInput { key: key.clone(), thread: thread.clone(), prompt, attachments, model, mode, fresh, set_mode }, commands, config, cx);
+            // `composer.sendAndNewThread`: the message goes, then a new draft opens in this project.
+            if *intent == ComposerSubmissionIntent::Background {
+                let project = StateBridge::shell(cx).read(cx).row(&key).map(|row| crate::components::sidebar::model::ProjectRef {
+                    environment_id: key.environment_id.clone(),
+                    project_id: crate::components::sidebar::model::ProjectId(row.source.project_id.to_string().into()),
+                });
+                super::open_new_thread(project, cx);
+            }
             drafts.update(|d| {
                 if let Some(draft) = d.drafts_by_thread_key.get_mut(&draft_key_text) {
                     draft.runtime_mode = None;

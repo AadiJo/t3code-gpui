@@ -1133,3 +1133,88 @@ impl Render for BranchToolbar {
         }
     }
 }
+
+/// The composer's context shortcuts (`composer.host`, `composer.cycleHost`, `composer.workspace`,
+/// `composer.branch`, `composer.previousWorktree`). Each opens the control the strip shows for it,
+/// as `openControl` clicks the visible, enabled trigger; it returns false when there is none.
+impl BranchToolbar {
+    fn narrow(&self, cx: &App) -> bool {
+        self.props.show_git_controls && self.strip_width.is_some_and(|w| w < cx.app_theme().rem(36.))
+    }
+
+    /// Opens the machine menu, or the shared run-context menu on a narrow strip.
+    pub fn open_host_menu(&mut self, cx: &mut Context<Self>) -> bool {
+        if self.props.env_locked || !self.can_pick_environment() {
+            return false;
+        }
+        let popup = if self.narrow(cx) { Popup::RunContext } else { Popup::Environment };
+        self.open_popup(popup, cx)
+    }
+
+    /// Moves a draft to the next machine of its project, wrapping (`composer.cycleHost`).
+    pub fn cycle_environment(&mut self, cx: &mut Context<Self>) -> bool {
+        let environments = &self.props.environments;
+        if !self.props.can_change_environment || environments.is_empty() {
+            return false;
+        }
+        let current = environments.iter().position(|e| Some(&e.environment_id) == self.props.environment_id.as_ref());
+        let next = current.map_or(0, |i| (i + 1) % environments.len());
+        cx.emit(BranchToolbarEvent::EnvironmentChanged(environments[next].environment_id.clone()));
+        true
+    }
+
+    /// Opens the workspace menu, or the run-context menu on a narrow strip.
+    pub fn open_workspace_menu(&mut self, cx: &mut Context<Self>) -> bool {
+        if !self.props.show_git_controls || self.env_mode_locked() {
+            return false;
+        }
+        if self.narrow(cx) {
+            return self.open_popup(Popup::RunContext, cx);
+        }
+        if self.props.force_new_worktree {
+            return false;
+        }
+        self.open_popup(Popup::Workspace, cx)
+    }
+
+    /// Opens the branch picker when its trigger is enabled.
+    pub fn open_branch_menu(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        if !self.props.show_git_controls || self.refs.is_none() || self.pending {
+            return false;
+        }
+        if self.open != Some(Popup::Branch) {
+            self.set_branch_picker_open(true, window, cx);
+        }
+        true
+    }
+
+    /// Picks the project's previous worktree for a draft, as its menu row does.
+    pub fn use_previous_worktree(&mut self, cx: &mut Context<Self>) -> bool {
+        let usable = self.props.show_git_controls
+            && !self.props.is_server_thread
+            && !self.env_mode_locked()
+            && !self.props.force_new_worktree
+            && self.props.previous_worktree.is_some();
+        if usable {
+            cx.emit(BranchToolbarEvent::UsePreviousWorktree);
+        }
+        usable
+    }
+
+    /// The open menu by name (`run-context`, `environment`, `workspace`, `branch`), for checks.
+    pub fn open_menu_name(&self) -> Option<&'static str> {
+        self.open.map(|popup| match popup {
+            Popup::RunContext => "run-context",
+            Popup::Environment => "environment",
+            Popup::Workspace => "workspace",
+            Popup::Branch => "branch",
+        })
+    }
+
+    fn open_popup(&mut self, popup: Popup, cx: &mut Context<Self>) -> bool {
+        self.open = Some(popup);
+        self.picker = None;
+        cx.notify();
+        true
+    }
+}

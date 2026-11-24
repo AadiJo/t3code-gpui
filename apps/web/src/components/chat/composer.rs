@@ -231,6 +231,14 @@ pub struct ChatComposer {
     pub(super) usage_revealed: std::collections::HashSet<SharedString>,
     /// The reset credit awaiting confirmation, by account.
     pub(super) usage_confirming: Option<(SharedString, crate::components::usage::usage_limits::ResetCreditChoice)>,
+    /// The branch strip under the card: the host, workspace and branch shortcuts open its menus.
+    context_controls: Option<gpui_kit::WeakEntity<crate::components::branch_toolbar::BranchToolbar>>,
+    /// The permissions chip's menu is open, with the mode a hover previews.
+    permissions_menu: Option<Option<RuntimeMode>>,
+    /// The command whose chord is down: a held key repeats it, and the fork ignores repeats.
+    held_command: Option<std::any::TypeId>,
+    /// The last frame moved the permissions chip into the overflow button.
+    chip_hidden: bool,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -273,6 +281,10 @@ impl ChatComposer {
             footer_width: COMPOSER_MAX_WIDTH,
             usage_revealed: Default::default(),
             usage_confirming: None,
+            context_controls: None,
+            permissions_menu: None,
+            held_command: None,
+            chip_hidden: false,
             _subscriptions: vec![subscription, settings],
         };
         this.load_draft(cx);
@@ -405,7 +417,9 @@ impl ChatComposer {
             }
             ComposerEditorEvent::SelectionChanged => self.refresh_menu(cx),
             ComposerEditorEvent::Submit(intent) => self.submit(*intent, cx),
-            ComposerEditorEvent::Tab | ComposerEditorEvent::FocusChanged(_) => {}
+            ComposerEditorEvent::Tab => {}
+            // A press whose key-up landed elsewhere (the branch picker took focus) is over.
+            ComposerEditorEvent::FocusChanged(_) => self.held_command = None,
             ComposerEditorEvent::Escape => {
                 if self.menu.is_some() {
                     self.dismiss_menu(cx);
@@ -780,6 +794,159 @@ impl ChatComposer {
         cx.notify();
     }
 
+    // ---- Shortcut commands (`composer.*`) ----
+
+    /// Hands the composer the branch strip drawn under it, whose menus the host, workspace and
+    /// branch shortcuts open.
+    pub fn set_context_controls(&mut self, strip: Option<gpui_kit::WeakEntity<crate::components::branch_toolbar::BranchToolbar>>) {
+        self.context_controls = strip;
+    }
+
+    fn with_strip<R>(&self, cx: &mut Context<Self>, f: impl FnOnce(&mut crate::components::branch_toolbar::BranchToolbar, &mut Context<crate::components::branch_toolbar::BranchToolbar>) -> R) -> Option<R> {
+        self.context_controls.as_ref()?.upgrade().map(|strip| strip.update(cx, f))
+    }
+
+    /// `composer.host`: opens the machine menu. False when the strip shows no machine picker.
+    pub fn open_host(&mut self, cx: &mut Context<Self>) -> bool {
+        self.with_strip(cx, |strip, cx| strip.open_host_menu(cx)).unwrap_or(false)
+    }
+
+    /// `composer.cycleHost`: moves a draft to its project's next machine.
+    pub fn cycle_host(&mut self, cx: &mut Context<Self>) -> bool {
+        self.with_strip(cx, |strip, cx| strip.cycle_environment(cx)).unwrap_or(false)
+    }
+
+    /// `composer.workspace`: opens the workspace menu.
+    pub fn open_workspace(&mut self, cx: &mut Context<Self>) -> bool {
+        self.with_strip(cx, |strip, cx| strip.open_workspace_menu(cx)).unwrap_or(false)
+    }
+
+    /// `composer.branch`: opens the branch picker.
+    pub fn open_branch(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        let Some(strip) = self.context_controls.as_ref().and_then(|s| s.upgrade()) else { return false };
+        strip.update(cx, |strip, cx| strip.open_branch_menu(window, cx))
+    }
+
+    /// `composer.previousWorktree`: a draft takes the project's previous worktree, then the
+    /// composer keeps focus (`onComposerFocusRequest`).
+    pub fn use_previous_worktree(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        let used = self.with_strip(cx, |strip, cx| strip.use_previous_worktree(cx)).unwrap_or(false);
+        if used {
+            window.focus(&self.editor.focus_handle(cx), cx);
+        }
+        used
+    }
+
+    /// `composer.effort`: opens the model picker with the keyboard on the selected effort level;
+    /// an open picker moves there instead of closing.
+    pub fn open_effort(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.picker.is_none() {
+            self.open_picker(window, cx);
+        }
+        if let Some((picker, _)) = &self.picker {
+            picker.update(cx, |p, cx| p.focus_effort(cx));
+        }
+    }
+
+    /// `composer.mode`: opens the permissions chip's menu, or, while the chip is hidden, the
+    /// model picker's permissions menu (`pickerOwnsModeShortcut`).
+    pub fn open_mode(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let chip_shown = self.state.runtime_mode != self.state.default_runtime_mode && !self.chip_hidden;
+        if chip_shown {
+            self.close_picker(window, cx);
+            self.permissions_menu = Some(None);
+            return cx.notify();
+        }
+        if self.picker.is_none() {
+            self.open_picker(window, cx);
+        }
+        if let Some((picker, _)) = &self.picker {
+            picker.update(cx, |p, cx| p.open_permissions(cx));
+        }
+    }
+
+    /// `composer.increaseEffort` / `composer.decreaseEffort`: the next effort level in catalog
+    /// order, wrapping (`getReasoningTraitStep`). False when the model has under two levels.
+    pub fn step_effort(&mut self, direction: EffortStep, cx: &mut Context<Self>) -> bool {
+        let selection = &self.state.selection;
+        let Some(descriptor) = self.state.catalog.model(&selection.instance_id, &selection.model).and_then(|m| m.effort.as_ref()) else {
+            return false;
+        };
+        let Some(next) = next_effort(&descriptor.options, selection.effort.as_deref(), direction) else { return false };
+        self.state.selection.effort = Some(next);
+        cx.emit(ComposerEvent::ModelChanged(self.state.selection.clone()));
+        if let Some((picker, _)) = &self.picker {
+            let (c, s, m) = (self.state.catalog.clone(), self.state.selection.clone(), self.state.runtime_mode);
+            picker.update(cx, |p, cx| p.update_state(c, s, m, cx));
+        }
+        cx.notify();
+        true
+    }
+
+    /// `composer.dictation`: starts dictation. With no transcription destination ready the fork
+    /// leaves the key alone, so this returns false and the key falls through.
+    pub fn toggle_dictation(&mut self, cx: &mut Context<Self>) -> bool {
+        if !self.state.voice_available || self.state.project_required {
+            return false;
+        }
+        cx.emit(ComposerEvent::VoiceRequested);
+        true
+    }
+
+    /// Runs a command once per press: a held chord repeats the action, which the fork ignores.
+    fn once<A: gpui_kit::Action>(&mut self, cx: &mut Context<Self>, run: impl FnOnce(&mut Self, &mut Context<Self>) -> bool) {
+        let id = std::any::TypeId::of::<A>();
+        if self.held_command == Some(id) {
+            return;
+        }
+        if run(self, cx) {
+            self.held_command = Some(id);
+        } else {
+            cx.propagate();
+        }
+    }
+
+    /// Registers the `composer.*` commands on the composer's key context.
+    fn command_handlers(&self, root: gpui_kit::Stateful<gpui_kit::Div>, cx: &mut Context<Self>) -> gpui_kit::Stateful<gpui_kit::Div> {
+        use crate::shortcuts::commands as k;
+        root.on_action(cx.listener(|this, _: &k::OpenComposerHost, _, cx| this.once::<k::OpenComposerHost>(cx, |t, cx| t.open_host(cx))))
+            .on_action(cx.listener(|this, _: &k::CycleComposerHost, _, cx| this.once::<k::CycleComposerHost>(cx, |t, cx| t.cycle_host(cx))))
+            .on_action(cx.listener(|this, _: &k::OpenComposerWorkspace, _, cx| this.once::<k::OpenComposerWorkspace>(cx, |t, cx| t.open_workspace(cx))))
+            .on_action(cx.listener(|this, _: &k::OpenComposerBranch, window, cx| {
+                this.once::<k::OpenComposerBranch>(cx, |t, cx| t.open_branch(window, cx))
+            }))
+            .on_action(cx.listener(|this, _: &k::UsePreviousWorktree, window, cx| {
+                this.once::<k::UsePreviousWorktree>(cx, |t, cx| t.use_previous_worktree(window, cx))
+            }))
+            .on_action(cx.listener(|this, _: &k::OpenComposerEffort, window, cx| {
+                this.once::<k::OpenComposerEffort>(cx, |t, cx| {
+                    t.open_effort(window, cx);
+                    true
+                })
+            }))
+            .on_action(cx.listener(|this, _: &k::OpenComposerMode, window, cx| {
+                this.once::<k::OpenComposerMode>(cx, |t, cx| {
+                    t.open_mode(window, cx);
+                    true
+                })
+            }))
+            .on_action(cx.listener(|this, _: &k::IncreaseEffort, _, cx| {
+                this.once::<k::IncreaseEffort>(cx, |t, cx| {
+                    t.step_effort(EffortStep::Up, cx);
+                    true
+                })
+            }))
+            .on_action(cx.listener(|this, _: &k::DecreaseEffort, _, cx| {
+                this.once::<k::DecreaseEffort>(cx, |t, cx| {
+                    t.step_effort(EffortStep::Down, cx);
+                    true
+                })
+            }))
+            .on_action(cx.listener(|this, _: &k::ToggleDictation, _, cx| this.once::<k::ToggleDictation>(cx, |t, cx| t.toggle_dictation(cx))))
+            // Any key release or modifier change ends the press that `once` remembered.
+            .on_key_up(cx.listener(|this, _: &gpui_kit::KeyUpEvent, _, _| this.held_command = None))
+    }
+
     // ---- Captured keys ----
 
     fn capture_up(&mut self, _: &editor_mod::MoveUp, window: &mut Window, cx: &mut Context<Self>) {
@@ -848,6 +1015,7 @@ impl ChatComposer {
     }
 
     fn on_modifiers(&mut self, event: &ModifiersChangedEvent, _: &mut Window, cx: &mut Context<Self>) {
+        self.held_command = None;
         let held = secondary(&event.modifiers);
         if held != self.modifier_held {
             self.modifier_held = held;
@@ -860,6 +1028,33 @@ impl ChatComposer {
         self.modifier_held = held;
         cx.notify();
     }
+}
+
+/// Which way `composer.increaseEffort` / `composer.decreaseEffort` steps.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EffortStep {
+    Up,
+    Down,
+}
+
+/// The level after `current` (or the default) in catalog order, wrapping; `None` with fewer
+/// than two levels.
+fn next_effort(options: &[crate::model_selection::OptionChoice], current: Option<&str>, step: EffortStep) -> Option<SharedString> {
+    if options.len() < 2 {
+        return None;
+    }
+    let ordered: Vec<_> = match step {
+        EffortStep::Up => options.iter().collect(),
+        EffortStep::Down => options.iter().rev().collect(),
+    };
+    let position = current
+        .and_then(|c| ordered.iter().position(|o| o.id.as_ref() == c))
+        .or_else(|| ordered.iter().position(|o| o.is_default));
+    let next = match position {
+        Some(at) => ordered[(at + 1) % ordered.len()],
+        None => ordered[0],
+    };
+    Some(next.id.clone())
 }
 
 fn secondary(modifiers: &Modifiers) -> bool {
@@ -990,16 +1185,38 @@ impl ChatComposer {
     fn render_permissions_chip(&self, icon_only: bool, c: &ComposerColors, cx: &mut Context<Self>) -> AnyElement {
         let mode = self.state.runtime_mode;
         control("composer-permissions-chip", false, c)
+            .relative()
             .pl(c.r(px(6.)))
             .child(Icon::new(runtime_mode_icon(mode)).size(IconSize::Custom(c.r(px(16.)))).color(c.foreground.opacity(0.8)).stroke(composer_icon_stroke(runtime_mode_icon(mode))))
             .when(!icon_only, |el| el.child(mode.label()))
+            .when(self.permissions_menu.is_some(), |el| el.bg(c.row_hover))
             .on_click(cx.listener(|this, _, _, cx| {
-                let next = this.state.runtime_mode.next();
-                this.state.runtime_mode = next;
-                cx.emit(ComposerEvent::RuntimeModeChanged(next));
+                this.permissions_menu = if this.permissions_menu.is_some() { None } else { Some(None) };
                 cx.notify();
             }))
+            .children(self.render_permissions_menu(c, cx))
             .into_any_element()
+    }
+
+    /// The chip's menu (`MenuPopup align="start"` above the chip) holding the permission modes.
+    fn render_permissions_menu(&self, c: &ComposerColors, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let preview = self.permissions_menu?;
+        let panel = crate::components::chat::model_picker::permissions_panel(
+            self.state.runtime_mode,
+            preview,
+            *c,
+            cx,
+            |this: &mut Self, mode| this.permissions_menu = Some(mode),
+            |this, mode, cx| {
+                this.permissions_menu = None;
+                if this.state.runtime_mode != mode {
+                    this.state.runtime_mode = mode;
+                    cx.emit(ComposerEvent::RuntimeModeChanged(mode));
+                }
+            },
+            |this| this.permissions_menu = None,
+        );
+        Some(deferred(div().absolute().bottom_full().left_0().pb(c.r(px(4.))).child(panel)).with_priority(3).into_any_element())
     }
 
     fn render_primary_actions(&self, c: &ComposerColors, cx: &mut Context<Self>) -> AnyElement {
@@ -1265,6 +1482,7 @@ impl Render for ChatComposer {
         let actions_width = c.r((CONTROL_HEIGHT)) * if self.state.voice_available { 2. } else { 1. } + c.r(px(4.));
         let host = self.footer_width - c.r((FOOTER_PADDING_X)) * 2. - (c.r((CONTROL_HEIGHT)) + c.r(px(8.))) - actions_width + c.r(px(7.));
         let (chip_icon_only, chip_hidden) = resolve_footer_layout(host, trigger_width, chip_widths, c.r((CONTROL_HEIGHT)), c.r(px(2.)));
+        self.chip_hidden = chip_hidden;
         let mut controls = div()
             .relative()
             .mr(c.r(px(-7.)))
@@ -1421,10 +1639,11 @@ impl Render for ChatComposer {
                 ))
         });
 
-        div()
+        let root = div()
             .id("chat-composer")
             .key_context("ChatComposer")
-            .on_action(cx.listener(|this, _: &crate::shortcuts::commands::ToggleModelPicker, window, cx| this.toggle_picker(window, cx)))
+            .on_action(cx.listener(|this, _: &crate::shortcuts::commands::ToggleModelPicker, window, cx| this.toggle_picker(window, cx)));
+        self.command_handlers(root, cx)
             .font_family(ui_font_family())
             .relative()
             .w_full()

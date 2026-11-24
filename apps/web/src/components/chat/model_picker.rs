@@ -129,6 +129,8 @@ pub struct ModelPicker {
     permissions_preview: Option<RuntimeMode>,
     /// Without the effort column and footer, as pickers outside the composer show it.
     plain: bool,
+    /// The effort level the keyboard is on (`composer.effort` moves focus to the column).
+    effort_focus: Option<usize>,
 }
 
 impl EventEmitter<ModelPickerEvent> for ModelPicker {}
@@ -162,6 +164,7 @@ impl ModelPicker {
             permissions_open: false,
             permissions_preview: None,
             plain: false,
+            effort_focus: None,
         };
         this.rebuild_rows();
         this.highlight_selected();
@@ -180,6 +183,55 @@ impl ModelPicker {
         self.selection = selection;
         self.runtime_mode = runtime_mode;
         self.rebuild_rows();
+        cx.notify();
+    }
+
+    /// Moves the keyboard to the selected effort level (`focusEffort`); arrows then step levels
+    /// and Enter picks one. Does nothing when the model has no levels.
+    pub fn focus_effort(&mut self, cx: &mut Context<Self>) {
+        let Some(options) = self.effort_options() else { return };
+        let current = self.selection.effort.clone();
+        let index = options
+            .iter()
+            .position(|o| current.as_ref() == Some(&o.id))
+            .or_else(|| options.iter().position(|o| o.is_default))
+            .unwrap_or(0);
+        self.effort_focus = Some(index);
+        self.permissions_open = false;
+        cx.notify();
+    }
+
+    /// Opens the footer's permissions menu (`composer.mode` when the picker owns it).
+    pub fn open_permissions(&mut self, cx: &mut Context<Self>) {
+        if !self.plain {
+            self.permissions_open = true;
+            self.permissions_preview = None;
+            self.effort_focus = None;
+            cx.notify();
+        }
+    }
+
+    /// The effort level under keyboard focus, if the column has it.
+    pub fn effort_focus(&self) -> Option<usize> {
+        self.effort_focus
+    }
+
+    /// Whether the footer's permissions menu is open.
+    pub fn permissions_open(&self) -> bool {
+        self.permissions_open
+    }
+
+    fn effort_options(&self) -> Option<Vec<crate::model_selection::OptionChoice>> {
+        if self.plain {
+            return None;
+        }
+        let model = self.catalog.model(&self.selection.instance_id, &self.selection.model)?;
+        model.effort.as_ref().map(|d| d.options.clone()).filter(|o| !o.is_empty())
+    }
+
+    fn pick_effort(&mut self, id: SharedString, cx: &mut Context<Self>) {
+        self.selection.effort = Some(id);
+        cx.emit(ModelPickerEvent::Select(self.selection.clone()));
         cx.notify();
     }
 
@@ -300,6 +352,8 @@ impl ModelPicker {
                 };
                 self.selection = selection.clone();
                 cx.emit(ModelPickerEvent::Select(selection));
+                // A docked picker stays open and moves to the new model's levels (`focusEffort("levels")`).
+                self.focus_effort(cx);
                 cx.notify();
             }
         }
@@ -322,6 +376,10 @@ impl ModelPicker {
     }
 
     fn on_up(&mut self, _: &PickerUp, _: &mut Window, cx: &mut Context<Self>) {
+        if let (Some(at), Some(options)) = (self.effort_focus, self.effort_options()) {
+            self.effort_focus = Some((at + options.len() - 1) % options.len());
+            return cx.notify();
+        }
         if !self.rows.is_empty() {
             self.highlighted = (self.highlighted + self.rows.len() - 1) % self.rows.len();
             self.scroll.scroll_to_item(self.highlighted, ScrollStrategy::Nearest);
@@ -330,6 +388,10 @@ impl ModelPicker {
     }
 
     fn on_down(&mut self, _: &PickerDown, _: &mut Window, cx: &mut Context<Self>) {
+        if let (Some(at), Some(options)) = (self.effort_focus, self.effort_options()) {
+            self.effort_focus = Some((at + 1) % options.len());
+            return cx.notify();
+        }
         if !self.rows.is_empty() {
             self.highlighted = (self.highlighted + 1) % self.rows.len();
             self.scroll.scroll_to_item(self.highlighted, ScrollStrategy::Nearest);
@@ -338,6 +400,9 @@ impl ModelPicker {
     }
 
     fn on_confirm(&mut self, _: &PickerConfirm, _: &mut Window, cx: &mut Context<Self>) {
+        if let Some(option) = self.effort_focus.zip(self.effort_options()).and_then(|(at, o)| o.get(at).cloned()) {
+            return self.pick_effort(option.id, cx);
+        }
         self.pick_row(self.highlighted, cx);
     }
 
@@ -363,6 +428,7 @@ impl ModelPicker {
 
     /// Types into the search field (also used by scripted tests).
     pub fn type_query(&mut self, text: &str, cx: &mut Context<Self>) {
+        self.effort_focus = None;
         self.query.push_str(text);
         self.highlighted = 0;
         self.rebuild_rows();
@@ -584,9 +650,11 @@ impl ModelPicker {
                 .enumerate()
                 .map(|(i, option)| {
                     let selected = current.as_ref() == Some(&option.id) || (current.is_none() && option.is_default);
+                    let focused = self.effort_focus == Some(i);
                     let id = option.id.clone();
                     div()
                         .id(SharedString::from(format!("effort-{i}")))
+                        .when(focused, |el| el.bg(c.row_hover))
                         .h(c.r(px(32.)))
                         .flex_none()
                         .flex()
@@ -608,11 +676,7 @@ impl ModelPicker {
                                 el
                             }
                         })
-                        .on_click(cx.listener(move |this, _, _, cx| {
-                            this.selection.effort = Some(id.clone());
-                            cx.emit(ModelPickerEvent::Select(this.selection.clone()));
-                            cx.notify();
-                        }))
+                        .on_click(cx.listener(move |this, _, _, cx| this.pick_effort(id.clone(), cx)))
                         .into_any_element()
                 })
                 .collect(),
@@ -743,108 +807,130 @@ impl ModelPicker {
             )
     }
 
-    /// `PermissionsMenu` (`side="top" align="end"`) holding
-    /// `ComposerPermissionsSection`: a `w-72` panel with a segmented row of the
-    /// four modes, then the shown mode's name and its two-line description.
+    /// `PermissionsMenu` (`side="top" align="end"`) above the footer trigger.
     fn render_permissions_menu(&self, c: ComposerColors, cx: &mut Context<Self>) -> Option<gpui_kit::AnyElement> {
         if !self.permissions_open {
             return None;
         }
-        let current = self.runtime_mode;
-        let shown = self.permissions_preview.unwrap_or(current);
-        let segments = RuntimeMode::ALL.iter().copied().enumerate().map(|(i, mode)| {
-            let checked = mode == current;
-            let last = i + 1 == RuntimeMode::ALL.len();
-            div()
-                .id(("permission-mode", i))
-                .flex()
-                .flex_1()
-                .h(c.r(px(24.)))
-                .items_center()
-                .justify_center()
-                .cursor_pointer()
-                .when(i == 0, |d| d.rounded_l(c.r(px(6.))))
-                .when(last, |d| d.rounded_r(c.r(px(6.))))
-                .when(checked, |d| d.bg(c.input.opacity(0.72)))
-                .when(!checked, |d| d.hover(move |s| s.bg(c.accent)))
-                .child(
-                    Icon::new(runtime_mode_icon(mode))
-                        .size(IconSize::Custom(c.r(px(14.))))
-                        .color(if checked { c.foreground } else { c.muted_foreground })
-                        .stroke(composer_icon_stroke(runtime_mode_icon(mode))),
-                )
-                .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
-                    this.permissions_preview = hovered.then_some(mode);
-                    cx.notify();
-                }))
-                .on_click(cx.listener(move |this, _, _, cx| {
-                    this.permissions_open = false;
-                    this.permissions_preview = None;
-                    if this.runtime_mode != mode {
-                        this.runtime_mode = mode;
-                        cx.emit(ModelPickerEvent::RuntimeModeChanged(mode));
-                    }
-                    cx.notify();
-                }))
-        });
-        let panel = div()
-            .id("permissions-menu")
-            .occlude()
-            .rounded(POPUP_RADIUS)
-            .border_1()
-            .border_color(c.popup_border)
-            .glass(c.popup_background)
-            .shadow(popup_shadow(&c))
-            .p(c.r(px(4.)))
-            .on_mouse_down_out(cx.listener(|this, _, _, cx| {
+        let panel = permissions_panel(
+            self.runtime_mode,
+            self.permissions_preview,
+            c,
+            cx,
+            |this: &mut Self, mode| this.permissions_preview = mode,
+            |this, mode, cx| {
                 this.permissions_open = false;
-                cx.notify();
-            }))
-            .child(
-                div()
-                    .w(c.r(px(288.)))
-                    .flex()
-                    .flex_col()
-                    .gap(c.r(px(6.)))
-                    .px(c.r(px(8.)))
-                    .py(c.r(px(6.)))
-                    .child(
-                        div()
-                            .text_size(c.r(px(12.)))
-                            .line_height(c.r(px(16.)))
-                            .font_weight(FontWeight::MEDIUM)
-                            .text_color(c.muted_foreground)
-                            .child(crate::i18n::t!("Permissions")),
-                    )
-                    .child(div().flex().rounded(c.r(px(8.))).bg(c.input.opacity(0.4)).p(c.r(px(2.))).children(segments))
-                    .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .gap(c.r(px(2.)))
-                            .child(
-                                div()
-                                    .text_size(c.r(px(14.)))
-                                    .line_height(c.r(px(20.)))
-                                    .text_color(if shown == current { c.foreground } else { c.muted_foreground })
-                                    .child(shown.label()),
-                            )
-                            .child(
-                                div()
-                                    .min_h(c.r(px(32.)))
-                                    .text_size(c.r(px(12.)))
-                                    .line_height(c.r(px(16.)))
-                                    .text_color(c.muted_foreground)
-                                    .child(shown.description()),
-                            ),
-                    ),
-            );
+                this.permissions_preview = None;
+                if this.runtime_mode != mode {
+                    this.runtime_mode = mode;
+                    cx.emit(ModelPickerEvent::RuntimeModeChanged(mode));
+                }
+            },
+            |this| this.permissions_open = false,
+        );
         Some(
             gpui_kit::deferred(div().absolute().bottom_full().right_0().pb(c.r(px(4.))).child(panel))
                 .with_priority(3)
                 .into_any_element(),
         )
     }
+}
+
+/// `ComposerPermissionsSection` in its menu popup: a `w-72` panel with a segmented row of the
+/// four modes, then the shown mode's name and its two-line description. The picker footer and
+/// the composer's permissions chip both open it; `preview` is the mode a hover shows.
+pub fn permissions_panel<V: 'static>(
+    current: RuntimeMode,
+    preview: Option<RuntimeMode>,
+    c: ComposerColors,
+    cx: &mut Context<V>,
+    on_hover: fn(&mut V, Option<RuntimeMode>),
+    on_pick: fn(&mut V, RuntimeMode, &mut Context<V>),
+    on_close: fn(&mut V),
+) -> gpui_kit::Stateful<gpui_kit::Div> {
+    let shown = preview.unwrap_or(current);
+    let segments = RuntimeMode::ALL.iter().copied().enumerate().map(|(i, mode)| {
+        let checked = mode == current;
+        let last = i + 1 == RuntimeMode::ALL.len();
+        div()
+            .id(("permission-mode", i))
+            .flex()
+            .flex_1()
+            .h(c.r(px(24.)))
+            .items_center()
+            .justify_center()
+            .cursor_pointer()
+            .when(i == 0, |d| d.rounded_l(c.r(px(6.))))
+            .when(last, |d| d.rounded_r(c.r(px(6.))))
+            .when(checked, |d| d.bg(c.input.opacity(0.72)))
+            .when(!checked, |d| d.hover(move |s| s.bg(c.accent)))
+            .child(
+                Icon::new(runtime_mode_icon(mode))
+                    .size(IconSize::Custom(c.r(px(14.))))
+                    .color(if checked { c.foreground } else { c.muted_foreground })
+                    .stroke(composer_icon_stroke(runtime_mode_icon(mode))),
+            )
+            .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
+                on_hover(this, hovered.then_some(mode));
+                cx.notify();
+            }))
+            .on_click(cx.listener(move |this, _, _, cx| {
+                on_pick(this, mode, cx);
+                cx.notify();
+            }))
+    });
+    div()
+        .id("permissions-menu")
+        .occlude()
+        .rounded(POPUP_RADIUS)
+        .border_1()
+        .border_color(c.popup_border)
+        .glass(c.popup_background)
+        .shadow(popup_shadow(&c))
+        .p(c.r(px(4.)))
+        .on_mouse_down_out(cx.listener(move |this, _, _, cx| {
+            on_close(this);
+            cx.notify();
+        }))
+        .child(
+            div()
+                .w(c.r(px(288.)))
+                .flex()
+                .flex_col()
+                .gap(c.r(px(6.)))
+                .px(c.r(px(8.)))
+                .py(c.r(px(6.)))
+                .child(
+                    div()
+                        .text_size(c.r(px(12.)))
+                        .line_height(c.r(px(16.)))
+                        .font_weight(FontWeight::MEDIUM)
+                        .text_color(c.muted_foreground)
+                        .child(crate::i18n::t!("Permissions")),
+                )
+                .child(div().flex().rounded(c.r(px(8.))).bg(c.input.opacity(0.4)).p(c.r(px(2.))).children(segments))
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap(c.r(px(2.)))
+                        .child(
+                            div()
+                                .text_size(c.r(px(14.)))
+                                .line_height(c.r(px(20.)))
+                                .text_color(if shown == current { c.foreground } else { c.muted_foreground })
+                                .child(shown.label()),
+                        )
+                        .child(
+                            div()
+                                .min_h(c.r(px(32.)))
+                                .text_size(c.r(px(12.)))
+                                .line_height(c.r(px(16.)))
+                                .text_color(c.muted_foreground)
+                                .child(shown.description()),
+                        ),
+                ),
+        )
 }
 
 /// A `Kbd` hint: `h-5 min-w-5 rounded px-1 text-xs font-medium`.

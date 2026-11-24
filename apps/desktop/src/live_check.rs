@@ -86,6 +86,7 @@
 #[allow(dead_code)]
 #[path = "import/mod.rs"]
 mod import;
+mod live_check_composer_actions;
 mod live_check_families;
 mod live_check_heap;
 mod live_check_linked;
@@ -590,6 +591,7 @@ fn main() -> anyhow::Result<()> {
         "timer" => run_timer(&mut check),
         "breadcrumb" => run_breadcrumb(&mut check),
         "settings" => live_check_settings::run_settings(&mut check),
+        "composer-actions" => live_check_composer_actions::run_composer_actions(&mut check),
         other => Err(anyhow::anyhow!("unknown phase {other}")),
     };
     check.finish(&phase, result)

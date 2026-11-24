@@ -329,6 +329,7 @@ impl ThreadRouteView {
             None => self.build_git(view, cx),
         };
         let strip: AnyView = controls.strip.clone().into();
+        self.composer.update(cx, |composer, _| composer.set_context_controls(Some(controls.strip.downgrade())));
         self.git.push_front(controls);
         self.git.truncate(GIT_CONTROLS_KEPT);
         let panel = self.details_open.then(|| self.ensure_panel(cx)).flatten();
@@ -776,7 +777,7 @@ impl ThreadRouteView {
                     }
                 }
             }
-            DataEvent::ThreadChanged(_) | DataEvent::OpenThread(_) | DataEvent::OpenSideChat { .. } => {}
+            DataEvent::ThreadChanged(_) | DataEvent::OpenThread(_) | DataEvent::OpenSideChat { .. } | DataEvent::NewThread(_) => {}
         }
     }
 }
