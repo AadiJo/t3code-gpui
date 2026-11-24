@@ -238,15 +238,17 @@ fn render(colors: SphereColors, mode: Appearance, ring: Hsla, backdrop: Hsla, si
         if d < padding_radius + 0.5 {
             // Scaled about the padding box's centre.
             let (u, v) = ((x - center) / SCALE + padding_radius, (y - center) / SCALE + padding_radius);
+            // The inset edge is the outer span's box-shadow, painted under the blurred layer.
+            if d > padding_radius - 1. {
+                color = over(color, edge.0, edge.1);
+            }
             let s = sample(u, v);
             if s[3] > 0. {
                 color = over(color, [s[0] / s[3], s[1] / s[3], s[2] / s[3]], s[3]);
             }
-            if d > padding_radius - 1. {
-                color = over(color, edge.0, edge.1);
-            }
         }
-        let inside = (padding_radius - d + 0.5).clamp(0., 1.);
+        // The border's inner edge antialiases over one device pixel, as Chromium's does.
+        let inside = ((padding_radius - d) * DENSITY + 0.5).clamp(0., 1.);
         let rgb: [f32; 3] = std::array::from_fn(|k| color[k] * inside + ring[k] * (1. - inside));
         // BGRA, the order RenderImage frames take.
         *pixel = image::Rgba([

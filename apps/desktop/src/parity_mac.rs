@@ -456,6 +456,11 @@ impl Layout {
                     let raw = text(key)?;
                     Some((key, serde_json::from_str(&raw).unwrap_or(Value::String(raw))))
                 })
+                // Custom themes as the first-launch import stores them.
+                .chain(text(t3code_web::hooks::use_theme::CUSTOM_THEMES_STORAGE_KEY).and_then(|raw| {
+                    let themes = serde_json::from_str(&raw).ok()?;
+                    Some((t3code_web::hooks::use_theme::CUSTOM_THEMES_STORAGE_KEY, install::custom_themes_as_files(themes)))
+                }))
                 .collect(),
         })
     }
