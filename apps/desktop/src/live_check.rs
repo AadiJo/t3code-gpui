@@ -35,11 +35,14 @@
 //            gestures, mouse-wheel lines) down and back to the top; makes rows until it overflows.
 //            `drive` also reaches below-the-fold rows by wheel. A watchdog ends any phase that
 //            stops making progress for three minutes and names the last step
+//   workspace three drafts sent from the composer with each workspace choice: the project root,
+//            a new worktree (its base auto-picked, then chosen) and that worktree again; each
+//            thread's workspace is read back from the server and its checkout from git
 //   import   a fresh data directory and a stand-in install (`T3CODE_IMPORT_HOME`, made by
 //            `import-check`, encrypted with the fixture macOS key): the launch import runs,
 //            the window explains the Keychain read, environments and settings arrive
 //
-// Usage: live-check <seed|drive|restart|import|send|sidebar|notify|details|mentions|heic|wheel|probe> <out-dir>
+// Usage: live-check <seed|drive|restart|import|send|sidebar|notify|details|mentions|heic|wheel|workspace|probe> <out-dir>
 #[allow(dead_code)]
 #[path = "import/mod.rs"]
 mod import;
@@ -479,7 +482,7 @@ fn key_of(state: &Seeded, thread: &str) -> ThreadKey {
 
 fn main() -> anyhow::Result<()> {
     let mut args = std::env::args().skip(1);
-    let usage = "usage: live-check <seed|drive|restart|import|send|sidebar|notify|details|mentions|heic|wheel|probe> <out-dir> | live-check timeline <projections-dir> <out-dir> | live-check commands <corpus.json> <out.json>";
+    let usage = "usage: live-check <seed|drive|restart|import|send|sidebar|notify|details|mentions|heic|wheel|workspace|probe> <out-dir> | live-check timeline <projections-dir> <out-dir> | live-check commands <corpus.json> <out.json>";
     let phase = args.next().context(usage)?;
     let out = PathBuf::from(args.next().context(usage)?);
     if phase == "timeline" {
@@ -505,6 +508,7 @@ fn main() -> anyhow::Result<()> {
         "heic" => run_heic(&mut check),
         "probe" => run_probe(&mut check),
         "wheel" => run_wheel(&mut check),
+        "workspace" => run_workspace(&mut check),
         other => Err(anyhow::anyhow!("unknown phase {other}")),
     };
     check.finish(&phase, result)
@@ -2563,4 +2567,147 @@ fn run_wheel(check: &mut Check) -> anyhow::Result<()> {
     let worst = frames.iter().cloned().fold(0., f64::max);
     check.check("every wheel event returns and draws its frame", true, format!("{} events, slowest frame {worst:.2} ms", frames.len()));
     check.shot("wheel-01-top.png")
+}
+
+fn git_out(dir: &str, args: &[&str]) -> Option<String> {
+    let out = std::process::Command::new("git").arg("-C").arg(dir).args(args).output().ok()?;
+    out.status.success().then(|| String::from_utf8_lossy(&out.stdout).trim().to_owned())
+}
+
+/// Opens a draft in the seeded project, lets `choose` act on its branch strip, sends `prompt`
+/// from the composer and returns the thread it became, with its row once the server has it.
+fn send_draft(
+    check: &mut Check,
+    state: &Seeded,
+    prompt: &str,
+    choose: impl FnOnce(&mut Check, &Entity<t3code_web::components::branch_toolbar::BranchToolbar>) -> anyhow::Result<()>,
+) -> anyhow::Result<ThreadKey> {
+    let root_dir = state.project_root.clone();
+    let project = check
+        .cx
+        .update(|cx| StateBridge::shell(cx).read(cx).snapshot().projects.iter().find(|p| p.workspace_root.as_ref() == root_dir).map(|p| p.project_ref.clone()))
+        .context("seeded project in the sidebar")?;
+    let root = check.root.clone();
+    check.cx.update(|cx| {
+        let data = root.read(cx).data().clone();
+        let draft = data.create_draft(Some(project), cx);
+        root.update(cx, |root, cx| root.navigate(Route::Draft(draft), cx));
+    });
+    check.pump(|c| c.read(|root, cx| root.thread_view().read(cx).branch_strip().is_some()), Duration::from_secs(10), "draft branch strip")?;
+    let strip = check.read(|root, cx| root.thread_view().read(cx).branch_strip().cloned()).context("strip")?;
+    choose(check, &strip)?;
+    check.focus_composer();
+    check.type_text(prompt);
+    check.press("enter");
+    check.pump(|c| matches!(c.route(), Route::Thread(_)), Duration::from_secs(20), "draft became a thread")?;
+    let Route::Thread(key) = check.route() else { bail!("no thread route") };
+    let k = key.clone();
+    check.pump(move |c| c.cx.update(|cx| StateBridge::shell(cx).read(cx).row(&k).is_some()), Duration::from_secs(30), "thread row from the server")?;
+    Ok(key)
+}
+
+fn emit_strip(check: &mut Check, strip: &Entity<t3code_web::components::branch_toolbar::BranchToolbar>, event: t3code_web::components::branch_toolbar::BranchToolbarEvent) {
+    let strip = strip.clone();
+    check.cx.update(|cx| strip.update(cx, |_, cx| cx.emit(event)));
+    check.frame();
+}
+
+fn strip_props(check: &mut Check, strip: &Entity<t3code_web::components::branch_toolbar::BranchToolbar>) -> t3code_web::components::branch_toolbar::BranchToolbarProps {
+    let strip = strip.clone();
+    check.cx.update(|cx| strip.read(cx).props().clone())
+}
+
+/// The server's workspace for a thread: (branch, worktree path).
+fn row_workspace(check: &mut Check, key: &ThreadKey) -> (Option<String>, Option<String>) {
+    check.cx.update(|cx| {
+        StateBridge::shell(cx).read(cx).row(key).map(|row| (row.source.branch.clone(), row.source.worktree_path.clone())).unwrap_or_default()
+    })
+}
+
+/// Sends from drafts with each workspace choice and reads the thread's workspace back.
+fn run_workspace(check: &mut Check) -> anyhow::Result<()> {
+    use t3code_web::components::branch_toolbar::BranchToolbarEvent;
+    use t3code_web::components::branch_toolbar_logic::EnvMode;
+    let state = load_state(&check.out)?;
+    check.pump(|c| c.connected(), Duration::from_secs(30), "connected")?;
+    let root_dir = state.project_root.clone();
+    let checkout_branch = git_out(&root_dir, &["branch", "--show-current"]).unwrap_or_default();
+
+    // Project root.
+    let local = send_draft(check, &state, "Workspace check: project root.", |check, strip| {
+        emit_strip(check, strip, BranchToolbarEvent::EnvModeChanged(EnvMode::Local));
+        Ok(())
+    })?;
+    let k = local.clone();
+    check.pump(move |c| row_workspace(c, &k).0.is_some(), Duration::from_secs(20), "root thread has its branch")?;
+    let (branch, worktree) = row_workspace(check, &local);
+    check.check(
+        "project root: the thread runs in the checkout",
+        worktree.is_none() && branch.as_deref() == Some(checkout_branch.as_str()),
+        format!("branch {branch:?} worktree {worktree:?} (checkout on {checkout_branch})"),
+    );
+    check.shot("w0-root.png")?;
+
+    // New worktree: the base is auto-picked once refs load, then chosen.
+    let base_commit = git_out(&root_dir, &["rev-parse", "main"]).context("main")?;
+    let clamp_commit = git_out(&root_dir, &["rev-parse", "feature/clamp"]).context("feature/clamp")?;
+    let fresh = send_draft(check, &state, "Workspace check: new worktree.", |check, strip| {
+        emit_strip(check, strip, BranchToolbarEvent::EnvModeChanged(EnvMode::Worktree));
+        let s = strip.clone();
+        check.pump(move |c| { let p = strip_props(c, &s); p.thread_branch.is_some() }, Duration::from_secs(15), "base branch auto-picked")?;
+        let props = strip_props(check, strip);
+        // The default branch (origin's HEAD), else the checked-out one.
+        let expected = git_out(&root_dir, &["symbolic-ref", "--short", "refs/remotes/origin/HEAD"])
+            .map(|r| r.trim_start_matches("origin/").to_owned())
+            .unwrap_or_else(|| checkout_branch.clone());
+        check.check(
+            "new worktree: the base defaults to the default branch, else the current one",
+            props.env_mode == EnvMode::Worktree && props.thread_branch.as_deref() == Some(expected.as_str()),
+            format!("mode {:?} base {:?} start from origin {}", props.env_mode, props.thread_branch, props.start_from_origin),
+        );
+        emit_strip(check, strip, BranchToolbarEvent::ThreadBranchChanged { branch: "main".into(), worktree_path: None });
+        let props = strip_props(check, strip);
+        check.check("new worktree: choosing a base keeps worktree mode", props.env_mode == EnvMode::Worktree && props.thread_branch.as_deref() == Some("main"), format!("{:?} {:?}", props.env_mode, props.thread_branch));
+        check.shot("w1-worktree-draft.png")?;
+        Ok(())
+    })?;
+    let k = fresh.clone();
+    check.pump(move |c| row_workspace(c, &k).1.is_some(), Duration::from_secs(60), "thread gets its new worktree")?;
+    let (branch, worktree) = row_workspace(check, &fresh);
+    let path = worktree.clone().unwrap_or_default();
+    let head_branch = git_out(&path, &["branch", "--show-current"]);
+    let head = git_out(&path, &["rev-parse", "HEAD"]);
+    let has_clamp = git_out(&path, &["merge-base", "--is-ancestor", &clamp_commit, "HEAD"]).is_some();
+    check.check(
+        "new worktree: a new checkout from the chosen base (main, not the checkout's feature/clamp)",
+        path != root_dir && head.as_deref() == Some(base_commit.as_str()) && !has_clamp && head_branch.is_some() && branch == head_branch,
+        format!("worktree {path} branch {branch:?} head {head_branch:?} at main {} has clamp {has_clamp}", head.as_deref() == Some(base_commit.as_str())),
+    );
+    check.shot("w2-worktree-thread.png")?;
+
+    // Existing worktree: the one the previous thread made.
+    let existing_branch = branch.clone().unwrap_or_default();
+    let reuse = send_draft(check, &state, "Workspace check: existing worktree.", |check, strip| {
+        emit_strip(check, strip, BranchToolbarEvent::ThreadBranchChanged { branch: existing_branch.clone(), worktree_path: Some(path.clone()) });
+        let props = strip_props(check, strip);
+        check.check("existing worktree: the draft takes the worktree", props.worktree_path.as_deref() == Some(path.as_str()), format!("{:?} {:?}", props.env_mode, props.worktree_path));
+        Ok(())
+    })?;
+    let k = reuse.clone();
+    check.pump(move |c| row_workspace(c, &k).1.is_some(), Duration::from_secs(30), "thread in the existing worktree")?;
+    let (branch, worktree) = row_workspace(check, &reuse);
+    check.check(
+        "existing worktree: the thread runs in that worktree",
+        worktree.as_deref() == Some(path.as_str()) && branch.as_deref() == Some(existing_branch.as_str()),
+        format!("branch {branch:?} worktree {worktree:?}"),
+    );
+    std::fs::write(
+        check.out.join("workspace-record.json"),
+        serde_json::to_vec_pretty(&serde_json::json!({
+            "root": row_workspace(check, &local),
+            "newWorktree": row_workspace(check, &fresh),
+            "existingWorktree": row_workspace(check, &reuse),
+        }))?,
+    )?;
+    check.shot("w3-existing-worktree.png")
 }

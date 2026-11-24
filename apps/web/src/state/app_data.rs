@@ -25,7 +25,7 @@ use crate::components::chat::messages_timeline::TimelineAction;
 use crate::components::chat::timeline_entries::{MessageId, PendingQuestion, TimelineInput};
 use crate::components::command_palette_lookups::CommandPaletteSource;
 use crate::components::diff_panel::DiffPanelInput;
-use crate::components::branch_toolbar::BranchToolbarProps;
+use crate::components::branch_toolbar::{BranchToolbarEvent, BranchToolbarProps};
 use crate::components::git_actions_control::GitActionsProps;
 use crate::components::git_actions_control_source::GitActionsSource;
 use crate::remote_open::RemoteOpenState;
@@ -203,6 +203,10 @@ pub trait AppData: 'static {
 
     /// The branch toolbar's props for `view`; re-read whenever the thread changes.
     fn toolbar_props(&self, view: &ThreadView, cx: &mut App) -> BranchToolbarProps;
+
+    /// A branch toolbar choice on a draft (workspace mode, base branch, start from origin): the
+    /// draft keeps it for its first send and emits [`DataEvent::ThreadChanged`].
+    fn draft_workspace_event(&self, _draft: &DraftId, _event: &BranchToolbarEvent, _cx: &mut App) {}
 
     /// The details card's server facts for `view` (pull request, issues, servers, automations,
     /// context window) on top of `base`; re-read whenever the thread changes.

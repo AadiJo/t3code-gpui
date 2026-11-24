@@ -356,6 +356,12 @@ impl ThreadRouteView {
     }
 
     fn on_branch_event(&mut self, key: &SharedString, event: &BranchToolbarEvent, cx: &mut Context<Self>) {
+        // A draft keeps its workspace choice for its first send.
+        if let Some(ThreadTarget::Draft(draft)) = self.target.clone()
+            && key.strip_prefix("draft:") == Some(draft.0.as_ref())
+        {
+            return self.data.draft_workspace_event(&draft, event, cx);
+        }
         match event {
             BranchToolbarEvent::ThreadBranchChanged { branch, .. } => self.set_branch(key, branch.clone().into(), cx),
             BranchToolbarEvent::OpenPullRequest(url) => cx.open_url(url),

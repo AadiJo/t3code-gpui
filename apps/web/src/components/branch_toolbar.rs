@@ -21,7 +21,7 @@ use super::branch_picker::{BranchPicker, BranchPickerEvent, BranchPickerItem, Br
 use super::branch_toolbar_logic::{
     EnvMode, EnvironmentOption, MachineKind, PreviousWorktreeSeed, derive_local_branch_name_from_remote_ref,
     is_worktree_change_blocked, resolve_branch_selection_target, resolve_branch_toolbar_value,
-    resolve_branch_trigger_label, resolve_current_workspace_label, resolve_env_mode_label,
+    resolve_branch_trigger_label, resolve_current_workspace_label, resolve_default_worktree_base_branch, resolve_env_mode_label,
     resolve_context_strip_labels_compact, resolve_locked_workspace_label, sanitize_new_ref_name,
     should_show_environment_indicator,
 };
@@ -225,6 +225,7 @@ impl BranchToolbar {
                     picker.update(cx, |p, cx| p.set_refs(listed, cx));
                 }
                 this.refs = refs;
+                this.default_worktree_base(cx);
             }
             cx.notify();
         })
@@ -255,11 +256,23 @@ impl BranchToolbar {
     pub fn set_props(&mut self, props: BranchToolbarProps, cx: &mut Context<Self>) {
         if self.props != props {
             self.props = props;
+            self.default_worktree_base(cx);
             if let Some((picker, _)) = &self.picker {
                 let options = self.picker_options(cx);
                 picker.update(cx, |p, cx| p.set_options(options, cx));
             }
             cx.notify();
+        }
+    }
+
+    /// A draft in New worktree mode without a base takes the default branch, else the current
+    /// one, once refs load (`BranchToolbarBranchSelector`'s `worktreeBaseBranchCandidate` effect).
+    fn default_worktree_base(&mut self, cx: &mut Context<Self>) {
+        if self.props.is_server_thread || self.props.thread_branch.is_some() || !self.selecting_worktree_base() {
+            return;
+        }
+        if let Some(base) = resolve_default_worktree_base_branch(self.refs()) {
+            cx.emit(BranchToolbarEvent::ThreadBranchChanged { branch: base.to_owned(), worktree_path: None });
         }
     }
 

@@ -3,6 +3,7 @@
 //! this whenever an environment is saved.
 
 pub mod diff;
+pub mod draft_workspace;
 pub mod git;
 pub mod rpc;
 pub mod sources;
@@ -58,6 +59,7 @@ use crate::components::usage::usage_source::{LiveUsageSource, UsageSource};
 /// A new thread that has no messages yet (`/draft/$draftId`).
 struct Draft {
     project: Option<ProjectRef>,
+    workspace: draft_workspace::DraftWorkspace,
 }
 
 /// The window's data on live state. See the module docs.
@@ -133,6 +135,12 @@ impl LiveData {
             search_generation: Rc::default(),
             _notifications: notifications,
         })
+    }
+
+    /// The workspace choice of the draft `view` shows.
+    pub(crate) fn draft_workspace(&self, view: &ThreadView) -> Option<draft_workspace::DraftWorkspace> {
+        let id = view.key.strip_prefix("draft:")?;
+        self.drafts.borrow().get(&DraftId(id.to_owned().into())).map(|d| d.workspace.clone())
     }
 
     fn emit(&self, event: DataEvent, cx: &mut App) {
@@ -266,7 +274,11 @@ impl AppData for LiveData {
                 })
             }
             ThreadTarget::Draft(id) => {
-                let project = self.drafts.borrow().get(id)?.project.clone();
+                let (project, branch) = {
+                    let drafts = self.drafts.borrow();
+                    let draft = drafts.get(id)?;
+                    (draft.project.clone(), draft.workspace.branch.clone())
+                };
                 let info = project.as_ref().and_then(|p| self.project(p, cx));
                 Some(ThreadView {
                     key: format!("draft:{}", id.0).into(),
@@ -277,19 +289,41 @@ impl AppData for LiveData {
                     is_draft: true,
                     running: false,
                     questions: Arc::from([]),
-                    branch: None,
+                    branch: branch.map(SharedString::from),
                     project_id: project.map(|p| p.project_id),
                 })
             }
         }
     }
 
-    fn create_draft(&self, project: Option<ProjectRef>, _: &mut App) -> DraftId {
+    fn create_draft(&self, project: Option<ProjectRef>, cx: &mut App) -> DraftId {
         let next = self.next_draft.get() + 1;
         self.next_draft.set(next);
         let id = DraftId(format!("draft-{}-{next}", uuid::Uuid::new_v4().simple()).into());
-        self.drafts.borrow_mut().insert(id.clone(), Draft { project });
+        let workspace = project
+            .as_ref()
+            .map(|p| {
+                let (environment_id, project_id) = draft_ids(p);
+                draft_workspace::DraftWorkspace::new(&environment_id, &project_id, cx)
+            })
+            .unwrap_or_default();
+        self.drafts.borrow_mut().insert(id.clone(), Draft { project, workspace });
         id
+    }
+
+    fn draft_workspace_event(&self, draft: &DraftId, event: &crate::components::branch_toolbar::BranchToolbarEvent, cx: &mut App) {
+        let changed = {
+            let mut drafts = self.drafts.borrow_mut();
+            let Some(entry) = drafts.get_mut(draft) else { return };
+            let Some(project) = entry.project.clone() else { return };
+            let (environment_id, project_id) = draft_ids(&project);
+            let before = entry.workspace.clone();
+            entry.workspace.apply(event, &environment_id, &project_id, cx);
+            entry.workspace != before
+        };
+        if changed {
+            self.emit(DataEvent::ThreadChanged(ThreadTarget::Draft(draft.clone())), cx);
+        }
     }
 
     fn discard_draft(&self, key: &ThreadKey, cx: &mut App) {
@@ -418,7 +452,15 @@ impl AppData for LiveData {
                     _ => {}
                 }
                 let ComposerEvent::Submit { prompt, model, attachments, .. } = event else { return None };
-                let project = self.drafts.borrow().get(id)?.project.clone()?;
+                let (project, workspace) = {
+                    let drafts = self.drafts.borrow();
+                    let draft = drafts.get(id)?;
+                    (draft.project.clone()?, draft.workspace.clone())
+                };
+                let Ok(workspace_strategy) = workspace.strategy() else {
+                    toast_error(t!("Failed to send message."), t!("Select a base branch before sending in New worktree mode."), cx);
+                    return None;
+                };
                 let (environment_id, project_id) = (
                     t3code_contracts::EnvironmentId::new(project.environment_id.0.as_ref()),
                     t3code_contracts::ProjectId::new(project.project_id.0.as_ref()),
@@ -457,9 +499,7 @@ impl AppData for LiveData {
                     model_selection: to_wire(model, &catalog, config.as_deref()),
                     runtime_mode,
                     interaction_mode: ProviderInteractionMode::Default,
-                    workspace_strategy: OrchestrationV2ThreadLaunchWorkspaceStrategy::Root(
-                        OrchestrationV2ThreadLaunchWorkspaceStrategyRoot { branch: None },
-                    ),
+                    workspace_strategy,
                     initial_message: Some(OrchestrationV2ThreadLaunchInputInitialMessage {
                         message_id: Some(message.message_id.clone()),
                         text,
@@ -935,4 +975,9 @@ impl ComposerSettings {
     fn apply(self, state: ComposerState) -> ComposerState {
         ComposerState { follow_up: self.follow_up, send_shortcut: self.send_shortcut, rich_text: self.rich_text, ..state }
     }
+}
+
+/// The wire ids of a draft's project.
+fn draft_ids(project: &ProjectRef) -> (t3code_contracts::EnvironmentId, t3code_contracts::ProjectId) {
+    (t3code_contracts::EnvironmentId::new(project.environment_id.0.as_ref()), t3code_contracts::ProjectId::new(project.project_id.0.as_ref()))
 }

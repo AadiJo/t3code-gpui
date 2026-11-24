@@ -239,7 +239,11 @@ pub fn toolbar_props(data: &LiveData, view: &ThreadView, cx: &mut App) -> Branch
         })
         .collect();
     let row = super::view_target(view).and_then(|key| StateBridge::shell(cx).read(cx).row(&key).cloned());
-    let worktree_path = row.as_ref().and_then(|row| row.source.worktree_path.clone());
+    let draft = data.draft_workspace(view);
+    let worktree_path = match &draft {
+        Some(draft) => draft.worktree_path.clone(),
+        None => row.as_ref().and_then(|row| row.source.worktree_path.clone()),
+    };
     let project_root = view
         .project_id
         .as_ref()
@@ -259,14 +263,18 @@ pub fn toolbar_props(data: &LiveData, view: &ThreadView, cx: &mut App) -> Branch
         auto_environment_label: None,
         can_change_environment: view.is_draft,
         can_auto_balance: false,
-        env_mode: if worktree_path.is_some() { EnvMode::Worktree } else { EnvMode::Local },
+        env_mode: match &draft {
+            Some(draft) => draft.env_mode,
+            None if worktree_path.is_some() => EnvMode::Worktree,
+            None => EnvMode::Local,
+        },
         force_new_worktree: false,
         worktree_path,
         project_cwd: project_root,
         is_server_thread: !view.is_draft,
         env_locked: !view.is_draft,
         thread_branch: view.branch.as_ref().map(|b| b.to_string()),
-        start_from_origin: false,
+        start_from_origin: draft.as_ref().is_some_and(|d| d.start_from_origin),
         previous_worktree: None,
         turn_running: view.running,
         can_write_source_control: true,
