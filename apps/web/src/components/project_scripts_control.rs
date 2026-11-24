@@ -15,7 +15,7 @@ use t3code_contracts::{
     CommandId, ProjectId, ProjectMutation, ProjectMutationProjectUpdate, ProjectScript, ProjectScriptIcon,
 };
 
-use super::chat::thread_details_panel_styles::{DismissPress, below_row, observed, row, row_base, row_icon, split_row, split_secondary};
+use super::chat::thread_details_panel_styles::{DismissPress, below_row, observed, row_width, row, row_base, row_icon, split_row, split_secondary};
 use super::git_actions_control_source::{GitActionsSource, now_ms};
 use super::icons::{Icon, IconName, IconSize};
 use super::ui::button::{Button, ButtonSize, ButtonVariant};
@@ -313,7 +313,7 @@ impl ProjectScriptsControl {
             glass_surface(theme)
                 .id("scripts-menu")
                 .occlude()
-                .w(theme.spacing.thread_details_panel_width - theme.rem(1.))
+                .w(row_width(&theme))
                 .p(theme.sp(1.))
                 .on_mouse_down_out(cx.listener(|this, event: &gpui_kit::MouseDownEvent, _, cx| {
                     this.dismissed.record(event.position);

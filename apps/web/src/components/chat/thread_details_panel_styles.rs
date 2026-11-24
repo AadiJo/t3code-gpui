@@ -30,6 +30,12 @@ pub fn row_inset(theme: &AppTheme) -> Pixels {
 pub const ROW_TEXT: Pixels = px(13.);
 /// Label line height: the cap-trimmed label sits in an 18px box.
 pub const ROW_LINE_HEIGHT: Pixels = px(18.);
+/// A full row's width: the card less its 1px border and the section's `px-2`.
+/// Menus and pickers the rows open take this width (`--anchor-width`).
+pub fn row_width(theme: &AppTheme) -> Pixels {
+    theme.spacing.thread_details_panel_width - px(2.) - theme.rem(1.)
+}
+
 /// The secondary half of a split row (`w-8`).
 pub fn split_secondary_width(theme: &AppTheme) -> Pixels {
     theme.rem(2.)

@@ -12,7 +12,7 @@ use gpui_kit::{
 };
 use t3code_contracts::{EditorId, LaunchEditorInput};
 
-use super::thread_details_panel_styles::{DismissPress, below_row, row_base, row_icon, split_row, split_secondary};
+use super::thread_details_panel_styles::{DismissPress, below_row, row_base, row_width, row_icon, split_row, split_secondary};
 use crate::components::git_actions_control_source::GitActionsSource;
 use crate::components::icons::{BrandIcon, Icon, IconName, IconSize, IconSource};
 use crate::components::ui::popover::glass_surface;
@@ -237,7 +237,7 @@ impl OpenInPicker {
             glass_surface(theme)
                 .id("open-in-menu")
                 .occlude()
-                .w(theme.spacing.thread_details_panel_width - theme.rem(1.))
+                .w(row_width(&theme))
                 .p(theme.sp(1.))
                 .on_mouse_down_out(cx.listener(|this, event: &gpui_kit::MouseDownEvent, _, cx| {
                     this.dismissed.record(event.position);

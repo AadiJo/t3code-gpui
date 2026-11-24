@@ -17,7 +17,7 @@ use t3code_contracts::{
 };
 
 use super::chat::thread_details_panel_styles::{
-    DismissPress, row_height, below_row, observed, row, row_base, row_busy_fill, row_icon, split_row, split_secondary,
+    DismissPress, row_height, row_icon_size, row_width, below_row, observed, row, row_base, row_busy_fill, row_icon, split_row, split_secondary,
 };
 use super::git_actions_control_logic::{
     GitActionIcon, GitActionMenuItem, GitDialogAction, GitQuickAction, GitQuickActionKind, ToastOutcome,
@@ -29,7 +29,7 @@ use super::git_actions_control_logic::{
 };
 use super::git_actions_control_publish::{PublishRepositoryDialog, PublishRepositoryEvent};
 use super::git_actions_control_source::{InlineSuccess, SourceControlError, SourceControlModel, now_ms};
-use super::icons::{Icon, IconName, IconSize};
+use super::icons::{Icon, IconName, IconSize, IconSource};
 use super::ui::button::{Button, ButtonSize, ButtonVariant};
 use super::ui::checkbox::{CheckState, Checkbox};
 use super::ui::dialog::{DialogSurface, Modal};
@@ -41,6 +41,7 @@ use super::ui::tooltip::tooltip;
 use super::ui::{DISABLED_OPACITY, TextStyleExt as _};
 use crate::appearance_fonts::{TextSize, mono_font, weight};
 use crate::i18n::t;
+use crate::source_control_presentation::source_control_presentation;
 use crate::theme_color::with_alpha;
 use crate::{ActiveAppTheme as _, AppTheme};
 
@@ -133,17 +134,24 @@ pub fn format_diff_count(count: u64) -> String {
     out
 }
 
-fn action_icon(icon: GitActionIcon) -> IconName {
+/// `GitActionItemIcon`: the pull request item draws the host's mark.
+fn action_icon(icon: GitActionIcon, host: IconSource) -> IconSource {
     match icon {
-        GitActionIcon::Commit => IconName::GitCommitHorizontal,
-        GitActionIcon::Push => IconName::CloudUpload,
-        GitActionIcon::Pr => IconName::GitPullRequestArrow,
+        GitActionIcon::Commit => IconName::GitCommitHorizontal.into(),
+        GitActionIcon::Push => IconName::CloudUpload.into(),
+        GitActionIcon::Pr => host,
     }
 }
 
-/// `GitQuickActionIcon`: a hint has no action, so it matches the label.
-fn quick_action_icon(quick: &GitQuickAction) -> IconName {
-    match &quick.kind {
+/// `GitQuickActionIcon`: a hint has no action, so it matches the label; a pull
+/// request action draws the host's mark.
+fn quick_action_icon(quick: &GitQuickAction, host: IconSource) -> IconSource {
+    if let GitQuickActionKind::RunAction(action) = &quick.kind
+        && !matches!(action, GitStackedAction::Commit | GitStackedAction::Push | GitStackedAction::CommitPush)
+    {
+        return host;
+    }
+    let name = match &quick.kind {
         GitQuickActionKind::OpenPublish => IconName::CloudUpload,
         GitQuickActionKind::RunPull => IconName::CloudDownload,
         GitQuickActionKind::RunAction(GitStackedAction::Commit) => IconName::GitCommitHorizontal,
@@ -154,7 +162,8 @@ fn quick_action_icon(quick: &GitQuickAction) -> IconName {
         }
         GitQuickActionKind::ShowHint(_) if quick.label == t!("Push", context = "verb, git action") => IconName::CloudUpload,
         GitQuickActionKind::ShowHint(_) => IconName::Info,
-    }
+    };
+    name.into()
 }
 
 /// A failed action's toast; it stays until dismissed (`timeout: 0`).
@@ -490,6 +499,7 @@ impl GitActionsControl {
         let c = &theme.colors;
         let has_primary_remote = status.is_some_and(|s| s.has_primary_remote);
         let term = change_request_terminology_for(status).term_kind().as_str();
+        let host_icon = source_control_presentation(status.and_then(|s| s.source_control_provider.as_ref())).icon;
         let mut rows: Vec<AnyElement> = items
             .iter()
             .enumerate()
@@ -508,7 +518,7 @@ impl GitActionsControl {
                     .py(theme.sp(1.))
                     .rounded(theme.radii.sm)
                     .ui_text(theme, TextSize::Sm, weight::NORMAL)
-                    .child(div().mx(px(-2.)).child(Icon::new(action_icon(item.icon)).size(IconSize::Custom(theme.rem(1.))).color(c.muted_foreground).opacity(0.8)))
+                    .child(div().mx(px(-2.)).child(Icon::new(action_icon(item.icon, host_icon)).size(IconSize::Custom(theme.rem(1.))).color(c.muted_foreground).opacity(0.8)))
                     .child(div().flex_1().min_w_0().truncate().child(item.label.clone()))
                     .when(disabled, |r| r.opacity(DISABLED_OPACITY))
                     .when_some(reason.filter(|_| item.disabled), |r, reason| r.tooltip(tooltip(reason)))
@@ -927,6 +937,7 @@ impl Render for GitActionsControl {
         let is_default = status_ref.is_some_and(|s| s.is_default_ref);
         let items = build_menu_items(status_ref, is_busy, has_primary_remote);
         let quick = resolve_quick_action(status_ref, is_busy, is_default, has_primary_remote);
+        let host_icon = source_control_presentation(status_ref.and_then(|s| s.source_control_provider.as_ref())).icon;
         let disabled_reason = if !self.props.can_write_source_control {
             Some(t!("This connection cannot change source control."))
         } else if quick.disabled {
@@ -948,7 +959,7 @@ impl Render for GitActionsControl {
             can_publish,
             detached || clean_behind || status_error.is_some(),
         );
-        let row_width = theme.spacing.thread_details_panel_width - theme.rem(1.);
+        let row_width = self::row_width(&theme);
 
         let mut root = div().flex().flex_col().w_full();
         if self.props.show_actions {
@@ -1037,7 +1048,7 @@ impl Render for GitActionsControl {
                     let enabled = self.props.can_write_source_control && !is_busy && !quick.disabled;
                     let quick_for_click = quick.clone();
                     let primary = row_base("git-primary", &theme, false, false)
-                        .child(row_icon(&theme, quick_action_icon(&quick)))
+                        .child(Icon::new(quick_action_icon(&quick, host_icon)).size(row_icon_size(&theme)).color(theme.colors.muted_foreground))
                         .child(div().flex_1().min_w_0().truncate().child(quick.label.clone()))
                         .tooltip(tooltip(disabled_reason.clone().unwrap_or_else(|| quick.label.clone())));
                     if enabled {

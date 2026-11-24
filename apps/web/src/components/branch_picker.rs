@@ -27,10 +27,6 @@ use crate::appearance_fonts::{TextSize, weight};
 use crate::i18n::{t, t_rich};
 use crate::theme_color::with_alpha;
 
-/// List row height (`estimatedItemSize={28}`).
-pub const PICKER_ROW_HEIGHT: Pixels = px(28.);
-/// The list's maximum height (`max-h-56`).
-const PICKER_LIST_MAX_HEIGHT: Pixels = px(224.);
 const CONTEXT: &str = "BranchPicker";
 const CREATE_PREFIX: &str = "__create_new_branch__:";
 const CHECKOUT_PREFIX: &str = "__checkout_pull_request__:";
@@ -342,13 +338,13 @@ impl BranchPicker {
         div()
             .id(("branch-picker-row", index))
             .w_full()
-            .h(PICKER_ROW_HEIGHT)
+            .h(theme.rem(1.75))
             .flex()
             .items_center()
-            .px(px(8.))
+            .px(theme.rem(0.5))
             .rounded(theme.radii.sm)
             .ui_text(theme, TextSize::Sm, weight::NORMAL)
-            .when(matches!(item, BranchPickerItem::CheckoutPullRequest(_)), |r| r.h(px(44.)))
+            .when(matches!(item, BranchPickerItem::CheckoutPullRequest(_)), |r| r.h(theme.rem(2.75)))
             .when(selected, |r| r.bg(theme.derived.item_selected))
             .when(highlighted && !disabled, |r| r.bg(highlight).text_color(c.highlight_foreground()))
             .when(disabled, |r| r.opacity(DISABLED_OPACITY))
@@ -368,40 +364,56 @@ impl BranchPicker {
 }
 
 impl Render for BranchPicker {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.app_theme().clone();
         let c = &theme.colors;
         // A checkout row is two lines tall and always first, so it sits above
         // the uniform list of 28px rows.
         let offset = usize::from(matches!(self.items.first(), Some(BranchPickerItem::CheckoutPullRequest(_))));
         let count = self.items.len() - offset;
-        let list_height = (PICKER_ROW_HEIGHT * count as f32 + px(16.)).min(PICKER_LIST_MAX_HEIGHT);
+        // `py-2` on the list plus the virtualized wrapper's `py-1`, under `max-h-56`.
+        let list_height = (theme.rem(1.75) * count as f32 + theme.rem(1.5)).min(theme.rem(14.));
         let checkout_row = (offset == 1).then(|| {
             let item = self.items[0].clone();
-            div().px(px(4.)).pt(px(8.)).child(self.render_row(0, &item, cx))
+            div().px(theme.rem(0.5)).pt(theme.rem(0.75)).child(self.render_row(0, &item, cx))
         });
         let query = self.query.clone();
-        let search = div()
-            .flex()
-            .items_center()
-            .gap(px(8.))
-            .h(px(36.))
-            .px(px(10.))
-            .border_b_1()
-            .border_color(with_alpha(c.border, 0.7))
-            .child(Icon::new(IconName::Search).size(IconSize::Sm).color(with_alpha(c.muted_foreground, 0.7)))
-            .child(
-                div()
-                    .flex()
-                    .flex_1()
-                    .items_center()
-                    .min_w_0()
-                    .ui_text(&theme, TextSize::Sm, weight::NORMAL)
-                    .text_color(if query.is_empty() { c.placeholder } else { c.foreground() })
-                    .child(if query.is_empty() { t!("Search refs...") } else { query.into() })
-                    .child(div().w(px(1.5)).h(px(16.)).bg(c.foreground())),
-            )
-            .child(picker_input_canvas(cx.entity()));
+        let focused = self.focus_handle.is_focused(window);
+        // `ComboboxSearchInput`: an underlined field whose rule turns the ring
+        // colour while it has focus, the icon inside its start padding.
+        let search = div().flex_none().px(theme.rem(0.75)).pt(theme.rem(0.625)).child(
+            div()
+                .relative()
+                .top(px(-1.))
+                .flex()
+                .items_center()
+                .pb(theme.rem(0.375))
+                .border_b_1()
+                .border_color(if focused { c.ring() } else { with_alpha(c.border, 0.7) })
+                .child(
+                    div()
+                        .absolute()
+                        .left_0()
+                        .top(theme.rem(0.375))
+                        .child(Icon::new(IconName::Search).size(IconSize::Custom(theme.rem(1.))).color(with_alpha(c.muted_foreground, 0.55))),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .flex_1()
+                        .items_center()
+                        .min_w_0()
+                        .h(theme.rem(1.625))
+                        .pl(theme.rem(1.25))
+                        .ui_text(&theme, TextSize::Sm, weight::NORMAL)
+                        .line_height(theme.rem(1.625))
+                        .text_color(if query.is_empty() { c.placeholder } else { c.foreground() })
+                        .when(!query.is_empty(), |q| q.child(query.clone()))
+                        .when(focused, |q| q.child(div().w(px(1.)).h(theme.rem(1.)).bg(c.foreground())))
+                        .when(query.is_empty(), |q| q.child(t!("Search refs..."))),
+                )
+                .child(picker_input_canvas(cx.entity())),
+        );
         let list = if count == 0 && offset == 0 {
             div()
                 .p(px(12.))
@@ -420,9 +432,9 @@ impl Render for BranchPicker {
             )
             .track_scroll(&self.scroll)
             .h(list_height)
-            .py(px(8.))
-            .pl(px(4.))
-            .pr(px(4.))
+            .py(theme.rem(0.75))
+            .pl(theme.rem(0.5))
+            .pr(theme.rem(0.25) + theme.spacing.app_scrollbar_width)
             .into_any_element()
         };
         let origin = self.options.start_from_origin.map(|on| {

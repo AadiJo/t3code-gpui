@@ -23,7 +23,7 @@ use super::branch_toolbar_logic::{
     resolve_branch_trigger_label, resolve_current_workspace_label, resolve_env_mode_label,
     resolve_locked_workspace_label, sanitize_new_ref_name, should_show_environment_indicator,
 };
-use super::chat::thread_details_panel_styles::{DismissPress, below_row, locked_row, row_icon, select_row};
+use super::chat::thread_details_panel_styles::{DismissPress, below_row, locked_row, row_width, row_icon, select_row};
 use super::git_actions_control_source::SourceControlModel;
 use super::icons::{Icon, IconName, IconSize};
 use super::previous_worktree_item_content::previous_worktree_item_content;
@@ -297,7 +297,7 @@ impl BranchToolbar {
             project_cwd: Some(self.props.project_cwd.clone()),
             width: Some(match self.layout {
                 BranchToolbarLayout::Composer => cx.app_theme().rem(20.),
-                _ => cx.app_theme().spacing.thread_details_panel_width - cx.app_theme().rem(1.),
+                _ => row_width(cx.app_theme()),
             }),
         }
     }
@@ -817,7 +817,7 @@ impl BranchToolbar {
                 rows.push(div().mx(theme.sp(2.)).my(theme.sp(1.)).h(px(1.)).bg(theme.colors.border).into_any_element());
             }
             rows.extend(self.workspace_rows(theme, cx));
-            below_row(Self::popup_surface(theme, Some(theme.spacing.thread_details_panel_width - theme.rem(1.)), rows, cx))
+            below_row(Self::popup_surface(theme, Some(row_width(&theme)), rows, cx))
         });
         div().flex().flex_col().w_full().child(trigger.test_support()).children(menu).into_any_element()
     }
