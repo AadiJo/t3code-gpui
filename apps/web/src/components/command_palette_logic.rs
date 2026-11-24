@@ -126,6 +126,8 @@ pub struct PaletteItem {
     pub thread: Option<Arc<PaletteThread>>,
     pub trailing: Option<PaletteTrailing>,
     pub kind: PaletteItemKind,
+    /// A page row that draws no chevron ("Add project" opens its flow in place).
+    pub hide_chevron: bool,
 }
 
 impl PaletteItem {
@@ -146,6 +148,7 @@ impl PaletteItem {
             thread: None,
             trailing: None,
             kind: PaletteItemKind::Action { run, keep_open: false },
+            hide_chevron: false,
         };
         item.set_terms(search_terms.iter().map(|t| SharedString::from(t.to_string())));
         item
@@ -200,6 +203,12 @@ impl PaletteItem {
 
     pub fn trailing(mut self, trailing: PaletteTrailing) -> Self {
         self.trailing = Some(trailing);
+        self
+    }
+
+    /// Leaves the page chevron off.
+    pub fn without_chevron(mut self) -> Self {
+        self.hide_chevron = true;
         self
     }
 

@@ -10,6 +10,8 @@ use gpui_kit::{
 use t3code_shared::palette_search::{SearchMatchHint, char_ranges_to_bytes};
 
 use super::command_palette_drag::PaletteThreadDrag;
+use super::command_palette_lookups::PaletteThread;
+use super::sidebar::model::SidebarProviderMark;
 use super::command_palette_logic::{PaletteItem, PaletteItemKind, PaletteRow, PaletteTitle, PaletteTrailing, ShownItem};
 use super::icons::{Icon, IconName, IconSize};
 use super::ui::{DISABLED_OPACITY, TextStyleExt as _};
@@ -63,13 +65,19 @@ fn title_element(item: &PaletteItem, theme: &AppTheme) -> AnyElement {
     match &item.title {
         PaletteTitle::Text(text) => div().truncate().child(text.clone()).into_any_element(),
         PaletteTitle::NewThreadIn { project } => {
+            // The project name is `font-semibold` inside the translated sentence.
             let full = item.search_name();
             let start = full.find(project.as_ref()).unwrap_or(full.len());
-            let bold = HighlightStyle { font_weight: Some(FontWeight(600.)), ..Default::default() };
+            let end = (start + project.len()).min(full.len());
             let _ = theme;
             div()
-                .truncate()
-                .child(StyledText::new(full.clone()).with_highlights([(start..start + project.len(), bold)]))
+                .flex()
+                .min_w_0()
+                .overflow_hidden()
+                .whitespace_nowrap()
+                .child(div().flex_none().child(SharedString::from(full[..start].replace(' ', "\u{a0}"))))
+                .child(div().flex_none().font_weight(FontWeight(600.)).child(SharedString::from(full[start..end].to_owned())))
+                .child(div().min_w_0().truncate().child(SharedString::from(full[end..].replace(' ', "\u{a0}"))))
                 .into_any_element()
         }
     }
@@ -132,6 +140,7 @@ pub fn render_item(
     shortcut_label: Option<SharedString>,
     theme: &AppTheme,
     callbacks: Option<RowCallbacks>,
+    cx: &gpui_kit::App,
 ) -> AnyElement {
     let c = &theme.colors;
     let item = &shown.item;
@@ -160,6 +169,9 @@ pub fn render_item(
     let content = if has_second_line(shown) {
         let second = match (&shown.hint, &item.description) {
             (Some(hint), _) => hint_line(hint, theme),
+            (None, _) if item.thread.is_some() => {
+                thread_subtitle(item.thread.as_ref().expect("checked"), item.secondary, theme, cx)
+            }
             (None, Some(description)) => div()
                 .min_w_0()
                 .truncate()
@@ -225,7 +237,7 @@ pub fn render_item(
                     .child(spaced(&label)),
             )
         })
-        .when(item.is_submenu(), |d| {
+        .when(item.is_submenu() && !item.hide_chevron, |d| {
             d.child(div().flex_none().ml_auto().mr(px(-2.)).child(Icon::new(IconName::ChevronRight).size(IconSize::Md).color(muted_70)))
         });
     let Some(callbacks) = callbacks.filter(|_| enabled) else {
@@ -274,4 +286,69 @@ pub fn render_empty(message: SharedString, theme: &AppTheme) -> AnyElement {
         .text_color(theme.colors.muted_foreground)
         .child(message)
         .into_any_element()
+}
+
+/// `ThreadCommandSubtitle`: the project's icon and name · environment, the
+/// workspace icon and branch, the provider's mark, and "Current thread", in
+/// `text-xs text-muted-foreground/70` with dots between.
+fn thread_subtitle(thread: &PaletteThread, is_current: bool, theme: &AppTheme, cx: &gpui_kit::App) -> AnyElement {
+    let muted = with_alpha(theme.colors.muted_foreground, 0.7);
+    let small = theme.rem(0.75);
+    let dot = || div().flex_none().child("·");
+    let mut parts: Vec<AnyElement> = Vec::new();
+    if let Some(project) = thread.project_title.clone() {
+        parts.push(
+            div()
+                .flex()
+                .min_w_0()
+                .items_center()
+                .gap(theme.rem(0.25))
+                .child(crate::components::project_favicon::ProjectFavicon::new(project.clone()).size(small))
+                .child(div().min_w_0().truncate().child(project))
+                .child(dot())
+                .child(div().flex_none().child(thread.environment_label.clone()))
+                .into_any_element(),
+        );
+    }
+    if let Some(branch) = thread.branch.clone() {
+        parts.push(
+            div()
+                .flex()
+                .min_w_0()
+                .items_center()
+                .gap(theme.rem(0.25))
+                .child(Icon::new(if thread.in_worktree { IconName::FolderGit2 } else { IconName::Folder }).size(IconSize::Custom(small)).color(muted))
+                .child(div().min_w_0().truncate().child(branch))
+                .into_any_element(),
+        );
+    }
+    if let Some(provider) = &thread.provider {
+        let mark = match provider.mark {
+            SidebarProviderMark::Brand(mark) => {
+                let composer = crate::components::chat::composer_theme::ComposerColors::new(cx);
+                crate::components::chat::composer_icons::provider_icon(mark, small, &provider.initials, &composer, cx)
+            }
+            SidebarProviderMark::AcpRegistry => {
+                Icon::new(crate::components::icons::BrandIcon::AcpRegistry).size(IconSize::Custom(small)).color(muted).into_any_element()
+            }
+        };
+        parts.push(div().flex_none().opacity(0.7).child(mark).into_any_element());
+    }
+    if is_current {
+        parts.push(div().flex_none().child(t!("Current thread")).into_any_element());
+    }
+    let mut row = div()
+        .flex()
+        .min_w_0()
+        .items_center()
+        .gap(theme.rem(0.25))
+        .ui_text(theme, TextSize::Xs, weight::NORMAL)
+        .text_color(muted);
+    for (index, part) in parts.into_iter().enumerate() {
+        if index > 0 {
+            row = row.child(dot());
+        }
+        row = row.child(part);
+    }
+    row.into_any_element()
 }

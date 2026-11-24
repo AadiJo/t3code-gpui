@@ -134,6 +134,10 @@ const OWNER_SCENES: &[Scene] = &[
     Scene { name: "details-git-menu", reference: "git-menu", light: false, steps: &[Step::Action(|| Box::new(ToggleThreadPanel)), Step::Wait(300), Step::ClickId("git-menu-trigger")] },
     Scene { name: "details-branch-picker", reference: "branch-picker", light: false, steps: &[Step::Action(|| Box::new(ToggleThreadPanel)), Step::Wait(300), Step::ClickId("branch-select")] },
     Scene { name: "details-items-menu", reference: "details-items-menu", light: false, steps: &[Step::Action(|| Box::new(ToggleThreadPanel)), Step::Wait(300), Step::RightClickId("thread-details-card")] },
+    Scene { name: "palette-root", reference: "palette-root", light: false, steps: &[Step::Action(|| Box::new(ToggleCommandPalette)), Step::Wait(200)] },
+    Scene { name: "palette-query-sync", reference: "palette-query-sync", light: false, steps: &[Step::Action(|| Box::new(ToggleCommandPalette)), Step::Type("sync"), Step::Wait(400)] },
+    Scene { name: "palette-messages", reference: "palette-messages", light: false, steps: &[Step::Action(|| Box::new(ToggleCommandPalette)), Step::Type("reconnect"), Step::Wait(600)] },
+    Scene { name: "palette-empty", reference: "palette-empty", light: false, steps: &[Step::Action(|| Box::new(ToggleCommandPalette)), Step::Type("zzqpv"), Step::Wait(300)] },
 ];
 
 const DETAILS: &[Step] = &[Step::Action(|| Box::new(ToggleThreadPanel)), Step::Wait(300)];

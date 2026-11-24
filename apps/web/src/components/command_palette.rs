@@ -386,19 +386,28 @@ impl CommandPalette {
                     "copy", "share", "prompt", "link",
                 ]));
             }
-            items.push(
-                command("action:copy-thread-reference", t!("Copy thread"), IconName::Link, StaticCommand::ThreadCopyReference, &[
-                    "copy", "thread", "thread id", "reference",
-                ])
-                .shortcut(StaticCommand::ThreadCopyReference),
-            );
+            // The subtitle is the thread's title (`resolveThreadReferenceCopyTarget`).
+            let title = active
+                .as_ref()
+                .and_then(|key| source.threads().iter().find(|t| &t.key == key).map(|t| t.title.clone()))
+                .filter(|t| !t.is_empty());
+            let mut copy = command("action:copy-thread-reference", t!("Copy thread"), IconName::Link, StaticCommand::ThreadCopyReference, &[
+                "copy", "thread", "thread id", "reference",
+            ])
+            .shortcut(StaticCommand::ThreadCopyReference);
+            if let Some(title) = title {
+                copy = copy.description(title);
+            }
+            items.push(copy);
             if source.supports(PaletteFeature::LinkPullRequest) {
-                items.push(event("action:link-pull-request", t!("Link pull request to thread"), IconName::GitPullRequestArrow, PaletteEvent::LinkPullRequest, &[
+                items.push(event("action:link-pull-request", t!("Link pull request to thread"), IconName::Link2, PaletteEvent::LinkPullRequest, &[
                     "link", "pull request", "pr", "attach", "stack",
                 ]));
-                items.push(event("action:open-thread-pull-requests", t!("Show linked items"), IconName::GitPullRequestArrow, PaletteEvent::ShowLinkedItems, &[
+                let mut linked = event("action:open-thread-pull-requests", t!("Show linked items"), IconName::Link2, PaletteEvent::ShowLinkedItems, &[
                     "pull requests", "issues", "linked", "stack", "prs",
-                ]));
+                ]);
+                linked.disabled = !source.active_thread_has_linked_items();
+                items.push(linked);
             }
             if source.supports(PaletteFeature::GuestShare) {
                 items.push(event("action:share-thread-with-guest", t!("Share with guest"), IconName::UserPlus, PaletteEvent::ShareWithGuest, &[
@@ -430,7 +439,7 @@ impl CommandPalette {
                 "new project", "create project", "empty", "repository", "repo", "git init",
             ]));
         }
-        items.push(add_project_item(&environments));
+        items.push(add_project_item(&environments).without_chevron());
         items.push(change_theme_item(&source.themes(), cx));
         items.push(change_appearance_item(cx));
         items.push(theme_editor_item());
@@ -687,7 +696,7 @@ impl CommandPalette {
                         }
                     };
                     let _ = cx;
-                    render_item(ix, shown, active, labels[ix].clone(), theme, Some(callbacks))
+                    render_item(ix, shown, active, labels[ix].clone(), theme, Some(callbacks), cx)
                 }
             }
         })

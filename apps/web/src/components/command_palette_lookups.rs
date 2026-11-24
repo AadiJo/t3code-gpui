@@ -2,12 +2,13 @@
 //! implements the trait over live state; [`FixtureSource`] fills it from a
 //! sidebar snapshot for scenes and checks.
 
+use crate::i18n::t;
 use std::sync::Arc;
 
 use gpui_kit::{Hsla, SharedString};
 use t3code_shared::palette_search::{PullRequestSubject, SearchText, ThreadOpenStats, ThreadSearchSubject};
 
-use crate::components::sidebar::model::{EnvironmentId, ProjectRef, SidebarSnapshot, SidebarThread, ThreadKey};
+use crate::components::sidebar::model::{EnvironmentId, ProjectRef, SidebarProvider, SidebarSnapshot, SidebarThread, ThreadKey};
 use crate::theme_palette::{Appearance, ThemeDocument};
 use crate::timestamp_format::format_relative_elapsed;
 
@@ -18,6 +19,14 @@ pub struct PaletteThread {
     pub project: Option<ProjectRef>,
     pub title: SharedString,
     pub branch: Option<SharedString>,
+    /// The project's name, for the subtitle.
+    pub project_title: Option<SharedString>,
+    /// Where the thread runs: the environment's label, "Local" or "Remote".
+    pub environment_label: SharedString,
+    /// The branch is checked out in a worktree (folder-git icon, not folder).
+    pub in_worktree: bool,
+    /// The provider mark the subtitle ends with.
+    pub provider: Option<SidebarProvider>,
     /// Epoch ms of the latest user activity, for the timestamp and recency.
     pub activity_at: i64,
     pub subject: ThreadSearchSubject,
@@ -51,6 +60,16 @@ impl PaletteThread {
             project: Some(ProjectRef { environment_id: thread.key.environment_id.clone(), project_id: thread.project_id.clone() }),
             title: thread.title.clone(),
             branch: thread.branch.clone(),
+            project_title: project_title.map(|t| SharedString::from(t.to_owned())),
+            environment_label: environment_label.map(|l| SharedString::from(l.to_owned())).unwrap_or_else(|| {
+                if thread.remote_machine {
+                    t!("Remote", context = "machine location")
+                } else {
+                    t!("Local", context = "machine location")
+                }
+            }),
+            in_worktree: thread.in_worktree,
+            provider: thread.provider.clone(),
             activity_at,
             subject,
         }
@@ -143,6 +162,11 @@ pub trait CommandPaletteSource {
     fn ports(&self) -> Vec<PalettePort>;
     fn settings(&self) -> Arc<[PaletteSetting]>;
     fn supports(&self, feature: PaletteFeature) -> bool;
+    /// The active thread has linked pull requests or issues; without any,
+    /// "Show linked items" is disabled. Defaults to `true`.
+    fn active_thread_has_linked_items(&self) -> bool {
+        true
+    }
     /// The clock relative times and search recency read.
     fn now_ms(&self) -> i64;
 }
