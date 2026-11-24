@@ -1434,8 +1434,8 @@ vertex BackdropVertexOutput backdrop_composite_vertex(
     constant BackdropParams *params [[buffer(BackdropInputIndex_Params)]]) {
   float2 unit = float2(float(vertex_id & 1u), 0.5 * float(vertex_id & 2u));
   float2 position = backdrop_float2(params->draw_origin) + unit * backdrop_float2(params->draw_size);
-  float2 device = position / backdrop_float2(params->viewport_size) * float2(2., -2.) + float2(-1., 1.);
-  return BackdropVertexOutput{float4(device, 0., 1.)};
+  float2 clip_position = position / backdrop_float2(params->viewport_size) * float2(2., -2.) + float2(-1., 1.);
+  return BackdropVertexOutput{float4(clip_position, 0., 1.)};
 }
 
 // The CSS `saturate()` matrix.
