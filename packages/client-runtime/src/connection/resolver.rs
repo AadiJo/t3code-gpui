@@ -22,7 +22,7 @@ pub async fn prepare(
     label: &str,
     route: &ConnectionRoute,
 ) -> Result<PreparedConnection, ConnectionError> {
-    tokio::time::timeout(PREPARE_TIMEOUT, prepare_route(auth, environment_id, label, route))
+    tokio::time::timeout(PREPARE_TIMEOUT, prepare_route(auth, environment_id, label, route, true))
         .await
         .unwrap_or_else(|_| {
             Err(ConnectionError::transient(
@@ -32,11 +32,27 @@ pub async fn prepare(
         })
 }
 
+/// [`prepare`] without the protocol gate, for a host on another protocol that is asked only to
+/// update itself (`prepareForUpdate`). The URL carries no `orchestrationProtocol`.
+pub async fn prepare_for_update(
+    auth: &RemoteAuthorization,
+    environment_id: &EnvironmentId,
+    label: &str,
+    route: &ConnectionRoute,
+) -> Result<PreparedConnection, ConnectionError> {
+    tokio::time::timeout(PREPARE_TIMEOUT, prepare_route(auth, environment_id, label, route, false))
+        .await
+        .unwrap_or_else(|_| {
+            Err(ConnectionError::transient(TransientReason::Timeout, format!("Timed out authorizing {label}.")))
+        })
+}
+
 async fn prepare_route(
     auth: &RemoteAuthorization,
     environment_id: &EnvironmentId,
     label: &str,
     route: &ConnectionRoute,
+    gate: bool,
 ) -> Result<PreparedConnection, ConnectionError> {
     let authorized = match &route.target.route {
         TargetRoute::Relay => auth.authorize_relay(environment_id, None).await?,
@@ -92,11 +108,13 @@ async fn prepare_route(
             }
         }
     };
-    if let Some(error) = protocol_compatibility_error(&authorized.descriptor) {
-        return Err(error);
-    }
     let mut socket_url = authorized.socket_url;
-    append_orchestration_protocol(&mut socket_url);
+    if gate {
+        if let Some(error) = protocol_compatibility_error(&authorized.descriptor) {
+            return Err(error);
+        }
+        append_orchestration_protocol(&mut socket_url);
+    }
     socket_url.query_pairs_mut().append_pair(FRAME_PARTS_QUERY_PARAM, "1");
     let label = if authorized.descriptor.label.is_empty() { label.to_owned() } else { authorized.descriptor.label.clone() };
     Ok(PreparedConnection {

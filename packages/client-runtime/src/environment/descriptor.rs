@@ -30,6 +30,8 @@ pub struct DescriptorCapabilities {
     pub access_token_renewal: bool,
     pub server_self_update: Option<String>,
     #[serde(default)]
+    pub server_self_update_progress: bool,
+    #[serde(default)]
     pub desktop_app_update: bool,
 }
 

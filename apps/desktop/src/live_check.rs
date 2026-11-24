@@ -81,6 +81,9 @@
 //   sidepane  a side chat's reply shows no "Fork from here" (the main pane keeps it); the side
 //            chat deleted from outside the pane reads "This side chat was deleted."
 //   delete-thread  deletes `T3_DELETE_THREAD`, as another client would
+//   server-update  version skew and the server Update control against the update stand-in:
+//            progress, restart, failure and retry, and an outdated-protocol host
+//            (`live_check_update.rs`)
 //   timer    the main pane's "Working for" on a running turn matches the server's run start and
 //            advances with the wall clock
 //   breadcrumb  an unlisted subagent thread and a side chat shown in the main pane name their
@@ -97,6 +100,7 @@ mod live_check_memory;
 mod live_check_palette;
 mod live_check_setup;
 mod live_check_settings;
+mod live_check_update;
 mod live_check_usage;
 #[allow(dead_code)]
 #[path = "notifications/mod.rs"]
@@ -595,6 +599,7 @@ fn main() -> anyhow::Result<()> {
         "timer" => run_timer(&mut check),
         "breadcrumb" => run_breadcrumb(&mut check),
         "settings" => live_check_settings::run_settings(&mut check),
+        "server-update" => live_check_update::run_server_update(&mut check),
         other => Err(anyhow::anyhow!("unknown phase {other}")),
     };
     check.finish(&phase, result)

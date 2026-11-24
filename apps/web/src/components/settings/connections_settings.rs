@@ -39,8 +39,15 @@ use crate::components::ui::toast::{ToastData, ToastKind, Toaster};
 use crate::components::ui::tooltip::tooltip;
 use crate::connection::presentation::{
     Diagnosis, HopResult, Tone, diagnose, diagnosis_text, present_phase, route_address,
-    route_label, row_status, status_text, version_mismatch, transport_label,
+    route_label, row_status, status_text, transport_label,
 };
+use crate::components::server_update_action::{
+    ServerUpdateStore, ServerUpdateTarget, UpdateAppearance, desktop_confirmation, outdated_server_update_action,
+    server_update_action, server_update_progress, server_updates_action, update_all,
+};
+use crate::hooks::use_settings::ServerSettingsStore;
+use crate::version_skew::{VersionMismatch, client_version, resolve_version_mismatch};
+use t3code_client_runtime::connection::server_update::{ServerUpdateStage, ServerUpdateState};
 use crate::connection::{ConnectionRuntime, ConnectionsState, EnvironmentState};
 use crate::i18n::t;
 use crate::theme_color::with_alpha;
@@ -51,6 +58,8 @@ enum PageDialog {
     SignIn(Entity<T3ConnectSignIn>),
     RemoveEnvironment { id: EnvironmentId, label: SharedString },
     RemoveRoute { id: EnvironmentId, route_id: String, label: SharedString, address: Option<SharedString> },
+    /// Confirms relaunching desktop apps that run these servers (`requestConfirmDialog`).
+    ConfirmUpdate(Vec<ServerUpdateTarget>),
 }
 
 /// A route being dragged to a new place in its environment's list.
@@ -104,6 +113,8 @@ impl ConnectionsSettings {
     /// The page over given state: the app's, or a scene's fixture.
     pub fn with_state(state: Entity<ConnectionsState>, _window: &mut Window, cx: &mut Context<Self>) -> Self {
         let observe = cx.observe(&state, |_, _, cx| cx.notify());
+        let updates = ServerUpdateStore::entity(cx);
+        let observe_updates = cx.observe(&updates, |_, _, cx| cx.notify());
         if let Some(runtime) = cx.try_global::<ConnectionRuntime>() {
             runtime.refresh_relay(cx);
         }
@@ -116,7 +127,7 @@ impl ConnectionsSettings {
             load_balancing_open: false,
             dialog: None,
             ticker: None,
-            _subscriptions: vec![observe],
+            _subscriptions: vec![observe, observe_updates],
         }
     }
 
@@ -454,7 +465,13 @@ impl ConnectionsSettings {
     }
 
     fn render_row(&self, env: &EnvironmentState, cx: &mut Context<Self>) -> AnyElement {
-        let diagnosis = diagnose(env);
+        let config = ServerSettingsStore::config(cx, env.id());
+        let update_state = ServerUpdateStore::shown_state(env.id(), config.as_ref().map(|c| c.environment.server_version.as_str()), cx);
+        let resuming = matches!(update_state, ServerUpdateState::Running { stage: ServerUpdateStage::Resuming, .. });
+        // While the host restarts into the update, the failure is expected, not diagnosed.
+        let diagnosis = if resuming { None } else { diagnose(env) };
+        let mismatch = environment_mismatch(env, cx);
+        let update_controls = self.render_update_controls(env, config.as_deref(), mismatch.as_ref(), &update_state, cx);
         let mut detail: Vec<AnyElement> = Vec::new();
         if let (Some(diagnosis), true) = (&diagnosis, self.diagnosis_open.contains(env.id())) {
             detail.push(self.render_diagnosis(env, diagnosis, cx));
@@ -488,23 +505,25 @@ impl ConnectionsSettings {
         let mut subtitle: Vec<AnyElement> = Vec::new();
         let mut parts = vec![transport_label(env)];
         if diagnosis.is_none() {
-            parts.push(status);
+            parts.push(if resuming { t!("Restarting") } else { status });
         }
-        let client_version = cx.try_global::<ConnectionRuntime>().map(|runtime| runtime.auth().presentation().app_version.clone());
-        let mismatch = client_version.and_then(|client| version_mismatch(env.server_version.as_deref(), &client));
-        if let (true, Some((server, _))) = (enabled, &mismatch) {
-            parts.push(server.clone());
+        if let (true, Some(mismatch)) = (enabled, &mismatch) {
+            parts.push(mismatch.server_version.clone());
         }
         let status_tooltip: SharedString = match &mismatch {
-            Some((server, client)) => format!(
+            Some(mismatch) => format!(
                 "{}\n{}",
                 status_text(env),
-                t!("Update available: {serverVersion} → {clientVersion}", serverVersion = server, clientVersion = client)
+                t!(
+                    "Update available: {serverVersion} → {clientVersion}",
+                    serverVersion = mismatch.server_version,
+                    clientVersion = mismatch.client_version
+                )
             )
             .into(),
             None => status_text(env),
         };
-        let error_tone = enabled && tone == Tone::Error && diagnosis.is_none();
+        let error_tone = enabled && tone == Tone::Error && !resuming && diagnosis.is_none();
         subtitle.push(
             div()
                 .id(SharedString::from(format!("env-status-{key}")))
@@ -636,6 +655,8 @@ impl ConnectionsSettings {
                 .child(div().text_color(c.destructive()).child(diagnosis.headline.clone()))
                 .child(div().flex().flex_wrap().items_center().gap(sp(1.)).text_color(c.muted_foreground).children(meta))
         });
+        let progress = div().max_w(theme.rem(28.)).children(server_update_progress(format!("env-update-progress-{key}"), &update_state, cx));
+        let below = below.map(IntoElement::into_any_element).into_iter().chain(Some(progress.into_any_element()));
         let switch_id = id.clone();
         let menu_entity = cx.entity().downgrade();
         let menu_env = env.clone();
@@ -645,6 +666,7 @@ impl ConnectionsSettings {
             .flex_none()
             .items_center()
             .gap(sp(1.))
+            .children(update_controls)
             .child(
                 div()
                     .id(SharedString::from(format!("env-switch-wrap-{key}")))
@@ -724,6 +746,92 @@ impl ConnectionsSettings {
             )
             .when(!detail.is_empty(), |d| d.child(div().pl(sp(7.)).children(detail)))
             .into_any_element()
+    }
+
+    /// The row's Update control, before its switch: the bare-socket Update for a host on an older
+    /// protocol, else the icon for a connected host behind this client while no update runs.
+    fn render_update_controls(
+        &self,
+        env: &EnvironmentState,
+        config: Option<&t3code_contracts::ServerConfig>,
+        mismatch: Option<&VersionMismatch>,
+        state: &ServerUpdateState,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
+        let key = env.id().as_str();
+        let server_label = t!(
+            "{label} server",
+            label = env.entry.label.as_str(),
+            context = "names a T3 server inside sentences such as {serverLabel} updated"
+        );
+        let retry = matches!(state, ServerUpdateState::Failed { .. });
+        let label = if retry { t!("Retry update") } else { t!("Update", context = "verb, updates the server") };
+        let blocked = env.status.as_ref().and_then(|status| status.last_failure.as_ref()).filter(|failure| {
+            failure.server_update_required
+                && failure.kind
+                    == t3code_client_runtime::connection::model::ConnectionErrorKind::Blocked(
+                        t3code_client_runtime::connection::model::BlockedReason::Unsupported,
+                    )
+        });
+        if env.entry.enabled && blocked.is_some() && !state.is_running() {
+            let from = env.server_version.as_ref().map(|v| v.to_string());
+            return Some(outdated_server_update_action(
+                format!("env-outdated-update-{key}"),
+                env.id().clone(),
+                server_label,
+                from,
+                client_version(cx),
+                label,
+                cx,
+            ));
+        }
+        let mismatch = mismatch?;
+        if !env.entry.enabled || !env.is_connected() || state.is_running() {
+            return None;
+        }
+        let target = ServerUpdateTarget::for_config(env.id().clone(), server_label, config, mismatch.client_version.clone());
+        let this = cx.entity().downgrade();
+        let start = target.clone();
+        Some(server_update_action(
+            format!("env-update-{key}"),
+            &target,
+            Some(label),
+            UpdateAppearance::Icon,
+            move |_, cx| {
+                this.update(cx, |this, cx| this.start_updates(vec![start.clone()], cx)).ok();
+            },
+            cx,
+        ))
+    }
+
+    /// Starts updates, asking first when one relaunches a desktop app.
+    fn start_updates(&mut self, targets: Vec<ServerUpdateTarget>, cx: &mut Context<Self>) {
+        if targets.iter().any(ServerUpdateTarget::needs_confirmation) {
+            self.dialog = Some(PageDialog::ConfirmUpdate(targets));
+            cx.notify();
+            return;
+        }
+        update_all(targets, cx);
+    }
+
+    /// Saved servers the header's "Update all" can update (`savedServerUpdateTargets`).
+    fn update_targets(&self, environments: &[EnvironmentState], cx: &mut App) -> Vec<ServerUpdateTarget> {
+        environments
+            .iter()
+            .filter(|env| env.entry.enabled && env.is_connected())
+            .filter_map(|env| {
+                let config = ServerSettingsStore::config(cx, env.id());
+                let mismatch = environment_mismatch(env, cx)?;
+                let state = ServerUpdateStore::state(env.id(), cx);
+                let target = ServerUpdateTarget::for_config(
+                    env.id().clone(),
+                    SharedString::from(env.entry.label.clone()),
+                    config.as_deref(),
+                    mismatch.client_version,
+                );
+                (!state.is_running() && target.self_update.is_some() && target.updates_remotely()).then_some(target)
+            })
+            .collect()
     }
 
     fn render_diagnosis(&self, env: &EnvironmentState, diagnosis: &Diagnosis, cx: &mut Context<Self>) -> AnyElement {
@@ -994,6 +1102,21 @@ impl ConnectionsSettings {
                     )
                     .into_any_element()
             }
+            PageDialog::ConfirmUpdate(targets) => {
+                let targets = targets.clone();
+                DialogSurface::new(desktop_confirmation(&targets))
+                    .footer(
+                        Button::new("confirm-cancel")
+                            .label(t!("Cancel"))
+                            .variant(ButtonVariant::Outline)
+                            .on_click(cx.listener(|this, _, _, cx| this.close_dialog(cx))),
+                    )
+                    .footer(Button::new("confirm-update").label(t!("Update")).on_click(cx.listener(move |this, _, _, cx| {
+                        this.close_dialog(cx);
+                        update_all(targets.clone(), cx);
+                    })))
+                    .into_any_element()
+            }
             PageDialog::RemoveRoute { id, route_id, label, address } => {
                 let (id, route_id) = (id.clone(), route_id.clone());
                 let text = match address {
@@ -1169,6 +1292,20 @@ impl Render for ConnectionsSettings {
         let load_balancing = self.render_load_balancing(&environments, cx);
         let cloud_rows = cloud_environment_connect_rows(&self.state, cx);
         let dialog = self.render_dialog(cx);
+        let targets = self.update_targets(&environments, cx);
+        let this = cx.entity().downgrade();
+        let update_all_button = (!targets.is_empty()).then(|| {
+            server_updates_action(
+                "environments-update-all",
+                &targets,
+                None,
+                ButtonVariant::GhostMuted,
+                move |targets, _, cx| {
+                    this.update(cx, |this, cx| this.start_updates(targets, cx)).ok();
+                },
+                cx,
+            )
+        });
         let theme = cx.app_theme();
         let c = &theme.colors;
         let header_action = Button::new("add-environment")
@@ -1177,6 +1314,7 @@ impl Render for ConnectionsSettings {
             .variant(ButtonVariant::GhostMuted)
             .size(ButtonSize::Xs)
             .on_click(cx.listener(|this, _, window, cx| this.open_add_dialog(None, window, cx)));
+        let header_action = div().flex().items_center().gap(theme.sp(1.)).children(update_all_button).child(header_action);
         let mut section = SettingsSection::new(t!("Environments")).header_action(header_action).children(rows).children(cloud_rows.rows);
         if environments.is_empty() && !cloud_rows.any {
             let description = t!("Click “Add environment” to pair another environment.");
@@ -1195,4 +1333,12 @@ impl Render for ConnectionsSettings {
             .children(load_balancing)
             .children(dialog)
     }
+}
+
+/// The environment's server behind this client, from its config, else the version its session
+/// reported (an environment whose config has not arrived).
+fn environment_mismatch(env: &EnvironmentState, cx: &App) -> Option<VersionMismatch> {
+    let config = ServerSettingsStore::config(cx, env.id());
+    let server = config.as_ref().map(|c| SharedString::from(c.environment.server_version.clone())).or_else(|| env.server_version.clone());
+    resolve_version_mismatch(server.as_deref(), &client_version(cx))
 }
