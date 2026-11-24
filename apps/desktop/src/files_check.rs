@@ -283,6 +283,14 @@ fn checks(root: &Path, appearance: Appearance, out: &Path) -> anyhow::Result<(St
     let table_rows = h.read(|p, cx| p.table_view().map(|t| t.read(cx).row_count()));
     h.check("csv opens as a table with a header row", table_rows == Some(9), format!("{table_rows:?} data rows"));
     h.shot(&format!("08-csv-{suffix}"))?;
+    h.with(|panel, _, cx| {
+        if let Some(table) = panel.read(cx).table_view().cloned() {
+            table.update(cx, |table, cx| table.scroll_cells_to(px(160.), cx));
+        }
+    });
+    h.frame();
+    h.frame();
+    h.shot(&format!("08b-csv-scrolled-sideways-{suffix}"))?;
 
     // Image with zoom.
     h.open("assets/orbit.png", None);
@@ -461,6 +469,14 @@ fn checks(root: &Path, appearance: Appearance, out: &Path) -> anyhow::Result<(St
     let count = h.read(|p, cx| p.content_search().map(|s| s.read(cx).match_count()));
     h.check("content search finds matches across files", count.is_some_and(|c| c >= 3), format!("{count:?}"));
     h.shot(&format!("16-content-search-{suffix}"))?;
+    h.with(|panel, _, cx| {
+        if let Some(search) = panel.read(cx).content_search().cloned() {
+            search.update(cx, |search, cx| search.scroll_results_by(px(60.), cx));
+        }
+    });
+    h.frame();
+    h.frame();
+    h.shot(&format!("16b-content-search-scrolled-{suffix}"))?;
     h.press("down");
     let target = h.read(|p, cx| p.content_search().and_then(|s| s.read(cx).selected_match().map(|m| (m.path.clone(), m.line_number))));
     h.press("enter");
