@@ -13,11 +13,10 @@ use gpui_kit::{
     Render, SharedString, StatefulInteractiveElement as _, Styled as _, Window, div, prelude::FluentBuilder as _, px,
 };
 use t3code_client_runtime::issue_presentation::{IssueWriteAccess, issue_write_access};
-use t3code_client_runtime::issue_selection::{issue_labels_after_picks, issue_write_after_picks};
 use t3code_client_runtime::pull_request_reactions::{PULL_REQUEST_REACTION_ORDER, pull_request_reaction_emoji};
-use t3code_client_runtime::pull_request_selection::SelectionDraft;
 use t3code_contracts::*;
 
+use super::issue_candidate_picker::{IssueCandidatePicker, IssueCandidatesChanged, IssuePickerKind};
 use super::issue_presentation::{issue_event_sentence, issue_state_presentation};
 use crate::appearance_fonts::{TextSize, weight};
 use crate::components::chat::chat_style::ChatColors;
@@ -48,11 +47,11 @@ pub struct IssueDetailPanel {
     source: Rc<dyn IssueSource>,
     reference: IssueRef,
     detail: Option<IssueDetail>,
-    candidates: Option<IssueCandidates>,
     error: Option<SharedString>,
     status: Option<SharedString>,
-    label_draft: SelectionDraft<IssueLabelCandidate>,
-    labels_open: bool,
+    label_picker: Option<Entity<IssueCandidatePicker>>,
+    assignee_picker: Option<Entity<IssueCandidatePicker>>,
+    _picker_events: Vec<gpui_kit::Subscription>,
     composer: Entity<InputState>,
     markdown: HashMap<String, Vec<ParsedBlocks>>,
     markdown_state: MarkdownUiState,
@@ -71,11 +70,11 @@ impl IssueDetailPanel {
             source,
             reference,
             detail: None,
-            candidates: None,
             error: None,
             status: None,
-            label_draft: SelectionDraft::new(),
-            labels_open: false,
+            label_picker: None,
+            assignee_picker: None,
+            _picker_events: Vec::new(),
             composer,
             markdown: HashMap::new(),
             markdown_state: MarkdownUiState::default(),
@@ -101,6 +100,7 @@ impl IssueDetailPanel {
                     Ok(d) => {
                         this.detail = Some(d);
                         this.error = None;
+                        this.sync_pickers(cx);
                     }
                     Err(e) => this.error = Some(e.0),
                 }
@@ -109,11 +109,6 @@ impl IssueDetailPanel {
             .ok();
         })
         .detach();
-    }
-
-    fn scope(&self) -> IssueScopeRef {
-        let r = &self.reference;
-        IssueScopeRef { project_id: r.project_id.clone(), tracker: r.tracker.clone(), host: r.host.clone(), scope: r.scope.clone() }
     }
 
     fn access(&self) -> Option<IssueWriteAccess> {
@@ -181,52 +176,49 @@ impl IssueDetailPanel {
         cx.notify();
     }
 
-    /// Opens or closes the label picker; closing writes the picks as one update.
-    pub fn toggle_label_picker(&mut self, cx: &mut Context<Self>) {
-        if !self.labels_open {
-            self.labels_open = true;
-            if self.candidates.is_none() {
-                let request = self.source.candidates(self.scope());
-                cx.spawn(async move |this, cx| {
-                    let result = request.await;
-                    this.update(cx, |this, cx| {
-                        this.candidates = result.ok();
-                        cx.notify();
-                    })
-                    .ok();
-                })
-                .detach();
-            }
-            cx.notify();
-            return;
-        }
-        self.labels_open = false;
+    /// Creates the label and assignee pickers once the issue says the tracker has them.
+    fn ensure_pickers(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(detail) = &self.detail else { return };
-        let held: Vec<String> = detail.labels.iter().map(|l| l.name.clone()).collect();
-        let after = issue_labels_after_picks(detail, &self.label_draft);
-        self.label_draft = SelectionDraft::new();
-        if let Some(labels) = issue_write_after_picks(after.as_deref(), &held, None) {
-            let r = self.reference.clone();
-            let request = self.source.update(IssueUpdateInput {
-                project_id: r.project_id,
-                tracker: r.tracker,
-                host: r.host,
-                scope: r.scope,
-                key: r.key,
-                title: None,
-                body: None,
-                labels: Some(labels),
-                assignees: None,
-            });
-            self.after_write(request, cx);
+        let (labels, assignees) = (detail.capabilities.labels, detail.capabilities.assignees);
+        let mut created = false;
+        for (kind, wanted) in [(IssuePickerKind::Labels, labels), (IssuePickerKind::Assignees, assignees)] {
+            let slot = match kind {
+                IssuePickerKind::Labels => &self.label_picker,
+                IssuePickerKind::Assignees => &self.assignee_picker,
+            };
+            if !wanted || slot.is_some() {
+                continue;
+            }
+            let (source, reference) = (self.source.clone(), self.reference.clone());
+            let picker = cx.new(|cx| IssueCandidatePicker::new(kind, source, reference, window, cx));
+            self._picker_events.push(cx.subscribe(&picker, |this, _, _: &IssueCandidatesChanged, cx| {
+                cx.emit(IssueDetailEvent::Changed);
+                this.refresh(cx);
+            }));
+            match kind {
+                IssuePickerKind::Labels => self.label_picker = Some(picker),
+                IssuePickerKind::Assignees => self.assignee_picker = Some(picker),
+            }
+            created = true;
         }
-        cx.notify();
+        if created {
+            self.sync_pickers(cx);
+        }
     }
 
-    fn toggle_label(&mut self, candidate: IssueLabelCandidate, cx: &mut Context<Self>) {
-        let held = self.detail.as_ref().is_some_and(|d| d.labels.iter().any(|l| l.name == candidate.name));
-        self.label_draft = self.label_draft.toggle(&candidate.name.clone(), candidate, held);
-        cx.notify();
+    /// Hands the pickers the latest read and what the viewer may change.
+    fn sync_pickers(&mut self, cx: &mut Context<Self>) {
+        let (Some(detail), Some(access)) = (self.detail.clone(), self.access()) else { return };
+        let blocked = access.blocked.map(|b| SharedString::new_static(b.message()));
+        if let Some(p) = &self.label_picker {
+            let reason = blocked.clone().unwrap_or_else(|| t!("Changing labels needs triage access on this tracker."));
+            let detail = detail.clone();
+            p.update(cx, |p, cx| p.set_issue(detail, access.labels, reason, cx));
+        }
+        if let Some(p) = &self.assignee_picker {
+            let reason = blocked.unwrap_or_else(|| t!("Changing assignees needs triage access on this tracker."));
+            p.update(cx, |p, cx| p.set_issue(detail, access.assignees, reason, cx));
+        }
     }
 
     fn markdown(&mut self, key: &str, text: &str, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
@@ -238,6 +230,47 @@ impl IssueDetailPanel {
         render_markdown(&view, window, cx).into_any_element()
     }
 
+    /// `PullRequestMetaRow`s for Labels and Assignees, each with its picker.
+    fn render_meta_rows(&self, detail: &IssueDetail, theme: &AppTheme) -> AnyElement {
+        let c = &theme.colors;
+        let row = |icon: IconName, label: SharedString, value: AnyElement| {
+            div()
+                .flex()
+                .items_center()
+                .min_h(theme.sp(6.))
+                .gap(theme.sp(2.))
+                .ui_text(theme, TextSize::Xs, weight::NORMAL)
+                .child(div().w(theme.rem(6.)).flex_none().flex().items_center().gap(theme.sp(1.5)).text_color(c.muted_foreground).child(Icon::new(icon).size(IconSize::Sm).color(c.muted_foreground)).child(label))
+                .child(div().flex_1().min_w_0().text_color(c.foreground()).child(value))
+        };
+        let none = |text: SharedString| div().text_color(c.muted_foreground).child(text).into_any_element();
+        let labels = div()
+            .flex()
+            .flex_wrap()
+            .items_center()
+            .gap(theme.sp(1.))
+            .when(detail.labels.is_empty(), |el| el.child(none(t!("None", context = "no labels"))))
+            .children(detail.labels.iter().map(|l| label_chip(theme, &l.name, l.color.as_deref())))
+            .children(self.label_picker.clone())
+            .into_any_element();
+        let assignees = div()
+            .flex()
+            .flex_wrap()
+            .items_center()
+            .gap(theme.sp(1.5))
+            .when(detail.assignees.is_empty(), |el| el.child(none(t!("None", context = "no assignees"))))
+            .children(detail.assignees.iter().map(|a| div().flex().items_center().gap(theme.sp(1.)).child(avatar(theme, Some(&a.login), 16.)).child(SharedString::from(a.login.clone()))))
+            .children(self.assignee_picker.clone())
+            .into_any_element();
+        div()
+            .flex()
+            .flex_col()
+            .gap(theme.sp(2.))
+            .child(row(IconName::Tag, t!("Labels"), labels))
+            .child(row(IconName::Users, t!("Assignees"), assignees))
+            .into_any_element()
+    }
+
     fn section(theme: &AppTheme, title: SharedString) -> gpui_kit::Div {
         div().flex().flex_col().gap(px(6.)).child(div().ui_text(theme, TextSize::Xs, weight::SEMIBOLD).text_color(theme.colors.muted_foreground).child(title))
     }
@@ -245,6 +278,7 @@ impl IssueDetailPanel {
 
 impl Render for IssueDetailPanel {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.ensure_pickers(window, cx);
         let theme = cx.app_theme().clone();
         let Some(detail) = self.detail.clone() else {
             let text = self.error.clone().unwrap_or_else(|| t!("Loading issue"));
@@ -314,35 +348,6 @@ impl Render for IssueDetailPanel {
             ));
         }
         activity.sort_by(|a, b| a.0.cmp(&b.0));
-        let picker = self.labels_open.then(|| {
-            let candidates = self.candidates.clone().map(|c| c.labels).unwrap_or_default();
-            div()
-                .flex()
-                .flex_col()
-                .p(px(4.))
-                .rounded(theme.radii.md)
-                .border_1()
-                .border_color(theme.colors.border)
-                .bg(theme.colors.popover())
-                .children(candidates.into_iter().map(|c| {
-                    let held = detail.labels.iter().any(|l| l.name == c.name);
-                    let on = self.label_draft.is_selected(&c.name, held);
-                    let name = c.name.clone();
-                    div()
-                        .id(SharedString::from(format!("issue-label-{name}")))
-                        .test_support()
-                        .flex()
-                        .items_center()
-                        .gap(px(8.))
-                        .h(px(26.))
-                        .px(px(6.))
-                        .rounded(px(4.))
-                        .hover(|s| s.bg(theme.colors.accent_surface))
-                        .child(Icon::new(if on { IconName::Check } else { IconName::Plus }).size(IconSize::Xs).color(theme.colors.muted_foreground))
-                        .child(label_chip(&theme, &c.name, c.color.as_deref()))
-                        .on_click(cx.listener(move |this, _, _, cx| this.toggle_label(c.clone(), cx)))
-                }))
-        });
         let reactions = detail.reactions.clone().unwrap_or_default();
         let mut reaction_row = div().flex().flex_wrap().gap(px(4.));
         for content in PULL_REQUEST_REACTION_ORDER {
@@ -438,24 +443,7 @@ impl Render for IssueDetailPanel {
                             .p(px(20.))
                             .child(div().ui_text(&theme, TextSize::Sm, weight::NORMAL).text_color(theme.colors.text).child(body))
                             .child(reaction_row)
-                            .child(
-                                Self::section(&theme, t!("Labels"))
-                                    .child(
-                                        div()
-                                            .flex()
-                                            .flex_wrap()
-                                            .items_center()
-                                            .gap(px(6.))
-                                            .children(detail.labels.iter().map(|l| label_chip(&theme, &l.name, l.color.as_deref())))
-                                            .when(access.labels, |el| {
-                                                el.child(Button::new("issue-labels-edit").size(ButtonSize::Xs).variant(ButtonVariant::Ghost).icon(IconName::Pencil).label(if self.labels_open { t!("Save") } else { t!("Change labels") }).on_click(cx.listener(|this, _, _, cx| this.toggle_label_picker(cx))))
-                                            }),
-                                    )
-                                    .children(picker),
-                            )
-                            .child(Self::section(&theme, t!("Assignees")).child(div().flex().flex_wrap().gap(px(8.)).children(detail.assignees.iter().map(|a| {
-                                div().flex().items_center().gap(px(6.)).ui_text(&theme, TextSize::Xs, weight::NORMAL).text_color(theme.colors.text).child(avatar(&theme, Some(&a.login), 18.)).child(SharedString::from(a.login.clone()))
-                            }))))
+                            .child(self.render_meta_rows(&detail, &theme))
                             .when(!detail.linked_pull_requests.is_empty(), |el| {
                                 el.child(Self::section(&theme, t!("Linked pull requests")).children(detail.linked_pull_requests.iter().map(|pr| {
                                     let (icon, tone, _) = pull_request_state_presentation(&theme, pr.state, pr.is_draft);
