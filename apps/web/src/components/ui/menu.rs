@@ -42,7 +42,10 @@ pub struct MenuItem {
     disabled: bool,
     inset: bool,
     highlighted: bool,
+    detail: Option<SharedString>,
+    id: Option<SharedString>,
     on_select: Option<Action>,
+    on_hover: Option<Rc<dyn Fn(&bool, &mut Window, &mut App) + 'static>>,
 }
 
 impl MenuItem {
@@ -56,7 +59,10 @@ impl MenuItem {
             disabled: false,
             inset: false,
             highlighted: false,
+            detail: None,
+            id: None,
             on_select: None,
+            on_hover: None,
         }
     }
 
@@ -102,6 +108,24 @@ impl MenuItem {
         self.on_select = Some(Rc::new(action));
         self
     }
+
+    /// A stable element id, for scripted checks; rows are otherwise numbered.
+    pub fn id(mut self, id: impl Into<SharedString>) -> Self {
+        self.id = Some(id.into());
+        self
+    }
+
+    /// Trailing muted text (`ml-auto text-xs text-muted-foreground`), such as a time.
+    pub fn detail(mut self, detail: impl Into<SharedString>) -> Self {
+        self.detail = Some(detail.into());
+        self
+    }
+
+    /// Runs when the pointer enters (`true`) or leaves the row; submenu triggers open on hover.
+    pub fn on_hover(mut self, hover: impl Fn(&bool, &mut Window, &mut App) + 'static) -> Self {
+        self.on_hover = Some(Rc::new(hover));
+        self
+    }
 }
 
 /// A row of a menu.
@@ -125,6 +149,7 @@ pub struct MenuPopup {
     entries: Vec<MenuEntry>,
     min_width: Option<Pixels>,
     dismiss: Option<Action>,
+    context: bool,
 }
 
 impl MenuPopup {
@@ -152,6 +177,13 @@ impl MenuPopup {
     /// At least this wide; a select's list matches its trigger.
     pub fn min_width(mut self, width: Pixels) -> Self {
         self.min_width = Some(width);
+        self
+    }
+
+    /// Styles it as the app's context menus (`contextMenuFallback.ts`): at least 8rem wide,
+    /// disabled rows in the muted colour.
+    pub fn context(mut self) -> Self {
+        self.context = true;
         self
     }
 
@@ -185,9 +217,15 @@ fn menu_switch(theme: &AppTheme, on: bool) -> impl IntoElement {
         )
 }
 
-fn render_item(theme: &AppTheme, index: usize, item: MenuItem, dismiss: Option<Action>) -> AnyElement {
+fn render_item(theme: &AppTheme, index: usize, item: MenuItem, dismiss: Option<Action>, context: bool) -> AnyElement {
     let c = &theme.colors;
-    let text = if item.destructive { c.destructive_foreground() } else { c.foreground() };
+    let text = if item.destructive {
+        c.destructive_foreground()
+    } else if context && item.disabled {
+        c.muted_foreground
+    } else {
+        c.foreground()
+    };
     let icon_color = if item.destructive { text } else { c.muted_foreground };
     let highlight = |el: gpui_kit::Stateful<gpui_kit::Div>| {
         el.bg(c.highlight()).text_color(if item.destructive { text } else { c.highlight_foreground() })
@@ -195,7 +233,7 @@ fn render_item(theme: &AppTheme, index: usize, item: MenuItem, dismiss: Option<A
     let radio_checked = item.kind == MenuItemKind::Radio(true);
     let leading_check = matches!(item.kind, MenuItemKind::Checkbox(_));
     let row = div()
-        .id(("menu-item", index))
+        .id(item.id.clone().map_or_else(|| ElementId::from(("menu-item", index)), ElementId::from))
         .flex()
         .items_center()
         .gap(theme.sp(2.))
@@ -227,6 +265,15 @@ fn render_item(theme: &AppTheme, index: usize, item: MenuItem, dismiss: Option<A
         ),
         _ => row,
     };
+    let row = row.children(item.detail.map(|detail| {
+        div()
+            .ml_auto()
+            .pl(theme.sp(2.))
+            .flex_none()
+            .ui_text(theme, TextSize::Xs, weight::NORMAL)
+            .text_color(c.muted_foreground)
+            .child(detail)
+    }));
     let row = row.children(item.shortcut.map(|keys| {
         div()
             .ml_auto()
@@ -239,6 +286,10 @@ fn render_item(theme: &AppTheme, index: usize, item: MenuItem, dismiss: Option<A
     if item.disabled {
         return row.into_any_element();
     }
+    let row = match item.on_hover.clone() {
+        Some(hover) => row.on_hover(move |hovered, window, cx| hover(hovered, window, cx)),
+        None => row,
+    };
     let action = item.on_select.clone();
     let (hover_bg, hover_text) = (c.highlight(), if item.destructive { text } else { c.highlight_foreground() });
     row.cursor_pointer()
@@ -261,7 +312,7 @@ impl RenderOnce for MenuPopup {
         let c = &theme.colors;
         let dismiss = self.dismiss.clone();
         let rows = self.entries.into_iter().enumerate().map(|(index, entry)| match entry {
-            MenuEntry::Item(item) => render_item(theme, index, item, dismiss.clone()),
+            MenuEntry::Item(item) => render_item(theme, index, item, dismiss.clone(), self.context),
             MenuEntry::Label(label) => div()
                 .px(theme.sp(2.))
                 .py(theme.sp(1.5))
@@ -272,7 +323,7 @@ impl RenderOnce for MenuPopup {
             MenuEntry::Separator => div().mx(theme.sp(2.)).my(theme.sp(1.)).h(px(1.)).bg(c.border).into_any_element(),
         });
         glass_surface(theme)
-            .min_w(self.min_width.unwrap_or(theme.rem(10.)))
+            .min_w(self.min_width.unwrap_or(theme.rem(if self.context { 8. } else { 10. })))
             .p(theme.sp(1.))
             .control_highlight(theme)
             .children(rows)

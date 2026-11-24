@@ -103,6 +103,8 @@ const SCENES: &[Scene] = &[
     Scene { name: "command-palette", reference: "command-palette", light: false, steps: &[Step::Action(|| Box::new(ToggleCommandPalette))] },
     Scene { name: "settings-environments", reference: "settings-environments", light: false, steps: &[Step::Navigate("/settings/connections")] },
     Scene { name: "terminal-drawer", reference: "terminal-drawer", light: false, steps: TERMINAL_STEPS },
+    Scene { name: "terminal-menu", reference: "terminal-menu", light: false, steps: &[Step::Action(|| Box::new(ToggleTerminal)), Step::Wait(1500), Step::Press("mod-n"), Step::Wait(1200), Step::RightClick(400.5, 626.)] },
+    Scene { name: "terminal-close-confirm", reference: "terminal-close-confirm", light: false, steps: &[Step::Action(|| Box::new(ToggleTerminal)), Step::Wait(1500), Step::Press("mod-n"), Step::Wait(1200), Step::Click(1088., 512.5)] },
     Scene { name: "right-panel-diff", reference: "right-panel-diff", light: false, steps: &[Step::Action(|| Box::new(ToggleDiff)), Step::Wait(300)] },
 ];
 

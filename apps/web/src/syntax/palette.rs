@@ -11,186 +11,7 @@ use serde::Deserialize;
 
 use crate::theme_palette::Appearance;
 
-/// A highlight class, named like the Zed capture the web highlighter emits.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-#[repr(u8)]
-pub enum SyntaxToken {
-    Attribute,
-    Boolean,
-    Comment,
-    CommentDoc,
-    Constant,
-    ConstantBuiltin,
-    Constructor,
-    DiffMinus,
-    DiffPlus,
-    Emphasis,
-    EmphasisStrong,
-    Enum,
-    Function,
-    FunctionMethod,
-    Keyword,
-    KeywordControl,
-    KeywordDeclaration,
-    KeywordImport,
-    KeywordOperator,
-    Label,
-    LinkText,
-    LinkUri,
-    Namespace,
-    Number,
-    Operator,
-    Preproc,
-    Property,
-    PropertyJsonKey,
-    Punctuation,
-    PunctuationBracket,
-    PunctuationDelimiter,
-    PunctuationListMarker,
-    PunctuationSpecial,
-    Selector,
-    SelectorClass,
-    SelectorId,
-    SelectorPseudo,
-    String,
-    StringEscape,
-    StringRegex,
-    StringSpecial,
-    StringSpecialSymbol,
-    Tag,
-    TagDoctype,
-    TextLiteral,
-    Title,
-    Type,
-    TypeBuiltin,
-    TypeClass,
-    Variable,
-    VariableParameter,
-    VariableSpecial,
-    Variant,
-}
-
-impl SyntaxToken {
-    /// Every token, in discriminant order.
-    pub const ALL: [SyntaxToken; 53] = {
-        use SyntaxToken::*;
-        [
-            Attribute,
-            Boolean,
-            Comment,
-            CommentDoc,
-            Constant,
-            ConstantBuiltin,
-            Constructor,
-            DiffMinus,
-            DiffPlus,
-            Emphasis,
-            EmphasisStrong,
-            Enum,
-            Function,
-            FunctionMethod,
-            Keyword,
-            KeywordControl,
-            KeywordDeclaration,
-            KeywordImport,
-            KeywordOperator,
-            Label,
-            LinkText,
-            LinkUri,
-            Namespace,
-            Number,
-            Operator,
-            Preproc,
-            Property,
-            PropertyJsonKey,
-            Punctuation,
-            PunctuationBracket,
-            PunctuationDelimiter,
-            PunctuationListMarker,
-            PunctuationSpecial,
-            Selector,
-            SelectorClass,
-            SelectorId,
-            SelectorPseudo,
-            String,
-            StringEscape,
-            StringRegex,
-            StringSpecial,
-            StringSpecialSymbol,
-            Tag,
-            TagDoctype,
-            TextLiteral,
-            Title,
-            Type,
-            TypeBuiltin,
-            TypeClass,
-            Variable,
-            VariableParameter,
-            VariableSpecial,
-            Variant,
-        ]
-    };
-
-    /// The Zed capture name the palette JSON keys its styles by.
-    pub fn name(self) -> &'static str {
-        use SyntaxToken::*;
-        match self {
-            Attribute => "attribute",
-            Boolean => "boolean",
-            Comment => "comment",
-            CommentDoc => "comment.doc",
-            Constant => "constant",
-            ConstantBuiltin => "constant.builtin",
-            Constructor => "constructor",
-            DiffMinus => "diff.minus",
-            DiffPlus => "diff.plus",
-            Emphasis => "emphasis",
-            EmphasisStrong => "emphasis.strong",
-            Enum => "enum",
-            Function => "function",
-            FunctionMethod => "function.method",
-            Keyword => "keyword",
-            KeywordControl => "keyword.control",
-            KeywordDeclaration => "keyword.declaration",
-            KeywordImport => "keyword.import",
-            KeywordOperator => "keyword.operator",
-            Label => "label",
-            LinkText => "link_text",
-            LinkUri => "link_uri",
-            Namespace => "namespace",
-            Number => "number",
-            Operator => "operator",
-            Preproc => "preproc",
-            Property => "property",
-            PropertyJsonKey => "property.json_key",
-            Punctuation => "punctuation",
-            PunctuationBracket => "punctuation.bracket",
-            PunctuationDelimiter => "punctuation.delimiter",
-            PunctuationListMarker => "punctuation.list_marker",
-            PunctuationSpecial => "punctuation.special",
-            Selector => "selector",
-            SelectorClass => "selector.class",
-            SelectorId => "selector.id",
-            SelectorPseudo => "selector.pseudo",
-            String => "string",
-            StringEscape => "string.escape",
-            StringRegex => "string.regex",
-            StringSpecial => "string.special",
-            StringSpecialSymbol => "string.special.symbol",
-            Tag => "tag",
-            TagDoctype => "tag.doctype",
-            TextLiteral => "text.literal",
-            Title => "title",
-            Type => "type",
-            TypeBuiltin => "type.builtin",
-            TypeClass => "type.class",
-            Variable => "variable",
-            VariableParameter => "variable.parameter",
-            VariableSpecial => "variable.special",
-            Variant => "variant",
-        }
-    }
-}
+use super::SyntaxToken;
 
 #[derive(Deserialize)]
 struct TokenStyleJson {
@@ -250,7 +71,18 @@ impl SyntaxPalette {
 
     fn from_json(json: PaletteJson) -> Self {
         let styles = SyntaxToken::ALL.map(|token| {
-            let Some(style) = json.syntax.get(token.name()) else {
+            // Zed's theme fallback: `tag.jsx` takes `tag` when it has no style of its own.
+            let mut name = token.name();
+            let style = loop {
+                if let Some(style) = json.syntax.get(name) {
+                    break Some(style);
+                }
+                match name.rfind('.') {
+                    Some(dot) => name = &name[..dot],
+                    None => break None,
+                }
+            };
+            let Some(style) = style else {
                 return HighlightStyle::default();
             };
             HighlightStyle {

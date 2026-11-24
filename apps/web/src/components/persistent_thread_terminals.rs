@@ -6,8 +6,18 @@ use std::collections::{HashMap, HashSet};
 
 use gpui_kit::*;
 
-use super::thread_terminal_drawer::{BackendFactory, DrawerMode, ThreadTerminalDrawer};
+use super::thread_terminal_drawer::{BackendFactory, DrawerMode, ThreadTerminalDrawer, ThreadTerminalDrawerEvent};
 use crate::terminal_ui_state_store::{TerminalUiStateStore, ThreadKey};
+
+/// A drawer's event, with the thread it belongs to. The host adds `AddTerminalContext`
+/// selections to that thread's composer draft and opens `LinkActivated` links.
+#[derive(Clone, Debug)]
+pub struct PersistentThreadTerminalsEvent {
+    pub thread: ThreadKey,
+    pub event: ThreadTerminalDrawerEvent,
+}
+
+impl EventEmitter<PersistentThreadTerminalsEvent> for PersistentThreadTerminals {}
 
 /// The drawers of all threads that have opened a terminal.
 pub struct PersistentThreadTerminals {
@@ -31,7 +41,16 @@ impl PersistentThreadTerminals {
                 let factory = self.factory.clone();
                 let key_for_drawer = key.clone();
                 let cwd = cwd.clone();
-                let drawer = cx.new(|cx| ThreadTerminalDrawer::new(key_for_drawer, cwd, DrawerMode::Drawer, factory, cx));
+                let drawer = cx.new(|cx| {
+                    let mut drawer = ThreadTerminalDrawer::new(key_for_drawer, cwd, DrawerMode::Drawer, factory, cx);
+                    drawer.set_can_add_to_chat(true, cx);
+                    drawer
+                });
+                let thread = key.clone();
+                cx.subscribe(&drawer, move |_, _, event: &ThreadTerminalDrawerEvent, cx| {
+                    cx.emit(PersistentThreadTerminalsEvent { thread: thread.clone(), event: event.clone() });
+                })
+                .detach();
                 self.drawers.insert(key.clone(), drawer);
             }
         }

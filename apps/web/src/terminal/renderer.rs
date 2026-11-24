@@ -19,6 +19,7 @@ use super::backend::GridSize;
 use super::core::{Damage, TerminalCore};
 use super::palette::{TerminalPalette, blend, to_hsla};
 use super::surface::TerminalSurface;
+use crate::theme_palette::ActiveAppTheme as _;
 
 /// Space between the grid and the element's edge, as in the web surface.
 pub const CONTENT_PADDING: Pixels = px(4.);
@@ -35,15 +36,24 @@ pub struct CellMetrics {
 }
 
 impl CellMetrics {
-    /// Measures a monospace font: advance of `m`, line height 1.35x rounded (the web metrics).
+    /// Measures a monospace font as `measureGhosttyCell` does: the advance of `M`, and a
+    /// line height of 1.35x rounded or the ink height of `Mg` rounded up, whichever is larger.
     pub fn measure(font: Font, font_size: Pixels, window: &Window) -> Self {
         let text_system = window.text_system();
         let font_id = text_system.resolve_font(&font);
         let cell_width = text_system
-            .advance(font_id, font_size, 'm')
+            .advance(font_id, font_size, 'M')
             .map(|advance| advance.width)
             .unwrap_or(font_size * 0.6);
-        let line_height = px((f32::from(font_size) * 1.35).round().max(1.));
+        let ink = |ch| text_system.typographic_bounds(font_id, font_size, ch).ok();
+        let glyph_height = match (ink('M'), ink('g')) {
+            (Some(m), Some(g)) => {
+                let top = (m.origin.y + m.size.height).max(g.origin.y + g.size.height);
+                f32::from(top - m.origin.y.min(g.origin.y))
+            }
+            _ => 0.,
+        };
+        let line_height = px((f32::from(font_size) * 1.35).round().max(glyph_height.ceil()).max(1.));
         Self { font, font_size, cell_width, line_height }
     }
 
@@ -59,34 +69,18 @@ impl CellMetrics {
     }
 }
 
-/// Monospace families tried in order, matching the web mono stack's resolved face per platform.
-const FONT_CANDIDATES: &[&str] = if cfg!(target_os = "macos") {
-    &["SF Mono", "Menlo", "Monaco"]
-} else if cfg!(target_os = "windows") {
-    &["Consolas", "Cascadia Mono", "Courier New"]
-} else {
-    &["Liberation Mono", "DejaVu Sans Mono", "Noto Sans Mono", "Ubuntu Mono"]
-};
-
-static FONT_FAMILY: std::sync::OnceLock<SharedString> = std::sync::OnceLock::new();
-
-/// The default terminal font: the first installed candidate, with symbol, CJK and emoji fallbacks.
-pub fn terminal_font(window: &Window) -> Font {
-    let family = FONT_FAMILY
-        .get_or_init(|| {
-            let installed = window.text_system().all_font_names();
-            FONT_CANDIDATES
-                .iter()
-                .find(|candidate| installed.iter().any(|name| name == *candidate))
-                .copied()
-                .unwrap_or(FONT_CANDIDATES[0])
-                .into()
-        })
-        .clone();
+/// The terminal font from the appearance settings (`resolveTerminalFontPreference`):
+/// the terminal family when fonts are separate, else the code family, with
+/// symbol, CJK and emoji fallbacks and no ligatures.
+pub fn terminal_font() -> Font {
     Font {
-        family,
+        family: crate::appearance_fonts::terminal_font(FontWeight::NORMAL).family,
         features: FontFeatures::disable_ligatures(),
         fallbacks: Some(gpui_kit::FontFallbacks::from_fonts(vec![
+            "SF Mono".into(),
+            "Menlo".into(),
+            "Consolas".into(),
+            "Liberation Mono".into(),
             "DejaVu Sans Mono".into(),
             "Symbols Nerd Font Mono".into(),
             "Noto Sans CJK JP".into(),
@@ -102,6 +96,13 @@ pub fn terminal_font(window: &Window) -> Font {
         weight: FontWeight::NORMAL,
         style: FontStyle::Normal,
     }
+}
+
+/// The terminal font size from the appearance settings (`resolveTerminalFontSizePreference`):
+/// the terminal size when fonts are separate, else the code size.
+pub fn terminal_font_size(cx: &App) -> Pixels {
+    let fonts = cx.app_theme().fonts;
+    px(if fonts.separate_prompt_font { fonts.terminal } else { fonts.code })
 }
 
 /// One shaped stretch of a row.

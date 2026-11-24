@@ -1,8 +1,7 @@
 //! One terminal on screen: owns the model and its backend, turns keyboard,
 //! IME, mouse and wheel input into bytes, and keeps the cursor blink,
-//! selection, find and link hover state. Ports `terminal/ghostty/surface.ts`.
+//! selection, context menu and link hover state. Ports `terminal/ghostty/surface.ts`.
 
-use crate::components::icons::IconName;
 use std::future::Future;
 use std::ops::Range;
 use std::pin::Pin;
@@ -14,22 +13,21 @@ use alacritty_terminal::index::{Column, Point as GridPoint, Side};
 use alacritty_terminal::selection::SelectionType;
 use alacritty_terminal::term::TermMode;
 use alacritty_terminal::term::cell::Flags;
-use alacritty_terminal::term::search::Match;
 use alacritty_terminal::vte::ansi::CursorShape;
 use futures::StreamExt as _;
 use gpui_kit::*;
 
 use super::backend::{GridSize, InputKind, TerminalBackend, TerminalInbound, TerminalOutbound, TerminalSink, inbound_channel};
-use super::core::{DEFAULT_SCROLLBACK, TerminalCore};
+use super::core::TerminalCore;
 use super::key_codes::{KeyEventKind, encode_key};
 use super::mouse::{MouseAction, alternate_scroll, mouse_report, reports_mouse};
 use super::palette::{TerminalPalette, to_hsla};
-use super::renderer::{CellMetrics, GridGeometry, GridLayout, TerminalGrid, terminal_font};
+use super::renderer::{CellMetrics, GridGeometry, GridLayout, TerminalGrid, terminal_font, terminal_font_size};
 use crate::terminal_links::{TerminalLinkKind, is_terminal_url, terminal_link_at};
+use crate::components::ui::menu::{MenuItem, MenuPopup};
+use crate::i18n::t;
 use crate::theme_palette::{ActiveAppTheme as _, Appearance};
 
-/// Default terminal font size (settings allow 8-20).
-pub const DEFAULT_TERMINAL_FONT_SIZE: Pixels = px(12.);
 const CURSOR_BLINK_INTERVAL: Duration = Duration::from_millis(500);
 /// The PTY hears only settled sizes; reflowing the shell on every drag step jitters.
 const RESIZE_DEBOUNCE: Duration = Duration::from_millis(150);
@@ -50,10 +48,6 @@ actions!(
         ScrollPageDown,
         ScrollToTop,
         ScrollToBottom,
-        /// Opens or closes the find bar.
-        ToggleFind,
-        /// Sends Ctrl+L to clear the screen.
-        Clear,
     ]
 );
 
@@ -65,8 +59,6 @@ pub fn init(cx: &mut App) {
             KeyBinding::new("cmd-c", Copy, context),
             KeyBinding::new("cmd-v", Paste, context),
             KeyBinding::new("cmd-a", SelectAll, context),
-            KeyBinding::new("cmd-f", ToggleFind, context),
-            KeyBinding::new("cmd-k", Clear, context),
             KeyBinding::new("shift-cmd-home", ScrollToTop, context),
             KeyBinding::new("shift-cmd-end", ScrollToBottom, context),
         ]);
@@ -79,7 +71,6 @@ pub fn init(cx: &mut App) {
             KeyBinding::new("ctrl-shift-v", Paste, context),
             KeyBinding::new("shift-insert", Paste, context),
             KeyBinding::new("ctrl-shift-a", SelectAll, context),
-            KeyBinding::new("ctrl-shift-f", ToggleFind, context),
             KeyBinding::new("ctrl-shift-home", ScrollToTop, context),
             KeyBinding::new("ctrl-shift-end", ScrollToBottom, context),
         ]);
@@ -104,6 +95,9 @@ pub enum TerminalSurfaceEvent {
     /// A URL or path link was activated with the platform's link modifier.
     LinkActivated { kind: TerminalLinkKind, text: SharedString },
     TitleChanged(Option<SharedString>),
+    /// "Add to chat" on the selection: its text (CRLF folded, outer blank lines trimmed)
+    /// and 1-based buffer lines.
+    AddToChat { text: SharedString, line_start: usize, line_end: usize },
     /// The process exited or the session closed; the owner may close the tab.
     SessionEnded(SessionStatus),
     Bell,
@@ -127,12 +121,6 @@ struct HoveredLink {
     end: GridPoint,
 }
 
-/// Find-in-terminal state.
-struct FindBar {
-    focus: FocusHandle,
-    query: String,
-    current: Option<Match>,
-}
 
 /// Cursor to paint this frame.
 pub struct CursorPaint {
@@ -189,9 +177,11 @@ pub struct TerminalSurface {
     scroll_remainder: f32,
     marked_text: Option<String>,
     hovered_link: Option<HoveredLink>,
-    find: Option<FindBar>,
+    /// Where the context menu is open, in window coordinates.
+    context_menu: Option<Point<Pixels>>,
     status: SessionStatus,
     read_only: bool,
+    can_add_to_chat: bool,
     title: Option<SharedString>,
     _drain: Task<()>,
 }
@@ -231,7 +221,7 @@ impl TerminalSurface {
         cx.on_blur(&focus, window, |this, _, cx| this.set_focused(false, cx)).detach();
         let theme = cx.app_theme();
         Self {
-            core: TerminalCore::new(GridSize { cols: 80, rows: 24 }, DEFAULT_SCROLLBACK),
+            core: TerminalCore::new(GridSize { cols: 80, rows: 24 }),
             backend,
             pending_sink: Some(sink),
             focus,
@@ -240,8 +230,8 @@ impl TerminalSurface {
             theme_key: (theme.id.clone(), theme.appearance),
             layout: Some(GridLayout::default()),
             geometry: None,
-            font: terminal_font(window),
-            font_size: DEFAULT_TERMINAL_FONT_SIZE,
+            font: terminal_font(),
+            font_size: terminal_font_size(cx),
             cell_size: (7., 16.),
             focused: false,
             cursor_on: true,
@@ -254,9 +244,10 @@ impl TerminalSurface {
             scroll_remainder: 0.,
             marked_text: None,
             hovered_link: None,
-            find: None,
+            context_menu: None,
             status: SessionStatus::Running,
             read_only: false,
+            can_add_to_chat: false,
             title: None,
             _drain: drain,
         }
@@ -274,14 +265,19 @@ impl TerminalSurface {
         self.font_size
     }
 
-    /// Applies the terminal font settings (family empty = platform default, size 8-20).
-    pub fn set_font(&mut self, family: Option<SharedString>, size: Pixels, window: &Window, cx: &mut Context<Self>) {
-        self.font = terminal_font(window);
-        if let Some(family) = family.filter(|family| !family.trim().is_empty()) {
-            self.font.family = family;
+    /// Re-reads the terminal font family and size from the appearance settings.
+    fn sync_font(&mut self, cx: &App) {
+        let size = terminal_font_size(cx);
+        let family = crate::appearance_fonts::terminal_font(FontWeight::NORMAL).family;
+        if size != self.font_size || family != self.font.family {
+            self.font = terminal_font();
+            self.font_size = size;
         }
-        self.font_size = size.clamp(px(8.), px(20.));
-        cx.notify();
+    }
+
+    /// Whether the context menu offers "Add to chat" (the host takes `AddToChat`).
+    pub fn set_can_add_to_chat(&mut self, can_add: bool) {
+        self.can_add_to_chat = can_add;
     }
 
     /// Without the operate grant the terminal shows output but sends nothing.
@@ -370,10 +366,6 @@ impl TerminalSurface {
                 TermEvent::CursorBlinkingChange => self.restart_blink(cx),
                 _ => {}
             }
-        }
-        // A query typed before its text arrived finds it once it does.
-        if self.find.as_ref().is_some_and(|find| find.current.is_none() && !find.query.is_empty()) {
-            self.find_step(false, cx);
         }
         if let Some(deadline) = self.core.sync_deadline() {
             if self.sync_task.is_none() {
@@ -495,17 +487,6 @@ impl TerminalSurface {
             }
         };
 
-        if self.find.is_some() {
-            let current = self.find.as_ref().and_then(|find| find.current.clone());
-            for found in self.core.visible_matches() {
-                let color = if Some(&found) == current.as_ref() {
-                    colors.search_match_active_background
-                } else {
-                    colors.search_match_background
-                };
-                push_range(&mut highlights, *found.start(), *found.end(), false, color);
-            }
-        }
         if let Some(range) = self.core.term().selection.as_ref().and_then(|s| s.to_range(self.core.term())) {
             push_range(&mut highlights, range.start, range.end, range.is_block, self.palette.selection);
         }
@@ -678,10 +659,6 @@ impl TerminalSurface {
         cx.notify();
     }
 
-    fn clear(&mut self, _: &Clear, _: &mut Window, cx: &mut Context<Self>) {
-        self.send_typed(b"\x0c".to_vec(), cx);
-    }
-
     // Mouse.
 
     fn cell_at(&self, position: Point<Pixels>) -> Option<(usize, usize, bool)> {
@@ -714,6 +691,11 @@ impl TerminalSurface {
                 self.send_input(report, InputKind::Typed);
             }
             self.pointer = Pointer::Reporting(event.button);
+            return;
+        }
+        if event.button == MouseButton::Right {
+            self.context_menu = Some(event.position);
+            cx.notify();
             return;
         }
         if event.button != MouseButton::Left {
@@ -865,136 +847,68 @@ impl TerminalSurface {
             end: line.point_at(link.end.saturating_sub(1))?,
         })
     }
+}
 
-    // Find.
+impl TerminalSurface {
+    // Context menu (`terminalContextMenuItems`).
 
-    fn toggle_find(&mut self, _: &ToggleFind, window: &mut Window, cx: &mut Context<Self>) {
-        if self.find.take().is_some() {
-            self.core.set_search("");
-            window.focus(&self.focus, cx);
-        } else {
-            let focus = cx.focus_handle();
-            window.focus(&focus, cx);
-            self.find = Some(FindBar { focus, query: String::new(), current: None });
-        }
+    /// The selection as "Add to chat" sends it, or `None` when nothing usable is selected.
+    fn selection_for_chat(&self) -> Option<(SharedString, usize, usize)> {
+        let text = self.core.selection_text()?.replace("\r\n", "\n");
+        let text = text.trim_matches('\n');
+        let (line_start, line_end) = self.core.selection_buffer_lines()?;
+        (!text.is_empty()).then(|| (text.to_string().into(), line_start, line_end))
+    }
+
+    fn close_context_menu(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.context_menu = None;
+        window.focus(&self.focus, cx);
         cx.notify();
     }
 
-    /// Sets the find query and jumps to the nearest match above the bottom of the viewport.
-    pub fn find(&mut self, query: &str, cx: &mut Context<Self>) {
-        let find = self.find.get_or_insert_with(|| FindBar { focus: cx.focus_handle(), query: String::new(), current: None });
-        find.query = query.to_string();
-        find.current = None;
-        self.core.set_search(query);
-        self.find_step(false, cx);
-    }
-
-    /// Moves to the next (`forward`) or previous match, wrapping around.
-    pub fn find_step(&mut self, forward: bool, cx: &mut Context<Self>) {
-        let Some(find) = self.find.as_ref() else { return };
-        let origin = match &find.current {
-            Some(current) if forward => current.end().add(self.core.term(), alacritty_terminal::index::Boundary::None, 1),
-            Some(current) => current.start().sub(self.core.term(), alacritty_terminal::index::Boundary::None, 1),
-            None => {
-                let rows = self.core.size().rows as usize;
-                self.core.viewport_point(rows - 1, self.core.size().cols as usize - 1)
+    fn render_context_menu(&self, cx: &mut Context<Self>) -> Option<impl IntoElement + use<>> {
+        let position = self.context_menu?;
+        let has_selection = self.core.has_selection();
+        let this = cx.weak_entity();
+        let act = move |action: fn(&mut Self, &mut Window, &mut Context<Self>)| {
+            let this = this.clone();
+            move |window: &mut Window, cx: &mut App| {
+                this.update(cx, |surface, cx| {
+                    surface.context_menu = None;
+                    action(surface, window, cx);
+                    window.focus(&surface.focus, cx);
+                    cx.notify();
+                })
+                .ok();
             }
         };
-        let found = self.core.find(origin, forward);
-        if let Some(found) = &found {
-            self.core.reveal(*found.start());
-        }
-        if let Some(find) = self.find.as_mut() {
-            find.current = found;
-        }
-        cx.notify();
-    }
-
-    fn on_find_key(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
-        let keystroke = &event.keystroke;
-        let Some(find) = self.find.as_mut() else { return };
-        cx.stop_propagation();
-        match keystroke.key.as_str() {
-            "escape" => {
-                self.find = None;
-                self.core.set_search("");
-                window.focus(&self.focus, cx);
-                cx.notify();
-            }
-            "enter" => self.find_step(keystroke.modifiers.shift, cx),
-            "backspace" => {
-                find.query.pop();
-                let query = find.query.clone();
-                self.find(&query, cx);
-            }
-            _ if !keystroke.modifiers.control && !keystroke.modifiers.platform => {
-                if let Some(text) = keystroke.key_char.as_ref() {
-                    let query = format!("{}{text}", find.query);
-                    self.find(&query, cx);
+        let mut menu = MenuPopup::new().context();
+        if self.can_add_to_chat {
+            menu = menu.item(MenuItem::new(t!("Add to chat")).disabled(!has_selection).on_select(act(|surface, _, cx| {
+                if let Some((text, line_start, line_end)) = surface.selection_for_chat() {
+                    cx.emit(TerminalSurfaceEvent::AddToChat { text, line_start, line_end });
+                    surface.core.clear_selection();
                 }
-            }
-            _ => cx.propagate(),
+            })));
         }
-    }
-
-    fn render_find_bar(&self, cx: &mut Context<Self>) -> Option<impl IntoElement> {
-        let find = self.find.as_ref()?;
-        let colors = &cx.app_theme().colors;
-        let label: SharedString = if find.query.is_empty() {
-            "Find".into()
-        } else {
-            find.query.clone().into()
-        };
-        let status: SharedString = match (&find.current, find.query.is_empty()) {
-            (_, true) => "".into(),
-            (Some(_), false) => "".into(),
-            (None, false) => "No results".into(),
-        };
-        let icon = |name: &'static str, id: &'static str, forward: Option<bool>| {
-            div()
-                .id(id)
-                .size(px(20.))
-                .flex()
-                .items_center()
-                .justify_center()
-                .rounded(px(4.))
-                .hover(|style| style.bg(colors.toolbar_control_hover))
-                .child(svg().path(name).size(px(13.)).text_color(colors.text_muted))
-                .on_click(cx.listener(move |this, _, window, cx| match forward {
-                    Some(forward) => this.find_step(forward, cx),
-                    None => this.toggle_find(&ToggleFind, window, cx),
-                }))
-        };
+        menu = menu
+            .item(MenuItem::new(t!("Copy")).disabled(!has_selection).on_select(act(|surface, window, cx| surface.copy(&Copy, window, cx))))
+            .item(MenuItem::new(t!("Paste")).disabled(self.read_only).on_select(act(|surface, window, cx| surface.paste(&Paste, window, cx))))
+            .item(MenuItem::new(t!("Select all", context = "select all terminal text")).on_select(act(|surface, window, cx| surface.select_all(&SelectAll, window, cx))))
+            .item(MenuItem::new(t!("Jump to latest")).on_select(act(|surface, _, _| surface.core.scroll_to_bottom())));
+        let dismiss = cx.listener(|this, _: &MouseDownEvent, window, cx| this.close_context_menu(window, cx));
+        let escape = cx.listener(|this, event: &KeyDownEvent, window, cx| {
+            if event.keystroke.key == "escape" {
+                this.close_context_menu(window, cx);
+            }
+        });
         Some(
-            div()
-                .id("terminal-find")
-                .absolute()
-                .top(px(8.))
-                .right(px(16.))
-                .flex()
-                .items_center()
-                .gap(px(4.))
-                .h(px(28.))
-                .pl(px(8.))
-                .pr(px(4.))
-                .rounded(px(6.))
-                .border_1()
-                .border_color(colors.border)
-                .bg(colors.surface_overlay)
-                .text_size(px(12.))
-                .track_focus(&find.focus)
-                .on_key_down(cx.listener(Self::on_find_key))
-                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                .child(
-                    div()
-                        .min_w(px(120.))
-                        .text_color(if find.query.is_empty() { colors.placeholder } else { colors.text })
-                        .child(label),
-                )
-                .child(div().text_color(colors.text_muted).child(status))
-                .child(icon(IconName::ChevronUp.path(), "terminal-find-prev", Some(false)))
-                .child(icon(IconName::ChevronDown.path(), "terminal-find-next", Some(true)))
-                .child(icon(IconName::X.path(), "terminal-find-close", None)),
+            deferred(
+                anchored().position(position).snap_to_window_with_margin(px(8.)).child(
+                    div().occlude().on_mouse_down_out(dismiss).on_key_down(escape).child(menu),
+                ),
+            )
+            .with_priority(5),
         )
     }
 }
@@ -1047,6 +961,7 @@ impl EntityInputHandler for TerminalSurface {
 
 impl Render for TerminalSurface {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.sync_font(cx);
         let background = cx.app_theme().colors.terminal_background;
         let cursor = if self.hovered_link.is_some() { CursorStyle::PointingHand } else { CursorStyle::IBeam };
         div()
@@ -1061,8 +976,6 @@ impl Render for TerminalSurface {
             .on_action(cx.listener(Self::copy))
             .on_action(cx.listener(Self::paste))
             .on_action(cx.listener(Self::select_all))
-            .on_action(cx.listener(Self::toggle_find))
-            .on_action(cx.listener(Self::clear))
             .on_action(cx.listener(|this, _: &ScrollPageUp, _, cx| this.scroll_history(cx, |core| core.scroll_page(true))))
             .on_action(cx.listener(|this, _: &ScrollPageDown, _, cx| this.scroll_history(cx, |core| core.scroll_page(false))))
             .on_action(cx.listener(|this, _: &ScrollToTop, _, cx| this.scroll_history(cx, TerminalCore::scroll_to_top)))
@@ -1080,7 +993,7 @@ impl Render for TerminalSurface {
             .on_mouse_up_out(MouseButton::Left, cx.listener(Self::on_mouse_up))
             .on_scroll(cx.listener(Self::on_scroll))
             .child(TerminalGrid::new(cx.entity()))
-            .children(self.render_find_bar(cx))
+            .children(self.render_context_menu(cx))
     }
 }
 

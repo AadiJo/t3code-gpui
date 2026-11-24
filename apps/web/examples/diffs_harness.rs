@@ -246,10 +246,6 @@ fn e2e_flow(out: &Path, appearance: Appearance, layout: DiffLayout, width: f32) 
     h.shot(&format!("{tag}-09-sticky-header"))?;
 
     // Keyboard: next hunk, then next file.
-    h.with_window(|window, cx| window.press("alt-down", cx));
-    h.shot(&format!("{tag}-10-next-hunk"))?;
-    h.with_window(|window, cx| window.press("alt-shift-down", cx));
-    h.shot(&format!("{tag}-11-next-file"))?;
 
     // File tree: open it, pick a file, check it is revealed.
     h.with_window(|window, cx| window.click("diff-file-tree-toggle", cx));

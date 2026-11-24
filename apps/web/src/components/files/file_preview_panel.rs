@@ -812,7 +812,6 @@ impl FilesPanel {
     fn render_actions(&self, open: &OpenFile, cx: &mut Context<Self>) -> Vec<AnyElement> {
         let mut actions = Vec::new();
         let path = open.path.clone();
-        let absolute: SharedString = absolute_path(self.files.root(), &path).into();
         // Open in: server editors and this machine's default app.
         let editors: Vec<EditorId> = self.capabilities.editor_ids.iter().filter(|id| **id != EditorId::FileManager).cloned().collect();
         let panel = cx.entity().downgrade();
@@ -864,29 +863,6 @@ impl FilesPanel {
                     .into_any_element(),
             );
         }
-        actions.push(
-            div()
-                .id("file-copy-path")
-                .tooltip(tooltip(t!("Copy path")))
-                .child(Button::new("file-copy-path-button").variant(ButtonVariant::Ghost).size(ButtonSize::IconSm).icon(IconName::Copy).on_click(move |_, _, cx| {
-                    cx.write_to_clipboard(ClipboardItem::new_string(absolute.to_string()));
-                }))
-                .into_any_element(),
-        );
-        let chat_path = path.clone();
-        actions.push(
-            div()
-                .id("file-add-to-chat")
-                .tooltip(tooltip(t!("Add to chat")))
-                .child(
-                    Button::new("file-add-to-chat-button")
-                        .variant(ButtonVariant::Ghost)
-                        .size(ButtonSize::IconSm)
-                        .icon(IconName::MessageSquarePlus)
-                        .on_click(cx.listener(move |panel, _, _, cx| panel.run_file_action(FileContextMenuAction::AddToChat, chat_path.clone(), cx))),
-                )
-                .into_any_element(),
-        );
         let explorer_label = if self.explorer_open { t!("Hide file explorer") } else { t!("Show file explorer") };
         let panel = cx.entity().downgrade();
         let explorer_open = self.explorer_open;

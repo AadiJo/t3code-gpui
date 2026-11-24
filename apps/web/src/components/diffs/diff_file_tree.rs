@@ -7,6 +7,7 @@ use std::{collections::HashSet, ops::Range, sync::Arc};
 
 use gpui_kit::{base::TestSupportExt as _, prelude::FluentBuilder as _, *};
 
+use crate::pierre_icons::{pierre_icon, resolve_file_icon};
 use crate::{
     ActiveAppTheme as _, diff_file_order::diff_file_tree_positions, diff_panel_store::DiffColorScheme,
     diff_patch::{ChangeType, FileDiff}, syntax::hex, theme_palette::Appearance,
@@ -318,27 +319,17 @@ impl DiffFileTree {
                         window.focus(&this.focus_handle, cx);
                         this.activate(index, cx);
                     }))
-                    .child(
-                        div().w(px(12.)).flex_none().when(row.directory, |el| {
-                            el.child(
-                                svg()
-                                    .path(if row.expanded { "icons/diffs/chevron-down.svg" } else { "icons/diffs/chevron-right.svg" })
-                                    .size(px(12.))
-                                    .text_color(muted),
-                            )
-                        }),
-                    )
-                    .child(
+                    .child(if row.directory {
                         svg()
-                            .path(match (row.directory, row.expanded) {
-                                (true, true) => "icons/diffs/folder-open.svg",
-                                (true, false) => "icons/diffs/folder.svg",
-                                _ => "icons/diffs/file.svg",
-                            })
-                            .size(px(14.))
+                            .path("icons/files/chevron.svg")
+                            .size(px(16.))
                             .flex_none()
-                            .text_color(status_color.unwrap_or(muted)),
-                    )
+                            .text_color(muted)
+                            .when(!row.expanded, |el| el.with_transformation(Transformation::rotate(radians(-std::f32::consts::FRAC_PI_2))))
+                            .into_any_element()
+                    } else {
+                        pierre_icon(resolve_file_icon(&row.path), px(16.), appearance, muted).into_any_element()
+                    })
                     .child(div().flex_1().min_w_0().overflow_hidden().whitespace_nowrap().text_ellipsis().child(row.name.clone()))
                     .when_some(row.status, |el, status| {
                         el.child(div().flex_none().font_weight(FontWeight::MEDIUM).text_size(px(11.)).child(status.letter()))

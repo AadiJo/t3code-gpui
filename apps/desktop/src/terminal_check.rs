@@ -275,13 +275,13 @@ fn bench(out: &Path) -> anyhow::Result<()> {
     writeln!(report, "flood: {} chunks of ~64 KiB, {megabytes:.1} MiB, half plain lines, half 12 SGR runs per line", chunks.len())?;
 
     // 1. Parser alone.
-    let mut core = t3code_web::terminal::core::TerminalCore::new(t3code_web::terminal::GridSize { cols: 160, rows: 48 }, 10_000);
+    let mut core = t3code_web::terminal::core::TerminalCore::new(t3code_web::terminal::GridSize { cols: 160, rows: 48 });
     let started = Instant::now();
     for chunk in &chunks {
         core.feed(chunk);
     }
     let parse = started.elapsed();
-    writeln!(report, "parse only (160x48, 10k scrollback): {:.2} s, {:.1} MiB/s", parse.as_secs_f64(), megabytes / parse.as_secs_f64())?;
+    writeln!(report, "parse only (160x48, 10 MB scrollback): {:.2} s, {:.1} MiB/s", parse.as_secs_f64(), megabytes / parse.as_secs_f64())?;
 
     // 2. Through the view, rendering a frame per flow-control window (8 chunks = 512 KiB).
     let mut h = Harness::open(1280., 800., || Box::new(RecordedBackend::new(Vec::new())))?;
@@ -314,10 +314,9 @@ fn bench(out: &Path) -> anyhow::Result<()> {
     h.shot(&out.join("bench-flood.png"))?;
     drop(h);
 
-    // 3. 100,000-line scrollback: memory and scrolling frame time.
+    // 3. 100,000 lines written into the 10 MB scrollback budget: memory and scrolling frame time.
     let rss_before = rss_kib();
     let mut h = Harness::open(1280., 800., || Box::new(RecordedBackend::new(Vec::new())))?;
-    h.cx.update(|cx| h.surface.update(cx, |surface, _| surface.core_mut().set_scrollback(100_000)));
     let mut text = String::new();
     for line in 0..100_100 {
         let _ = write!(text, "\x1b[3{}m{line:06}\x1b[0m scrollback line with some ordinary text to fill the row \x1b[1mbold\x1b[0m tail\r\n", line % 8);
