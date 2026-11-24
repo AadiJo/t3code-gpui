@@ -422,6 +422,7 @@ pub fn fixture_thread() -> TimelineInput {
             index: 0,
             count: 2,
         }),
+        item_sources: Default::default(),
     }
 }
 

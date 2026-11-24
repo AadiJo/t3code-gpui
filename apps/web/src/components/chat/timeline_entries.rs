@@ -416,4 +416,7 @@ pub struct TimelineInput {
     pub worktree_setup: Option<WorktreeSetup>,
     pub queued: Arc<[QueuedMessage]>,
     pub pending_question: Option<PendingQuestion>,
+    /// The turn item behind each live entry, by entry id; row rules that read item fields
+    /// (an assistant message's phase) use it. Empty for fixtures.
+    pub item_sources: Arc<std::collections::HashMap<SharedString, Arc<t3code_contracts::OrchestrationV2TurnItem>>>,
 }

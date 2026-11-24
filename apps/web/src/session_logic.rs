@@ -745,7 +745,7 @@ fn map_row(row: &VisibleTurnItem, superseded_attempt: Option<AttemptId>, folded_
         Item::Subagent(subagent) => EntryKind::Event(TimelineEvent::Subagent(Subagent {
             id: id_of(&subagent.subagent_id),
             run_id,
-            provider_turn_id: None,
+            provider_turn_id: subagent.provider_turn_id.as_ref().map(id_of),
             title: item_title(item).map(shared).unwrap_or_else(|| shared(first_line(&subagent.prompt))),
             detail: subagent.progress.clone().or_else(|| subagent.result.clone()).map(|text| shared(first_line(&text))),
             status: subagent_status(subagent.status),
@@ -1002,6 +1002,19 @@ pub fn pending_questions(projection: &ThreadProjection) -> Vec<(PendingQuestion,
 /// Everything the timeline derives its rows from, for one projection.
 pub fn timeline_input(mapper: &mut TimelineMapper, projection: &ThreadProjection, optimistic: &[OptimisticMessage]) -> TimelineInput {
     let entries = mapper.entries(projection, optimistic);
+    // Entries are keyed by message id for messages and item id otherwise.
+    let item_sources: HashMap<SharedString, Arc<Item>> = projection
+        .visible_turn_items
+        .iter()
+        .map(|row| {
+            let key = match &*row.item {
+                Item::UserMessage(user) => id_of(&user.message_id),
+                Item::AssistantMessage(reply) => id_of(&reply.message_id),
+                other => id_of(&other.item_id()),
+            };
+            (key, Arc::clone(&row.item))
+        })
+        .collect();
     let requests = pending_requests(projection);
     let active = active_run(projection);
     let latest = projection.runs.iter().filter(|run| run.status != Run::Queued).max_by_key(|run| run.ordinal);
@@ -1042,6 +1055,7 @@ pub fn timeline_input(mapper: &mut TimelineMapper, projection: &ThreadProjection
             })
             .collect(),
         pending_question: pending_question(&requests),
+        item_sources: Arc::new(item_sources),
     }
 }
 

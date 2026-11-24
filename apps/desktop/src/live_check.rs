@@ -973,19 +973,26 @@ mod timeline_dump {
         String::from_utf16_lossy(&text.encode_utf16().take(120).collect::<Vec<u16>>())
     }
 
-    /// The text the web keeps as an entry's `detail`, from the typed payload.
+    /// The entry's `detail` as the web keeps it.
     fn detail(entry: &WorkLogEntry) -> Value {
-        let text = match &entry.item {
-            WorkItem::Reasoning { text } => Some(text.to_string()),
-            WorkItem::FileSearch { pattern, .. } if !pattern.is_empty() => Some(pattern.to_string()),
-            WorkItem::WebSearch { queries, .. } if !queries.is_empty() => {
-                Some(queries.iter().map(|q| q.as_ref()).collect::<Vec<_>>().join(", "))
-            }
-            WorkItem::Approval { detail, .. } => Some(detail.to_string()),
-            WorkItem::Error { message, .. } => Some(message.to_string()),
-            _ => None,
-        };
-        text.map_or(Value::Null, Value::String)
+        entry.source.as_ref().and_then(|s| s.facts.detail.as_ref()).map_or(Value::Null, |d| Value::from(d.to_string()))
+    }
+
+    /// The web's lifecycle status, `null` for notifications.
+    fn entry_status(entry: &WorkLogEntry) -> Value {
+        use t3code_web::work_entry_labels::Lifecycle;
+        match entry.source.as_ref().map(|s| s.facts.lifecycle) {
+            Some(None) => Value::Null,
+            Some(Some(lifecycle)) => Value::from(match lifecycle {
+                Lifecycle::InProgress => "inProgress",
+                Lifecycle::Completed => "completed",
+                Lifecycle::Failed => "failed",
+                Lifecycle::Declined => "declined",
+                Lifecycle::Stopped => "stopped",
+                Lifecycle::Idle => "idle",
+            }),
+            None => Value::from(status(entry.status)),
+        }
     }
 
     fn item_type(entry: &WorkLogEntry) -> &'static str {
@@ -1012,7 +1019,7 @@ mod timeline_dump {
             "label": entry_label(entry).as_ref(),
             "rawLabel": entry.label.as_ref(),
             "detail": detail(entry),
-            "status": status(entry.status),
+            "status": entry_status(entry),
             "itemType": item_type(entry),
         })
     }
@@ -1021,7 +1028,7 @@ mod timeline_dump {
         match &entry.kind {
             EntryKind::Work(work) => json!({
                 "id": entry.id.as_str(), "kind": "work", "label": work.label.as_ref(), "detail": detail(work),
-                "status": status(work.status), "display": entry_label(work).as_ref(),
+                "status": entry_status(work), "display": entry_label(work).as_ref(),
             }),
             EntryKind::Message(message) => json!({
                 "id": entry.id.as_str(), "kind": "message",
