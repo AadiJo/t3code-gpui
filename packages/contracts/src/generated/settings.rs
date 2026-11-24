@@ -200,10 +200,10 @@ crate::wire::string_enum! {
 pub struct ClientServerSettingsPatchWorktreeCleanupCustomRules {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub worktree_keep_when: Option<WorktreeKeepWhen>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub worktree_after_days: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub worktree_settled_after_days: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "crate::wire::double_option")]
+    pub worktree_after_days: Option<Option<u64>>,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "crate::wire::double_option")]
+    pub worktree_settled_after_days: Option<Option<u64>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub worktree_on_merge: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -250,20 +250,20 @@ impl<'de> ::serde::Deserialize<'de> for ClientServerSettingsPatchWorktreeCleanup
 pub struct ClientServerSettingsPatchStorageCleanup {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub worktree_keep_when: Option<WorktreeKeepWhen>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub worktree_after_days: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub worktree_settled_after_days: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "crate::wire::double_option")]
+    pub worktree_after_days: Option<Option<u64>>,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "crate::wire::double_option")]
+    pub worktree_settled_after_days: Option<Option<u64>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub worktree_on_merge: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub worktree_on_delete: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub worktree_unchanged: Option<bool>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub browser_artifacts_after_days: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub logs_after_days: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "crate::wire::double_option")]
+    pub browser_artifacts_after_days: Option<Option<u64>>,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "crate::wire::double_option")]
+    pub logs_after_days: Option<Option<u64>>,
 }
 
 crate::wire::string_enum! {
@@ -431,8 +431,8 @@ pub struct ProjectProviderInstanceOverride {
 pub struct ClientServerSettingsPatchProjectSettingsOverridesValue {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub worktree_cleanup: Option<WorktreeCleanup>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub default_model_selection: Option<ModelSelection>,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "crate::wire::double_option")]
+    pub default_model_selection: Option<Option<ModelSelection>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_runtime_mode: Option<RuntimeMode>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -453,10 +453,10 @@ pub struct ClientServerSettingsPatchProjectSettingsOverridesValue {
     pub text_generation_model_selection: Option<ModelSelection>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub thread_title_instructions: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub source_control_writer_model_selection: Option<ModelSelection>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub review_guide_model_selection: Option<ModelSelection>,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "crate::wire::double_option")]
+    pub source_control_writer_model_selection: Option<Option<ModelSelection>>,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "crate::wire::double_option")]
+    pub review_guide_model_selection: Option<Option<ModelSelection>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub review_guide_instructions: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -469,12 +469,12 @@ pub struct ClientServerSettingsPatchProjectSettingsOverridesValue {
     pub branch_name_prefix: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub branch_name_instructions: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub pull_request_merge_method: Option<PullRequestMergeMethod>,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "crate::wire::double_option")]
+    pub pull_request_merge_method: Option<Option<PullRequestMergeMethod>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sidebar_auto_settle_on_merge: Option<bool>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub sidebar_auto_settle_after_days: Option<SidebarAutoSettleAfterDays>,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "crate::wire::double_option")]
+    pub sidebar_auto_settle_after_days: Option<Option<SidebarAutoSettleAfterDays>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sidebar_auto_settle_keep_pull_requests: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

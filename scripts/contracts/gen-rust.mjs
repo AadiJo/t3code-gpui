@@ -8,7 +8,7 @@
 // file per TypeScript source module plus `rpc_methods.rs` and `http_endpoints.rs`. Mapping rules:
 // - Required key -> `T`; required `NullOr` -> `Option<T>` (always written, null when None);
 //   optional key -> `Option<T>` omitted when None (an optional key that arrived as null decodes to None);
-//   an optional `NullOr` key of a `*Patch` struct -> `Option<Option<T>>`, so `Some(None)` writes null
+//   an optional `NullOr` key of a `*Patch` struct or one nested in it -> `Option<Option<T>>`, so `Some(None)` writes null
 //   (a patch clears a setting with null).
 // - A named string definition is a branded id -> `Arc<str>` newtype. Named integers are aliases.
 // - Unions decode by what the wire carries: a discriminator field (`_tag`, `type`, `kind`, ...), the
@@ -590,7 +590,7 @@ function emitStruct(name, s, ctx, tagKeyOverride) {
     const forwardCompat = isForwardCompatible(prop);
     const lenientItems = !forwardCompat && hasForwardCompatibleItems(prop);
     // A patch's optional nullable key has three states: absent (keep), null (clear), a value (set).
-    const clearable = !required.has(key) && /Patch$/.test(name) && (altsOf(prop) ?? []).some(isNull);
+    const clearable = !required.has(key) && /Patch/.test(name) && (altsOf(prop) ?? []).some(isNull);
     if (clearable) {
       if (!ty.startsWith("Option<")) ty = `Option<${ty}>`;
       ty = `Option<${ty}>`;

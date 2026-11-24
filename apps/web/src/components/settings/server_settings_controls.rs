@@ -380,3 +380,37 @@ pub fn status_mark(icon: Option<crate::components::icons::IconSource>, dot: Hsla
             .into_any_element(),
     }
 }
+
+/// `RetentionControl`: "Off" and a switch, or a days stepper and the switch.
+/// Switching on saves 8 days; switching off saves `None` (null).
+pub fn retention_control(
+    id: impl Into<SharedString>,
+    value: Option<u64>,
+    minimum: u64,
+    disabled: bool,
+    on_change: impl Fn(Option<u64>, &mut Window, &mut App) + 'static,
+    cx: &App,
+) -> AnyElement {
+    let theme = cx.app_theme();
+    let id: SharedString = id.into();
+    let change = Rc::new(on_change);
+    let (step, toggle) = (change.clone(), change);
+    div()
+        .flex()
+        .items_center()
+        .gap(theme.sp(3.))
+        .child(match value {
+            Some(days) => div()
+                .flex()
+                .items_center()
+                .gap(theme.sp(2.))
+                .child(interval_seconds_field(SharedString::from(format!("{id}-days")), days, minimum, 1, disabled, move |d, window, cx| step(Some(d.min(3650)), window, cx), cx))
+                .child(hint(t!("days"), cx))
+                .into_any_element(),
+            None => hint(t!("Off"), cx),
+        })
+        .child(Switch::new(SharedString::from(format!("{id}-switch")), value.is_some()).disabled(disabled).on_change(move |on, window, cx| {
+            toggle(on.then_some(8), window, cx)
+        }))
+        .into_any_element()
+}
