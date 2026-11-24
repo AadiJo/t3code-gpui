@@ -36,7 +36,8 @@ use t3code_web::components::sidebar_logic::SidebarListEntry;
 use t3code_web::connection::{ConnectionRuntime, RuntimeConfig};
 use t3code_web::desktop_notifications::NotificationInbox;
 use t3code_web::fixtures::FixtureStore;
-use t3code_web::hooks::use_settings::ClientSettingsStore;
+use t3code_client_runtime::environment::EnvironmentId;
+use t3code_web::hooks::use_settings::{ClientSettingsStore, ServerSettingsStore};
 use t3code_web::hooks::use_theme::ThemeStore;
 use t3code_web::router::Route;
 use t3code_web::shortcuts::commands::{
@@ -90,7 +91,7 @@ enum Step {
     Navigate(&'static str),
     /// Opens the thread with this title, as clicking its row does.
     Thread(&'static str),
-    /// Gives the settings modal the server pages over the fixture environment.
+    /// Gives the settings modal the server pages over the reference server.
     ServerPages,
     /// Changes app state directly (a setting the capture turned on).
     Run(fn(&mut App)),
@@ -231,8 +232,6 @@ const SCENES: &[Scene] = &[
     Scene { name: "diff-stacked", steps: &[Dispatch(|| Box::new(ToggleDiff)), Wait(2500), Root(reveal_math), Wait(1500)] },
     Scene { name: "diff-split", steps: &[Dispatch(|| Box::new(ToggleDiff)), Wait(2500), Root(reveal_math), Wait(800), Click("diff-split", CENTER), Wait(1500)] },
     Scene { name: "diff-scope-menu", steps: &[Dispatch(|| Box::new(ToggleDiff)), Wait(2500), Click("diff-scope", CENTER), Wait(400)] },
-    // The capture's "Diff options" click missed: its image shows the Files tab on src/math.ts.
-    Scene { name: "diff-options-menu", steps: &[Dispatch(|| Box::new(ToggleRightPanel)), Wait(1000), Root(|r, w, cx| open_file(r, "src/math.ts", w, cx)), Wait(1800)] },
     Scene { name: "files-tree", steps: &[Dispatch(|| Box::new(ToggleRightPanel)), Wait(1000), Root(open_files), Wait(2000)] },
     Scene { name: "files-text", steps: &[Dispatch(|| Box::new(ToggleRightPanel)), Wait(1000), Root(|r, w, cx| open_file(r, "src/math.ts", w, cx)), Wait(1800)] },
     Scene { name: "files-markdown", steps: &[Dispatch(|| Box::new(ToggleRightPanel)), Wait(1000), Root(|r, w, cx| open_file(r, "README.md", w, cx)), Wait(1800)] },
@@ -248,7 +247,40 @@ const SCENES: &[Scene] = &[
     Scene { name: "settings-keybindings-recording", steps: &[CARD, Navigate("/settings/keybindings"), Wait(300), Settings(record_command_palette), Wait(1000)] },
     Scene { name: "settings-task-editor", steps: &[CARD, Navigate("/settings/scheduled-tasks"), ServerPages, Wait(300), Click("task-new", CENTER), Wait(1500)] },
     Scene { name: "settings-connections-add", steps: &[CARD, Navigate("/settings/connections"), Wait(300), Click("add-environment", CENTER), Wait(1500)] },
+    Scene { name: "settings-connections-saved", steps: &[CARD, Run(saved_environment), Navigate("/settings/connections"), Wait(300)] },
+    Scene {
+        name: "settings-connections-routes",
+        steps: &[CARD, Run(saved_environment), Navigate("/settings/connections"), Wait(300), Click(SAVED_ROUTES, CENTER), Wait(400)],
+    },
+    Scene {
+        name: "settings-connections-menu",
+        steps: &[
+            CARD,
+            Run(saved_environment),
+            Navigate("/settings/connections"),
+            Wait(300),
+            Click(SAVED_ROUTES, CENTER),
+            Wait(400),
+            Click(SAVED_MENU, CENTER),
+            Wait(400),
+        ],
+    },
 ];
+
+/// The saved environment the Mac reference paired: a second server labelled "Build server" on
+/// this machine, reached over one direct route.
+const SAVED_ENVIRONMENT: &str = "env-build";
+const SAVED_ROUTES: &str = "env-routes-toggle-env-build";
+const SAVED_MENU: &str = "env-more-env-build";
+
+/// Adds the saved environment to the connection catalog the settings page lists.
+fn saved_environment(cx: &mut App) {
+    let saved = t3code_web::scenes::connections::saved_environment(SAVED_ENVIRONMENT, "Build server", "http://127.0.0.1:20284/", "0.1.11");
+    ConnectionRuntime::state(cx).update(cx, |state, cx| {
+        state.environments = vec![saved];
+        cx.notify();
+    });
+}
 
 /// Settings pages the capture also scrolled: (view, pages). Page `i` scrolls the content by
 /// `i * (viewport - 60)`, as the capture did.
@@ -265,13 +297,6 @@ const SCROLLED: &[(&str, usize)] = &[
     ("settings-storage", 1),
     ("settings-threads", 2),
     ("settings-voice", 1),
-];
-
-/// Reference views no scene reaches, and why.
-pub const UNREACHABLE: &[(&str, &str)] = &[
-    ("settings-connections-saved", "needs a second paired server; fixture windows have no saved environment in the connection catalog"),
-    ("settings-connections-routes", "needs a saved environment (see settings-connections-saved)"),
-    ("settings-connections-menu", "needs a saved environment (see settings-connections-saved)"),
 ];
 
 /// When each reference view was captured (epoch seconds), so relative times read the same.
@@ -559,9 +584,9 @@ fn render(name: &str, steps: &[Step], profile: &Profile, out: &Path, data: &Path
             })
         });
         NotificationInbox::set_items(inbox.iter().filter(|n| !n.read).cloned().collect(), cx);
-        if name.starts_with("settings-") {
-            t3code_web::scenes::settings::seed_fixture(cx);
-        }
+        // The reference server's config (providers, settings, keybindings) for every page that reads it.
+        let env = t3code_web::fixtures::fixture_environment();
+        ServerSettingsStore::insert_fixture(EnvironmentId::from(env.0.as_ref()), t3code_web::fixtures::reference_server::config(&env), cx);
     });
     frame(&mut cx, window);
     // The capture leaves the mouse over empty space near the bottom right before each view.
@@ -629,7 +654,7 @@ fn render(name: &str, steps: &[Step], profile: &Profile, out: &Path, data: &Path
             }
             ServerPages => cx.update(|cx| {
                 if let Some(settings) = shell.read(cx).settings().cloned() {
-                    let (model, _) = t3code_web::scenes::settings_server::fixture_model(cx);
+                    let model = t3code_web::fixtures::reference_server::model(&t3code_web::fixtures::fixture_environment(), cx);
                     let pages = cx.new(|_| t3code_web::components::settings::server_settings_pages::ServerSettingsPages::new(model));
                     settings.update(cx, |s, cx| s.set_server_pages(pages, cx));
                 }

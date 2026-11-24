@@ -6,6 +6,7 @@
 
 pub mod app_data;
 pub mod palette_source;
+pub mod reference_server;
 pub mod reference_world;
 mod thread_actions;
 pub mod timelines;

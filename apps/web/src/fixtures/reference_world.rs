@@ -314,6 +314,22 @@ pub fn build(env: &EnvironmentId) -> ReferenceWorld {
     ReferenceWorld { snapshot, threads, checkout: Arc::new(world.workspace) }
 }
 
+/// The reference server's projects as its shell snapshot lists them (the Projects settings page).
+pub fn projects() -> Vec<t3code_contracts::Project> {
+    let world: World = serde_json::from_str(WORLD).expect("reference_world.json parses");
+    world
+        .projects
+        .into_iter()
+        .map(|p| {
+            serde_json::from_value(serde_json::json!({
+                "id": p.id, "title": p.title, "workspaceRoot": p.workspace_root, "defaultModelSelection": null,
+                "scripts": [], "createdAt": p.created_at, "updatedAt": p.updated_at, "deletedAt": null
+            }))
+            .expect("reference project decodes")
+        })
+        .collect()
+}
+
 /// The Replay agent's display name for a scenario model id (`rich-replay-agent.ts`).
 pub fn scenario_name(model: &str) -> &str {
     match model {
