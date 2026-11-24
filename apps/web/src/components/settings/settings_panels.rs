@@ -567,12 +567,34 @@ pub fn labs_panel(cx: &App) -> AnyElement {
 }
 
 const SIMLOCK_URL: &str = "https://incubator.callstack.com/simlock/";
+/// `AboutVersionTitle`'s copy button: the version in mono `text-2xs`,
+/// muted until hovered, copying itself with a "Copy version" tooltip.
+fn version_copy_button(cx: &App) -> AnyElement {
+    use crate::ActiveAppTheme as _;
+    use crate::components::ui::TextStyleExt as _;
+    let theme = cx.app_theme();
+    let c = &theme.colors;
+    let version = env!("CARGO_PKG_VERSION");
+    div()
+        .id("about-version-copy")
+        .cursor_pointer()
+        .mono_text(gpui_kit::px(crate::appearance_fonts::TextSize::Xs2.size(theme.fonts.interface)), crate::appearance_fonts::weight::MEDIUM)
+        .text_color(c.muted_foreground)
+        .hover(|s| s.text_color(c.foreground()))
+        .tooltip(crate::components::ui::tooltip::tooltip(t!("Copy version")))
+        .on_click(move |_, _, cx| cx.write_to_clipboard(gpui_kit::ClipboardItem::new_string(version.to_owned())))
+        .child(version)
+        .into_any_element()
+}
+
 const PRIVACY_POLICY_URL: &str = "https://t3.codes/privacy-policy";
 const APP_STORE_URL: &str = "https://apps.apple.com/us/app/t3-code-remote-claude-more/id6787819824";
 const PLAY_STORE_URL: &str = "https://play.google.com/store/apps/details?id=com.t3tools.t3code";
 
 /// `AboutSettingsPanel`. The desktop self-updater is not built, so the
-/// version row has no update button; the update track is saved for it.
+/// version row has no "Check for Updates" button; the update track is
+/// saved for it. The Welcome page row needs a primary environment, which
+/// this remote-only app does not have, so it is hidden as on the web.
 pub fn about_panel(on_open_licenses: Rc<dyn Fn(&mut Window, &mut App)>, cx: &App) -> AnyElement {
     let channel = DesktopSettingsStore::get(cx).update_channel;
     let track = select_control(
@@ -598,9 +620,11 @@ pub fn about_panel(on_open_licenses: Rc<dyn Fn(&mut Window, &mut App)>, cx: &App
     let link = |id: &'static str, label: SharedString, url: &'static str| {
         Button::new(id).variant(ButtonVariant::Outline).size(ButtonSize::Sm).label(label).on_click(move |_, _, cx| cx.open_url(url))
     };
+    let store = |id: &'static str, icon: crate::components::icons::BrandIcon, label: SharedString, url: &'static str| link(id, label, url).icon(icon);
     let app = SettingsSection::new(t!("App"))
         .child(
-            SettingsRow::new(format!("{} {}", setting_title("app-version"), env!("CARGO_PKG_VERSION")))
+            SettingsRow::new(t!("Version"))
+                .title_suffix(version_copy_button(cx))
                 .description(t!("Current version of the application.")),
         )
         .child(track_row)
@@ -611,8 +635,8 @@ pub fn about_panel(on_open_licenses: Rc<dyn Fn(&mut Window, &mut App)>, cx: &App
                     div()
                         .flex()
                         .gap(gpui_kit::rems(0.5))
-                        .child(link("mobile-app-ios", t!("iPhone and iPad"), APP_STORE_URL))
-                        .child(link("mobile-app-android", SharedString::new_static("Android"), PLAY_STORE_URL)),
+                        .child(store("mobile-app-ios", crate::components::icons::BrandIcon::Apple, t!("iPhone and iPad"), APP_STORE_URL))
+                        .child(store("mobile-app-android", crate::components::icons::BrandIcon::Android, SharedString::new_static("Android"), PLAY_STORE_URL)),
                 ),
         );
     let legal = SettingsSection::new(t!("Legal"))

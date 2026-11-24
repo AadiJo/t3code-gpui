@@ -188,6 +188,8 @@ pub const SETTINGS_ROW_GROUP: &str = "settings-row";
 #[derive(IntoElement)]
 pub struct SettingsRow {
     title: SharedString,
+    title_suffix: Option<AnyElement>,
+    title_icon: Option<crate::components::icons::IconName>,
     reset: Option<AnyElement>,
     disabled: bool,
     description: Option<SharedString>,
@@ -202,6 +204,8 @@ impl SettingsRow {
     pub fn new(title: impl Into<SharedString>) -> Self {
         Self {
             title: title.into(),
+            title_suffix: None,
+            title_icon: None,
             reset: None,
             disabled: false,
             description: None,
@@ -216,6 +220,19 @@ impl SettingsRow {
     /// Replaces the title, for a row titled differently from its catalog entry.
     pub fn title(mut self, title: impl Into<SharedString>) -> Self {
         self.title = title.into();
+        self
+    }
+
+    /// Drawn inside the title, 8px after its text, on its baseline (the
+    /// About page's version copy button).
+    pub fn title_suffix(mut self, suffix: impl IntoElement) -> Self {
+        self.title_suffix = Some(suffix.into_any_element());
+        self
+    }
+
+    /// A 14px muted icon before the title text, 8px from it.
+    pub fn title_icon(mut self, icon: crate::components::icons::IconName) -> Self {
+        self.title_icon = Some(icon);
         self
     }
 
@@ -310,9 +327,20 @@ impl RenderOnce for SettingsRow {
                                     .min_h(theme.sp(5.))
                                     .child(
                                         div()
+                                            .flex()
+                                            .items_baseline()
+                                            .gap(theme.sp(2.))
                                             .ui_text(theme, TextSize::Sm, weight::MEDIUM)
                                             .text_color(c.foreground())
-                                            .child(self.title),
+                                            .children(self.title_icon.map(|icon| {
+                                                div().self_center().child(
+                                                    crate::components::icons::Icon::new(icon)
+                                                        .size(crate::components::icons::IconSize::Sm)
+                                                        .color(c.muted_foreground),
+                                                )
+                                            }))
+                                            .child(self.title)
+                                            .children(self.title_suffix),
                                     )
                                     .children(self.inheritance)
                                     .child(
