@@ -25,6 +25,8 @@ pub struct DialogSurface {
     title_icon: Option<IconSource>,
     /// `max-w-*` in rem; `max-w-lg` (32rem) unless set.
     max_width_rem: f32,
+    /// `DialogFooter variant="bare"`: no rule or tinted band behind the buttons.
+    bare_footer: bool,
     description: Option<SharedString>,
     children: Vec<AnyElement>,
     footer: Vec<AnyElement>,
@@ -37,6 +39,7 @@ impl DialogSurface {
             title: title.into(),
             title_icon: None,
             max_width_rem: 32.,
+            bare_footer: false,
             description: None,
             children: Vec::new(),
             footer: Vec::new(),
@@ -47,6 +50,12 @@ impl DialogSurface {
     /// A 1rem icon before the title (`<Icon className="me-2 size-4" />`).
     pub fn title_icon(mut self, icon: impl Into<IconSource>) -> Self {
         self.title_icon = Some(icon.into());
+        self
+    }
+
+    /// `DialogFooter variant="bare"`.
+    pub fn bare_footer(mut self) -> Self {
+        self.bare_footer = true;
         self
     }
 
@@ -146,9 +155,7 @@ impl RenderOnce for DialogSurface {
                         .gap(sp(2.))
                         .px(sp(6.))
                         .py(sp(4.))
-                        .border_t_1()
-                        .border_color(c.border)
-                        .bg(theme.derived.dialog_footer)
+                        .when(!self.bare_footer, |f| f.border_t_1().border_color(c.border).bg(theme.derived.dialog_footer))
                         .rounded_b(theme.radii.xxl - px(1.))
                         .children(self.footer),
                 )
