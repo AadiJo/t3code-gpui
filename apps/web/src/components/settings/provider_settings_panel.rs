@@ -154,6 +154,11 @@ pub fn driver_brand(driver: &str, dark: bool) -> Option<BrandIcon> {
         "muse" => BrandIcon::MuseCode,
         "pi" => BrandIcon::Pi,
         "fx" => BrandIcon::Fx,
+        // Text generators, by the service they reach (`textGeneratorBrand`).
+        "openai" => BrandIcon::OpenAi,
+        "anthropic" => BrandIcon::Anthropic,
+        "openrouter" => BrandIcon::OpenRouter,
+        "ollama" => BrandIcon::Ollama,
         "codex" => BrandIcon::OpenAi,
         "claudeAgent" => BrandIcon::ClaudeAi,
         "cursor" => BrandIcon::Cursor,
@@ -238,6 +243,8 @@ pub struct ProviderSettingsPanel {
     updating: BTreeSet<String>,
     /// Per-instance sign-in UI state (chosen method, last error).
     pub(super) auth_ui: HashMap<String, super::provider_authentication_section::AuthUi>,
+    /// The open usage-hub or text-generator dialog.
+    pub(super) extra_dialog: Option<super::provider_usage_and_generators::ExtraDialog>,
     /// Sign-in terminals by instance, while a terminal flow runs.
     pub(super) auth_terminals: HashMap<String, super::provider_auth_terminal::AuthTerminal>,
     /// One accent picker per instance, created on first render of its editor.
@@ -264,6 +271,7 @@ impl ProviderSettingsPanel {
             confirm: None,
             updating: BTreeSet::new(),
             auth_ui: HashMap::new(),
+            extra_dialog: None,
             auth_terminals: HashMap::new(),
             accent_pickers: HashMap::new(),
             adding_model: BTreeSet::new(),
@@ -1666,61 +1674,6 @@ impl ProviderSettingsPanel {
             .into_any_element()
     }
 
-    fn render_usage_sources(&self, cx: &mut Context<Self>) -> AnyElement {
-        let theme = &cx.app_theme().clone();
-        let c = &theme.colors;
-        let snapshot = self.model.read(cx).snapshot();
-        let sources = snapshot.settings.usage_limit_sources.clone().unwrap_or_default();
-        let mut section = SettingsSection::new(t!("Usage providers")).header_action(
-            Button::new("usage-add-hub")
-                .variant(ButtonVariant::GhostMuted)
-                .size(ButtonSize::Xs)
-                .icon(IconName::Plus)
-                .label(t!("Add hub"))
-                .disabled(snapshot.read_only),
-        );
-        if sources.is_empty() {
-            section.extend([SettingsRow::new(t!("No hubs configured.")).into_any_element()]);
-        }
-        for (id, source) in sources {
-            let value = serde_json::to_value(&source).unwrap_or_default();
-            let label = value.get("label").and_then(|v| v.as_str()).unwrap_or(&id).to_owned();
-            let enabled = value.get("enabled").and_then(|v| v.as_bool()).unwrap_or(true);
-            section.extend([SettingsRow::new(if enabled { label.into() } else { t!("{name} · Disabled", name = label) })
-                .description(SharedString::from(value.get("baseUrl").and_then(|v| v.as_str()).unwrap_or_default().to_owned()))
-                .control(div().ui_text(theme, TextSize::Xs, weight::NORMAL).text_color(c.muted_foreground).child(t!("Remove")))
-                .into_any_element()]);
-        }
-        section.into_any_element()
-    }
-
-    fn render_text_generators(&self, cx: &mut Context<Self>) -> AnyElement {
-        let snapshot = self.model.read(cx).snapshot();
-        let generators = snapshot.settings.text_generators.clone().unwrap_or_default();
-        let mut section = SettingsSection::new(t!("Text generators")).header_action(
-            Button::new("text-generator-add")
-                .variant(ButtonVariant::GhostMuted)
-                .size(ButtonSize::Xs)
-                .icon(IconName::Plus)
-                .label(t!("Add generator"))
-                .disabled(snapshot.read_only),
-        );
-        if generators.is_empty() {
-            section.extend([SettingsRow::new(t!("No text generators yet")).into_any_element()]);
-        }
-        for (id, config) in generators {
-            let value = serde_json::to_value(&config).unwrap_or_default();
-            let name = value.get("name").and_then(|v| v.as_str()).unwrap_or(&id).to_owned();
-            let enabled = value.get("enabled").and_then(|v| v.as_bool()).unwrap_or(true);
-            let base = value.get("baseUrl").and_then(|v| v.as_str()).unwrap_or_default().to_owned();
-            section.extend([SettingsRow::new(SharedString::from(name.clone()))
-                .description(SharedString::from(format!("{}{base}", if enabled { "" } else { "Off · " })))
-                .control(Switch::new(SharedString::from(format!("text-generator-{id}")), enabled).disabled(snapshot.read_only))
-                .into_any_element()]);
-        }
-        section.into_any_element()
-    }
-
     fn render_advanced(&self, cx: &mut Context<Self>) -> AnyElement {
         let snapshot = self.model.read(cx).snapshot();
         let read_only = snapshot.read_only;
@@ -2115,6 +2068,7 @@ impl Render for ProviderSettingsPanel {
         }
         page = page.child(self.render_advanced(cx));
         let confirm = self.render_confirm(cx);
+        let extra = self.render_extra_dialog(window, cx);
         div()
             .relative()
             .size_full()
@@ -2130,5 +2084,6 @@ impl Render for ProviderSettingsPanel {
                 })
             }))
             .children(confirm)
+            .children(extra)
     }
 }

@@ -223,6 +223,36 @@ fn main() -> anyhow::Result<()> {
     let enabled = h.cx.update(|cx| providers.read(cx).model().read(cx).snapshot().providers.iter().find(|p| p.instance_id == "codex_work").map(|p| p.enabled));
     h.expect(enabled == Some(false), "codex_work now disabled");
 
+    // Usage hub: add, then remove.
+    h.note("== usage hub");
+    h.click("usage-add-hub");
+    let url = h.cx.update(|cx| providers.read(cx).field("hub:url"));
+    h.type_into(url, "https://hub.example.ts.net:8318", "hub url");
+    let key = h.cx.update(|cx| providers.read(cx).field("hub:key"));
+    h.type_into(key, "mgmt-key", "management key");
+    h.shot("check-04b-add-hub")?;
+    h.click("hub-add");
+    let hub = h.cx.update(|cx| providers.read(cx).model().read(cx).snapshot().settings.usage_limit_sources.clone().unwrap_or_default().contains_key("cliproxy-hub.example.ts.net-8318"));
+    h.expect(hub, "hub stored as cliproxy-hub.example.ts.net-8318");
+    h.click("usage-remove-cliproxy-hub.example.ts.net-8318");
+    h.click("hub-remove");
+    let gone = h.cx.update(|cx| providers.read(cx).model().read(cx).snapshot().settings.usage_limit_sources.clone().unwrap_or_default().is_empty());
+    h.expect(gone, "hub removed with null");
+
+    // Text generator: connect (tested first), then toggle off.
+    h.note("== text generator");
+    // The section sits below the fold; open its form as its header button does.
+    h.cx.update(|cx| providers.update(cx, |p, cx| p.open_generator(None, cx)));
+    h.frame();
+    let key = h.cx.update(|cx| providers.read(cx).field("generator:key"));
+    h.type_into(key, "sk-openai", "api key");
+    h.shot("check-04c-add-generator")?;
+    h.click("generator-connect");
+    let calls = h.calls();
+    h.expect(calls.iter().any(|c| c == "server.listTextGeneratorModels"), "connect tests with server.listTextGeneratorModels");
+    let saved = h.cx.update(|cx| providers.read(cx).model().read(cx).snapshot().settings.text_generators.clone().unwrap_or_default().contains_key("openai"));
+    h.expect(saved, "generator stored as openai");
+
     // Device code: copy, then cancel.
     h.note("== device-code sign-in");
     h.click("provider-row-claudeAgent");
