@@ -29,7 +29,7 @@ use crate::components::pull_request::pull_request_source::IssueSource;
 use crate::components::ui::TextStyleExt as _;
 use crate::components::ui::button::{Button, ButtonSize, ButtonVariant};
 use crate::components::ui::input::TextInput;
-use crate::components::ui::menu::{MenuItem, MenuItemKind, MenuPopup, dropdown_menu};
+use crate::components::ui::menu::{MenuItem, MenuPopup, dropdown_menu};
 use crate::i18n::t;
 use crate::markdown_pipeline::{MarkdownFlavor, ParsedBlocks};
 use crate::{ActiveAppTheme as _, AppTheme};

@@ -36,7 +36,7 @@ use crate::appearance_fonts::{TextSize, weight};
 use crate::components::icons::{Icon, IconName, IconSize};
 use crate::components::ui::TextStyleExt as _;
 use crate::components::ui::button::{Button, ButtonSize, ButtonVariant};
-use crate::components::ui::input::TextInput;
+use crate::components::ui::input::{InputSize, TextInput};
 use crate::components::ui::menu::{MenuItem, MenuItemKind, MenuPopup, dropdown_menu};
 use crate::i18n::t;
 use crate::{ActiveAppTheme as _, AppTheme};
@@ -562,7 +562,7 @@ impl PullRequestsPage {
             let this = this.clone();
             dropdown_menu(
                 "pr-sort",
-                Button::new("pr-sort-trigger").variant(ButtonVariant::Outline).size(ButtonSize::Sm).icon(IconName::ArrowDownUp).label(sort_label(sort)),
+                Button::new("pr-sort-trigger").variant(ButtonVariant::Outline).icon(IconName::ArrowDownUp).label(t!("Sort", context = "verb, sort a list")),
                 move |_, _| {
                     let mut menu = MenuPopup::new().label(t!("Sort pull requests"));
                     for option in PullRequestListSort::ALL {
@@ -585,7 +585,7 @@ impl PullRequestsPage {
             let facets = self.merged.as_ref().map(|m| collect_pull_request_list_facets(&m.entries, state)).unwrap_or_default();
             dropdown_menu(
                 "pr-filters",
-                Button::new("pr-filters-trigger").variant(ButtonVariant::Outline).size(ButtonSize::Sm).icon(IconName::ListFilter).label(t!("Filters")),
+                Button::new("pr-filters-trigger").variant(ButtonVariant::Outline).icon(IconName::ListFilter).label(t!("Filters")),
                 move |_, _| filters_popup(&this, state, involvement, &filters, &facets),
             )
         };
@@ -596,7 +596,7 @@ impl PullRequestsPage {
             let label: SharedString = self.active_view().map(|v| SharedString::from(v.name.clone())).unwrap_or_else(|| t!("Views", context = "saved filter views menu"));
             dropdown_menu(
                 "pr-views",
-                Button::new("pr-views-trigger").variant(ButtonVariant::Outline).size(ButtonSize::Sm).icon(IconName::Bookmark).label(label),
+                Button::new("pr-views-trigger").variant(ButtonVariant::Outline).icon(IconName::Bookmark).label(label).trailing_icon(IconName::ChevronDown),
                 move |_, cx| {
                     let mut menu = MenuPopup::new().label(t!("{list, select, pullRequest {Saved pull request views} other {Saved issue views}}", list = "pullRequest"));
                     let prefs: Vec<_> = this.read(cx).saved_views.iter().map(|v| (v.id.clone(), v.search.clone())).collect();
@@ -628,7 +628,7 @@ impl PullRequestsPage {
             .flex_wrap()
             .items_center()
             .gap(px(8.))
-            .child(div().id("pr-search").min_w(px(240.)).flex_1().child(TextInput::new(&self.search)))
+            .child(div().id("pr-search").min_w(px(240.)).flex_1().child(TextInput::new(&self.search).size(InputSize::Lg).leading_icon(IconName::Search)))
             .child(sort_menu)
             .child(filters_menu)
             .child(views_menu)
@@ -1123,13 +1123,12 @@ impl Render for PullRequestsPage {
                 div()
                     .flex()
                     .items_center()
-                    .h(px(48.))
-                    .px(px(16.))
-                    .border_b_1()
-                    .border_color(theme.colors.border)
-                    .gap(px(8.))
-                    .child(div().ui_text(&theme, TextSize::Sm, weight::MEDIUM).text_color(theme.colors.text).child(t!("Pull requests")))
-                    .child(div().ui_text(&theme, TextSize::Xs, weight::NORMAL).text_color(theme.colors.muted_foreground).child(format!("{}", self.rows))),
+                    // `WorkspacePageHeader`: the topbar height and gutter, no rule below.
+                    .h(theme.spacing.workspace_topbar_height)
+                    .flex_none()
+                    .px(theme.spacing.workspace_gutter)
+                    .gap(theme.sp(3.))
+                    .child(div().ui_text(&theme, TextSize::Sm, weight::MEDIUM).text_color(theme.colors.text).child(t!("Pull requests"))),
             )
             .child(
                 div()
@@ -1137,9 +1136,10 @@ impl Render for PullRequestsPage {
                     .flex_col()
                     .flex_1()
                     .min_h_0()
-                    .gap(px(12.))
-                    .px(px(24.))
-                    .pt(px(16.))
+                    // `WorkspacePageContainer`: `px-6 pt-6`, then `gap-3` within the toolbar group.
+                    .gap(theme.sp(3.))
+                    .px(theme.sp(6.))
+                    .pt(theme.sp(6.))
                     .child(self.render_toolbar(&theme, cx))
                     .children(self.render_chips(&theme, cx))
                     .children(self.render_banners(&theme, cx))
