@@ -44,7 +44,7 @@ use crate::components::ui::TextStyleExt as _;
 use crate::components::ui::button::{Button, ButtonSize, ButtonVariant};
 use crate::components::ui::input::TextInput;
 use crate::components::ui::menu::{MenuItem, MenuItemKind, MenuPopup, dropdown_menu};
-use crate::diff_patch::{FileDiff, HunkBlock, parse_patch};
+use crate::diff_patch::{FileContents, FileDiff, HunkBlock, parse_patch};
 use crate::i18n::{t, t_rich};
 use crate::markdown_pipeline::{MarkdownFlavor, ParsedBlocks};
 use crate::{ActiveAppTheme as _, AppTheme};
@@ -310,14 +310,47 @@ impl PullRequestDetailPanel {
         cx.notify();
     }
 
+    /// Reads both sides of one file so its collapsed context can expand (`pullRequests.diffFileContents`).
+    fn load_contents(&mut self, key: SharedString, cx: &mut Context<Self>) {
+        let Some(code) = &self.code else { return };
+        let Some(file) = code.files.iter().find(|f| f.path == key).cloned() else { return };
+        let r = &self.reference;
+        let change_type = ReviewDiffChangeType::from_wire(file.change.as_str()).unwrap_or(ReviewDiffChangeType::Change);
+        let request = self.source.diff_file_contents(PullRequestDiffFileContentsInput {
+            project_id: r.project_id.clone(),
+            host: r.host.clone(),
+            expected_account_id: r.expected_account_id.clone(),
+            allow_stale: r.allow_stale,
+            repository: r.repository.clone(),
+            number: r.number,
+            commit: None,
+            change_type,
+            old_path: file.prev_path.clone().unwrap_or_else(|| file.path.clone()).to_string(),
+            new_path: file.path.to_string(),
+        });
+        cx.spawn(async move |this, cx| {
+            let result = request.await;
+            this.update(cx, |this, cx| match result {
+                Ok(contents) => {
+                    if let Some(code) = &this.code {
+                        let contents = std::sync::Arc::new(FileContents::new(&contents.old_contents, &contents.new_contents));
+                        code.view.update(cx, |view, cx| view.set_contents(&key, contents, cx));
+                    }
+                }
+                Err(error) => this.status = Some(error.0),
+            })
+            .ok();
+        })
+        .detach();
+    }
+
     fn load_code(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let started = Instant::now();
         let view = cx.new(|cx| CodeView::new(ViewMode::Diff, window, cx));
-        let events = cx.subscribe(&view, |this, _, event: &CodeViewEvent, cx| {
-            if let CodeViewEvent::CollapsedChanged { key, collapsed } = event {
-                this.folds = this.folds.with_fold(false, key, Some(*collapsed));
-            }
-            let _ = cx;
+        let events = cx.subscribe(&view, |this, _, event: &CodeViewEvent, cx| match event {
+            CodeViewEvent::CollapsedChanged { key, collapsed } => this.folds = this.folds.with_fold(false, key, Some(*collapsed)),
+            CodeViewEvent::RequestContents { key } => this.load_contents(key.clone(), cx),
+            _ => {}
         });
         self.code = Some(CodeState { view, files: Vec::new(), opened_at: Some(started), _events: events });
         let r = &self.reference;
