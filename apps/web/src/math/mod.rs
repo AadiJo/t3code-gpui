@@ -54,6 +54,13 @@ thread_local! {
     static CACHE: RefCell<HashMap<(bool, SharedString), Option<Arc<Formula>>>> = RefCell::new(HashMap::new());
 }
 
+thread_local!(static LAYOUTS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) });
+
+/// How many formulas were laid out (cache misses) so far on this thread, for benchmarks.
+pub fn layouts() -> usize {
+    LAYOUTS.get()
+}
+
 /// Typeset formulas kept before the cache starts over (the fork's LRU holds 1000).
 const CACHE_CAPACITY: usize = 1000;
 
@@ -64,6 +71,7 @@ pub fn typeset(tex: &SharedString, display: bool) -> Option<Arc<Formula>> {
     if let Some(hit) = CACHE.with_borrow(|cache| cache.get(&key).cloned()) {
         return hit;
     }
+    LAYOUTS.set(LAYOUTS.get() + 1);
     let formula = CONTEXT.with(|ctx| {
         let settings = settings(display);
         katex_native::layout_with(ctx, tex, &settings)
