@@ -10,6 +10,7 @@ use gpui_kit::{
 };
 
 use super::TextStyleExt as _;
+use super::motion::Transition;
 use super::sheet::SheetSide;
 use super::button::{Button, ButtonSize, ButtonVariant};
 use crate::appearance_fonts::{TextSize, weight};
@@ -68,7 +69,7 @@ pub fn dialog_glass(theme: &AppTheme) -> Div {
         .border_color(theme.derived.dialog_glass_border)
         .bg(theme.derived.surface_glass_opaque)
         .shadow(theme.shadows.dialog.clone())
-        .text_color(theme.colors.foreground())
+        .text_color(theme.foregrounds.popover)
 }
 
 impl RenderOnce for DialogSurface {
@@ -182,8 +183,9 @@ impl RenderOnce for Modal {
         };
         let viewport = window.viewport_size();
         let (on_backdrop, on_escape) = (self.on_close.clone(), self.on_close);
+        // Backdrop and popup both fade in over 200ms (`data-starting-style:opacity-0`).
         deferred(
-            anchored().position(point(px(0.), px(0.))).child(
+            anchored().position(point(px(0.), px(0.))).child(Transition::DIALOG.fade_in("modal-enter",
                 div()
                     .id(self.id)
                     .track_focus(&handle)
@@ -210,7 +212,17 @@ impl RenderOnce for Modal {
                             .size_full()
                             .flex()
                             .when(side == SheetSide::Right, |d| d.justify_end())
-                            .child(div().occlude().h_full().w((viewport.width - px(48.)).min(theme.rem(28.))).child(self.content)),
+                            .child({
+                                // `data-starting-style:translate-x-8` (left: `-translate-x-8`).
+                                let slide = if side == SheetSide::Right { px(32.) } else { px(-32.) };
+                                let panel = div()
+                                    .relative()
+                                    .occlude()
+                                    .h_full()
+                                    .w((viewport.width - px(48.)).min(theme.rem(28.)))
+                                    .child(self.content);
+                                Transition::DIALOG.run("sheet-slide", panel, move |p, t| p.left(slide * (1. - t)))
+                            }),
                         None => div()
                             .absolute()
                             .size_full()
@@ -221,7 +233,7 @@ impl RenderOnce for Modal {
                             // Presses inside the dialog must not reach the backdrop.
                             .child(div().occlude().w_full().flex().justify_center().child(self.content)),
                     }),
-            ),
+            )),
         )
         .with_priority(3)
     }

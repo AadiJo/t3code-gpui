@@ -261,7 +261,9 @@ fn render_item(theme: &AppTheme, index: usize, item: MenuItem, dismiss: Option<A
     let row = match item.kind {
         MenuItemKind::Switch(on) => row.gap(theme.sp(4.)).pr(theme.sp(1.5)).child(menu_switch(theme, on)),
         MenuItemKind::Submenu => row.child(
-            div().mr(px(-2.)).child(Icon::new(IconName::ChevronRight).size(IconSize::Md).color(text).opacity(0.8)),
+            div().mr(px(-2.)).child(
+                Icon::new(IconName::ChevronRight).size(IconSize::Md).color(c.muted_foreground).opacity(0.8),
+            ),
         ),
         _ => row,
     };
@@ -379,12 +381,14 @@ impl RenderOnce for ContextMenu {
             });
         if let Some(position) = at {
             let close = open_state.clone();
-            let popup = (self.menu)(window, cx).on_dismiss(move |_, cx| PopupOpen::set(&close, false, None, cx));
+            let mut popup = (self.menu)(window, cx).on_dismiss(move |_, cx| PopupOpen::set(&close, false, None, cx));
+            // The fork's fallback context menu: `min-w-32`, kept 4px inside the window.
+            popup.min_width.get_or_insert(cx.app_theme().rem(8.));
             root = root.child(
                 deferred(
                     anchored()
                         .position(position)
-                        .snap_to_window_with_margin(px(8.))
+                        .snap_to_window_with_margin(px(4.))
                         .child(PopupOpen::dismissable(&open_state, popup)),
                 )
                 .with_priority(5),

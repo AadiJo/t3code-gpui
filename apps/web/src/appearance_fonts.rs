@@ -70,8 +70,8 @@ static MONO_FALLBACKS: LazyLock<FontFallbacks> = LazyLock::new(|| {
 });
 
 /// The font family settings (`fontFamilySans`, `fontFamilyCode`,
-/// `fontFamilyComposer`, `fontFamilyTerminal`): a family name each, or
-/// `None` for the default stack. Set by the theme store.
+/// `fontFamilyComposer`, `fontFamilyTerminal`): each the setting's comma
+/// list of families, or `None` for the default stack. Set by the theme store.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct FamilyOverrides {
     pub sans: Option<SharedString>,
@@ -96,12 +96,20 @@ struct ResolvedFamilies {
 static FAMILY_OVERRIDES: RwLock<ResolvedFamilies> =
     RwLock::new(ResolvedFamilies { sans: None, code: None, composer: None, terminal: None });
 
-/// `appearanceFontStack`: the custom family first, then the default family and its fallbacks.
+/// `appearanceFontStack`: the setting's families in order (quotes
+/// stripped, empty entries dropped), then the default family and its fallbacks.
 fn resolve(custom: Option<SharedString>, family: SharedString, fallbacks: &FontFallbacks) -> Resolved {
     let custom = custom?;
-    let mut list = vec![family.to_string()];
+    let mut names = custom
+        .split(',')
+        .map(|name| name.trim().trim_matches(['"', '\'']).trim())
+        .filter(|name| !name.is_empty())
+        .map(str::to_owned);
+    let first = names.next()?;
+    let mut list: Vec<String> = names.collect();
+    list.push(family.to_string());
     list.extend(fallbacks.fallback_list().iter().cloned());
-    Some((custom, FontFallbacks::from_fonts(list)))
+    Some((first.into(), FontFallbacks::from_fonts(list)))
 }
 
 /// Replaces the family settings every font helper reads.

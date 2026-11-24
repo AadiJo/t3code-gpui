@@ -10,6 +10,7 @@ use gpui_kit::{
     Window, anchored, deferred, div, point, prelude::*, px,
 };
 
+use super::motion::Transition;
 use super::{TextStyleExt as _, ControlHighlightExt as _};
 use crate::appearance_fonts::{TextSize, weight};
 use crate::{ActiveAppTheme as _, AppTheme};
@@ -25,7 +26,7 @@ pub fn glass_surface(theme: &AppTheme) -> Div {
         .border_color(theme.derived.dropdown_glass_border)
         .bg(theme.derived.dropdown_glass_opaque)
         .shadow(theme.shadows.menu.clone())
-        .text_color(theme.colors.foreground())
+        .text_color(theme.foregrounds.popover)
 }
 
 /// Floats `content` over the window just below where this element is laid
@@ -120,7 +121,7 @@ impl RenderOnce for PopoverSurface {
             PopoverPadding::Compact => (theme.sp(3.), theme.sp(2.)),
             PopoverPadding::None => (px(0.), px(0.)),
         };
-        glass_surface(theme)
+        let surface = glass_surface(theme)
             .when_some(width, |s, w| s.w(w))
             .gap(theme.sp(2.))
             .px(px_)
@@ -130,7 +131,9 @@ impl RenderOnce for PopoverSurface {
             .children(self.title.map(|title| {
                 div().ui_text(theme, TextSize::Sm, weight::SEMIBOLD).line_height(px(TextSize::Sm.size(theme.fonts.interface))).child(title)
             }))
-            .children(self.children)
+            .children(self.children);
+        // `data-starting-style:opacity-0`; `scale-98` needs a transform GPUI lacks.
+        Transition::STANDARD.fade_in("popover-enter", surface)
     }
 }
 

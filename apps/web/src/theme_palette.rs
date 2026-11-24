@@ -9,6 +9,7 @@ use gpui_kit::{App, Global, Hsla, Window, WindowAppearance};
 use serde::{Deserialize, Deserializer, de::Error as _};
 
 use crate::Assets;
+use crate::appearance_contrast::{AppearanceContrast, ContrastForegrounds, apply_contrast};
 use crate::appearance_fonts::FontSettings;
 use crate::theme_color::{Srgb8, parse_css_color};
 use crate::theme_component::apply_component_theme;
@@ -253,7 +254,13 @@ pub struct AppTheme {
     pub id: String,
     pub name: String,
     pub appearance: Appearance,
+    /// The palette with the Contrast setting applied: what every view draws with.
     pub colors: ThemePalette,
+    /// The theme file's palette before the Contrast setting.
+    pub raw_colors: ThemePalette,
+    /// Text recomputed against the card and popover surfaces for the Contrast setting.
+    pub foregrounds: ContrastForegrounds,
+    pub contrast: AppearanceContrast,
     /// The stylesheet's `color-mix` and opacity results for this palette.
     pub derived: DerivedColors,
     /// Tailwind palette colours the theme cannot change.
@@ -287,13 +294,35 @@ impl AppTheme {
         fonts: FontSettings,
         glass_opacity: GlassOpacity,
     ) -> Self {
-        let colors = document.palette(appearance);
-        let fonts = fonts.clamped();
+        Self::from_settings(&ThemeSettings {
+            document: Arc::new(document.clone()),
+            mode: match appearance {
+                Appearance::Dark => ThemeMode::Dark,
+                Appearance::Light => ThemeMode::Light,
+            },
+            system: appearance,
+            fonts,
+            glass_opacity,
+            ..ThemeSettings::default()
+        })
+    }
+
+    /// The theme every setting in `settings` describes.
+    pub fn from_settings(settings: &ThemeSettings) -> Self {
+        let document = &settings.document;
+        let appearance = document.resolve_appearance(settings.mode, settings.system);
+        let raw_colors = document.palette(appearance);
+        let (colors, foregrounds) = apply_contrast(&raw_colors, appearance, settings.contrast);
+        let fonts = settings.fonts.clamped();
+        let glass_opacity = settings.glass_opacity;
         Self {
             id: document.id.clone(),
             name: document.name.clone(),
             appearance,
             colors,
+            raw_colors,
+            foregrounds,
+            contrast: settings.contrast,
             derived: DerivedColors::new(&colors, appearance, glass_opacity),
             fixed: FixedColors::new(appearance),
             fonts,
@@ -301,7 +330,7 @@ impl AppTheme {
             radii: Radii::new(fonts.interface),
             shadows: Shadows::new(appearance),
             spacing: Spacing::new(fonts.interface),
-            motion: Motion::default(),
+            motion: Motion { panel: settings.panel_animation, ..Motion::default() },
         }
     }
 
@@ -342,9 +371,31 @@ pub struct ThemeSettings {
     pub fonts: FontSettings,
     /// The Glass opacity client setting (`glassOpacity`, 40 to 100, default 80).
     pub glass_opacity: GlassOpacity,
+    /// The Contrast client setting (`appearanceContrast`, 50 to 200, default 100).
+    pub contrast: AppearanceContrast,
+    /// The Panel animations client setting (`panelAnimationDurationMs`, 0 to 400).
+    pub panel_animation: std::time::Duration,
 }
 
 impl Global for ThemeSettings {}
+
+impl Default for ThemeSettings {
+    /// Graphite, dark, with every client setting at its default.
+    fn default() -> Self {
+        Self {
+            document: Arc::new(ThemeDocument::graphite()),
+            mode: ThemeMode::System,
+            system: Appearance::Dark,
+            fonts: FontSettings::default(),
+            glass_opacity: GlassOpacity::default(),
+            contrast: AppearanceContrast::default(),
+            panel_animation: std::time::Duration::from_millis(DEFAULT_PANEL_ANIMATION_MS),
+        }
+    }
+}
+
+/// `DEFAULT_PANEL_ANIMATION_DURATION_MS` in `packages/contracts/src/settings.ts`.
+pub const DEFAULT_PANEL_ANIMATION_MS: u64 = 0;
 
 impl ThemeSettings {
     /// Applies a change to the theme settings, then rebuilds the theme.
@@ -362,6 +413,32 @@ impl ThemeSettings {
     /// Applies the Glass opacity client setting; every glass fill follows it.
     pub fn set_glass_opacity(glass_opacity: GlassOpacity, cx: &mut App) {
         Self::update(cx, |settings| settings.glass_opacity = glass_opacity);
+    }
+
+    /// Applies the owner-setting overrides the headless tools take from the
+    /// environment: `T3CODE_CONTRAST`, `T3CODE_GLASS_OPACITY`,
+    /// `T3CODE_INTERFACE_SIZE` and `T3CODE_PANEL_MS`. Call after opening the
+    /// window so its rem follows the Interface size. Captures show settled
+    /// frames, so motion is off unless `T3CODE_MOTION=1`.
+    pub fn apply_env_overrides(cx: &mut App) {
+        cx.set_reduce_motion(std::env::var("T3CODE_MOTION").map_or(true, |v| v != "1"));
+        let var = |name: &str| std::env::var(name).ok().and_then(|v| v.trim().parse::<u32>().ok());
+        let (contrast, glass, interface, panel) =
+            (var("T3CODE_CONTRAST"), var("T3CODE_GLASS_OPACITY"), var("T3CODE_INTERFACE_SIZE"), var("T3CODE_PANEL_MS"));
+        Self::update(cx, |settings| {
+            if let Some(contrast) = contrast {
+                settings.contrast = AppearanceContrast::new(contrast);
+            }
+            if let Some(glass) = glass {
+                settings.glass_opacity = GlassOpacity::new(glass.min(100) as u8);
+            }
+            if let Some(interface) = interface {
+                settings.fonts.interface = interface as f32;
+            }
+            if let Some(panel) = panel {
+                settings.panel_animation = std::time::Duration::from_millis(panel.min(400).into());
+            }
+        });
     }
 
     /// Pins one appearance of the current theme, keeping every other setting.
@@ -397,11 +474,14 @@ impl ThemeSettings {
 }
 
 /// Installs settings as the app-wide theme, mirrored onto gpui-component's theme.
+/// Every open window's rem follows the Interface size, as the web's root font size does.
 pub fn install(settings: ThemeSettings, cx: &mut App) {
-    let appearance = settings.document.resolve_appearance(settings.mode, settings.system);
-    let theme =
-        AppTheme::with_settings(&settings.document, appearance, settings.fonts, settings.glass_opacity);
+    let theme = AppTheme::from_settings(&settings);
+    let rem = gpui_kit::px(theme.fonts.interface);
     cx.set_global(settings);
+    for window in cx.windows() {
+        _ = window.update(cx, |_, window, _| window.set_rem_size(rem));
+    }
     set_app_theme(theme, cx);
 }
 

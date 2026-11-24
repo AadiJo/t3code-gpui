@@ -16,6 +16,7 @@ judges the right edge and reports the left) or `exclude: "<reason>"` (a fixture 
 documented GPUI limit; measured and shown, never judged).
 """
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -25,7 +26,8 @@ import measure as m
 
 HERE = Path(__file__).resolve().parent
 SPEC = json.loads((HERE / "spec.json").read_text())
-EXPECTED = HERE / "expected.json"
+# `PARITY_EXPECTED=expected-owner.json` judges against the owner-settings capture.
+EXPECTED = HERE / os.environ.get("PARITY_EXPECTED", "expected.json")
 PX = SPEC["tolerance"]["px"]
 # GPUI places a line's baseline with the font's exact ascent and descent
 # (gpui text_system/line.rs: padding_top = (line_height - ascent - descent) / 2);

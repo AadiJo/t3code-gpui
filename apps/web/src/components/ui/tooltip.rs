@@ -4,6 +4,7 @@
 
 use gpui_kit::{AnyView, App, AppContext as _, Context, IntoElement, Render, RenderOnce, SharedString, Window, div, prelude::*, px};
 
+use super::motion::Transition;
 use super::{TextStyleExt as _, ControlHighlightExt as _, kbd::Kbd};
 use crate::ActiveAppTheme as _;
 use crate::appearance_fonts::{TextSize, weight};
@@ -57,7 +58,7 @@ impl RenderOnce for TooltipSurface {
             .py(theme.sp(1.))
             .rounded(radius)
             .border_1()
-            .text_color(c.foreground())
+            .text_color(theme.foregrounds.popover)
             .ui_text(theme, TextSize::Xs, weight::NORMAL)
             .line_height(px(TextSize::Xs.size(theme.fonts.interface) * 1.375));
         let card = match self.variant {
@@ -83,7 +84,8 @@ struct TooltipView(TooltipSurface);
 
 impl Render for TooltipView {
     fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-        div().pb(px(4.)).child(self.0.clone())
+        // `data-starting-style:opacity-0` (the `scale-98` half needs a transform GPUI lacks).
+        Transition::STANDARD.fade_in("tooltip-enter", div().pb(px(4.)).child(self.0.clone()))
     }
 }
 
