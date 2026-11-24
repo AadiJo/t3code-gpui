@@ -61,7 +61,10 @@
 //            (`T3_CONTROL_DIR`) and settled Done; a fork whose source is then deleted drops the
 //            source's row once `orchestration.getThreadTitles` settles without it
 //   lineage-ref  shots of the states `capture-lineage.mjs` takes in the fork, same threads
-// Usage: live-check <seed|drive|restart|import|send|sidebar|notify|details|mentions|heic|wheel|workspace|banner|sidebardata|composer|composer-restart|sidechats|sidechats-ref|lineage|lineage-ref|probe> <out-dir>
+//   sidepane  a side chat's reply shows no "Fork from here" (the main pane keeps it); the side
+//            chat deleted from outside the pane reads "This side chat was deleted."
+//   delete-thread  deletes `T3_DELETE_THREAD`, as another client would
+// Usage: live-check <seed|drive|restart|import|send|sidebar|notify|details|mentions|heic|wheel|workspace|banner|sidebardata|composer|composer-restart|sidechats|sidechats-ref|lineage|lineage-ref|sidepane|delete-thread|probe> <out-dir>
 #[allow(dead_code)]
 #[path = "import/mod.rs"]
 mod import;
@@ -544,6 +547,8 @@ fn main() -> anyhow::Result<()> {
         "sidechats-ref" => run_sidechats_ref(&mut check),
         "lineage" => run_lineage(&mut check),
         "lineage-ref" => run_lineage_ref(&mut check),
+        "sidepane" => run_sidepane(&mut check),
+        "delete-thread" => run_delete_thread(&mut check),
         other => Err(anyhow::anyhow!("unknown phase {other}")),
     };
     check.finish(&phase, result)
@@ -3783,5 +3788,71 @@ fn run_lineage_ref(check: &mut Check) -> anyhow::Result<()> {
             check.shot("lineage-stop-tooltip.png")?;
         }
     }
+    Ok(())
+}
+
+/// The `sidepane` phase: a side chat of "Fork source <T3_LINEAGE_TAG>" (made by `/side`) shows
+/// its reply without "Fork from here" while the main pane keeps it; deleted from outside the pane
+/// it reads "This side chat was deleted.".
+fn run_sidepane(check: &mut Check) -> anyhow::Result<()> {
+    let tag = std::env::var("T3_LINEAGE_TAG").context("T3_LINEAGE_TAG")?;
+    let paired = check.cx.update(|cx| !ConnectionRuntime::state(cx).read(cx).environments.is_empty());
+    if !paired {
+        let request = parse_pairing_url(&std::env::var("T3_PAIRING_URL").context("T3_PAIRING_URL")?)?;
+        let pairing = check.cx.update(|cx| ConnectionRuntime::global(cx).pair(request, None, cx));
+        check.wait_task(pairing)?.map_err(|e| anyhow::anyhow!("{}", e.0))?;
+    }
+    check.pump(|c| c.connected(), Duration::from_secs(30), "connected")?;
+    let id = check.cx.update(|cx| ConnectionRuntime::state(cx).read(cx).environments[0].entry.environment_id.to_string());
+    let environment_id = t3code_contracts::EnvironmentId::new(id.as_str());
+    let env = environment_id.clone();
+    let title = format!("Fork source {tag}");
+    check.pump(move |c| thread_titled(c, &env, &title, None).is_some(), Duration::from_secs(20), "the host is listed")?;
+    let key = thread_titled(check, &environment_id, &format!("Fork source {tag}"), None).context("host")?;
+    check.go(&key);
+    let k = key.clone();
+    check.pump(move |c| c.route() == Route::Thread(k.clone()) && !c.shown_input().entries.is_empty(), Duration::from_secs(20), "the host shows")?;
+    check.focus_composer();
+    check.type_text("/side Why does it say that?");
+    check.press("enter");
+    let k = key.clone();
+    check.pump(move |c| side_chat_tab(c, &k).is_some(), Duration::from_secs(30), "the side chat tab opens")?;
+    let side = thread_key(&environment_id, &ThreadId::new(side_chat_tab(check, &key).context("tab")?.as_str()));
+    let s = side.clone();
+    check.pump(
+        move |c| shell_thread(c, &s).is_some_and(|t| t.status.as_str() == "completed") && c.read(|root, cx| {
+            root.right_panel().read(cx).side_chat_pane().is_some_and(|pane| {
+                pane.read(cx).chat().read(cx).timeline().read(cx).input().entries.iter().any(|e| matches!(&e.kind, EntryKind::Message(m) if m.role == t3code_web::components::chat::timeline_entries::MessageRole::Assistant))
+            })
+        }),
+        Duration::from_secs(60),
+        "the side chat replies",
+    )?;
+    let embedded = check.read(|root, cx| root.right_panel().read(cx).side_chat_pane().is_some_and(|pane| pane.read(cx).chat().read(cx).timeline().read(cx).is_embedded()));
+    let main = check.read(|root, cx| root.thread_view().read(cx).chat().read(cx).timeline().read(cx).is_embedded());
+    check.check("the side chat's timeline is embedded (no fork) and the main pane's is not", embedded && !main, format!("side {embedded} main {main}"));
+    check.wait(Duration::from_millis(600));
+    check.shot("p0-side-chat-reply.png")?;
+    let commands = commands_of(check, &environment_id)?;
+    let target = tid(&side);
+    check.block(async move { commands.delete(&target, false).await })?.map_err(|e| anyhow::anyhow!("{e}"))?;
+    let s = side.clone();
+    check.pump(move |c| shell_thread(c, &s).is_none(), Duration::from_secs(20), "the side chat leaves the shell")?;
+    check.wait(Duration::from_millis(600));
+    let deleted = check.read(|root, cx| root.right_panel().read(cx).side_chat_pane().is_some_and(|pane| pane.read(cx).deleted(cx)));
+    check.check("the open tab says the side chat was deleted", deleted, "");
+    check.shot("p1-side-chat-deleted.png")?;
+    Ok(())
+}
+
+/// The `delete-thread` phase: deletes `T3_DELETE_THREAD` on the paired server, as another client
+/// would (for reference captures of a side chat deleted elsewhere).
+fn run_delete_thread(check: &mut Check) -> anyhow::Result<()> {
+    let thread = ThreadId::new(std::env::var("T3_DELETE_THREAD").context("T3_DELETE_THREAD")?.as_str());
+    check.pump(|c| c.connected(), Duration::from_secs(30), "connected")?;
+    let id = check.cx.update(|cx| ConnectionRuntime::state(cx).read(cx).environments[0].entry.environment_id.to_string());
+    let commands = commands_of(check, &t3code_contracts::EnvironmentId::new(id.as_str()))?;
+    check.block(async move { commands.delete(&thread, false).await })?.map_err(|e| anyhow::anyhow!("{e}"))?;
+    check.check("deleted", true, "");
     Ok(())
 }

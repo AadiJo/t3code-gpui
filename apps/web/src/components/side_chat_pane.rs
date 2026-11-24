@@ -9,7 +9,7 @@ use crate::components::chat::composer::{ChatComposer, ComposerEvent, ComposerSta
 use crate::components::chat::composer_command_menu::{ComposerCommandItem, ComposerMenuSource, SlashMenuContext};
 use crate::components::chat::messages_timeline::TimelineAction;
 use crate::components::chat_view::{ChatView, ChatViewEvent};
-use crate::components::icons::IconName;
+use crate::components::icons::{IconName, IconSize};
 use crate::components::sidebar::model::ThreadKey;
 use crate::components::ui::TextStyleExt as _;
 use crate::components::ui::button::{Button, ButtonSize, ButtonVariant};
@@ -86,6 +86,7 @@ impl SideChatPane {
         let focus = composer.focus_handle(cx);
         chat.update(cx, |chat, cx| {
             chat.set_embedded(true, cx);
+            chat.timeline().clone().update(cx, |timeline, cx| timeline.set_embedded(true, cx));
             chat.set_composer(composer.clone().into(), focus, cx);
         });
         let subscriptions = vec![
@@ -100,6 +101,11 @@ impl SideChatPane {
 
     pub fn key(&self) -> &ThreadKey {
         &self.key
+    }
+
+    /// The side chat is gone from its environment's shell (deleted elsewhere).
+    pub fn deleted(&self, cx: &App) -> bool {
+        matches!(self.data.side_chat(&self.key, cx), SideChatLookup::Deleted)
     }
 
     pub fn chat(&self) -> &Entity<ChatView> {
@@ -292,8 +298,12 @@ impl SideChatPane {
 }
 
 impl Render for SideChatPane {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.app_theme().clone();
+        // `size-3.5`, down to a whole device pixel: GPUI snaps an icon box up to the next device
+        // pixel and rasterizes on top of that, so 13.125px would draw near 13.5px.
+        let scale = window.scale_factor();
+        let icon = IconSize::Custom(px((f32::from(theme.rem(0.875)) * scale).floor() / scale));
         let lookup = self.data.side_chat(&self.key, cx);
         let facts = match &lookup {
             SideChatLookup::Found(facts) => Some(facts.clone()),
@@ -316,6 +326,7 @@ impl Render for SideChatPane {
                     .disabled(!can_add)
                     .on_click(cx.listener(|this, _, _, cx| this.add_to_chat(cx))),
             );
+        // The title inherits the page's text colour, which the Contrast setting leaves as the theme file's.
         let header = div()
             .flex()
             .flex_none()
@@ -326,7 +337,7 @@ impl Render for SideChatPane {
             .pl(theme.rem(0.75))
             .border_b_1()
             .border_color(theme.colors.border)
-            .child(div().flex_1().min_w_0().truncate().ui_text(&theme, TextSize::Xs, weight::MEDIUM).child(title.clone()))
+            .child(div().flex_1().min_w_0().truncate().ui_text(&theme, TextSize::Xs, weight::MEDIUM).text_color(theme.raw_colors.text).child(title.clone()))
             .child(add)
             .child(
                 div().id("side-chat-delete-tip").tooltip(tooltip(t!("Delete side chat"))).child(
@@ -334,6 +345,7 @@ impl Render for SideChatPane {
                         .variant(ButtonVariant::Ghost)
                         .size(ButtonSize::IconXs)
                         .icon(IconName::Trash2)
+                        .icon_size(icon)
                         .disabled(facts.is_none() || self.deleting)
                         .on_click(cx.listener(|this, _, _, cx| this.request_delete(cx))),
                 ),
@@ -344,6 +356,7 @@ impl Render for SideChatPane {
                         .variant(ButtonVariant::Ghost)
                         .size(ButtonSize::IconXs)
                         .icon(IconName::X)
+                        .icon_size(icon)
                         .on_click(cx.listener(|_, _, _, cx| cx.emit(SideChatPaneEvent::Close))),
                 ),
             );

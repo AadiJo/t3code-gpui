@@ -97,10 +97,13 @@ impl MessagesTimeline {
                 )
                 .on_click(cx.listener(move |this, _, _, cx| this.copy(key, text.clone(), cx))),
             )
-            .child(xs_button(("fork", key), Some(IconName::GitFork), None, colors.theme.text, &colors).on_click({
-                let id = message.id.clone();
-                cx.listener(move |_, _, _, cx| cx.emit(TimelineAction::Fork(id.clone())))
-            }).test_support())
+            // An embedded side chat offers no fork: it would promote the side chat.
+            .when(!self.embedded, |row| {
+                row.child(xs_button(("fork", key), Some(IconName::GitFork), None, colors.theme.text, &colors).on_click({
+                    let id = message.id.clone();
+                    cx.listener(move |_, _, _, cx| cx.emit(TimelineAction::Fork(id.clone())))
+                }).test_support())
+            })
             .child(xs_button(("reply", key), Some(IconName::Reply), None, colors.theme.muted_foreground, &colors).on_click({
                 let (id, text) = (message.id.clone(), message.text.clone());
                 cx.listener(move |_, _, _, cx| cx.emit(TimelineAction::Reply { message: id.clone(), text: text.clone() }))

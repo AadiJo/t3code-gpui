@@ -164,6 +164,8 @@ pub struct MessagesTimeline {
     pub(super) now: Instant,
     /// Wall-clock milliseconds the fixtures treat as "now", for running timers.
     pub(super) now_millis: i64,
+    /// A side chat's timeline in the right panel: no "Fork from here" (a fork would promote it).
+    pub(super) embedded: bool,
     /// The list's top spacer at a 16px root: the header fade's height, or a side chat's `pt-2`
     /// above its "Context from" divider (the web's list header swaps the spacer for the divider block).
     top_inset: Pixels,
@@ -211,6 +213,7 @@ impl MessagesTimeline {
             rendering_row: 0,
             now: Instant::now(),
             now_millis: 0,
+            embedded: false,
             top_inset: TIMELINE_TOP_INSET,
             weak,
         }
@@ -418,6 +421,17 @@ impl MessagesTimeline {
 
     pub fn input(&self) -> &TimelineInput {
         &self.input
+    }
+
+    /// Marks this as an embedded side chat's timeline (`embedded` in `ChatView`).
+    pub fn set_embedded(&mut self, embedded: bool, cx: &mut Context<Self>) {
+        self.embedded = embedded;
+        cx.notify();
+    }
+
+    /// This is an embedded side chat's timeline.
+    pub fn is_embedded(&self) -> bool {
+        self.embedded
     }
 
     /// The milliseconds clock running timers read ("Working for 1m 23s").
