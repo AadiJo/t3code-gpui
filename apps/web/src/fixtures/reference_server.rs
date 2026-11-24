@@ -14,7 +14,7 @@ use t3code_client_runtime::rpc::client::RpcError;
 use t3code_contracts::{
     DatabaseStorageStatus, HostResourcesSnapshot, IssueListInput, IssueListResult, IssueTrackerConnectionList, IssuesListError,
     NonNegativeInt, PullRequestActionInput, PullRequestFilterOptions, PullRequestFilterOptionsInput, PullRequestListInput,
-    PullRequestListResult, PullRequestListStatsInput, PullRequestListStatsResult, PullRequestSummary, PullRequestsListError,
+    ProjectSearchEntriesResult, PullRequestListResult, PullRequestListStatsInput, PullRequestListStatsResult, PullRequestSummary, PullRequestsListError,
     ScheduledTask, ServerConfig,
     ServerConfigStreamSnapshotEvent, ServerProcessDiagnosticsResult, ServerTraceDiagnosticsResult, SourceControlDiscoveryResult,
     StorageCleanupReport,
@@ -42,6 +42,9 @@ struct Dump {
     host_resources: HostResourcesSnapshot,
     pull_requests: Reply<PullRequestListResult, PullRequestsListError>,
     issues: Reply<IssueListResult, IssuesListError>,
+    /// `projects.searchEntries` in the t3code checkout, by query, as go to file asked it.
+    #[serde(default)]
+    search_entries: HashMap<String, ProjectSearchEntriesResult>,
 }
 
 /// How a listing answered.
@@ -108,6 +111,55 @@ pub fn snapshot(env: &crate::components::sidebar::model::EnvironmentId) -> Serve
         trace_diagnostics: Some(Arc::new(dump.trace_diagnostics)),
         process_diagnostics: Some(Arc::new(dump.process_diagnostics)),
         host_resources: Some(Arc::new(dump.host_resources)),
+    }
+}
+
+/// The t3code checkout's files with the reference server's path search: go to file lists what
+/// the server's index answered for the queries the capture typed, and the directory answers the
+/// rest (and every other call).
+pub struct ReferenceWorkspaceFiles {
+    directory: crate::file_source::SharedWorkspaceFiles,
+    searches: Arc<HashMap<String, ProjectSearchEntriesResult>>,
+}
+
+impl ReferenceWorkspaceFiles {
+    pub fn new(root: std::path::PathBuf) -> Arc<Self> {
+        Arc::new(Self { directory: crate::file_source::DirectoryFiles::new(root), searches: Arc::new(dump().search_entries) })
+    }
+}
+
+impl crate::file_source::WorkspaceFiles for ReferenceWorkspaceFiles {
+    fn root(&self) -> &str {
+        self.directory.root()
+    }
+    fn list_entries(&self, directory: Option<String>) -> crate::file_source::FileFuture<t3code_contracts::ProjectListEntriesResult> {
+        self.directory.list_entries(directory)
+    }
+    fn read_file(&self, relative_path: String) -> crate::file_source::FileFuture<t3code_contracts::ProjectReadFileResult> {
+        self.directory.read_file(relative_path)
+    }
+    fn write_file(&self, relative_path: String, contents: String) -> crate::file_source::FileFuture<t3code_contracts::ProjectWriteFileResult> {
+        self.directory.write_file(relative_path, contents)
+    }
+    fn search_entries(&self, query: String, limit: u64) -> crate::file_source::FileFuture<ProjectSearchEntriesResult> {
+        match self.searches.get(&query) {
+            Some(recorded) => {
+                let mut result = recorded.clone();
+                result.truncated = result.truncated || result.entries.len() as u64 > limit;
+                result.entries.truncate(limit as usize);
+                Box::pin(async move { Ok(result) })
+            }
+            None => self.directory.search_entries(query, limit),
+        }
+    }
+    fn search_contents(&self, query: crate::file_source::ContentQuery) -> crate::file_source::FileFuture<t3code_contracts::ProjectSearchContentsResult> {
+        self.directory.search_contents(query)
+    }
+    fn read_asset(&self, relative_path: String) -> crate::file_source::FileFuture<crate::file_source::AssetBytes> {
+        self.directory.read_asset(relative_path)
+    }
+    fn local_copy(&self, relative_path: String) -> crate::file_source::FileFuture<std::path::PathBuf> {
+        self.directory.local_copy(relative_path)
     }
 }
 

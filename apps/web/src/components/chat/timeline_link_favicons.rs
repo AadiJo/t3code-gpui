@@ -46,6 +46,8 @@ enum Phase {
 struct LinkFavicons {
     dir: PathBuf,
     hosts: HashMap<String, Phase>,
+    /// Set up by [`preload`] alone: hosts it did not name are never fetched.
+    offline: bool,
 }
 
 impl Global for LinkFavicons {}
@@ -54,7 +56,17 @@ impl Global for LinkFavicons {}
 pub fn init(data_dir: &Path, cx: &mut App) {
     let dir = data_dir.join("link-favicons");
     _ = std::fs::create_dir_all(&dir);
-    cx.set_global(LinkFavicons { dir, hosts: HashMap::new() });
+    cx.set_global(LinkFavicons { dir, hosts: HashMap::new(), offline: false });
+}
+
+/// Gives `host` an icon from `bytes` without fetching it, for fixture windows that show a
+/// capture's state. Without [`init`], no other host is fetched either.
+pub fn preload(host: &str, bytes: &[u8], cx: &mut App) {
+    let Some(image) = decode(bytes) else { return };
+    if !cx.has_global::<LinkFavicons>() {
+        cx.set_global(LinkFavicons { dir: PathBuf::new(), hosts: HashMap::new(), offline: true });
+    }
+    cx.global_mut::<LinkFavicons>().hosts.insert(host.to_owned(), Phase::Ready(image));
 }
 
 /// The host of an external web link (`resolveExternalWebLinkHost`): http and https only,
@@ -91,7 +103,7 @@ pub fn link_favicon(host: &str, wanted: &mut Vec<String>, cx: &App) -> LinkFavic
 
 /// Starts loading the icons of `hosts`: from disk when kept, else over the network.
 pub fn request(hosts: Vec<String>, cx: &mut App) {
-    if hosts.is_empty() || !cx.has_global::<LinkFavicons>() {
+    if hosts.is_empty() || cx.try_global::<LinkFavicons>().is_none_or(|store| store.offline) {
         return;
     }
     if !cx.has_global::<crate::connection::ConnectionRuntime>() {

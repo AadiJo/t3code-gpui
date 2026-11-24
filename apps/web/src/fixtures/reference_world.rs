@@ -393,3 +393,9 @@ pub fn model_catalog() -> crate::model_selection::ModelCatalog {
         hidden: Default::default(),
     }
 }
+
+/// The link favicons the capture's browser loaded for the world's links (Google's favicon
+/// service answers example.com with its fallback globe), set without any network.
+pub fn preload_link_favicons(cx: &mut gpui_kit::App) {
+    crate::components::chat::timeline_link_favicons::preload("example.com", include_bytes!("link_favicon_example_com.png"), cx);
+}

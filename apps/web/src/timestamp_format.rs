@@ -3,6 +3,7 @@
 //! translated strings. Pass `now_ms` from one clock read to keep a render consistent.
 
 use std::sync::RwLock;
+use std::sync::atomic::{AtomicI64, Ordering};
 
 use gpui_kit::SharedString;
 use jiff::{Timestamp, ZonedDateTime, civil, tz::TimeZone};
@@ -67,9 +68,29 @@ pub fn resolve_hour12(format: TimestampFormat) -> bool {
     }
 }
 
+/// How far the app's clock is set from the system clock, in milliseconds (0 unless a screenshot
+/// tool pins it with [`set_clock`]).
+static CLOCK_OFFSET_MS: AtomicI64 = AtomicI64::new(0);
+
+/// Sets the app's clock to `now_ms` (epoch milliseconds) from this moment on, so relative times
+/// and previews read as they did at a capture. Headless tools only.
+pub fn set_clock(now_ms: i64) {
+    CLOCK_OFFSET_MS.store(now_ms - Timestamp::now().as_millisecond(), Ordering::Relaxed);
+}
+
 /// The current time in epoch milliseconds.
 pub fn now_ms() -> i64 {
-    Timestamp::now().as_millisecond()
+    Timestamp::now().as_millisecond() + CLOCK_OFFSET_MS.load(Ordering::Relaxed)
+}
+
+/// The current instant on the app's clock.
+pub fn now_timestamp() -> Timestamp {
+    Timestamp::from_millisecond(now_ms()).unwrap_or_else(|_| Timestamp::now())
+}
+
+/// The current time on the app's clock in the system time zone.
+pub fn now_zoned() -> ZonedDateTime {
+    now_timestamp().to_zoned_datetime(TimeZone::system())
 }
 
 /// Parses the ISO 8601 forms `new Date(iso)` accepts: with an offset, a local

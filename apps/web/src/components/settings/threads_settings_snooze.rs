@@ -235,7 +235,7 @@ pub fn snooze_presets_row<V: 'static>(
     let theme = &cx.app_theme().clone();
     let c = &theme.colors;
     let presets = model.read(cx).snapshot().settings.snooze_presets.clone().unwrap_or_else(default_presets);
-    let now = Zoned::now();
+    let now = crate::timestamp_format::now_zoned();
     let hour12 = crate::timestamp_format::resolve_hour12(crate::hooks::settings_bridge::timestamp_format(cx));
     let save = {
         let model = model.clone();

@@ -17,6 +17,10 @@ display list) is dropped, and in the terminal views every text element is droppe
 geometry kept, since a terminal prompt shows the user and host. Scroll pages
 (`<view>.scroll-<n>`) are views like any other when the capture saved their element JSON.
 
+Scroll pages (`<view>.scroll-<n>`) record the settings content region and their first heading;
+`compare` shifts the port's content region so that heading lines up and reports the shift once
+per page, so a row-height drift above it is not counted against every row of the page.
+
 `compare` finds each reference text in the port image (best ink match within 24px of where the
 reference has it), measures it there, and writes `report.md` (per scene pass and fail, every
 failing element with both values, grouped by cause and area), `results.json` and side-by-sides.
@@ -131,14 +135,16 @@ TINY = 64  # device px²: an ink box this small (a middle dot, a period) correla
 TINY_SEARCH = 6  # so it is searched for only this close to its place
 
 
-def find_offset(ref_patch, port_im, x0, y0, bg):
+def find_offset(ref_patch, port_im, x0, y0, bg, reach_y=None):
     """The (dx, dy) in device px where the port's ink best matches the reference text's ink
-    (`ref_patch`, ink levels at (x0, y0)), within SEARCH (TINY_SEARCH for a tiny patch); None
-    when nothing near looks like it. Column profiles find candidates (tolerant of a slightly
-    wider or narrower text); a 2D correlation of the ink picks among them."""
+    (`ref_patch`, ink levels at (x0, y0)), within SEARCH (TINY_SEARCH for a tiny patch; `reach_y`
+    device px vertically when given); None when nothing near looks like it. Column profiles find
+    candidates (tolerant of a slightly wider or narrower text); a 2D correlation of the ink picks
+    among them."""
     h, w = ref_patch.shape
     search = TINY_SEARCH if h * w <= TINY else SEARCH
-    area, (ox, oy) = ink_level(port_im, x0 - search, y0 - search, x0 + w + search, y0 + h + search, bg)
+    sy_reach = search if reach_y is None else reach_y
+    area, (ox, oy) = ink_level(port_im, x0 - search, y0 - sy_reach, x0 + w + search, y0 + h + sy_reach, bg)
     if area.shape[0] < h or area.shape[1] < w:
         return None
     ref_cols = ref_patch.sum(axis=0)
@@ -469,6 +475,72 @@ def measure_box(im, el, ref=None):
 
 REF_IMAGE = {}
 
+# ---------------------------------------------------------------- scroll pages
+#
+# A scroll page shows the settings content scrolled by a fixed offset. Rows of a different height
+# put other rows at that offset, so every row would fail for one drift. Each page is aligned on its
+# first heading instead: the port's content region is shifted so that heading sits where the
+# reference has it, the shift is reported once for the page, and the elements are judged there.
+
+SCROLLER = "[role=region][aria-label=Settings content]"
+
+
+def scroll_region(view, data):
+    """The scrolled content's box (logical px) on a `<view>.scroll-<n>` page, else None."""
+    if ".scroll-" not in view:
+        return None
+    box = next((e for e in data["elements"] if SCROLLER in e["el"]), None)
+    return [box["x"], box["y"], box["w"], box["h"]] if box else None
+
+
+def inside(box, region):
+    cx, cy = box[0] + box[2] / 2, box[1] + box[3] / 2
+    x, y, w, h = region
+    return x <= cx <= x + w and y <= cy <= y + h
+
+
+def scroll_anchor(elements, region):
+    """The element a scroll page is aligned on: its first heading (weight 600 or more) inside the
+    scrolled region, else its first text there."""
+    texts = [e for e in elements if e["kind"] == "text" and inside(e["box"], region)]
+    heading = next((e for e in texts if re.match(r"(6|7|8|9)00 ", e.get("font", ""))), None)
+    pick = heading or (texts[0] if texts else None)
+    return pick["name"] if pick else None
+
+
+def align_scroll_page(doc, port_im, ref_im):
+    """The port image with its scrolled region shifted onto the reference's anchor, and the shift
+    in logical px (port minus reference); (port_im, None) when the anchor is not found."""
+    region, name = doc.get("scroll_region"), doc.get("anchor")
+    el = next((e for e in doc["elements"] if e["name"] == name), None)
+    if not region or el is None or ref_im is None:
+        return port_im, None
+    ref = el["ref"]
+    bg = np.array(unhex(ref["bg"]), dtype=np.int16)
+    rl, rt = int(round(ref["left"] * SCALE)), int(round(ref["top"] * SCALE))
+    rw, rh = int(round(ref["width"] * SCALE)), int(round(ref["height"] * SCALE))
+    patch, _ = ink_level(ref_im, rl, rt, rl + rw, rt + rh, bg)
+    if patch.shape != (rh, rw) or patch.max() <= INK:
+        return port_im, None
+    offset = find_offset(patch, port_im, rl, rt, bg, reach_y=int(region[3] * SCALE / 2))
+    if offset is None:
+        return port_im, None
+    dy = offset[1]
+    if dy == 0:
+        return port_im, 0.0
+    x0, y0, x1, y1 = (int(round(v * SCALE)) for v in (region[0], region[1], region[0] + region[2], region[1] + region[3]))
+    aligned = port_im.copy()
+    src = port_im[y0:y1, x0:x1]
+    fill = mode_colour(src)
+    shifted = np.empty_like(src)
+    shifted[:] = fill
+    if dy > 0:
+        shifted[: src.shape[0] - dy] = src[dy:]
+    else:
+        shifted[-dy:] = src[: src.shape[0] + dy]
+    aligned[y0:y1, x0:x1] = shifted
+    return aligned, dy / SCALE
+
 # ---------------------------------------------------------------- record
 
 
@@ -483,6 +555,7 @@ def record(ref_dir, *only):
         data = json.loads(path.read_text())
         im = load(ref_dir / f"{view}.png")
         picked, dropped = select(view, data, words)
+        region = scroll_region(view, data)
         out = []
         for el in picked:
             ref = measure_text_ref(im, el) if el["kind"] == "text" else measure_box(im, el)
@@ -492,6 +565,11 @@ def record(ref_dir, *only):
                 continue
             out.append({**el, "ref": ref})
         doc = {"view": view, "viewport": data["viewport"], "scale": data["scale"], "dropped": dropped, "elements": out}
+        if region:
+            doc["scroll_region"] = region
+            anchor = scroll_anchor(out, region)
+            if anchor:
+                doc["anchor"] = anchor
         (EXPECTED / f"{view}.json").write_text(json.dumps(doc, separators=(",", ":"), ensure_ascii=False) + "\n")
         print(f"wrote expected/mac/{view}.json ({len(out)} elements, {dropped} dropped)")
 
@@ -596,6 +674,10 @@ def compare(port_dir, out_dir, ref_dir=None):
         im = load(port_png)
         ref_png = Path(ref_dir) / f"{view}.png" if ref_dir else None
         REF_IMAGE["im"] = load(ref_png) if ref_png and ref_png.exists() else None
+        note = ""
+        if doc.get("scroll_region"):
+            im, shift = align_scroll_page(doc, im, REF_IMAGE["im"])
+            note = f"aligned on {doc.get('anchor', '?')}, port page shift {shift:+g}px" if shift is not None else "anchor not found, judged unaligned"
         passed = failed = 0
         marks, rows_out = [], []
         for el in doc["elements"]:
@@ -620,7 +702,7 @@ def compare(port_dir, out_dir, ref_dir=None):
                 key = (cause, el["area"].split(":")[0] if el["area"].startswith("overlay") else el["area"], font_key(el.get("font")) if el["kind"] == "text" else "")
                 groups[key].append(f"- {view} / {el['name']}: {bad}")
         results[view] = rows_out
-        summary.append((view, passed, failed, 0, ""))
+        summary.append((view, passed, failed, 0, note))
         side_by_side(ref_png, port_png, marks, out_dir / "side" / f"{view}.png")
     for png in sorted(port_dir.glob("*.scroll-*.png")):
         if (EXPECTED / f"{png.stem}.json").exists():
@@ -636,7 +718,7 @@ def compare(port_dir, out_dir, ref_dir=None):
         "Text: glyph ink box (left, top, width, height), baseline and ink colour, found within 24px of the reference position.",
         "Boxes: edges at mid-side and the fill.",
         "",
-        f"**{total_pass} elements pass, {total_fail} fail, in {sum(1 for s in summary if not s[4])} scenes.**",
+        f"**{total_pass} elements pass, {total_fail} fail, in {sum(1 for s in summary if s[4] != "no port image")} scenes.**",
         "",
         "| scene | pass | fail | note |",
         "| --- | --- | --- | --- |",
