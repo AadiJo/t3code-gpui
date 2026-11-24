@@ -60,7 +60,12 @@ pub fn model_select_row(
 ) -> SettingsRow {
     let options = model_options(model.read(cx));
     if options.is_empty() && none_label.is_none() {
-        return SettingsRow::new(title).control(hint(t!("No providers available"), cx));
+        let empty = if id == "textGenerationModelSelection" { t!("No text generation providers available.") } else { t!("No providers available") };
+        let row = SettingsRow::new(title).control(hint(empty, cx));
+        return match description {
+            Some(d) => row.description(d),
+            None => row,
+        };
     }
     let offset = usize::from(none_label.is_some());
     let mut labels: Vec<SharedString> = none_label.into_iter().collect();
@@ -142,14 +147,7 @@ impl Render for ThreadsSettingsPanel {
                 save_patch(&env_model, "defaultThreadEnvMode", patch, cx);
             }));
 
-        // Snooze options: the presets, listed.
-        let presets = s.snooze_presets.as_ref().and_then(|p| serde_json::to_value(p).ok()).and_then(|v| v.get("presets").cloned()).and_then(|v| v.as_array().cloned()).unwrap_or_default();
-        let preset_labels: Vec<String> = presets.iter().filter_map(|p| p.get("label").and_then(|l| l.as_str()).map(str::to_owned).or_else(|| p.get("id").and_then(|i| i.as_str()).map(str::to_owned))).collect();
-        let snooze = SettingsSection::new(t!("Snooze")).child(
-            SettingsRow::new(t!("Snooze options"))
-                .description(t!("Choices in every snooze menu, listed soonest first. Weekdays mean the next one after today."))
-                .status(SharedString::from(if preset_labels.is_empty() { "Default".to_owned() } else { preset_labels.join(" · ") })),
-        );
+        let snooze = SettingsSection::new(t!("Snooze")).child(super::threads_settings_snooze::snooze_presets_row(&self.model, &mut self.fields, ro, window, cx));
 
         let usage = SettingsSection::new(t!("Usage limits"))
             .child(bool_setting(model, "autoResumeLimitedThreads", t!("Resume after usage limits"), Some(t!("Automatically resume threads when their usage limits reset. You can cancel auto-resume in each thread.")), s.auto_resume_limited_threads.unwrap_or(false), lock(&["autoResumeLimitedThreads"]), |v| ClientServerSettingsPatch { auto_resume_limited_threads: Some(v), ..Default::default() }))
