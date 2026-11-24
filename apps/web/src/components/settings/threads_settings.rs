@@ -3,13 +3,14 @@
 //! `SnoozePresetsSettings.tsx` (shown, edited elsewhere) and
 //! `ThreadTitleInstructionsSettings.tsx`, at environment scope.
 
-use gpui_kit::{App, Context, Entity, IntoElement, Render, SharedString, Subscription, Window, div, prelude::*};
+use gpui_kit::{App, Context, Entity, IntoElement, Render, SharedString, Subscription, Window, div, prelude::*, px};
 use t3code_contracts::{
     ClientServerSettingsPatch, ClientServerSettingsPatchTextGenerationModelSelection, ModelSelection, ResponseStreamingMode,
     RuntimeMode, SidebarAutoSettleAfterDays, ThreadEnvMode,
 };
 
 use super::server_settings_controls::{
+    advanced_fold,
     Fields, bool_setting, field_input, hint, interval_seconds_field, lock_reason, reset_button, save_patch, select_row,
 };
 use super::server_settings_data::ServerPanelsModel;
@@ -78,13 +79,14 @@ pub fn model_select_row(
 pub struct ThreadsSettingsPanel {
     model: Entity<ServerPanelsModel>,
     fields: Fields,
+    advanced_open: bool,
     _observe: Subscription,
 }
 
 impl ThreadsSettingsPanel {
     pub fn new(model: Entity<ServerPanelsModel>, cx: &mut Context<Self>) -> Self {
         let observe = cx.observe(&model, |_, _, cx| cx.notify());
-        Self { model, fields: Fields::default(), _observe: observe }
+        Self { model, fields: Fields::default(), advanced_open: false, _observe: observe }
     }
 }
 
@@ -108,32 +110,16 @@ impl Render for ThreadsSettingsPanel {
         let model = &self.model;
 
         // New projects.
-        let base = self.fields.get("addProjectBaseDirectory", s.add_project_base_directory.clone().unwrap_or_default(), "~/", false, window, cx);
-        let base_read = base.clone();
         let save_base = model.clone();
+        let base = self.fields.draft("addProjectBaseDirectory", s.add_project_base_directory.clone().unwrap_or_default(), "~/", false, window, cx, move |text, _, cx| {
+            let patch = ClientServerSettingsPatch { add_project_base_directory: Some(text.trim().to_owned()), ..Default::default() };
+            save_patch(&save_base, "addProjectBaseDirectory", patch, cx);
+        });
         let new_projects = SettingsSection::new(t!("New projects"))
             .child(
                 SettingsRow::new(t!("Add project starts in"))
                     .description(t!("Leave empty to use \"~/\" when the Add Project browser opens."))
-                    .control(
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap(theme.sp(2.))
-                            .child(div().w(theme.sp(56.)).child(field_input(&base, true, false, ro)))
-                            .child(
-                                Button::new("threads-base-save")
-                                    .variant(ButtonVariant::Outline)
-                                    .size(ButtonSize::Xs)
-                                    .label(t!("Save"))
-                                    .disabled(ro)
-                                    .on_click(move |_, _, cx| {
-                                        let value = base_read.read(cx).value().trim().to_owned();
-                                        let patch = ClientServerSettingsPatch { add_project_base_directory: Some(value), ..Default::default() };
-                                        save_patch(&save_base, "addProjectBaseDirectory", patch, cx);
-                                    }),
-                            ),
-                    ),
+                    .control(div().w(px(288.)).child(field_input(&base, false, false, ro))),
             )
             .child(bool_setting(model, "ghqCloneLayout", t!("Clone into host folders"), Some(t!("Clones go to github.com/owner/repo under the folder above, like ghq.")), s.ghq_clone_layout.unwrap_or(false), lock(&["ghqCloneLayout"]), |v| ClientServerSettingsPatch { ghq_clone_layout: Some(v), ..Default::default() }));
 
@@ -144,16 +130,16 @@ impl Render for ThreadsSettingsPanel {
         let runtime_modes = RuntimeMode::ALL;
         let runtime_ix = runtime_modes.iter().position(|m| Some(*m) == s.default_runtime_mode).unwrap_or(3);
         let runtime_model = model.clone();
-        let defaults = SettingsSection::new(t!("Project defaults and overrides"))
-            .child(model_select_row(model, "defaultModelSelection", t!("Default model"), Some(t!("Default model for new threads. Projects can override it.")), s.default_model_selection.as_ref(), None, lock(&["defaultModelSelection"]), |v| ClientServerSettingsPatch { default_model_selection: Some(v), ..Default::default() }, cx))
-            .child(select_row("defaultThreadEnvMode", t!("Workspace"), Some(t!("Where new threads start. Projects and their t3.json can override it.")), env_modes.iter().map(|(_, l)| l.clone()).collect(), env_ix, lock(&["defaultThreadEnvMode"]), move |ix, _, cx| {
-                let patch = ClientServerSettingsPatch { default_thread_env_mode: Some(Some([ThreadEnvMode::Local, ThreadEnvMode::Worktree][ix])), ..Default::default() };
-                save_patch(&env_model, "defaultThreadEnvMode", patch, cx);
-            }))
+        let defaults = SettingsSection::new(t!("New threads"))
+            .child(model_select_row(model, "defaultModelSelection", t!("Model"), Some(t!("Default model for new threads. Projects can override it.")), s.default_model_selection.as_ref(), None, lock(&["defaultModelSelection"]), |v| ClientServerSettingsPatch { default_model_selection: Some(v), ..Default::default() }, cx))
             .child(model_select_row(model, "fallbackModelSelection", t!("Fallback model"), Some(t!("Used for new threads when the default model's provider is out of usage.")), s.fallback_model_selection.as_ref(), Some(t!("None", context = "no fallback model")), lock(&["fallbackModelSelection"]), |v| ClientServerSettingsPatch { fallback_model_selection: Some(v), ..Default::default() }, cx))
             .child(select_row("defaultRuntimeMode", t!("Permissions"), Some(t!("Default permissions for new threads. Projects can override them.")), runtime_modes.iter().map(|m| runtime_mode_label(*m)).collect(), runtime_ix, lock(&["defaultRuntimeMode"]), move |ix, _, cx| {
                 let patch = ClientServerSettingsPatch { default_runtime_mode: Some(RuntimeMode::ALL[ix]), ..Default::default() };
                 save_patch(&runtime_model, "defaultRuntimeMode", patch, cx);
+            }))
+            .child(select_row("defaultThreadEnvMode", t!("Workspace"), Some(t!("Where new threads start. Projects and their t3.json can override it.")), env_modes.iter().map(|(_, l)| l.clone()).collect(), env_ix, lock(&["defaultThreadEnvMode"]), move |ix, _, cx| {
+                let patch = ClientServerSettingsPatch { default_thread_env_mode: Some(Some([ThreadEnvMode::Local, ThreadEnvMode::Worktree][ix])), ..Default::default() };
+                save_patch(&env_model, "defaultThreadEnvMode", patch, cx);
             }));
 
         // Snooze options: the presets, listed.
@@ -185,41 +171,54 @@ impl Render for ThreadsSettingsPanel {
                 save_patch(&inactive_model, "sidebarAutoSettleAfterDays", patch, cx);
             }));
         if let Some(days) = days {
-            auto_settle = auto_settle
-                .child(SettingsRow::new(t!("Days of inactivity before auto-settle")).description(t!("Any new activity un-settles a thread automatically.")).control(interval_seconds_field("auto-settle-days", days as u64, 1, 1, ro, move |d, _, cx| {
-                    let patch = ClientServerSettingsPatch { sidebar_auto_settle_after_days: Some(Some(SidebarAutoSettleAfterDays::Number(d as f64))), ..Default::default() };
+            let days_field = self.fields.draft("autoSettleDays", format!("{}", days as u64), "", false, window, cx, move |text, _, cx| {
+                if let Ok(d) = text.trim().parse::<u64>() {
+                    let patch = ClientServerSettingsPatch { sidebar_auto_settle_after_days: Some(Some(SidebarAutoSettleAfterDays::Number(d.clamp(1, 3650) as f64))), ..Default::default() };
                     save_patch(&days_model, "sidebarAutoSettleAfterDays", patch, cx);
-                }, cx)))
+                }
+            });
+            auto_settle = auto_settle
+                .child(SettingsRow::new(t!("Days of inactivity before auto-settle")).description(t!("Any new activity un-settles a thread automatically.")).control(div().w(px(96.)).child(field_input(&days_field, false, false, ro))))
                 .child(bool_setting(model, "sidebarAutoSettleKeepPullRequests", t!("Keep threads with a PR"), Some(t!("Inactivity does not settle threads with a pull request. Merge and close still do.")), s.sidebar_auto_settle_keep_pull_requests.unwrap_or(false), lock(&["sidebarAutoSettleKeepPullRequests"]), |v| ClientServerSettingsPatch { sidebar_auto_settle_keep_pull_requests: Some(v), ..Default::default() }));
         }
 
         // Text generation.
-        let instructions = self.fields.get("threadTitleInstructions", s.thread_title_instructions.clone().unwrap_or_default(), t!("Keep titles to a few words. Lead with the main subject."), false, window, cx);
-        let instructions_read = instructions.clone();
         let instructions_model = model.clone();
+        let instructions = self.fields.draft("threadTitleInstructions", s.thread_title_instructions.clone().unwrap_or_default(), t!("Keep titles to a few words. Lead with the main subject."), false, window, cx, move |text, _, cx| {
+            save_patch(&instructions_model, "threadTitleInstructions", ClientServerSettingsPatch { thread_title_instructions: Some(text.trim().to_owned()), ..Default::default() }, cx);
+        });
         let streaming = [ResponseStreamingMode::Turn, ResponseStreamingMode::Paragraph];
         let streaming_ix = streaming.iter().position(|m| Some(*m) == s.response_streaming_mode).unwrap_or(0);
         let streaming_model = model.clone();
+        let this = cx.entity().downgrade();
+        let advanced = advanced_fold(
+            "text-generation-advanced",
+            self.advanced_open,
+            move |_, cx| {
+                this.update(cx, |this, cx| {
+                    this.advanced_open = !this.advanced_open;
+                    cx.notify();
+                })
+                .ok();
+            },
+            vec![
+                SettingsRow::new(t!("Thread title instructions"))
+                    .description(t!("Appended to the prompt for new and regenerated thread titles."))
+                    .control(div().w(theme.sp(64.)).child(field_input(&instructions, false, false, ro)))
+                    .into_any_element(),
+                select_row("responseStreamingMode", t!("Response streaming"), Some(if streaming_ix == 0 { t!("Text appears once the agent finishes its turn.") } else { t!("Each paragraph or code block appears as soon as it is complete.") }), vec![t!("Wait for the full response"), t!("Show finished paragraphs")], streaming_ix, lock(&["responseStreamingMode"]), move |ix, _, cx| {
+                    save_patch(&streaming_model, "responseStreamingMode", ClientServerSettingsPatch { response_streaming_mode: Some(streaming[ix]), ..Default::default() }, cx);
+                })
+                .into_any_element(),
+            ],
+            cx,
+        );
         let text_generation = SettingsSection::new(t!("Text generation"))
             .child(model_select_row(model, "textGenerationModelSelection", t!("Text generation model"), Some(t!("For thread titles and other generated text. Source control has its own setting. Text generators from Providers also appear here.")), s.text_generation_model_selection.as_ref(), None, lock(&["textGenerationModelSelection"]), |v| ClientServerSettingsPatch {
                 text_generation_model_selection: v.and_then(|v| serde_json::from_value::<ClientServerSettingsPatchTextGenerationModelSelection>(serde_json::to_value(v).ok()?).ok()),
                 ..Default::default()
             }, cx))
-            .child(
-                SettingsRow::new(t!("Thread title instructions"))
-                    .description(t!("Appended to the prompt for new and regenerated thread titles."))
-                    .control(div().flex().items_center().gap(theme.sp(2.)).child(div().w(theme.sp(64.)).child(field_input(&instructions, false, false, ro))).child(
-                        Button::new("thread-title-save").variant(ButtonVariant::Outline).size(ButtonSize::Xs).label(t!("Save")).disabled(ro).on_click(move |_, _, cx| {
-                            let value = instructions_read.read(cx).value().trim().to_owned();
-                            save_patch(&instructions_model, "threadTitleInstructions", ClientServerSettingsPatch { thread_title_instructions: Some(value), ..Default::default() }, cx);
-                        }),
-                    )),
-            )
-            .child(select_row("responseStreamingMode", t!("Response streaming"), Some(if streaming_ix == 0 { t!("Text appears once the agent finishes its turn.") } else { t!("Each paragraph or code block appears as soon as it is complete.") }), vec![t!("Wait for the full response"), t!("Show finished paragraphs")], streaming_ix, lock(&["responseStreamingMode"]), move |ix, _, cx| {
-                save_patch(&streaming_model, "responseStreamingMode", ClientServerSettingsPatch { response_streaming_mode: Some(streaming[ix]), ..Default::default() }, cx);
-            }));
-        let reset_streaming = s.response_streaming_mode.is_some_and(|m| m != ResponseStreamingMode::Turn);
-        let _ = reset_streaming.then(|| reset_button("responseStreamingReset", t!("Reset response streaming to default"), |_, _| {}));
+            .child(advanced);
 
         page_container(cx).child(new_projects).child(defaults).child(snooze).child(usage).child(auto_settle).child(text_generation)
     }
