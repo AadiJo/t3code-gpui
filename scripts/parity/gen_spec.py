@@ -46,7 +46,7 @@ def sidebar(active=True):
         ink("settled label", 14, 700, 80, 724, **T),
         ink("settled count", 200, 700, 245, 724),
         ink("footer icons", 8, 735, 200, 772),
-        ink("update button", 210, 740, 245, 772),
+        ink("update button", 210, 740, 245, 772, exclude="reference build has no desktop updater bridge, so the web draws it disabled at 60%; the owner's app draws it enabled"),
     ]
     return e
 

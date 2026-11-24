@@ -291,7 +291,8 @@
       740,
       245,
       772
-     ]
+     ],
+     "exclude": "reference build has no desktop updater bridge, so the web draws it disabled at 60%; the owner's app draws it enabled"
     },
     {
      "name": "composer left edge",
@@ -762,7 +763,8 @@
       740,
       245,
       772
-     ]
+     ],
+     "exclude": "reference build has no desktop updater bridge, so the web draws it disabled at 60%; the owner's app draws it enabled"
     },
     {
      "name": "composer left edge",
@@ -1132,7 +1134,8 @@
       740,
       245,
       772
-     ]
+     ],
+     "exclude": "reference build has no desktop updater bridge, so the web draws it disabled at 60%; the owner's app draws it enabled"
     },
     {
      "name": "hovered row fill",
