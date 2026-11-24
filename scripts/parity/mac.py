@@ -96,45 +96,55 @@ def measure_ink(im, x0, y0, x1, y1, bg=None):
     diff = np.abs(region - bg).max(axis=2)
     iy, ix = np.unravel_index(diff.argmax(), diff.shape)
     return {
-        "left": (ox + left) / SCALE,
-        "top": (oy + top) / SCALE,
-        "width": (right - left) / SCALE,
-        "height": (bottom - top) / SCALE,
-        "baseline": (oy + baseline) / SCALE,
+        "left": float(ox + left) / SCALE,
+        "top": float(oy + top) / SCALE,
+        "width": float(right - left) / SCALE,
+        "height": float(bottom - top) / SCALE,
+        "baseline": float(oy + baseline) / SCALE,
         "color": hexc(region[iy, ix]),
         "bg": hexc(bg),
     }
 
 
-def find_offset(ref_mask, port_im, x0, y0, bg):
-    """The (dx, dy) in device px where the port's ink best matches the reference's ink mask
-    placed at (x0, y0); None when nothing near looks like it."""
-    h, w = ref_mask.shape
-    mask, _, (ox, oy) = ink_mask(port_im, x0 - SEARCH, y0 - SEARCH, x0 + w + SEARCH, y0 + h + SEARCH, bg)
-    if mask is None or mask.shape[0] < h or mask.shape[1] < w:
-        return None
-    # Coarse search at half resolution, then refine around the best coarse offset.
-    def score(dx, dy):
-        sx, sy = x0 + dx - ox, y0 + dy - oy
-        if sx < 0 or sy < 0 or sx + w > mask.shape[1] or sy + h > mask.shape[0]:
-            return None
-        return int(np.count_nonzero(mask[sy : sy + h, sx : sx + w] != ref_mask))
+def ink_level(im, x0, y0, x1, y1, bg):
+    """How far each pixel of a device-px region is from the background (0..255), as floats."""
+    x0, y0, x1, y1 = clip(im, x0, y0, x1, y1)
+    return np.abs(im[y0:y1, x0:x1] - bg).max(axis=2).astype(np.float32), (x0, y0)
 
-    best = None
-    for dy in range(-SEARCH, SEARCH + 1, 3):
-        for dx in range(-SEARCH, SEARCH + 1, 3):
-            s = score(dx, dy)
-            if s is not None and (best is None or (s, abs(dx) + abs(dy)) < (best[0], abs(best[1]) + abs(best[2]))):
-                best = (s, dx, dy)
-    if best is None:
+
+def ncc(a, b):
+    a = a - a.mean(axis=-1, keepdims=True)
+    b = b - b.mean(axis=-1, keepdims=True)
+    den = np.sqrt((a * a).sum(axis=-1) * (b * b).sum(axis=-1)) + 1e-6
+    return (a * b).sum(axis=-1) / den
+
+
+def find_offset(ref_patch, port_im, x0, y0, bg):
+    """The (dx, dy) in device px where the port's ink best matches the reference text's ink
+    (`ref_patch`, ink levels at (x0, y0)), within SEARCH; None when nothing near looks like it.
+    Column profiles find candidates (tolerant of a slightly wider or narrower text); a 2D
+    correlation of the ink picks among them."""
+    h, w = ref_patch.shape
+    area, (ox, oy) = ink_level(port_im, x0 - SEARCH, y0 - SEARCH, x0 + w + SEARCH, y0 + h + SEARCH, bg)
+    if area.shape[0] < h or area.shape[1] < w:
         return None
-    _, bx, by = best
-    for dy in range(by - 3, by + 4):
-        for dx in range(bx - 3, bx + 4):
-            s = score(dx, dy)
-            if s is not None and (s, abs(dx) + abs(dy)) < (best[0], abs(best[1]) + abs(best[2])):
-                best = (s, dx, dy)
-    if best[0] > 0.7 * ref_mask.sum() + 4:
+    ref_cols = ref_patch.sum(axis=0)
+    cum = np.vstack([np.zeros((1, area.shape[1]), np.float32), np.cumsum(area, axis=0)])
+    candidates = []
+    for sy in range(0, area.shape[0] - h + 1):
+        cols = cum[sy + h] - cum[sy]
+        windows = np.lib.stride_tricks.sliding_window_view(cols, w)
+        scores = ncc(windows, ref_cols[None, :])
+        sx = int(scores.argmax())
+        candidates.append((float(scores[sx]), sx, sy))
+    candidates.sort(reverse=True)
+    best = None
+    for _, sx, sy in candidates[:12]:
+        score = round(float(ncc(area[sy : sy + h, sx : sx + w].ravel()[None, :], ref_patch.ravel()[None, :])[0]), 3)
+        dx, dy = sx + ox - x0, sy + oy - y0
+        if best is None or (score, -abs(dx) - abs(dy)) > (best[0], -abs(best[1]) - abs(best[2])):
+            best = (score, dx, dy)
+    if best is None or best[0] < 0.45:
         return None
     return best[1], best[2]
 
@@ -154,7 +164,7 @@ def edge_scan(im, x0, y0, x1, y1, like=None):
     steps = np.abs(np.diff(line, axis=0)).max(axis=1)
 
     def edge(i):
-        return {"at": (start + i + 1) / SCALE, "before": hexc(line[max(0, i - 1)]), "after": hexc(line[min(len(line) - 1, i + 2)])}
+        return {"at": float(start + i + 1) / SCALE, "before": hexc(line[max(0, i - 1)]), "after": hexc(line[min(len(line) - 1, i + 2)])}
 
     if like is None:
         i = int(steps.argmax())
@@ -314,8 +324,31 @@ def text_region(box):
     return x - 2, y - 1, x + w + 2, y + h + 1
 
 
+def measure_text_at(im, x0, y0, x1, y1, bg=None):
+    """`measure_ink` over a text's region; ink that reaches the region's edge is followed
+    outward while the gaps between glyphs stay under 4 device px (a text wider than its box)."""
+    found = measure_ink(im, x0, y0, x1, y1, bg)
+    if found.get("empty"):
+        return found
+    bg = np.array(unhex(found["bg"]), dtype=np.int16)
+    pad = max(8, int(0.12 * (x1 - x0)))
+    mask, _, (mx, _) = ink_mask(im, x0 - pad, y0, x1 + pad, y1, bg)
+    columns = mask.any(axis=0)
+    left = int(round(found["left"] * SCALE)) - mx
+    right = int(round((found["left"] + found["width"]) * SCALE)) - mx
+    if left <= int(x0) - mx + 1:
+        while left > 0 and columns[max(0, left - 4) : left].any():
+            left -= 1
+    if right >= int(x1) - mx - 1:
+        while right < len(columns) and columns[right : right + 4].any():
+            right += 1
+    found["left"] = float(mx + left) / SCALE
+    found["width"] = float(right - left) / SCALE
+    return found
+
+
 def measure_text_ref(im, el):
-    return measure_ink(im, *text_region(el["box"]))
+    return measure_text_at(im, *text_region(el["box"]))
 
 
 def measure_text_port(im, el, ref):
@@ -327,23 +360,17 @@ def measure_text_port(im, el, ref):
     rl, rt = int(round(ref["left"] * SCALE)), int(round(ref["top"] * SCALE))
     rw, rh = int(round(ref["width"] * SCALE)), int(round(ref["height"] * SCALE))
     ref_im = REF_IMAGE.get("im")
-    ref_mask = None
-    if ref_im is not None:
-        ref_mask, _, _ = ink_mask(ref_im, rl, rt, rl + rw, rt + rh, bg)
-    offset = find_offset(ref_mask, im, rl, rt, bg) if ref_mask is not None and ref_mask.any() else None
+    offset = None
+    if ref_im is not None and rw >= 2 and rh >= 2:
+        patch, _ = ink_level(ref_im, rl, rt, rl + rw, rt + rh, bg)
+        if patch.shape == (rh, rw) and patch.max() > INK:
+            offset = find_offset(patch, im, rl, rt, bg)
     if offset is None:
         found = measure_ink(im, x0, y0, x1, y1, bg)
         found["matched"] = False
         return found
     dx, dy = offset
-    found = measure_ink(im, x0 + dx, y0 + dy, x1 + dx, y1 + dy, bg)
-    # Ink that reaches the region's edge runs past it (a wider text): measure the extent with
-    # room, keeping the colour from the reference-sized region.
-    if not found.get("empty") and (found["left"] * SCALE <= x0 + dx + 1 or (found["left"] + found["width"]) * SCALE >= x1 + dx - 1):
-        pad = max(8, int(0.12 * (x1 - x0)))
-        wide = measure_ink(im, x0 + dx - 6, y0 + dy, x1 + dx + pad, y1 + dy, bg)
-        if not wide.get("empty"):
-            found = {**wide, "color": found["color"]}
+    found = measure_text_at(im, x0 + dx, y0 + dy, x1 + dx, y1 + dy, bg)
     found["matched"] = True
     return found
 
@@ -421,11 +448,15 @@ def judge_text(ref, port):
         return [("ink", "present", "none", "", False)], cause
     for prop in ("left", "top", "width", "height", "baseline"):
         d = round(port[prop] - ref[prop], 2)
-        rows.append((prop, ref[prop], port[prop], d, abs(d) <= PX))
+        rows.append((prop, ref[prop], port[prop], d, bool(abs(d) <= PX)))
     d = channels(ref["color"], port["color"])
-    rows.append(("ink colour", ref["color"], port["color"], d, d <= CHANNEL))
+    rows.append(("ink colour", ref["color"], port["color"], d, bool(d <= CHANNEL)))
     bad = {r[0] for r in rows if r[4] is False}
-    if not port.get("matched"):
+    if not bad:
+        cause = None
+    elif not port.get("matched"):
+        # Nothing within 24px looks like the reference text: the port draws other text or
+        # moved it further; what sits at the reference's place is reported.
         cause = "not found near its place"
     elif "width" in bad:
         cause = "text width"
@@ -449,10 +480,10 @@ def judge_box(ref, port):
             rows.append((f"{side} edge", ref[side]["at"], "none", "", False))
             continue
         d = round(port[side]["at"] - ref[side]["at"], 2)
-        rows.append((f"{side} edge", ref[side]["at"], port[side]["at"], d, abs(d) <= PX))
+        rows.append((f"{side} edge", ref[side]["at"], port[side]["at"], d, bool(abs(d) <= PX)))
     if "fill" in ref and "fill" in port:
         d = channels(ref["fill"], port["fill"])
-        rows.append(("fill", ref["fill"], port["fill"], d, d <= CHANNEL))
+        rows.append(("fill", ref["fill"], port["fill"], d, bool(d <= CHANNEL)))
     bad = [r[0] for r in rows if r[4] is False]
     cause = None
     if any("edge" in b for b in bad):
