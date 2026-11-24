@@ -1,0 +1,225 @@
+{
+ "default": {
+  "modal fill (content)": {
+   "color": "#191919"
+  },
+  "nav search kbd": {
+   "top": 59.5,
+   "left": 252.0,
+   "bottom": 70.5,
+   "right": 256.5,
+   "color": "#8f8f8f",
+   "bg": "#141415"
+  },
+  "breadcrumb": {
+   "top": 59.0,
+   "left": 301.5,
+   "bottom": 73.0,
+   "right": 416.5,
+   "color": "#f5f5f5",
+   "bg": "#141415"
+  },
+  "close button": {
+   "top": 60.5,
+   "left": 1032.5,
+   "bottom": 69.5,
+   "right": 1041.5,
+   "color": "#8f8f8f",
+   "bg": "#141415"
+  },
+  "group left edge": {
+   "start": "#141415",
+   "edges": [
+    {
+     "at": 315.0,
+     "color": "#1d1d1e"
+    },
+    {
+     "at": 316.5,
+     "color": "#191919"
+    }
+   ]
+  },
+  "group right edge": {
+   "start": "#191919",
+   "edges": [
+    {
+     "at": 1024.0,
+     "color": "#181819"
+    },
+    {
+     "at": 1025.0,
+     "color": "#141415"
+    }
+   ]
+  },
+  "h2 Composer": {
+   "top": 121.0,
+   "left": 327.5,
+   "bottom": 136.5,
+   "right": 407.5,
+   "color": "#f5f5f5",
+   "bg": "#141415"
+  },
+  "send shortcut title": {
+   "top": 235.5,
+   "left": 328.5,
+   "bottom": 246.5,
+   "right": 420.5,
+   "color": "#f5f5f5",
+   "bg": "#191919"
+  },
+  "send shortcut select left edge": {
+   "start": "#191919",
+   "edges": [
+    {
+     "at": 852.0,
+     "color": "#202021"
+    },
+    {
+     "at": 853.0,
+     "color": "#202021"
+    }
+   ]
+  },
+  "send shortcut select right edge": {
+   "start": "#202021",
+   "edges": [
+    {
+     "at": 1011.0,
+     "color": "#191919"
+    },
+    {
+     "at": 1012.0,
+     "color": "#191919"
+    }
+   ]
+  },
+  "send shortcut select top/bottom": {
+   "start": "#191919",
+   "edges": [
+    {
+     "at": 239.5,
+     "color": "#202021"
+    },
+    {
+     "at": 263.0,
+     "color": "#171718"
+    }
+   ],
+   "vertical": true
+  },
+  "advanced": {
+   "top": 301.0,
+   "left": 332.5,
+   "bottom": 310.5,
+   "right": 405.5,
+   "color": "#8f8f8f",
+   "bg": "#191919"
+  },
+  "h2 Follow-ups": {
+   "top": 367.0,
+   "left": 328.0,
+   "bottom": 382.5,
+   "right": 411.5,
+   "color": "#f5f5f5",
+   "bg": "#141415"
+  },
+  "follow-up select left edge": {
+   "start": "#191919",
+   "edges": [
+    {
+     "at": 852.0,
+     "color": "#202021"
+    },
+    {
+     "at": 853.0,
+     "color": "#202021"
+    }
+   ]
+  },
+  "follow-up select right edge": {
+   "start": "#202021",
+   "edges": [
+    {
+     "at": 1011.0,
+     "color": "#191919"
+    },
+    {
+     "at": 1012.0,
+     "color": "#191919"
+    }
+   ]
+  },
+  "follow-up select top/bottom": {
+   "start": "#191919",
+   "edges": [
+    {
+     "at": 427.5,
+     "color": "#202021"
+    },
+    {
+     "at": 451.0,
+     "color": "#171718"
+    }
+   ],
+   "vertical": true
+  },
+  "h2 Activity": {
+   "top": 522.5,
+   "left": 327.5,
+   "bottom": 538.5,
+   "right": 386.0,
+   "color": "#f5f5f5",
+   "bg": "#141415"
+  },
+  "tool calls select left edge": {
+   "start": "#191919",
+   "edges": [
+    {
+     "at": 852.0,
+     "color": "#202021"
+    },
+    {
+     "at": 853.0,
+     "color": "#202021"
+    }
+   ]
+  },
+  "tool calls select right edge": {
+   "start": "#202021",
+   "edges": [
+    {
+     "at": 1011.0,
+     "color": "#191919"
+    },
+    {
+     "at": 1012.0,
+     "color": "#191919"
+    }
+   ]
+  },
+  "tool calls select top/bottom": {
+   "start": "#191919",
+   "edges": [
+    {
+     "at": 583.5,
+     "color": "#202021"
+    },
+    {
+     "at": 607.0,
+     "color": "#171718"
+    }
+   ],
+   "vertical": true
+  },
+  "h2 Screen reader": {
+   "top": 679.0,
+   "left": 327.5,
+   "bottom": 691.5,
+   "right": 433.5,
+   "color": "#f5f5f5",
+   "bg": "#141415"
+  }
+ }
+}

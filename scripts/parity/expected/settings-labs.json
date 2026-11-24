@@ -1,0 +1,87 @@
+{
+ "default": {
+  "modal fill (content)": {
+   "color": "#141415"
+  },
+  "nav search kbd": {
+   "top": 59.5,
+   "left": 252.0,
+   "bottom": 70.5,
+   "right": 256.5,
+   "color": "#8f8f8f",
+   "bg": "#141415"
+  },
+  "breadcrumb": {
+   "top": 59.0,
+   "left": 301.5,
+   "bottom": 73.0,
+   "right": 418.0,
+   "color": "#f5f5f5",
+   "bg": "#141415"
+  },
+  "close button": {
+   "top": 60.5,
+   "left": 1032.5,
+   "bottom": 69.5,
+   "right": 1041.5,
+   "color": "#8f8f8f",
+   "bg": "#141415"
+  },
+  "scope sentence": {
+   "top": 113.0,
+   "left": 327.5,
+   "bottom": 141.0,
+   "right": 786.0,
+   "color": "#f5f5f5",
+   "bg": "#141415"
+  },
+  "h2 Beta": {
+   "top": 181.0,
+   "left": 328.0,
+   "bottom": 193.5,
+   "right": 361.5,
+   "color": "#f5f5f5",
+   "bg": "#141415"
+  },
+  "boring sidebar title": {
+   "top": 228.0,
+   "left": 329.0,
+   "bottom": 242.0,
+   "right": 550.0,
+   "color": "#f5f5f5",
+   "bg": "#191919"
+  },
+  "guest links title": {
+   "top": 313.0,
+   "left": 328.5,
+   "bottom": 324.5,
+   "right": 402.0,
+   "color": "#f5f5f5",
+   "bg": "#191919"
+  },
+  "sharing & access link": {
+   "top": 355.0,
+   "left": 552.0,
+   "bottom": 367.0,
+   "right": 656.5,
+   "color": "#8f8f8f",
+   "bg": "#191919"
+  },
+  "linked environments title": {
+   "top": 398.0,
+   "left": 329.0,
+   "bottom": 409.5,
+   "right": 466.0,
+   "color": "#f5f5f5",
+   "bg": "#191919"
+  },
+  "simlock title": {
+   "top": 568.0,
+   "left": 328.5,
+   "bottom": 582.0,
+   "right": 521.0,
+   "color": "#f5f5f5",
+   "bg": "#191919"
+  }
+ }
+}

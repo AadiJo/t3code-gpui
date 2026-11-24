@@ -1,14 +1,18 @@
 """Visual parity between the GPUI port and the fork's web app.
 
-  record  <ref-dir> [scene-filter ...]    measure the reference PNGs once and write
-                                          expected.json (committed; the PNGs are not);
-                                          filters re-record only the scenes whose name
-                                          contains one, skipping those without a PNG here
+  record  <ref-dir> [scene-filter ...]    measure the reference PNGs once and write each
+                                          scene's values to expected/<scene>.json under the
+                                          mode (committed; the PNGs are not); filters
+                                          re-record only the scenes whose name contains
+                                          one, skipping those without a PNG here
   compare <port-dir> <out-dir> [ref-dir]  measure the port PNGs, write report.md and
                                           results.json, and side-by-side images when
                                           the reference PNGs are available
 
-spec.json lists, per scene, the elements to measure (see measure.py) with a name,
+`PARITY_MODE=owner` records and judges the capture at the owner's settings (contrast 95,
+glass 40) instead of the shared one (`default`).
+
+The spec (gen_spec.py, one module per area under specs/) lists, per scene, the elements to measure (see measure.py) with a name,
 optionally `blur: true` on a scan across backdrop-blurred glass (edge
 positions judged, colours shown only), `anchor: "<element>"` (measure relative to where that element landed, also
 horizontally with `anchor_x: true`,
@@ -25,12 +29,13 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw
 
+import gen_spec
 import measure as m
 
 HERE = Path(__file__).resolve().parent
-SPEC = json.loads((HERE / "spec.json").read_text())
-# `PARITY_EXPECTED=expected-owner.json` judges against the owner-settings capture.
-EXPECTED = HERE / os.environ.get("PARITY_EXPECTED", "expected.json")
+SPEC = gen_spec.build()
+EXPECTED_DIR = HERE / "expected"
+MODE = os.environ.get("PARITY_MODE", "default")
 PX = SPEC["tolerance"]["px"]
 # GPUI places a line's baseline with the font's exact ascent and descent
 # (gpui text_system/line.rs: padding_top = (line_height - ascent - descent) / 2);
@@ -46,12 +51,22 @@ def channels(a, b):
     return max(abs(int(a[i : i + 2], 16) - int(b[i : i + 2], 16)) for i in (0, 2, 4))
 
 
+def load_expected():
+    """Every scene's recorded values in MODE."""
+    expected = {}
+    for path in sorted(EXPECTED_DIR.glob("*.json")):
+        modes = json.loads(path.read_text())
+        if MODE in modes:
+            expected[path.stem] = modes[MODE]
+    return expected
+
+
 def record(ref_dir, *only):
-    """Measures the reference PNGs; with filters, re-records just the scenes whose name
-    contains one and keeps every other scene's values (references live in several
-    directories, captured at different times)."""
+    """Measures the reference PNGs into each scene's file under MODE, keeping its other mode;
+    with filters, re-records just the scenes whose name contains one (references live in
+    several directories, captured at different times)."""
     ref_dir = Path(ref_dir)
-    expected = json.loads(EXPECTED.read_text()) if only and EXPECTED.exists() else {}
+    EXPECTED_DIR.mkdir(exist_ok=True)
     for scene, body in SPEC["scenes"].items():
         if only and not any(f in scene for f in only):
             continue
@@ -60,9 +75,11 @@ def record(ref_dir, *only):
             print(f"skipped {scene}: no {png.name} in {ref_dir}")
             continue
         im = m.load(png)
-        expected[scene] = {e["name"]: m.measure(im, e) for e in body["elements"]}
-    EXPECTED.write_text(json.dumps(expected, indent=1) + "\n")
-    print(f"wrote {EXPECTED.name}")
+        path = EXPECTED_DIR / f"{scene}.json"
+        modes = json.loads(path.read_text()) if path.exists() else {}
+        modes[MODE] = {e["name"]: m.measure(im, e) for e in body["elements"]}
+        path.write_text(json.dumps(dict(sorted(modes.items())), indent=1) + "\n")
+        print(f"wrote {path.relative_to(HERE)} ({MODE})")
 
 
 def judge(element, ref, port):
@@ -153,7 +170,7 @@ def side_by_side(ref_png, port_png, marks, out):
 def compare(port_dir, out_dir, ref_dir=None):
     port_dir, out_dir = Path(port_dir), Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    expected = json.loads(EXPECTED.read_text())
+    expected = load_expected()
     body_lines = []
     summary = []
     results = {}
@@ -164,7 +181,7 @@ def compare(port_dir, out_dir, ref_dir=None):
             summary.append((scene, 0, 0, 0, "(no port image)"))
             continue
         if scene not in expected:
-            summary.append((scene, 0, 0, 0, f"(not recorded in {EXPECTED.name})"))
+            summary.append((scene, 0, 0, 0, f"(not recorded for {MODE})"))
             continue
         im = m.load(port_png)
         by_name = {e["name"]: e for e in body["elements"]}

@@ -1,0 +1,74 @@
+{
+ "default": {
+  "row 1 chevron": {
+   "top": 231.5,
+   "left": 1001.5,
+   "bottom": 300.0,
+   "right": 1006.5,
+   "color": "#8f8f8f",
+   "bg": "#141415"
+  },
+  "intro": {
+   "top": 177.5,
+   "left": 327.5,
+   "bottom": 191.0,
+   "right": 765.0,
+   "color": "#8f8f8f",
+   "bg": "#141415"
+  },
+  "card left edge": {
+   "start": "#141415",
+   "edges": [
+    {
+     "at": 311.0,
+     "color": "#191919"
+    },
+    {
+     "at": 312.0,
+     "color": "#191919"
+    },
+    {
+     "at": 328.0,
+     "color": "#163425"
+    }
+   ]
+  },
+  "card right edge": {
+   "start": "#191919",
+   "edges": [
+    {
+     "at": 1028.0,
+     "color": "#141415"
+    },
+    {
+     "at": 1029.0,
+     "color": "#141415"
+    }
+   ]
+  },
+  "row 1 icon": {
+   "top": 226.0,
+   "left": 326.0,
+   "bottom": 246.0,
+   "right": 346.0,
+   "color": "#05df72",
+   "bg": "#163425"
+  },
+  "row 1 title": {
+   "top": 222.0,
+   "left": 356.5,
+   "bottom": 233.5,
+   "right": 385.0,
+   "color": "#f5f5f5",
+   "bg": "#191919"
+  },
+  "row 2 icon": {
+   "top": 287.0,
+   "left": 326.0,
+   "bottom": 307.0,
+   "right": 346.0,
+   "color": "#00bcff",
+   "bg": "#152f39"
+  }
+ }
+}

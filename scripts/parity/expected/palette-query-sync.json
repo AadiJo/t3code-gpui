@@ -1,0 +1,114 @@
+{
+ "default": {
+  "section label": {
+   "top": 140.5,
+   "left": 297.0,
+   "bottom": 149.5,
+   "right": 340.0,
+   "color": "#888888",
+   "bg": "#141414"
+  },
+  "thread icon": {
+   "top": 167.0,
+   "left": 297.5,
+   "bottom": 180.5,
+   "right": 311.5,
+   "color": "#838383",
+   "bg": "#141414"
+  },
+  "thread title": {
+   "top": 168.0,
+   "left": 319.5,
+   "bottom": 181.0,
+   "right": 430.0,
+   "color": "#e8e8e8",
+   "bg": "#141414"
+  },
+  "thread subtitle": {
+   "top": 184.0,
+   "left": 319.0,
+   "bottom": 196.0,
+   "right": 572.5,
+   "color": "#00d5be",
+   "bg": "#141414"
+  },
+  "thread time": {
+   "top": 176.5,
+   "left": 758.0,
+   "bottom": 186.0,
+   "right": 804.0,
+   "color": "#646464",
+   "bg": "#141414"
+  },
+  "footer rule": {
+   "start": "#141414",
+   "edges": [
+    {
+     "at": 213.0,
+     "color": "#181819"
+    },
+    {
+     "at": 214.0,
+     "color": "#181819"
+    }
+   ],
+   "vertical": true
+  }
+ },
+ "owner": {
+  "section label": {
+   "top": 140.5,
+   "left": 297.0,
+   "bottom": 149.5,
+   "right": 340.0,
+   "color": "#888888",
+   "bg": "#141414"
+  },
+  "thread icon": {
+   "top": 167.0,
+   "left": 297.5,
+   "bottom": 180.5,
+   "right": 311.5,
+   "color": "#838383",
+   "bg": "#141414"
+  },
+  "thread title": {
+   "top": 168.0,
+   "left": 319.5,
+   "bottom": 181.0,
+   "right": 430.0,
+   "color": "#e8e8e8",
+   "bg": "#141414"
+  },
+  "thread subtitle": {
+   "top": 184.0,
+   "left": 319.0,
+   "bottom": 196.0,
+   "right": 572.5,
+   "color": "#00d5be",
+   "bg": "#141414"
+  },
+  "thread time": {
+   "top": 176.5,
+   "left": 758.0,
+   "bottom": 186.0,
+   "right": 804.0,
+   "color": "#646464",
+   "bg": "#141414"
+  },
+  "footer rule": {
+   "start": "#141414",
+   "edges": [
+    {
+     "at": 213.0,
+     "color": "#181819"
+    },
+    {
+     "at": 214.0,
+     "color": "#181819"
+    }
+   ],
+   "vertical": true
+  }
+ }
+}
