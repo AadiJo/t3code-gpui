@@ -357,7 +357,8 @@ impl Render for ScheduledTaskEditor {
             .clone();
         let webhook_denied = managed_capability_denial(snapshot.managed_policy.as_deref(), ManagedCapability::WebhookTasks);
         let modes = [(ScheduleMode::Fixed, t!("At a time")), (ScheduleMode::Once, t!("Once")), (ScheduleMode::Interval, t!("Every interval")), (ScheduleMode::Webhook, t!("On webhook"))];
-        let kinds = div().flex().p(px(2.)).rounded(theme.radii.lg).bg(c.muted).children(modes.iter().map(|(mode, label)| {
+        // `ToggleGroup` (segmented): `gap-0.5 rounded-lg bg-input/40 p-0.5`.
+        let kinds = div().flex().gap(theme.sp(0.5)).p(theme.sp(0.5)).rounded(theme.radii.lg).bg(crate::theme_color::with_alpha(c.input, 0.4)).children(modes.iter().map(|(mode, label)| {
             let mode = *mode;
             Toggle::new(SharedString::from(format!("schedule-kind-{mode:?}")))
                 .label(label.clone())
