@@ -362,7 +362,10 @@ impl Sidebar {
         self.spacer_height = 0.;
         self.hovered = None;
         self.cursor = self.cursor.filter(|&c| c < self.list.entries.len());
+        // `reset` drops the scroll anchor; a rebuild keeps the list where the user left it.
+        let top = self.list_state.logical_scroll_top();
         self.list_state.reset(self.list.entries.len());
+        self.list_state.scroll_to(top);
         cx.notify();
     }
 
