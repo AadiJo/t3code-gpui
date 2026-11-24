@@ -305,11 +305,12 @@ fn readable_text(background: Rgb, foreground: Rgb, amount: f64, minimum: f64) ->
     readable
 }
 
+const LIGHT: Rgb = Rgb { r: 255., g: 250., b: 255. };
+const DARK: Rgb = Rgb { r: 36., g: 21., b: 35. };
+const WHITE: Rgb = Rgb { r: 255., g: 255., b: 255. };
+const BLACK: Rgb = Rgb { r: 0., g: 0., b: 0. };
+
 fn readable_foreground(background: Rgb) -> Rgb {
-    const LIGHT: Rgb = Rgb { r: 255., g: 250., b: 255. };
-    const DARK: Rgb = Rgb { r: 36., g: 21., b: 35. };
-    const WHITE: Rgb = Rgb { r: 255., g: 255., b: 255. };
-    const BLACK: Rgb = Rgb { r: 0., g: 0., b: 0. };
     let (light, dark) = (contrast(background, LIGHT), contrast(background, DARK));
     if light.max(dark) >= 4.5 {
         return if light >= dark { LIGHT } else { DARK };
@@ -374,12 +375,30 @@ pub fn default_theme_colors(appearance: ThemeAppearance) -> ThemeColors {
     }).collect()
 }
 
+static STANDARD: LazyLock<Value> = LazyLock::new(|| {
+    let bytes = Assets::get("themes/t3-code.json").expect("t3 code theme is embedded");
+    serde_json::from_slice(&bytes).expect("t3 code theme parses")
+});
+
+/// `getStandardThemeColors`: the T3 Code palette, on a black canvas in dark mode, with every role.
+pub fn standard_theme_colors(appearance: ThemeAppearance) -> ThemeColors {
+    let raw = match appearance {
+        ThemeAppearance::Light => &STANDARD["colors"],
+        ThemeAppearance::Dark => &STANDARD["variants"]["dark"],
+    };
+    let mut colors = default_theme_colors(appearance);
+    for (role, color) in object_colors(raw) {
+        let canonical = canonical_color(&color).unwrap_or(color);
+        colors.insert(role, canonical);
+    }
+    if appearance == ThemeAppearance::Dark {
+        colors.insert("canvas".into(), canonical_color("#000000").unwrap_or_default());
+    }
+    colors
+}
+
 /// `getStandardThemeColors` accent and input, from the bundled T3 Code theme.
 fn standard_color(appearance: ThemeAppearance, role: &str) -> String {
-    static STANDARD: LazyLock<Value> = LazyLock::new(|| {
-        let bytes = Assets::get("themes/t3-code.json").expect("t3 code theme is embedded");
-        serde_json::from_slice(&bytes).expect("t3 code theme parses")
-    });
     let raw = match appearance {
         ThemeAppearance::Light => &STANDARD["colors"][role],
         ThemeAppearance::Dark => &STANDARD["variants"]["dark"][role],
@@ -410,6 +429,102 @@ fn standard_status_colors(canvas: Rgb) -> [(&'static str, String); 6] {
         ("warningForeground", readable_on(warning_fg, warning_surface)),
         ("warningSurface", rgb_color(warning_surface)),
     ]
+}
+
+/// `updateThemeColorFamily`: sets `role` and rederives the roles the theme editor's
+/// advanced mode groups with it (foregrounds, hovers, surfaces) on this palette.
+pub fn update_theme_color_family(appearance: ThemeAppearance, colors: &ThemeColors, role: &str, value: &str) -> ThemeColors {
+    let mut next = colors.clone();
+    let Some((selected_oklch, alpha)) = parse_theme_color(value) else {
+        next.insert(role.to_owned(), value.to_owned());
+        return next;
+    };
+    let normalized = format_oklch(selected_oklch, alpha);
+    let dark_fallback = if appearance == ThemeAppearance::Dark { Rgb { r: 24., g: 15., b: 27. } } else { Rgb { r: 250., g: 245., b: 250. } };
+    let canvas = parse_rgb_or(colors.get("canvas").map_or("", String::as_str), dark_fallback);
+    let selected = oklch_to_rgb(selected_oklch);
+    let selected_on = |background: Rgb| mix(background, selected, alpha);
+    let on_canvas = selected_on(canvas);
+    let accent = parse_rgb_or(colors.get("accent").map_or("", String::as_str), Rgb { r: 168., g: 67., b: 112. });
+    let canvas_dark = luminance(canvas) < 0.179;
+    let terminal_dark = luminance(on_canvas) < 0.179;
+    let foreground_on = |background: Rgb| rgb_color(readable_foreground(background));
+    let tone_on = |background: Rgb| {
+        let direction = if luminance(background) < 0.179 { Direction::Lighter } else { Direction::Darker };
+        oklch_color(solve_lightness(selected_oklch, &[background], 4.6, direction))
+    };
+    let status = || {
+        let surface = mix(canvas, on_canvas, if canvas_dark { 0.16 } else { 0.08 });
+        (tone_on(surface), rgb_color(surface))
+    };
+    let all = |keys: &[&str]| keys.iter().map(|k| (k.to_string(), normalized.clone())).collect::<Vec<_>>();
+    let pairs: Vec<(String, String)> = match role {
+        "canvas" => all(&["canvas", "chrome", "toolbar"]),
+        "text" => all(&["text", "toolbarForeground", "toolbarControlForeground"]),
+        "mutedForeground" => all(&["textMuted", "mutedForeground", "placeholder", "secondaryLabel", "iconMuted", "sidebarMutedForeground"]),
+        "border" => all(&["border", "toolbarBorder", "sidebarBorder"]),
+        "secondary" => {
+            let mut v = all(&["secondary", "muted", "toolbarControl"]);
+            v.push(("secondaryForeground".into(), foreground_on(on_canvas)));
+            v
+        }
+        "accentSurface" => {
+            let mut v = all(&["accentSurface", "toolbarControlHover"]);
+            v.push(("accentSurfaceForeground".into(), foreground_on(on_canvas)));
+            v
+        }
+        "accent" => {
+            let update_surface = mix(canvas, on_canvas, if canvas_dark { 0.32 } else { 0.16 });
+            let mut v = all(&["accent", "focus", "update", "terminalCursor"]);
+            v.push(("accentForeground".into(), foreground_on(on_canvas)));
+            v.push(("updateForeground".into(), tone_on(update_surface)));
+            v.push(("updateSurface".into(), rgb_color(update_surface)));
+            v
+        }
+        "messageAction" => {
+            let action_foreground = readable_foreground(on_canvas);
+            let toward = if action_foreground == LIGHT || action_foreground == WHITE { BLACK } else { WHITE };
+            let hover = mix(selected, toward, 0.12);
+            vec![
+                ("messageAction".into(), normalized.clone()),
+                ("messageActionForeground".into(), rgb_color(action_foreground)),
+                ("messageActionHover".into(), format_oklch(rgb_to_oklch(hover), alpha)),
+            ]
+        }
+        "messageSurface" => vec![("messageSurface".into(), normalized.clone()), ("messageForeground".into(), foreground_on(on_canvas))],
+        "searchMatchBackground" | "searchMatchActiveBackground" => {
+            let foreground = role.replace("Background", "Foreground");
+            vec![(role.to_owned(), rgb_color(on_canvas)), (foreground, foreground_on(on_canvas))]
+        }
+        "codeBackground" => vec![("codeBackground".into(), normalized.clone()), ("codeForeground".into(), foreground_on(on_canvas))],
+        "sidebar" => vec![("sidebar".into(), normalized.clone()), ("sidebarForeground".into(), foreground_on(on_canvas))],
+        "sidebarRowSelected" => {
+            let sidebar = parse_rgb_or(colors.get("sidebar").map_or("", String::as_str), canvas);
+            let on_sidebar = selected_on(sidebar);
+            vec![
+                ("sidebarRowHover".into(), rgb_color(mix(sidebar, on_sidebar, 0.5))),
+                ("sidebarRowActive".into(), rgb_color(mix(sidebar, on_sidebar, 0.8))),
+                ("sidebarRowSelected".into(), normalized.clone()),
+            ]
+        }
+        "terminalBackground" => {
+            let foreground = readable_foreground(on_canvas);
+            vec![
+                ("terminalBackground".into(), normalized.clone()),
+                ("terminalForeground".into(), rgb_color(foreground)),
+                ("terminalSelection".into(), rgb_color(mix(on_canvas, accent, if terminal_dark { 0.35 } else { 0.18 }))),
+                ("terminalScrollbar".into(), rgb_color(mix(on_canvas, foreground, if terminal_dark { 0.42 } else { 0.22 }))),
+                ("terminalScrollbarHover".into(), rgb_color(mix(on_canvas, foreground, if terminal_dark { 0.55 } else { 0.32 }))),
+            ]
+        }
+        "error" | "warning" => {
+            let (foreground, surface) = status();
+            vec![(role.to_owned(), normalized.clone()), (format!("{role}Foreground"), foreground), (format!("{role}Surface"), surface)]
+        }
+        _ => vec![(role.to_owned(), normalized.clone())],
+    };
+    next.extend(pairs);
+    next
 }
 
 /// `createVividThemeColors`: a whole palette from a canvas and an accent.

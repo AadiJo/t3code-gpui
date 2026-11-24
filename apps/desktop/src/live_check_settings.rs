@@ -2,19 +2,20 @@
 // trigger opens the model picker and Enter picks its highlighted model, which the server then
 // reports as `fallbackModelSelection`; the reset arrow clears it again. The first snooze option's
 // "+" steps its amount, which the server reports in `snoozePresets`; "−" steps it back. Providers
-// names its one environment ("on <label>"). Every value is read back from the server's config.
+// names its one environment ("on <label>"). Usage's "Model prices" adds a custom price, saves it
+// and resets it again. Every value is read back from the server's config.
 
 use super::*;
 use t3code_contracts::{SnoozePresetSetting, SnoozePresetSettingAfter};
 use t3code_web::hooks::use_settings::ServerSettingsStore;
 use t3code_web::router::SettingsPanel;
 
-/// Clicks the centre of the visible element `id`, scrolling the settings page down with the
-/// wheel until it is laid out in view.
+/// Clicks the centre of the visible element `id`, scrolling the settings page with the wheel
+/// (down, then back up) until it is laid out in view.
 fn click_id(check: &mut Check, id: &str) -> anyhow::Result<()> {
     let element = ElementId::from(SharedString::from(id.to_owned()));
     let mut found = None;
-    for _ in 0..12 {
+    for step in 0..30 {
         let size = check.cx.update_window(check.window, |_, w, _| w.viewport_size()).unwrap_or_default();
         found = check
             .cx
@@ -28,7 +29,7 @@ fn click_id(check: &mut Check, id: &str) -> anyhow::Result<()> {
         let wheel_at = point(size.width * 0.6, size.height * 0.5);
         check.cx.update_window(check.window, |_, w, cx| {
             w.dispatch_event(
-                ScrollEvent { position: wheel_at, delta: ScrollDelta::Pixels(point(px(0.), px(-240.))), modifiers: Modifiers::default(), touch_phase: TouchPhase::Moved, source: ScrollSource::Pointer }
+                ScrollEvent { position: wheel_at, delta: ScrollDelta::Pixels(point(px(0.), px(if step < 12 { -240. } else { 240. }))), modifiers: Modifiers::default(), touch_phase: TouchPhase::Moved, source: ScrollSource::Pointer }
                     .to_platform_input(),
                 cx,
             );
@@ -46,6 +47,33 @@ fn click_id(check: &mut Check, id: &str) -> anyhow::Result<()> {
     })?;
     check.frame();
     Ok(())
+}
+
+/// Clicks the centre of the visible element `id` where it is, without scrolling.
+fn click_visible(check: &mut Check, id: &str) -> anyhow::Result<()> {
+    let element = ElementId::from(SharedString::from(id.to_owned()));
+    let at = check
+        .cx
+        .update_window(check.window, |_, w, _| w.try_find(element.clone()).filter(|e| e.visible()).map(|e| e.bounds().center()))
+        .ok()
+        .flatten()
+        .with_context(|| format!("no visible element {id}"))?;
+    check.cx.update_window(check.window, |_, w, cx| {
+        w.dispatch_event(MouseMoveEvent { position: at, pressed_button: None, modifiers: Modifiers::default() }.to_platform_input(), cx);
+        w.dispatch_event(
+            MouseDownEvent { button: MouseButton::Left, position: at, modifiers: Modifiers::default(), click_count: 1, first_mouse: false }.to_platform_input(),
+            cx,
+        );
+        w.dispatch_event(MouseUpEvent { button: MouseButton::Left, position: at, modifiers: Modifiers::default(), click_count: 1 }.to_platform_input(), cx);
+    })?;
+    check.frame();
+    Ok(())
+}
+
+/// The custom input and output price the server holds for `model`.
+fn custom_price(check: &mut Check, id: &t3code_contracts::EnvironmentId, model: &str) -> Option<(f64, f64)> {
+    let price = server_settings(check, id)?.usage_price_overrides?.get(model)?.clone();
+    Some((price.input_cost_per_million_tokens, price.output_cost_per_million_tokens))
 }
 
 /// The environment's server settings as its config last reported them.
@@ -127,5 +155,95 @@ pub(super) fn run_settings(check: &mut Check) -> anyhow::Result<()> {
     let named = check.cx.update(|cx| cx.try_global::<t3code_web::components::settings::settings_controls::PagesEnvironment>().and_then(|e| e.0.clone()));
     check.check("Providers names the environment its page shows", named.as_ref() == Some(&environment_id), format!("{named:?}"));
     check.shot("s4-providers.png")?;
+
+    // Usage > environments menu > Model prices: a new row with input and output prices saves to
+    // the server's `usagePriceOverrides`; its reset arrow and Save remove it again.
+    const MODEL: &str = "live-check-model";
+    check.cx.update(|cx| router.update(cx, |router, cx| router.navigate(Route::Usage, cx)));
+    check.frame();
+    check.wait(Duration::from_millis(800));
+    click_visible(check, "usage-environments-trigger")?;
+    check.wait(Duration::from_millis(300));
+    check.shot("s5-usage-menu.png")?;
+    click_visible(check, "usage-model-prices")?;
+    check.wait(Duration::from_millis(300));
+    click_visible(check, "usage-price-add")?;
+    check.type_text(MODEL);
+    click_visible(check, "usage-price-new:0-input")?;
+    check.type_text("0.5");
+    click_visible(check, "usage-price-new:0-output")?;
+    check.type_text("2");
+    check.type_text("x");
+    check.frame();
+    check.shot("s6-prices-typed.png")?;
+    click_visible(check, "usage-prices-save")?;
+    let env = environment_id.clone();
+    check.pump(move |c| custom_price(c, &env, MODEL).is_some(), Duration::from_secs(15), "the new model price reaches the server")?;
+    let saved = custom_price(check, &environment_id, MODEL);
+    // "x" is not a price edit, so the output cell keeps "2".
+    check.check("Save writes input 0.5 and output 2", saved == Some((0.5, 2.0)), format!("{saved:?}"));
+    check.wait(Duration::from_millis(300));
+    check.shot("s7-prices-saved.png")?;
+    click_visible(check, &format!("usage-price-reset-model:{MODEL}"))?;
+    check.shot("s8-prices-reset.png")?;
+    click_visible(check, "usage-prices-save")?;
+    let env = environment_id.clone();
+    check.pump(move |c| custom_price(c, &env, MODEL).is_none(), Duration::from_secs(15), "reset removes the model price on the server")?;
+    check.check("reset and Save remove the custom price", true, "");
+    check.shot("s9-prices-removed.png")?;
+
+    // Source control: GitHub's details hold the token form. A token saved for github.com reaches
+    // `sourceControlHosts.github.tokens` (redacted on the way back); Remove clears it.
+    let github_token = |c: &mut Check, env: &t3code_contracts::EnvironmentId| {
+        server_settings(c, env)
+            .and_then(|s| s.source_control_hosts)
+            .and_then(|hosts| hosts.get("github").cloned())
+            .and_then(|github| github.get("tokens").and_then(|t| t.get("github.com")).cloned())
+            .filter(|token| token.as_str().is_none_or(|t| !t.is_empty()))
+    };
+    check.press("escape");
+    let route = Route::Settings { panel: SettingsPanel::SourceControl, query: SharedString::default() };
+    check.cx.update(|cx| router.update(cx, |router, cx| router.navigate(route, cx)));
+    check.frame();
+    check.pump(|c| c.cx.update_window(c.window, |_, w, _| w.try_find(ElementId::from(SharedString::from("sc-details-github"))).is_some()).unwrap_or(false), Duration::from_secs(20), "GitHub appears in discovery")?;
+    click_id(check, "sc-details-github")?;
+    check.wait(Duration::from_millis(300));
+    click_id(check, "sc-token-value")?;
+    check.type_text("ghp_livecheck0000");
+    check.shot("s10-token-typed.png")?;
+    click_id(check, "sc-token-save")?;
+    let env = environment_id.clone();
+    check.pump(move |c| github_token(c, &env).is_some(), Duration::from_secs(15), "the GitHub token reaches the server")?;
+    let saved = github_token(check, &environment_id);
+    check.check("Save stores a GitHub token for github.com", saved.is_some(), format!("{saved:?}"));
+    check.wait(Duration::from_millis(300));
+    check.shot("s11-token-saved.png")?;
+    click_id(check, "sc-token-remove")?;
+    let env = environment_id.clone();
+    check.pump(move |c| github_token(c, &env).is_none(), Duration::from_secs(15), "Remove clears the GitHub token")?;
+    check.check("Remove clears the GitHub token", true, "");
+    check.shot("s12-token-removed.png")?;
+
+    // Bitbucket's details hold its settings form: the email saves on Enter, Remove clears it.
+    let bitbucket_email = |c: &mut Check, env: &t3code_contracts::EnvironmentId| {
+        server_settings(c, env)
+            .and_then(|s| s.source_control_hosts)
+            .and_then(|hosts| hosts.get("bitbucket").and_then(|b| b.get("email")).and_then(|e| e.as_str()).map(str::to_owned))
+            .filter(|email| !email.is_empty())
+    };
+    click_id(check, "sc-details-bitbucket")?;
+    check.wait(Duration::from_millis(300));
+    click_id(check, "host-field-bitbucket-email")?;
+    check.type_text("dev@example.test");
+    check.press("enter");
+    let env = environment_id.clone();
+    check.pump(move |c| bitbucket_email(c, &env).is_some(), Duration::from_secs(15), "the Bitbucket email reaches the server")?;
+    let email = bitbucket_email(check, &environment_id);
+    check.check("Enter saves the Bitbucket email", email.as_deref() == Some("dev@example.test"), format!("{email:?}"));
+    check.shot("s13-bitbucket-saved.png")?;
+    click_id(check, "host-remove-bitbucket")?;
+    let env = environment_id.clone();
+    check.pump(move |c| bitbucket_email(c, &env).is_none(), Duration::from_secs(15), "Remove clears the Bitbucket settings")?;
+    check.check("Remove clears the Bitbucket settings", true, "");
     Ok(())
 }

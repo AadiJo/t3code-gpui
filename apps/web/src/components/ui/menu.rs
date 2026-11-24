@@ -47,6 +47,7 @@ pub struct MenuItem {
     id: Option<SharedString>,
     on_select: Option<Action>,
     on_hover: Option<Rc<dyn Fn(&bool, &mut Window, &mut App) + 'static>>,
+    keep_open: bool,
 }
 
 impl MenuItem {
@@ -65,7 +66,14 @@ impl MenuItem {
             id: None,
             on_select: None,
             on_hover: None,
+            keep_open: false,
         }
+    }
+
+    /// `closeOnClick={false}`: selecting the item leaves the menu open.
+    pub fn keep_open(mut self) -> Self {
+        self.keep_open = true;
+        self
     }
 
     pub fn icon(mut self, icon: impl Into<IconSource>) -> Self {
@@ -310,6 +318,7 @@ fn render_item(theme: &AppTheme, index: usize, item: MenuItem, height: Pixels, d
         None => row,
     };
     let action = item.on_select.clone();
+    let dismiss = dismiss.filter(|_| !item.keep_open);
     let (hover_bg, hover_text) = (c.highlight(), if item.destructive { text } else { c.highlight_foreground() });
     row.cursor_pointer()
         .hover(move |s| s.bg(hover_bg).text_color(hover_text))

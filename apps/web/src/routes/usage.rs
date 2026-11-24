@@ -58,7 +58,7 @@ impl Render for UsageRoute {
             .border_1()
             .border_color(theme.colors.border)
             .bg(theme.colors.background())
-            .shadow(theme.shadows.dialog.clone())
+            .shadow(theme.shadows.app_modal.clone())
             .child(self.page.clone())
     }
 }

@@ -1320,6 +1320,7 @@ impl Render for AppRoot {
             .on_action(|_: &ToggleFullScreen, window, _| window.toggle_fullscreen())
             .on_action(|_: &Minimize, window, _| window.minimize_window())
             .on_action(|_: &ZoomWindow, window, _| window.zoom_window())
+            .on_action(|_: &crate::shortcuts::commands::ToggleThemeEditor, window, cx| crate::components::settings::theme_editor_panel::ThemeEditorStore::toggle(window, cx))
             .child(self.layout.clone())
             .children(self.usage.as_ref().map(|(usage, _)| {
                 let router = self.router.downgrade();
@@ -1329,6 +1330,7 @@ impl Render for AppRoot {
             }))
             .children(self.expanded.as_ref().map(|(dialog, _)| dialog.clone()))
             .children(self.link_dialog.as_ref().map(|(dialog, _)| dialog.clone()))
+            .children(crate::components::settings::theme_editor_panel::ThemeEditorStore::layer(cx))
     }
 }
 

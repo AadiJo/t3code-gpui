@@ -29,6 +29,8 @@ pub struct DialogSurface {
     max_width_rem: f32,
     /// `DialogFooter variant="bare"`: no rule or tinted band behind the buttons.
     bare_footer: bool,
+    /// `items-center` on the footer, for a footer with a note beside its buttons.
+    footer_centered: bool,
     description: Option<SharedString>,
     children: Vec<AnyElement>,
     footer: Vec<AnyElement>,
@@ -42,6 +44,7 @@ impl DialogSurface {
             title_icon: None,
             max_width_rem: 32.,
             bare_footer: false,
+            footer_centered: false,
             description: None,
             children: Vec::new(),
             footer: Vec::new(),
@@ -58,6 +61,12 @@ impl DialogSurface {
     /// `DialogFooter variant="bare"`.
     pub fn bare_footer(mut self) -> Self {
         self.bare_footer = true;
+        self
+    }
+
+    /// Centres the footer's items vertically (`items-center`).
+    pub fn footer_centered(mut self) -> Self {
+        self.footer_centered = true;
         self
     }
 
@@ -144,7 +153,8 @@ impl RenderOnce for DialogSurface {
                         .gap(sp(4.))
                         .px(sp(6.))
                         .pt(sp(1.))
-                        .pb(sp(6.))
+                        // `pb-1` above a bare footer, which brings its own `py-4`.
+                        .pb(if self.bare_footer && !self.footer.is_empty() { sp(1.) } else { sp(6.) })
                         .ui_text(theme, TextSize::Sm, weight::NORMAL)
                         .children(self.children),
                 )
@@ -154,6 +164,7 @@ impl RenderOnce for DialogSurface {
                     div()
                         .flex()
                         .justify_end()
+                        .when(self.footer_centered, |f| f.items_center())
                         .gap(sp(2.))
                         .px(sp(6.))
                         .py(sp(4.))
