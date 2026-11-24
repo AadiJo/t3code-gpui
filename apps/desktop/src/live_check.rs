@@ -28,11 +28,14 @@
 //            server's worktree setup stream (stages and their states)
 //   mentions `@` offers a thread's own used side chat (as "Side chat") and no other
 //            thread's, never the composer's own thread, best title match first
+//   heic     a HEIC photo attaches as a JPEG fitted to 2000px and uploads; an unreadable one is
+//            refused. Linux has no HEIC decoder here, so run it with a stand-in `heif-convert`
+//            on PATH (the macOS build decodes with `sips`)
 //   import   a fresh data directory and a stand-in install (`T3CODE_IMPORT_HOME`, made by
 //            `import-check`, encrypted with the fixture macOS key): the launch import runs,
 //            the window explains the Keychain read, environments and settings arrive
 //
-// Usage: live-check <seed|drive|restart|import|send|sidebar|notify|details|mentions> <out-dir>
+// Usage: live-check <seed|drive|restart|import|send|sidebar|notify|details|mentions|heic> <out-dir>
 #[allow(dead_code)]
 #[path = "import/mod.rs"]
 mod import;
@@ -416,7 +419,7 @@ fn key_of(state: &Seeded, thread: &str) -> ThreadKey {
 
 fn main() -> anyhow::Result<()> {
     let mut args = std::env::args().skip(1);
-    let usage = "usage: live-check <seed|drive|restart|import|send|sidebar|notify|details|mentions> <out-dir> | live-check timeline <projections-dir> <out-dir> | live-check commands <corpus.json> <out.json>";
+    let usage = "usage: live-check <seed|drive|restart|import|send|sidebar|notify|details|mentions|heic> <out-dir> | live-check timeline <projections-dir> <out-dir> | live-check commands <corpus.json> <out.json>";
     let phase = args.next().context(usage)?;
     let out = PathBuf::from(args.next().context(usage)?);
     if phase == "timeline" {
@@ -438,6 +441,7 @@ fn main() -> anyhow::Result<()> {
         "notify" => run_notify(&mut check),
         "details" => run_details(&mut check),
         "mentions" => run_mentions(&mut check),
+        "heic" => run_heic(&mut check),
         other => Err(anyhow::anyhow!("unknown phase {other}")),
     };
     check.finish(&phase, result)
@@ -2278,4 +2282,48 @@ fn run_mentions(check: &mut Check) -> anyhow::Result<()> {
     check.check("@ ranks the exact title first", quokka.first().is_some_and(|(id, ..)| *id == id_of(&exact)), format!("{quokka:?}"));
     check.check("@ lists at most five threads", quokka.len() <= 5, quokka.len());
     Ok(())
+}
+
+/// The `heic` phase. See the header.
+fn run_heic(check: &mut Check) -> anyhow::Result<()> {
+    use t3code_web::composer_draft_store::{ComposerAttachmentKind, UploadState};
+    let state = load_state(&check.out)?;
+    check.pump(|c| c.connected(), Duration::from_secs(30), "connected")?;
+    let key = thread_with_turn(check, &state, "HEIC attach")?;
+    check.go(&key);
+    check.wait(Duration::from_millis(300));
+    // The stand-in decoder passes the bytes through, so the "HEIC" file holds a 4000x3000 JPEG.
+    let photo = check.out.join("IMG_0042.HEIC");
+    let image = image::RgbImage::from_fn(4000, 3000, |x, y| image::Rgb([(x / 16) as u8, (y / 12) as u8, 90]));
+    let mut jpeg = Vec::new();
+    image::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpeg, 80).encode_image(&image)?;
+    std::fs::write(&photo, &jpeg)?;
+    let composer = composer_of(check);
+    check.cx.update(|cx| composer.update(cx, |c, cx| c.attach_paths(vec![photo.clone()], cx)));
+    let attached = check.cx.update(|cx| {
+        composer.read(cx).attachments().first().map(|a| match &a.kind {
+            ComposerAttachmentKind::Image { bytes, mime } => (a.name.to_string(), mime.to_string(), image::load_from_memory(bytes).map(|i| (i.width(), i.height())).ok()),
+            _ => (a.name.to_string(), "not an image".into(), None),
+        })
+    });
+    check.check(
+        "a HEIC photo attaches as IMG_0042.jpg, image/jpeg, 2000x1500",
+        attached.as_ref().is_some_and(|(name, mime, size)| name == "IMG_0042.jpg" && mime == "image/jpeg" && *size == Some((2000, 1500))),
+        format!("{attached:?}"),
+    );
+    let c2 = composer.clone();
+    let uploaded = check.pump(
+        move |c| c.cx.update(|cx| c2.read(cx).attachments().iter().all(|a| a.upload == UploadState::Uploaded)),
+        Duration::from_secs(30),
+        "the converted image uploaded",
+    );
+    check.check("the converted image uploads", uploaded.is_ok(), format!("{uploaded:?}"));
+    check.shot("90-heic-attached.png")?;
+    let broken = check.out.join("broken.heic");
+    std::fs::write(&broken, b"not an image")?;
+    let before = check.cx.update(|cx| composer.read(cx).attachments().len());
+    check.cx.update(|cx| composer.update(cx, |c, cx| c.attach_paths(vec![broken.clone()], cx)));
+    let after = check.cx.update(|cx| composer.read(cx).attachments().len());
+    check.check("an unreadable HEIC is refused", before == after, format!("{before} -> {after}"));
+    check.shot("91-heic-refused.png")
 }

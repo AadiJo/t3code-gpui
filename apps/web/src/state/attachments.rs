@@ -42,6 +42,8 @@ pub enum FileClass {
     File(String),
     /// An image type providers do not take.
     UnsupportedImage,
+    /// HEIC or HEIF: converted to JPEG before it is attached (`convertHeicImage`).
+    Heic,
 }
 
 /// The MIME type a browser reports for `name`, from its extension.
@@ -92,6 +94,10 @@ pub fn classify(name: &str, mime: &str) -> FileClass {
         return FileClass::File("image/x-adobe-dng".into());
     }
     let generic = lower.is_empty() || lower == "application/octet-stream";
+    // `isHeicImageFile`: Finder and some browsers omit the MIME type when dragging HEIC photos.
+    if matches!(lower.as_str(), "image/heic" | "image/heif") || (generic && (lower_name.ends_with(".heic") || lower_name.ends_with(".heif"))) {
+        return FileClass::Heic;
+    }
     if generic && let Some(image) = mime_from_name(name).and_then(supported_image) {
         return FileClass::Image(image);
     }
@@ -148,6 +154,29 @@ pub fn intake(candidates: Vec<Candidate>, held: usize, file_limit: Option<u64>) 
                 ));
                 continue;
             }
+            FileClass::Heic => {
+                let bytes = match &candidate.kind {
+                    ComposerAttachmentKind::Image { bytes, .. } => Some(bytes.to_vec()),
+                    ComposerAttachmentKind::File { path } => std::fs::read(path.as_ref()).ok(),
+                    ComposerAttachmentKind::PastedText { .. } => None,
+                };
+                let Some(jpeg) = bytes.and_then(|bytes| convert_heic(&bytes)) else {
+                    error = Some(t!("''{name}'' could not be read as an image.", name = candidate.name));
+                    continue;
+                };
+                // `fileNameForMimeType`: the converted file is a .jpg.
+                let base = candidate.name.rsplit_once('.').filter(|(base, _)| !base.is_empty()).map_or(candidate.name.as_str(), |(base, _)| base);
+                let name = format!("{}.jpg", if base.is_empty() { "image" } else { base });
+                accepted.push(ComposerAttachment {
+                    context_id: format!("image_{}", uuid::Uuid::new_v4()).into(),
+                    name: name.into(),
+                    size_bytes: jpeg.len() as u64,
+                    kind: ComposerAttachmentKind::Image { bytes: Arc::from(jpeg), mime: "image/jpeg".into() },
+                    upload: UploadState::Uploading,
+                });
+                reserved += 1;
+                continue;
+            }
             FileClass::Image(mime) => {
                 let bytes = match candidate.kind {
                     ComposerAttachmentKind::Image { bytes, .. } => bytes,
@@ -189,6 +218,46 @@ pub fn intake(candidates: Vec<Candidate>, held: usize, file_limit: Option<u64>) 
         reserved += 1;
     }
     Intake { accepted, error }
+}
+
+/// The longest edge an attached image keeps (`IMAGE_ATTACHMENT_MAX_EDGE`).
+const IMAGE_ATTACHMENT_MAX_EDGE: u32 = 2000;
+/// The web's first JPEG quality step (`QUALITY_STEPS[0]`).
+const JPEG_QUALITY: u8 = 92;
+
+/// Converts HEIC or HEIF bytes to a JPEG of at most [`IMAGE_ATTACHMENT_MAX_EDGE`] on its longest
+/// edge (`convertHeicImage`). The platform decodes: `sips` on macOS, `heif-convert` (libheif)
+/// elsewhere when installed. `None` when nothing could read it.
+pub fn convert_heic(bytes: &[u8]) -> Option<Vec<u8>> {
+    let dir = std::env::temp_dir().join(format!("t3code-heic-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).ok()?;
+    let (input, decoded) = (dir.join("in.heic"), dir.join("out.jpg"));
+    let result = (|| {
+        std::fs::write(&input, bytes).ok()?;
+        let ran = if cfg!(target_os = "macos") {
+            std::process::Command::new("/usr/bin/sips").args(["-s", "format", "jpeg"]).arg(&input).arg("--out").arg(&decoded).output()
+        } else {
+            std::process::Command::new("heif-convert").args(["-q", "100"]).arg(&input).arg(&decoded).output()
+        };
+        if !ran.ok()?.status.success() {
+            return None;
+        }
+        let image = image::load_from_memory(&std::fs::read(&decoded).ok()?).ok()?;
+        let longest = image.width().max(image.height());
+        let image = if longest > IMAGE_ATTACHMENT_MAX_EDGE {
+            let scale = IMAGE_ATTACHMENT_MAX_EDGE as f64 / longest as f64;
+            let width = ((image.width() as f64 * scale).round() as u32).clamp(1, IMAGE_ATTACHMENT_MAX_EDGE);
+            let height = ((image.height() as f64 * scale).round() as u32).clamp(1, IMAGE_ATTACHMENT_MAX_EDGE);
+            image.resize_exact(width, height, image::imageops::FilterType::Triangle)
+        } else {
+            image
+        };
+        let mut out = Vec::new();
+        image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, JPEG_QUALITY).encode_image(&image.to_rgb8()).ok()?;
+        Some(out)
+    })();
+    let _ = std::fs::remove_dir_all(&dir);
+    result
 }
 
 /// `fileAttachmentTooLargeMessage`.
