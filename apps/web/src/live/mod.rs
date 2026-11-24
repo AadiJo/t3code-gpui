@@ -81,6 +81,8 @@ pub struct LiveData {
     /// By environment, workspace and composer: a source holds its composer's shown thread, so the
     /// main pane and a side chat pane in the same workspace each keep their own.
     menus: RefCell<HashMap<(t3code_contracts::EnvironmentId, Option<String>, gpui_kit::EntityId), Rc<LiveMenuSource>>>,
+    /// The last `/` facts per environment and workspace, for a menu source made after them.
+    menu_facts: RefCell<HashMap<(t3code_contracts::EnvironmentId, Option<String>), live_composer::SlashFacts>>,
     workspaces: RefCell<HashMap<SharedString, Workspace>>,
     usage: RefCell<Option<Rc<dyn UsageSource>>>,
     /// The server settings model and the environment it follows.
@@ -135,6 +137,7 @@ impl LiveData {
             thread: RefCell::default(),
             side_thread: RefCell::default(),
             menus: RefCell::default(),
+            menu_facts: RefCell::default(),
             workspaces: RefCell::default(),
             usage: RefCell::default(),
             settings: RefCell::default(),
@@ -172,17 +175,32 @@ impl LiveData {
         Some(thread)
     }
 
-    /// Re-emits a live thread's changes as [`DataEvent`]s.
+    /// Re-emits a live thread's changes as [`DataEvent`]s, and a change of its environment's
+    /// config (provider commands, usage limits) as a thread change.
     fn forward_events(&self, thread: &Entity<LiveThread>, key: &ThreadKey, cx: &mut App) -> Subscription {
         let events = self.events.clone();
         let target = ThreadTarget::Server(key.clone());
-        cx.subscribe(thread, move |thread, event: &LiveThreadEvent, cx| {
-            let event = match event {
-                LiveThreadEvent::Text(changes) => DataEvent::Text { thread: thread.read(cx).key().clone(), changes: changes.clone() },
-                LiveThreadEvent::Structure | LiveThreadEvent::Status => DataEvent::ThreadChanged(target.clone()),
-            };
-            events.update(cx, |_, cx| cx.emit(event));
-        })
+        let thread_events = cx.subscribe(thread, {
+            let (events, target) = (events.clone(), target.clone());
+            move |thread, event: &LiveThreadEvent, cx| {
+                let event = match event {
+                    LiveThreadEvent::Text(changes) => DataEvent::Text { thread: thread.read(cx).key().clone(), changes: changes.clone() },
+                    LiveThreadEvent::Structure | LiveThreadEvent::Status => DataEvent::ThreadChanged(target.clone()),
+                };
+                events.update(cx, |_, cx| cx.emit(event));
+            }
+        });
+        let (environment_id, _) = runtime_ids(key);
+        let Some(environment) = self.environment(&environment_id, cx) else { return thread_events };
+        let mut last = environment.read(cx).config.clone();
+        let config_changes = cx.observe(&environment, move |environment, cx| {
+            let config = environment.read(cx).config.clone();
+            if config.as_ref().map(Arc::as_ptr) != last.as_ref().map(Arc::as_ptr) {
+                last = config;
+                events.update(cx, |_, cx| cx.emit(DataEvent::ThreadChanged(target.clone())));
+            }
+        });
+        Subscription::join(thread_events, config_changes)
     }
 
     /// The live thread when `key` is the open one or the right panel's side chat.
@@ -431,10 +449,20 @@ impl AppData for LiveData {
                 let drafts = StateBridge::drafts(cx).current();
                 let draft = drafts.drafts_by_thread_key.get(live_composer::draft_key(&key).0.as_ref());
                 let armed = live_composer::FreshSessionArms::armed(&key, cx);
-                let state = composer_state(&key, row.as_deref(), thread.read(cx), environment.read(cx), catalog, draft, armed);
+                let mut state = composer_state(&key, row.as_deref(), thread.read(cx), environment.read(cx), catalog, draft, armed);
                 let show_skills = crate::hooks::use_settings::ClientSettingsStore::get(cx).show_skills_in_slash_menu;
-                let facts = live_composer::slash_facts(row.as_deref(), thread.read(cx), environment.read(cx), &state.selection.instance_id.0, show_skills);
+                let mut facts = live_composer::slash_facts(row.as_deref(), thread.read(cx), environment.read(cx), &state.selection.instance_id.0, show_skills);
+                // `/usage-limits` (`useUsageLimitsPanel`): offered while the provider reports limits.
+                let instance = state.selection.instance_id.0.to_string();
+                let panel_key = live_composer::usage_panel_key(&key, row.as_deref(), thread.read(cx).input(), &instance);
+                let config = environment.read(cx).config.clone();
+                state.usage_limits = panel_key.is_some() && live_composer::usage_limits_offered(config.as_deref(), &instance);
+                facts.usage_limits = state.usage_limits;
+                if let Some(banner) = live_composer::usage_banner(&key, panel_key.as_deref(), config.as_deref(), &instance, cx) {
+                    state.banners.insert(0, banner);
+                }
                 let cwd = (!view.cwd.is_empty()).then(|| view.cwd.to_string());
+                self.menu_facts.borrow_mut().insert((environment_id.clone(), cwd.clone()), facts.clone());
                 for ((environment, workspace, _), source) in self.menus.borrow().iter() {
                     if *environment == environment_id && *workspace == cwd {
                         source.set_facts(facts.clone());
@@ -486,11 +514,18 @@ impl AppData for LiveData {
         };
         let cwd = (!view.cwd.is_empty()).then(|| view.cwd.to_string());
         let key = (environment.read(cx).environment_id().clone(), cwd.clone(), composer.entity_id());
+        let facts = self.menu_facts.borrow().get(&(key.0.clone(), cwd.clone())).cloned();
         let source = self
             .menus
             .borrow_mut()
             .entry(key)
-            .or_insert_with(|| LiveMenuSource::new(&environment, cwd, self.palette.clone(), cx))
+            .or_insert_with(|| {
+                let source = LiveMenuSource::new(&environment, cwd, self.palette.clone(), cx);
+                if let Some(facts) = facts {
+                    source.set_facts(facts);
+                }
+                source
+            })
             .clone();
         source.set_config(environment.read(cx).config.as_ref());
         source.set_shown(view_target(view));
@@ -625,8 +660,9 @@ impl AppData for LiveData {
                         if let Some(draft) = removed {
                             drafts.borrow_mut().insert(draft_id.clone(), draft);
                         }
-                        ThreadErrors::send_failed(&draft_key, crate::state::composer::send_error(&error), restore, cx);
-                        events.update(cx, |_, cx| cx.emit(DataEvent::DraftLaunchFailed { draft: draft_id, thread: failed_thread }));
+                        let error = crate::state::composer::send_error(&error);
+                        ThreadErrors::send_failed(&draft_key, error.clone(), restore, cx);
+                        events.update(cx, |_, cx| cx.emit(DataEvent::DraftLaunchFailed { draft: draft_id, thread: failed_thread, error }));
                     }),
                     Some(Ok(_)) => crate::state::attachments::AttachmentUploads::forget_sent(sent),
                     None => {}

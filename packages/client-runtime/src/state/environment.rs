@@ -404,7 +404,8 @@ async fn follow_config(store: Weak<Inner>) {
         let session = sessions.borrow_and_update().clone();
         if let Some(session) = session {
             let Some(inner) = store.upgrade() else { return };
-            let config = Arc::clone(&session.initial_config);
+            let mut configs = session.config();
+            let config = configs.borrow_and_update().clone();
             inner.config.send_replace(Some(Arc::clone(&config)));
             let cache = inner.context.cache.clone();
             let environment_id = inner.context.environment_id.clone();
@@ -413,20 +414,17 @@ async fn follow_config(store: Weak<Inner>) {
             drop(inner);
             loop {
                 tokio::select! {
+                    // The session folds snapshots, settings, provider statuses and usage sources in.
+                    changed = configs.changed() => {
+                        if changed.is_err() {
+                            break;
+                        }
+                        let Some(inner) = store.upgrade() else { return };
+                        inner.config.send_replace(Some(configs.borrow_and_update().clone()));
+                    }
                     event = events.recv() => match event {
                         Ok(event) => {
                             let Some(inner) = store.upgrade() else { return };
-                            match &*event {
-                                ServerConfigStreamEvent::Snapshot(snapshot) => {
-                                    inner.config.send_replace(Some(Arc::new(snapshot.config.clone())));
-                                }
-                                ServerConfigStreamEvent::SettingsUpdated(update) => inner.config.send_modify(|config| {
-                                    if let Some(config) = config {
-                                        Arc::make_mut(config).settings = update.payload.settings.clone();
-                                    }
-                                }),
-                                _ => {}
-                            }
                             _ = inner.config_events.send(event);
                         }
                         Err(broadcast::error::RecvError::Lagged(_)) => continue,

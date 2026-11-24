@@ -174,7 +174,7 @@ impl SideChatPane {
         self.data.composer_event(&self.target(), event, &composer.downgrade(), cx);
         match event {
             ComposerEvent::Submit { .. } => self.refresh(true, cx),
-            ComposerEvent::ModelChanged(_) | ComposerEvent::RuntimeModeChanged(_) | ComposerEvent::ClearSession | ComposerEvent::BannerAction(_) => {
+            ComposerEvent::ModelChanged(_) | ComposerEvent::RuntimeModeChanged(_) | ComposerEvent::ClearSession | ComposerEvent::BannerAction(_) | ComposerEvent::BannerDismissed(_) | ComposerEvent::UsageLimits => {
                 self.refresh(false, cx)
             }
             _ => {}

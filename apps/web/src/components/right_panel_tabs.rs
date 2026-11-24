@@ -566,7 +566,7 @@ impl RightPanel {
                 Some(pane) => div().flex_1().min_h_0().child(pane).into_any_element(),
                 None => self.render_empty(surface, cx),
             },
-            RightPanelSurface::PullRequest { .. } | RightPanelSurface::Issue { .. } | RightPanelSurface::Preview { .. } => {
+            RightPanelSurface::PullRequest { .. } | RightPanelSurface::PullRequests { .. } | RightPanelSurface::Issue { .. } | RightPanelSurface::Preview { .. } => {
                 match self.surface_view(surface, window, cx) {
                     Some(view) => div().flex_1().min_h_0().child(view).into_any_element(),
                     None => self.render_empty(surface, cx),
@@ -673,6 +673,7 @@ impl RightPanel {
                 };
                 cx.new(|cx| crate::components::issue::issue_detail_panel::IssueDetailPanel::new(source, reference, window, cx)).into()
             }
+            RightPanelSurface::PullRequests { .. } => crate::components::pull_request::thread_pull_requests_panel::thread_pull_requests_panel(crate::state::shell::thread_key(&environment, &t3code_contracts::ThreadId::new(thread_id)), self.store.clone(), cx),
             RightPanelSurface::Preview { resource_id, .. } => {
                 let source = self.data.preview_source(&environment, cx)?;
                 let (thread_id, tab) = (thread_id.to_owned(), resource_id.clone().unwrap_or_default());

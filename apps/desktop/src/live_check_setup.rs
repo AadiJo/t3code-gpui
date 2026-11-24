@@ -5,6 +5,7 @@
 // row turns "Worktree setup cancelled" with the server's cancelled phase. A second launch without
 // the script finishes ("Worktree ready" or folds away as the web does).
 
+use t3code_web::components::ui::toast::Toaster;
 use super::*;
 use t3code_contracts::rpc::methods::SubscribeWorktreeSetup;
 use t3code_contracts::{
@@ -234,6 +235,32 @@ pub(super) fn run_draft_banner(check: &mut Check) -> anyhow::Result<()> {
     check.check("the draft route is back", route == Route::Draft(draft.clone()), format!("{route:?}"));
     check.check("the draft's banner shows the server's message", shown.as_ref().is_some_and(|b| !b.error.is_empty()), format!("{:?}", shown.map(|b| b.error)));
     check.check("the refused prompt is back in the draft's composer", restored.trim() == prompt, format!("{restored:?}"));
-    check.shot("draft-banner-00.png")
+    check.shot("draft-banner-00.png")?;
+
+    // Refused after the user went elsewhere: a toast offers the draft back (`stackedThreadToast`).
+    let composer = composer_of(check);
+    check.cx.update(|cx| {
+        composer.update(cx, |_, cx| {
+            cx.emit(t3code_web::components::chat::composer::ComposerEvent::Submit {
+                prompt: prompt.into(),
+                attachments: Vec::new(),
+                model: t3code_web::model_selection::ModelSelection {
+                    instance_id: t3code_web::model_selection::ProviderInstanceId("no-such-instance".into()),
+                    model: "nothing".into(),
+                    effort: None,
+                    speed: None,
+                    ultracode: false,
+                },
+                intent: t3code_web::composer_logic::ComposerSubmissionIntent::Foreground,
+                dispatch: None,
+            })
+        });
+        router.update(cx, |router, cx| router.navigate(Route::Usage, cx));
+    });
+    check.pump(|c| c.cx.update(|cx| Toaster::titles(cx).iter().any(|t| t.as_ref() == "Could not start thread")), Duration::from_secs(20), "a toast says the thread did not start")?;
+    let route = check.route();
+    check.check("the route stays where the user went", route == Route::Usage, format!("{route:?}"));
+    check.shot("draft-banner-01-toast.png")?;
+    Ok(())
 }
 

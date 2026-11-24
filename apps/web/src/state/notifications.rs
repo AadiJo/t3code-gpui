@@ -17,7 +17,7 @@ use t3code_contracts::{EnvironmentId, OrchestrationV2AppThreadLineageRelationshi
 
 use super::shell::{LiveShell, RowExtras, RowKey, environment_key, map_row, runtime_ids, thread_key};
 use super::{LiveEnvironment, StateBridge};
-use crate::components::sidebar::model::{ThreadKey, TimestampMs};
+use crate::components::sidebar::model::{SidebarThread, ThreadKey, TimestampMs};
 use crate::components::thread_notification_coordinator::{
     EnvironmentShell, NotificationInput, NotificationThread, ThreadLineage, ThreadNotificationCoordinator,
 };
@@ -127,6 +127,8 @@ impl LiveNotifications {
             let live = env.shell.status == SyncStatus::Live && env.shell.snapshot.is_some();
             let threads = live.then(|| {
                 let projects = env.shell.snapshot.as_ref().map(|snapshot| snapshot.projects.as_slice()).unwrap_or_default();
+                let titles: HashMap<&t3code_contracts::ProjectId, SharedString> =
+                    projects.iter().map(|project| (&project.id, SharedString::from(project.title.clone()))).collect();
                 presented
                     .iter()
                     .filter(|row| row.environment_id == id)
@@ -134,11 +136,7 @@ impl LiveNotifications {
                         let key = (row.environment_id.clone(), row.id().clone());
                         let local_visit = ui_state.thread_last_visited_at_by_id.get(&scoped_thread_key(&row.environment_id, row.id())).copied();
                         let lineage = lineage(row, &delegated);
-                        let project_title = projects
-                            .iter()
-                            .find(|project| project.id == row.source.project_id)
-                            .map(|project| SharedString::from(project.title.clone()))
-                            .unwrap_or_else(|| t!("Project"));
+                        let project_title = titles.get(&row.source.project_id).cloned().unwrap_or_else(|| t!("Project"));
                         let reused = self.mapped.remove(&key).filter(|mapped| {
                             Arc::ptr_eq(&mapped.source, row) && mapped.local_visit == local_visit && mapped.lineage == lineage && mapped.project_title == project_title
                         });
@@ -147,7 +145,7 @@ impl LiveNotifications {
                             local_visit,
                             lineage,
                             project_title: project_title.clone(),
-                            thread: Arc::new(notification_thread(row, local_visit, lineage, project_title, now)),
+                            thread: Arc::new(notification_thread(row, shell.mapped_row(row), local_visit, lineage, project_title, now)),
                         });
                         let thread = Arc::clone(&mapped.thread);
                         next.insert(key, mapped);
@@ -181,17 +179,29 @@ impl LiveNotifications {
     }
 }
 
-/// One shell row as notifications read it (`presentThreadShell` plus the raw shell fields).
-fn notification_thread(row: &ThreadRow, local_visit: Option<EpochMs>, lineage: ThreadLineage, project_title: SharedString, now: EpochMs) -> NotificationThread {
-    let extras = RowExtras { local_visit, woke_at: thread_woke_at(row, now), ..RowExtras::default() };
+/// One shell row as notifications read it (`presentThreadShell` plus the raw shell fields). The
+/// sidebar's mapped row is shared when it was mapped from this row with the same visit: the
+/// fields it adds (provider, draft, remote, unread mark) are ones notifications never read.
+fn notification_thread(
+    row: &ThreadRow,
+    sidebar: Option<(Option<EpochMs>, &Arc<SidebarThread>)>,
+    local_visit: Option<EpochMs>,
+    lineage: ThreadLineage,
+    project_title: SharedString,
+    now: EpochMs,
+) -> NotificationThread {
     let source = &row.source;
+    let mapped = match sidebar {
+        Some((visit, thread)) if visit == local_visit => Arc::clone(thread),
+        _ => Arc::new(map_row(row, RowExtras { local_visit, woke_at: thread_woke_at(row, now), ..RowExtras::default() })),
+    };
     NotificationThread {
-        row: Arc::new(map_row(row, extras)),
+        row: mapped,
         project_title,
         lineage,
-        latest_run_id: row.latest_run.as_ref().map(|run| SharedString::from(run.run_id.to_string())),
-        active_run_id: row.runtime.as_ref().and_then(|runtime| runtime.active_run_id.as_ref()).map(|id| SharedString::from(id.to_string())),
-        pending_request_id: source.pending_runtime_request.as_ref().map(|request| SharedString::from(request.id.to_string())),
+        latest_run_id: row.latest_run.as_ref().map(|run| SharedString::from(Arc::clone(&run.run_id.0))),
+        active_run_id: row.runtime.as_ref().and_then(|runtime| runtime.active_run_id.as_ref()).map(|id| SharedString::from(Arc::clone(&id.0))),
+        pending_request_id: source.pending_runtime_request.as_ref().map(|request| SharedString::from(Arc::clone(&request.id.0))),
         snooze: SnoozeState {
             snoozed_until: row.snoozed_until.map(TimestampMs),
             snoozed_at: row.snoozed_at.map(TimestampMs),

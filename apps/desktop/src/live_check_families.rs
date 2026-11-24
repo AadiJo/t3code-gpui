@@ -43,7 +43,7 @@ struct Truth {
     settled_at: i64,
 }
 
-fn pair_if_needed(check: &mut Check, wanted: usize, var: &str) -> anyhow::Result<()> {
+pub(super) fn pair_if_needed(check: &mut Check, wanted: usize, var: &str) -> anyhow::Result<()> {
     let have = check.cx.update(|cx| ConnectionRuntime::state(cx).read(cx).environments.len());
     if have >= wanted {
         return Ok(());
@@ -61,14 +61,14 @@ fn environment_ids(check: &mut Check) -> Vec<t3code_contracts::EnvironmentId> {
     })
 }
 
-fn all_connected(check: &mut Check, count: usize) -> bool {
+pub(super) fn all_connected(check: &mut Check, count: usize) -> bool {
     check.cx.update(|cx| {
         let state = ConnectionRuntime::state(cx).read(cx);
         state.environments.len() >= count && state.environments.iter().all(|e| e.status.as_ref().is_some_and(|s| s.phase == ConnectionPhase::Connected))
     })
 }
 
-fn project_at(check: &mut Check, environment_id: &t3code_contracts::EnvironmentId, root: &str) -> anyhow::Result<ProjectId> {
+pub(super) fn project_at(check: &mut Check, environment_id: &t3code_contracts::EnvironmentId, root: &str) -> anyhow::Result<ProjectId> {
     let id = environment_id.clone();
     let root_text = root.to_owned();
     check.pump(move |c| c.cx.update(|cx| StateBridge::environment(&id, cx).is_some_and(|env| env.read(cx).shell.snapshot.is_some())), Duration::from_secs(30), "shell loaded")?;
@@ -337,7 +337,7 @@ fn wheel_frames(check: &mut Check) -> Vec<f64> {
     frames
 }
 
-fn frame_summary(frames: &[f64]) -> String {
+pub(super) fn frame_summary(frames: &[f64]) -> String {
     let mut sorted = frames.to_vec();
     let p50 = percentile(&mut sorted, 0.5);
     let p99 = percentile(&mut sorted, 0.99);
@@ -420,6 +420,15 @@ fn compare_shelf(check: &mut Check, truth: &[Truth], total: usize, step: &str) -
     (drawn.len(), ok)
 }
 
+/// A screenshot, unless `T3_FAMILY_SHOTS=0`: memory runs leave out the headless renderer's
+/// capture buffers.
+fn shot(check: &mut Check, name: &str) -> anyhow::Result<()> {
+    if std::env::var("T3_FAMILY_SHOTS").is_ok_and(|v| v == "0") {
+        return Ok(());
+    }
+    check.shot(name)
+}
+
 pub(super) fn run_families(check: &mut Check) -> anyhow::Result<()> {
     let state: FamiliesState = serde_json::from_slice(&std::fs::read(check.out.join(FAMILIES_FILE))?)?;
     // A fresh profile pairs here: the seeding profile's shell resumed from the cut it took before
@@ -478,7 +487,7 @@ pub(super) fn run_families(check: &mut Check) -> anyhow::Result<()> {
     if cached {
         check.check("the cached Settled count already includes what is not loaded", header_cached == Some(total), format!("{header_cached:?} of {total}"));
     }
-    let rss_start = rss_mib();
+    let (heap_start, rss_start) = super::live_check_heap::heap_mark("before-pages");
     let presented_start = check.cx.update(|cx| StateBridge::shell(cx).read(cx).presented().len());
 
     // The family: an older settled thread opened by its route merges its family.
@@ -497,7 +506,7 @@ pub(super) fn run_families(check: &mut Check) -> anyhow::Result<()> {
     let (r, f) = (root.clone(), fork.clone());
     check.pump(move |c| in_shell(c, &r) && in_shell(c, &f), Duration::from_secs(30), "opening the old root merges its family (root and fork)")?;
     check.check("opening an old thread merges its family", true, "root and fork rows present");
-    check.shot("fam-00-family-open.png")?;
+    shot(check, "fam-00-family-open.png")?;
     let (r, f) = (truth.iter().find(|t| t.key == root).cloned(), truth.iter().find(|t| t.key == fork).cloned());
     check.check("the family rows are the server's oldest settled rows", r.is_some() && f.is_some(), format!("root {:?}, fork {:?}", r.map(|t| t.settled_at), f.map(|t| t.settled_at)));
     let other = truth.iter().find(|t| t.key.environment_id.0.as_ref() == state.env_b.as_str()).map(|t| t.key.clone()).context("a thread on B")?;
@@ -517,7 +526,7 @@ pub(super) fn run_families(check: &mut Check) -> anyhow::Result<()> {
     // Before any page: frames and memory with the shelf open at its first count.
     let frames_before = wheel_frames(check);
     check.note(format!("wheel before pages: {}", frame_summary(&frames_before)));
-    check.note(format!("resident memory before pages {rss_start:.1} MiB, {presented_start} presented rows"));
+    check.note(format!("resident memory before pages {rss_start:.1} MiB, heap {heap_start:.1} MiB, {presented_start} presented rows"));
 
     // `T3_FAMILY_CYCLES` repeats open, load every page and close, to tell retained allocator
     // pages from growth.
@@ -527,7 +536,7 @@ pub(super) fn run_families(check: &mut Check) -> anyhow::Result<()> {
     for cycle in 0..cycles {
     click_entry(check, |e| matches!(e, SidebarListEntry::ShelfHeader { shelf: Shelf::Settled, expanded: false, .. }), "settled header")?;
     settle_shelf(check)?;
-    check.shot("fam-01-settled-open.png")?;
+    shot(check, "fam-01-settled-open.png")?;
     step = 0;
     let (mut drawn, _) = compare_shelf(check, &truth, total, "open");
     slow_clicks.clear();
@@ -539,13 +548,13 @@ pub(super) fn run_families(check: &mut Check) -> anyhow::Result<()> {
         settle_shelf(check)?;
         let (next, ok) = compare_shelf(check, &truth, total, &format!("show more {step}"));
         if !ok {
-            check.shot(&format!("fam-mismatch-{step}.png")).ok();
+            shot(check, &format!("fam-mismatch-{step}.png")).ok();
             break;
         }
         anyhow::ensure!(next > drawn, "show more {step} drew no new rows ({next})");
         drawn = next;
         if step == 6 && cycle == 0 {
-            check.shot("fam-02-pages.png")?;
+            shot(check, "fam-02-pages.png")?;
             // Each environment's pages are the server's pages, in order.
             let pages = page_state(check, &ids);
             for ((loaded, rows, status, _), sizes) in pages.iter().zip(&sizes) {
@@ -589,13 +598,19 @@ pub(super) fn run_families(check: &mut Check) -> anyhow::Result<()> {
     if !clicks.is_empty() {
         check.note(format!("{step} show more clicks: p50 {:.2} ms, worst {:.2} ms (event and draw)", percentile(&mut clicks, 0.5), clicks.last().copied().unwrap_or(0.)));
     }
-    check.shot("fam-03-all-pages.png")?;
+    shot(check, "fam-03-all-pages.png")?;
 
-    rss_all = rss_mib();
     presented_all = check.cx.update(|cx| StateBridge::shell(cx).read(cx).presented().len());
+    let heap_all;
+    (heap_all, rss_all) = super::live_check_heap::heap_mark(&format!("all-pages-{cycle}"));
     frames_after = wheel_frames(check);
     check.note(format!("wheel after every page: {}", frame_summary(&frames_after)));
-    check.note(format!("resident memory after every page {rss_all:.1} MiB (+{:.1}), {presented_all} presented rows", rss_all - rss_start));
+    check.note(format!(
+        "resident memory after every page {rss_all:.1} MiB (+{:.1}), heap {heap_all:.1} MiB (+{:.1}, {:.1} KiB per added row), {presented_all} presented rows",
+        rss_all - rss_start,
+        heap_all - heap_start,
+        (heap_all - heap_start) * 1024.0 / presented_all.saturating_sub(presented_start).max(1) as f64
+    ));
 
     // Closing the shelf drops the page rows; opening it again reads them again.
     click_entry(check, |e| matches!(e, SidebarListEntry::ShelfHeader { shelf: Shelf::Settled, expanded: true, .. }), "settled header")?;
@@ -604,8 +619,9 @@ pub(super) fn run_families(check: &mut Check) -> anyhow::Result<()> {
     let presented_closed = check.cx.update(|cx| StateBridge::shell(cx).read(cx).presented().len());
     check.check("a closed shelf keeps no pages", closed.iter().all(|p| p.0 == 0), format!("{presented_closed} presented rows, was {presented_all}"));
     check.wait(Duration::from_secs(2));
-    rss_closed = rss_mib();
-    check.note(format!("cycle {cycle}: resident memory with the shelf closed {rss_closed:.1} MiB"));
+    let heap_closed;
+    (heap_closed, rss_closed) = super::live_check_heap::heap_mark(&format!("closed-{cycle}"));
+    check.note(format!("cycle {cycle}: resident memory with the shelf closed {rss_closed:.1} MiB, heap {heap_closed:.1} MiB"));
     rss_cycles.push((rss_all, rss_closed));
     }
     let record = serde_json::json!({

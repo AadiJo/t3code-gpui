@@ -409,3 +409,32 @@ pub fn change_request_url(kind: SourceControlHostKind, input: ChangeRequestUrlIn
         }
     })
 }
+
+/// `canonicalRepositoryKey`: one spelling of a `host/path` repository key. Paths take their
+/// canonical form; Azure DevOps Services repositories, written with an SSH v3 host or a legacy
+/// `<organization>.visualstudio.com` host, become `dev.azure.com/<org>/<project>/_git/<repo>`.
+pub fn canonical_repository_key(key: &str) -> String {
+    let key = match key.split_once('/') {
+        Some((host, path)) => format!("{host}/{}", canonical_repository_path(path)),
+        None => return key.to_owned(),
+    };
+    let parts: Vec<&str> = key.split('/').collect();
+    let azure = match parts.as_slice() {
+        [host, "v3", organization, project, repository] if matches!(*host, "ssh.dev.azure.com" | "vs-ssh.visualstudio.com") => {
+            Some(format!("dev.azure.com/{organization}/{project}/_git/{repository}"))
+        }
+        [host, rest @ ..] if host.ends_with(".visualstudio.com") && !host.trim_end_matches(".visualstudio.com").contains('.') => {
+            let organization = host.trim_end_matches(".visualstudio.com");
+            let rest = match rest {
+                ["defaultcollection", rest @ ..] => rest,
+                rest => rest,
+            };
+            match rest {
+                [project, "_git", repository] if !organization.is_empty() => Some(format!("dev.azure.com/{organization}/{project}/_git/{repository}")),
+                _ => None,
+            }
+        }
+        _ => None,
+    };
+    azure.unwrap_or(key)
+}

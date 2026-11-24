@@ -1,10 +1,12 @@
 //! The command palette over live threads and projects (`CommandPalette.tsx` data,
 //! `commandPaletteStore.ts` handlers). [`LivePaletteSource`] is refreshed from
-//! [`LiveShell`] by [`LivePaletteSource::refresh`]; a palette thread keeps its `Arc` while its
-//! sidebar row's `Arc` is unchanged, so a refresh after one thread changed builds one search
-//! subject.
+//! [`LiveShell`] by [`LivePaletteSource::refresh`], which keeps only the shell's row `Arc`s. The
+//! palette threads and `@` candidates are built when first read and kept up to date while they
+//! are read between refreshes; a refresh after a quiet stretch drops them, so a closed palette
+//! holds no copy of the rows. A palette thread keeps its `Arc` while its sidebar row's `Arc` is
+//! unchanged, so a refresh after one thread changed builds one search subject.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -34,9 +36,14 @@ use t3code_client_runtime::state::models::ThreadRow;
 #[derive(Default)]
 struct PaletteData {
     revision: u64,
-    threads: Arc<[Arc<PaletteThread>]>,
+    /// The shell's listed and presented rows as of the last refresh.
+    sidebar_rows: Vec<Arc<SidebarThread>>,
+    presented_rows: Vec<Arc<ThreadRow>>,
+    /// Built from those rows on first read; `None` until then.
+    threads: Option<Arc<[Arc<PaletteThread>]>>,
     projects: Arc<[PaletteProject]>,
     active_thread: Option<ThreadKey>,
+    active_project: Option<ProjectRef>,
     /// The active thread links pull requests or issues.
     active_has_links: bool,
     /// The active thread's environment has its server config, so links can change
@@ -51,8 +58,64 @@ struct PaletteData {
     environments: Vec<PaletteEnvironment>,
     now_ms: i64,
     memo: HashMap<ThreadKey, (Arc<SidebarThread>, Arc<PaletteThread>)>,
-    mentions: Arc<[Arc<MentionCandidate>]>,
+    mentions: Option<Arc<[Arc<MentionCandidate>]>>,
     mention_memo: HashMap<ThreadKey, (Arc<ThreadRow>, Arc<MentionCandidate>)>,
+}
+
+impl PaletteData {
+    /// The palette threads, built from the rows when not built since the last refresh.
+    fn threads(&mut self) -> Arc<[Arc<PaletteThread>]> {
+        if let Some(threads) = &self.threads {
+            return threads.clone();
+        }
+        let mut memo = std::mem::take(&mut self.memo);
+        let mut next = HashMap::with_capacity(self.sidebar_rows.len());
+        let threads: Arc<[Arc<PaletteThread>]> = self
+            .sidebar_rows
+            .iter()
+            .filter(|thread| !thread.archived)
+            .map(|thread| {
+                let palette = match memo.remove(&thread.key) {
+                    Some((source, palette)) if Arc::ptr_eq(&source, thread) => palette,
+                    _ => {
+                        let project = self.projects.iter().find(|p| p.project_ref == thread.project_ref());
+                        Arc::new(PaletteThread::from_sidebar(thread, project.map(|p| p.title.as_ref()), None, None))
+                    }
+                };
+                next.insert(thread.key.clone(), (Arc::clone(thread), Arc::clone(&palette)));
+                palette
+            })
+            .collect();
+        self.memo = next;
+        self.threads = Some(threads.clone());
+        threads
+    }
+
+    /// The `@` candidates, built like [`Self::threads`].
+    fn mentions(&mut self) -> Arc<[Arc<MentionCandidate>]> {
+        if let Some(mentions) = &self.mentions {
+            return mentions.clone();
+        }
+        let mut memo = std::mem::take(&mut self.mention_memo);
+        let mut next = HashMap::with_capacity(memo.len());
+        let mentions: Arc<[Arc<MentionCandidate>]> = self
+            .presented_rows
+            .iter()
+            .filter(|row| row.source.archived_at.is_none() && (row.source.lineage.is_listed() || row.source.lineage.side_chat == Some(true)))
+            .map(|row| {
+                let key = super::shell::thread_key(&row.environment_id, row.id());
+                let candidate = match memo.remove(&key) {
+                    Some((source, candidate)) if Arc::ptr_eq(&source, row) => candidate,
+                    _ => Arc::new(MentionCandidate::new(row)),
+                };
+                next.insert(key, (Arc::clone(row), Arc::clone(&candidate)));
+                candidate
+            })
+            .collect();
+        self.mention_memo = next;
+        self.mentions = Some(mentions.clone());
+        mentions
+    }
 }
 
 /// A thread the composer's `@` menu may reference (`ComposerThreadCandidate`): every listed
@@ -86,6 +149,8 @@ impl MentionCandidate {
 #[derive(Default)]
 pub struct LivePaletteSource {
     data: RefCell<PaletteData>,
+    /// The built lists were read since the last refresh.
+    read: Cell<bool>,
 }
 
 impl LivePaletteSource {
@@ -95,7 +160,8 @@ impl LivePaletteSource {
 
     /// The threads `@` may reference, as of the last refresh.
     pub fn mention_candidates(&self) -> Arc<[Arc<MentionCandidate>]> {
-        self.data.borrow().mentions.clone()
+        self.read.set(true);
+        self.data.borrow_mut().mentions()
     }
 
     /// Takes the shell's current rows if they changed since the last refresh.
@@ -105,47 +171,25 @@ impl LivePaletteSource {
             return;
         }
         let snapshot = shell.snapshot();
-        let projects = crate::components::command_palette_lookups::palette_projects(snapshot);
-        let mut memo = std::mem::take(&mut data.memo);
-        let mut next = HashMap::with_capacity(snapshot.threads.len());
-        let threads: Arc<[Arc<PaletteThread>]> = snapshot
-            .threads
-            .iter()
-            .filter(|thread| !thread.archived)
-            .map(|thread| {
-                let palette = match memo.remove(&thread.key) {
-                    Some((source, palette)) if Arc::ptr_eq(&source, thread) => palette,
-                    _ => {
-                        let project = projects.iter().find(|p| p.project_ref == thread.project_ref());
-                        Arc::new(PaletteThread::from_sidebar(thread, project.map(|p| p.title.as_ref()), None, None))
-                    }
-                };
-                next.insert(thread.key.clone(), (Arc::clone(thread), Arc::clone(&palette)));
-                palette
-            })
-            .collect();
-        data.memo = next;
-        data.threads = threads;
-        let mut memo = std::mem::take(&mut data.mention_memo);
-        let mut next = HashMap::with_capacity(memo.len());
-        let mentions: Arc<[Arc<MentionCandidate>]> = shell
-            .presented()
-            .iter()
-            .filter(|row| row.source.archived_at.is_none() && (row.source.lineage.is_listed() || row.source.lineage.side_chat == Some(true)))
-            .map(|row| {
-                let key = super::shell::thread_key(&row.environment_id, row.id());
-                let candidate = match memo.remove(&key) {
-                    Some((source, candidate)) if Arc::ptr_eq(&source, row) => candidate,
-                    _ => Arc::new(MentionCandidate::new(row)),
-                };
-                next.insert(key, (Arc::clone(row), Arc::clone(&candidate)));
-                candidate
-            })
-            .collect();
-        data.mention_memo = next;
-        data.mentions = mentions;
-        data.projects = projects;
+        data.projects = crate::components::command_palette_lookups::palette_projects(snapshot);
+        data.sidebar_rows = snapshot.threads.clone();
+        data.presented_rows = shell.presented().to_vec();
+        // Lists read since the last refresh are rebuilt now from their memos, so an open palette
+        // stays current; unread ones are dropped with their memos.
+        let (threads, mentions) = (data.threads.take().is_some(), data.mentions.take().is_some());
+        if self.read.replace(false) {
+            if threads {
+                data.threads();
+            }
+            if mentions {
+                data.mentions();
+            }
+        } else {
+            data.memo = HashMap::new();
+            data.mention_memo = HashMap::new();
+        }
         data.active_thread = snapshot.active_thread.clone();
+        data.active_project = snapshot.active_thread.as_ref().and_then(|active| snapshot.threads.iter().find(|t| &t.key == active && !t.archived)).map(|t| t.project_ref());
         data.active_has_links = snapshot.active_thread.as_ref().and_then(|key| shell.row(key)).is_some_and(|row| {
             row.source.pull_requests.as_ref().is_some_and(|links| !links.is_empty()) || row.source.issues.as_ref().is_some_and(|issues| !issues.is_empty())
         });
@@ -178,7 +222,8 @@ impl LivePaletteSource {
 
 impl CommandPaletteSource for LivePaletteSource {
     fn threads(&self) -> Arc<[Arc<PaletteThread>]> {
-        self.data.borrow().threads.clone()
+        self.read.set(true);
+        self.data.borrow_mut().threads()
     }
 
     fn projects(&self) -> Arc<[PaletteProject]> {
@@ -190,9 +235,7 @@ impl CommandPaletteSource for LivePaletteSource {
     }
 
     fn current_project(&self) -> Option<ProjectRef> {
-        let data = self.data.borrow();
-        let active = data.active_thread.as_ref()?;
-        data.threads.iter().find(|t| &t.key == active).and_then(|t| t.project.clone())
+        self.data.borrow().active_project.clone()
     }
 
     fn environments(&self) -> Vec<PaletteEnvironment> {

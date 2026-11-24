@@ -234,7 +234,7 @@ impl ConnectionRuntime {
             let auth = Arc::new(RemoteAuthorization::new(presentation, key, CredentialStore::new(secrets), relay));
             let context = Arc::new(ConnectionContext {
                 auth: auth.clone(),
-                session_options: RpcSessionOptions::default(),
+                session_options: RpcSessionOptions { usage_limit_sources: true, usage_limits_command: true, ..RpcSessionOptions::default() },
                 frame_tap: None,
             });
             let registry = ConnectionRegistry::open(context, &data_dir).await?;

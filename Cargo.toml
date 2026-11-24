@@ -19,6 +19,7 @@ license = "MIT"
 publish = false
 
 [workspace.dependencies]
+backtrace = "0.3"
 t3code-client-runtime = { path = "packages/client-runtime" }
 t3code-contracts = { path = "packages/contracts" }
 t3code-i18n-macros = { path = "packages/i18n-macros" }
@@ -141,6 +142,12 @@ debug = false
 strip = "symbols"
 codegen-units = 16
 lto = "thin"
+
+# Release code with line tables, for heap profiles (`live-check` with `--features heap-profile`).
+[profile.profiling]
+inherits = "release"
+debug = "line-tables-only"
+strip = "none"
 
 # Patched GPUI crates (gpui-pre 0.3.14, Apache-2.0) adding a backdrop blur
 # primitive (`Window::paint_backdrop`, `Styled::backdrop_blur`) drawn by the

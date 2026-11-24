@@ -70,8 +70,8 @@ pub enum DataEvent {
     Text { thread: ThreadKey, changes: Arc<[(MessageId, SharedString, bool)]> },
     /// A draft got its first message and is now a server thread.
     DraftPromoted { draft: DraftId, thread: ThreadKey },
-    /// The server refused the launch `DraftPromoted` announced: the draft is back.
-    DraftLaunchFailed { draft: DraftId, thread: ThreadKey },
+    /// The server refused the launch `DraftPromoted` announced: the draft is back, with why.
+    DraftLaunchFailed { draft: DraftId, thread: ThreadKey, error: SharedString },
     /// Show this thread (a fork or side chat that just arrived).
     OpenThread(ThreadKey),
     /// Show `parent` with the side chat's tab open in its right panel (`openSideChat`).

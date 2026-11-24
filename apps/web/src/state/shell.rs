@@ -34,6 +34,9 @@ use crate::components::sidebar::model::{
 
 pub type RowKey = (t3code_contracts::EnvironmentId, t3code_contracts::ThreadId);
 
+/// Dropping this many presented rows in one rebuild returns the freed memory to the system.
+const RELEASE_AFTER_DROPPED_ROWS: usize = 100;
+
 /// What a mapped row was built from; equal inputs reuse the mapped `Arc`.
 struct MappedRow {
     source: Arc<ThreadRow>,
@@ -386,6 +389,13 @@ impl LiveShell {
         self.presented.iter().find(|row| row.environment_id.as_str() == key.environment_id.0.as_ref() && row.id().as_str() == key.thread_id.0.as_ref())
     }
 
+    /// The sidebar's mapped row for a presented row, with the local visit it was mapped with,
+    /// while it is mapped from this very row. Other views share it instead of mapping again.
+    pub fn mapped_row(&self, row: &Arc<ThreadRow>) -> Option<(Option<EpochMs>, &Arc<SidebarThread>)> {
+        let mapped = self.mapped.get(&(row.environment_id.clone(), row.id().clone()))?;
+        Arc::ptr_eq(&mapped.source, row).then_some((mapped.local_visit, &mapped.thread))
+    }
+
     /// Marks the thread the main pane shows.
     pub fn set_active_thread(&mut self, key: Option<ThreadKey>, cx: &mut Context<Self>) {
         if self.active_thread != key {
@@ -426,7 +436,12 @@ impl LiveShell {
             .filter_map(|env| env.shell.snapshot.as_ref().map(|snapshot| (env.environment_id().clone(), Arc::clone(&snapshot.threads))))
             .collect();
         let borrowed: Vec<_> = shells.iter().map(|(id, threads)| (id.clone(), threads.as_slice())).collect();
+        let before = self.presented.len();
         self.presented = self.rows.present(&borrowed);
+        // A closed shelf or a removed environment drops many rows at once.
+        if before >= self.presented.len() + RELEASE_AFTER_DROPPED_ROWS {
+            super::memory::release_after_drop();
+        }
         let filters: HashMap<_, _> = envs
             .iter()
             .filter_map(|env| Some((env.environment_id().clone(), hidden_tags(env.config.as_deref().map(|config| &config.settings))?)))

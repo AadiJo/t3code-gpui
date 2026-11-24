@@ -7,6 +7,8 @@ publish.workspace = true
 
 [features]
 headless = ["t3code-web/test-support", "gpui-kit/test-support"]
+# Sampled heap profiles of `live-check` (`T3_HEAP_PROFILE`, see `live_check_heap.rs`).
+heap-profile = ["dep:backtrace"]
 
 [[bin]]
 name = "t3code"
@@ -92,6 +94,7 @@ jiff.workspace = true
 url.workspace = true
 uuid.workspace = true
 rusty-leveldb.workspace = true
+backtrace = { workspace = true, optional = true }
 
 [build-dependencies]
 embed-resource.workspace = true
