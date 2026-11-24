@@ -246,6 +246,9 @@ fn render(scene: &Scene, owner: bool, out: &std::path::Path, data: &std::path::P
             t3code_web::hooks::use_theme::ThemeStore::set_appearance_mode(ThemeMode::Dark, cx);
         } else {
             ThemeSettings::set_glass_opacity(GlassOpacity::new(OWNER_GLASS_OPACITY), cx);
+            // The reference captures ran with the fork's notification inbox on.
+            t3code_web::hooks::use_settings::ClientSettingsStore::update(cx, |s| s.notification_inbox_enabled = true);
+            ThemeSettings::set_mode(if scene.light { ThemeMode::Light } else { ThemeMode::Dark }, cx);
         }
         ConnectionRuntime::init(config, cx)
     })?;
