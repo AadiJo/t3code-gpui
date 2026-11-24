@@ -3,6 +3,7 @@
 //! 12px gap while hovered. A corner orb dismisses; non-loading toasts expire
 //! after five seconds.
 
+use crate::components::ui::GlassExt as _;
 use std::collections::HashSet;
 use std::rc::Rc;
 use std::time::Duration;
@@ -124,7 +125,7 @@ fn toast_card(theme: &AppTheme) -> gpui_kit::Div {
         .rounded(theme.radii.lg)
         .border_1()
         .border_color(theme.derived.dropdown_glass_border)
-        .bg(theme.derived.dropdown_glass_opaque)
+        .glass(theme.derived.glass_dropdown)
         .shadow(theme.shadows.xl25.clone())
 }
 

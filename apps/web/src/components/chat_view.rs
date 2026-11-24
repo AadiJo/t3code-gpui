@@ -6,6 +6,7 @@
 //! A new thread with no messages shows the draft hero: the composer centred
 //! under "What should we work on?".
 
+use crate::components::ui::GlassExt as _;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Duration;
@@ -458,7 +459,7 @@ impl ChatView {
             .rounded(px(16.))
             .border_1()
             .border_color(outline)
-            .bg(colors.composer_glass)
+            .glass(colors.composer_glass)
             .px_4()
             .pt_4()
             .text_size(TEXT_SM.size)
@@ -538,7 +539,7 @@ impl Render for ChatView {
                             .border_1()
                             .border_b_0()
                             .border_color(alpha(colors.theme.border, 0.8))
-                            .bg(colors.composer_glass)
+                            .glass(colors.composer_glass)
                             .pb_2()
                             .child(pending_user_input_panel(question, selected, on_pick.clone(), &colors))
                             .children(question_nav)

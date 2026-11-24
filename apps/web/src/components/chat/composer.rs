@@ -8,6 +8,7 @@
 //! The composer never talks to the network. It raises [`ComposerEvent`]s for
 //! the chat view, which feeds state back through [`ChatComposer::set_state`].
 
+use crate::components::ui::GlassExt as _;
 use crate::components::icons::{Icon, IconName, IconSize};
 use std::cell::RefCell;
 use std::ops::Range;
@@ -1031,7 +1032,7 @@ impl ChatComposer {
                 .px(px(4.))
                 .pt(px(4.))
                 .rounded_t(SURFACE_RADIUS)
-                .bg(c.glass_surface)
+                .glass(c.glass_surface)
                 .border_1()
                 .border_color(c.outline)
                 .flex()
@@ -1204,7 +1205,7 @@ impl Render for ChatComposer {
             .relative()
             .w_full()
             .rounded(SURFACE_RADIUS)
-            .bg(c.glass_surface)
+            .glass(c.glass_surface)
             .border_1()
             .border_color(c.outline)
             .when(!c.is_dark(), |el| {
@@ -1235,7 +1236,7 @@ impl Render for ChatComposer {
                 .mb(-ATTACHMENT_OVERLAP)
                 .pb(ATTACHMENT_OVERLAP)
                 .rounded_t(SURFACE_RADIUS)
-                .bg(c.glass_surface)
+                .glass(c.glass_surface)
                 .border_1()
                 .border_color(c.outline)
                 .shadow(popup_shadow(&c))

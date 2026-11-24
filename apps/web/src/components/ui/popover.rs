@@ -1,9 +1,7 @@
 //! Popover and the glass surface shared by menus, selects and toasts.
 //! Ports `popover.tsx` and the `dropdown-glass` utility (`index.css:367-470`).
 //!
-//! GPUI cannot blur what is behind an element, so glass surfaces paint the
-//! spec's opaque fallback: the translucent popover colour flattened over the
-//! canvas.
+//! Glass surfaces blur what is behind them through `GlassExt::glass`.
 
 use gpui_kit::{
     AnyElement, App, ClickEvent, Div, ElementId, Entity, IntoElement, ParentElement, Pixels, Point, RenderOnce, SharedString,
@@ -11,7 +9,7 @@ use gpui_kit::{
 };
 
 use super::motion::Transition;
-use super::{TextStyleExt as _, ControlHighlightExt as _};
+use super::{GlassExt as _, TextStyleExt as _, ControlHighlightExt as _};
 use crate::appearance_fonts::{TextSize, weight};
 use crate::{ActiveAppTheme as _, AppTheme};
 
@@ -24,7 +22,7 @@ pub fn glass_surface(theme: &AppTheme) -> Div {
         .rounded(theme.radii.lg)
         .border_1()
         .border_color(theme.derived.dropdown_glass_border)
-        .bg(theme.derived.dropdown_glass_opaque)
+        .glass(theme.derived.glass_dropdown)
         .shadow(theme.shadows.menu.clone())
         .text_color(theme.foregrounds.popover)
 }

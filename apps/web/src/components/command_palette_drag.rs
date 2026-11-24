@@ -2,6 +2,7 @@
 //! the palette closes as the drag starts, and a drop target such as the
 //! composer accepts [`PaletteThreadDrag`] with `.on_drop(...)`.
 
+use crate::components::ui::GlassExt as _;
 use gpui_kit::{Context, IntoElement, ParentElement as _, Render, SharedString, Styled as _, Window, div};
 
 use super::sidebar::model::ThreadKey;
@@ -25,7 +26,7 @@ impl Render for PaletteThreadDrag {
             .rounded(theme.radii.md)
             .border_1()
             .border_color(theme.derived.dropdown_glass_border)
-            .bg(theme.derived.dropdown_glass_opaque)
+            .glass(theme.derived.glass_dropdown)
             .shadow(theme.shadows.md5.clone())
             .ui_text(theme, TextSize::Xs, weight::MEDIUM)
             .text_color(theme.colors.foreground())

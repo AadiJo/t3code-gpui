@@ -3,6 +3,7 @@
 //! `dialog-glass` popup up to 36rem wide, a borderless search field with a
 //! leading search icon, the list panel, and the footer of key hints.
 
+use crate::components::ui::GlassExt as _;
 use gpui_kit::{
     AnyElement, App, Div, Entity, IntoElement, MouseButton, ParentElement as _, Pixels, SharedString, Styled as _,
     Window, anchored, component::input::{Input, InputState},
@@ -111,7 +112,7 @@ pub fn palette_overlay(content: AnyElement, on_close: impl Fn(&mut Window, &mut 
                         .top_0()
                         .left_0()
                         .size_full()
-                        .bg(theme.derived.dialog_backdrop)
+                        .glass(theme.derived.glass_dialog_backdrop)
                         .on_mouse_down(MouseButton::Left, move |_, window, cx| on_close(window, cx)),
                 )
                 .child(div().relative().w_full().flex().justify_center().child(content)),

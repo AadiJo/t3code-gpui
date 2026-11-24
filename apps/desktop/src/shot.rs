@@ -2,7 +2,9 @@
 // Usage: shot <scene> <out.png> [width height]
 // `T3CODE_CONTRAST`, `T3CODE_GLASS_OPACITY`, `T3CODE_INTERFACE_SIZE` and
 // `T3CODE_PANEL_MS` render with those client settings; `T3CODE_SCALE` sets the
-// device scale (2 by default).
+// device scale (2 by default). `T3CODE_SHOT_REPEAT=<n>` also renders the
+// finished scene n more times, each read back so the GPU work is included,
+// and prints the times.
 use std::sync::Arc;
 
 use anyhow::{Context as _, anyhow};
@@ -67,6 +69,17 @@ fn main() -> anyhow::Result<()> {
     cx.update_window(handle, |_, window, cx| window.render_frame(cx))?;
     let image = cx.capture_screenshot(handle)?;
     image.save(&out)?;
+    if let Some(repeat) = std::env::var("T3CODE_SHOT_REPEAT").ok().and_then(|value| value.parse::<usize>().ok()) {
+        let mut times = Vec::with_capacity(repeat);
+        for _ in 0..repeat {
+            let start = std::time::Instant::now();
+            cx.capture_screenshot(handle)?;
+            times.push(start.elapsed().as_secs_f64() * 1000.);
+        }
+        times.sort_by(f64::total_cmp);
+        let at = |q: f64| times[((times.len() - 1) as f64 * q).round() as usize];
+        println!("frame with readback, {repeat} frames: p50 {:.2} ms, p95 {:.2} ms, max {:.2} ms", at(0.5), at(0.95), at(1.));
+    }
     println!("{out}: {}x{}", image.width(), image.height());
     Ok(())
 }
