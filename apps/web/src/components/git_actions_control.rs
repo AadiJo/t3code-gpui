@@ -150,11 +150,16 @@ fn quick_action_icon(quick: &GitQuickAction) -> IconName {
     }
 }
 
+/// A failed action's toast; it stays until dismissed (`timeout: 0`).
 fn error_toast(title: SharedString, error: &SourceControlError, cx: &mut App) {
-    // Errors stay until dismissed in the original; the toaster expires every toast.
-    let _ = resolve_git_action_result_toast_timing(ToastOutcome::Error);
+    let timing = resolve_git_action_result_toast_timing(ToastOutcome::Error);
     let description = if error.0.is_empty() { t!("An error occurred.") } else { error.0.clone() };
-    Toaster::push(ToastData::new(ToastKind::Error, title).description(description), cx);
+    let toast = ToastData::new(ToastKind::Error, title).description(description);
+    let toast = match timing.dismiss_after_visible_ms {
+        None => toast.persistent(),
+        Some(ms) => toast.timeout(Duration::from_millis(ms as u64)),
+    };
+    Toaster::push(toast, cx);
 }
 
 impl GitActionsControl {
@@ -352,7 +357,8 @@ impl GitActionsControl {
             cx.update(|cx| {
                 model.update(cx, |m, cx| m.finish(None, cx));
                 if let Err(error) = result {
-                    error_toast(t!("Git initialization failed"), &error, cx);
+                    let description = if error.0.is_empty() { t!("An error occurred.") } else { error.0.clone() };
+                    Toaster::push(ToastData::new(ToastKind::Error, t!("Git initialization failed")).description(description), cx);
                 }
             })
         })

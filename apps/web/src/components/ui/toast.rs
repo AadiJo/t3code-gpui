@@ -46,11 +46,26 @@ pub struct ToastData {
     pub action: Option<(SharedString, Action)>,
     /// A leading icon in place of the kind's (`data.leadingIcon`).
     pub icon: Option<(IconName, Hsla)>,
+    /// How long it stays; `None` keeps it until dismissed (`timeout: 0`).
+    pub timeout: Option<Duration>,
 }
 
 impl ToastData {
     pub fn new(kind: ToastKind, title: impl Into<SharedString>) -> Self {
-        Self { kind, title: title.into(), description: None, action: None, icon: None }
+        let timeout = (kind != ToastKind::Loading).then_some(TIMEOUT);
+        Self { kind, title: title.into(), description: None, action: None, icon: None, timeout }
+    }
+
+    /// Keeps the toast until it is dismissed (`timeout: 0`).
+    pub fn persistent(mut self) -> Self {
+        self.timeout = None;
+        self
+    }
+
+    /// Dismisses the toast after `timeout` instead of the default five seconds.
+    pub fn timeout(mut self, timeout: Duration) -> Self {
+        self.timeout = Some(timeout);
+        self
     }
 
     /// Replaces the kind's leading icon.
@@ -221,17 +236,18 @@ impl Toaster {
         cx.global::<GlobalToaster>().0.clone()
     }
 
-    /// Shows a toast. It expires after five seconds unless it is loading.
+    /// Shows a toast. It expires after its timeout (five seconds unless set;
+    /// never for a loading or persistent toast).
     pub fn push(data: ToastData, cx: &mut App) -> u64 {
         let toaster = Self::view(cx);
         toaster.update(cx, |toaster, cx| {
             let id = toaster.next_id;
             toaster.next_id += 1;
-            let expires = data.kind != ToastKind::Loading;
+            let timeout = data.timeout;
             toaster.toasts.insert(0, (id, data));
-            if expires {
+            if let Some(timeout) = timeout {
                 cx.spawn(async move |this, cx| {
-                    cx.background_executor().timer(TIMEOUT).await;
+                    cx.background_executor().timer(timeout).await;
                     this.update(cx, |toaster, cx| toaster.remove(id, cx)).ok();
                 })
                 .detach();
