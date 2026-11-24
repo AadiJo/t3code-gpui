@@ -461,9 +461,11 @@ impl MessagesTimeline {
         t3code_client_runtime::state::models::now_ms() + self.clock_offset
     }
 
-    /// The composer overlay's measured height; the list reserves it at the bottom.
+    /// The composer overlay's measured height, rounded up to a whole pixel as
+    /// `publishComposerOverlayHeight` does; the list reserves it at the bottom.
     pub fn set_composer_inset(&mut self, height: Pixels, cx: &mut Context<Self>) {
-        if (self.composer_inset - height).abs() < px(0.5) {
+        let height = height.ceil();
+        if self.composer_inset == height {
             return;
         }
         self.composer_inset = height;
@@ -754,14 +756,15 @@ impl MessagesTimeline {
         hasher.finish()
     }
 
-    /// Bottom padding of a row (`MessagesTimeline.tsx:1660-1683`).
+    /// Bottom padding of a row at a 16px root (`MessagesTimeline.tsx:1660-1683`); the caller
+    /// scales it by the interface size.
     fn row_bottom_padding(row: &TimelineRow) -> Pixels {
         match &row.kind {
             RowKind::Work { .. } | RowKind::WorkLive { .. } | RowKind::WorkToggle { .. } | RowKind::Thinking { .. } => px(0.),
             RowKind::WorkGroupDetails { .. } => px(0.),
             RowKind::Event { event: super::timeline_entries::TimelineEvent::Subagent(_), .. } => px(0.),
             RowKind::TurnFold { .. } | RowKind::Working { .. } => px(6.),
-            RowKind::Message(m) if m.message.role == MessageRole::User && m.grouped_with_next => px(4.),
+            RowKind::Message(m) if m.grouped_with_next => px(4.),
             RowKind::Message(m) if m.message.role == MessageRole::Assistant && !m.show_meta => px(8.),
             RowKind::WorktreeSetup(_)
             | RowKind::Event { .. }
@@ -770,8 +773,7 @@ impl MessagesTimeline {
             | RowKind::SentMessage { .. }
             | RowKind::McpApp { .. }
             | RowKind::ViewedImages { .. }
-            | RowKind::PendingApproval { .. }
-            | RowKind::AssistantMeta { .. } => px(8.),
+            | RowKind::PendingApproval { .. } => px(8.),
             RowKind::QueuedMessages { .. } => px(0.),
             _ => px(16.),
         }
