@@ -16,6 +16,7 @@ use crate::components::ui::tooltip::tooltip;
 use crate::hooks::use_settings::ClientSettingsStore;
 use crate::i18n::t;
 use crate::keybindings::{ShortcutContext, WhenKey, shortcut_label_for_command};
+use crate::shortcuts::commands::{CloseTerminal, NewTerminal, SplitTerminal, SplitTerminalVertical};
 use crate::shortcuts::keymap::ShortcutState;
 use crate::terminal::{TerminalBackend, TerminalSurface, TerminalSurfaceEvent};
 use t3code_shared::keybindings::{KeybindingCommand, StaticCommand};
@@ -31,40 +32,6 @@ pub const MIN_DRAWER_HEIGHT: f32 = 180.;
 const MAX_DRAWER_HEIGHT_RATIO: f32 = 0.75;
 const RESIZE_HANDLE_HEIGHT: Pixels = px(6.);
 const SIDEBAR_WIDTH: Pixels = px(144.);
-
-actions!(
-    terminal_drawer,
-    [
-        /// Opens a terminal in a new group.
-        NewTerminal,
-        /// Adds a terminal beside the active one.
-        SplitTerminal,
-        /// Adds a terminal below the active one.
-        SplitTerminalVertical,
-        /// Closes the active terminal.
-        CloseTerminal,
-    ]
-);
-
-/// Registers the drawer's terminal-focused shortcuts (`mod+n`, `mod+d`, `mod+shift+d`, `mod+w`).
-pub fn init(cx: &mut App) {
-    let context = Some("ThreadTerminalDrawer > Terminal");
-    if cfg!(target_os = "macos") {
-        cx.bind_keys([
-            KeyBinding::new("cmd-n", NewTerminal, context),
-            KeyBinding::new("cmd-d", SplitTerminal, context),
-            KeyBinding::new("cmd-shift-d", SplitTerminalVertical, context),
-            KeyBinding::new("cmd-w", CloseTerminal, context),
-        ]);
-    } else {
-        cx.bind_keys([
-            KeyBinding::new("ctrl-n", NewTerminal, context),
-            KeyBinding::new("ctrl-d", SplitTerminal, context),
-            KeyBinding::new("ctrl-shift-d", SplitTerminalVertical, context),
-            KeyBinding::new("ctrl-w", CloseTerminal, context),
-        ]);
-    }
-}
 
 /// Where a terminal session runs, as the server's `terminal.open` input needs it.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -704,6 +671,10 @@ impl Render for ThreadTerminalDrawer {
 
         let split_enabled = group.terminal_ids.len() < MAX_TERMINALS_PER_GROUP;
         let has_sidebar = state.terminal_ids.len() > 1;
+        // Focus given to the drawer (opening it, workspace focus) belongs to its active terminal.
+        if self.focus.is_focused(window) && self.pending_close.is_none() {
+            self.focus_terminal(&state.active_terminal_id, window, cx);
+        }
         let panes = self.render_panes(&group, &state.active_terminal_id, window, cx);
         let mut content = div().flex().size_full().min_h_0().bg(colors.terminal_background);
         if has_sidebar {

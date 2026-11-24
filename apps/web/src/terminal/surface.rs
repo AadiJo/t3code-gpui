@@ -882,7 +882,7 @@ impl TerminalSurface {
                 .ok();
             }
         };
-        let mut menu = MenuPopup::new();
+        let mut menu = MenuPopup::new().context();
         if self.can_add_to_chat {
             menu = menu.item(MenuItem::new(t!("Add to chat")).disabled(!has_selection).on_select(act(|surface, _, cx| {
                 if let Some((text, line_start, line_end)) = surface.selection_for_chat() {

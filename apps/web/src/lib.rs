@@ -125,7 +125,6 @@ pub fn init(cx: &mut App) {
     components::chat::thread_find_bar::init(cx);
     components::branch_picker::bind_keys(cx);
     terminal::surface::init(cx);
-    components::thread_terminal_drawer::init(cx);
     cx.set_global(terminal_ui_state_store::TerminalUiStateStore::default());
     app_root::init(cx);
     components::diffs::init(cx);

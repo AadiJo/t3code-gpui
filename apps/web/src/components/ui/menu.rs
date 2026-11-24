@@ -125,6 +125,7 @@ pub struct MenuPopup {
     entries: Vec<MenuEntry>,
     min_width: Option<Pixels>,
     dismiss: Option<Action>,
+    context: bool,
 }
 
 impl MenuPopup {
@@ -152,6 +153,13 @@ impl MenuPopup {
     /// At least this wide; a select's list matches its trigger.
     pub fn min_width(mut self, width: Pixels) -> Self {
         self.min_width = Some(width);
+        self
+    }
+
+    /// Styles it as the app's context menus (`contextMenuFallback.ts`): at least 8rem wide,
+    /// disabled rows in the muted colour.
+    pub fn context(mut self) -> Self {
+        self.context = true;
         self
     }
 
@@ -185,9 +193,15 @@ fn menu_switch(theme: &AppTheme, on: bool) -> impl IntoElement {
         )
 }
 
-fn render_item(theme: &AppTheme, index: usize, item: MenuItem, dismiss: Option<Action>) -> AnyElement {
+fn render_item(theme: &AppTheme, index: usize, item: MenuItem, dismiss: Option<Action>, context: bool) -> AnyElement {
     let c = &theme.colors;
-    let text = if item.destructive { c.destructive_foreground() } else { c.foreground() };
+    let text = if item.destructive {
+        c.destructive_foreground()
+    } else if context && item.disabled {
+        c.muted_foreground
+    } else {
+        c.foreground()
+    };
     let icon_color = if item.destructive { text } else { c.muted_foreground };
     let highlight = |el: gpui_kit::Stateful<gpui_kit::Div>| {
         el.bg(c.highlight()).text_color(if item.destructive { text } else { c.highlight_foreground() })
@@ -261,7 +275,7 @@ impl RenderOnce for MenuPopup {
         let c = &theme.colors;
         let dismiss = self.dismiss.clone();
         let rows = self.entries.into_iter().enumerate().map(|(index, entry)| match entry {
-            MenuEntry::Item(item) => render_item(theme, index, item, dismiss.clone()),
+            MenuEntry::Item(item) => render_item(theme, index, item, dismiss.clone(), self.context),
             MenuEntry::Label(label) => div()
                 .px(theme.sp(2.))
                 .py(theme.sp(1.5))
@@ -272,7 +286,7 @@ impl RenderOnce for MenuPopup {
             MenuEntry::Separator => div().mx(theme.sp(2.)).my(theme.sp(1.)).h(px(1.)).bg(c.border).into_any_element(),
         });
         glass_surface(theme)
-            .min_w(self.min_width.unwrap_or(theme.rem(10.)))
+            .min_w(self.min_width.unwrap_or(theme.rem(if self.context { 8. } else { 10. })))
             .p(theme.sp(1.))
             .control_highlight(theme)
             .children(rows)
