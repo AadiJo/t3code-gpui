@@ -2,6 +2,7 @@
 //! Summary, Guide, Timeline and Code tabs, and their data sources. Mirrors
 //! `apps/web/src/components/pullRequest`.
 
+pub mod link_pull_request_dialog;
 pub mod pull_request_candidate_picker;
 pub mod pull_request_detail_logic;
 pub mod pull_request_detail_panel;

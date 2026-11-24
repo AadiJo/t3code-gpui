@@ -11,6 +11,9 @@
 //            servers' own order read page by page, the header counts every settled thread and
 //            each environment's pages match the server's. Server A's socket is dropped and the
 //            pages read again. Resident memory and wheel frame times before and after.
+//   families-search  sidebar search by title finds a thread settled before the cut: the search
+//            sends each server's cut (`olderSettledBefore`), the older rows it returns join the
+//            shell and the sidebar lists the match; clearing the search drops them again.
 
 use super::*;
 use t3code_client_runtime::state::older_settled_threads::{OLDER_SETTLED_PAGE_SIZE, PagesStatus};
@@ -623,5 +626,49 @@ pub(super) fn run_families(check: &mut Check) -> anyhow::Result<()> {
         "rss_cycles_all_closed_mib": rss_cycles,
     });
     std::fs::write(check.out.join("families-record.json"), serde_json::to_vec_pretty(&record)?)?;
+    Ok(())
+}
+
+/// Whether the sidebar lists a thread titled `title`, and whether the shell holds it.
+fn listed_and_held(check: &mut Check, title: &str) -> (bool, bool) {
+    let held = check.cx.update(|cx| StateBridge::shell(cx).read(cx).presented().iter().any(|row| row.title() == title));
+    let listed = check.read(|root, cx| {
+        root.sidebar().read(cx).list().entries.iter().any(|entry| matches!(entry, SidebarListEntry::Thread { thread, .. } if thread.title.as_ref() == title))
+    });
+    (listed, held)
+}
+
+fn set_sidebar_search(check: &mut Check, text: &str) {
+    let sidebar = check.read(|root, _| root.sidebar().clone());
+    let text = text.to_owned();
+    check.cx.update_window(check.window, |_, window, cx| sidebar.update(cx, |sidebar, cx| sidebar.set_search(&text, window, cx))).ok();
+}
+
+pub(super) fn run_families_search(check: &mut Check) -> anyhow::Result<()> {
+    let per_server: usize = std::env::var("T3_FAMILY_THREADS").ok().and_then(|v| v.parse().ok()).unwrap_or(1100);
+    // The last seeded thread on server A settled first, so it is the oldest and below the cut.
+    let title = format!("Old alpha {:04}", per_server - 1);
+    if check.cx.update(|cx| ConnectionRuntime::state(cx).read(cx).environments.is_empty()) {
+        pair_if_needed(check, 1, "T3_PAIRING_URL")?;
+        pair_if_needed(check, 2, "T3_PAIRING_URL_B")?;
+    }
+    check.pump(|c| all_connected(c, 2), Duration::from_secs(60), "both servers connected")?;
+    check.pump(
+        |c| c.cx.update(|cx| StateBridge::shell(cx).read(cx).environments(cx).iter().all(|env| env.read(cx).shell.generation > 0)),
+        Duration::from_secs(60),
+        "authoritative snapshots",
+    )?;
+    let (_, held) = listed_and_held(check, &title);
+    check.check("the oldest settled thread is left out of the shell", !held, &title);
+    set_sidebar_search(check, &title);
+    let t = title.clone();
+    check.pump(move |c| listed_and_held(c, &t).0, Duration::from_secs(20), "the search lists the older settled thread")?;
+    let (listed, held) = listed_and_held(check, &title);
+    check.check("search lists an older settled thread", listed && held, format!("listed {listed}, in shell {held}"));
+    check.shot("fam-search-00-found.png")?;
+    set_sidebar_search(check, "");
+    let t = title.clone();
+    check.pump(move |c| !listed_and_held(c, &t).1, Duration::from_secs(10), "clearing the search drops the older rows")?;
+    check.check("clearing the search drops the older rows", true, "");
     Ok(())
 }

@@ -128,6 +128,8 @@ pub struct ThreadMenuState<'a> {
     pub is_settled: bool,
     pub is_snoozed: bool,
     pub is_running: bool,
+    /// `canSnooze` holds now; otherwise Snooze shows disabled.
+    pub can_snooze_now: bool,
     pub project_label: &'a str,
     pub project_filter_active: bool,
     /// Rows offer "Filter by <project>"; the chat header's menu does not.
@@ -166,9 +168,9 @@ pub fn thread_menu_items(state: &ThreadMenuState<'_>) -> Vec<MenuItem> {
     items.push(if state.is_snoozed {
         MenuItem::new(C::Wake, "Wake thread").icon(IconName::Clock)
     } else {
-        MenuItem::new(C::SnoozeCustom, "Snooze")
-            .icon(IconName::Clock)
-            .submenu(snooze_items(state.snooze_presets))
+        let mut snooze = MenuItem::new(C::SnoozeCustom, "Snooze").icon(IconName::Clock).submenu(snooze_items(state.snooze_presets));
+        snooze.disabled = !state.can_snooze_now;
+        snooze
     });
     items.push(
         MenuItem::new(C::Rename, "Rename thread")

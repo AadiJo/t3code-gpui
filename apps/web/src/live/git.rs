@@ -234,7 +234,10 @@ pub fn toolbar_props(data: &LiveData, view: &ThreadView, cx: &mut App) -> Branch
                     .map(|c| SharedString::from(c.environment.label.clone()))
                     .unwrap_or_else(|| SharedString::from(env.environment_id().to_string())),
                 is_primary: false,
-                machine: MachineKind::Server,
+                machine: t3code_contracts::server::resolve_environment_machine_kind(
+                    env.config.as_ref().map(|c| &c.environment),
+                    env.config.as_ref().map(|c| &c.settings),
+                ),
             }
         })
         .collect();

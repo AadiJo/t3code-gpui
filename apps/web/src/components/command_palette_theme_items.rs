@@ -8,11 +8,12 @@ use gpui_kit::{App, SharedString};
 use t3code_shared::keybindings::StaticCommand;
 
 use super::command_palette_logic::{PaletteGroup, PaletteItem, PaletteRun, PaletteTitle, PaletteTrailing, PaletteView};
-use super::command_palette_lookups::PaletteTheme;
+use super::settings::theme_sphere::{SphereColors, standard_sphere_colors};
 use super::icons::IconName;
 use super::ui::toast::{ToastData, ToastKind, Toaster};
 use crate::i18n::t;
-use crate::theme_palette::{ThemeMode, ThemeSettings};
+use crate::hooks::use_theme::{ThemeStore, standard_theme};
+use crate::theme_palette::{Appearance, ThemeMode, ThemeSettings};
 
 /// The appearance modes in cycle order (`APPEARANCE_OPTIONS`).
 pub const APPEARANCE_OPTIONS: [(ThemeMode, IconName); 3] =
@@ -47,28 +48,63 @@ pub fn cycle_appearance(cx: &mut App) {
     Toaster::push(ToastData::new(ToastKind::Plain, title), cx);
 }
 
-/// The Change theme page.
-pub fn change_theme_item(themes: &[PaletteTheme], cx: &App) -> PaletteItem {
-    let current_id = cx.global::<ThemeSettings>().document.id.clone();
-    let items = themes
-        .iter()
+/// The Change theme page (`useThemeCards`): the standard T3 Code theme, then every other theme
+/// in the catalog (built-in, custom, environment). A one-mode theme sets that half; the others
+/// set the whole theme.
+pub fn change_theme_item(cx: &App) -> PaletteItem {
+    let settings = cx.global::<ThemeSettings>();
+    let resolved = match settings.mode {
+        ThemeMode::System => settings.system,
+        ThemeMode::Light => Appearance::Light,
+        ThemeMode::Dark => Appearance::Dark,
+    };
+    let store = cx.try_global::<ThemeStore>();
+    let standard_id = standard_theme().document.id.clone();
+    // `themeHalves[resolvedTheme] ?? getThemeDefinition(theme)?.id`; the standard theme is `None`.
+    let current_id = store.and_then(|store| {
+        store.halves().get(resolved).map(str::to_owned).or_else(|| ThemeStore::find(store.preference(), cx).map(|t| t.document.id.clone()))
+    });
+    let current_id = current_id.filter(|id| *id != standard_id);
+    let items = ThemeStore::catalog(cx)
+        .into_iter()
         .map(|theme| {
-            let value = match &theme.id {
+            let standard = theme.document.id == standard_id;
+            let id: Option<SharedString> = (!standard).then(|| theme.document.id.clone().into());
+            let value = match &id {
                 Some(id) => format!("theme:palette:{id}"),
                 None => "theme:standard".to_owned(),
             };
-            let document = theme.document.clone();
-            let run = PaletteRun::Local(Rc::new(move |_, cx| ThemeSettings::set_document((*document).clone(), cx)));
-            let mut item = PaletteItem::action(value, PaletteTitle::Text(theme.label.clone()), IconName::Palette, run, &[]);
-            item.set_terms([theme.label.clone(), "theme".into(), "appearance".into()]);
-            if let [(appearance, _)] = theme.previews.as_slice() {
+            let modes = theme.modes();
+            let single = (modes.len() == 1).then(|| modes[0]);
+            let label: SharedString = theme.document.name.clone().into();
+            let run_id = id.clone();
+            let run = PaletteRun::Local(Rc::new(move |_, cx| match (&run_id, single) {
+                (Some(id), Some(appearance)) => ThemeStore::set_half(appearance, Some(id), cx),
+                (Some(id), None) => ThemeStore::set_theme(id, cx),
+                (None, _) => {
+                    let mode = cx.global::<ThemeSettings>().mode;
+                    ThemeStore::set_theme(mode_key(mode), cx)
+                }
+            }));
+            let mut item = PaletteItem::action(value, PaletteTitle::Text(label.clone()), IconName::Palette, run, &[]);
+            item.set_terms([label, "theme".into(), "appearance".into()]);
+            if let Some(appearance) = single {
                 item.description = Some(if appearance.is_dark() { t!("For dark mode") } else { t!("For light mode") });
             }
-            let current = theme.id.as_deref() == Some(current_id.as_str());
-            Rc::new(item.trailing(PaletteTrailing::Swatches {
-                current,
-                colors: theme.previews.iter().map(|(_, colors)| *colors).collect(),
-            }))
+            let colors = modes
+                .iter()
+                .map(|&mode| {
+                    let colors = if standard {
+                        standard_sphere_colors(mode)
+                    } else {
+                        let palette = theme.document.palette(mode);
+                        SphereColors { canvas: palette.canvas, accent: palette.accent, message_action: palette.message_action }
+                    };
+                    (mode, colors)
+                })
+                .collect();
+            let current = current_id.as_deref() == id.as_deref();
+            Rc::new(item.trailing(PaletteTrailing::Swatches { current, colors }))
         })
         .collect();
     let view = PaletteView {

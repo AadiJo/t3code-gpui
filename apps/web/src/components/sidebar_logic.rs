@@ -975,7 +975,7 @@ pub fn build_sidebar_list(snapshot: &SidebarSnapshot, options: &SidebarListOptio
         SidebarSection::Snoozed,
         usize::MAX,
     );
-    let settled_limit = settings.settled_page_size + options.settled_visible;
+    let settled_limit = settings.settled_initial_count + options.settled_visible;
     shelf(
         &mut list,
         Shelf::Settled,
@@ -993,7 +993,7 @@ pub fn build_sidebar_list(snapshot: &SidebarSnapshot, options: &SidebarListOptio
     let hidden_settled = settled_count.saturating_sub(settled.len().min(settled_limit));
     if options.settled_expanded && hidden_settled > 0 {
         list.entries.push(SidebarListEntry::ShowMore {
-            count: hidden_settled.min(settings.settled_page_size),
+            count: hidden_settled.min(super::sidebar::model::SETTLED_TAIL_PAGE_COUNT),
         });
     }
     list.groups = groups;

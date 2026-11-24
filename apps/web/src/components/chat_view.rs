@@ -96,6 +96,7 @@ pub struct HeaderThreadMenu {
     pub is_settled: bool,
     pub is_snoozed: bool,
     pub is_running: bool,
+    pub can_snooze_now: bool,
     pub auto_settle_enabled: bool,
     /// The snooze submenu, resolved when the row was read.
     pub snooze_presets: Vec<crate::state::sidebar_actions::ResolvedSnoozePreset>,
@@ -109,14 +110,15 @@ impl HeaderThreadMenu {
         auto_settle_enabled: bool,
         snooze_presets: Option<&[t3code_contracts::SnoozePresetSetting]>,
     ) -> Self {
-        use crate::components::sidebar_logic::{ThreadStatus, effectively_snoozed, resolve_thread_status};
+        use crate::components::sidebar_logic::effectively_snoozed;
         Self {
             key: row.key.clone(),
             branch: row.branch.clone(),
             is_pinned: row.pinned_at.is_some(),
             is_settled: row.settled_override == Some(SettledOverride::Settled),
             is_snoozed: effectively_snoozed(row, now),
-            is_running: matches!(resolve_thread_status(row), ThreadStatus::Working | ThreadStatus::Preparing),
+            is_running: !row.runtime_can_archive(),
+            can_snooze_now: row.can_snooze(now),
             auto_settle_enabled,
             snooze_presets: crate::state::sidebar_actions::resolve_snooze_presets(
                 snooze_presets,
@@ -361,6 +363,7 @@ impl ChatView {
             is_settled: facts.is_settled,
             is_snoozed: facts.is_snoozed,
             is_running: facts.is_running,
+            can_snooze_now: facts.can_snooze_now,
             project_label: &self.project,
             project_filter_active: false,
             show_project_filter: false,

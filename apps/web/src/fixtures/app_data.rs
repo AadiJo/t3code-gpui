@@ -303,7 +303,7 @@ impl AppData for FixtureData {
                     environment_id: id.clone(),
                     label: super::reference_world::ENVIRONMENT_LABEL.into(),
                     is_primary: false,
-                    machine: MachineKind::Server,
+                    machine: MachineKind::Linux,
                 }],
                 environment_id: Some(id),
                 previous_worktree: None,

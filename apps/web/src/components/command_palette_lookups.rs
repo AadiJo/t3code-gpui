@@ -5,11 +5,10 @@
 use crate::i18n::t;
 use std::sync::Arc;
 
-use gpui_kit::{Hsla, SharedString};
+use gpui_kit::SharedString;
 use t3code_shared::palette_search::{PullRequestSubject, SearchText, ThreadOpenStats, ThreadSearchSubject};
 
 use crate::components::sidebar::model::{EnvironmentId, ProjectRef, SidebarProvider, SidebarSnapshot, SidebarThread, ThreadKey};
-use crate::theme_palette::{Appearance, ThemeDocument};
 use crate::timestamp_format::format_relative_elapsed;
 
 /// A thread the palette can open, with its search subject built once.
@@ -86,8 +85,38 @@ impl PaletteThread {
 pub struct PaletteProject {
     pub project_ref: ProjectRef,
     pub title: SharedString,
+    /// The logical project (sidebar group) it belongs to, and that group's display name
+    /// (`projectPickerEntries`, `group.displayName`).
+    pub group_key: SharedString,
+    pub group_label: SharedString,
     pub workspace_root: SharedString,
     pub pinned: bool,
+}
+
+/// The snapshot's unarchived projects, each with its sidebar group (`buildProjectGroups` with
+/// the snapshot's grouping; per-project overrides are already folded into the project keys).
+pub fn palette_projects(snapshot: &SidebarSnapshot) -> Arc<[PaletteProject]> {
+    let groups = crate::components::sidebar::sidebar_project_grouping::build_project_groups(
+        &snapshot.projects,
+        snapshot.settings.grouping_mode,
+        &Default::default(),
+    );
+    snapshot
+        .projects
+        .iter()
+        .filter(|p| !p.archived)
+        .map(|p| {
+            let group = groups.iter().find(|g| g.member_refs.contains(&p.project_ref));
+            PaletteProject {
+                project_ref: p.project_ref.clone(),
+                title: p.title.clone(),
+                group_key: group.map_or_else(|| p.title.clone(), |g| g.key.clone()),
+                group_label: group.map_or_else(|| p.title.clone(), |g| g.label.clone()),
+                workspace_root: p.workspace_root.clone(),
+                pinned: p.pinned,
+            }
+        })
+        .collect()
 }
 
 /// A connected environment, for Add project.
@@ -96,17 +125,6 @@ pub struct PaletteEnvironment {
     pub id: EnvironmentId,
     pub label: SharedString,
     pub connected: bool,
-}
-
-/// A theme the Change theme page lists.
-#[derive(Clone, Debug)]
-pub struct PaletteTheme {
-    /// `None` is the standard theme that follows the appearance.
-    pub id: Option<SharedString>,
-    pub label: SharedString,
-    /// Preview colours (background, accent) per appearance the theme has.
-    pub previews: Vec<(Appearance, [Hsla; 2])>,
-    pub document: Arc<ThemeDocument>,
 }
 
 /// A port the user forwards, or one a server reports listening.
@@ -158,7 +176,6 @@ pub trait CommandPaletteSource {
     /// The project new threads go to by default.
     fn current_project(&self) -> Option<ProjectRef>;
     fn environments(&self) -> Vec<PaletteEnvironment>;
-    fn themes(&self) -> Vec<PaletteTheme>;
     fn ports(&self) -> Vec<PalettePort>;
     fn settings(&self) -> Arc<[PaletteSetting]>;
     fn supports(&self, feature: PaletteFeature) -> bool;
@@ -180,21 +197,18 @@ pub struct FixtureSource {
     settings: Arc<[PaletteSetting]>,
     ports: Vec<PalettePort>,
     now_ms: i64,
+    /// Threads that link a pull request or an issue.
+    linked: Arc<std::collections::HashSet<ThreadKey>>,
 }
 
 impl FixtureSource {
+    /// Whether `thread` links a pull request or an issue ("Show linked items").
+    pub fn has_linked_items(&self, thread: Option<&ThreadKey>) -> bool {
+        thread.is_some_and(|key| self.linked.contains(key))
+    }
+
     pub fn new(snapshot: &SidebarSnapshot) -> Self {
-        let projects: Arc<[PaletteProject]> = snapshot
-            .projects
-            .iter()
-            .filter(|p| !p.archived)
-            .map(|p| PaletteProject {
-                project_ref: p.project_ref.clone(),
-                title: p.title.clone(),
-                workspace_root: p.workspace_root.clone(),
-                pinned: p.pinned,
-            })
-            .collect();
+        let projects = palette_projects(snapshot);
         let threads = snapshot
             .threads
             .iter()
@@ -216,6 +230,9 @@ impl FixtureSource {
             settings: crate::components::settings::settings_search::palette_settings(Default::default()),
             ports: Vec::new(),
             now_ms: snapshot.now.0,
+            linked: Arc::new(
+                snapshot.threads.iter().filter(|t| t.pull_request.is_some() || t.issue_key.is_some()).map(|t| t.key.clone()).collect(),
+            ),
         }
     }
 
@@ -247,20 +264,6 @@ impl CommandPaletteSource for FixtureSource {
         self.environments.clone()
     }
 
-    fn themes(&self) -> Vec<PaletteTheme> {
-        let graphite = Arc::new(ThemeDocument::graphite());
-        let swatch = |appearance| {
-            let palette = graphite.palette(appearance);
-            (appearance, [palette.canvas, palette.accent])
-        };
-        vec![PaletteTheme {
-            id: Some(graphite.id.clone().into()),
-            label: graphite.name.clone().into(),
-            previews: vec![swatch(Appearance::Light), swatch(Appearance::Dark)],
-            document: graphite,
-        }]
-    }
-
     fn ports(&self) -> Vec<PalettePort> {
         self.ports.clone()
     }
@@ -271,6 +274,10 @@ impl CommandPaletteSource for FixtureSource {
 
     fn supports(&self, feature: PaletteFeature) -> bool {
         matches!(feature, PaletteFeature::PortForwarding | PaletteFeature::NewProject | PaletteFeature::ProjectSettings)
+    }
+
+    fn active_thread_has_linked_items(&self) -> bool {
+        self.has_linked_items(self.active_thread.as_ref())
     }
 
     fn now_ms(&self) -> i64 {

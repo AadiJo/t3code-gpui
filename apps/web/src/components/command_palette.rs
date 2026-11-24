@@ -312,7 +312,7 @@ impl CommandPalette {
                 .as_ref()
                 .and_then(|r| projects.iter().find(|p| &p.project_ref == r))
                 .or_else(|| projects.first())
-                .map(|p| p.title.clone());
+                .map(|p| p.group_label.clone());
             if let Some(project) = active_title {
                 items.push(
                     PaletteItem::action(
@@ -333,7 +333,14 @@ impl CommandPalette {
                     items: new_thread_in_items(
                         &projects,
                         scratch_environment.as_ref(),
-                        &ProjectContext { environments: &environments, current: current_project.clone() },
+                        &ProjectContext {
+                            environments: &environments,
+                            current: current_project.clone(),
+                            current_group: current_project
+                                .as_ref()
+                                .and_then(|r| projects.iter().find(|p| &p.project_ref == r))
+                                .map(|p| p.group_key.clone()),
+                        },
                     ),
                 }],
                 initial_query: None,
@@ -445,7 +452,7 @@ impl CommandPalette {
             ]));
         }
         items.push(add_project_item(&environments).without_chevron());
-        items.push(change_theme_item(&source.themes(), cx));
+        items.push(change_theme_item(cx));
         items.push(change_appearance_item(cx));
         items.push(theme_editor_item());
         if source.supports(PaletteFeature::PullRequests) {

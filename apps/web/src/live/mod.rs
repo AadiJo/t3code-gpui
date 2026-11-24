@@ -710,16 +710,33 @@ impl AppData for LiveData {
 
     fn search_threads(&self, query: SharedString, cx: &mut App) {
         // `useThreadSearch`: a pasted wall of text searches by its start; messages need a word
-        // of three or more letters; answers land 120 ms after the typing stops.
+        // of three or more letters; answers land 120 ms after the typing stops. A server whose
+        // shell leaves older settled threads out is also asked for their titles
+        // (`olderSettledBefore`), and the rows it returns are merged into its shell while the
+        // search stands (`createThreadSearchResultsAtomFamily`, `mountRows`).
+        const SEARCH_ROWS_KEY: &str = "thread-search";
         let generation = self.search_generation.get() + 1;
         self.search_generation.set(generation);
         let trimmed: String = query.trim().chars().take(200).collect::<String>().trim().to_owned();
         let shell = StateBridge::shell(cx);
-        if !trimmed.split_whitespace().any(|token| token.chars().count() >= 3) {
+        let search_messages = trimmed.split_whitespace().any(|token| token.chars().count() >= 3);
+        let environments = StateBridge::environments(cx).read(cx).list.clone();
+        let targets: Vec<_> = environments
+            .iter()
+            .filter_map(|env| {
+                let env = env.read(cx);
+                // Nothing older is asked for before this session's first snapshot (`searchGenerationAtom`).
+                let before = env.older.older.as_ref().filter(|_| env.shell.generation > 0).map(|older| older.before.clone());
+                Some((env.store.clone(), before, rpc::RpcLink::new(env.environment_id(), cx)?))
+            })
+            .collect();
+        if trimmed.is_empty() || !targets.iter().any(|(_, before, _)| search_messages || before.is_some()) {
+            for (store, _, _) in &targets {
+                store.shell().unmount_rows(SEARCH_ROWS_KEY);
+            }
             shell.update(cx, |shell, cx| shell.set_search_matches(None, cx));
             return;
         }
-        let links: Vec<_> = self.environment_links(cx).into_iter().map(|(_, link)| link).collect();
         let weak = Rc::downgrade(&self.search_generation);
         cx.spawn(async move |cx| {
             cx.background_executor().timer(std::time::Duration::from_millis(120)).await;
@@ -727,22 +744,39 @@ impl AppData for LiveData {
                 return;
             }
             let mut found = Vec::new();
-            for link in links {
+            let mut rows = Vec::new();
+            for (store, before, link) in targets {
+                if !search_messages && before.is_none() {
+                    rows.push((store, None));
+                    continue;
+                }
                 let environment_id = link.environment_id().clone();
                 let input = t3code_contracts::OrchestrationV2SearchThreadsInput {
                     query: trimmed.clone(),
+                    titles_only: (before.is_some() && !search_messages).then_some(true),
+                    older_settled_before: before,
                     limit: None,
-                    older_settled_before: None,
                     project_ids: None,
                     environment_label: None,
-                    titles_only: None,
                 };
+                let mut older = None;
                 if let Ok(result) = link.call::<t3code_contracts::rpc::methods::OrchestrationSearchThreads>(input).await {
                     found.extend(result.matches.into_iter().map(|m| (thread_key(&environment_id, &m.thread_id), m)));
+                    older = result
+                        .threads
+                        .filter(|threads| !threads.is_empty())
+                        .map(|threads| t3code_client_runtime::state::thread_families::FamilyRows::new(result.snapshot_sequence.unwrap_or(0), threads));
                 }
+                rows.push((store, older));
             }
             if weak.upgrade().is_none_or(|token| token.get() != generation) {
                 return;
+            }
+            for (store, older) in rows {
+                match older {
+                    Some(read) => store.shell().mount_rows(SEARCH_ROWS_KEY, vec![read]),
+                    None => store.shell().unmount_rows(SEARCH_ROWS_KEY),
+                }
             }
             cx.update(|cx| {
                 // Ranked across environments as the palette ranks them (`rankMessageMatches`).

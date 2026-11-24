@@ -263,6 +263,11 @@ impl Toaster {
     }
 
     /// Removes a toast by id.
+    /// The titles of the toasts on screen, newest first.
+    pub fn titles(cx: &App) -> Vec<SharedString> {
+        Self::view(cx).read(cx).toasts.iter().map(|(_, toast)| toast.title.clone()).collect()
+    }
+
     pub fn dismiss(id: u64, cx: &mut App) {
         Self::view(cx).update(cx, |toaster, cx| toaster.remove(id, cx));
     }

@@ -71,6 +71,7 @@ fn thread(id: &str, project: &str, title: &str, age: i64) -> SidebarThread {
         has_pending_user_input: false,
         pending_subagent_request: None,
         pending_guest_message_count: 0,
+        pending_request_blocks_snooze: false,
         goal_active: false,
         last_visited_at: Some(FIXTURE_NOW),
         has_unread_completion_notification: false,
@@ -362,7 +363,7 @@ pub fn large_snapshot(thread_count: usize, project_count: usize) -> SidebarSnaps
         threads,
         notifications: Vec::new(),
         settings: SidebarSettings {
-            settled_page_size: 50,
+            settled_initial_count: 50,
             ..SidebarSettings::default()
         },
         active_thread: None,

@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use crate::components::command_palette_lookups::{
     CommandPaletteSource, FixtureSource, PaletteEnvironment, PaletteFeature, PalettePort, PaletteProject,
-    PaletteSetting, PaletteTheme, PaletteThread,
+    PaletteSetting, PaletteThread,
 };
 use crate::components::sidebar::model::{ProjectRef, SidebarSnapshot, ThreadKey};
 
@@ -91,10 +91,6 @@ impl CommandPaletteSource for FixturePaletteSource {
         self.lists().environments()
     }
 
-    fn themes(&self) -> Vec<PaletteTheme> {
-        self.lists().themes()
-    }
-
     fn ports(&self) -> Vec<PalettePort> {
         Vec::new()
     }
@@ -105,6 +101,10 @@ impl CommandPaletteSource for FixturePaletteSource {
 
     fn supports(&self, feature: PaletteFeature) -> bool {
         self.features.contains(&feature)
+    }
+
+    fn active_thread_has_linked_items(&self) -> bool {
+        self.lists().has_linked_items(self.active.borrow().as_ref())
     }
 
     fn now_ms(&self) -> i64 {

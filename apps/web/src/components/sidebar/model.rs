@@ -149,6 +149,8 @@ pub struct SidebarThread {
     pub has_pending_user_input: bool,
     pub pending_subagent_request: Option<SubagentRequest>,
     pub pending_guest_message_count: u32,
+    /// A pending runtime request other than a question (approval, permission, auth refresh).
+    pub pending_request_blocks_snooze: bool,
     /// The run is working toward a goal ("Goal" instead of "Working").
     pub goal_active: bool,
     /// Resolved visit watermark: the server value, or the local fallback on
@@ -197,10 +199,40 @@ pub enum SidebarProviderMark {
 }
 
 impl SidebarThread {
-    /// Whether the row offers Snooze (`canSnooze`). The row does not carry the pending
-    /// runtime request kind or a queued turn start, so those two gates are not applied.
-    pub fn can_snooze(&self) -> bool {
-        !self.has_pending_approvals && self.pending_subagent_request.is_none() && self.pending_guest_message_count == 0
+    /// Whether the row offers Snooze (`canSnooze`): nothing waits on the user but a question,
+    /// no guest message would wake it at once, and no run is about to start.
+    pub fn can_snooze(&self, now: TimestampMs) -> bool {
+        !self.has_pending_approvals
+            && !self.pending_request_blocks_snooze
+            && self.pending_subagent_request.is_none()
+            && self.pending_guest_message_count == 0
+            && !self.has_queued_turn_start(now)
+    }
+
+    /// `threadRuntimeCanArchive`: no run is preparing, starting or running. (A queued run behind
+    /// an active one also blocks archiving in the web; rows do not carry the active run id.)
+    pub fn runtime_can_archive(&self) -> bool {
+        !self.runtime.as_ref().is_some_and(|runtime| {
+            matches!(runtime.status, RuntimeStatus::Run(RunStatus::Preparing | RunStatus::Starting | RunStatus::Running))
+        })
+    }
+
+    /// `hasQueuedTurnStart`: the runtime is preparing, queued or starting, or a message sent
+    /// within the last two minutes (either way, clocks differ) has no run after it yet.
+    pub fn has_queued_turn_start(&self, now: TimestampMs) -> bool {
+        const QUEUED_TURN_START_GRACE_MS: i64 = 2 * 60 * 1000;
+        if self.runtime.as_ref().is_some_and(|runtime| {
+            matches!(runtime.status, RuntimeStatus::Run(RunStatus::Preparing | RunStatus::Queued | RunStatus::Starting))
+        }) {
+            return true;
+        }
+        let Some(message_at) = self.latest_user_message_at else { return false };
+        if (now.0 - message_at.0).abs() > QUEUED_TURN_START_GRACE_MS {
+            return false;
+        }
+        self.latest_run
+            .as_ref()
+            .is_none_or(|run| [run.requested_at, run.started_at, run.completed_at].iter().all(|at| at.is_none_or(|at| at.0 < message_at.0)))
     }
 
     pub fn project_ref(&self) -> ProjectRef {
@@ -274,9 +306,12 @@ pub struct SidebarSettings {
     pub settlement_supported: bool,
     pub snooze_supported: bool,
     pub pinning_supported: bool,
-    /// Settled rows shown before "Show N more".
-    pub settled_page_size: usize,
+    /// Settled rows shown before the first "Show N more" (`SETTLED_TAIL_INITIAL_COUNT`).
+    pub settled_initial_count: usize,
 }
+
+/// Settled rows each "Show N more" adds (`SETTLED_TAIL_PAGE_COUNT`).
+pub const SETTLED_TAIL_PAGE_COUNT: usize = 25;
 
 impl Default for SidebarSettings {
     fn default() -> Self {
@@ -290,7 +325,7 @@ impl Default for SidebarSettings {
             settlement_supported: true,
             snooze_supported: true,
             pinning_supported: true,
-            settled_page_size: 10,
+            settled_initial_count: 10,
         }
     }
 }

@@ -5,7 +5,7 @@
 use std::rc::Rc;
 use std::sync::Arc;
 
-use gpui_kit::{App, Hsla, SharedString, Window};
+use gpui_kit::{App, SharedString, Window};
 use t3code_shared::keybindings::{KeybindingCommand, THREAD_JUMP_COMMANDS};
 use t3code_shared::palette_search::{
     PALETTE_SECONDARY_LIMIT, PALETTE_THREAD_LIMIT, RankKey, SearchMatchHint, SearchQuery, SearchText,
@@ -95,7 +95,7 @@ pub enum PaletteTrailing {
     /// "Current", for the theme or mode in use.
     Current,
     /// Theme preview circles, optionally after "Current".
-    Swatches { current: bool, colors: Vec<[Hsla; 2]> },
+    Swatches { current: bool, colors: Vec<(crate::theme_palette::Appearance, super::settings::theme_sphere::SphereColors)> },
 }
 
 /// A row action or a page.
@@ -136,7 +136,10 @@ pub struct PaletteItem {
 #[derive(Clone, Debug)]
 pub struct PaletteProjectRow {
     pub project_ref: ProjectRef,
+    /// The logical project's display name.
     pub name: SharedString,
+    /// The project's own title, which its monogram is drawn from.
+    pub title: SharedString,
     /// The environment's location label ("Local", or the machine's name).
     pub location: Option<SharedString>,
     pub workspace_root: SharedString,
