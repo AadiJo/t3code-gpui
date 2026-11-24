@@ -232,7 +232,7 @@ pub fn fixture_state(key: &str) -> ComposerState {
             workspace: "Worktree".into(),
             branch: "composer".into(),
         }),
-        voice_available: true,
+        voice_available: false,
         validation: None,
         file_attachment_limit: Some(crate::state::attachments::MAX_FILE_BYTES),
         placeholder: None,

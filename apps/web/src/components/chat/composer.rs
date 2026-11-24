@@ -139,6 +139,8 @@ pub struct ComposerState {
     pub history: Arc<Vec<PromptHistoryEntry>>,
     pub banners: Vec<ComposerBanner>,
     pub context_strip: Option<ComposerContextStrip>,
+    /// Shows the dictation button. As in the fork, it is shown only when a
+    /// transcription destination is chosen and ready, never as a setup prompt.
     pub voice_available: bool,
     pub validation: Option<SharedString>,
     /// Replaces the placeholder while the agent waits: a pending approval
