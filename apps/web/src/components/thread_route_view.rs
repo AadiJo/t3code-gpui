@@ -209,8 +209,10 @@ impl ThreadRouteView {
         self.target = Some(target);
         let source = self.data.menu_source(&view, &self.composer, cx);
         *self.menu.0.borrow_mut() = Some(source);
+        let parent_crumb = self.parent_crumb(&view, cx);
         self.chat.update(cx, |chat, cx| {
             chat.set_thread_menu(thread_menu, cx);
+            chat.set_parent_crumb(parent_crumb, cx);
             let hero = view.is_draft && view.timeline.entries.is_empty();
             chat.set_thread(view.key.clone(), view.project.clone(), view.title.clone(), view.timeline.clone(), cx);
             chat.set_hero(hero, cx);
@@ -220,6 +222,18 @@ impl ThreadRouteView {
         self.mount_git(&view, cx);
         cx.notify();
         true
+    }
+
+    /// The header's parent crumb for a provider subagent thread: opens the parent.
+    fn parent_crumb(&self, view: &ThreadView, cx: &Context<Self>) -> Option<crate::components::chat::chat_header::ParentCrumb> {
+        let (parent, title) = view.parent_subagent.clone()?;
+        let this = cx.weak_entity();
+        Some(crate::components::chat::chat_header::ParentCrumb {
+            title,
+            on_click: Rc::new(move |_, cx| {
+                let _ = this.update(cx, |_, cx| cx.emit(ThreadRouteEvent::OpenThread(parent.clone())));
+            }),
+        })
     }
 
     /// The header "Thread actions" facts for a server thread's sidebar row.
@@ -249,8 +263,10 @@ impl ThreadRouteView {
         let hero = view.is_draft && view.timeline.entries.is_empty();
         let thread_menu = self.thread_menu(&target, cx);
         let project_icon = view.project_icon.clone();
+        let parent_crumb = self.parent_crumb(&view, cx);
         self.chat.update(cx, |chat, cx| {
             chat.set_project_icon(project_icon, cx);
+            chat.set_parent_crumb(parent_crumb, cx);
             chat.set_hero(hero, cx);
             chat.set_questions(view.questions.clone(), cx);
             chat.set_thread_menu(thread_menu, cx);

@@ -312,6 +312,7 @@ impl FixtureStore {
                     branch: record.branch.clone(),
                     project_id: Some(record.project_id.clone()),
                     project_icon: None,
+                    parent_subagent: None,
                 })
             }
             ThreadTarget::Draft(id) => {
@@ -329,6 +330,7 @@ impl FixtureStore {
                     branch: None,
                     project_id: project.map(|p| p.project_ref.project_id.clone()),
                     project_icon: None,
+                    parent_subagent: None,
                 })
             }
         }

@@ -21,6 +21,21 @@ use crate::state::app_data::DetailsOutcome;
 use crate::state::shell::{runtime_ids, thread_key};
 use crate::state::thread_relationships::{RelationshipSources, RelationshipsInput, TitleLookup, derive};
 
+/// The parent of a provider subagent thread (`lineage.relationshipToParent === "subagent"`) and
+/// its title, "Parent thread" while the shell does not list it, for the header's parent crumb.
+pub fn parent_subagent_crumb(key: &ThreadKey, cx: &App) -> Option<(ThreadKey, SharedString)> {
+    use t3code_contracts::OrchestrationV2AppThreadLineageRelationshipToParent as Relationship;
+    let (environment_id, thread_id) = runtime_ids(key);
+    let snapshot = StateBridge::environment(&environment_id, cx)?.read(cx).shell.snapshot.clone()?;
+    let shell = snapshot.threads.iter().find(|t| t.id == thread_id)?;
+    if shell.lineage.relationship_to_parent != Some(Relationship::Subagent) {
+        return None;
+    }
+    let parent_id = shell.lineage.parent_thread_id.clone()?;
+    let title = snapshot.threads.iter().find(|t| t.id == parent_id).map_or_else(|| t!("Parent thread"), |p| p.title.clone().into());
+    Some((thread_key(&environment_id, &parent_id), title))
+}
+
 /// What the sections keep between reads: looked-up titles and the stop in flight.
 #[derive(Default)]
 pub struct RelationshipsState {

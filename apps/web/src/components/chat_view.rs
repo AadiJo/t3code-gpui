@@ -165,6 +165,7 @@ pub struct ChatView {
     banner: Option<AnyView>,
     /// The breadcrumb's project icon (override and favicon); the monogram without one.
     project_icon: Option<crate::components::project_favicon::ProjectIconSource>,
+    parent_crumb: Option<crate::components::chat::chat_header::ParentCrumb>,
     thread_key: SharedString,
     find_bar: Option<(Entity<ThreadFindBar>, Subscription)>,
     /// Every question of the pending request.
@@ -203,6 +204,7 @@ impl ChatView {
             details_mode: ThreadDetailsMode::Popover,
             banner: None,
             project_icon: None,
+            parent_crumb: None,
             thread_key: SharedString::default(),
             find_bar: None,
             questions: Arc::from([]),
@@ -446,6 +448,12 @@ impl ChatView {
     /// The breadcrumb's project icon source, as drawn.
     pub fn project_icon(&self) -> Option<&crate::components::project_favicon::ProjectIconSource> {
         self.project_icon.as_ref()
+    }
+
+    /// The breadcrumb's parent crumb, for a provider subagent thread.
+    pub fn set_parent_crumb(&mut self, crumb: Option<crate::components::chat::chat_header::ParentCrumb>, cx: &mut Context<Self>) {
+        self.parent_crumb = crumb;
+        cx.notify();
     }
 
     /// The breadcrumb's project icon source.
@@ -757,7 +765,7 @@ impl Render for ChatView {
                     .min_w_0()
                     .min_h_0()
                     .when(!self.embedded, |d| {
-                        d.child(chat_header(&self.project, self.project_icon.as_ref(), &self.title, self.header_height, self.header_inset, &colors, thread_actions))
+                        d.child(chat_header(&self.project, self.project_icon.as_ref(), &self.title, self.header_height, self.header_inset, &colors, self.parent_crumb.as_ref(), thread_actions))
                     })
                     .child(
                         div()
