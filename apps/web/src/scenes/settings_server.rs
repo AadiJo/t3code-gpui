@@ -331,6 +331,9 @@ pub fn build_devices(window: &mut Window, cx: &mut App) -> AnyView {
 pub fn build_projects(window: &mut Window, cx: &mut App) -> AnyView {
     scene(Variant::Page(SettingsPath::Projects), false, window, cx)
 }
+pub fn build_browser(window: &mut Window, cx: &mut App) -> AnyView {
+    scene(Variant::Page(SettingsPath::Browser), false, window, cx)
+}
 pub fn build_access(window: &mut Window, cx: &mut App) -> AnyView {
     scene(Variant::Page(SettingsPath::Access), false, window, cx)
 }

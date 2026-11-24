@@ -88,6 +88,7 @@ pub fn scenes() -> &'static [(&'static str, SceneBuilder)] {
         ("settings-server-devices", settings_server::build_devices),
         ("settings-server-projects", settings_server::build_projects),
         ("settings-server-access", settings_server::build_access),
+        ("settings-server-browser", settings_server::build_browser),
         ("settings", settings::build),
         ("settings-appearance", settings::build_appearance),
         ("settings-chat", settings::build_chat),
