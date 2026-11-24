@@ -1375,6 +1375,7 @@ impl Render for ChatComposer {
         div()
             .id("chat-composer")
             .key_context("ChatComposer")
+            .on_action(cx.listener(|this, _: &crate::shortcuts::commands::ToggleModelPicker, window, cx| this.toggle_picker(window, cx)))
             .font_family(ui_font_family())
             .relative()
             .w_full()

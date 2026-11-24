@@ -23,6 +23,7 @@ use crate::components::chat::composer_theme::{
     ComposerColors, MODEL_PICKER_EFFORT_WIDTH, MODEL_PICKER_HEIGHT, MODEL_PICKER_LIST_WIDTH, MODEL_PICKER_RAIL_WIDTH,
     POPUP_RADIUS, ui_font_family,
 };
+use crate::shortcuts::commands;
 use crate::model_ordering::{ProviderModelItem, order_claude_before_openai, sort_provider_model_items};
 use crate::model_search::{SearchableModel, rank_model_search};
 use crate::model_selection::{
@@ -298,6 +299,14 @@ impl ModelPicker {
         }
     }
 
+    /// `⌘1`–`⌘9`: picks the row whose hint shows that number.
+    fn jump(&mut self, index: usize, cx: &mut Context<Self>) {
+        if index < self.rows.len() {
+            self.highlighted = index;
+            self.pick_row(index, cx);
+        }
+    }
+
     fn adjacent_provider(&mut self, step: isize, cx: &mut Context<Self>) {
         let mut tabs = vec![PickerTab::Favorites];
         tabs.extend(self.rail_entries().into_iter().filter(|e| e.ready).map(|e| PickerTab::Instance(e.instance_id)));
@@ -562,7 +571,7 @@ impl ModelPicker {
         let heading: SharedString = descriptor.as_ref().map_or("Effort".into(), |d| d.label.clone());
         let current = self.selection.effort.clone();
         let rows: Vec<AnyElement> = match descriptor {
-            None => vec![div().px(c.r(px(8.))).h(c.r(px(32.))).flex().items_center().text_size(c.r(px(14.))).text_color(c.muted_foreground).child("No options").into_any_element()],
+            None => vec![div().px(c.r(px(8.))).h(c.r(px(32.))).flex().items_center().text_size(c.r(px(14.))).text_color(c.muted_foreground).child(crate::i18n::t!("No effort levels")).into_any_element()],
             Some(d) => d
                 .options
                 .iter()
@@ -915,6 +924,18 @@ impl Render for ModelPicker {
             .on_action(cx.listener(Self::on_backspace))
             .on_action(cx.listener(Self::on_previous_provider))
             .on_action(cx.listener(Self::on_next_provider))
+            // The shortcut registry's commands (`modelPicker.*`), which users may rebind.
+            .on_action(cx.listener(|this, _: &commands::PreviousModelProvider, _, cx| this.adjacent_provider(-1, cx)))
+            .on_action(cx.listener(|this, _: &commands::NextModelProvider, _, cx| this.adjacent_provider(1, cx)))
+            .on_action(cx.listener(|this, _: &commands::JumpToModel1, _, cx| this.jump(0, cx)))
+            .on_action(cx.listener(|this, _: &commands::JumpToModel2, _, cx| this.jump(1, cx)))
+            .on_action(cx.listener(|this, _: &commands::JumpToModel3, _, cx| this.jump(2, cx)))
+            .on_action(cx.listener(|this, _: &commands::JumpToModel4, _, cx| this.jump(3, cx)))
+            .on_action(cx.listener(|this, _: &commands::JumpToModel5, _, cx| this.jump(4, cx)))
+            .on_action(cx.listener(|this, _: &commands::JumpToModel6, _, cx| this.jump(5, cx)))
+            .on_action(cx.listener(|this, _: &commands::JumpToModel7, _, cx| this.jump(6, cx)))
+            .on_action(cx.listener(|this, _: &commands::JumpToModel8, _, cx| this.jump(7, cx)))
+            .on_action(cx.listener(|this, _: &commands::JumpToModel9, _, cx| this.jump(8, cx)))
             .on_mouse_down_out(cx.listener(|_, _, _, cx| cx.emit(ModelPickerEvent::Close)))
             .font_family(ui_font_family())
             .flex()
