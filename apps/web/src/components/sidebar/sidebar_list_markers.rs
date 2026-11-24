@@ -42,7 +42,8 @@ impl Sidebar {
             Shelf::Snoozed => "Snoozed",
             Shelf::Settled => "Settled",
         };
-        let tone = colors.sidebar_muted_foreground;
+        let drag_tone = (shelf == Shelf::Settled).then(|| super::sidebar_drag::settled_header_drag_tone(self, colors)).flatten();
+        let tone = drag_tone.unwrap_or(colors.sidebar_muted_foreground);
         div()
             .mx(colors.r(2.))
             .h(colors.s(SECTION_HEADER_HEIGHT))
@@ -73,10 +74,7 @@ impl Sidebar {
                             .child(count.to_string()),
                     )
                     .child(chevron(expanded, tone, colors))
-                    .when(shelf == Shelf::Settled, |d| {
-                        let d = super::sidebar_drag::settled_header_drag_tone(d, self.options.dragging.is_some(), colors);
-                        self.drop_target(d, crate::components::sidebar_logic::SidebarSection::Settled, cx)
-                    })
+
                     .on_click(cx.listener(move |this, _, window, cx| {
                         window.focus(&this.focus_handle, cx);
                         this.cursor = Some(ix);

@@ -50,6 +50,8 @@ enum Step {
     HoldModifier,
     /// Presses the left button at a point and drags it to another in ten moves, without releasing.
     Drag(f32, f32, f32, f32),
+    /// Continues a [`Step::Drag`] (button still held) to another point.
+    DragOn(f32, f32, f32, f32),
 }
 
 /// A reference view and how to reach it.
@@ -168,7 +170,7 @@ const OWNER_SCENES: &[Scene] = &[
     Scene { name: "owner-sb-rename", reference: "sb-rename", light: false, steps: &[Step::Move(127., 540.), Step::Sidebar(rename_tls), Step::Press("end"), Step::Type(" now")] },
     Scene { name: "owner-sb-jump-hints", reference: "sb-jump-hints", light: false, steps: &[Step::HoldModifier, Step::Wait(1200)] },
     Scene { name: "owner-sb-drag", reference: "sb-drag", light: false, steps: &[Step::Drag(107.5, 521.5, 107.5, 381.5), Step::Wait(300)] },
-    Scene { name: "owner-sb-drag-down", reference: "sb-drag-down", light: false, steps: &[Step::Drag(107.5, 521.5, 107.5, 381.5), Step::Drag(107.5, 381.5, 107.5, 779.), Step::Wait(300)] },
+    Scene { name: "owner-sb-drag-down", reference: "sb-drag-down", light: false, steps: &[Step::Drag(107.5, 521.5, 107.5, 381.5), Step::DragOn(107.5, 381.5, 107.5, 779.), Step::Wait(300)] },
     Scene { name: "owner-sb-filter", reference: "sb-filter", light: false, steps: &[Step::Click(182., 74.5)] },
 ];
 
@@ -318,8 +320,12 @@ fn render(scene: &Scene, owner: bool, out: &std::path::Path, data: &std::path::P
                 let sidebar = cx.update(|cx| root.read(cx).sidebar().clone());
                 cx.update_window(window, |_, w, cx| sidebar.update(cx, |s, cx| edit(s, w, cx))).ok();
             }
-            Step::Drag(x0, y0, x1, y1) => {
+            Step::Drag(x0, y0, x1, y1) | Step::DragOn(x0, y0, x1, y1) => {
+                let press = matches!(step, Step::Drag(..));
                 cx.update_window(window, |_, w, cx| {
+                    if !press {
+                        return;
+                    }
                     let at = point(px(*x0), px(*y0));
                     w.dispatch_event(MouseMoveEvent { position: at, pressed_button: None, modifiers: Modifiers::default() }.to_platform_input(), cx);
                     w.dispatch_event(
@@ -329,8 +335,10 @@ fn render(scene: &Scene, owner: bool, out: &std::path::Path, data: &std::path::P
                     );
                 })
                 .ok();
-                for i in 1..=10 {
-                    let t = i as f32 / 10.;
+                // A held drag past an edge keeps auto-scrolling, so DragOn lingers at its end.
+                let moves = if press { 10 } else { 40 };
+                for i in 1..=moves {
+                    let t = (i as f32 / 10.).min(1.);
                     let at = point(px(x0 + (x1 - x0) * t), px(y0 + (y1 - y0) * t));
                     cx.update_window(window, |_, w, cx| {
                         w.dispatch_event(

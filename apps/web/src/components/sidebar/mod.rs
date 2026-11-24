@@ -141,6 +141,8 @@ pub struct Sidebar {
     pub(crate) jump_hints: bool,
     /// The project filter popup, while open.
     pub(crate) scope_menu: Option<sidebar_project_scope::ProjectScopeMenu>,
+    /// While dragging: the section under the pointer, shared with the drag preview.
+    pub(crate) drag_target: std::rc::Rc<std::cell::Cell<Option<super::sidebar_logic::SidebarSection>>>,
     jump_hold: Option<Task<()>>,
     _subscriptions: Vec<Subscription>,
 }
@@ -190,6 +192,7 @@ impl Sidebar {
             renaming: None,
             jump_hints: false,
             scope_menu: None,
+            drag_target: Default::default(),
             jump_hold: None,
             _subscriptions: vec![subscription],
         };
@@ -978,6 +981,15 @@ impl Render for Sidebar {
             .flex()
             .flex_col()
             .text_color(colors.sidebar_foreground)
+            .on_drag_move(cx.listener(|this, event: &DragMoveEvent<sidebar_drag::DraggedThread>, _, cx| {
+                this.drag_moved(event.event.position, cx);
+            }))
+            .on_drop(cx.listener(|this, dragged: &sidebar_drag::DraggedThread, _, cx| {
+                match this.drag_target.get() {
+                    Some(target) => this.drop_into(dragged, target, cx),
+                    None => this.end_drag(cx),
+                }
+            }))
             .on_mouse_up(MouseButton::Left, cx.listener(|this, _, window, cx| {
                 cx.defer_in(window, |this, _, cx| this.end_drag(cx));
                 let _ = this;

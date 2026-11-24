@@ -156,16 +156,7 @@ impl Sidebar {
             .when_some(self.drag_value(ix, colors), |d, value| {
                 d.on_drag(value, super::sidebar_drag::drag_preview(cx.weak_entity()))
             })
-            .when_some(self.list.entries.get(ix).and_then(|e| match e {
-                SidebarListEntry::Thread { section, .. } => Some(*section),
-                _ => None,
-            }), |d, section| {
-                let target = match section {
-                    SidebarSection::Working => SidebarSection::Active,
-                    other => other,
-                };
-                self.drop_target(d, target, cx)
-            })
+
             .when(self.hover_card == Some(ix), |d| {
                 let card = crate::components::thread_hover_card::thread_hover_card(
                     thread,

@@ -650,6 +650,8 @@ pub struct SidebarListOptions {
     pub project_scope: Vec<SharedString>,
     /// A row is being dragged from this section.
     pub dragging: Option<SidebarSection>,
+    /// The dragged row, whose slot closes while it follows the pointer.
+    pub drag_key: Option<ThreadKey>,
 }
 
 impl Default for SidebarListOptions {
@@ -664,6 +666,7 @@ impl Default for SidebarListOptions {
             grouping_overrides: GroupingOverrides::new(),
             project_scope: Vec::new(),
             dragging: None,
+            drag_key: None,
         }
     }
 }
@@ -772,7 +775,11 @@ pub fn build_sidebar_list(snapshot: &SidebarSnapshot, options: &SidebarListOptio
         project_titles,
         ..Default::default()
     };
+    let drag_key = options.drag_key.as_ref();
     let push_thread = |list: &mut SidebarList, thread: &Arc<SidebarThread>, variant, section| {
+        if Some(&thread.key) == drag_key {
+            return;
+        }
         list.thread_order.push(thread.key.clone());
         list.entries.push(SidebarListEntry::Thread {
             thread: thread.clone(),
