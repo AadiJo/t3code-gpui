@@ -662,7 +662,13 @@ impl AppleTextSystemState {
             cx.set_allows_font_subpixel_quantization(false);
             cx.set_should_subpixel_quantize_fonts(false);
 
-            if cfg!(target_os = "macos") && params.dilation > 0 {
+            if params.dilation == gpui::GLYPH_ANTIALIASED {
+                // `-webkit-font-smoothing: antialiased`: Skia draws through CoreGraphics
+                // with font smoothing off.
+                cx.set_should_smooth_fonts(false);
+                cx.set_gray_fill_color(0.0, 1.0);
+                cx.set_rgb_stroke_color(0.0, 0.0, 0.0, 1.0);
+            } else if cfg!(target_os = "macos") && params.dilation > 0 {
                 let luminance = params.dilation as f64 * 0.25;
                 cx.set_should_smooth_fonts(true);
                 cx.set_gray_fill_color(luminance, 1.0);

@@ -55,6 +55,11 @@ pub const SUBPIXEL_VARIANTS_Y: u8 = 1;
 // Leave enough room below the underline for its stroke while keeping it below the baseline.
 const UNDERLINE_DESCENT_OFFSET_FACTOR: f32 = 0.618;
 
+/// The glyph dilation that asks for plain grayscale antialiasing with the platform's font
+/// smoothing off (CSS `-webkit-font-smoothing: antialiased`; see
+/// [`TextSystem::set_antialiased`]). Other dilations are smoothing levels.
+pub const GLYPH_ANTIALIASED: u8 = u8::MAX;
+
 /// The baseline's offset from the top of a line box, as Blink places it: ascent and
 /// descent each round to whole pixels (`FontMetrics::AscentDescentWithHacks`), and the
 /// leading above the text is floored (`CalculateLeadingSpace`). On a display with a device
@@ -582,7 +587,7 @@ impl TextSystem {
     /// Returns the dilation level to use for a glyph painted in the given color.
     pub(crate) fn glyph_dilation_for_color(&self, color: Hsla) -> u8 {
         if self.antialiased.load(std::sync::atomic::Ordering::Relaxed) {
-            return 0;
+            return GLYPH_ANTIALIASED;
         }
         self.platform_text_system.glyph_dilation_for_color(color)
     }
