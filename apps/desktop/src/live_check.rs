@@ -26,11 +26,13 @@
 //            filter closes a hidden thread's notification and keeps it quiet
 //   details  a thread launched into a new worktree: the timeline's setup row follows the
 //            server's worktree setup stream (stages and their states)
+//   mentions `@` offers a thread's own used side chat (as "Side chat") and no other
+//            thread's, never the composer's own thread, best title match first
 //   import   a fresh data directory and a stand-in install (`T3CODE_IMPORT_HOME`, made by
 //            `import-check`, encrypted with the fixture macOS key): the launch import runs,
 //            the window explains the Keychain read, environments and settings arrive
 //
-// Usage: live-check <seed|drive|restart|import|send|sidebar|notify|details> <out-dir>
+// Usage: live-check <seed|drive|restart|import|send|sidebar|notify|details|mentions> <out-dir>
 #[allow(dead_code)]
 #[path = "import/mod.rs"]
 mod import;
@@ -414,7 +416,7 @@ fn key_of(state: &Seeded, thread: &str) -> ThreadKey {
 
 fn main() -> anyhow::Result<()> {
     let mut args = std::env::args().skip(1);
-    let usage = "usage: live-check <seed|drive|restart|import|send|sidebar|notify|details> <out-dir> | live-check timeline <projections-dir> <out-dir> | live-check commands <corpus.json> <out.json>";
+    let usage = "usage: live-check <seed|drive|restart|import|send|sidebar|notify|details|mentions> <out-dir> | live-check timeline <projections-dir> <out-dir> | live-check commands <corpus.json> <out.json>";
     let phase = args.next().context(usage)?;
     let out = PathBuf::from(args.next().context(usage)?);
     if phase == "timeline" {
@@ -435,6 +437,7 @@ fn main() -> anyhow::Result<()> {
         "sidebar" => run_sidebar(&mut check),
         "notify" => run_notify(&mut check),
         "details" => run_details(&mut check),
+        "mentions" => run_mentions(&mut check),
         other => Err(anyhow::anyhow!("unknown phase {other}")),
     };
     check.finish(&phase, result)
@@ -2218,4 +2221,61 @@ fn run_details(check: &mut Check) -> anyhow::Result<()> {
     let ran = seen.iter().any(|line| line.contains("Check out files:"));
     check.check("worktree setup: stages carry their labels", ran, seen.last().cloned().unwrap_or_default());
     check.shot("70-worktree-setup.png")
+}
+
+/// The `mentions` phase. See the header.
+fn run_mentions(check: &mut Check) -> anyhow::Result<()> {
+    let state = load_state(&check.out)?;
+    check.pump(|c| c.connected(), Duration::from_secs(30), "connected")?;
+    let tag = now_ms() % 100_000;
+    let parent = thread_with_turn(check, &state, &format!("Quokka parent {tag}"))?;
+    let other = thread_with_turn(check, &state, &format!("Quokka other {tag}"))?;
+    let exact = thread_with_turn(check, &state, "Quokka")?;
+    let composer = composer_of(check);
+    check.go(&parent);
+    check.focus_composer();
+    check.type_text("/side Where does the quokka helper live?");
+    check.press("enter");
+    let p = parent.clone();
+    check.pump(move |c| matches!(c.route(), Route::Thread(k) if k != p), Duration::from_secs(30), "the side chat opens")?;
+    let Route::Thread(side) = check.route() else { bail!("no side chat route") };
+    let s = side.clone();
+    check.pump(
+        move |c| c.cx.update(|cx| StateBridge::shell(cx).read(cx).row(&s).is_some_and(|row| row.latest_user_message_at.is_some())),
+        Duration::from_secs(30),
+        "the side chat has its message",
+    )?;
+    let side_title = check.cx.update(|cx| StateBridge::shell(cx).read(cx).row(&side).map(|row| row.title().to_owned())).unwrap_or_default();
+    // The `@` trigger ends at a space, so the query is one word of the title.
+    let query: String = side_title.split_whitespace().max_by_key(|word| word.len()).unwrap_or_default().trim_matches(|c: char| !c.is_alphanumeric()).to_owned();
+    let lineage = check.cx.update(|cx| StateBridge::shell(cx).read(cx).row(&side).map(|row| format!("{:?}", row.source.lineage)));
+    check.note(format!("side chat title {side_title:?}, query {query:?}, lineage {lineage:?}, parent {}", parent.thread_id.0));
+    let menu = |check: &mut Check, on: &ThreadKey, text: &str| -> Vec<(String, String, String)> {
+        check.go(on);
+        check.wait(Duration::from_millis(300));
+        check.focus_composer();
+        let editor = check.cx.update(|cx| composer.read(cx).editor().clone());
+        check.cx.update(|cx| editor.update(cx, |e, cx| e.set_text(String::new(), cx)));
+        check.type_text(&format!("@{text}"));
+        check.wait(Duration::from_millis(500));
+        let items = check.cx.update(|cx| {
+            composer.read(cx).menu().map(|m| {
+                m.items.iter().filter(|i| i.id.starts_with("thread:")).map(|i| (i.id.to_string(), i.label.to_string(), i.description.to_string())).collect()
+            })
+        });
+        check.cx.update(|cx| editor.update(cx, |e, cx| e.set_text(String::new(), cx)));
+        items.unwrap_or_default()
+    };
+    let id_of = |key: &ThreadKey| format!("thread:{}:{}", key.environment_id.0, key.thread_id.0);
+    let from_parent = menu(check, &parent, &query);
+    let offered = from_parent.iter().find(|(id, ..)| *id == id_of(&side));
+    check.check("@ from the parent offers its side chat as \"Side chat\"", offered.is_some_and(|(_, _, d)| d == "Side chat"), format!("{from_parent:?}"));
+    check.shot("80-mention-side-chat.png")?;
+    let from_other = menu(check, &other, &query);
+    check.check("@ from another thread leaves the side chat out", !from_other.iter().any(|(id, ..)| *id == id_of(&side)), format!("{from_other:?}"));
+    let quokka = menu(check, &other, "Quokka");
+    check.check("@ leaves out the composer's own thread", !quokka.iter().any(|(id, ..)| *id == id_of(&other)), format!("{quokka:?}"));
+    check.check("@ ranks the exact title first", quokka.first().is_some_and(|(id, ..)| *id == id_of(&exact)), format!("{quokka:?}"));
+    check.check("@ lists at most five threads", quokka.len() <= 5, quokka.len());
+    Ok(())
 }
