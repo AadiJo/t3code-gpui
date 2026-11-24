@@ -16,7 +16,7 @@ written. Any element whose text could name the machine (absolute paths, the user
 and only geometry kept, since a terminal prompt shows the user and host. Scroll pages
 (`<view>.scroll-<n>.png`) have no element JSON; they get side-by-sides but are not judged.
 
-`compare` finds each reference text in the port image (best ink match within 12px of where the
+`compare` finds each reference text in the port image (best ink match within 24px of where the
 reference has it), measures it there, and writes `report.md` (per scene pass and fail, every
 failing element with both values, grouped by cause and area), `results.json` and side-by-sides.
 """
@@ -38,7 +38,7 @@ SCALE = 2
 PX = 0.5  # logical px
 CHANNEL = 1  # per channel, of 255
 INK = 24  # a pixel is ink when a channel differs from the background by more than this
-SEARCH = 24  # device px searched around the reference position
+SEARCH = 48  # device px searched around the reference position (24 logical px)
 MONO = ("Monaco", "PT Mono", "monospace", "ui-monospace", "Menlo")
 
 
@@ -121,16 +121,16 @@ def find_offset(ref_mask, port_im, x0, y0, bg):
         return int(np.count_nonzero(mask[sy : sy + h, sx : sx + w] != ref_mask))
 
     best = None
-    for dy in range(-SEARCH, SEARCH + 1, 2):
-        for dx in range(-SEARCH, SEARCH + 1, 2):
+    for dy in range(-SEARCH, SEARCH + 1, 3):
+        for dx in range(-SEARCH, SEARCH + 1, 3):
             s = score(dx, dy)
             if s is not None and (best is None or (s, abs(dx) + abs(dy)) < (best[0], abs(best[1]) + abs(best[2]))):
                 best = (s, dx, dy)
     if best is None:
         return None
     _, bx, by = best
-    for dy in range(by - 2, by + 3):
-        for dx in range(bx - 2, bx + 3):
+    for dy in range(by - 3, by + 4):
+        for dx in range(bx - 3, bx + 4):
             s = score(dx, dy)
             if s is not None and (s, abs(dx) + abs(dy)) < (best[0], abs(best[1]) + abs(best[2])):
                 best = (s, dx, dy)
@@ -139,21 +139,36 @@ def find_offset(ref_mask, port_im, x0, y0, bg):
     return best[1], best[2]
 
 
-def edge_scan(im, x0, y0, x1, y1):
-    """The strongest colour step along a horizontal or vertical device-px segment: (position in
-    logical px, colour before, colour after), or None."""
+def edge_scan(im, x0, y0, x1, y1, like=None):
+    """A colour step along a horizontal or vertical device-px segment: (position in logical px,
+    colour before, colour after), or None. Without `like` the strongest step; with `like` (a
+    reference edge) the step whose colours are closest to it, nearest its position on ties."""
     x0, y0, x1, y1 = clip(im, x0, y0, x1, y1)
     if x0 >= x1 or y0 >= y1:
         return None
-    line = im[y0, x0:x1] if y1 - y0 <= 1 else im[y0:y1, x0]
+    horizontal = y1 - y0 <= 1
+    line = im[y0, x0:x1] if horizontal else im[y0:y1, x0]
     if len(line) < 3:
         return None
+    start = x0 if horizontal else y0
     steps = np.abs(np.diff(line, axis=0)).max(axis=1)
-    i = int(steps.argmax())
-    if steps[i] <= 6:
+
+    def edge(i):
+        return {"at": (start + i + 1) / SCALE, "before": hexc(line[max(0, i - 1)]), "after": hexc(line[min(len(line) - 1, i + 2)])}
+
+    if like is None:
+        i = int(steps.argmax())
+        return edge(i) if steps[i] > 6 else None
+    candidates = [int(i) for i in np.nonzero(steps > 6)[0]]
+    if not candidates:
         return None
-    start = x0 if y1 - y0 <= 1 else y0
-    return {"at": (start + i + 1) / SCALE, "before": hexc(line[max(0, i - 1)]), "after": hexc(line[min(len(line) - 1, i + 2)])}
+
+    def cost(i):
+        e = edge(i)
+        return (channels(e["before"], like["before"]) + channels(e["after"], like["after"]), abs(e["at"] - like["at"]))
+
+    best = min(candidates, key=cost)
+    return edge(best) if cost(best)[0] <= 48 else None
 
 
 # ---------------------------------------------------------------- element selection
@@ -224,6 +239,29 @@ def area_of(e, overlays, sidebar_right):
     return "main"
 
 
+def merge_code_runs(texts):
+    """Syntax-highlighted code is one span per token; judge each line of tokens as one element."""
+    merged, out = [], []
+    for e in sorted(texts, key=lambda e: (round(e["y"] + e["h"] / 2), e["x"])):
+        mono = e["el"].startswith("span") and any(m in e["font"] for m in MONO)
+        last = merged[-1] if merged else None
+        if (
+            mono
+            and last is not None
+            and last["font"] == e["font"]
+            and abs((last["y"] + last["h"] / 2) - (e["y"] + e["h"] / 2)) <= 1
+            and 0 <= e["x"] - (last["x"] + last["w"]) <= 12
+        ):
+            last["text"] = last["text"] + " " + e["text"]
+            last["w"] = e["x"] + e["w"] - last["x"]
+            continue
+        if mono:
+            merged.append(dict(e))
+        else:
+            out.append(e)
+    return out + merged
+
+
 def select(view, data, words):
     """The judged elements of one view: visible leaf texts (innermost per text and place) and
     boxes with a visible fill or border."""
@@ -253,6 +291,7 @@ def select(view, data, words):
         if parse_alpha(e.get("bg", "")) >= 0.5 or border_width(e.get("border", "")) >= 1:
             if 8 <= e["w"] < vw and 8 <= e["h"] < vh and e["x"] >= 0 and e["y"] >= 0 and e["x"] + e["w"] <= vw and e["y"] + e["h"] <= vh:
                 boxes.append(e)
+    texts = merge_code_runs(list(texts.values()))
     picked, seen = [], defaultdict(int)
 
     def name(kind, e, label):
@@ -260,7 +299,7 @@ def select(view, data, words):
         seen[base] += 1
         return base if seen[base] == 1 else f"{base} #{seen[base]}"
 
-    for e in sorted(texts.values(), key=lambda e: (e["y"], e["x"])):
+    for e in sorted(texts, key=lambda e: (e["y"], e["x"])):
         picked.append({"kind": "text", "name": name("text", e, repr(e["text"].strip()[:48])), "area": area_of(e, overlays, sidebar_right), "font": e["font"], "box": [e["x"], e["y"], e["w"], e["h"]]})
     for e in sorted(boxes, key=lambda e: (e["y"], e["x"])):
         picked.append({"kind": "box", "name": name("box", e, f"{round(e['w'])}x{round(e['h'])}"), "area": area_of(e, overlays, sidebar_right), "box": [e["x"], e["y"], e["w"], e["h"]]})
@@ -297,8 +336,14 @@ def measure_text_port(im, el, ref):
         found["matched"] = False
         return found
     dx, dy = offset
-    pad = max(8, int(0.12 * (x1 - x0)))
-    found = measure_ink(im, x0 + dx - 4, y0 + dy - 2, x1 + dx + pad, y1 + dy + 2, bg)
+    found = measure_ink(im, x0 + dx, y0 + dy, x1 + dx, y1 + dy, bg)
+    # Ink that reaches the region's edge runs past it (a wider text): measure the extent with
+    # room, keeping the colour from the reference-sized region.
+    if not found.get("empty") and (found["left"] * SCALE <= x0 + dx + 1 or (found["left"] + found["width"]) * SCALE >= x1 + dx - 1):
+        pad = max(8, int(0.12 * (x1 - x0)))
+        wide = measure_ink(im, x0 + dx - 6, y0 + dy, x1 + dx + pad, y1 + dy, bg)
+        if not wide.get("empty"):
+            found = {**wide, "color": found["color"]}
     found["matched"] = True
     return found
 
@@ -309,6 +354,12 @@ def measure_box(im, el, ref=None):
     span = 8 if ref is None else SEARCH
     my, mx = int((Y0 + Y1) / 2), int((X0 + X1) / 2)
     result = {}
+    narrow = {
+        "left": (X0 - 8, my, X0 + 8, my + 1),
+        "right": (X1 - 8, my, X1 + 8, my + 1),
+        "top": (mx, Y0 - 8, mx + 1, Y0 + 8),
+        "bottom": (mx, Y1 - 8, mx + 1, Y1 + 8),
+    }
     for side, seg in (
         ("left", (X0 - span, my, X0 + span, my + 1)),
         ("right", (X1 - span, my, X1 + span, my + 1)),
@@ -317,7 +368,12 @@ def measure_box(im, el, ref=None):
     ):
         if ref is not None and side not in ref:
             continue
-        found = edge_scan(im, *seg)
+        found = edge_scan(im, *seg, like=ref[side] if ref is not None else None)
+        if ref is not None:
+            # Prefer the edge where the reference recorded it (same window as `record`).
+            near = edge_scan(im, *narrow[side])
+            if near and channels(near["before"], ref[side]["before"]) + channels(near["after"], ref[side]["after"]) <= 6:
+                found = near
         if found:
             result[side] = found
     inner = im[int(Y0) + 4 : int(Y1) - 4, int(X0) + 4 : int(X1) - 4]
@@ -361,7 +417,8 @@ def record(ref_dir, *only):
 def judge_text(ref, port):
     rows = []
     if port.get("empty"):
-        return [("ink", "present", "none", "", False)], "missing in port"
+        cause = "not found near its place" if port.get("matched") is False else "missing in port"
+        return [("ink", "present", "none", "", False)], cause
     for prop in ("left", "top", "width", "height", "baseline"):
         d = round(port[prop] - ref[prop], 2)
         rows.append((prop, ref[prop], port[prop], d, abs(d) <= PX))
@@ -485,7 +542,7 @@ def compare(port_dir, out_dir, ref_dir=None):
         "# Mac parity report",
         "",
         f"Mode `mac`: port renders against the fork rendered on the owner's Mac. Tolerance {PX}px per position and size, {CHANNEL}/255 per channel.",
-        "Text: glyph ink box (left, top, width, height), baseline and ink colour, found within 12px of the reference position.",
+        "Text: glyph ink box (left, top, width, height), baseline and ink colour, found within 24px of the reference position.",
         "Boxes: edges at mid-side and the fill.",
         "",
         f"**{total_pass} elements pass, {total_fail} fail, in {sum(1 for s in summary if not s[4])} scenes.**",
@@ -502,7 +559,7 @@ def compare(port_dir, out_dir, ref_dir=None):
     for (cause, area, font), items in sorted(groups.items(), key=lambda kv: (kv[0][0], kv[0][1], -len(kv[1]))):
         lines += [f"### {cause} · {area}{' · ' + font if font else ''} ({len(items)})", ""] + items + [""]
     (out_dir / "report.md").write_text("\n".join(lines) + "\n")
-    (out_dir / "results.json").write_text(json.dumps(results, indent=1) + "\n")
+    (out_dir / "results.json").write_text(json.dumps(results, indent=1, default=float) + "\n")
     print("\n".join(lines[:12 + len(summary)]))
     print(f"report: {out_dir / 'report.md'}")
     return total_fail
