@@ -7,6 +7,7 @@
 //! The panel acts on one environment through [`ServerPanelsModel`].
 
 use std::collections::{BTreeSet, HashMap};
+use std::rc::Rc;
 use std::sync::Arc;
 
 use gpui_kit::{TestSupportExt as _, 
@@ -143,9 +144,16 @@ pub fn instance_rows(
     rows
 }
 
-/// The mark for a driver, or `None` to draw initials.
-pub fn driver_brand(driver: &str) -> Option<BrandIcon> {
+/// The mark for a driver (`ProviderInstanceIcon`'s bundled and package
+/// icons), or `None` to draw initials. OpenCode's two-tone mark differs by
+/// appearance.
+pub fn driver_brand(driver: &str, dark: bool) -> Option<BrandIcon> {
     Some(match driver {
+        "opencode" if dark => BrandIcon::OpenCodeDark,
+        "opencode" => BrandIcon::OpenCodeLight,
+        "muse" => BrandIcon::MuseCode,
+        "pi" => BrandIcon::Pi,
+        "fx" => BrandIcon::Fx,
         "codex" => BrandIcon::OpenAi,
         "claudeAgent" => BrandIcon::ClaudeAi,
         "cursor" => BrandIcon::Cursor,
@@ -161,7 +169,8 @@ pub fn driver_brand(driver: &str) -> Option<BrandIcon> {
 pub fn provider_instance_icon(driver: &str, name: &str, accent: Option<&str>, cx: &App) -> AnyElement {
     let theme = &cx.app_theme().clone();
     let c = &theme.colors;
-    let mark = match driver_brand(driver) {
+    let dark = theme.appearance == crate::theme_palette::Appearance::Dark;
+    let mark = match driver_brand(driver, dark) {
         Some(brand) => Icon::new(brand).size(IconSize::Md).color(with_alpha(c.foreground(), 0.8)).into_any_element(),
         None => div()
             .size(px(16.))
@@ -231,6 +240,10 @@ pub struct ProviderSettingsPanel {
     pub(super) auth_ui: HashMap<String, super::provider_authentication_section::AuthUi>,
     /// One accent picker per instance, created on first render of its editor.
     accent_pickers: HashMap<String, Entity<ProviderAccentColorPicker>>,
+    /// Instances whose "Add custom model" field is open.
+    adding_model: BTreeSet<String>,
+    /// The last custom-model validation error, per instance.
+    model_error: HashMap<String, SharedString>,
     /// The page's content width, for the web's `@min-[48rem]/providers` query.
     width: f32,
     _subscriptions: Vec<Subscription>,
@@ -250,6 +263,8 @@ impl ProviderSettingsPanel {
             updating: BTreeSet::new(),
             auth_ui: HashMap::new(),
             accent_pickers: HashMap::new(),
+            adding_model: BTreeSet::new(),
+            model_error: HashMap::new(),
             width: 0.,
             _subscriptions: vec![observe],
         }
@@ -934,6 +949,10 @@ impl ProviderSettingsPanel {
                 for field in &form_fields {
                     section.extend([self.render_form_field(row, &instance, meta, field, locks.as_ref(), read_only, window, cx)]);
                 }
+                if row.driver == "acpRegistry" && config_string(instance.config.as_ref(), "source").as_deref() == Some("local") {
+                    let lock = locks.as_ref().filter(|l| l.config_keys.contains("commandArgs")).map(|l| l.reason.clone());
+                    section.extend([self.render_command_arguments(row, &instance, lock, read_only, window, cx)]);
+                }
                 sections.push(section.into_any_element());
             }
             None => {
@@ -954,7 +973,7 @@ impl ProviderSettingsPanel {
 
         // Models.
         if meta.is_some() {
-            sections.push(self.render_models_section(row, live.as_deref(), &snapshot.settings, read_only, cx));
+            sections.push(self.render_models_section(row, live.as_deref(), &snapshot.settings, read_only, window, cx));
         }
 
         div().flex().flex_col().gap(theme.sp(6.)).py(theme.sp(4.)).children(sections).into_any_element()
@@ -1059,7 +1078,7 @@ impl ProviderSettingsPanel {
         if let Some(l) = locks.filter(|l| l.whole_environment) {
             section.extend([div().px(theme.sp(4.)).py(theme.sp(3.)).child(managed_notice(l.reason.clone(), cx)).into_any_element()]);
         }
-        let mut body = div().flex().flex_col().gap(theme.sp(2.)).when(whole || read_only, |d| d.opacity(0.5));
+        let mut body = div().flex().flex_col().gap(theme.sp(2.));
         for (ix, variable) in variables.iter().enumerate() {
             let sensitive = variable.sensitive == Some(true);
             let (rename_instance, rename_id, old_name) = (instance.clone(), iid.clone(), variable.name.clone());
@@ -1096,30 +1115,68 @@ impl ProviderSettingsPanel {
             let remove_instance = instance.clone();
             let remove_name = variable.name.clone();
             let remove_id = iid.clone();
+            let (lock_instance, lock_name, lock_id) = (instance.clone(), variable.name.clone(), iid.clone());
+            let locked = read_only || whole;
             body = body.child(
                 div()
                     .flex()
-                    .items_center()
-                    .gap(theme.sp(2.))
-                    .child(div().w(theme.sp(48.)).child(field_input(&name, true, false, read_only || whole)))
-                    .child(div().flex_1().child(field_input(&value, true, false, read_only || whole)))
-                    .child(div().ui_text(theme, TextSize::Xs, weight::NORMAL).text_color(c.muted_foreground).child(
-                        if variable.sensitive == Some(true) { t!("Sensitive, stored separately") } else { t!("Plain text") },
-                    ))
-                    .when(!read_only && !whole, |d| {
-                        d.child(
-                            Button::new(SharedString::from(format!("{iid}-var-remove-{ix}")))
-                                .variant(ButtonVariant::GhostMuted)
-                                .size(ButtonSize::IconXs)
-                                .icon(IconName::X)
-                                .on_click(cx.listener(move |this, _, _, cx| {
-                                    let mut next = remove_instance.clone();
-                                    next.environment = next.environment.map(|vars| vars.into_iter().filter(|v| v.name != remove_name).collect::<Vec<_>>()).filter(|v| !v.is_empty());
-                                    this.fields.reset_prefix(&format!("{remove_id}:var:"));
-                                    this.persist_instance(&remove_id, next, cx);
-                                })),
-                        )
-                    }),
+                    .flex_col()
+                    .gap(theme.sp(1.5))
+                    .min_w_0()
+                    .rounded(theme.radii.lg)
+                    .border_1()
+                    .border_color(c.border)
+                    .p(theme.sp(2.))
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(theme.sp(1.5))
+                            .min_w_0()
+                            .child(div().flex_1().min_w_0().child(field_input(&name, true, false, locked || variable.value_redacted == Some(true))))
+                            .child(
+                                Button::new(SharedString::from(format!("{iid}-var-remove-{ix}")))
+                                    .variant(ButtonVariant::GhostDestructive)
+                                    .size(ButtonSize::IconMicro)
+                                    .icon(IconName::X)
+                                    .disabled(locked)
+                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                        let mut next = remove_instance.clone();
+                                        next.environment = next.environment.map(|vars| vars.into_iter().filter(|v| v.name != remove_name).collect::<Vec<_>>()).filter(|v| !v.is_empty());
+                                        this.fields.reset_prefix(&format!("{remove_id}:var:"));
+                                        this.persist_instance(&remove_id, next, cx);
+                                    })),
+                            ),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .items_start()
+                            .gap(theme.sp(1.5))
+                            .min_w_0()
+                            .child(div().flex_1().min_w_0().child(field_input(&value, true, false, locked)))
+                            .child(
+                                div().id(SharedString::from(format!("{iid}-var-lock-tip-{ix}"))).tooltip(tooltip(TooltipSurface::new(
+                                    if sensitive { t!("Sensitive, stored separately") } else { t!("Plain text") },
+                                ))).child(
+                                    Button::new(SharedString::from(format!("{iid}-var-lock-{ix}")))
+                                        .variant(ButtonVariant::GhostMuted)
+                                        .size(ButtonSize::IconMicro)
+                                        .icon(if sensitive { IconName::Lock } else { IconName::LockOpen })
+                                        .pressed(sensitive)
+                                        .disabled(locked || variable.value_redacted == Some(true))
+                                        .on_click(cx.listener(move |this, _, _, cx| {
+                                            let mut next = lock_instance.clone();
+                                            if let Some(vars) = next.environment.as_mut() {
+                                                for v in vars.iter_mut().filter(|v| v.name == lock_name) {
+                                                    v.sensitive = Some(!sensitive);
+                                                }
+                                            }
+                                            this.persist_instance(&lock_id, next, cx);
+                                        })),
+                                ),
+                            ),
+                    ),
             );
         }
         let add_instance = instance.clone();
@@ -1129,7 +1186,7 @@ impl ProviderSettingsPanel {
             .control(
                 Button::new(SharedString::from(format!("{iid}-var-add")))
                     .variant(ButtonVariant::Outline)
-                    .size(ButtonSize::Xs)
+                    .size(ButtonSize::Sm)
                     .icon(IconName::Plus)
                     .label(t!("Add variable"))
                     .disabled(read_only || whole)
@@ -1143,7 +1200,7 @@ impl ProviderSettingsPanel {
                         vars.push(t3code_contracts::ProviderInstanceEnvironmentInnerItem {
                             name: format!("VARIABLE_{n}"),
                             value: Some(String::new()),
-                            sensitive: Some(false),
+                            sensitive: Some(true),
                             secret: None,
                             value_redacted: None,
                         });
@@ -1152,94 +1209,456 @@ impl ProviderSettingsPanel {
                         this.persist_instance(&add_id, next, cx);
                     })),
             );
-        section.extend([
-            header.into_any_element(),
-            div()
-                .px(theme.sp(4.))
-                .pb(theme.sp(3.))
-                .child(body)
-                .child(hint(t!("Sensitive values are stored separately and never returned to the app."), cx))
-                .into_any_element(),
-        ]);
+        let redacted = variables.iter().any(|v| v.value_redacted == Some(true));
+        let header = if variables.is_empty() {
+            header
+        } else {
+            header.child(
+                div().mt(theme.sp(3.)).pb(theme.sp(2.)).flex().flex_col().gap(theme.sp(2.)).child(body).child(hint(
+                    if redacted {
+                        t!("Sensitive values are stored separately and never returned to the app. Enter a new value to rename a saved one or make it plain text.")
+                    } else {
+                        t!("Sensitive values are stored separately and never returned to the app.")
+                    },
+                    cx,
+                )),
+            )
+        };
+        section.extend([header.into_any_element()]);
         section.into_any_element()
     }
 
+    /// `ProviderCommandArguments`: one literal argument per row, saved as
+    /// `config.commandArgs`.
+    fn render_command_arguments(
+        &mut self,
+        row: &InstanceRow,
+        instance: &StoredInstance,
+        lock: Option<SharedString>,
+        read_only: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let theme = &cx.app_theme().clone();
+        let iid = row.instance_id.clone();
+        let args: Vec<String> = instance
+            .config
+            .as_ref()
+            .and_then(|c| c.get("commandArgs"))
+            .and_then(|v| v.as_array())
+            .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_owned)).collect())
+            .unwrap_or_default();
+        let save = {
+            let (instance, id, this) = (instance.clone(), iid.clone(), cx.entity().downgrade());
+            Rc::new(move |next: Vec<String>, cx: &mut App| {
+                let mut updated = instance.clone();
+                let mut config = updated.config.clone().filter(|c| c.is_object()).unwrap_or_else(|| serde_json::json!({}));
+                config.as_object_mut().expect("object").insert("commandArgs".into(), serde_json::json!(next));
+                updated.config = Some(config);
+                let id = id.clone();
+                this.update(cx, |this, cx| {
+                    this.fields.reset_prefix(&format!("{id}:arg:"));
+                    this.persist_instance(&id, updated, cx)
+                })
+                .ok();
+            })
+        };
+        let mut list = div().mt(theme.sp(3.)).pb(theme.sp(2.)).flex().flex_col().gap(theme.sp(2.)).min_w_0();
+        for (ix, arg) in args.iter().enumerate() {
+            if lock.is_some() {
+                list = list.child(div().truncate().mono_text(px(TextSize::Xs.size(theme.fonts.interface)), weight::NORMAL).child(arg.clone()));
+                continue;
+            }
+            let (commit_args, commit_save) = (args.clone(), save.clone());
+            let field = self.fields.draft(format!("{iid}:arg:{ix}"), arg.clone(), "", false, window, cx, move |text, _, cx| {
+                let mut next = commit_args.clone();
+                next[ix] = text.to_string();
+                commit_save(next, cx);
+            });
+            let (remove_args, remove_save) = (args.clone(), save.clone());
+            list = list.child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(theme.sp(1.5))
+                    .min_w_0()
+                    .child(div().flex_1().min_w_0().child(field_input(&field, true, false, read_only)))
+                    .child(
+                        Button::new(SharedString::from(format!("{iid}-arg-remove-{ix}")))
+                            .variant(ButtonVariant::GhostDestructive)
+                            .size(ButtonSize::IconMicro)
+                            .icon(IconName::X)
+                            .disabled(read_only)
+                            .on_click(move |_, _, cx| {
+                                let mut next = remove_args.clone();
+                                next.remove(ix);
+                                remove_save(next, cx);
+                            }),
+                    ),
+            );
+        }
+        let add_save = save;
+        let add_args = args.clone();
+        let mut row_el = SettingsRow::new(t!("Arguments"))
+            .description(t!("One literal argument per row, in launch order."))
+            .control(ManagedControl::new(
+                format!("{iid}-args-lock"),
+                lock,
+                Button::new(SharedString::from(format!("{iid}-arg-add")))
+                    .variant(ButtonVariant::Outline)
+                    .size(ButtonSize::Sm)
+                    .icon(IconName::Plus)
+                    .label(t!("Add argument"))
+                    .disabled(read_only)
+                    .on_click(move |_, _, cx| {
+                        let mut next = add_args.clone();
+                        next.push(String::new());
+                        add_save(next, cx);
+                    }),
+            ));
+        if !args.is_empty() {
+            row_el = row_el.child(list);
+        }
+        row_el.into_any_element()
+    }
+
+    /// Saves a new list of custom models on the instance (`config.customModels`).
+    fn save_custom_models(&mut self, instance_id: &str, instance: &StoredInstance, custom: Vec<serde_json::Value>, cx: &mut Context<Self>) {
+        let mut next = instance.clone();
+        let mut config = next.config.clone().filter(|c| c.is_object()).unwrap_or_else(|| serde_json::json!({}));
+        let map = config.as_object_mut().expect("object");
+        if custom.is_empty() {
+            map.remove("customModels");
+        } else {
+            map.insert("customModels".into(), serde_json::Value::Array(custom));
+        }
+        next.config = (!map.is_empty()).then_some(config);
+        self.persist_instance(instance_id, next, cx);
+    }
+
+    /// `ProviderModelsSection`: count, Disable all, Add custom model, then
+    /// favourites, visible and hidden models with reorder arrows and a picker switch.
     fn render_models_section(
-        &self,
+        &mut self,
         row: &InstanceRow,
         live: Option<&ServerProvider>,
         settings: &t3code_contracts::ServerSettings,
         read_only: bool,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let theme = &cx.app_theme().clone();
         let c = &theme.colors;
+        let iid = row.instance_id.clone();
+        let instance = row.instance();
         let prefs = settings.provider_model_preferences.as_ref().and_then(|p| p.get(&row.instance_id));
-        let hidden: BTreeSet<String> = prefs.and_then(|p| p.hidden_models.clone()).unwrap_or_default().into_iter().collect();
-        let favorites: BTreeSet<String> = settings
+        let hidden: Vec<String> = prefs.and_then(|p| p.hidden_models.clone()).unwrap_or_default();
+        let model_order: Vec<String> = prefs.and_then(|p| p.model_order.clone()).unwrap_or_default();
+        let favorites: Vec<String> = settings
             .favorites
             .iter()
             .flatten()
             .filter(|f| f.provider.as_str() == row.instance_id)
             .map(|f| f.model.clone())
             .collect();
-        let models = live.map(|p| p.models.clone()).unwrap_or_default();
-        let list = div().flex().flex_col().children(models.iter().map(|model| {
-            let is_hidden = hidden.contains(&model.slug);
-            let is_favorite = favorites.contains(&model.slug);
-            let (hide_id, fav_id) = (row.instance_id.clone(), row.instance_id.clone());
-            let (hide_slug, fav_slug) = (model.slug.clone(), model.slug.clone());
+        let custom_config: Vec<serde_json::Value> = instance
+            .config
+            .as_ref()
+            .and_then(|c| c.get("customModels"))
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default();
+        // (slug, name, is_custom): the reported models, configured custom models
+        // the provider has not reported yet, then unreported favourites.
+        let mut models: Vec<(String, String, bool)> =
+            live.map(|p| p.models.iter().map(|m| (m.slug.clone(), m.name.clone(), m.is_custom)).collect()).unwrap_or_default();
+        for entry in &custom_config {
+            if let Some(slug) = entry.get("slug").and_then(|v| v.as_str()) {
+                if !models.iter().any(|m| m.0 == slug) {
+                    let name = entry.get("name").and_then(|v| v.as_str()).unwrap_or(slug);
+                    models.push((slug.to_owned(), name.to_owned(), true));
+                }
+            }
+        }
+        let reported = models.len();
+        for slug in &favorites {
+            if !models.iter().any(|m| &m.0 == slug) {
+                models.push((slug.clone(), slug.clone(), false));
+            }
+        }
+        let order_ix = |slug: &str| model_order.iter().position(|m| m == slug).unwrap_or(usize::MAX);
+        let mut ordered = models.clone();
+        ordered.sort_by_key(|m| order_ix(&m.0));
+        let is_hidden = |m: &(String, String, bool)| !m.2 && hidden.contains(&m.0);
+        let is_fav = |m: &(String, String, bool)| favorites.contains(&m.0);
+        #[derive(Clone, Copy, PartialEq)]
+        enum Group {
+            Favorite,
+            Visible,
+            Hidden,
+        }
+        let group_of = |m: &(String, String, bool)| if is_fav(m) { Group::Favorite } else if is_hidden(m) { Group::Hidden } else { Group::Visible };
+        let display: Vec<(String, String, bool)> = [Group::Favorite, Group::Visible, Group::Hidden]
+            .into_iter()
+            .flat_map(|g| ordered.iter().filter(move |m| group_of(m) == g).cloned().collect::<Vec<_>>())
+            .collect();
+        let favorite_count = display.iter().filter(|m| is_fav(m)).count();
+        let hidden_count = display.iter().filter(|m| is_hidden(m)).count();
+        let built_in: Vec<String> = models.iter().take(reported).filter(|m| !m.2).map(|m| m.0.clone()).collect();
+        let all_hidden = !built_in.is_empty() && built_in.iter().all(|s| hidden.contains(s));
+
+        let mut count = if reported == 1 { t!("{count} model", count = reported) } else { t!("{count} models", count = reported) }.to_string();
+        if favorite_count > 0 {
+            count.push_str(" · ");
+            count.push_str(&if favorite_count == 1 { t!("{count} favorite", count = favorite_count) } else { t!("{count} favorites", count = favorite_count) });
+        }
+        if hidden_count > 0 {
+            count.push_str(" · ");
+            count.push_str(&t!("{count} hidden", count = hidden_count));
+        }
+        let bulk_id = iid.clone();
+        let bulk_slugs = built_in.clone();
+        let header = div()
+            .flex()
+            .flex_wrap()
+            .items_center()
+            .justify_between()
+            .gap(theme.sp(2.))
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(theme.sp(2.))
+                    .when(!built_in.is_empty(), |d| {
+                        d.child(
+                            Button::new(SharedString::from(format!("models-bulk-{iid}")))
+                                .variant(ButtonVariant::GhostMuted)
+                                .size(ButtonSize::Xs)
+                                .label(if all_hidden { t!("Enable all") } else { t!("Disable all") })
+                                .disabled(read_only)
+                                .on_click(cx.listener(move |this, _, _, cx| {
+                                    let items = bulk_slugs
+                                        .iter()
+                                        .map(|slug| ClientServerSettingsPatchSetModelsHiddenItem {
+                                            provider: ProviderInstanceId::new(bulk_id.as_str()),
+                                            model: slug.clone(),
+                                            hidden: !all_hidden,
+                                        })
+                                        .collect();
+                                    this.update_settings("model-prefs", ClientServerSettingsPatch { set_models_hidden: Some(items), ..Default::default() }, cx);
+                                })),
+                        )
+                    })
+                    .child(div().ui_text(theme, TextSize::Xs, weight::NORMAL).text_color(c.muted_foreground).child(count)),
+            )
+            .when(row.driver != "antigravity" && !self.adding_model.contains(&iid), |d| {
+                let add_id = iid.clone();
+                d.child(
+                    div().mr(-theme.sp(2.)).child(
+                        Button::new(SharedString::from(format!("models-add-{iid}")))
+                            .variant(ButtonVariant::GhostMuted)
+                            .size(ButtonSize::Xs)
+                            .icon(IconName::Plus)
+                            .label(t!("Add custom model"))
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                this.adding_model.insert(add_id.clone());
+                                cx.notify();
+                            })),
+                    ),
+                )
+            });
+
+        let mut list = div().mt(theme.sp(2.)).mx(-theme.sp(2.)).flex().flex_col();
+        if display.is_empty() {
+            list = list.child(div().px(theme.sp(2.)).py(theme.sp(2.)).child(hint(t!("No models reported for this provider yet."), cx)));
+        }
+        let group_label = |label: SharedString, first: bool| {
             div()
-                .flex()
-                .items_center()
-                .gap(theme.sp(2.))
-                .py(theme.sp(1.5))
-                .border_b_1()
-                .border_color(with_alpha(c.border, 0.4))
-                .child(
-                    div()
-                        .flex_1()
-                        .min_w_0()
-                        .flex()
-                        .items_center()
-                        .gap(theme.sp(2.))
-                        .when(is_hidden, |d| d.opacity(0.5))
-                        .child(div().truncate().ui_text(theme, TextSize::Sm, weight::NORMAL).child(model.name.clone()))
-                        .child(div().truncate().mono_text(px(11.), weight::NORMAL).text_color(c.muted_foreground).child(model.slug.clone()))
-                        .when(model.is_custom, |d| d.child(Badge::new(t!("Custom")).variant(BadgeVariant::Outline).size(BadgeSize::Sm))),
-                )
-                .child(
-                    Button::new(SharedString::from(format!("model-fav-{}-{}", row.instance_id, model.slug)))
-                        .variant(ButtonVariant::GhostMuted)
-                        .size(ButtonSize::IconXs)
-                        .icon(IconName::Star)
-                        .pressed(is_favorite)
-                        .disabled(read_only)
-                        .on_click(cx.listener(move |this, _, _, cx| this.set_model_favorite(&fav_id, &fav_slug, !is_favorite, cx))),
-                )
-                .child(
-                    Button::new(SharedString::from(format!("model-hide-{}-{}", row.instance_id, model.slug)))
-                        .variant(ButtonVariant::GhostMuted)
-                        .size(ButtonSize::IconXs)
-                        .icon(if is_hidden { IconName::EyeOff } else { IconName::Eye })
-                        .disabled(read_only)
-                        .on_click(cx.listener(move |this, _, _, cx| this.set_model_hidden(&hide_id, &hide_slug, !is_hidden, cx))),
-                )
-        }));
+                .px(theme.sp(2.))
+                .pb(theme.sp(1.5))
+                .pt(if first { theme.sp(1.) } else { theme.sp(5.) })
+                .ui_text(theme, TextSize::Xs2, weight::NORMAL)
+                .text_color(c.muted_foreground)
+                .child(label)
+        };
+        for (ix, model) in display.iter().enumerate() {
+            let group = group_of(model);
+            let starts = ix == 0 || group_of(&display[ix - 1]) != group;
+            if starts && favorite_count > 0 && group == Group::Favorite {
+                list = list.child(group_label(t!("Favorites"), ix == 0));
+            }
+            if starts && favorite_count > 0 && group == Group::Visible {
+                list = list.child(group_label(t!("All", context = "group of all visible models"), ix == 0));
+            }
+            if starts && group == Group::Hidden {
+                list = list.child(group_label(t!("Hidden from picker"), ix == 0));
+            }
+            let (slug, name, custom) = model.clone();
+            let hidden_row = is_hidden(model);
+            let favorite = group == Group::Favorite;
+            let can_up = ix > 0 && group_of(&display[ix - 1]) == group;
+            let can_down = ix + 1 < display.len() && group_of(&display[ix + 1]) == group;
+            let order: Vec<String> = display.iter().map(|m| m.0.clone()).collect();
+            let move_by = |delta: isize| {
+                let (order, id) = (order.clone(), iid.clone());
+                cx.listener(move |this: &mut Self, _: &ClickEvent, _, cx| {
+                    let mut next = order.clone();
+                    let target = (ix as isize + delta) as usize;
+                    next.swap(ix, target);
+                    let patch = ClientServerSettingsPatch {
+                        set_provider_model_order: Some(t3code_contracts::ClientServerSettingsPatchSetProviderModelOrder {
+                            provider: ProviderInstanceId::new(id.as_str()),
+                            model_order: next,
+                        }),
+                        ..Default::default()
+                    };
+                    this.update_settings("model-prefs", patch, cx);
+                })
+            };
+            let micro = |id: String, icon: IconName| Button::new(SharedString::from(id)).variant(ButtonVariant::GhostMuted).size(ButtonSize::IconMicro).icon(icon);
+            let (fav_id, fav_slug, hide_id, hide_slug) = (iid.clone(), slug.clone(), iid.clone(), slug.clone());
+            let remove_slug = slug.clone();
+            let (remove_id, remove_instance, remove_config) = (iid.clone(), instance.clone(), custom_config.clone());
+            list = list.child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(theme.sp(2.))
+                    .h(theme.sp(7.))
+                    .px(theme.sp(2.))
+                    .rounded(theme.radii.md)
+                    .hover(|d| d.bg(with_alpha(c.muted, 0.3)))
+                    .when(hidden_row, |d| d.opacity(0.5))
+                    .child(
+                        // A favourite's star is drawn in the warning colour (the web also fills it).
+                        div().w(theme.sp(6.)).flex().child(
+                            div()
+                                .id(SharedString::from(format!("model-fav-{iid}-{slug}")))
+                                .size(theme.sp(5.))
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .rounded(theme.radii.md)
+                                .when(!read_only, |d| d.cursor_pointer().hover(|d| d.bg(c.accent)))
+                                .tooltip(tooltip(TooltipSurface::new(if favorite { t!("Remove from favorites") } else { t!("Add to favorites") })))
+                                .child(Icon::new(IconName::Star).size(IconSize::Xs).color(if favorite { c.warning } else { c.muted_foreground }))
+                                .when(!read_only, |d| d.on_click(cx.listener(move |this, _, _, cx| this.set_model_favorite(&fav_id, &fav_slug, !favorite, cx)))),
+                        ),
+                    )
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .flex()
+                            .items_baseline()
+                            .gap(theme.sp(2.))
+                            .child(
+                                div()
+                                    .flex_none()
+                                    .truncate()
+                                    .ui_text(theme, TextSize::Xs, weight::NORMAL)
+                                    .text_color(if hidden_row { c.muted_foreground } else { with_alpha(c.foreground(), 0.9) })
+                                    .child(name.clone()),
+                            )
+                            .when(name != slug, |d| {
+                                d.child(div().truncate().mono_text(px(TextSize::Xs2.size(theme.fonts.interface)), weight::NORMAL).text_color(with_alpha(c.muted_foreground, 0.7)).child(slug.clone()))
+                            })
+                            .when(custom, |d| {
+                                d.child(div().flex_none().ui_text(theme, TextSize::Xs2, weight::NORMAL).text_color(with_alpha(c.muted_foreground, 0.7)).child(t!("custom", context = "badge, user-added model")))
+                            }),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .flex_none()
+                            .items_center()
+                            .justify_end()
+                            .gap(theme.sp(0.5))
+                            .when(!hidden_row, |d| {
+                                d.child(micro(format!("model-up-{iid}-{slug}"), IconName::ArrowUp).disabled(read_only || !can_up).on_click(move_by(-1)))
+                                    .child(micro(format!("model-down-{iid}-{slug}"), IconName::ArrowDown).disabled(read_only || !can_down).on_click(move_by(1)))
+                            })
+                            .when(custom, |d| {
+                                d.child(micro(format!("model-remove-{iid}-{slug}"), IconName::X).disabled(read_only).on_click(cx.listener(move |this, _, _, cx| {
+                                    let next = remove_config.iter().filter(|e| e.get("slug").and_then(|v| v.as_str()) != Some(remove_slug.as_str())).cloned().collect();
+                                    this.save_custom_models(&remove_id, &remove_instance, next, cx);
+                                })))
+                            }),
+                    )
+                    .child(
+                        Switch::new(SharedString::from(format!("model-show-{iid}-{slug}")), !hidden_row)
+                            .size(super::super::ui::switch::SwitchSize::Sm)
+                            .disabled(read_only || custom)
+                            .on_change({
+                                let this = cx.entity().downgrade();
+                                move |checked, _, cx| {
+                                    this.update(cx, |this, cx| this.set_model_hidden(&hide_id, &hide_slug, !checked, cx)).ok();
+                                }
+                            }),
+                    ),
+            );
+        }
+
+        let mut adder = None;
+        if self.adding_model.contains(&iid) && !read_only && row.driver != "antigravity" {
+            let input = self.fields.get(format!("{iid}:custom-model"), "", "model-slug", false, window, cx);
+            let (add_input, add_id, add_instance, add_config) = (input.clone(), iid.clone(), instance.clone(), custom_config.clone());
+            let built = built_in.clone();
+            let cancel_id = iid.clone();
+            adder = Some(
+                div()
+                    .mt(theme.sp(3.))
+                    .flex()
+                    .gap(theme.sp(2.))
+                    .child(div().flex_1().child(field_input(&input, false, false, false)))
+                    .child(Button::new(SharedString::from(format!("models-add-save-{iid}"))).variant(ButtonVariant::Outline).size(ButtonSize::Sm).label(t!("Add", context = "verb, adds a custom model")).on_click(cx.listener(move |this, _, window, cx| {
+                        let slug = add_input.read(cx).value().trim().to_owned();
+                        let error = if slug.is_empty() {
+                            Some(t!("Enter a model slug."))
+                        } else if built.contains(&slug) {
+                            Some(t!("That model is already built in."))
+                        } else if slug.len() > 256 {
+                            Some(t!("Model slugs must be {max} characters or less.", max = 256))
+                        } else if add_config.iter().any(|e| e.get("slug").and_then(|v| v.as_str()) == Some(slug.as_str())) {
+                            Some(t!("That custom model is already saved."))
+                        } else {
+                            None
+                        };
+                        if let Some(error) = error {
+                            this.model_error.insert(add_id.clone(), error);
+                            cx.notify();
+                            return;
+                        }
+                        let mut next = add_config.clone();
+                        next.push(serde_json::json!({ "slug": slug, "name": slug, "capabilities": null }));
+                        this.save_custom_models(&add_id, &add_instance, next, cx);
+                        this.adding_model.remove(&add_id);
+                        this.model_error.remove(&add_id);
+                        this.fields.set(&format!("{add_id}:custom-model"), "", window, cx);
+                        cx.notify();
+                    })))
+                    .child(Button::new(SharedString::from(format!("models-add-cancel-{iid}"))).variant(ButtonVariant::Ghost).size(ButtonSize::Sm).label(t!("Cancel")).on_click(cx.listener(move |this, _, _, cx| {
+                        this.adding_model.remove(&cancel_id);
+                        this.model_error.remove(&cancel_id);
+                        cx.notify();
+                    }))),
+            );
+        }
+        let error = self.model_error.get(&iid).cloned().map(|e| div().mt(theme.sp(2.)).child(tinted(e, c.destructive(), cx)));
+
         FlatSection::new(t!("Models"))
             .child(
                 div()
                     .px(theme.sp(4.))
                     .py(theme.sp(3.))
-                    .child(hint(
+                    .child(div().mb(theme.sp(3.)).child(hint(
                         t!("Model preferences and custom models are saved on the selected environment and shared across connected devices."),
                         cx,
-                    ))
-                    .child(div().pt(theme.sp(3.)).child(if models.is_empty() {
-                        hint(t!("No models"), cx)
-                    } else {
-                        list.into_any_element()
-                    })),
+                    )))
+                    .child(header)
+                    .child(list)
+                    .children(adder)
+                    .children(error),
             )
             .into_any_element()
     }

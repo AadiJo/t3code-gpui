@@ -173,11 +173,30 @@ pub struct ServerSettingsScene {
     pub settings: Entity<SettingsRoute>,
     pub pages: Entity<ServerSettingsPages>,
     pub source: Arc<FixtureServerSettings>,
+    pub path: SettingsPath,
 }
 
 impl Render for ServerSettingsScene {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        div().size_full().child(self.app.clone()).child(Modal::dialog("settings-route", self.settings.clone(), |_, _| {}))
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // `T3_SCENE_OFFSET=<px>` draws the page alone, scrolled down by that
+        // much, in a column `T3_SCENE_PAGE_WIDTH` wide (default 768), to
+        // inspect what lies below the dialog's fold.
+        let env = |name: &str| std::env::var(name).ok().and_then(|v| v.parse::<f32>().ok());
+        if let Some(offset) = env("T3_SCENE_OFFSET") {
+            use crate::ActiveAppTheme as _;
+            let width = env("T3_SCENE_PAGE_WIDTH").unwrap_or(768.);
+            let path = self.path;
+            let view = self.pages.update(cx, |pages, cx| pages.page(path, window, cx));
+            let theme = cx.app_theme();
+            return div()
+                .size_full()
+                .overflow_hidden()
+                .bg(theme.colors.background())
+                .text_color(theme.colors.foreground())
+                .child(div().w(gpui_kit::px(width)).mx_auto().mt(gpui_kit::px(-offset)).children(view))
+                .into_any_element();
+        }
+        div().size_full().child(self.app.clone()).child(Modal::dialog("settings-route", self.settings.clone(), |_, _| {})).into_any_element()
     }
 }
 
@@ -241,7 +260,7 @@ pub fn build_scene(variant: Variant, window: &mut Window, cx: &mut App) -> Entit
         }
         _ => {}
     }
-    cx.new(|_| ServerSettingsScene { app, settings, pages, source })
+    cx.new(|_| ServerSettingsScene { app, settings, pages, source, path })
 }
 
 fn scene(variant: Variant, light: bool, window: &mut Window, cx: &mut App) -> AnyView {
