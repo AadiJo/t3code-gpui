@@ -4,12 +4,17 @@
 //!
 //! `T3CODE_TEXT_TABLE=<table.json>` names the table (`styles` and placed `rows`), and
 //! `T3CODE_TEXT_TABLE_OUT=<out.json>` where the measurements go. A style's family
-//! `system` is the UI font, or `T3CODE_TEXT_TABLE_SANS` when set.
+//! `system` is the UI font, or `T3CODE_TEXT_TABLE_SANS` when set. A window is shorter
+//! than the table, so `T3CODE_TEXT_TABLE_PAGE=<n>` draws page n: the rows whose top is
+//! in `[n * PAGE_HEIGHT, (n + 1) * PAGE_HEIGHT)` after the first row's top, moved up.
 
 use gpui_kit::*;
 use serde::{Deserialize, Serialize};
 
 use crate::appearance_fonts::ui_font_family;
+
+/// A page of the table: 22 rows of 46px.
+const PAGE_HEIGHT: f32 = 22. * 46.;
 
 pub fn build(_: &mut Window, cx: &mut App) -> AnyView {
     let table = std::env::var("T3CODE_TEXT_TABLE")
@@ -17,7 +22,8 @@ pub fn build(_: &mut Window, cx: &mut App) -> AnyView {
         .and_then(|path| std::fs::read(path).ok())
         .and_then(|bytes| serde_json::from_slice(&bytes).ok())
         .unwrap_or_default();
-    cx.new(|_| TextMetricsScene { table, written: false }).into()
+    let page = std::env::var("T3CODE_TEXT_TABLE_PAGE").ok().and_then(|page| page.parse().ok()).unwrap_or(0);
+    cx.new(|_| TextMetricsScene { table, page, written: false }).into()
 }
 
 #[derive(Default, Deserialize)]
@@ -55,6 +61,7 @@ struct Measured {
 
 struct TextMetricsScene {
     table: Table,
+    page: u32,
     written: bool,
 }
 
@@ -68,7 +75,7 @@ impl TextMetricsScene {
     }
 
     fn line_height(style: &Style, ascent: Pixels, descent: Pixels) -> Pixels {
-        style.line_height.map(px).unwrap_or_else(|| px(ascent.0.round() + descent.0.round()))
+        style.line_height.map(px).unwrap_or_else(|| px(f32::from(ascent).round() + f32::from(descent).round()))
     }
 
     /// Shapes every row as the text element would and writes the measurements once.
@@ -84,11 +91,11 @@ impl TextMetricsScene {
                 let line = window.text_system().shape_line(row.text.clone(), px(style.size), &[run], None);
                 let line_height = Self::line_height(style, line.ascent, line.descent);
                 Measured {
-                    width: line.width.0,
-                    ascent: line.ascent.0,
-                    descent: line.descent.0,
-                    line_height: line_height.0,
-                    baseline: line_baseline_offset(line_height, line.ascent, line.descent).0,
+                    width: f32::from(line.width),
+                    ascent: f32::from(line.ascent),
+                    descent: f32::from(line.descent),
+                    line_height: f32::from(line_height),
+                    baseline: f32::from(line_baseline_offset(line_height, line.ascent, line.descent)),
                 }
             })
             .collect();
@@ -104,7 +111,10 @@ impl Render for TextMetricsScene {
             self.written = true;
             self.write_measurements(window);
         }
-        div().size_full().relative().bg(black()).text_color(white()).children(self.table.rows.iter().map(|row| {
+        let first = self.table.rows.iter().map(|row| row.y).fold(f32::INFINITY, f32::min);
+        let top = self.page as f32 * PAGE_HEIGHT;
+        let on_page = |row: &&Row| (top..top + PAGE_HEIGHT).contains(&(row.y - first));
+        div().size_full().relative().bg(black()).text_color(white()).children(self.table.rows.iter().filter(on_page).map(|row| {
             let style = &self.table.styles[row.style];
             let font = Self::font(style);
             let font_id = window.text_system().resolve_font(&font);
@@ -113,7 +123,7 @@ impl Render for TextMetricsScene {
             div()
                 .absolute()
                 .left(px(row.x))
-                .top(px(row.y))
+                .top(px(row.y - top))
                 .whitespace_nowrap()
                 .font_family(font.family)
                 .font_weight(font.weight)

@@ -20,7 +20,7 @@ use gpui_kit::{
 };
 
 use super::chat::{
-    chat_style::{ChatColors, TEXT_2XS, TEXT_CODE, TEXT_SM_RELAXED, TEXT_XS, alpha, mono, sans},
+    chat_style::{ChatColors, TEXT_2XS, TEXT_SM_RELAXED, TEXT_XS, alpha, mono, sans},
     rich_text::{LinkHandler, RichText, TextBox, TextIcon},
     syntax_highlighting::{highlight, highlight_or_schedule, is_plain_language},
     syntax_theme::SyntaxTheme,
@@ -524,8 +524,8 @@ impl Renderer<'_> {
             .px(CODE_PAD_X)
             .py(CODE_PAD_Y)
             .font_family(mono().family)
-            .text_size(TEXT_CODE.size)
-            .line_height(TEXT_CODE.line_height);
+            .text_size(colors.code.size)
+            .line_height(colors.code.line_height);
         let body = if wrapped {
             body.child(text).into_any_element()
         } else {

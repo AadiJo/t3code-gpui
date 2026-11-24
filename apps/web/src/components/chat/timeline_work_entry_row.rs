@@ -11,7 +11,7 @@ use gpui_kit::{
 };
 
 use super::{
-    chat_style::{ChatColors, TEXT_CODE, TEXT_SM_RELAXED, TEXT_XS, alpha, mono},
+    chat_style::{ChatColors, TEXT_SM_RELAXED, TEXT_XS, alpha, mono},
     messages_timeline::MessagesTimeline,
     messages_timeline_logic::TimelineRow,
     rich_text::RichText,
@@ -29,8 +29,6 @@ const DETAIL_INDENT: gpui_kit::Pixels = px(28.);
 /// Scroll caps: command output `max-h-80`, read output `max-h-64`, structured `max-h-80`.
 const OUTPUT_MAX_HEIGHT: gpui_kit::Pixels = px(320.);
 const READ_MAX_HEIGHT: gpui_kit::Pixels = px(256.);
-/// Monospace detail: `--font-size-code` with `leading-relaxed`.
-const CODE_LINE_HEIGHT: gpui_kit::Pixels = px(21.125);
 
 impl MessagesTimeline {
     /// A work-log entry, standalone or inside an expanded group.
@@ -141,7 +139,7 @@ impl MessagesTimeline {
         let theme = SyntaxTheme::for_appearance(colors.appearance);
         let key = MessagesTimeline::key_of(entry.id.as_str());
         let mono_block = |id: &'static str, text: SharedString, color: Hsla| {
-            div().text_size(TEXT_CODE.size).line_height(CODE_LINE_HEIGHT).child(
+            div().text_size(colors.code.size).line_height(code_line_height(colors)).child(
                 RichText::new((id, key), text.clone(), vec![mono_run(text.len(), color)]).selection_color(colors.selection),
             )
         };
@@ -150,8 +148,8 @@ impl MessagesTimeline {
                 let command_runs = highlighted_runs(command, "bash", theme, alpha(colors.theme.text, 0.85));
                 let mut parts = vec![
                     div()
-                        .text_size(TEXT_CODE.size)
-                        .line_height(CODE_LINE_HEIGHT)
+                        .text_size(colors.code.size)
+                        .line_height(code_line_height(colors))
                         .child(RichText::new(("command", key), command.clone(), command_runs).selection_color(colors.selection))
                         .into_any_element(),
                 ];
@@ -276,8 +274,8 @@ impl MessagesTimeline {
                             .id(("tool-output", key))
                             .max_h(OUTPUT_MAX_HEIGHT)
                             .overflow_y_scroll()
-                            .text_size(TEXT_CODE.size)
-                            .line_height(CODE_LINE_HEIGHT)
+                            .text_size(colors.code.size)
+                            .line_height(code_line_height(colors))
                             .child(RichText::new(("tool-output-text", key), output.clone(), runs).selection_color(colors.selection))
                             .into_any_element(),
                     );
@@ -380,4 +378,9 @@ fn question_answers(pairs: &[(SharedString, SharedString)], colors: &ChatColors)
             div().child(question.clone()).child(div().ml_3().child(answer.clone()))
         }))
         .into_any_element()
+}
+
+/// Monospace detail: `--font-size-code` with `leading-relaxed`.
+fn code_line_height(colors: ChatColors) -> gpui_kit::Pixels {
+    colors.code.size * 1.625
 }

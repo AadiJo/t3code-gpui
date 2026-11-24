@@ -30,6 +30,7 @@ use super::{
     review_comment::{ReviewComment, ReviewCommentInput, build_review_comment},
 };
 use crate::{
+    appearance_fonts::mono_font,
     ActiveAppTheme as _,
     diff_count::format_diff_count,
     diff_panel_store::{DiffColorScheme, DiffLayout},
@@ -69,15 +70,13 @@ pub struct CodeViewOptions {
     pub layout: DiffLayout,
     pub wrap: bool,
     pub scheme: DiffColorScheme,
-    /// `--font-size-code`, 13px by default.
-    pub font_size: f32,
     /// Show the gutter "+" that starts a line comment.
     pub comments: bool,
 }
 
 impl Default for CodeViewOptions {
     fn default() -> Self {
-        Self { layout: DiffLayout::Stacked, wrap: true, scheme: DiffColorScheme::RedGreen, font_size: 13., comments: true }
+        Self { layout: DiffLayout::Stacked, wrap: true, scheme: DiffColorScheme::RedGreen, comments: true }
     }
 }
 
@@ -279,6 +278,8 @@ pub struct CodeView {
     metrics: Option<Metrics>,
     font: Font,
     font_bold: Font,
+    /// The code font size setting this view was last laid out at.
+    font_size: f32,
     font_italic: Font,
     shape_cache: HashMap<ShapeKey, (ShapedLine, u64)>,
     number_cache: HashMap<(u32, u8), ShapedLine>,
@@ -319,29 +320,11 @@ impl Focusable for CodeView {
     }
 }
 
-/// A monospace family that exists on this machine, preferring the web's stack.
-fn mono_family(window: &Window) -> SharedString {
-    let names = window.text_system().all_font_names();
-    let candidates: &[&str] = if cfg!(target_os = "macos") {
-        &["SF Mono", "Menlo", "Monaco"]
-    } else if cfg!(target_os = "windows") {
-        &["Consolas", "Cascadia Mono", "Courier New"]
-    } else {
-        &["Liberation Mono", "DejaVu Sans Mono", "Ubuntu Mono", "Noto Sans Mono"]
-    };
-    candidates
-        .iter()
-        .find(|name| names.iter().any(|n| n == *name))
-        .map(|name| SharedString::new_static(name))
-        .unwrap_or_else(|| "monospace".into())
-}
-
 impl CodeView {
     pub fn new(mode: ViewMode, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let syntax = SyntaxStore::global(cx);
         let observer = cx.observe(&syntax, |_, _, cx| cx.notify());
-        let family = mono_family(window);
-        let font = Font { family: family.clone(), ..font(family.clone()) };
+        let font = mono_font(FontWeight::NORMAL);
         Self {
             mode,
             options: CodeViewOptions::default(),
@@ -353,6 +336,7 @@ impl CodeView {
             bounds: Bounds::default(),
             metrics: None,
             font_bold: Font { weight: FontWeight::BOLD, ..font.clone() },
+            font_size: 13.,
             font_italic: Font { style: FontStyle::Italic, ..font.clone() },
             font,
             shape_cache: HashMap::new(),
@@ -1228,7 +1212,18 @@ impl CodeView {
             self.shape_cache.clear();
             self.number_cache.clear();
         }
-        let size = px(self.options.font_size);
+        // `--diffs-font-size` is the code font size setting, in the code font family setting.
+        let font = mono_font(FontWeight::NORMAL);
+        if self.font != font || self.font_size != theme.fonts.code {
+            self.font_bold = Font { weight: FontWeight::BOLD, ..font.clone() };
+            self.font_italic = Font { style: FontStyle::Italic, ..font.clone() };
+            self.font = font;
+            self.font_size = theme.fonts.code;
+            self.shape_cache.clear();
+            self.number_cache.clear();
+            self.layout_dirty = true;
+        }
+        let size = px(self.font_size);
         let ch = {
             let text_system = window.text_system();
             let font_id = text_system.resolve_font(&self.font);
@@ -1332,7 +1327,7 @@ impl CodeView {
                         .or_insert_with(|| {
                             let text: SharedString = cell.number.to_string().into();
                             let run = TextRun { len: text.len(), font: self.font.clone(), color: number_color.0, background_color: None, underline: None, strikethrough: None };
-                            window.text_system().shape_line(text, px(self.options.font_size), &[run], None)
+                            window.text_system().shape_line(text, px(self.font_size), &[run], None)
                         })
                         .clone();
                     let number_x = cell_x + gutter - 2. - metrics.ch - f32::from(number.width);
@@ -1370,7 +1365,7 @@ impl CodeView {
                                 line.clone()
                             }
                             None => {
-                                let shaped = shape_segment(window, &self.font, &self.font_bold, &self.font_italic, self.options.font_size, palette, colors.foreground, text, segment.clone(), spans);
+                                let shaped = shape_segment(window, &self.font, &self.font_bold, &self.font_italic, self.font_size, palette, colors.foreground, text, segment.clone(), spans);
                                 self.shape_cache.insert(key, (shaped.clone(), frame));
                                 shaped
                             }

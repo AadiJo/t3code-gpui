@@ -32,7 +32,7 @@ use crate::components::chat::composer_prompt_history::{PromptHistoryEntry, Promp
 use crate::components::chat::composer_theme::{
     ATTACHMENT_OVERLAP, BODY_PADDING_BOTTOM, BODY_PADDING_TOP, BODY_PADDING_X, COMPOSER_MAX_WIDTH, CONTROL_HEIGHT,
     CONTROL_RADIUS, ComposerColors, DRAWER_INSET, FOOTER_COMPACT_BREAKPOINT, FOOTER_PADDING_BOTTOM, FOOTER_PADDING_X,
-    ICON_ACTION_RADIUS, SURFACE_RADIUS, UI_FONT_FAMILY,
+    ICON_ACTION_RADIUS, SURFACE_RADIUS, ui_font_family,
 };
 use crate::components::chat::model_picker::{MODEL_PICKER_SIZE, ModelPicker, ModelPickerEvent, input_handler_canvas, popup_shadow};
 use crate::components::composer_prompt_editor::{
@@ -830,7 +830,7 @@ fn effort_glyph(glyph: &EffortGlyph, color: Hsla) -> impl IntoElement {
 }
 
 fn text_width(text: &str, size: Pixels, weight: FontWeight, window: &mut Window) -> Pixels {
-    let mut f = gpui_kit::font(UI_FONT_FAMILY);
+    let mut f = gpui_kit::font(ui_font_family());
     f.weight = weight;
     let run = gpui_kit::TextRun { len: text.len(), font: f, color: gpui_kit::black(), background_color: None, underline: None, strikethrough: None };
     window.text_system().layout_line(text, size, &[run], None).width
@@ -1302,7 +1302,7 @@ impl Render for ChatComposer {
         div()
             .id("chat-composer")
             .key_context("ChatComposer")
-            .font_family(UI_FONT_FAMILY)
+            .font_family(ui_font_family())
             .relative()
             .w_full()
             .max_w(COMPOSER_MAX_WIDTH)
