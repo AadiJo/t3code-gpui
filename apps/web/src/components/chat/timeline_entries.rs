@@ -419,4 +419,6 @@ pub struct TimelineInput {
     /// The turn item behind each live entry, by entry id; row rules that read item fields
     /// (an assistant message's phase) use it. Empty for fixtures.
     pub item_sources: Arc<std::collections::HashMap<SharedString, Arc<t3code_contracts::OrchestrationV2TurnItem>>>,
+    /// The superseded attempt of each live entry that belongs to one, by entry id.
+    pub superseded_attempts: Arc<std::collections::HashMap<SharedString, AttemptId>>,
 }

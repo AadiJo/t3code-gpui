@@ -1096,6 +1096,9 @@ mod timeline_dump {
                 "id": id, "kind": "message",
                 "label": if message.message.role == MessageRole::User { "user" } else { "assistant" },
                 "detail": preview(&message.message.text), "showMeta": message.show_meta,
+                "status": message.diff_summary.as_ref().filter(|d| !d.files.is_empty()).map(|d| {
+                    format!("diff:{}", d.files.iter().map(|f| format!("{}+{}-{}", f.path, f.additions, f.deletions)).collect::<Vec<_>>().join(","))
+                }),
             }),
             RowKind::ContextCompaction { label, failed, active, .. } => json!({
                 "id": id, "kind": "context-compaction", "label": label.as_ref(),
@@ -1202,6 +1205,11 @@ mod timeline_dump {
                     "index": index,
                     "threadId": projection.thread.id.to_string(),
                     "entries": input.entries.iter().map(entry).collect::<Vec<_>>(),
+                    "checkpoints": t3code_web::session_logic::checkpoint_summaries(&projection).iter().map(|c| json!({
+                        "assistantMessageId": c.assistant_message_id.as_ref().map(|i| i.to_string()),
+                        "turnCount": c.turn_count,
+                        "files": c.files.iter().map(|f| format!("{}:{}+{}-{}", f.operation, f.path, f.additions, f.deletions)).collect::<Vec<_>>(),
+                    })).collect::<Vec<_>>(),
                     "rows": rows.iter().map(row).collect::<Vec<_>>(),
                     "expandedRows": expanded_rows.iter().map(row).collect::<Vec<_>>(),
                 }));

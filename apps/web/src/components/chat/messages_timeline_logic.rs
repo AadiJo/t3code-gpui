@@ -546,10 +546,33 @@ pub fn derive_timeline_rows(input: &TimelineInput, expansion: &TimelineExpansion
     let mut attempt_anchor: HashMap<SharedString, (AttemptId, Timestamp)> = HashMap::new();
     let mut attempt_hidden: HashSet<SharedString> = HashSet::new();
     let mut seen_attempts: HashSet<AttemptId> = HashSet::new();
+    // `deriveSupersededAttemptFolds`: every output of a superseded attempt folds, except the
+    // user's own messages, cards that stay answerable, live subagents and notices; an attempt
+    // that produced a final answer stays in view.
+    let live_subagents = live_subagent_entry_ids(entries);
+    let retained_replies = retained_reply_ids(input);
+    let attempt_of = |entry: &TimelineEntry| -> Option<AttemptId> {
+        match &entry.kind {
+            EntryKind::Work(w) => w.superseded_attempt.clone(),
+            _ => input.superseded_attempts.get(entry.id.as_str()).cloned(),
+        }
+    };
+    let retained_attempts: HashSet<AttemptId> =
+        entries.iter().filter(|e| retained_replies.contains(&e.id.0)).filter_map(|e| attempt_of(e)).collect();
     for entry in entries {
-        if let EntryKind::Work(w) = &entry.kind
-            && let Some(attempt) = &w.superseded_attempt
-        {
+        let excluded = match &entry.kind {
+            EntryKind::Message(m) => m.role == MessageRole::User,
+            EntryKind::Event(TimelineEvent::Divider(d)) => d.kind == super::timeline_entries::DividerKind::Handoff,
+            EntryKind::HtmlRender { .. } | EntryKind::McpApp { .. } | EntryKind::SentMessage { .. } => true,
+            EntryKind::Work(w) => matches!(w.item, WorkItem::SystemNotice { .. }),
+            _ => false,
+        } || is_persistent_card(entry)
+            || live_subagents.contains(&entry.id.0);
+        if excluded {
+            continue;
+        }
+        if let Some(attempt) = attempt_of(entry).filter(|a| !retained_attempts.contains(a)) {
+            let attempt = &attempt;
             if seen_attempts.insert(attempt.clone()) {
                 attempt_anchor.insert(entry.id.0.clone(), (attempt.clone(), entry.created_at));
             }
@@ -944,6 +967,12 @@ fn attach_trailing_meta(rows: Vec<TimelineRow>) -> Vec<TimelineRow> {
                 }
                 RowKind::Work { entry, .. } if entry.run_id.as_ref() == Some(run) => {
                     has_group |= is_tool_like(entry) || matches!(entry.item, WorkItem::Error { .. });
+                    if has_group {
+                        last_trailing = Some(index);
+                    }
+                }
+                // An open group's list belongs to its header: the meta row follows both.
+                RowKind::WorkGroupDetails { entries, .. } if entries.iter().any(|e| e.run_id.as_ref() == Some(run)) => {
                     if has_group {
                         last_trailing = Some(index);
                     }

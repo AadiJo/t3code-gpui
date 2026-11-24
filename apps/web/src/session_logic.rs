@@ -1076,6 +1076,20 @@ pub fn timeline_input(mapper: &mut TimelineMapper, projection: &ThreadProjection
             })
             .collect(),
         pending_question: pending_question(&requests),
+        superseded_attempts: Arc::new(
+            superseded_attempts(projection)
+                .into_iter()
+                .filter_map(|(item_id, attempt)| {
+                    let row = projection.visible_turn_items.iter().find(|row| row.item.item_id() == item_id)?;
+                    let key = match &*row.item {
+                        Item::UserMessage(user) => id_of(&user.message_id),
+                        Item::AssistantMessage(reply) => id_of(&reply.message_id),
+                        other => id_of(&other.item_id()),
+                    };
+                    Some((key, attempt))
+                })
+                .collect(),
+        ),
         item_sources: Arc::new(item_sources),
     }
 }
