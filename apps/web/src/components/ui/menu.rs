@@ -14,7 +14,7 @@ use gpui_kit::{
 use super::popover::{Popover, PopupHandle, PopupOpen, glass_surface};
 use super::{DISABLED_OPACITY, TextStyleExt as _, ControlHighlightExt as _};
 use crate::appearance_fonts::{TextSize, weight};
-use crate::components::icons::{Icon, IconName, IconSize};
+use crate::components::icons::{Icon, IconName, IconSize, IconSource};
 use crate::{ActiveAppTheme as _, AppTheme};
 
 type Action = Rc<dyn Fn(&mut Window, &mut App) + 'static>;
@@ -35,7 +35,7 @@ pub enum MenuItemKind {
 #[derive(Clone)]
 pub struct MenuItem {
     label: SharedString,
-    icon: Option<IconName>,
+    icon: Option<IconSource>,
     shortcut: Option<SharedString>,
     kind: MenuItemKind,
     destructive: bool,
@@ -66,8 +66,8 @@ impl MenuItem {
         }
     }
 
-    pub fn icon(mut self, icon: IconName) -> Self {
-        self.icon = Some(icon);
+    pub fn icon(mut self, icon: impl Into<IconSource>) -> Self {
+        self.icon = Some(icon.into());
         self
     }
 

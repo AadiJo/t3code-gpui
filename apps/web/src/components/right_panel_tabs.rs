@@ -370,6 +370,8 @@ impl RightPanel {
             FilesPanelEvent::AddToChat(mention) => cx.emit(RightPanelEvent::InsertReference(mention.clone())),
             // Opening on the host needs the server (`shell.openInEditor`).
             FilesPanelEvent::OpenInEditor { .. } => {}
+            // Opening in the preview browser needs the server (`assets.createUrl`, `preview.open`).
+            FilesPanelEvent::OpenInPreview { .. } => {}
         });
         self.files.insert(workspace.key.clone(), (panel.clone(), subscription));
         Some(panel)
