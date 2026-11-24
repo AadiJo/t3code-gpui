@@ -66,6 +66,7 @@
 #[path = "import/mod.rs"]
 mod import;
 mod live_check_families;
+mod live_check_palette;
 mod live_check_setup;
 #[allow(dead_code)]
 #[path = "notifications/mod.rs"]
@@ -546,6 +547,8 @@ fn main() -> anyhow::Result<()> {
         "sidechats-ref" => run_sidechats_ref(&mut check),
         "families-seed" => live_check_families::run_families_seed(&mut check),
         "families" => live_check_families::run_families(&mut check),
+        "families-search" => live_check_families::run_families_search(&mut check),
+        "palette" => live_check_palette::run_palette(&mut check),
         "setup" => live_check_setup::run_setup(&mut check),
         "draft-banner" => live_check_setup::run_draft_banner(&mut check),
         other => Err(anyhow::anyhow!("unknown phase {other}")),

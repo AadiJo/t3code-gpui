@@ -84,6 +84,8 @@ pub struct LinkPullRequestDialog {
     dirty: bool,
     pending: bool,
     submit_error: Option<SharedString>,
+    /// The field takes focus after the first frame; the modal focuses itself while it opens.
+    focus_input: bool,
 }
 
 impl EventEmitter<LinkPullRequestClosed> for LinkPullRequestDialog {}
@@ -100,8 +102,7 @@ impl LinkPullRequestDialog {
             _ => {}
         })
         .detach();
-        reference.update(cx, |input, cx| input.focus(window, cx));
-        Self { reference, project, link, dirty: false, pending: false, submit_error: None }
+        Self { reference, project, link, dirty: false, pending: false, submit_error: None, focus_input: true }
     }
 
     fn resolved(&self, cx: &App) -> Option<Result<ResolvedLink, SharedString>> {
@@ -153,7 +154,10 @@ impl Focusable for LinkPullRequestDialog {
 }
 
 impl Render for LinkPullRequestDialog {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if std::mem::take(&mut self.focus_input) {
+            cx.defer_in(window, |this, window, cx| this.reference.update(cx, |input, cx| input.focus(window, cx)));
+        }
         let theme = cx.app_theme().clone();
         let c = &theme.colors;
         let value = self.reference.read(cx).value();

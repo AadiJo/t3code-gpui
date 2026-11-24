@@ -479,6 +479,11 @@ impl AppRoot {
     }
 
     /// The palette's data source.
+    /// "Link pull request" is open.
+    pub fn link_dialog_open(&self) -> bool {
+        self.link_dialog.is_some()
+    }
+
     pub fn palette_source(&self) -> Rc<dyn CommandPaletteSource> {
         self.data.palette_source()
     }
@@ -596,11 +601,13 @@ impl AppRoot {
             Route::PullRequests { .. } => {
                 let sources = self.data.pull_request_sources(cx);
                 let page = cx.new(|cx| PullRequestsPage::new(sources, window, cx));
-                let data = self.data.clone();
+                // Weak: a page kept past the window's teardown must not drop the app's data
+                // (and its subscriptions) while GPUI is releasing subscribers.
+                let data = Rc::downgrade(&self.data);
                 cx.new(|cx| {
                     let subscription = cx.subscribe(&page, move |this: &mut ListPage, _, event: &PullRequestsPageEvent, cx| {
                         let PullRequestsPageEvent::Open { environment_id, reference } = event;
-                        let Some(source) = data.pull_request_detail(environment_id, cx) else { return };
+                        let Some(source) = data.upgrade().and_then(|data| data.pull_request_detail(environment_id, cx)) else { return };
                         let reference = reference.clone();
                         this.detail = Some(cx.new(|cx| PullRequestDetailPanel::new(source, reference, cx)).into());
                         cx.notify();
