@@ -252,5 +252,79 @@ scene("window-thread-light", [
     hscan("row 1 card edges", 140, 0, 256),
 ])
 
+# Owner scenes (interface 15, glass 40, contrast 95), rendered by parity-shot
+# when PARITY_CLIENT_SETTINGS names the owner's settings file. "-wide" is the
+# owner's 1710x1074 window; dx, dy move the 1100x780 boxes to it.
+FIX_GIT = "fixture: the thread's git state, editor, machine and scripts are fixture content"
+FIX_PROJECTS = "fixture: project set, paths and environment label"
+FIX_KEYS = "Linux: shortcut labels read Ctrl+Shift+N where the Mac shows the glyphs"
+
+def details(dx=0, dy=0):
+    return [
+        hscan("card left edge", 150 + dy, 815 + dx, 840 + dx, **BL),
+        hscan("card right edge", 150 + dy, 1075 + dx, 1100 + dx, **BL),
+        vscan("card top edge", 950 + dx, 50 + dy, 70 + dy, **BL),
+        ink("workspace rows", 840 + dx, 66 + dy, 1080 + dx, 160 + dy, exclude=FIX_GIT),
+        vscan("section rule", 1000 + dx, 160 + dy, 175 + dy),
+        ink("branch icon", 840 + dx, 178 + dy, 864 + dx, 204 + dy),
+        ink("branch label", 866 + dx, 178 + dy, 1040 + dx, 204 + dy, **T),
+        ink("branch chevron", 1050 + dx, 178 + dy, 1080 + dx, 204 + dy),
+        ink("git action row", 840 + dx, 208 + dy, 1040 + dx, 234 + dy, exclude=FIX_GIT),
+        ink("changes label", 866 + dx, 238 + dy, 928 + dx, 264 + dy, **T),
+        ink("changes counts", 960 + dx, 238 + dy, 1080 + dx, 264 + dy, exclude=FIX_GIT),
+    ]
+
+def palette(dx=0, dy=0):
+    return [
+        hscan("palette left edge", 300 + dy, 260 + dx, 300 + dx, **BL),
+        hscan("palette right edge", 300 + dy, 800 + dx, 840 + dx, **BL),
+        vscan("palette top edge", 550 + dx, 60 + dy, 100 + dy, **BL),
+        ink("search icon", 292 + dx, 88 + dy, 316 + dx, 116 + dy),
+        ink("search placeholder", 318 + dx, 88 + dy, 640 + dx, 116 + dy, **T),
+        ink("section label", 286 + dx, 134 + dy, 400 + dx, 156 + dy, **T),
+        fill("highlighted item", 600 + dx, 172 + dy),
+        ink("item 1 icon", 292 + dx, 160 + dy, 316 + dx, 186 + dy),
+        ink("item 1 title", 318 + dx, 160 + dy, 560 + dx, 186 + dy, **T),
+        ink("item 1 shortcut", 700 + dx, 160 + dy, 810 + dx, 186 + dy, exclude=FIX_KEYS),
+        ink("item 2 title", 318 + dx, 190 + dy, 560 + dx, 216 + dy, **T),
+        ink("item 3 title", 318 + dx, 220 + dy, 560 + dx, 246 + dy, **T),
+    ]
+
+scene("details", chrome(), details())
+scene("details-wide", details(dx=610), reference="details-wide")
+scene("palette-root", palette())
+scene("palette-root-wide", palette(dx=305, dy=29.4), reference="palette-root-wide")
+scene("palette-query-sync", [
+    ink("section label", 286, 134, 400, 156, **T),
+    ink("thread icon", 292, 160, 316, 186),
+    ink("thread title", 318, 160, 560, 182, **T),
+    ink("thread subtitle", 318, 182, 640, 200, **T),
+    ink("thread time", 720, 166, 810, 186, **TR, exclude="fixture: relative time"),
+    vscan("footer rule", 600, 200, 240),
+])
+scene("palette-nested-project", [
+    ink("back arrow", 292, 88, 316, 116),
+    ink("search placeholder", 318, 88, 640, 116, **T),
+    ink("section label", 286, 134, 400, 156, **T),
+    ink("project 1 favicon", 292, 160, 316, 186),
+    ink("project 1 title", 318, 160, 560, 182, **T),
+    ink("project 1 location", 318, 182, 760, 200, exclude=FIX_PROJECTS),
+    ink("no project row", 292, 214, 560, 240),
+    ink("project 2 favicon", 292, 240, 316, 266),
+])
+INBOX = {"anchor": "inbox title", "anchor_x": True}
+scene("inbox", [
+    ink("inbox popover", 130, 500, 520, 745, exclude="its place follows the sidebar footer's bell, which the sidebar owns"),
+    ink("inbox title", 150, 525, 260, 545, **T, exclude="locator for the rows below"),
+    ink("mark all read", 400, 525, 500, 545, **TR, **INBOX),
+    ink("tabs", 150, 552, 260, 574, **T, **INBOX),
+    ink("item 1 icon", 155, 590, 178, 612, **INBOX),
+    ink("item 1 title", 178, 588, 420, 606, **T, **INBOX),
+    ink("item 1 subtitle", 178, 606, 420, 621, **T, **INBOX),
+    ink("item 1 meta", 178, 621, 420, 636, **T, **INBOX),
+    ink("item 1 read button", 460, 600, 495, 625, **INBOX),
+    fill("inbox fill", 450, 700),
+])
+
 json.dump({"tolerance": {"px": 0.5, "text_px": 1.0, "channel": 1}, "scenes": scenes}, open(sys.argv[1], "w"), indent=1)
 print(sum(len(s["elements"]) for s in scenes.values()), "elements")

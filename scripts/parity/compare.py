@@ -1,14 +1,16 @@
 """Visual parity between the GPUI port and the fork's web app.
 
-  record  <ref-dir>                       measure the reference PNGs once and write
-                                          expected.json (committed; the PNGs are not)
+  record  <ref-dir> [scene ...]           measure the reference PNGs once and write
+                                          expected.json (committed; the PNGs are not);
+                                          named scenes only re-record those
   compare <port-dir> <out-dir> [ref-dir]  measure the port PNGs, write report.md and
                                           results.json, and side-by-side images when
                                           the reference PNGs are available
 
 spec.json lists, per scene, the elements to measure (see measure.py) with a name,
 optionally `blur: true` on a scan across backdrop-blurred glass (edge
-positions judged, colours shown only), `anchor: "<element>"` (measure relative to where that element landed,
+positions judged, colours shown only), `anchor: "<element>"` (measure relative to where that element landed, also
+horizontally with `anchor_x: true`,
 for content below a documented difference that moves it),
 and optionally `text: true` (glyph shapes differ by rasteriser, so a text run's
 right edge is reported but not judged; `text: "right"` for right-aligned text
@@ -41,10 +43,14 @@ def channels(a, b):
     return max(abs(int(a[i : i + 2], 16) - int(b[i : i + 2], 16)) for i in (0, 2, 4))
 
 
-def record(ref_dir):
+def record(ref_dir, *only):
+    """Measures the reference PNGs; with scene names, re-records only those and
+    keeps every other scene's values (references captured at different times)."""
     ref_dir = Path(ref_dir)
-    expected = {}
+    expected = json.loads(EXPECTED.read_text()) if only and EXPECTED.exists() else {}
     for scene, body in SPEC["scenes"].items():
+        if only and scene not in only:
+            continue
         im = m.load(ref_dir / f"{body.get('reference', scene)}.png")
         expected[scene] = {e["name"]: m.measure(im, e) for e in body["elements"]}
     EXPECTED.write_text(json.dumps(expected, indent=1) + "\n")
@@ -156,7 +162,7 @@ def compare(port_dir, out_dir, ref_dir=None):
         marks = []
         for element in body["elements"]:
             ref = expected[scene][element["name"]]
-            dy = 0.0
+            dy = dx = 0.0
             if "anchor" in element:
                 # Content below a known, documented difference: measure it where
                 # the anchor actually landed, so spacing compares like for like.
@@ -164,7 +170,9 @@ def compare(port_dir, out_dir, ref_dir=None):
                 found = m.measure(im, anchor)
                 if not found.get("empty"):
                     dy = found["top"] - expected[scene][anchor["name"]]["top"]
-            port = m.unshift(m.measure(im, m.shifted(element, dy)), dy)
+                    if element.get("anchor_x"):
+                        dx = found["left"] - expected[scene][anchor["name"]]["left"]
+            port = m.unshift_x(m.unshift(m.measure(im, m.shifted_x(m.shifted(element, dy), dx)), dy), dx)
             rows = judge(element, ref, port)
             verdicts = [ok for *_, ok in rows if ok is not None]
             state = "excluded" if element.get("exclude") else ("pass" if all(verdicts) else "FAIL")

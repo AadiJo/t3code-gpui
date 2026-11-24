@@ -50,6 +50,8 @@ enum Step {
     Navigate(&'static str),
     /// Lets background work (a shell) run before the next step.
     Wait(u64),
+    /// Changes app state directly (a setting the capture turned on).
+    Run(fn(&mut App)),
 }
 
 /// A reference view and how to reach it.
@@ -138,6 +140,8 @@ const OWNER_SCENES: &[Scene] = &[
     Scene { name: "palette-query-sync", reference: "palette-query-sync", light: false, steps: &[Step::Action(|| Box::new(ToggleCommandPalette)), Step::Type("sync"), Step::Wait(400)] },
     Scene { name: "palette-messages", reference: "palette-messages", light: false, steps: &[Step::Action(|| Box::new(ToggleCommandPalette)), Step::Type("reconnect"), Step::Wait(600)] },
     Scene { name: "palette-nested-project", reference: "palette-nested-project", light: false, steps: &[Step::Action(|| Box::new(ToggleCommandPalette)), Step::Wait(200), Step::Press("down"), Step::Press("enter"), Step::Wait(300)] },
+    // The owner keeps the inbox off; the capture turned it on (INBOX=1).
+    Scene { name: "inbox", reference: "inbox", light: false, steps: &[Step::Run(|cx| ClientSettingsStore::update(cx, |s| s.notification_inbox_enabled = true)), Step::Wait(200), Step::ClickId("sidebar-notifications"), Step::Wait(200)] },
     Scene { name: "palette-empty", reference: "palette-empty", light: false, steps: &[Step::Action(|| Box::new(ToggleCommandPalette)), Step::Type("zzqpv"), Step::Wait(300)] },
 ];
 
@@ -280,6 +284,7 @@ fn render(scene: &Scene, profile: Profile, file_name: &str, out: &std::path::Pat
                 cx.update_window(window, |_, w, cx| w.dispatch_action(action(), cx)).ok();
             }
             Step::Navigate(route) => cx.update(|cx| root.update(cx, |root, cx| root.navigate(Route::parse(route), cx))),
+            Step::Run(run) => cx.update(|cx| run(cx)),
             Step::Wait(ms) => {
                 let until = Instant::now() + Duration::from_millis(*ms);
                 while Instant::now() < until {

@@ -149,3 +149,25 @@ def unshift(result, dy):
     if "edges" in out and isinstance(out.get("edges"), list) and out["edges"] and "vertical" in out:
         out["edges"] = [{**e, "at": e["at"] - dy} for e in out["edges"]]
     return out
+
+
+def shifted_x(element, dx):
+    """An ink or fill element with its horizontal coordinates moved by `dx`."""
+    if not dx or element["kind"] not in ("ink", "fill"):
+        return element
+    at = list(element["at"])
+    at[0] += dx
+    if element["kind"] == "ink":
+        at[2] += dx
+    return {**element, "at": at}
+
+
+def unshift_x(result, dx):
+    """A measurement taken at a horizontally shifted position, moved back by `dx`."""
+    if not dx or result.get("empty"):
+        return result
+    out = dict(result)
+    for key in ("left", "right"):
+        if key in out:
+            out[key] -= dx
+    return out

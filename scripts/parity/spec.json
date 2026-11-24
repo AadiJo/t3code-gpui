@@ -4210,6 +4210,879 @@
      ]
     }
    ]
+  },
+  "details": {
+   "elements": [
+    {
+     "name": "titlebar fill",
+     "kind": "fill",
+     "at": [
+      600,
+      30
+     ]
+    },
+    {
+     "name": "sidebar fill (top)",
+     "kind": "fill",
+     "at": [
+      240,
+      40
+     ]
+    },
+    {
+     "name": "sidebar edge",
+     "kind": "hscan",
+     "at": [
+      400,
+      250,
+      262
+     ]
+    },
+    {
+     "name": "sidebar toggle",
+     "kind": "ink",
+     "at": [
+      84,
+      14,
+      112,
+      40
+     ]
+    },
+    {
+     "name": "right toggles",
+     "kind": "ink",
+     "at": [
+      995,
+      14,
+      1090,
+      40
+     ]
+    },
+    {
+     "name": "breadcrumb monogram",
+     "kind": "ink",
+     "at": [
+      272,
+      16,
+      293,
+      37
+     ]
+    },
+    {
+     "name": "breadcrumb project",
+     "kind": "ink",
+     "at": [
+      294,
+      14,
+      350,
+      40
+     ],
+     "text": true
+    },
+    {
+     "name": "breadcrumb slash",
+     "kind": "ink",
+     "at": [
+      350,
+      14,
+      366,
+      40
+     ],
+     "text": true
+    },
+    {
+     "name": "breadcrumb title",
+     "kind": "ink",
+     "at": [
+      368,
+      14,
+      520,
+      40
+     ],
+     "text": true
+    },
+    {
+     "name": "dev badge",
+     "kind": "ink",
+     "at": [
+      2,
+      15,
+      34,
+      37
+     ],
+     "exclude": "dev builds only; never on the owner's build"
+    },
+    {
+     "name": "card left edge",
+     "kind": "hscan",
+     "at": [
+      150,
+      815,
+      840
+     ],
+     "blur": true
+    },
+    {
+     "name": "card right edge",
+     "kind": "hscan",
+     "at": [
+      150,
+      1075,
+      1100
+     ],
+     "blur": true
+    },
+    {
+     "name": "card top edge",
+     "kind": "vscan",
+     "at": [
+      950,
+      50,
+      70
+     ],
+     "blur": true
+    },
+    {
+     "name": "workspace rows",
+     "kind": "ink",
+     "at": [
+      840,
+      66,
+      1080,
+      160
+     ],
+     "exclude": "fixture: the thread's git state, editor, machine and scripts are fixture content"
+    },
+    {
+     "name": "section rule",
+     "kind": "vscan",
+     "at": [
+      1000,
+      160,
+      175
+     ]
+    },
+    {
+     "name": "branch icon",
+     "kind": "ink",
+     "at": [
+      840,
+      178,
+      864,
+      204
+     ]
+    },
+    {
+     "name": "branch label",
+     "kind": "ink",
+     "at": [
+      866,
+      178,
+      1040,
+      204
+     ],
+     "text": true
+    },
+    {
+     "name": "branch chevron",
+     "kind": "ink",
+     "at": [
+      1050,
+      178,
+      1080,
+      204
+     ]
+    },
+    {
+     "name": "git action row",
+     "kind": "ink",
+     "at": [
+      840,
+      208,
+      1040,
+      234
+     ],
+     "exclude": "fixture: the thread's git state, editor, machine and scripts are fixture content"
+    },
+    {
+     "name": "changes label",
+     "kind": "ink",
+     "at": [
+      866,
+      238,
+      928,
+      264
+     ],
+     "text": true
+    },
+    {
+     "name": "changes counts",
+     "kind": "ink",
+     "at": [
+      960,
+      238,
+      1080,
+      264
+     ],
+     "exclude": "fixture: the thread's git state, editor, machine and scripts are fixture content"
+    }
+   ]
+  },
+  "details-wide": {
+   "elements": [
+    {
+     "name": "card left edge",
+     "kind": "hscan",
+     "at": [
+      150,
+      1425,
+      1450
+     ],
+     "blur": true
+    },
+    {
+     "name": "card right edge",
+     "kind": "hscan",
+     "at": [
+      150,
+      1685,
+      1710
+     ],
+     "blur": true
+    },
+    {
+     "name": "card top edge",
+     "kind": "vscan",
+     "at": [
+      1560,
+      50,
+      70
+     ],
+     "blur": true
+    },
+    {
+     "name": "workspace rows",
+     "kind": "ink",
+     "at": [
+      1450,
+      66,
+      1690,
+      160
+     ],
+     "exclude": "fixture: the thread's git state, editor, machine and scripts are fixture content"
+    },
+    {
+     "name": "section rule",
+     "kind": "vscan",
+     "at": [
+      1610,
+      160,
+      175
+     ]
+    },
+    {
+     "name": "branch icon",
+     "kind": "ink",
+     "at": [
+      1450,
+      178,
+      1474,
+      204
+     ]
+    },
+    {
+     "name": "branch label",
+     "kind": "ink",
+     "at": [
+      1476,
+      178,
+      1650,
+      204
+     ],
+     "text": true
+    },
+    {
+     "name": "branch chevron",
+     "kind": "ink",
+     "at": [
+      1660,
+      178,
+      1690,
+      204
+     ]
+    },
+    {
+     "name": "git action row",
+     "kind": "ink",
+     "at": [
+      1450,
+      208,
+      1650,
+      234
+     ],
+     "exclude": "fixture: the thread's git state, editor, machine and scripts are fixture content"
+    },
+    {
+     "name": "changes label",
+     "kind": "ink",
+     "at": [
+      1476,
+      238,
+      1538,
+      264
+     ],
+     "text": true
+    },
+    {
+     "name": "changes counts",
+     "kind": "ink",
+     "at": [
+      1570,
+      238,
+      1690,
+      264
+     ],
+     "exclude": "fixture: the thread's git state, editor, machine and scripts are fixture content"
+    }
+   ],
+   "reference": "details-wide"
+  },
+  "palette-root": {
+   "elements": [
+    {
+     "name": "palette left edge",
+     "kind": "hscan",
+     "at": [
+      300,
+      260,
+      300
+     ],
+     "blur": true
+    },
+    {
+     "name": "palette right edge",
+     "kind": "hscan",
+     "at": [
+      300,
+      800,
+      840
+     ],
+     "blur": true
+    },
+    {
+     "name": "palette top edge",
+     "kind": "vscan",
+     "at": [
+      550,
+      60,
+      100
+     ],
+     "blur": true
+    },
+    {
+     "name": "search icon",
+     "kind": "ink",
+     "at": [
+      292,
+      88,
+      316,
+      116
+     ]
+    },
+    {
+     "name": "search placeholder",
+     "kind": "ink",
+     "at": [
+      318,
+      88,
+      640,
+      116
+     ],
+     "text": true
+    },
+    {
+     "name": "section label",
+     "kind": "ink",
+     "at": [
+      286,
+      134,
+      400,
+      156
+     ],
+     "text": true
+    },
+    {
+     "name": "highlighted item",
+     "kind": "fill",
+     "at": [
+      600,
+      172
+     ]
+    },
+    {
+     "name": "item 1 icon",
+     "kind": "ink",
+     "at": [
+      292,
+      160,
+      316,
+      186
+     ]
+    },
+    {
+     "name": "item 1 title",
+     "kind": "ink",
+     "at": [
+      318,
+      160,
+      560,
+      186
+     ],
+     "text": true
+    },
+    {
+     "name": "item 1 shortcut",
+     "kind": "ink",
+     "at": [
+      700,
+      160,
+      810,
+      186
+     ],
+     "exclude": "Linux: shortcut labels read Ctrl+Shift+N where the Mac shows the glyphs"
+    },
+    {
+     "name": "item 2 title",
+     "kind": "ink",
+     "at": [
+      318,
+      190,
+      560,
+      216
+     ],
+     "text": true
+    },
+    {
+     "name": "item 3 title",
+     "kind": "ink",
+     "at": [
+      318,
+      220,
+      560,
+      246
+     ],
+     "text": true
+    }
+   ]
+  },
+  "palette-root-wide": {
+   "elements": [
+    {
+     "name": "palette left edge",
+     "kind": "hscan",
+     "at": [
+      329.4,
+      565,
+      605
+     ],
+     "blur": true
+    },
+    {
+     "name": "palette right edge",
+     "kind": "hscan",
+     "at": [
+      329.4,
+      1105,
+      1145
+     ],
+     "blur": true
+    },
+    {
+     "name": "palette top edge",
+     "kind": "vscan",
+     "at": [
+      855,
+      89.4,
+      129.4
+     ],
+     "blur": true
+    },
+    {
+     "name": "search icon",
+     "kind": "ink",
+     "at": [
+      597,
+      117.4,
+      621,
+      145.4
+     ]
+    },
+    {
+     "name": "search placeholder",
+     "kind": "ink",
+     "at": [
+      623,
+      117.4,
+      945,
+      145.4
+     ],
+     "text": true
+    },
+    {
+     "name": "section label",
+     "kind": "ink",
+     "at": [
+      591,
+      163.4,
+      705,
+      185.4
+     ],
+     "text": true
+    },
+    {
+     "name": "highlighted item",
+     "kind": "fill",
+     "at": [
+      905,
+      201.4
+     ]
+    },
+    {
+     "name": "item 1 icon",
+     "kind": "ink",
+     "at": [
+      597,
+      189.4,
+      621,
+      215.4
+     ]
+    },
+    {
+     "name": "item 1 title",
+     "kind": "ink",
+     "at": [
+      623,
+      189.4,
+      865,
+      215.4
+     ],
+     "text": true
+    },
+    {
+     "name": "item 1 shortcut",
+     "kind": "ink",
+     "at": [
+      1005,
+      189.4,
+      1115,
+      215.4
+     ],
+     "exclude": "Linux: shortcut labels read Ctrl+Shift+N where the Mac shows the glyphs"
+    },
+    {
+     "name": "item 2 title",
+     "kind": "ink",
+     "at": [
+      623,
+      219.4,
+      865,
+      245.4
+     ],
+     "text": true
+    },
+    {
+     "name": "item 3 title",
+     "kind": "ink",
+     "at": [
+      623,
+      249.4,
+      865,
+      275.4
+     ],
+     "text": true
+    }
+   ],
+   "reference": "palette-root-wide"
+  },
+  "palette-query-sync": {
+   "elements": [
+    {
+     "name": "section label",
+     "kind": "ink",
+     "at": [
+      286,
+      134,
+      400,
+      156
+     ],
+     "text": true
+    },
+    {
+     "name": "thread icon",
+     "kind": "ink",
+     "at": [
+      292,
+      160,
+      316,
+      186
+     ]
+    },
+    {
+     "name": "thread title",
+     "kind": "ink",
+     "at": [
+      318,
+      160,
+      560,
+      182
+     ],
+     "text": true
+    },
+    {
+     "name": "thread subtitle",
+     "kind": "ink",
+     "at": [
+      318,
+      182,
+      640,
+      200
+     ],
+     "text": true
+    },
+    {
+     "name": "thread time",
+     "kind": "ink",
+     "at": [
+      720,
+      166,
+      810,
+      186
+     ],
+     "text": "right",
+     "exclude": "fixture: relative time"
+    },
+    {
+     "name": "footer rule",
+     "kind": "vscan",
+     "at": [
+      600,
+      200,
+      240
+     ]
+    }
+   ]
+  },
+  "palette-nested-project": {
+   "elements": [
+    {
+     "name": "back arrow",
+     "kind": "ink",
+     "at": [
+      292,
+      88,
+      316,
+      116
+     ]
+    },
+    {
+     "name": "search placeholder",
+     "kind": "ink",
+     "at": [
+      318,
+      88,
+      640,
+      116
+     ],
+     "text": true
+    },
+    {
+     "name": "section label",
+     "kind": "ink",
+     "at": [
+      286,
+      134,
+      400,
+      156
+     ],
+     "text": true
+    },
+    {
+     "name": "project 1 favicon",
+     "kind": "ink",
+     "at": [
+      292,
+      160,
+      316,
+      186
+     ]
+    },
+    {
+     "name": "project 1 title",
+     "kind": "ink",
+     "at": [
+      318,
+      160,
+      560,
+      182
+     ],
+     "text": true
+    },
+    {
+     "name": "project 1 location",
+     "kind": "ink",
+     "at": [
+      318,
+      182,
+      760,
+      200
+     ],
+     "exclude": "fixture: project set, paths and environment label"
+    },
+    {
+     "name": "no project row",
+     "kind": "ink",
+     "at": [
+      292,
+      214,
+      560,
+      240
+     ]
+    },
+    {
+     "name": "project 2 favicon",
+     "kind": "ink",
+     "at": [
+      292,
+      240,
+      316,
+      266
+     ]
+    }
+   ]
+  },
+  "inbox": {
+   "elements": [
+    {
+     "name": "inbox popover",
+     "kind": "ink",
+     "at": [
+      130,
+      500,
+      520,
+      745
+     ],
+     "exclude": "its place follows the sidebar footer's bell, which the sidebar owns"
+    },
+    {
+     "name": "inbox title",
+     "kind": "ink",
+     "at": [
+      150,
+      525,
+      260,
+      545
+     ],
+     "text": true,
+     "exclude": "locator for the rows below"
+    },
+    {
+     "name": "mark all read",
+     "kind": "ink",
+     "at": [
+      400,
+      525,
+      500,
+      545
+     ],
+     "text": "right",
+     "anchor": "inbox title",
+     "anchor_x": true
+    },
+    {
+     "name": "tabs",
+     "kind": "ink",
+     "at": [
+      150,
+      552,
+      260,
+      574
+     ],
+     "text": true,
+     "anchor": "inbox title",
+     "anchor_x": true
+    },
+    {
+     "name": "item 1 icon",
+     "kind": "ink",
+     "at": [
+      155,
+      590,
+      178,
+      612
+     ],
+     "anchor": "inbox title",
+     "anchor_x": true
+    },
+    {
+     "name": "item 1 title",
+     "kind": "ink",
+     "at": [
+      178,
+      588,
+      420,
+      606
+     ],
+     "text": true,
+     "anchor": "inbox title",
+     "anchor_x": true
+    },
+    {
+     "name": "item 1 subtitle",
+     "kind": "ink",
+     "at": [
+      178,
+      606,
+      420,
+      621
+     ],
+     "text": true,
+     "anchor": "inbox title",
+     "anchor_x": true
+    },
+    {
+     "name": "item 1 meta",
+     "kind": "ink",
+     "at": [
+      178,
+      621,
+      420,
+      636
+     ],
+     "text": true,
+     "anchor": "inbox title",
+     "anchor_x": true
+    },
+    {
+     "name": "item 1 read button",
+     "kind": "ink",
+     "at": [
+      460,
+      600,
+      495,
+      625
+     ],
+     "anchor": "inbox title",
+     "anchor_x": true
+    },
+    {
+     "name": "inbox fill",
+     "kind": "fill",
+     "at": [
+      450,
+      700
+     ]
+    }
+   ]
   }
  }
 }
