@@ -12,6 +12,9 @@ use gpui_kit::{App, Context, Entity, SharedString, Subscription};
 use t3code_client_runtime::state::client_store::ClientStore;
 use t3code_client_runtime::state::drafts::{Drafts, scoped_thread_key};
 use t3code_client_runtime::state::models::{EpochMs, ThreadRow, now_ms, parse_ms};
+use t3code_client_runtime::state::older_settled_threads::{
+    FamilyMount, OlderSettledView, PagesStatus, ShelfRequest, is_older_settled, settled_shelf_frontier, wanted_pages,
+};
 use t3code_client_runtime::state::sidebar::last_visited_at;
 use t3code_client_runtime::state::thread_settled::thread_woke_at;
 use t3code_client_runtime::state::thread_shell::{ShellRows, navigation_rows};
@@ -63,6 +66,14 @@ pub struct LiveShell {
     hidden: Arc<HashSet<RowKey>>,
     /// Whether some environment's tag filter is on.
     hiding: bool,
+    /// What the Settled shelf shows, and the older pages asked of each environment for it.
+    settled_request: model::SettledShelfRequest,
+    settled_pages: HashMap<t3code_contracts::EnvironmentId, usize>,
+    /// The environments those pages were asked of; another set starts over, as the web keys
+    /// requested pages by the shelf's scopes.
+    settled_scope: Vec<t3code_contracts::EnvironmentId>,
+    /// The family of the open thread while the shell leaves it out (`useOpenThreadFamily`).
+    open_family: Option<(ThreadKey, FamilyMount)>,
     _environment_subscriptions: Vec<Subscription>,
     _subscriptions: Vec<Subscription>,
 }
@@ -331,6 +342,10 @@ impl LiveShell {
             search_matches: None,
             hidden: Arc::default(),
             hiding: false,
+            settled_request: model::SettledShelfRequest::default(),
+            settled_pages: HashMap::new(),
+            settled_scope: Vec::new(),
+            open_family: None,
             _environment_subscriptions: Vec::new(),
             _subscriptions: vec![subscription, settings, inbox],
         };
@@ -373,6 +388,7 @@ impl LiveShell {
             self.active_thread = key.clone();
             self.snapshot.active_thread = key;
             self.revision += 1;
+            self.schedule(cx);
             cx.notify();
         }
     }
@@ -503,6 +519,8 @@ impl LiveShell {
             .collect();
         (projects, wanted)
         };
+        let older_settled = self.sync_older_settled(&envs, &listed, &threads, settings.working_shelf, now);
+        self.sync_open_family(&envs);
         drop(envs);
         // Favicons need the app mutably; the lookups start after the shells are read.
         let projects = projects
@@ -511,6 +529,7 @@ impl LiveShell {
             .map(|(project, (id, root, path))| SidebarProject { favicon: super::favicons::favicon(&id, &root, path.as_deref(), cx), ..project })
             .collect();
         self.snapshot = SidebarSnapshot {
+            older_settled,
             projects,
             threads,
             notifications: Vec::new(),
@@ -542,6 +561,136 @@ impl LiveShell {
         self.snapshot.search_content_matches = self.search_matches.clone();
         self.revision += 1;
         cx.notify();
+    }
+
+    /// What the Settled shelf shows now; older pages load until it lists that many rows.
+    pub fn set_settled_request(&mut self, request: model::SettledShelfRequest, cx: &mut Context<Self>) {
+        if request.retry {
+            for env in self.environments.read(cx).list.iter() {
+                let env = env.read(cx);
+                if env.older.request.pages > 0 {
+                    env.store.older_settled().retry();
+                }
+            }
+        }
+        let request = model::SettledShelfRequest { retry: false, ..request };
+        if request.projects != self.settled_request.projects {
+            self.settled_pages.clear();
+        }
+        if request != self.settled_request {
+            self.settled_request = request;
+            self.schedule(cx);
+        }
+    }
+
+    /// The shelf's view of every environment's older settled threads, and the next pages to read
+    /// (`useOlderSettledShelf`, `useOlderSettledShelfGrowth`).
+    fn sync_older_settled(
+        &mut self,
+        envs: &[&LiveEnvironment],
+        listed: &[Arc<ThreadRow>],
+        threads: &[Arc<SidebarThread>],
+        working_shelf: bool,
+        now: EpochMs,
+    ) -> model::OlderSettledShelf {
+        let request = &self.settled_request;
+        // Each environment's scope: the filter's projects there (none: not in the shelf), or all.
+        let scopes: Vec<(&LiveEnvironment, Option<Vec<t3code_contracts::ProjectId>>)> = envs
+            .iter()
+            .filter_map(|env| match &request.projects {
+                None => Some((*env, None)),
+                Some(projects) => {
+                    let ids: Vec<_> = projects
+                        .iter()
+                        .filter(|p| p.environment_id.0.as_ref() == env.environment_id().as_str())
+                        .map(|p| t3code_contracts::ProjectId::new(p.project_id.0.as_ref()))
+                        .collect();
+                    (!ids.is_empty()).then_some((*env, Some(ids)))
+                }
+            })
+            .collect();
+        // The web's scopes are the environments with a config (`serverConfigs`).
+        let mut scope_ids: Vec<_> = scopes.iter().filter(|(env, _)| env.config_loaded()).map(|(env, _)| env.environment_id().clone()).collect();
+        scope_ids.sort();
+        if scope_ids != self.settled_scope {
+            self.settled_scope = scope_ids;
+            self.settled_pages.clear();
+        }
+        let views: Vec<&OlderSettledView> = scopes.iter().map(|(env, _)| env.older.as_ref()).collect();
+        let frontier = settled_shelf_frontier(views.iter().copied());
+        let mut shelf = model::OlderSettledShelf {
+            frontier: frontier.as_ref().map(|cursor| model::SettledFrontier {
+                settled_at: TimestampMs(cursor.settled_at),
+                thread_id: cursor.thread_id.as_ref().map(|id| SharedString::from(Arc::clone(&id.0))),
+            }),
+            ..Default::default()
+        };
+        for env in envs {
+            let Some(older) = &env.older.older else { continue };
+            for (project_id, count) in older.counts.iter() {
+                let project = ProjectRef { environment_id: environment_key(env.environment_id()), project_id: model::ProjectId(SharedString::from(Arc::clone(&project_id.0))) };
+                *shelf.unloaded.entry(project).or_default() += *count as i64;
+            }
+            for row in listed.iter().filter(|row| &row.environment_id == env.environment_id()) {
+                if is_older_settled(&row.source, older.before_ms) {
+                    let project = ProjectRef { environment_id: environment_key(&row.environment_id), project_id: model::ProjectId(SharedString::from(Arc::clone(&row.source.project_id.0))) };
+                    *shelf.unloaded.entry(project).or_default() -= 1;
+                }
+            }
+        }
+        let loaded = scopes.iter().filter(|(env, _)| self.settled_pages.get(env.environment_id()).copied().unwrap_or(0) > 0 && request.expanded);
+        for (env, _) in loaded {
+            shelf.loading |= env.older.pages.status == PagesStatus::Pending;
+            shelf.failed |= env.older.pages.status == PagesStatus::Failed;
+        }
+
+        // Read more pages while the shelf lists fewer rows than it shows, once every environment
+        // answers the pages last asked of it.
+        let synced = scopes.iter().all(|(env, _)| env.older.request.pages == if request.expanded { self.settled_pages.get(env.environment_id()).copied().unwrap_or(0) } else { 0 });
+        if request.expanded && synced {
+            let listed_count = threads
+                .iter()
+                .filter(|thread| {
+                    !thread.archived
+                        && crate::components::sidebar_logic::resolve_section(thread, TimestampMs(now), working_shelf) == crate::components::sidebar_logic::SidebarSection::Settled
+                        && request.projects.as_ref().is_none_or(|projects| projects.contains(&thread.project_ref()))
+                        && shelf.is_listed(thread)
+                })
+                .count();
+            let environments: Vec<_> = scopes.iter().map(|(env, _)| (env.environment_id().clone(), env.older.as_ref())).collect();
+            if let Some(next) = wanted_pages(&self.settled_pages, &environments, listed_count, request.visible_count) {
+                self.settled_pages = next;
+            }
+        }
+        for env in envs {
+            let scope = scopes.iter().find(|(scoped, _)| scoped.environment_id() == env.environment_id());
+            let pages = match scope {
+                Some(_) if request.expanded => self.settled_pages.get(env.environment_id()).copied().unwrap_or(0),
+                _ => 0,
+            };
+            env.store.older_settled().set_shelf(ShelfRequest { project_ids: scope.and_then(|(_, ids)| ids.clone()), pages });
+        }
+        shelf
+    }
+
+    /// Keeps the open thread's family merged while the shell leaves that thread out: an older
+    /// settled thread opened from search or a link. Sticks to the thread until the route leaves.
+    fn sync_open_family(&mut self, envs: &[&LiveEnvironment]) {
+        let Some(active) = self.active_thread.clone() else {
+            self.open_family = None;
+            return;
+        };
+        if self.open_family.as_ref().is_some_and(|(key, _)| key == &active) {
+            return;
+        }
+        self.open_family = None;
+        let (environment_id, thread_id) = runtime_ids(&active);
+        let Some(env) = envs.iter().find(|env| env.environment_id() == &environment_id) else { return };
+        // Only an authoritative shell can say a thread is missing.
+        if env.shell.generation == 0 || env.shell.thread(&thread_id).is_some() {
+            return;
+        }
+        self.open_family = Some((active, env.store.older_settled().mount_family(thread_id)));
     }
 
     /// The environment entities, for handlers.

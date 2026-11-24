@@ -80,6 +80,10 @@ pub enum TimelineAction {
     OpenLink(SharedString),
     /// A code block's Run button: run this shell command in a terminal.
     RunShellCommand(SharedString),
+    /// Cancel the running worktree setup.
+    CancelWorktreeSetup,
+    /// Open the setup script's terminal by its id.
+    OpenTerminal(SharedString),
 }
 
 /// The open find's query and where it stands.
@@ -772,7 +776,7 @@ impl MessagesTimeline {
             RowKind::ProposedPlan(plan) => self.render_proposed_plan(row, plan, window, cx),
             RowKind::HtmlRender { title } => self.render_embedded_frame("HTML render", title),
             RowKind::McpApp { title } => self.render_embedded_frame("App", title),
-            RowKind::WorktreeSetup(setup) => self.render_worktree_setup(setup),
+            RowKind::WorktreeSetup(setup) => self.render_worktree_setup(setup, window, cx),
             RowKind::PendingApproval { entry } => self.render_pending_approval(entry, cx),
             RowKind::QueuedMessages { messages } => self.render_queued(messages, cx),
         };

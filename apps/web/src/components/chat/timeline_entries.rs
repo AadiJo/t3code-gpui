@@ -312,10 +312,78 @@ pub struct ProposedPlan {
 /// Setup of a new worktree before the agent starts (`WorktreeSetupSnapshot`).
 #[derive(Clone, Debug, PartialEq)]
 pub struct WorktreeSetup {
+    pub phase: SetupPhase,
     pub started_at: Timestamp,
-    pub running: bool,
-    pub branch: SharedString,
-    pub steps: Arc<[(SharedString, ToolStatus)]>,
+    pub ended_at: Option<Timestamp>,
+    pub branch: Option<SharedString>,
+    pub base_ref: Option<SharedString>,
+    pub worktree_path: Option<SharedString>,
+    pub setup_script: Option<SetupScript>,
+    pub stages: Arc<[SetupStage]>,
+    /// Why setup failed, shown under a failed setup.
+    pub error: Option<SharedString>,
+    /// The agent started and the run is under way: the row folds into one summary line
+    /// (`setupHandedOff`). Set by the timeline when it places the row.
+    pub embedded: bool,
+}
+
+/// `WorktreeSetupPhase`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SetupPhase {
+    Running,
+    Done,
+    Failed,
+    Cancelled,
+}
+
+/// `WorktreeSetupStageStatus`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SetupStageStatus {
+    Pending,
+    Running,
+    Done,
+    Skipped,
+    Warning,
+    Failed,
+}
+
+/// `WorktreeSetupStageId`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SetupStageId {
+    Fetch,
+    Checkout,
+    Submodules,
+    SetupScript,
+    Agent,
+}
+
+/// One setup stage. `label` is already the script's name for the setup script stage.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SetupStage {
+    pub id: SetupStageId,
+    pub label: SharedString,
+    pub status: SetupStageStatus,
+    pub started_at: Option<Timestamp>,
+    pub ended_at: Option<Timestamp>,
+    pub percent: Option<u64>,
+    pub detail: Option<SharedString>,
+    /// The script's last output lines.
+    pub tail: Arc<[SharedString]>,
+}
+
+/// The project's setup script the setup runs.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SetupScript {
+    pub name: SharedString,
+    pub command: SharedString,
+    pub terminal_id: SharedString,
+}
+
+impl WorktreeSetup {
+    /// `worktreeSetupAgentStarted`: the agent stage is done.
+    pub fn agent_started(&self) -> bool {
+        self.stages.iter().any(|stage| stage.id == SetupStageId::Agent && stage.status == SetupStageStatus::Done)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]

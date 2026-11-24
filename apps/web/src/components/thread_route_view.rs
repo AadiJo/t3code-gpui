@@ -74,6 +74,8 @@ pub enum ThreadRouteEvent {
     OpenLinkedItems,
     /// Show this browser tab (a thread server opened in the preview).
     OpenBrowser(SharedString),
+    /// Open this terminal (the worktree setup script's).
+    OpenTerminal(SharedString),
 }
 
 /// The menu of the shown thread's workspace; the composer keeps one source.
@@ -630,6 +632,7 @@ impl ThreadRouteView {
                     auto_open_preview: None,
                 }));
             }
+            (TimelineAction::OpenTerminal(id), _) => return cx.emit(ThreadRouteEvent::OpenTerminal(id.clone())),
             (TimelineAction::Reply { message, text }, _) => {
                 // `responseContextRecord`: a chip naming the reply by its opening words.
                 let opening: String = text.lines().find(|l| !l.trim().is_empty()).unwrap_or_default().chars().take(48).collect();
@@ -725,6 +728,13 @@ impl ThreadRouteView {
             DataEvent::DraftPromoted { draft, thread } => {
                 if self.target.as_ref() == Some(&ThreadTarget::Draft(draft.clone())) {
                     let target = ThreadTarget::Server(thread.clone());
+                    self.target = Some(target.clone());
+                    cx.emit(ThreadRouteEvent::Promoted(target));
+                }
+            }
+            DataEvent::DraftLaunchFailed { draft, thread } => {
+                if self.target.as_ref() == Some(&ThreadTarget::Server(thread.clone())) {
+                    let target = ThreadTarget::Draft(draft.clone());
                     self.target = Some(target.clone());
                     cx.emit(ThreadRouteEvent::Promoted(target));
                 }

@@ -316,6 +316,7 @@ pub fn build(env: &EnvironmentId) -> ReferenceWorld {
         snooze_presets: Default::default(),
         drafts: Vec::new(),
         active_draft: None,
+        older_settled: Default::default(),
     };
     ReferenceWorld { snapshot, threads, checkout: Arc::new(world.workspace) }
 }

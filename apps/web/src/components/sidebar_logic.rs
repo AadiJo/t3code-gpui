@@ -844,6 +844,9 @@ pub fn build_sidebar_list(snapshot: &SidebarSnapshot, options: &SidebarListOptio
     sort_pinned(&mut pinned);
     sort_snoozed(&mut snoozed);
     sort_settled(&mut settled);
+    // Older settled threads load in pages; the shelf lists them only as far as they are loaded.
+    let settled_count = settled.len() + snapshot.older_settled.unloaded_count(None);
+    settled.retain(|thread| snapshot.older_settled.is_listed(thread));
     sort_desc_by(&mut working, send_timestamp);
 
     let has_folders = settings.project_folders;
@@ -903,14 +906,14 @@ pub fn build_sidebar_list(snapshot: &SidebarSnapshot, options: &SidebarListOptio
     // `Sidebar.tsx:3326-3373`: a scope can hide every active thread; say so
     // even when its project still has settled ones.
     let nothing_active = pinned.len() + active.len() + working.len() + snoozed.len() == 0;
-    let nothing_listed = nothing_active && settled.is_empty();
-    if !has_folders && drafts.is_empty() && nothing_active && (settled.is_empty() || !scoped.is_empty()) {
+    let nothing_listed = nothing_active && settled_count == 0;
+    if !has_folders && drafts.is_empty() && nothing_active && (settled_count == 0 || !scoped.is_empty()) {
         list.entries.push(SidebarListEntry::Empty(if snapshot.projects.is_empty() {
             EmptyState::NoProjects
         } else if !scoped.is_empty() {
             EmptyState::Scoped {
                 project: (scoped.len() == 1).then(|| groups[scoped[0]].label.clone()),
-                has_settled: !settled.is_empty(),
+                has_settled: settled_count > 0,
             }
         } else {
             EmptyState::NoThreads
@@ -982,9 +985,15 @@ pub fn build_sidebar_list(snapshot: &SidebarSnapshot, options: &SidebarListOptio
         SidebarSection::Settled,
         settled_limit,
     );
-    if options.settled_expanded && settled.len() > settled_limit {
+    if let Some(SidebarListEntry::ShelfHeader { count, .. }) =
+        list.entries.iter_mut().rev().find(|entry| matches!(entry, SidebarListEntry::ShelfHeader { shelf: Shelf::Settled, .. }))
+    {
+        *count = settled_count;
+    }
+    let hidden_settled = settled_count.saturating_sub(settled.len().min(settled_limit));
+    if options.settled_expanded && hidden_settled > 0 {
         list.entries.push(SidebarListEntry::ShowMore {
-            count: (settled.len() - settled_limit).min(settings.settled_page_size),
+            count: hidden_settled.min(settings.settled_page_size),
         });
     }
     list.groups = groups;

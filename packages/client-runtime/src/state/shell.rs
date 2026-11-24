@@ -24,6 +24,7 @@ use super::environment::{EnvironmentContext, SyncStatus, connection_phase, Conne
 use super::environment_http::{endpoint_path, get_bytes};
 use super::models::now_ms;
 use super::shell_reducer::{ShellSnapshot, apply_shell_deltas, merge_snapshot_projects, reuse_unchanged_threads};
+use super::thread_families::{FamilyRows, Mounts};
 use super::thread_lifecycle::PendingUpdates;
 use crate::rpc::{RpcError, RpcSession};
 
@@ -127,14 +128,18 @@ struct Inner {
     source: Arc<ShellState>,
     origin: Option<ShellOrigin>,
     pending: PendingUpdates,
+    /// Family, page and search reads merged behind the server rows.
+    mounts: Mounts,
 }
 
-/// The shell store of one environment. Views read [`ShellStore::subscribe`]; optimistic updates
-/// from commands are applied on top of the server rows.
+/// The shell store of one environment. Views read [`ShellStore::subscribe`]: the server rows,
+/// then mounted family rows the server left out, with optimistic updates from commands on top.
 #[derive(Clone)]
 pub struct ShellStore {
     inner: Arc<Mutex<Inner>>,
     view: watch::Sender<Arc<ShellState>>,
+    /// The server rows alone, for readers that must not count mounted rows.
+    source: watch::Sender<Arc<ShellState>>,
 }
 
 impl ShellStore {
@@ -157,8 +162,9 @@ impl ShellStore {
         }
         let state = Arc::new(state);
         Self {
-            inner: Arc::new(Mutex::new(Inner { source: Arc::clone(&state), origin, pending: PendingUpdates::default() })),
-            view: watch::Sender::new(state),
+            inner: Arc::new(Mutex::new(Inner { source: Arc::clone(&state), origin, pending: PendingUpdates::default(), mounts: Mounts::default() })),
+            view: watch::Sender::new(Arc::clone(&state)),
+            source: watch::Sender::new(state),
         }
     }
 
@@ -172,14 +178,44 @@ impl ShellStore {
         self.view.borrow().clone()
     }
 
-    /// The server rows without optimistic updates.
+    /// The server rows without optimistic updates or mounted rows.
     pub fn source(&self) -> Arc<ShellState> {
         Arc::clone(&self.inner.lock().expect("shell lock").source)
     }
 
+    /// The server rows alone, and changes to them.
+    pub fn subscribe_source(&self) -> watch::Receiver<Arc<ShellState>> {
+        self.source.subscribe()
+    }
+
+    /// Merges `reads` behind the server rows under `key`, replacing what was there
+    /// (`mountRows`). Each read's `snapshot_sequence` decides which removals drop its rows.
+    pub fn mount_rows(&self, key: &str, reads: Vec<Arc<FamilyRows>>) {
+        let mut inner = self.inner.lock().expect("shell lock");
+        if inner.mounts.set(key, reads) {
+            self.publish(&mut inner);
+        }
+    }
+
+    /// Stops merging the rows under `key`.
+    pub fn unmount_rows(&self, key: &str) {
+        let mut inner = self.inner.lock().expect("shell lock");
+        if inner.mounts.remove(key) {
+            self.publish(&mut inner);
+        }
+    }
+
     fn publish(&self, inner: &mut Inner) {
+        self.source.send_if_modified(|current| {
+            if Arc::ptr_eq(current, &inner.source) {
+                return false;
+            }
+            *current = Arc::clone(&inner.source);
+            true
+        });
         inner.pending.retire(inner.source.snapshot.as_ref().map(|snapshot| snapshot.snapshot_sequence));
-        let view = inner.pending.apply(&inner.source);
+        let merged = inner.mounts.merge(&inner.source);
+        let view = inner.pending.apply(&merged);
         self.view.send_if_modified(|current| {
             if Arc::ptr_eq(current, &view) {
                 return false;

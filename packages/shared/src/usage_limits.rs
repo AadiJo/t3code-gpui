@@ -770,3 +770,186 @@ pub fn display_limit_windows(pool: &LimitPool) -> Vec<&LimitPoolWindow> {
         _ => windows,
     }
 }
+
+/// `hasProviderUsageLimits`: some provider of `driver` reports limits, a hub has an account of
+/// that driver, or an unreadable hub might.
+pub fn has_provider_usage_limits(driver: &str, providers: &[ServerConfigProvidersItem], sources: &[ServerConfigUsageLimitSourcesItem]) -> bool {
+    providers_with_limits(providers).any(|provider| provider.driver == driver)
+        || sources.iter().any(|source| source.accounts.iter().any(|account| account.driver == driver) || (source.error.is_some() && source.accounts.is_empty()))
+}
+
+/// One account of a [`UsageLimitsReport`] (`UsageLimitsReport.accounts`).
+#[derive(Clone, Debug)]
+pub struct ReportAccount {
+    pub id: String,
+    pub driver: String,
+    pub label: String,
+    pub plan: Option<String>,
+    pub email: Option<String>,
+    pub source_label: Option<String>,
+    pub instance_id: Option<ProviderInstanceId>,
+    pub reset_credit_input: Option<ProviderConsumeResetCreditInput>,
+    pub display_name: Option<String>,
+    pub accent_color: Option<String>,
+    pub limits: UsageLimits,
+}
+
+/// Limits of one driver across instances and limit hubs (`UsageLimitsReport`).
+#[derive(Clone, Debug)]
+pub struct UsageLimitsReport {
+    pub accounts: Vec<ReportAccount>,
+    pub notices: Vec<String>,
+}
+
+fn native_report(p: &ServerConfigProvidersItem) -> AccountReport<'_> {
+    AccountReport { driver: p.driver.as_str(), email: p.auth.email.as_deref(), workspace_id: p.auth.workspace_id.as_deref(), limits: p.usage_limits.as_ref() }
+}
+
+fn hub_report(a: &t3code_contracts::ServerConfigUsageLimitSourcesItemAccountsItem) -> AccountReport<'_> {
+    AccountReport { driver: a.driver.as_str(), email: a.email.as_deref(), workspace_id: a.workspace_id.as_deref(), limits: Some(&a.usage_limits) }
+}
+
+fn checked_ms(limits: &UsageLimits) -> f64 {
+    parse_instant_ms(&limits.checked_at).map_or(f64::NAN, |ms| ms as f64)
+}
+
+/// `collectProviderUsageLimits`: the selected instance's driver, one entry per login. Instances
+/// of the same login merge (a usable read beats an unusable one, then the freshest wins), reset
+/// credits come from the freshest instance or hub reporting that login, and hub accounts no
+/// instance covers are listed after them.
+pub fn collect_provider_usage_limits(
+    instance_id: &str,
+    providers: &[ServerConfigProvidersItem],
+    sources: &[ServerConfigUsageLimitSourcesItem],
+) -> Option<UsageLimitsReport> {
+    let selected = providers.iter().find(|provider| provider.instance_id.as_str() == instance_id)?;
+    if !has_provider_usage_limits(&selected.driver, providers, sources) {
+        return None;
+    }
+    let resolve_key = account_key_resolver(
+        providers
+            .iter()
+            .filter(|p| p.enabled)
+            .map(native_report)
+            .chain(sources.iter().flat_map(|s| s.accounts.iter()).map(hub_report)),
+    );
+    struct Native<'a> {
+        usage: (&'a ServerConfigProvidersItem, &'a UsageLimits),
+        credits: Option<(&'a ServerConfigProvidersItem, &'a UsageLimits)>,
+    }
+    let mut order: Vec<String> = Vec::new();
+    let mut by_account: HashMap<String, Native> = HashMap::new();
+    for provider in providers_with_limits(providers) {
+        let Some(limits) = provider.usage_limits.as_ref().filter(|_| provider.driver == selected.driver) else { continue };
+        let key = resolve_key(&native_report(provider)).unwrap_or_else(|| format!("instance:{}", provider.instance_id.as_str()));
+        let usable = limits_notice_reason(limits).is_none();
+        let entry = match by_account.remove(&key) {
+            None => {
+                order.push(key.clone());
+                Native { usage: (provider, limits), credits: limits.reset_credits.is_some().then_some((provider, limits)) }
+            }
+            Some(previous) => {
+                let previous_usable = limits_notice_reason(previous.usage.1).is_none();
+                let wins = (usable && !previous_usable) || (usable == previous_usable && checked_ms(limits) > checked_ms(previous.usage.1));
+                let credits = match previous.credits {
+                    Some(prior) if !(limits.reset_credits.is_some() && checked_ms(limits) > checked_ms(prior.1)) => Some(prior),
+                    _ if limits.reset_credits.is_some() => Some((provider, limits)),
+                    other => other,
+                };
+                Native { usage: if wins { (provider, limits) } else { previous.usage }, credits }
+            }
+        };
+        by_account.insert(key, entry);
+    }
+    let native: Vec<Native> = order.into_iter().filter_map(|key| by_account.remove(&key)).collect();
+    let native_keys: std::collections::HashSet<String> = native
+        .iter()
+        .filter(|n| !n.usage.1.windows.is_empty() && n.usage.1.unavailable.is_none())
+        .filter_map(|n| resolve_key(&native_report(n.usage.0)))
+        .collect();
+    let mut accounts = Vec::new();
+    for Native { usage: (provider, limits), credits } in &native {
+        let key = resolve_key(&native_report(provider));
+        let hub_credits = sources
+            .iter()
+            .flat_map(|source| source.accounts.iter().map(move |account| (source, account)))
+            .filter(|(_, account)| {
+                key.is_some()
+                    && resolve_key(&hub_report(account)) == key
+                    && account.usage_limits.reset_credits.is_some()
+                    && limits_notice_reason(&account.usage_limits).is_none()
+            })
+            .max_by(|a, b| checked_ms(&a.1.usage_limits).total_cmp(&checked_ms(&b.1.usage_limits)));
+        let hub_credit_id = hub_credits.and_then(|(_, account)| account.usage_limits.reset_credits.as_ref()?.next_credit_id.clone());
+        let show_hub = hub_credits.is_some_and(|(_, account)| credits.is_none_or(|(_, own)| checked_ms(&account.usage_limits) > checked_ms(own)));
+        let shown_credits = if show_hub {
+            hub_credits.and_then(|(_, account)| account.usage_limits.reset_credits.clone())
+        } else {
+            credits.and_then(|(_, own)| own.reset_credits.clone())
+        };
+        let reset_credit_input = match (hub_credit_id, hub_credits) {
+            (Some(credit_id), Some((source, account))) => ProviderConsumeResetCreditInput::UsageLimitSource(UsageLimitSourceConsumeResetCreditInput {
+                source_id: source.id.clone(),
+                account_id: account.id.clone(),
+                credit_id,
+            }),
+            _ => ProviderConsumeResetCreditInput::NoUndefined(ProviderConsumeResetCreditInputNoUndefined {
+                instance_id: ProviderInstanceId::new(credits.map_or(provider.instance_id.as_str(), |(p, _)| p.instance_id.as_str())),
+                credit_id: None,
+            }),
+        };
+        let name = provider.display_name.as_deref().map(str::trim).filter(|n| !n.is_empty()).unwrap_or(provider.driver.as_str());
+        let mut limits = (*limits).clone();
+        if shown_credits.is_some() {
+            limits.reset_credits = shown_credits;
+        }
+        accounts.push(ReportAccount {
+            id: provider.instance_id.as_str().to_owned(),
+            driver: provider.driver.clone(),
+            label: format!("{name} [{}]", provider.instance_id.as_str()),
+            plan: provider.auth.label.clone(),
+            email: provider.auth.email.clone(),
+            source_label: None,
+            instance_id: Some(ProviderInstanceId::new(provider.instance_id.as_str())),
+            reset_credit_input: Some(reset_credit_input),
+            display_name: provider.display_name.clone(),
+            accent_color: provider.accent_color.clone(),
+            limits,
+        });
+    }
+    let mut notices = Vec::new();
+    for source in sources {
+        let matching: Vec<_> = source.accounts.iter().filter(|account| account.driver == selected.driver).collect();
+        for account in &matching {
+            if resolve_key(&hub_report(account)).is_some_and(|key| native_keys.contains(&key)) {
+                continue;
+            }
+            let hub_name = account.id.strip_suffix(".json").or_else(|| account.id.strip_suffix(".JSON")).unwrap_or(&account.id);
+            accounts.push(ReportAccount {
+                id: format!("{}:{}", source.id.as_str(), account.id),
+                driver: account.driver.clone(),
+                label: format!("{} · {hub_name}", source.label),
+                plan: account.plan.clone(),
+                email: account.email.clone(),
+                source_label: Some("CLI Proxy".to_owned()),
+                instance_id: None,
+                reset_credit_input: account.usage_limits.reset_credits.as_ref().and_then(|c| c.next_credit_id.clone()).map(|credit_id| {
+                    ProviderConsumeResetCreditInput::UsageLimitSource(UsageLimitSourceConsumeResetCreditInput {
+                        source_id: source.id.clone(),
+                        account_id: account.id.clone(),
+                        credit_id,
+                    })
+                }),
+                display_name: None,
+                accent_color: None,
+                limits: account.usage_limits.clone(),
+            });
+        }
+        if let Some(error) = &source.error
+            && (!matching.is_empty() || source.accounts.is_empty())
+        {
+            notices.push(format!("{}: {error}", source.label));
+        }
+    }
+    Some(UsageLimitsReport { accounts, notices })
+}

@@ -273,6 +273,7 @@ pub fn showcase_snapshot() -> SidebarSnapshot {
         search_content_matches: None,
         now: FIXTURE_NOW,
         snooze_presets: Default::default(),
+        older_settled: Default::default(),
     }
 }
 
@@ -373,6 +374,7 @@ pub fn large_snapshot(thread_count: usize, project_count: usize) -> SidebarSnaps
         active_draft: None,
         search_content_matches: None,
         snooze_presets: Default::default(),
+        older_settled: Default::default(),
     }
 }
 
@@ -439,6 +441,7 @@ pub fn reference_snapshot() -> SidebarSnapshot {
         active_draft: None,
         search_content_matches: None,
         snooze_presets: Default::default(),
+        older_settled: Default::default(),
     }
 }
 
@@ -603,5 +606,6 @@ pub fn owner_snapshot() -> SidebarSnapshot {
         active_draft: None,
         search_content_matches: None,
         snooze_presets: Default::default(),
+        older_settled: Default::default(),
     }
 }

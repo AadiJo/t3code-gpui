@@ -95,6 +95,8 @@ pub enum SidebarEvent {
     RenameThread(ThreadKey, String),
     /// The search field's text changed; the data source may add server matches.
     SearchChanged(SharedString),
+    /// The Settled shelf opened, closed, showed more or retried; older pages load to fill it.
+    SettledShelf(model::SettledShelfRequest),
 }
 
 /// The row whose title is being edited (`ThreadRenameInput`).
@@ -151,6 +153,8 @@ pub struct Sidebar {
     /// While dragging: the section under the pointer, shared with the drag preview.
     pub(crate) drag_target: std::rc::Rc<std::cell::Cell<Option<super::sidebar_logic::SidebarSection>>>,
     jump_hold: Option<Task<()>>,
+    /// The Settled shelf state last reported with [`SidebarEvent::SettledShelf`].
+    settled_request: model::SettledShelfRequest,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -205,6 +209,7 @@ impl Sidebar {
             scope_menu: None,
             drag_target: Default::default(),
             jump_hold: None,
+            settled_request: Default::default(),
             _subscriptions: vec![subscription],
         };
         if cx.has_global::<crate::hooks::use_settings::ClientSettingsStore>() {
@@ -227,6 +232,8 @@ impl Sidebar {
             this.options.project_scope = ui.sidebar_project_scope_keys.iter().map(|k| SharedString::from(k.clone())).collect();
         }
         this.rebuild(cx);
+        // Nobody listens yet; the first snapshot reports the shelf.
+        this.settled_request = Default::default();
         this
     }
 
@@ -509,6 +516,7 @@ impl Sidebar {
         self.apply_client_settings(cx);
         self.list = build_sidebar_list(&self.snapshot, &self.options);
         let rem_scale = ShellColors::from_theme(cx.app_theme()).rem_scale;
+        self.report_settled_shelf(false, cx);
         self.heights = self
             .list
             .entries
@@ -519,7 +527,10 @@ impl Sidebar {
         self.spacer_height = 0.;
         self.hovered = None;
         self.cursor = self.cursor.filter(|&c| c < self.list.entries.len());
+        // `reset` drops the scroll anchor; a rebuild keeps the list where the user left it.
+        let top = self.list_state.logical_scroll_top();
         self.list_state.reset(self.list.entries.len());
+        self.list_state.scroll_to(top);
         cx.notify();
     }
 
@@ -624,8 +635,26 @@ impl Sidebar {
     }
 
     pub(crate) fn show_more_settled(&mut self, cx: &mut Context<Self>) {
+        if self.snapshot.older_settled.loading {
+            return;
+        }
+        self.report_settled_shelf(true, cx);
         self.options.settled_visible += self.snapshot.settings.settled_page_size;
         self.rebuild(cx);
+    }
+
+    /// Tells the data what the Settled shelf shows when that changed, or to retry.
+    fn report_settled_shelf(&mut self, retry: bool, cx: &mut Context<Self>) {
+        let request = model::SettledShelfRequest {
+            expanded: self.options.settled_expanded,
+            visible_count: self.snapshot.settings.settled_page_size + self.options.settled_visible,
+            projects: None,
+            retry,
+        };
+        if retry || request != self.settled_request {
+            self.settled_request = model::SettledShelfRequest { retry: false, ..request.clone() };
+            cx.emit(SidebarEvent::SettledShelf(request));
+        }
     }
 
     /// Keys a thread command acts on: the selection when the row is in it.

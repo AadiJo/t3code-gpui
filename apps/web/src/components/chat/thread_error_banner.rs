@@ -187,6 +187,8 @@ impl Render for ThreadErrorBanner {
             .child(
                 Button::new("thread-error-dismiss")
                     .icon(IconName::X)
+                    // `icon-xs` draws an unsized svg at `size-3.5`: 0.875rem, not a fixed 14px.
+                    .icon_size(IconSize::Custom(theme.sp(3.5)))
                     .size(ButtonSize::IconXs)
                     .variant(ButtonVariant::Ghost)
                     .on_click(cx.listener(|_, _, _, cx| cx.emit(ThreadErrorBannerEvent::Dismiss))),

@@ -406,7 +406,7 @@ impl RightPanel {
         next_terminal_id(&used)
     }
 
-    fn add_terminal_tab(&mut self, id: String, cx: &mut Context<Self>) {
+    pub(crate) fn add_terminal_tab(&mut self, id: String, cx: &mut Context<Self>) {
         let surface = RightPanelSurface::Terminal {
             id: format!("terminal:{id}"),
             resource_id: id.clone(),

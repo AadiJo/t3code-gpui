@@ -68,7 +68,9 @@ pub enum DataEvent {
     Text { thread: ThreadKey, changes: Arc<[(MessageId, SharedString, bool)]> },
     /// A draft got its first message and is now a server thread.
     DraftPromoted { draft: DraftId, thread: ThreadKey },
-    /// Show this thread (a fork that just arrived).
+    /// The server refused the launch `DraftPromoted` announced: the draft is back.
+    DraftLaunchFailed { draft: DraftId, thread: ThreadKey },
+    /// Show this thread (a fork or side chat that just arrived).
     OpenThread(ThreadKey),
     /// Show `parent` with the side chat's tab open in its right panel (`openSideChat`).
     OpenSideChat { parent: ThreadKey, side_chat: ThreadKey },
@@ -233,6 +235,11 @@ pub trait AppData: 'static {
 
     /// The sidebar search changed; a live source asks the servers for message matches.
     fn search_threads(&self, _query: SharedString, _cx: &mut App) {}
+
+    /// The Settled shelf's state: a live source reads older settled pages from servers that
+    /// leave them out of the shell until the shelf lists `visible_count` rows, and retries a
+    /// failed page when asked. The snapshot's `older_settled` reports where it stands.
+    fn show_older_settled(&self, _request: crate::components::sidebar::model::SettledShelfRequest, _cx: &mut App) {}
 
     /// Renames a thread.
     fn rename_thread(&self, key: &ThreadKey, title: String, cx: &mut App);

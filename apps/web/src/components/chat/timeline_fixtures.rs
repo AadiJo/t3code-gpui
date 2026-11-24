@@ -402,10 +402,19 @@ pub fn fixture_thread() -> TimelineInput {
         supports_rollback: true,
         revert_turn_counts: Default::default(),
         worktree_setup: Some(WorktreeSetup {
+            phase: super::timeline_entries::SetupPhase::Done,
             started_at: at(3_598),
-            running: false,
-            branch: s("sync-cursor"),
-            steps: Arc::from([(s("Create worktree"), ToolStatus::Completed), (s("Install dependencies"), ToolStatus::Completed)]),
+            ended_at: Some(at(3_590)),
+            branch: Some(s("sync-cursor")),
+            base_ref: Some(s("main")),
+            worktree_path: None,
+            setup_script: None,
+            stages: Arc::from([
+                setup_stage(super::timeline_entries::SetupStageId::Fetch, "Fetch base branch", at(3_598), at(3_596)),
+                setup_stage(super::timeline_entries::SetupStageId::Checkout, "Check out files", at(3_596), at(3_591)),
+            ]),
+            error: None,
+            embedded: false,
         }),
         queued: Arc::from([
             QueuedMessage { id: s("q-1"), text: s("Then open a PR with the soak numbers."), created_at: at(20), image_count: 0, guest: false, editing: false },
@@ -514,5 +523,19 @@ pub fn streaming_thread(history: TimelineInput, reply: &str) -> TimelineInput {
         is_working: true,
         active_turn_started_at: Some(at(25)),
         ..history
+    }
+}
+
+/// A finished setup stage for the fixtures.
+fn setup_stage(id: super::timeline_entries::SetupStageId, label: &'static str, started: Timestamp, ended: Timestamp) -> super::timeline_entries::SetupStage {
+    super::timeline_entries::SetupStage {
+        id,
+        label: SharedString::new_static(label),
+        status: super::timeline_entries::SetupStageStatus::Done,
+        started_at: Some(started),
+        ended_at: Some(ended),
+        percent: None,
+        detail: None,
+        tail: Arc::from([]),
     }
 }

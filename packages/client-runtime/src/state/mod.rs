@@ -14,6 +14,7 @@ pub mod environment;
 pub mod environment_http;
 pub mod models;
 pub mod notifications;
+pub mod older_settled_threads;
 pub mod optimistic_messages;
 pub mod orchestration;
 pub mod orchestration_v2_projection;
@@ -27,6 +28,7 @@ pub mod subagent_runtime;
 #[cfg(test)]
 pub mod test_fixtures;
 pub mod thread_detail;
+pub mod thread_families;
 pub mod thread_history_merge;
 pub mod thread_inbox;
 pub mod thread_lifecycle;

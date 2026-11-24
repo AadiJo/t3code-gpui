@@ -54,10 +54,19 @@
 //            transfer on the parent), a fork with the lineage on both ends, and `/side` refused
 //            inside a side chat; each read back from the server
 //   sidechats-ref  shots of the fork capture's states on its server (`T3_REF_IDS`: ids.json)
-// Usage: live-check <seed|drive|restart|import|send|sidebar|notify|details|mentions|heic|wheel|workspace|banner|sidebardata|composer|composer-restart|sidechats|sidechats-ref|probe> <out-dir>
+//   setup    the worktree setup row against the server's setup stream: running, cancelled,
+//            finished (`live_check_setup.rs`)
+//   draft-banner  a draft launch the server refuses returns to the draft with the banner and
+//            the prompt (`live_check_setup.rs`)
+//   families-seed, families  older settled pages and thread families on two servers
+//            (`live_check_families.rs`)
+//
+// Usage: live-check <draft-banner|setup|families-seed|families|seed|drive|restart|import|send|sidebar|notify|details|mentions|heic|wheel|workspace|banner|sidebardata|composer|composer-restart|sidechats|sidechats-ref|probe> <out-dir>
 #[allow(dead_code)]
 #[path = "import/mod.rs"]
 mod import;
+mod live_check_families;
+mod live_check_setup;
 #[allow(dead_code)]
 #[path = "notifications/mod.rs"]
 mod notifications;
@@ -535,6 +544,10 @@ fn main() -> anyhow::Result<()> {
         "composer-restart" => run_composer_restart(&mut check),
         "sidechats" => run_sidechats(&mut check),
         "sidechats-ref" => run_sidechats_ref(&mut check),
+        "families-seed" => live_check_families::run_families_seed(&mut check),
+        "families" => live_check_families::run_families(&mut check),
+        "setup" => live_check_setup::run_setup(&mut check),
+        "draft-banner" => live_check_setup::run_draft_banner(&mut check),
         other => Err(anyhow::anyhow!("unknown phase {other}")),
     };
     check.finish(&phase, result)
@@ -2304,10 +2317,10 @@ fn run_details(check: &mut Check) -> anyhow::Result<()> {
         let setup = check.shown_input().worktree_setup;
         let line = match &setup {
             Some(setup) => format!(
-                "running={} branch={} steps={:?}",
-                setup.running,
-                setup.branch,
-                setup.steps.iter().map(|(label, status)| format!("{label}:{status:?}")).collect::<Vec<_>>()
+                "phase={:?} branch={} steps={:?}",
+                setup.phase,
+                setup.branch.as_deref().unwrap_or(""),
+                setup.stages.iter().map(|stage| format!("{}:{:?}", stage.label, stage.status)).collect::<Vec<_>>()
             ),
             None => "none".into(),
         };
@@ -2315,7 +2328,7 @@ fn run_details(check: &mut Check) -> anyhow::Result<()> {
             check.note(format!("setup row: {line}"));
             seen.push(line);
         }
-        if setup.as_ref().is_some_and(|s| !s.running) || (seen.len() > 1 && setup.is_none()) {
+        if setup.as_ref().is_some_and(|s| s.phase != t3code_web::components::chat::timeline_entries::SetupPhase::Running) || (seen.len() > 1 && setup.is_none()) {
             break;
         }
     }

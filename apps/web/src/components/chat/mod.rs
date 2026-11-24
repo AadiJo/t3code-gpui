@@ -40,4 +40,5 @@ pub mod timeline_row_parts;
 pub mod timeline_viewport;
 pub mod virtual_list;
 pub mod work_log_presentation;
+pub mod worktree_setup_card;
 pub mod zoomable_image;

@@ -595,17 +595,23 @@ impl AppData for LiveData {
                     }),
                 };
                 let task = StateBridge::spawn(async move { commands.launch_thread(input).await }, cx);
-                let thread_view_key = crate::fixtures::scoped_key(&thread_key(&environment_id, &thread_id));
+                // A launch the server refused created no thread: as the web does, the draft comes
+                // back with the error and its prompt, and the route returns to it.
+                let removed = self.drafts.borrow_mut().remove(id);
+                let key = thread_key(&environment_id, &thread_id);
+                let (drafts, events, draft_id, failed_thread) = (Rc::clone(&self.drafts), self.events.clone(), id.clone(), key.clone());
                 cx.spawn(async move |cx| match task.await {
                     Some(Err(error)) => cx.update(|cx| {
-                        ThreadErrors::send_failed(&thread_view_key, crate::state::composer::send_error(&error), restore, cx)
+                        if let Some(draft) = removed {
+                            drafts.borrow_mut().insert(draft_id.clone(), draft);
+                        }
+                        ThreadErrors::send_failed(&draft_key, crate::state::composer::send_error(&error), restore, cx);
+                        events.update(cx, |_, cx| cx.emit(DataEvent::DraftLaunchFailed { draft: draft_id, thread: failed_thread }));
                     }),
                     Some(Ok(_)) => crate::state::attachments::AttachmentUploads::forget_sent(sent),
                     None => {}
                 })
                 .detach();
-                self.drafts.borrow_mut().remove(id);
-                let key = thread_key(&environment_id, &thread_id);
                 self.emit(DataEvent::DraftPromoted { draft: id.clone(), thread: key.clone() }, cx);
                 Some(key)
             }
@@ -623,12 +629,26 @@ impl AppData for LiveData {
             }
             TimelineAction::Fork(message) => self.fork_from(key, message, cx),
             TimelineAction::EditFrom(message) => return self.confirm_revert(key, message, cx),
+            TimelineAction::CancelWorktreeSetup => {
+                // `worktreeSetup.cancel`; the setup stream shows the result.
+                let (environment_id, thread_id) = runtime_ids(key);
+                let Some(link) = rpc::RpcLink::new(&environment_id, cx) else { return ActionOutcome::Done };
+                let call = link.call::<t3code_contracts::rpc::methods::WorktreeSetupCancel>(t3code_contracts::WorktreeSetupCancelInput { thread_id });
+                cx.background_executor()
+                    .spawn(async move {
+                        if let Err(error) = call.await {
+                            tracing::warn!(%error, "cancelling worktree setup failed");
+                        }
+                    })
+                    .detach();
+            }
             // The route view handles these itself.
             TimelineAction::OpenDiff { .. }
             | TimelineAction::OpenImage { .. }
             | TimelineAction::OpenLink(_)
             | TimelineAction::RunShellCommand(_)
-            | TimelineAction::Reply { .. } => {}
+            | TimelineAction::Reply { .. }
+            | TimelineAction::OpenTerminal(_) => {}
         }
         ActionOutcome::Done
     }
@@ -665,6 +685,10 @@ impl AppData for LiveData {
             SidebarOutcome::NewThread(project) => CommandOutcome::NewThread(project),
             _ => CommandOutcome::Done,
         }
+    }
+
+    fn show_older_settled(&self, request: crate::components::sidebar::model::SettledShelfRequest, cx: &mut App) {
+        StateBridge::shell(cx).update(cx, |shell, cx| shell.set_settled_request(request, cx));
     }
 
     fn search_threads(&self, query: SharedString, cx: &mut App) {
@@ -780,7 +804,10 @@ impl AppData for LiveData {
 
     fn set_active_thread(&self, active: Option<&ThreadKey>, cx: &mut App) {
         *self.shown_environment.borrow_mut() = active.map(|key| runtime_ids(key).0);
-        self.details.update(cx, |details, cx| details.follow(active.cloned(), cx));
+        // The route owns the open thread's family mount (`useOpenThreadFamily`).
+        let active = active.cloned();
+        StateBridge::shell(cx).update(cx, |shell, cx| shell.set_active_thread(active.clone(), cx));
+        self.details.update(cx, |details, cx| details.follow(active, cx));
     }
 
     fn thread_details(&self, view: &ThreadView, base: ThreadDetailsInput, cx: &mut App) -> ThreadDetailsInput {

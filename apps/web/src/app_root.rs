@@ -729,9 +729,11 @@ impl AppRoot {
     fn on_thread_event(&mut self, _: &Entity<ThreadRouteView>, event: &ThreadRouteEvent, window: &mut Window, cx: &mut Context<Self>) {
         match event {
             ThreadRouteEvent::Promoted(target) => {
-                if let ThreadTarget::Server(key) = target {
-                    self.router.update(cx, |router, cx| router.replace(Route::Thread(key.clone()), cx));
-                }
+                let route = match target {
+                    ThreadTarget::Server(key) => Route::Thread(key.clone()),
+                    ThreadTarget::Draft(draft) => Route::Draft(draft.clone()),
+                };
+                self.router.update(cx, |router, cx| router.replace(route, cx));
             }
             ThreadRouteEvent::OpenThread(key) => self.navigate(Route::Thread(key.clone()), cx),
             ThreadRouteEvent::OpenDiff { turn, file } => {
@@ -752,6 +754,7 @@ impl AppRoot {
                 self.details.mode = *mode;
                 self.apply_details(cx);
             }
+            ThreadRouteEvent::OpenTerminal(id) => self.right_panel.update(cx, |panel, cx| panel.add_terminal_tab(id.to_string(), cx)),
             ThreadRouteEvent::Navigate(path) => self.navigate(Route::parse(path), cx),
             ThreadRouteEvent::OpenLinkedItems => self.right_panel.update(cx, |panel, cx| panel.open_linked_items(cx)),
             ThreadRouteEvent::OpenBrowser(tab) => {
@@ -934,6 +937,7 @@ impl AppRoot {
             SidebarEvent::RenameThread(key, title) => self.data.rename_thread(key, title.clone(), cx),
             SidebarEvent::ProjectCommand(project, MenuCommand::ProjectSettings) => self.open_project_settings(project, cx),
             SidebarEvent::SearchChanged(query) => self.data.search_threads(query.clone(), cx),
+            SidebarEvent::SettledShelf(request) => self.data.show_older_settled(request.clone(), cx),
             SidebarEvent::AddProject | SidebarEvent::OpenProjectFilter | SidebarEvent::ProjectCommand(..) => {}
         }
     }
