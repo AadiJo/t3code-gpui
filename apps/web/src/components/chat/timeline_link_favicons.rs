@@ -143,8 +143,9 @@ fn failed(stage: &str) -> crate::connection::CommandError {
 async fn fetch(host: &str) -> Option<Vec<u8>> {
     let mut url = url::Url::parse("https://www.google.com/s2/favicons").ok()?;
     url.query_pairs_mut().append_pair("domain", host).append_pair("sz", "32");
-    let client = reqwest::Client::builder().timeout(FETCH_TIMEOUT).build().ok()?;
-    let response = client.get(url).send().await.ok()?.error_for_status().ok()?;
+    // The process-wide client carries the TLS configuration (rustls with ring and web roots).
+    let client = t3code_client_runtime::rpc::http::http_client();
+    let response = client.get(url).timeout(FETCH_TIMEOUT).send().await.ok()?.error_for_status().ok()?;
     let bytes = response.bytes().await.ok()?;
     (bytes.len() <= MAX_ICON_BYTES).then(|| bytes.to_vec())
 }
