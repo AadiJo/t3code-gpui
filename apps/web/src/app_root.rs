@@ -21,7 +21,9 @@ use crate::components::media::media_actions::MediaKind;
 use crate::components::media::media_source::MediaBytes;
 use crate::components::right_panel_tabs::{RightPanel, RightPanelEvent, ScriptBackendFactory};
 use crate::components::ui::toast::{ToastData, ToastKind, Toaster};
+use crate::components::pull_request::link_pull_request_dialog::{LinkPullRequest, LinkPullRequestClosed, LinkPullRequestDialog};
 use crate::components::ui::dialog::Modal;
+use crate::state::StateBridge;
 use crate::components::issue::issue_detail_panel::IssueDetailPanel;
 use crate::components::issue::issues_page::{IssuesPage, IssuesPageEvent};
 use crate::components::pull_request::pull_request_detail_panel::PullRequestDetailPanel;
@@ -281,6 +283,8 @@ pub struct AppRoot {
     terminals: Entity<PersistentThreadTerminals>,
     /// The media viewer over the whole window, while open.
     expanded: Option<(Entity<ExpandedImageDialog>, Subscription)>,
+    /// "Link pull request", hosted here so it outlives the palette.
+    link_dialog: Option<(Entity<LinkPullRequestDialog>, Subscription)>,
     /// The Usage page in the large route modal, while its route shows.
     usage: Option<(Entity<UsageRoute>, Subscription)>,
     /// The thread details card: docked or popover by the canvas width, each with its own
@@ -403,6 +407,7 @@ impl AppRoot {
             right_panels,
             terminals,
             expanded: None,
+            link_dialog: None,
             usage: None,
             details: DetailsVisibility { mode: ThreadDetailsMode::Popover, inline_open: true, popover_open: false },
             shown: None,
@@ -1053,19 +1058,71 @@ impl AppRoot {
             PaletteEvent::OpenProjectSettings(project) => self.open_project_settings(project, cx),
             PaletteEvent::OpenPullRequests => self.navigate(Route::parse("/pull-requests"), cx),
             PaletteEvent::OpenIssues => self.navigate(Route::parse("/issues"), cx),
+            PaletteEvent::ShowLinkedItems => self.right_panel.update(cx, |panel, cx| panel.open_linked_items(cx)),
+            PaletteEvent::LinkPullRequest => self.open_link_pull_request(window, cx),
+            PaletteEvent::RestartAgentSession => {
+                if let Some(key) = self.shown_key()
+                    && StateBridge::is_running(cx)
+                {
+                    crate::state::palette::restart_agent_session(&key, cx);
+                }
+            }
+            PaletteEvent::Triage => self.start_triage(cx),
             // Need the sync layer or server features the fixture store does not have.
-            PaletteEvent::Triage
-            | PaletteEvent::CopyPromptLink { .. }
-            | PaletteEvent::LinkPullRequest
-            | PaletteEvent::ShowLinkedItems
+            PaletteEvent::CopyPromptLink { .. }
             | PaletteEvent::ShareWithGuest
-            | PaletteEvent::RestartAgentSession
             | PaletteEvent::NewProject
             | PaletteEvent::AddProject(_)
             | PaletteEvent::UseInAnotherApp
             | PaletteEvent::ToggleProjectPin(_)
             | PaletteEvent::PortForward(_) => {}
         }
+    }
+
+    /// Opens "Link pull request" for the thread on screen (`openLinkPullRequestDialog`).
+    fn open_link_pull_request(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(key) = self.shown_key() else { return };
+        let live = StateBridge::is_running(cx);
+        let project = live.then(|| crate::state::palette::link_project(&key, cx)).flatten();
+        let link: LinkPullRequest = if live {
+            Rc::new(move |link, cx: &mut App| crate::state::palette::link_pull_request(&key, link, cx))
+        } else {
+            Rc::new(|_, _: &mut App| Task::ready(Ok(())))
+        };
+        let dialog = cx.new(|cx| LinkPullRequestDialog::new(project, link, window, cx));
+        let subscription = cx.subscribe_in(&dialog, window, |this, _, _: &LinkPullRequestClosed, window, cx| {
+            this.link_dialog = None;
+            this.restore_focus(window, cx);
+            cx.notify();
+        });
+        self.link_dialog = Some((dialog, subscription));
+        cx.notify();
+    }
+
+    /// `useStartTriage`: once the server has the playbook and the scratch project, a No project
+    /// draft opens with the prompt, unless the user went elsewhere meanwhile.
+    fn start_triage(&mut self, cx: &mut Context<Self>) {
+        if !StateBridge::is_running(cx) {
+            return;
+        }
+        let Some(environment) = crate::state::palette::triage_environment(self.shown_key().as_ref(), cx) else { return };
+        let route = self.router.read(cx).current().clone();
+        let task = crate::state::palette::start_triage(environment, cx);
+        cx.spawn(async move |this, cx| {
+            let Some((project, prompt)) = task.await else { return };
+            this.update(cx, |this, cx| {
+                if this.router.read(cx).current() != &route {
+                    return;
+                }
+                let draft = this.data.create_draft(Some(project), cx);
+                let key = crate::composer_draft_store::ComposerDraftKey(format!("draft:{}", draft.0).into());
+                let seeded = crate::composer_draft_store::ComposerDraft { prompt, ..Default::default() };
+                this.data.draft_store(cx).borrow_mut().save(&key, &seeded);
+                this.navigate(Route::Draft(draft), cx);
+            })
+            .ok();
+        })
+        .detach();
     }
 
     fn on_layout_event(&mut self, layout: &Entity<AppSidebarLayout>, event: &LayoutEvent, window: &mut Window, cx: &mut Context<Self>) {
@@ -1263,6 +1320,7 @@ impl Render for AppRoot {
                 })
             }))
             .children(self.expanded.as_ref().map(|(dialog, _)| dialog.clone()))
+            .children(self.link_dialog.as_ref().map(|(dialog, _)| dialog.clone()))
     }
 }
 

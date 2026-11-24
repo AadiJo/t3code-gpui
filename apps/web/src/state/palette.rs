@@ -9,7 +9,14 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::Arc;
 
-use gpui_kit::{App, SharedString};
+use gpui_kit::{App, SharedString, Task};
+use t3code_client_runtime::change_request_links::SourceControlHostKind;
+use t3code_client_runtime::operations::commands::new_command_id;
+use t3code_contracts::rpc::methods::{ProjectsEnsureScratch, ServerPrepareTriage, ServerRefreshProviders};
+use t3code_contracts::{
+    AuthClientMetadataDeviceType, AuthClientPresentationMetadata, ClientSurface, OrchestrationV2Command as Command,
+    OrchestrationV2CommandThreadPullRequestLink, ServerPrepareTriageInput, ServerRefreshProvidersPayload, ThreadPullRequestLinkSource,
+};
 
 use super::shell::LiveShell;
 use super::sidebar_actions::{SidebarOutcome, handle as handle_sidebar};
@@ -17,7 +24,10 @@ use crate::components::command_palette_logic::PaletteEvent;
 use crate::components::command_palette_lookups::{
     CommandPaletteSource, PaletteEnvironment, PaletteFeature, PalettePort, PaletteProject, PaletteSetting, PaletteTheme, PaletteThread,
 };
+use crate::components::pull_request::link_pull_request_dialog::{LinkProject, ResolvedLink};
 use crate::components::sidebar::SidebarEvent;
+use crate::components::ui::toast::{ToastData, ToastKind, Toaster};
+use crate::i18n::t;
 use crate::components::sidebar::model::{EnvironmentId, ProjectRef, SidebarThread, ThreadKey};
 use crate::theme_palette::{Appearance, ThemeDocument};
 use t3code_client_runtime::state::models::ThreadRow;
@@ -30,6 +40,15 @@ struct PaletteData {
     active_thread: Option<ThreadKey>,
     /// The active thread links pull requests or issues.
     active_has_links: bool,
+    /// The active thread's environment has its server config, so links can change
+    /// (`threadPullRequestLinkMode`).
+    active_can_link: bool,
+    /// Some environment has its server config (`Open pull requests`).
+    pull_requests: bool,
+    /// Some environment's server offers issues.
+    issues: bool,
+    /// Where `Triage an issue` runs (`pickTriageEnvironment`), when that server offers it.
+    triage: Option<t3code_contracts::EnvironmentId>,
     environments: Vec<PaletteEnvironment>,
     now_ms: i64,
     memo: HashMap<ThreadKey, (Arc<SidebarThread>, Arc<PaletteThread>)>,
@@ -142,6 +161,16 @@ impl LivePaletteSource {
             row.source.pull_requests.as_ref().is_some_and(|links| !links.is_empty()) || row.source.issues.as_ref().is_some_and(|issues| !issues.is_empty())
         });
         data.now_ms = snapshot.now.0;
+        let environments = shell.environments(cx);
+        let config = |env: &gpui_kit::Entity<super::LiveEnvironment>| env.read(cx).config.clone();
+        let active_environment = snapshot.active_thread.as_ref().map(|key| super::shell::runtime_ids(key).0);
+        data.active_can_link = active_environment
+            .as_ref()
+            .and_then(|id| environments.iter().find(|env| env.read(cx).environment_id() == id))
+            .is_some_and(|env| config(env).is_some());
+        data.pull_requests = environments.iter().any(|env| config(env).is_some());
+        data.issues = environments.iter().any(|env| config(env).is_some_and(|c| c.environment.capabilities.issues == Some(true)));
+        data.triage = triage_environment(snapshot.active_thread.as_ref(), cx);
         data.environments = shell
             .environments(cx)
             .iter()
@@ -204,7 +233,15 @@ impl CommandPaletteSource for LivePaletteSource {
     }
 
     fn supports(&self, feature: PaletteFeature) -> bool {
-        matches!(feature, PaletteFeature::NewProject | PaletteFeature::ProjectSettings)
+        let data = self.data.borrow();
+        match feature {
+            PaletteFeature::NewProject | PaletteFeature::ProjectSettings | PaletteFeature::RestartAgentSession => true,
+            PaletteFeature::LinkPullRequest => data.active_can_link,
+            PaletteFeature::PullRequests => data.pull_requests,
+            PaletteFeature::Issues => data.issues,
+            PaletteFeature::Triage => data.triage.is_some(),
+            _ => false,
+        }
     }
 
     fn active_thread_has_linked_items(&self) -> bool {
@@ -214,6 +251,20 @@ impl CommandPaletteSource for LivePaletteSource {
     fn now_ms(&self) -> i64 {
         self.data.borrow().now_ms
     }
+}
+
+/// The machine `Triage an issue` runs on (`pickTriageEnvironment`): the one on screen, else the
+/// first connected one that offers triage. This client has no primary (local) environment.
+pub fn triage_environment(active: Option<&ThreadKey>, cx: &App) -> Option<t3code_contracts::EnvironmentId> {
+    let environments = super::StateBridge::environments(cx).read(cx).list.clone();
+    let supports = |env: &gpui_kit::Entity<super::LiveEnvironment>| {
+        env.read(cx).config.as_ref().is_some_and(|c| c.environment.capabilities.triage == Some(true))
+    };
+    match active.map(|key| super::shell::runtime_ids(key).0) {
+        Some(id) => environments.iter().find(|env| env.read(cx).environment_id() == &id).filter(|env| supports(env)),
+        None => environments.iter().find(|env| env.read(cx).store.session().is_some() && supports(env)),
+    }
+    .map(|env| env.read(cx).environment_id().clone())
 }
 
 /// What the app must do after a palette event the bridge cannot finish alone.
@@ -226,4 +277,201 @@ pub fn handle(event: &PaletteEvent, cx: &mut App) -> PaletteOutcome {
         PaletteEvent::NewThreadIn(project) => SidebarOutcome::NewThread(Some(project.clone())),
         _ => SidebarOutcome::Done,
     }
+}
+
+fn command_error(error: impl std::fmt::Display) -> SharedString {
+    SharedString::from(error.to_string())
+}
+
+/// The thread project's repository, for resolving a bare pull request number
+/// (`pullRequestLinkProject`).
+pub fn link_project(key: &ThreadKey, cx: &App) -> Option<LinkProject> {
+    let shell = super::StateBridge::shell(cx);
+    let shell = shell.read(cx);
+    let row = shell.row(key)?;
+    let environment = super::StateBridge::environment(&row.environment_id, cx)?;
+    let snapshot = environment.read(cx).shell.snapshot.clone()?;
+    let project = snapshot.projects.iter().find(|p| p.id == row.source.project_id)?;
+    let identity = project.repository_identity.as_ref()?;
+    let repository = identity.display_name.clone().or_else(|| Some(format!("{}/{}", identity.owner.as_ref()?, identity.name.as_ref()?)))?;
+    let kind = identity.provider.as_ref().and_then(|p| SourceControlHostKind::from_wire(p.0.as_ref()))?;
+    let remote = identity.locator.remote_url.clone();
+    let host = parse_remote_host(&remote).unwrap_or_default();
+    Some(LinkProject { kind, host, repository, remote_url: Some(remote), web_url: identity.web_url.clone() })
+}
+
+/// The lower-case host of a git remote, HTTP or SSH (`git@host:owner/name`).
+fn parse_remote_host(remote: &str) -> Option<String> {
+    let rest = remote.split_once("://").map_or(remote, |(_, rest)| rest);
+    let rest = rest.rsplit_once('@').map_or(rest, |(_, rest)| rest);
+    let host = rest.split(['/', ':']).next()?;
+    (!host.is_empty()).then(|| host.to_lowercase())
+}
+
+/// Links a pull request to the thread (`thread.pull-request.link`, source manual).
+pub fn link_pull_request(key: &ThreadKey, link: ResolvedLink, cx: &App) -> Task<Result<(), SharedString>> {
+    let (environment_id, thread_id) = super::shell::runtime_ids(key);
+    let Some(environment) = super::StateBridge::environment(&environment_id, cx) else {
+        return Task::ready(Err(t!("The pull request is not available in this environment.")));
+    };
+    let commands = environment.read(cx).commands.clone();
+    let task = super::StateBridge::spawn(
+        async move {
+            // `normalizeThreadPullRequestKey`: links are keyed by the lower-case host and path.
+            let command = Command::ThreadPullRequestLink(OrchestrationV2CommandThreadPullRequestLink {
+                command_id: new_command_id(),
+                thread_id,
+                host: link.host.to_lowercase(),
+                repository: link.repository.to_lowercase(),
+                number: link.number,
+                url: link.url,
+                source: ThreadPullRequestLinkSource::Manual,
+                repository_web_url: None,
+            });
+            commands.dispatch(command).await.map(|_| ()).map_err(command_error)
+        },
+        cx,
+    );
+    cx.background_executor().spawn(async move { task.await.unwrap_or_else(|| Err(t!("Link update interrupted."))) })
+}
+
+/// `Restart agent session`: detaches the thread's provider sessions, says the next message
+/// starts fresh, then asks the provider for a fresh probe in the thread's checkout.
+pub fn restart_agent_session(key: &ThreadKey, cx: &mut App) {
+    let (environment_id, thread_id) = super::shell::runtime_ids(key);
+    let Some(environment) = super::StateBridge::environment(&environment_id, cx) else { return };
+    let shell = super::StateBridge::shell(cx);
+    let Some(row) = shell.read(cx).row(key).cloned() else { return };
+    let environment = environment.read(cx);
+    let commands = environment.commands.clone();
+    let workspace_root = environment
+        .shell
+        .snapshot
+        .as_ref()
+        .and_then(|snapshot| snapshot.projects.iter().find(|p| p.id == row.source.project_id).map(|p| p.workspace_root.clone()));
+    let link = crate::live::rpc::RpcLink::new(&environment_id, cx);
+    let running = row.runtime.is_some();
+    let input = workspace_root.map(|root| ServerRefreshProvidersPayload {
+        instance_id: Some(row.source.provider_instance_id.clone()),
+        cwd: Some(row.source.worktree_path.clone().unwrap_or(root)),
+        fresh: Some(true),
+        ..Default::default()
+    });
+    let stop = super::StateBridge::spawn(
+        async move { if running { commands.stop_sessions(&thread_id).await.map(|_| ()).map_err(command_error) } else { Ok(()) } },
+        cx,
+    );
+    cx.spawn(async move |cx| {
+        let failed = |error: SharedString, cx: &mut gpui_kit::AsyncApp| {
+            cx.update(|cx| Toaster::push(ToastData::new(ToastKind::Error, t!("Something went wrong.")).description(error), cx));
+        };
+        if let Some(Err(error)) = stop.await {
+            return failed(error, cx);
+        }
+        cx.update(|cx| {
+            Toaster::push(
+                ToastData::new(ToastKind::Success, t!("Agent session will restart")).description(t!("Your next message starts a fresh session.")),
+                cx,
+            )
+        });
+        let (Some(link), Some(input)) = (link, input) else { return };
+        if let Err(error) = link.call::<ServerRefreshProviders>(input).await {
+            failed(error, cx);
+        }
+    })
+    .detach();
+}
+
+/// `TRIAGE_CLI_COMMAND`, the terminal fallback the failure toast offers to copy.
+const TRIAGE_CLI_COMMAND: &str = "npx t3 triage";
+
+fn triage_failed(description: SharedString, cx: &mut App) {
+    Toaster::push(
+        ToastData::new(ToastKind::Error, t!("Could not start triage"))
+            .description(t!("{description} Run {command} in a terminal on that machine instead.", description = description.as_ref(), command = TRIAGE_CLI_COMMAND))
+            .persistent()
+            .action(t!("Copy command"), |_, cx| cx.write_to_clipboard(gpui_kit::ClipboardItem::new_string(TRIAGE_CLI_COMMAND.to_owned()))),
+        cx,
+    );
+}
+
+/// In-app `t3 triage` (`useStartTriage`): the server writes the session files and returns the
+/// playbook prompt, then the environment's No project (scratch) project is found or created and
+/// shown in the shell. Resolves to the project and prompt for a new draft; failures toast.
+pub fn start_triage(environment_id: t3code_contracts::EnvironmentId, cx: &mut App) -> Task<Option<(ProjectRef, String)>> {
+    let Some(environment) = super::StateBridge::environment(&environment_id, cx) else { return Task::ready(None) };
+    if environment.read(cx).config.as_ref().is_none_or(|c| c.scratch_workspace_root.is_none()) {
+        triage_failed(t!("This machine cannot start threads without a project."), cx);
+        return Task::ready(None);
+    }
+    let Some(link) = crate::live::rpc::RpcLink::new(&environment_id, cx) else { return Task::ready(None) };
+    let store = environment.read(cx).store.clone();
+    let presentation = t3code_client_runtime::platform::ClientPresentation::default();
+    let client = AuthClientPresentationMetadata {
+        label: Some(presentation.label),
+        device_type: Some(AuthClientMetadataDeviceType::Desktop),
+        os: Some(presentation.os.to_owned()),
+        surface: Some(ClientSurface::Desktop),
+        app_version: Some(presentation.app_version),
+        ..AuthClientPresentationMetadata::default()
+    };
+    let prepare = link.call::<ServerPrepareTriage>(ServerPrepareTriageInput { client });
+    let scratch = link.call::<ProjectsEnsureScratch>(Default::default());
+    let pending = std::rc::Rc::new(std::cell::Cell::new(None::<u64>));
+    let shown = pending.clone();
+    // A slow source lookup holds the draft back, so say something after 400 ms.
+    let timer = cx.spawn(async move |cx| {
+        cx.background_executor().timer(std::time::Duration::from_millis(400)).await;
+        cx.update(|cx| shown.set(Some(Toaster::push(ToastData::new(ToastKind::Loading, t!("Starting triage…")).persistent(), cx))));
+    });
+    cx.spawn(async move |cx| {
+        let result: Result<(ProjectRef, String), SharedString> = async {
+            let prompt = prepare.await?.prompt;
+            let project_id = scratch.await?.project_id;
+            // Drafts key off the stored project, so wait until the shell has it.
+            let wait = project_id.clone();
+            let loaded = cx
+                .update(|cx| super::StateBridge::spawn(async move { wait_for_project(store, wait).await }, cx))
+                .await
+                .flatten();
+            if loaded.is_none() {
+                return Err(t!("T3 Code could not open a new thread."));
+            }
+            Ok((ProjectRef { environment_id: super::shell::environment_key(&environment_id), project_id: project_key(&project_id) }, prompt))
+        }
+        .await;
+        drop(timer);
+        cx.update(|cx| {
+            if let Some(id) = pending.get() {
+                Toaster::dismiss(id, cx);
+            }
+            match result {
+                Ok(found) => Some(found),
+                Err(error) => {
+                    triage_failed(if error.is_empty() { t!("An error occurred.") } else { error }, cx);
+                    None
+                }
+            }
+        })
+    })
+}
+
+fn project_key(id: &t3code_contracts::ProjectId) -> crate::components::sidebar::model::ProjectId {
+    crate::components::sidebar::model::ProjectId(SharedString::from(id.0.to_string()))
+}
+
+/// Resolves once the environment's shell lists `project_id`, or after 10 s with `None`.
+async fn wait_for_project(store: t3code_client_runtime::state::EnvironmentStore, project_id: t3code_contracts::ProjectId) -> Option<()> {
+    let mut shell = store.shell().subscribe();
+    let found = async {
+        loop {
+            if shell.borrow().snapshot.as_ref().is_some_and(|s| s.projects.iter().any(|p| p.id == project_id)) {
+                return;
+            }
+            if shell.changed().await.is_err() {
+                std::future::pending::<()>().await;
+            }
+        }
+    };
+    tokio::time::timeout(std::time::Duration::from_secs(10), found).await.ok()
 }
