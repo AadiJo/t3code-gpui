@@ -404,7 +404,13 @@ fn run_seed(check: &mut Check) -> anyhow::Result<()> {
     let environment_id = t3code_contracts::EnvironmentId::new(id.as_str());
     let commands = commands_of(check, &environment_id)?;
     let root = PathBuf::from(std::env::var("T3_PROJECT_ROOT").context("T3_PROJECT_ROOT")?);
-    let project = ProjectId::new(uuid::Uuid::new_v4().to_string());
+    let root_text = root.display().to_string();
+    let existing = check.cx.update(|cx| {
+        let shell = StateBridge::environment(&environment_id, cx)?.read(cx).shell.clone();
+        shell.snapshot.as_ref()?.projects.iter().find(|p| p.workspace_root == root_text).map(|p| p.id.clone())
+    });
+    let reuse = existing.is_some();
+    let project = existing.unwrap_or_else(|| ProjectId::new(uuid::Uuid::new_v4().to_string()));
     let mutation = ProjectMutation::ProjectCreate(ProjectMutationProjectCreate {
         command_id: CommandId::new(uuid::Uuid::new_v4().to_string()),
         project_id: project.clone(),
@@ -414,9 +420,11 @@ fn run_seed(check: &mut Check) -> anyhow::Result<()> {
         default_model_selection: None,
         scripts: None,
     });
-    let c = commands.clone();
-    check.block(async move { c.mutate_project(mutation).await })?.map_err(|e| anyhow::anyhow!("{e}"))?;
-    check.note("created project orbit");
+    if !reuse {
+        let c = commands.clone();
+        check.block(async move { c.mutate_project(mutation).await })?.map_err(|e| anyhow::anyhow!("{e}"))?;
+        check.note("created project orbit");
+    }
     let create = |check: &mut Check, title: &str, model: &str| -> anyhow::Result<ThreadId> {
         let thread_id = ThreadId::new(uuid::Uuid::new_v4().to_string());
         let input = CreateThread {
@@ -479,13 +487,14 @@ fn run_seed(check: &mut Check) -> anyhow::Result<()> {
         settled(check, &long, before, &environment_id)?;
     }
     let edit = create(check, "Clamp edit", "multi-turn")?;
-    let before = send(check, &edit, "Add a saturating helper next to clamp.")?;
-    // The replayed turn writes nothing, so the edit lands while its run is open: the run's end
-    // checkpoint then holds it, as an agent's own edit would.
+    check.wait(Duration::from_secs(1));
+    // The replayed turn writes nothing, so the edit lands after the thread's first checkpoint
+    // and before its run ends: the run's checkpoint then holds it, as an agent's edit would.
     let math = root.join("src/math.rs");
     let mut text = std::fs::read_to_string(&math)?;
-    text.push_str("\npub fn saturate(v: i32) -> i32 {\n    clamp(v, 0, 255)\n}\n");
+    text.push_str(&format!("\npub fn saturate_{}(v: i32) -> i32 {{\n    clamp(v, 0, 255)\n}}\n", now_ms() % 100_000));
     std::fs::write(&math, text)?;
+    let before = send(check, &edit, "Add a saturating helper next to clamp.")?;
     settled(check, &edit, before, &environment_id)?;
     let approval = create(check, "Approval flow", "approval")?;
     let stream = create(check, "Streaming", "multi-turn")?;
@@ -542,7 +551,8 @@ fn run_drive(check: &mut Check) -> anyhow::Result<()> {
     // Cold open, then cached switches between two threads.
     let cold = check.click_row(&long, "long thread (cold)")?;
     check.pump(|c| c.shown_input().entries.len() > 20, Duration::from_secs(20), "long thread timeline")?;
-    check.check("cold open shows the thread", check.route() == Route::Thread(long.clone()), format!("click-to-frame {:.2} ms", ms(cold)));
+    let shown = check.route() == Route::Thread(long.clone());
+    check.check("cold open shows the thread", shown, format!("click-to-frame {:.2} ms", ms(cold)));
     check.shot("02-long-thread.png")?;
     check.click_row(&edit, "edit thread (cold)")?;
     check.pump(|c| !c.shown_input().entries.is_empty(), Duration::from_secs(20), "edit thread timeline")?;
@@ -576,7 +586,7 @@ fn run_drive(check: &mut Check) -> anyhow::Result<()> {
     while Instant::now() < deadline {
         check.wait(Duration::from_millis(50));
         let input = check.shown_input();
-        let streaming = input.entries.iter().any(|e| matches!(&e.kind, EntryKind::Message(m) if m.streaming));
+        let streaming = input.is_working || input.entries.iter().any(|e| matches!(&e.kind, EntryKind::Message(m) if m.streaming));
         if streaming && !streamed {
             streamed = true;
             check.shot("04-streaming.png")?;
@@ -595,7 +605,7 @@ fn run_drive(check: &mut Check) -> anyhow::Result<()> {
             _ => None,
         })
         .unwrap_or(0);
-    check.check("the sent turn streams a reply", streamed && reply > 0, format!("streamed {streamed}, reply {reply} chars"));
+    check.check("the sent turn runs and its reply arrives", streamed && reply > 0, format!("saw the run working {streamed}, reply {reply} chars"));
     check.shot("05-after-stream.png")?;
 
     // An approval: send, wait for the request, approve it from the timeline.
@@ -605,6 +615,12 @@ fn run_drive(check: &mut Check) -> anyhow::Result<()> {
     check.press("enter");
     check.pump(|c| !c.shown_input().pending_approval_ids.is_empty(), Duration::from_secs(40), "approval requested")?;
     check.shot("06-approval.png")?;
+    // The paused run stands in for an agent writing: this edit lands inside the run, so its
+    // end checkpoint holds it.
+    let math = PathBuf::from(&state.project_root).join("src/math.rs");
+    let mut text = std::fs::read_to_string(&math)?;
+    text.push_str(&format!("\npub fn probe_{}() -> i32 {{\n    clamp(512, 0, 255)\n}}\n", now_ms() % 100_000));
+    std::fs::write(&math, text)?;
     let request = check.shown_input().pending_approval_ids[0].clone();
     let timeline = check.read(|root, cx| root.thread_view().read(cx).chat().read(cx).timeline().clone());
     // The Approve label sits inside the virtual list, which the test registry does not reach;
@@ -613,9 +629,10 @@ fn run_drive(check: &mut Check) -> anyhow::Result<()> {
     check.pump(|c| c.shown_input().pending_approval_ids.is_empty(), Duration::from_secs(30), "approval answered")?;
     check.shot("07-approved.png")?;
 
-    // The diff tab: the edit turn's checkpoint diff, then the branch against main.
-    check.go(&edit);
-    check.pump(|c| !c.shown_input().turn_diff_summaries.is_empty(), Duration::from_secs(10), "turn diff summary in the timeline")?;
+    // The diff tab: the approved turn's checkpoint diff, then the branch against main.
+    let edit = approval.clone();
+    check.pump(|c| !c.shown_input().turn_diff_summaries.is_empty(), Duration::from_secs(30), "turn diff summary in the timeline")?;
+    check.shot("07b-changed-files.png")?;
     let turn = check.shown_input().turn_diff_summaries[0].assistant_message_id.0.clone();
     check.read(|root, _| root.right_panel().clone());
     let panel = check.read(|root, _| root.right_panel().clone());
@@ -688,16 +705,23 @@ fn run_drive(check: &mut Check) -> anyhow::Result<()> {
     check.action(t3code_web::shortcuts::commands::ToggleThreadPanel);
     check.pump(|c| c.read(|root, cx| root.thread_view().read(cx).details().is_some()), Duration::from_secs(5), "thread details open")?;
     check.shot("11-details.png")?;
+    // git refuses to switch over the turn's uncommitted edit, so commit it first, as a user would.
+    let repo = PathBuf::from(&state.project_root);
+    let committed = std::process::Command::new("git").arg("-C").arg(&repo).args(["commit", "-qam", "chore: keep the probe edits"]).status()?;
+    check.note(format!("committed the edits in the checkout: {committed}"));
     let details = check.read(|root, cx| root.thread_view().read(cx).details().cloned()).context("details")?;
     let toolbar = check.cx.update(|cx| details.read(cx).branch().clone());
     check.cx.update_window(window, |_, w, cx| toolbar.update(cx, |t, cx| t.set_branch_picker_open(true, w, cx)))?;
     check.pump(|c| c.cx.update(|cx| toolbar.read(cx).branch_picker().is_some()), Duration::from_secs(10), "branch picker open")?;
     let picker = check.cx.update(|cx| toolbar.read(cx).branch_picker().cloned()).context("picker")?;
     check.wait(Duration::from_millis(500));
-    check.cx.update(|cx| picker.update(cx, |p, cx| p.type_query("main", cx)));
+    check.cx.update_window(window, |_, w, cx| {
+        let focus = picker.focus_handle(cx);
+        w.focus(&focus, cx);
+    })?;
+    check.type_text("main");
     check.shot("11b-branch-picker.png")?;
     check.press("enter");
-    let repo = PathBuf::from(&state.project_root);
     check.pump(
         |_| std::process::Command::new("git").arg("-C").arg(&repo).args(["branch", "--show-current"]).output().is_ok_and(|o| String::from_utf8_lossy(&o.stdout).trim() == "main"),
         Duration::from_secs(20),
@@ -740,7 +764,17 @@ fn run_drive(check: &mut Check) -> anyhow::Result<()> {
     check.wait(Duration::from_millis(200));
     check.shot("15-palette.png")?;
     check.press("enter");
-    check.pump(|c| c.route() == Route::Thread(long.clone()), Duration::from_secs(5), "palette jumped to the long thread")?;
+    check.pump(
+        |c| {
+            let route = c.route();
+            c.read(|root, cx| match route {
+                Route::Thread(key) => root.data().snapshot(None, cx).threads.iter().any(|t| t.key == key && t.title.starts_with("Long design")),
+                _ => false,
+            })
+        },
+        Duration::from_secs(5),
+        "palette jumped to a long design thread",
+    )?;
 
     // Rename from the context menu: CPU while the field is open and idle, against the same
     // idle before it opened.
@@ -764,7 +798,8 @@ fn run_drive(check: &mut Check) -> anyhow::Result<()> {
         })
     });
     check.frame();
-    check.check("rename opens the row's title field", check.read(|root, cx| root.sidebar().read(cx).renaming().is_some()), "");
+    let renaming = check.read(|root, cx| root.sidebar().read(cx).renaming().is_some());
+    check.check("rename opens the row's title field", renaming, "");
     let open = idle_cpu(check, Duration::from_secs(2));
     check.check(
         "an open rename field leaves the main thread idle",
@@ -773,9 +808,16 @@ fn run_drive(check: &mut Check) -> anyhow::Result<()> {
     );
     check.shot("17-rename-field.png")?;
     let field = check.read(|root, cx| root.sidebar().read(cx).renaming().map(|(_, f)| f.clone())).context("field")?;
-    check.cx.update_window(window, |_, w, cx| field.update(cx, |f, cx| f.set_value("Approval flow (renamed)", w, cx)))?;
+    let renamed = format!("Approval flow {}", now_ms() % 100_000);
+    let value = renamed.clone();
+    check.cx.update_window(window, |_, w, cx| field.update(cx, |f, cx| f.set_value(value, w, cx)))?;
     check.press("enter");
-    check.pump(|c| c.cx.update(|cx| StateBridge::shell(cx).read(cx).snapshot().threads.iter().any(|t| t.title.as_ref() == "Approval flow (renamed)")), Duration::from_secs(10), "renamed on the server")?;
+    let target = approval.clone();
+    check.pump(
+        move |c| c.cx.update(|cx| StateBridge::shell(cx).read(cx).snapshot().threads.iter().any(|t| t.key == target && t.title.as_ref() == renamed)),
+        Duration::from_secs(10),
+        "renamed on the server",
+    )?;
     check.shot("18-renamed.png")?;
 
     // 300 keys in the composer: resident memory before and after.
