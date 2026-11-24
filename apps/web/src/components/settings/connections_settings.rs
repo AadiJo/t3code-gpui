@@ -7,7 +7,8 @@
 //! [`ConnectionRuntime`] and comes back as new state. Without a runtime
 //! (scenes) the page renders its state and commands do nothing.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
 use std::time::{Duration, SystemTime};
 
 use gpui_kit::{
@@ -21,17 +22,18 @@ use t3code_client_runtime::environment::EnvironmentId;
 
 use super::add_environment_dialog::{AddEnvironmentDialog, AddEnvironmentEvent};
 use super::settings_layout::{SettingsSection, page_container};
+use super::settings_search::setting_title;
 use crate::ActiveAppTheme as _;
 use crate::appearance_fonts::{TextSize, weight};
 use crate::components::clerk::{T3ConnectSignIn, T3ConnectSignInEvent};
 use crate::components::cloud::cloud_environment_connect_rows;
-use crate::components::connection_status_dot::ConnectionStatusDot;
 use crate::components::icons::{Icon, IconName, IconSize};
 use crate::components::ui::TextStyleExt as _;
 use crate::components::ui::button::{Button, ButtonSize, ButtonVariant};
 use crate::components::ui::dialog::{DialogSurface, Modal};
 use crate::components::ui::empty::Empty;
-use crate::components::ui::menu::{MenuItem, MenuPopup, dropdown_menu};
+use crate::components::ui::menu::{MenuItem, MenuItemKind, MenuPopup};
+use crate::components::ui::popover::{Popover, PopupHandle};
 use crate::components::ui::switch::{Switch, SwitchSize};
 use crate::components::ui::toast::{ToastData, ToastKind, Toaster};
 use crate::components::ui::tooltip::tooltip;
@@ -82,6 +84,10 @@ pub struct ConnectionsSettings {
     routes_open: HashSet<EnvironmentId>,
     diagnosis_open: HashSet<EnvironmentId>,
     removing: HashSet<EnvironmentId>,
+    /// Rows whose "Permissions" is open, with what the session check found.
+    permissions: HashMap<EnvironmentId, super::connections_settings_access::SessionCheck>,
+    /// The Load balancing fold is open.
+    load_balancing_open: bool,
     dialog: Option<PageDialog>,
     /// Ticks once a second while a row shows a retry countdown.
     ticker: Option<Task<()>>,
@@ -106,6 +112,8 @@ impl ConnectionsSettings {
             routes_open: HashSet::new(),
             diagnosis_open: HashSet::new(),
             removing: HashSet::new(),
+            permissions: HashMap::new(),
+            load_balancing_open: false,
             dialog: None,
             ticker: None,
             _subscriptions: vec![observe],
@@ -252,6 +260,173 @@ impl ConnectionsSettings {
         .detach();
     }
 
+    /// `LoadBalancingSettings`: a folded card with the on/off switch and a
+    /// preference per environment, shown with two or more enabled
+    /// environments. The choices are client settings on this device.
+    fn render_load_balancing(&self, environments: &[EnvironmentState], cx: &mut Context<Self>) -> Option<AnyElement> {
+        use crate::hooks::use_settings::ClientSettingsStore;
+        // `preferences`: Prefer, Normal, Less often, Manual only.
+        const WEIGHTS: [u64; 4] = [100, 50, 25, 0];
+        let preference = |weight: Option<u64>| match weight {
+            None | Some(50) => 50,
+            Some(0) => 0,
+            Some(w) if w < 50 => 25,
+            Some(_) => 100,
+        };
+        let environments: Vec<&EnvironmentState> =
+            environments.iter().filter(|env| env.entry.enabled && present_phase(env) != crate::connection::presentation::PresentedPhase::Unsupported).collect();
+        if environments.len() < 2 {
+            return None;
+        }
+        let theme = cx.app_theme();
+        let c = &theme.colors;
+        let sp = |n: f32| theme.sp(n);
+        let settings = ClientSettingsStore::get(cx);
+        let enabled = settings.load_balancing_enabled;
+        let weights = settings.load_balancing_weights.clone();
+        let summary: SharedString = if enabled {
+            let parts: Vec<String> = environments
+                .iter()
+                .filter_map(|env| {
+                    let label = env.entry.label.clone();
+                    match preference(weights.get(env.id().as_str()).copied()) {
+                        100 => Some(t!("{environment} prefer", environment = label).to_string()),
+                        25 => Some(t!("{environment} less often", environment = label).to_string()),
+                        0 => Some(t!("{environment} manual only", environment = label).to_string()),
+                        _ => None,
+                    }
+                })
+                .collect();
+            SharedString::from(parts.join(" · "))
+        } else {
+            t!("Off", context = "load balancing is turned off")
+        };
+        let open = self.load_balancing_open;
+        let labels = vec![t!("Prefer"), t!("Normal", context = "load balancing preference"), t!("Less often"), t!("Manual only")];
+        let divider = with_alpha(c.border, 0.5);
+        let header = div()
+            .flex()
+            .flex_wrap()
+            .items_center()
+            .gap_x(sp(4.))
+            .px(sp(4.))
+            .child(
+                div()
+                    .id("load-balancing-toggle")
+                    .flex()
+                    .flex_1()
+                    .min_w_0()
+                    .min_h(sp(11.))
+                    .items_center()
+                    .gap(sp(2.))
+                    .py(sp(2.))
+                    .cursor_pointer()
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.load_balancing_open = !this.load_balancing_open;
+                        cx.notify();
+                    }))
+                    .child(Icon::new(if open { IconName::ChevronDown } else { IconName::ChevronRight }).size(IconSize::Custom(sp(4.))).color(c.muted_foreground))
+                    .child(div().flex_none().ui_text(theme, TextSize::Sm, weight::MEDIUM).text_color(c.foreground()).child(setting_title("load-balancing")))
+                    .when(!summary.is_empty(), |d| {
+                        d.child(div().min_w_0().truncate().ui_text(theme, TextSize::Xs, weight::NORMAL).text_color(c.muted_foreground).child(summary))
+                    }),
+            )
+            .child(
+                div().ml_auto().flex().items_center().py(sp(1.5)).child(
+                    Switch::new("load-balancing-switch", enabled)
+                        .on_change(|checked, _, cx| ClientSettingsStore::update(cx, |s| s.load_balancing_enabled = checked)),
+                ),
+            );
+        let body = open.then(|| {
+            let rows = environments.iter().map(|env| {
+                let env_id = env.id().as_str().to_owned();
+                let current = WEIGHTS.iter().position(|w| *w == preference(weights.get(&env_id).copied())).unwrap_or(1);
+                let select = crate::components::ui::select::Select::new(SharedString::from(format!("load-weight-{env_id}")), labels.clone(), current, move |ix, _, cx| {
+                    let key = env_id.clone();
+                    ClientSettingsStore::update(cx, |s| {
+                        s.load_balancing_weights.insert(key, WEIGHTS[ix]);
+                    })
+                })
+                .size(crate::components::ui::select::SelectSize::Xs);
+                div()
+                    .border_t_1()
+                    .border_color(divider)
+                    .flex()
+                    .items_center()
+                    .gap(sp(3.))
+                    .px(sp(4.))
+                    .py(sp(2.5))
+                    .child(super::settings_controls::environment_machine_icon(
+                        super::settings_controls::environment_machine_kind(env.id(), cx),
+                        sp(4.),
+                        c.muted_foreground,
+                    ))
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .flex_1()
+                            .min_w_0()
+                            .child(div().truncate().ui_text(theme, TextSize::Sm, weight::MEDIUM).text_color(c.foreground()).child(env.entry.label.clone()))
+                            .child(div().truncate().ui_text(theme, TextSize::Xs, weight::NORMAL).text_color(c.muted_foreground).child(transport_label(env))),
+                    )
+                    .child(div().w(sp(32.)).flex_none().child(select))
+            });
+            div()
+                .border_t_1()
+                .border_color(divider)
+                .child(
+                    div().px(sp(4.)).py(sp(2.5)).ui_text(theme, TextSize::Xs, weight::NORMAL).text_color(c.muted_foreground).child(t!(
+                        "New threads in shared projects start on the machine with the most free CPU and memory, weighted by each machine's preference."
+                    )),
+                )
+                .children(rows.collect::<Vec<_>>())
+        });
+        Some(
+            div()
+                .id("load-balancing")
+                .rounded(theme.radii.xl)
+                .border_1()
+                .border_color(with_alpha(c.border, 0.6))
+                .bg(with_alpha(c.card(), 0.4))
+                .shadow(theme.shadows.xs5.clone())
+                .text_color(c.foreground())
+                .child(header)
+                .children(body)
+                .into_any_element(),
+        )
+    }
+
+    /// Opens or closes a row's "Permissions"; opening asks the environment
+    /// what this session may do.
+    fn toggle_permissions(&mut self, id: EnvironmentId, cx: &mut Context<Self>) {
+        use super::connections_settings_access::{SessionCheck, check_session};
+        if self.permissions.remove(&id).is_some() {
+            cx.notify();
+            return;
+        }
+        let connected = self.state.read(cx).environment(&id).is_some_and(|env| present_phase(env) == crate::connection::presentation::PresentedPhase::Connected);
+        let check = connected.then(|| check_session(&id, cx)).flatten();
+        self.permissions.insert(id.clone(), if check.is_some() { SessionCheck::Checking } else { SessionCheck::Unavailable });
+        if let Some(check) = check {
+            cx.spawn(async move |this, cx| {
+                let result = check.await;
+                this.update(cx, |this, cx| {
+                    if let Some(slot) = this.permissions.get_mut(&id) {
+                        *slot = match result {
+                            Ok(state) => SessionCheck::Done(Box::new(state)),
+                            Err(_) => SessionCheck::Failed,
+                        };
+                        cx.notify();
+                    }
+                })
+                .ok();
+            })
+            .detach();
+        }
+        cx.notify();
+    }
+
     fn retry(&self, id: &EnvironmentId, cx: &App) {
         if let Some(runtime) = cx.try_global::<ConnectionRuntime>() {
             runtime.retry(id);
@@ -286,6 +461,17 @@ impl ConnectionsSettings {
         }
         if self.routes_open.contains(env.id()) {
             detail.push(self.render_routes(env, cx));
+        }
+        if let Some(session) = self.permissions.get(env.id()) {
+            let theme = cx.app_theme();
+            detail.push(
+                div()
+                    .mt(theme.sp(2.))
+                    .border_t_1()
+                    .border_color(with_alpha(theme.colors.border, 0.5))
+                    .child(super::connections_settings_access::session_permissions(session, true, cx))
+                    .into_any_element(),
+            );
         }
         let theme = cx.app_theme();
         let c = &theme.colors;
@@ -354,7 +540,25 @@ impl ConnectionsSettings {
                 .test_support()
                 .into_any_element(),
         );
-        let dot = ConnectionStatusDot::for_phase(phase, Some(status_text(env)), SharedString::from(format!("env-dot-{key}")));
+        subtitle.push(div().flex_none().child("·").into_any_element());
+        let permissions_open = self.permissions.contains_key(&id);
+        let permissions_id = id.clone();
+        subtitle.push(
+            div()
+                .id(SharedString::from(format!("env-permissions-toggle-{key}")))
+                .flex()
+                .flex_none()
+                .items_center()
+                .gap(px(2.))
+                .cursor_pointer()
+                .text_color(c.muted_foreground)
+                .hover(|s| s.text_color(c.foreground()))
+                .on_click(cx.listener(move |this, _, _, cx| this.toggle_permissions(permissions_id.clone(), cx)))
+                .child(t!("Permissions"))
+                .child(chevron(permissions_open, c.muted_foreground))
+                .test_support()
+                .into_any_element(),
+        );
         let identity = div()
             .flex()
             .flex_col()
@@ -365,7 +569,6 @@ impl ConnectionsSettings {
                     .flex()
                     .items_center()
                     .gap(sp(1.5))
-                    .child(dot)
                     .child(
                         div()
                             .truncate()
@@ -458,14 +661,46 @@ impl ConnectionsSettings {
                             }),
                     ),
             )
-            .child(dropdown_menu(
+            .child(Popover::new(
                 SharedString::from(format!("env-menu-{key}")),
                 Button::new(SharedString::from(format!("env-more-{key}")))
                     .variant(ButtonVariant::GhostMuted)
                     .size(ButtonSize::IconXs)
                     .icon(IconName::Ellipsis)
                     .disabled(removing),
-                move |_, _| environment_menu(menu_entity.clone(), &menu_env, routes_open, trace_id.clone()),
+                move |handle, window, cx| {
+                    // The "Icon" submenu (`EnvironmentIconMenu`) opens beside the menu on hover or click.
+                    let icon_open = window.use_keyed_state(SharedString::from(format!("env-icon-open-{}", menu_env.id().as_str())), cx, |_, _| false);
+                    let showing = *icon_open.read(cx);
+                    let kind = super::settings_controls::environment_machine_kind(menu_env.id(), cx);
+                    let opener = icon_open.clone();
+                    let icon_item = MenuItem::new(t!("Icon"))
+                        .icon(super::settings_controls::machine_icon_source(kind))
+                        .kind(MenuItemKind::Submenu)
+                        .on_hover(move |hovered, _, cx| {
+                            if *hovered {
+                                opener.update(cx, |open, cx| {
+                                    *open = true;
+                                    cx.notify();
+                                });
+                            }
+                        });
+                    let clicked = icon_open.clone();
+                    let icon_item = icon_item.on_select(move |_, cx| clicked.update(cx, |open, _| *open = true));
+                    let (dismiss_handle, keep) = (handle.clone(), icon_open.clone());
+                    let menu = environment_menu(menu_entity.clone(), &menu_env, routes_open, trace_id.clone(), icon_item, icon_open.clone())
+                        .on_dismiss(move |_, cx| {
+                            if !*keep.read(cx) {
+                                dismiss_handle.close(cx);
+                            }
+                        });
+                    let theme = cx.app_theme();
+                    let submenu = showing.then(|| {
+                        // Base UI's sub popup: inline-end, aligned to its trigger row 5px up.
+                        div().mt(px(1.) + theme.sp(1.) - px(5.)).child(environment_icon_menu(menu_env.id().clone(), handle.clone(), icon_open.clone(), cx))
+                    });
+                    div().flex().items_start().child(menu).children(submenu).into_any_element()
+                },
             ));
         div()
             .id(SharedString::from(format!("env-row-{key}")))
@@ -478,11 +713,12 @@ impl ConnectionsSettings {
                     .flex()
                     .items_center()
                     .gap(sp(3.))
-                    .child(
-                        Icon::new(IconName::Server)
-                            .size(IconSize::Md)
-                            .color(if enabled { c.muted_foreground } else { with_alpha(c.muted_foreground, 0.6) }),
-                    )
+                    // `EnvironmentRow`: the machine icon, dimmed with the identity when switched off.
+                    .child(super::settings_controls::environment_machine_icon(
+                        super::settings_controls::environment_machine_kind(&id, cx),
+                        sp(4.),
+                        if enabled { c.muted_foreground } else { with_alpha(c.muted_foreground, 0.6) },
+                    ))
                     .child(div().flex().flex_col().flex_1().min_w_0().child(identity).children(below))
                     .child(controls),
             )
@@ -808,18 +1044,93 @@ fn environment_mcp_url(env: &EnvironmentState) -> Option<String> {
     })
 }
 
-/// The row's "More actions" menu.
+/// `ENVIRONMENT_MACHINE_KIND_LABELS`.
+fn machine_kind_label(kind: t3code_contracts::EnvironmentMachineKind) -> SharedString {
+    use t3code_contracts::EnvironmentMachineKind as Kind;
+    match kind {
+        Kind::Server => t!("Server"),
+        Kind::Cloud => t!("Cloud VM"),
+        Kind::Linux => t!("Linux/WSL"),
+        Kind::Desktop => t!("Desktop"),
+        Kind::Laptop => t!("Laptop"),
+        Kind::MacMini => t!("Mini PC"),
+        Kind::MacStudio => t!("Workstation"),
+        _ => t!("Server"),
+    }
+}
+
+/// `EnvironmentIconMenu`'s popup: every machine kind, the detected one
+/// marked; picking the detected kind clears the override.
+fn environment_icon_menu(id: EnvironmentId, handle: PopupHandle, open: Entity<bool>, cx: &App) -> MenuPopup {
+    use t3code_contracts::EnvironmentMachineKind as Kind;
+    let config = crate::hooks::use_settings::ServerSettingsStore::config(cx, &id);
+    let reported = config.as_ref().and_then(|c| c.environment.platform.machine);
+    let detected = reported.unwrap_or(Kind::Server);
+    let resolved = super::settings_controls::environment_machine_kind(&id, cx);
+    let mut menu = MenuPopup::new();
+    let locked = config.is_none();
+    if locked {
+        menu = menu.item(MenuItem::new(t!("Connect to this environment to change its icon.")).disabled(true)).separator();
+    }
+    for kind in [Kind::Server, Kind::Cloud, Kind::Linux, Kind::Desktop, Kind::Laptop, Kind::MacMini, Kind::MacStudio] {
+        let (id, handle, open) = (id.clone(), handle.clone(), open.clone());
+        let mut item = MenuItem::new(machine_kind_label(kind))
+            .icon(super::settings_controls::machine_icon_source(kind))
+            .icon_size(IconSize::Custom(cx.app_theme().sp(3.5)))
+            .kind(MenuItemKind::Radio(kind == resolved))
+            .disabled(locked);
+        if kind == detected {
+            item = item.detail(if reported.is_some() {
+                t!("detected", context = "machine kind detected automatically")
+            } else {
+                t!("default", context = "machine kind used when none is detected")
+            });
+        }
+        menu = menu.item(item.on_select(move |_, cx| {
+            open.update(cx, |open, _| *open = false);
+            handle.close(cx);
+            let patch = t3code_contracts::ClientServerSettingsPatch { environment_icon: Some((kind != detected).then_some(kind)), ..Default::default() };
+            let save = crate::hooks::use_settings::ServerSettingsStore::update(id.clone(), patch, cx);
+            cx.spawn(async move |cx| {
+                if let Err(error) = save.await {
+                    cx.update(|cx| Toaster::push(ToastData::new(ToastKind::Error, t!("Setting not saved")).description(error.0.to_string()), cx));
+                }
+            })
+            .detach();
+        }));
+    }
+    menu
+}
+
+/// The row's "More actions" menu; `icon_item` opens the Icon submenu, and
+/// hovering any other row closes it.
 fn environment_menu(
     this: WeakEntity<ConnectionsSettings>,
     env: &EnvironmentState,
     routes_open: bool,
     trace_id: Option<String>,
+    icon_item: MenuItem,
+    icon_open: Entity<bool>,
 ) -> MenuPopup {
     let id = env.id().clone();
     let label = SharedString::from(env.entry.label.clone());
     let mcp_url = environment_mcp_url(env);
+    let close_icon = move |hovered: &bool, _: &mut Window, cx: &mut App| {
+        if *hovered {
+            icon_open.update(cx, |open, cx| {
+                *open = false;
+                cx.notify();
+            });
+        }
+    };
+    let close_icon = Rc::new(close_icon);
+    let hover = |item: MenuItem| {
+        let close = close_icon.clone();
+        item.on_hover(move |hovered, window, cx| close(hovered, window, cx))
+    };
     let mut menu = MenuPopup::new()
-        .item(MenuItem::new(if routes_open { t!("Hide routes") } else { t!("Routes") }).icon(IconName::Route).on_select({
+        .item(icon_item)
+        .item(hover(MenuItem::new(if routes_open { t!("Hide routes") } else { t!("Routes") }).icon(IconName::Route)).on_select({
             let (this, id) = (this.clone(), id.clone());
             move |_, cx| {
                 this.update(cx, |this, cx| {
@@ -832,16 +1143,16 @@ fn environment_menu(
             }
         }));
     if let Some(url) = mcp_url {
-        menu = menu.item(MenuItem::new(t!("Copy MCP URL")).on_select(move |_, cx| {
+        menu = menu.item(hover(MenuItem::new(t!("Copy MCP URL"))).on_select(move |_, cx| {
             cx.write_to_clipboard(ClipboardItem::new_string(url.clone()));
         }));
     }
     if let Some(trace_id) = trace_id {
-        menu = menu.item(MenuItem::new(t!("Copy trace ID")).on_select(move |_, cx| {
+        menu = menu.item(hover(MenuItem::new(t!("Copy trace ID"))).on_select(move |_, cx| {
             cx.write_to_clipboard(ClipboardItem::new_string(trace_id.clone()));
         }));
     }
-    menu.separator().item(MenuItem::new(t!("Remove from this device…")).destructive().on_select(move |_, cx| {
+    menu.separator().item(hover(MenuItem::new(t!("Remove from this device…")).destructive()).on_select(move |_, cx| {
         this.update(cx, |this, cx| {
             this.dialog = Some(PageDialog::RemoveEnvironment { id: id.clone(), label: label.clone() });
             cx.notify();
@@ -855,6 +1166,7 @@ impl Render for ConnectionsSettings {
         self.sync_ticker(cx);
         let environments: Vec<EnvironmentState> = self.state.read(cx).environments.clone();
         let rows: Vec<AnyElement> = environments.iter().map(|env| self.render_row(env, cx)).collect();
+        let load_balancing = self.render_load_balancing(&environments, cx);
         let cloud_rows = cloud_environment_connect_rows(&self.state, cx);
         let dialog = self.render_dialog(cx);
         let theme = cx.app_theme();
@@ -880,6 +1192,7 @@ impl Render for ConnectionsSettings {
         page_container(cx)
             .text_color(c.foreground())
             .child(section)
+            .children(load_balancing)
             .children(dialog)
     }
 }
