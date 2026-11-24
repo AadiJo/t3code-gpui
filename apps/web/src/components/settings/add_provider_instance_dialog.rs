@@ -17,7 +17,7 @@ use t3code_contracts::{
 };
 
 use super::provider_driver_meta::{DRIVERS, FieldControl, driver_meta, local_acp_fields};
-use super::provider_settings_panel::{provider_instance_icon, toast_error};
+use super::provider_settings_panel::toast_error;
 use super::provider_accent_color_picker::ProviderAccentColorPicker;
 use super::server_settings_controls::{Fields, field_input, hint, tinted};
 use super::server_settings_data::ServerPanelsModel;
@@ -276,7 +276,7 @@ impl AddProviderInstanceDialog {
                 .when(!allowed, |d| d.opacity(0.5))
                 .when(allowed && !selected, |d| d.cursor_pointer().hover(|d| d.bg(with_alpha(c.foreground(), 0.05))))
                 .when(allowed, |d| d.on_click(cx.listener(move |this, _, _, cx| this.pick_driver(driver, cx))))
-                .child(provider_instance_icon(driver, label, None, cx))
+                .child(super::provider_settings_panel::provider_instance_icon_sized(driver, label, None, theme.sp(4.), cx))
                 .child(div().flex_1().min_w_0().truncate().ui_text(theme, TextSize::Sm, weight::MEDIUM).text_color(c.foreground()).child(label))
                 .when(selected, |d| {
                     d.child(
@@ -534,11 +534,14 @@ impl Render for AddProviderInstanceDialog {
                     .items_center()
                     .gap(theme.sp(2.))
                     .min_w_0()
-                    .px(theme.sp(2.5))
-                    .py(theme.sp(2.))
+                    // `ring-1 ring-inset` takes no space: every cell has a 1px border and gives it back from its padding.
+                    .px(theme.sp(2.5) - px(1.))
+                    .py(theme.sp(2.) - px(1.))
                     .rounded(theme.radii.lg)
                     .cursor_pointer()
-                    .when(active, |d| d.bg(c.card()).border_1().border_color(with_alpha(c.foreground(), 0.05)))
+                    .border_1()
+                    .border_color(gpui_kit::transparent_black())
+                    .when(active, |d| d.bg(c.card()).border_color(with_alpha(c.foreground(), 0.05)))
                     .when(!active, |d| d.hover(|d| d.bg(c.card())))
                     .on_click(cx.listener(move |this, _, _, cx| this.go_to(ix, cx)))
                     .child(
@@ -589,15 +592,32 @@ impl Render for AddProviderInstanceDialog {
         };
         dialog_glass(theme)
             .id("add-provider-dialog")
+            .relative()
             .w(theme.rem(48.))
+            // `DialogPopup`'s close button.
+            .child(
+                div().absolute().top(theme.sp(2.)).right(theme.sp(2.)).child(
+                    Button::new("add-provider-close")
+                        .variant(ButtonVariant::Ghost)
+                        .size(ButtonSize::Icon)
+                        .icon(IconName::X)
+                        .on_click(cx.listener(|_, _, _, cx| cx.emit(AddProviderInstanceEvent::Close))),
+                ),
+            )
             .child(
                 div()
                     .flex()
                     .flex_col()
-                    .gap(theme.sp(3.))
+                    // `DialogHeader`: `gap-2 p-6`, `pb-3` above a panel; the title is `leading-snug`.
+                    .gap(theme.sp(2.))
                     .p(theme.sp(6.))
-                    .pb(theme.sp(4.))
-                    .child(div().ui_text(theme, TextSize::Xl, weight::SEMIBOLD).child(t!("Add provider")))
+                    .pb(theme.sp(3.))
+                    .child(
+                        div()
+                            .ui_text(theme, TextSize::Xl, weight::SEMIBOLD)
+                            .line_height(px(TextSize::Xl.size(theme.fonts.interface) * 1.375))
+                            .child(t!("Add provider")),
+                    )
                     .child(div().ui_text(theme, TextSize::Sm, weight::NORMAL).text_color(c.muted_foreground).child(t!(
                         "Add an account or configure a provider on {environment}.",
                         environment = environment
@@ -608,7 +628,8 @@ impl Render for AddProviderInstanceDialog {
             .child(
                 div()
                     .px(theme.sp(6.))
-                    .py(theme.sp(5.))
+                    // `ring-1` draws outside layout; the hairlines here give their 1px back.
+                    .py(theme.sp(5.) - px(1.))
                     .bg(with_alpha(c.foreground(), 0.02))
                     .border_t_1()
                     .border_b_1()
