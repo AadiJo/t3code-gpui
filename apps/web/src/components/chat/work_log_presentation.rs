@@ -3,11 +3,17 @@
 //! and `TimelineWorkEntryRow.logic.ts` the timeline rows use.
 
 use crate::components::icons::IconName;
+use crate::work_entry_labels::{GroupAction, GroupKind, WorkSource, group_kind, summarize_tool_group as web_summarize_tool_group};
 use gpui_kit::SharedString;
 
 use super::{
     timeline_entries::{DynamicToolKind, TodoState, ToolStatus, WorkItem, WorkLogEntry},
 };
+
+/// Every entry's web presentation, when all of them carry one (live data).
+fn sources_of(entries: &[WorkLogEntry]) -> Option<Vec<&WorkSource>> {
+    entries.iter().map(|entry| entry.source.as_deref()).collect()
+}
 
 /// What a tool call did, for grouping and summaries (`ToolGroupAction`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -66,6 +72,23 @@ impl SummaryKind {
 
 /// The action of one entry (`toolGroupAction`).
 pub fn tool_action(entry: &WorkLogEntry) -> ToolAction {
+    if let Some(source) = &entry.source {
+        return match source.action {
+            GroupAction::LinkPr | GroupAction::UnlinkPr | GroupAction::ListPrs | GroupAction::WatchPr | GroupAction::UnwatchPr => {
+                ToolAction::PullRequest
+            }
+            GroupAction::Read => ToolAction::Read,
+            GroupAction::Edit => ToolAction::Edit,
+            GroupAction::Command => ToolAction::Command,
+            GroupAction::ThreadCreate => ToolAction::ThreadCreate,
+            GroupAction::Browser => ToolAction::Browser,
+            GroupAction::Device => ToolAction::Device,
+            GroupAction::CodeSearch => ToolAction::CodeSearch,
+            GroupAction::Search => ToolAction::Search,
+            GroupAction::Other => ToolAction::Other,
+            GroupAction::Update => ToolAction::Update,
+        };
+    }
     match &entry.item {
         WorkItem::Command { .. } => ToolAction::Command,
         WorkItem::FileChange { .. } => ToolAction::Edit,
@@ -87,6 +110,9 @@ pub fn tool_action(entry: &WorkLogEntry) -> ToolAction {
 /// Whether an entry reads as a tool call or a thought rather than a notice
 /// (`workLogEntryIsToolLike`: tone tool or thinking).
 pub fn is_tool_like(entry: &WorkLogEntry) -> bool {
+    if let Some(source) = &entry.source {
+        return source.tool_like;
+    }
     !matches!(
         entry.item,
         WorkItem::SystemNotice { .. }
@@ -100,6 +126,9 @@ pub fn is_tool_like(entry: &WorkLogEntry) -> bool {
 
 /// Whether the entry should read as failed (`workEntryDisplayIndicatesToolFailure`).
 pub fn indicates_failure(entry: &WorkLogEntry) -> bool {
+    if let Some(source) = &entry.source {
+        return source.display_failure;
+    }
     match &entry.item {
         WorkItem::Command { exit_code: Some(code), .. } if *code != 0 => true,
         WorkItem::Error { .. } => true,
@@ -110,6 +139,9 @@ pub fn indicates_failure(entry: &WorkLogEntry) -> bool {
 /// Completed calls with nothing to show stay out of groups unless live
 /// (`workEntryIsVisibleInGroup`).
 pub fn is_visible_in_group(entry: &WorkLogEntry) -> bool {
+    if let Some(source) = &entry.source {
+        return source.visible_in_group(false);
+    }
     match &entry.item {
         WorkItem::Reasoning { text } => !text.trim().is_empty(),
         _ => true,
@@ -135,6 +167,17 @@ pub fn entry_icon(entry: &WorkLogEntry) -> IconName {
 
 /// The group header icon (`toolGroupSummaryKind`).
 pub fn summary_kind(entries: &[WorkLogEntry]) -> SummaryKind {
+    if let Some(sources) = sources_of(entries) {
+        return match group_kind(&sources) {
+            GroupKind::PullRequest => SummaryKind::Action(ToolAction::PullRequest),
+            GroupKind::Action(_) => SummaryKind::Action(tool_action(&entries[0])),
+            GroupKind::DynamicTool => SummaryKind::DynamicTool,
+            GroupKind::Reasoning => SummaryKind::Reasoning,
+            GroupKind::AgentTool => SummaryKind::AgentTool,
+            GroupKind::ToneTool => SummaryKind::ToneTool,
+            GroupKind::Other | GroupKind::Mixed => SummaryKind::Mixed,
+        };
+    }
     let tools: Vec<_> = entries.iter().filter(|e| !matches!(e.item, WorkItem::Reasoning { .. })).collect();
     if !entries.is_empty() && tools.is_empty() {
         return SummaryKind::Reasoning;
@@ -220,6 +263,9 @@ fn join_clauses(items: &[String]) -> String {
 
 /// "Read 3 files and ran 2 commands" (`summarizeToolGroup`).
 pub fn summarize_tool_group(entries: &[WorkLogEntry]) -> SharedString {
+    if let Some(sources) = sources_of(entries) {
+        return web_summarize_tool_group(&sources).0;
+    }
     let tools: Vec<&WorkLogEntry> = entries.iter().filter(|e| !matches!(e.item, WorkItem::Reasoning { .. })).collect();
     if !entries.is_empty() && tools.is_empty() {
         return if entries.len() == 1 { "Thought".into() } else { format!("Thought (×{})", entries.len()).into() };
@@ -267,6 +313,9 @@ fn basename(path: &str) -> &str {
 
 /// The one-line label of an entry (`workEntryDisplayLabel`).
 pub fn entry_label(entry: &WorkLogEntry) -> SharedString {
+    if let Some(source) = &entry.source {
+        return source.display_label.clone();
+    }
     match &entry.item {
         WorkItem::Reasoning { text } => {
             let thought = text.split_whitespace().collect::<Vec<_>>().join(" ");
@@ -309,6 +358,9 @@ pub fn entry_label(entry: &WorkLogEntry) -> SharedString {
 
 /// The label of a live entry: "Running pnpm", "Thinking" (`liveWorkEntryLabel`).
 pub fn live_entry_label(entry: &WorkLogEntry, active: bool) -> SharedString {
+    if let Some(source) = &entry.source {
+        return source.live_label(active);
+    }
     let status = if active { entry.status } else if entry.status == ToolStatus::InProgress { ToolStatus::Completed } else { entry.status };
     match &entry.item {
         WorkItem::Reasoning { text } if text.trim().is_empty() => {

@@ -219,6 +219,9 @@ pub struct WorkLogEntry {
     pub item: WorkItem,
     /// Set when a steer superseded the attempt this entry belongs to.
     pub superseded_attempt: Option<AttemptId>,
+    /// The web's presentation of the turn item this entry came from (labels, action,
+    /// failure, summaries). Live entries carry it; fixtures leave it `None`.
+    pub source: Option<std::sync::Arc<crate::work_entry_labels::WorkSource>>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

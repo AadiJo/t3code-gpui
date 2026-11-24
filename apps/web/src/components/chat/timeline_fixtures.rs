@@ -105,6 +105,7 @@ impl Builder {
                 label: s(label),
                 item,
                 superseded_attempt: attempt.map(AttemptId::new),
+                source: None,
             }),
         });
         self

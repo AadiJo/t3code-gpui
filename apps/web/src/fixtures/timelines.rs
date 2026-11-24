@@ -96,6 +96,7 @@ impl TimelineBuilder {
                 label: label.to_string().into(),
                 item,
                 superseded_attempt: None,
+                source: None,
             }),
         });
         id

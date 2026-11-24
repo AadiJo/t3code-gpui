@@ -587,7 +587,12 @@ pub fn derive_timeline_rows(input: &TimelineInput, expansion: &TimelineExpansion
                     }
                 } else if visible.len() == 1 && is_tool_like(&visible[0]) {
                     let only = visible[0].clone();
-                    let display_label = (tool_action(&only) == ToolAction::Edit).then(|| summarize_tool_group(&visible));
+                    // An edit reads as its group summary, anything else as `singleToolCallLabel`.
+                    let display_label = if tool_action(&only) == ToolAction::Edit {
+                        Some(summarize_tool_group(&visible))
+                    } else {
+                        only.source.as_ref().map(|source| source.single_call_label.clone())
+                    };
                     rows.push(row(entry.id.0.clone(), Some(entry.created_at), RowKind::Work { entry: only, display_label }));
                 } else if !visible.is_empty() {
                     let expanded = expansion.work_groups.contains(&group);
@@ -600,7 +605,10 @@ pub fn derive_timeline_rows(input: &TimelineInput, expansion: &TimelineExpansion
                             run_id: work.run_id.clone(),
                             count: visible.len(),
                             expanded,
-                            summary: summarize_tool_group(&visible),
+                            summary: match visible.as_slice() {
+                                [single] if !is_tool_like(single) => single.label.clone(),
+                                _ => summarize_tool_group(&visible),
+                            },
                             summary_kind: summary_kind(&visible),
                             has_failure,
                         },
