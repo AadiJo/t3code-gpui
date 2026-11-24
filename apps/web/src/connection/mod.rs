@@ -824,6 +824,7 @@ async fn detect_wake(registry: ConnectionRegistry) {
         let now = SystemTime::now();
         if now.duration_since(last).unwrap_or_default() > WAKE_GAP {
             tracing::info!("woke from sleep; waking supervisors");
+            t3code_client_runtime::rpc::http::reset_http_pool();
             if runtime_metrics_enabled() {
                 eprintln!("runtime-wake t={} gap_ms={}", epoch_ms(), now.duration_since(last).unwrap_or_default().as_millis());
             }
@@ -839,6 +840,7 @@ async fn detect_wake(registry: ConnectionRegistry) {
                 continue;
             }
             tracing::info!(?status, "network changed");
+            t3code_client_runtime::rpc::http::reset_http_pool();
             registry.broadcast(SupervisorSignal::NetworkChanged(status));
             if route.is_some() {
                 registry.broadcast(SupervisorSignal::Wakeup);

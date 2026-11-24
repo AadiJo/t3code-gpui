@@ -13,7 +13,7 @@ use super::catalog::{CatalogEntry, ConnectionRoute};
 use super::driver::{self, ConnectionContext, RoutePreflight};
 use super::model::{
     AttemptStage, ConnectionError, ConnectionPhase, ConnectionStatus, DPOP_ACCESS_TOKEN_REFRESH_SKEW_MS,
-    NetworkStatus, TransientReason,
+    NetworkStatus,
 };
 use super::routes::{ReportedEndpoint, route_id};
 use crate::authorization::HttpAuthorization;
@@ -372,9 +372,9 @@ impl Supervisor {
                 }
                 dead = async { wake_probe.as_mut().expect("guarded").await }, if wake_probe.is_some() => {
                     wake_probe = None;
+                    // A failed probe reconnects at once with a fresh retry ladder, as the web does.
                     if dead {
-                        let error = ConnectionError::transient(TransientReason::Transport, "The connection went silent after the device woke.");
-                        break Ended::Failed { error, established: true, stable: connected_at.elapsed() >= BACKOFF_RESET_AFTER };
+                        break Ended::Interrupted { reset_retry: true };
                     }
                 }
                 signal = self.signals.recv() => {
@@ -468,6 +468,8 @@ async fn probe_after_wake(session: Arc<RpcSession>) -> bool {
         return answer.is_err();
     }
     let deadline = started + if nearby { WAKE_PROBE_DEADLINE_NEARBY } else { WAKE_PROBE_DEADLINE };
+    // A fresh request: a pooled keep-alive socket may be as dead as the RPC socket.
+    crate::rpc::http::reset_http_pool();
     let descriptor = crate::environment::fetch_descriptor(&http, deadline.saturating_duration_since(Instant::now()));
     tokio::select! {
         answer = &mut call => answer.is_err(),

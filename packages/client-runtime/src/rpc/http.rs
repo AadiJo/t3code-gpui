@@ -39,19 +39,32 @@ pub fn tls_config() -> Arc<rustls::ClientConfig> {
         .clone()
 }
 
+static CLIENT: std::sync::RwLock<Option<reqwest::Client>> = std::sync::RwLock::new(None);
+
+fn build_client() -> reqwest::Client {
+    reqwest::Client::builder()
+        .use_preconfigured_tls((*tls_config()).clone())
+        .connect_timeout(DEFAULT_REQUEST_TIMEOUT)
+        .build()
+        .expect("HTTP client builds")
+}
+
 /// The process-wide HTTP client. It sends no `Origin` and keeps no cookies,
 /// as a native client should (spec 01, section 1.3).
 pub fn http_client() -> reqwest::Client {
-    static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
-    CLIENT
-        .get_or_init(|| {
-            reqwest::Client::builder()
-                .use_preconfigured_tls((*tls_config()).clone())
-                .connect_timeout(DEFAULT_REQUEST_TIMEOUT)
-                .build()
-                .expect("HTTP client builds")
-        })
-        .clone()
+    if let Some(client) = CLIENT.read().expect("HTTP client lock").as_ref() {
+        return client.clone();
+    }
+    CLIENT.write().expect("HTTP client lock").get_or_insert_with(build_client).clone()
+}
+
+/// Drops every pooled keep-alive connection: the next request opens a new
+/// one. Call on wake and network change, when pooled sockets may be dead
+/// without a reset (a request on one would wait out its whole timeout, and
+/// the pool's idle timer runs on the monotonic clock, which macOS stops
+/// during sleep). Requests in flight finish on the old pool.
+pub fn reset_http_pool() {
+    *CLIENT.write().expect("HTTP client lock") = Some(build_client());
 }
 
 /// `reason` on `EnvironmentAuthInvalidError`.
