@@ -1,25 +1,26 @@
-//! Settings → Projects. Ports `ProjectsSettings.tsx` (the project list) and
-//! the rows of `ProjectSettingsPanel.tsx` for one project: Name, Project icon
-//! (monogram and colour), Pin, Archive and its actions (scripts), each sent
-//! with `projects.mutate`. "Add to another machine" opens
-//! [`AddProjectToMachineDialog`].
+//! Settings → Projects. Ports `ProjectsSettings.tsx`: with no project picked,
+//! the `SettingsScopeNotice` list of projects; picking one opens its
+//! `ProjectSettingsPanel` page (Name, Project icon, Pin, Archive, actions,
+//! Danger), each change sent with `projects.mutate`.
 
 use gpui_kit::{AppContext as _, Context, Entity, IntoElement, Render, SharedString, Subscription, Window, div, prelude::*, px};
 use t3code_contracts::{CommandId, ProjectMutation, ProjectMutationProjectUpdate};
 
 use super::provider_settings_panel::toast_error;
-use super::server_settings_controls::{Fields, field_input, hint};
+use super::server_settings_controls::{Fields, field_input};
 use super::server_settings_data::ServerPanelsModel;
 use super::settings_layout::{SettingsRow, SettingsSection, page_container};
 use crate::ActiveAppTheme as _;
 use crate::appearance_fonts::{TextSize, weight};
 use crate::components::add_project_to_machine_dialog::{AddProjectToMachineDialog, AddProjectToMachineEvent};
+use crate::components::icons::{Icon, IconName, IconSize};
+use crate::components::project_favicon::ProjectFavicon;
+use crate::components::ui::toast::{ToastData, ToastKind, Toaster};
 use crate::components::ui::TextStyleExt as _;
 use crate::components::ui::button::{Button, ButtonSize, ButtonVariant};
 use crate::components::ui::dialog::Modal;
 use crate::components::ui::switch::Switch;
 use crate::i18n::t;
-use crate::project_identity::derive_project_identity;
 use crate::theme_color::with_alpha;
 
 /// The Projects page.
@@ -75,92 +76,195 @@ impl ProjectsSettingsPanel {
     }
 }
 
-impl Render for ProjectsSettingsPanel {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+impl ProjectsSettingsPanel {
+    /// `SettingsScopeNotice target="project"`: a line of copy and one row per
+    /// project with its icon, name, path and a chevron.
+    fn render_list(&mut self, projects: &[t3code_contracts::Project], cx: &mut Context<Self>) -> gpui_kit::Div {
         let theme = &cx.app_theme().clone();
         let c = &theme.colors;
-        let snapshot = self.model.read(cx).snapshot().clone();
-        let ro = snapshot.read_only;
-        let projects: Vec<_> = snapshot.projects.iter().filter(|p| p.deleted_at.is_none()).cloned().collect();
-        if self.selected.is_none() {
-            self.selected = projects.first().map(|p| p.id.to_string());
-        }
-        let mut list = SettingsSection::new(t!("Projects"));
-        for project in &projects {
-            let identity = derive_project_identity(&project.title);
+        let rows = projects.iter().enumerate().map(|(ix, project)| {
             let id = project.id.to_string();
-            let selected = self.selected.as_deref() == Some(id.as_str());
-            list.extend([div()
+            let secondary: SharedString = if project.archived_at.is_some() {
+                format!("{} · {}", t!("Archived", context = "project state"), project.workspace_root).into()
+            } else {
+                project.workspace_root.clone().into()
+            };
+            div()
                 .id(SharedString::from(format!("project-row-{id}")))
                 .flex()
                 .items_center()
                 .gap(theme.sp(3.))
+                .w_full()
+                .min_w_0()
                 .px(theme.sp(4.))
-                .py(theme.sp(2.5))
+                .py(theme.sp(3.))
+                .when(ix > 0, |d| d.border_t_1().border_color(with_alpha(c.border, 0.5)))
                 .cursor_pointer()
-                .when(selected, |d| d.bg(with_alpha(c.foreground(), 0.06)))
+                .hover(|d| d.bg(with_alpha(c.accent, 0.5)))
                 .on_click(cx.listener(move |this, _, _, cx| {
                     this.selected = Some(id.clone());
                     cx.notify();
                 }))
+                .child(ProjectFavicon::new(project.title.clone()))
                 .child(
                     div()
-                        .size(px(22.))
+                        .flex_1()
+                        .min_w_0()
                         .flex()
-                        .items_center()
-                        .justify_center()
-                        .rounded(theme.radii.md)
-                        .bg(with_alpha(c.muted, 0.8))
-                        .ui_text(theme, TextSize::Xs2, weight::SEMIBOLD)
-                        .child(identity.monogram),
+                        .flex_col()
+                        .child(div().truncate().ui_text(theme, TextSize::Sm, weight::MEDIUM).child(project.title.clone()))
+                        .child(div().truncate().ui_text(theme, TextSize::Xs, weight::NORMAL).text_color(c.muted_foreground).child(secondary)),
                 )
-                .child(div().flex_1().min_w_0().flex().flex_col().child(div().truncate().ui_text(theme, TextSize::Sm, weight::MEDIUM).child(project.title.clone())).child(hint(project.workspace_root.clone(), cx)))
-                .when(project.pinned_at.is_some(), |d| d.child(hint(t!("Pinned"), cx)))
-                .into_any_element()]);
+                .child(Icon::new(IconName::ChevronRight).size(IconSize::Md).color(c.muted_foreground))
+                .into_any_element()
+        });
+        page_container(cx).child(
+            div()
+                .flex()
+                .flex_col()
+                .gap(theme.sp(3.))
+                .child(div().px(theme.sp(4.)).ui_text(theme, TextSize::Sm, weight::NORMAL).text_color(c.muted_foreground).child(t!("Choose a project to manage its name, icon, checkouts and actions.")))
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .overflow_hidden()
+                        .rounded(theme.radii.xl)
+                        .border_1()
+                        .border_color(with_alpha(c.border, 0.6))
+                        .bg(with_alpha(c.card(), 0.4))
+                        .shadow(theme.shadows.xs5.clone())
+                        .children(rows),
+                ),
+        )
+    }
+
+    /// `ProjectSettingsPanel` for one project.
+    fn render_project(&mut self, project: &t3code_contracts::Project, ro: bool, window: &mut Window, cx: &mut Context<Self>) -> gpui_kit::Div {
+        let theme = &cx.app_theme().clone();
+        let c = &theme.colors;
+        let pid = project.id.clone();
+        let this = cx.entity().downgrade();
+        let rename_id = pid.clone();
+        let name = self.fields.draft(format!("{}:name", project.id), project.title.clone(), "", false, window, cx, move |text, _, cx| {
+            let title = text.trim().to_owned();
+            if title.is_empty() {
+                Toaster::push(ToastData::new(ToastKind::Warning, t!("Project title cannot be empty")), cx);
+                return;
+            }
+            let id = rename_id.clone();
+            this.update(cx, |this, cx| this.update_project(update(id, |u| u.title = Some(title)), cx)).ok();
+        });
+        let (pin_id, archive_id, delete_id) = (pid.clone(), pid.clone(), pid.clone());
+        let pinned = project.pinned_at.is_some();
+        let archived = project.archived_at.is_some();
+        let this_pin = cx.entity().downgrade();
+        let alert = div()
+            .flex()
+            .items_start()
+            .gap(theme.sp(2.))
+            .rounded(theme.radii.xl)
+            .border_1()
+            .border_color(with_alpha(theme.fixed.info, 0.32))
+            .bg(with_alpha(theme.fixed.info, 0.04))
+            .px(theme.sp(3.5))
+            .py(theme.sp(3.))
+            .ui_text(theme, TextSize::Sm, weight::NORMAL)
+            .child(div().pt(px(2.)).child(Icon::new(IconName::Info).size(IconSize::Md).color(theme.fixed.info)))
+            .child(div().flex_1().text_color(c.muted_foreground).child(t!("Can't find a setting? Keep this project picked above and hop to any other settings page.")));
+        let overview = div()
+            .flex()
+            .flex_col()
+            .overflow_hidden()
+            .rounded(theme.radii.xl)
+            .border_1()
+            .border_color(with_alpha(c.border, 0.6))
+            .bg(with_alpha(c.card(), 0.4))
+            .children(
+                [
+                    SettingsRow::new(t!("Name"))
+                        .description(t!("The shared name for this project group in the sidebar and thread lists."))
+                        .control(div().w(theme.sp(56.)).child(field_input(&name, false, false, ro)))
+                        .into_any_element(),
+                    SettingsRow::new(t!("Project icon"))
+                        .description(t!("Automatic"))
+                        .control(ProjectFavicon::new(project.title.clone()).size(px(20.)))
+                        .into_any_element(),
+                    SettingsRow::new(t!("Pin"))
+                        .description(t!("Pinned projects come first in project pickers."))
+                        .control(Switch::new("project-pin", pinned).disabled(ro).on_change(move |v, _, cx| {
+                            let id = pin_id.clone();
+                            this_pin.update(cx, |this, cx| this.update_project(update(id, |u| u.pinned = Some(v)), cx)).ok();
+                        }))
+                        .into_any_element(),
+                    SettingsRow::new(t!("Archive"))
+                        .description(if archived {
+                            t!("Hidden from project pickers. Threads and files are kept.")
+                        } else {
+                            t!("Hides the project from project pickers. Threads and files are kept.")
+                        })
+                        .control(
+                            Button::new("project-archive")
+                                .variant(ButtonVariant::Outline)
+                                .size(ButtonSize::Sm)
+                                .label(if archived { t!("Unarchive") } else { t!("Archive", context = "verb, archives a project") })
+                                .disabled(ro)
+                                .on_click(cx.listener(move |this, _, _, cx| {
+                                    this.update_project(update(archive_id.clone(), |u| u.archived = Some(!archived)), cx);
+                                })),
+                        )
+                        .into_any_element(),
+                ]
+                .into_iter()
+                .enumerate()
+                .map(|(ix, row)| div().when(ix > 0, |d| d.border_t_1().border_color(with_alpha(c.border, 0.5))).child(row)),
+            );
+        let mut actions = SettingsSection::new(t!("Actions"));
+        for script in &project.scripts {
+            actions.extend([SettingsRow::new(SharedString::from(script.name.clone())).description(SharedString::from(script.command.clone())).into_any_element()]);
         }
-        if projects.is_empty() {
-            list.extend([SettingsRow::new(t!("No projects")).into_any_element()]);
+        if project.scripts.is_empty() {
+            actions.extend([SettingsRow::new(t!("No actions")).into_any_element()]);
         }
-        let mut page = page_container(cx).child(list);
-        if let Some(project) = projects.iter().find(|p| Some(p.id.to_string()) == self.selected) {
-            let pid = project.id.clone();
-            let name = self.fields.get(format!("{}:name", project.id), project.title.clone(), "", false, window, cx);
-            let name_read = name.clone();
-            let (rename_id, pin_id, archive_id) = (pid.clone(), pid.clone(), pid.clone());
-            let pinned = project.pinned_at.is_some();
-            let archived = project.archived_at.is_some();
-            let this = cx.entity().downgrade();
-            let this_pin = this.clone();
-            let detail = SettingsSection::new(t!("Project"))
-                .child(SettingsRow::new(t!("Name")).description(t!("The shared name for this project group in the sidebar and thread lists.")).control(
-                    div().flex().items_center().gap(theme.sp(2.)).child(div().w(theme.sp(56.)).child(field_input(&name, false, false, ro))).child(
-                        Button::new("project-rename").variant(ButtonVariant::Outline).size(ButtonSize::Xs).label(t!("Save")).disabled(ro).on_click(cx.listener(move |this, _, _, cx| {
-                            let title = name_read.read(cx).value().trim().to_owned();
-                            this.update_project(update(rename_id.clone(), |u| u.title = Some(title)), cx);
+        let danger = SettingsSection::new(t!("Danger")).child(
+            SettingsRow::new(t!("Remove project"))
+                .description(t!("Deletes the project entry and its threads. Files on disk are not touched."))
+                .control(
+                    Button::new("project-remove")
+                        .variant(ButtonVariant::DestructiveOutline)
+                        .size(ButtonSize::Sm)
+                        .icon(IconName::Trash2)
+                        .label(t!("Remove project"))
+                        .disabled(ro)
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            let input = ProjectMutation::ProjectDelete(t3code_contracts::ProjectMutationProjectDelete { command_id: command_id(), project_id: delete_id.clone(), force: None });
+                            this.selected = None;
+                            this.model.update(cx, |m, cx| {
+                                m.run("project-mutate", move |s| s.mutate_project(input), |result, cx| {
+                                    if let Err(e) = result {
+                                        toast_error(t!("Failed to remove project"), e, cx);
+                                    }
+                                }, cx)
+                            });
                         })),
-                    ),
-                ))
-                .child(SettingsRow::new(t!("Pin")).description(t!("Pinned projects come first in project pickers.")).control(Switch::new("project-pin", pinned).disabled(ro).on_change(move |v, _, cx| {
-                    let id = pin_id.clone();
-                    this_pin.update(cx, |this, cx| this.update_project(update(id, |u| u.pinned = Some(v)), cx)).ok();
-                })))
-                .child(SettingsRow::new(t!("Archive")).description(t!("Archived projects leave the sidebar. Their threads are kept.")).control(
-                    Button::new("project-archive").variant(ButtonVariant::Outline).size(ButtonSize::Sm).label(if archived { t!("Unarchive") } else { t!("Archive") }).disabled(ro).on_click(cx.listener(move |this, _, _, cx| {
-                        this.update_project(update(archive_id.clone(), |u| u.archived = Some(!archived)), cx);
-                    })),
-                ))
-                .child(SettingsRow::new(t!("Add to another machine")).description(t!("Clone this project onto another environment.")).control(
-                    Button::new("project-add-to-machine").variant(ButtonVariant::Outline).size(ButtonSize::Sm).label(t!("Add to another machine")).disabled(ro).on_click(cx.listener(|this, _, window, cx| this.open_add_to_machine(window, cx))),
-                ));
-            let mut actions = SettingsSection::new(t!("Actions"));
-            for script in &project.scripts {
-                actions.extend([SettingsRow::new(SharedString::from(script.name.clone())).description(SharedString::from(script.command.clone())).into_any_element()]);
+                ),
+        );
+        page_container(cx).gap(theme.sp(6.)).child(alert).child(overview).child(actions).child(danger)
+    }
+}
+
+impl Render for ProjectsSettingsPanel {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let snapshot = self.model.read(cx).snapshot().clone();
+        let ro = snapshot.read_only;
+        let projects: Vec<_> = snapshot.projects.iter().filter(|p| p.deleted_at.is_none()).cloned().collect();
+        let page = match projects.iter().find(|p| Some(p.id.to_string()) == self.selected) {
+            Some(project) => self.render_project(project, ro, window, cx),
+            None => {
+                self.selected = None;
+                self.render_list(&projects, cx)
             }
-            if project.scripts.is_empty() {
-                actions.extend([SettingsRow::new(t!("No actions")).into_any_element()]);
-            }
-            page = page.child(detail).child(actions);
-        }
+        };
         let dialog = self.dialog.clone().map(|dialog| {
             let this = cx.entity().downgrade();
             Modal::dialog("add-project-to-machine", dialog, move |_, cx| {
