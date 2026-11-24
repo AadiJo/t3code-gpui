@@ -233,6 +233,7 @@ impl MessagesTimeline {
             self.scroll_memory.insert(previous.clone(), self.list.memory());
             self.remember_rows(previous);
         }
+        self.list.settle();
         self.expansion = TimelineExpansion::default();
         self.expanded_entries.clear();
         self.find = None;
@@ -841,6 +842,7 @@ impl Render for MessagesTimeline {
         self.colors = ChatColors::get(cx);
         self.lane = super::chat_style::ChatLane::get(cx);
         self.apply_insets();
+        self.list.set_smooth_follow(self.input.is_working && !crate::components::ui::motion::prefers_reduced_motion(cx));
         self.now = Instant::now().max(self.now);
         let weak = self.weak.clone();
         let colors = self.colors;

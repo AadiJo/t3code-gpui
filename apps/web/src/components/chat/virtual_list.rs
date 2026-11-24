@@ -9,7 +9,7 @@
 //! out each frame. Every other row keeps its last measured height, or its
 //! estimate, in a prefix-sum table.
 
-use std::{cell::RefCell, collections::HashMap, ops::Range, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, ops::Range, rc::Rc, time::{Duration, Instant}};
 
 use gpui_kit::{
     AnyElement, App, AvailableSpace, Bounds, ContentMask, Corners, DispatchPhase, Element,
@@ -32,6 +32,11 @@ const SCROLLBAR_WIDTH: Pixels = px(6.);
 /// The trailing strip where a press counts as a scrollbar press (`timelineViewport.ts`).
 const SCROLLBAR_HIT_WIDTH: Pixels = px(16.);
 const SCROLLBAR_MIN_THUMB: Pixels = px(24.);
+/// Chromium's programmatic smooth scroll on desktop, which the fork's follow uses
+/// (`scrollTo({ behavior: "smooth" })`): `cubic-bezier(0.4, 0, 0, 1)` over `sqrt(|delta|) / 60`
+/// seconds, at most 1.5s (`cc/base/features.cc`, `ScrollOffsetAnimationCurve`).
+const SMOOTH_SCROLL_CURVE: crate::theme_tokens::CubicBezier = crate::theme_tokens::CubicBezier(0.4, 0., 0., 1.);
+const SMOOTH_SCROLL_MAX: Duration = Duration::from_millis(1_500);
 /// Lines-based wheel deltas scroll this far per line.
 const WHEEL_LINE_HEIGHT: Pixels = px(20.);
 
@@ -65,6 +70,14 @@ enum Position {
     /// A new user message held `offset` below the viewport top, with end
     /// space added beneath the content when it is too short to allow that.
     Pinned { index: usize, offset: Pixels },
+}
+
+/// The follow easing from a drawn scroll top to the moving end.
+#[derive(Clone, Copy, Debug)]
+struct FollowAnimation {
+    from: Pixels,
+    start: Instant,
+    duration: Duration,
 }
 
 /// Visible geometry from the last layout, for overlays like the scroll-to-end button.
@@ -106,6 +119,13 @@ struct Inner {
     viewport: ListViewport,
     scrollbar_drag: Option<Pixels>,
     scrollbar_hovered: bool,
+    /// Following the end eases to it when it moves (the fork's smooth `maintainScrollAtEnd`).
+    smooth_follow: bool,
+    follow_animation: Option<FollowAnimation>,
+    /// The end and the drawn scroll top at the last layout, while at the end.
+    last_end: Option<(Pixels, Pixels)>,
+    /// The time this layout is drawn for.
+    now: Instant,
     on_scroll: Option<Box<dyn FnMut(&ListViewport, TimelineFollow, &mut Window, &mut App)>>,
 }
 
@@ -128,6 +148,10 @@ impl VirtualListState {
             scrollbar_drag: None,
             scrollbar_hovered: false,
             on_scroll: None,
+            smooth_follow: false,
+            follow_animation: None,
+            last_end: None,
+            now: Instant::now(),
         })))
     }
 
@@ -180,6 +204,24 @@ impl VirtualListState {
         handler: impl FnMut(&ListViewport, TimelineFollow, &mut Window, &mut App) + 'static,
     ) {
         self.0.borrow_mut().on_scroll = Some(Box::new(handler));
+    }
+
+    /// Whether following eases to a moved end instead of jumping: on while a turn is working
+    /// and motion is allowed, as the fork's `TIMELINE_MAINTAIN_SCROLL_AT_END_SMOOTH`.
+    pub fn set_smooth_follow(&self, smooth: bool) {
+        let mut inner = self.0.borrow_mut();
+        inner.smooth_follow = smooth;
+        if !smooth {
+            inner.follow_animation = None;
+        }
+    }
+
+    /// Forgets where the end was, so the next layout (another thread's rows) does not ease to
+    /// it: the fork keeps a newly shown list unanimated until it settles.
+    pub fn settle(&self) {
+        let mut inner = self.0.borrow_mut();
+        inner.last_end = None;
+        inner.follow_animation = None;
     }
 
     /// Jumps to the end and follows it (the scroll-to-end button, sending).
@@ -307,7 +349,40 @@ impl Inner {
         (self.content_height() - self.viewport.bounds.size.height).max(px(0.))
     }
 
+    /// The drawn scroll top: the position's, or on the way to the end while following eases.
     fn scroll_top(&mut self) -> Pixels {
+        let target = self.target_scroll_top();
+        let Some(animation) = self.follow_animation else { return target };
+        if !matches!(self.position, Position::End) {
+            self.follow_animation = None;
+            return target;
+        }
+        let progress = (self.now.saturating_duration_since(animation.start).as_secs_f32() / animation.duration.as_secs_f32()).min(1.);
+        if progress >= 1. {
+            self.follow_animation = None;
+            return target;
+        }
+        animation.from + (target - animation.from) * SMOOTH_SCROLL_CURVE.ease(progress)
+    }
+
+    /// Starts or retargets the follow animation when the end moved since the last layout.
+    fn follow_end_moved(&mut self) {
+        if !self.smooth_follow || !matches!(self.position, Position::End) || self.len() == 0 {
+            self.follow_animation = None;
+            return;
+        }
+        let end = self.max_scroll();
+        let Some((last_end, drawn)) = self.last_end else { return };
+        if end > last_end + px(0.5) {
+            let from = if self.follow_animation.is_some() { self.scroll_top() } else { drawn };
+            let seconds = f32::from(end - from).abs().sqrt() / 60.;
+            let duration = Duration::from_secs_f32(seconds).min(SMOOTH_SCROLL_MAX);
+            self.follow_animation = Some(FollowAnimation { from, start: self.now, duration });
+        }
+    }
+
+    /// Where the position puts the viewport, without the follow animation.
+    fn target_scroll_top(&mut self) -> Pixels {
         match self.position {
             Position::End => self.max_scroll(),
             Position::Row { index, offset } => self.row_top(index) + offset,
@@ -341,7 +416,8 @@ impl Inner {
     }
 
     fn reach(&mut self) -> ViewportReach {
-        let scroll_top = self.scroll_top();
+        // Easing to the end still counts as at the end.
+        let scroll_top = self.target_scroll_top();
         let distance = self.content_height() - scroll_top - self.viewport.bounds.size.height;
         ViewportReach {
             scrolls_up: scroll_top > px(0.),
@@ -490,6 +566,8 @@ impl Element for VirtualList {
         let hitbox = window.insert_hitbox(bounds, HitboxBehavior::Normal);
         let state = self.state.clone();
         let mut inner = state.0.borrow_mut();
+        inner.now = Instant::now();
+        inner.follow_end_moved();
         let width = bounds.size.width;
         if inner.last_width != Some(width) {
             // Heights measured at another width are only estimates now.
@@ -592,6 +670,11 @@ impl Element for VirtualList {
             row_bounds,
         };
         inner.update_follow_from_reach();
+        inner.last_end = matches!(inner.position, Position::End).then(|| (inner.max_scroll(), scroll_top));
+        if inner.follow_animation.is_some() {
+            // Finite: the animation ends after its duration and stops asking for frames.
+            window.request_animation_frame();
+        }
 
         let thumb = (content_height > viewport_height).then(|| {
             let ratio = viewport_height / content_height;
