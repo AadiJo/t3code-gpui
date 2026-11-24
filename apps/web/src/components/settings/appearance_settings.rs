@@ -1185,7 +1185,7 @@ fn duplicate_theme(id: &str, cx: &mut App) {
             }
         }
         Err(error) => {
-            Toaster::push(ToastData::new(ToastKind::Error, t!("Could not add theme")).description(error.to_string()), cx);
+            Toaster::push(ToastData::new(ToastKind::Error, t!("Could not create the theme.")).description(error.to_string()), cx);
         }
     }
 }

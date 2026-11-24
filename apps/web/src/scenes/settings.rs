@@ -17,7 +17,9 @@ use crate::routes::settings::SettingsRoute;
 /// The fixture environment's id.
 pub const FIXTURE_ENVIRONMENT: &str = "env-fixture";
 
-/// A server config for a made-up macOS host with the default keymap.
+/// A server config for a made-up host with the default keymap and the
+/// built-in server settings, like the reference capture's server (which
+/// reports no fast worktree checkout).
 pub fn fixture_config() -> ServerConfig {
     let keybindings = serde_json::to_value(default_resolved_keybindings()).expect("keybindings encode");
     let config = serde_json::json!({
@@ -26,7 +28,7 @@ pub fn fixture_config() -> ServerConfig {
             "label": "Studio",
             "platform": { "os": "darwin", "arch": "arm64" },
             "serverVersion": "0.1.11",
-            "capabilities": { "fastWorktreeCheckout": true }
+            "capabilities": {}
         },
         "auth": {
             "policy": "loopback-browser",
@@ -46,7 +48,7 @@ pub fn fixture_config() -> ServerConfig {
             "otlpTracesEnabled": false,
             "otlpMetricsEnabled": false
         },
-        "settings": { "linkedEnvironmentsEnabled": true, "speechProjectCustomWords": [{ "term": "GPUI", "aliases": ["gee pee you eye"] }] }
+        "settings": {}
     });
     serde_json::from_value(config).expect("fixture server config decodes")
 }

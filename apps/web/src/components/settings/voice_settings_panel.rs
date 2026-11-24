@@ -343,7 +343,7 @@ impl Render for VoiceSettings {
             );
 
         let off_icon = Icon::new(IconName::MicOff).size(IconSize::Md).color(theme.colors.icon_muted);
-        let destination = Select::new("select-voice-destination", [t!("Off", context = "voice transcription destination")], 0, |_, _, _| {})
+        let destination = Select::new("select-voice-destination", [t!("Off")], 0, |_, _, _| {})
             .size(SelectSize::Sm)
             .leading(off_icon);
         let transcription = SettingsSection::new(t!("Transcription"))
