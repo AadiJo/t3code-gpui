@@ -9,7 +9,7 @@ use crate::theme_tokens::Glass;
 use crate::composer_editor_mentions::{ChipKind, ContextKind};
 use crate::theme_palette::Appearance;
 
-/// `--chat-content-max-width` 46rem plus the fork's 2rem.
+/// The composer's width at a 16px rem until its first layout measures it.
 pub const COMPOSER_MAX_WIDTH: Pixels = px(768.);
 /// `leading-relaxed` at 14px: the scroll step and a fallback row height.
 pub const PROMPT_LINE_HEIGHT: Pixels = px(22.75);

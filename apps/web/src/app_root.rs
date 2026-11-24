@@ -81,6 +81,9 @@ actions!(
     ]
 );
 
+/// The right panel's width for a thread with none saved (`PREVIEW_PANEL_DEFAULT_WIDTH`).
+const RIGHT_PANEL_DEFAULT_WIDTH: f32 = 540.;
+
 /// The web keymap's `mod`: `cmd` on macOS, `ctrl` elsewhere.
 macro_rules! mod_key {
     ($keys:literal) => {
@@ -553,6 +556,7 @@ impl AppRoot {
         });
         let active = self.shown_key();
         let shown_key = self.panel_key();
+        self.restore_right_panel_width(cx);
         ThreadFindStore::retain_for_route(cx, route.is_modal(), shown_key.as_deref());
         self.sidebar.update(cx, |sidebar, cx| sidebar.set_active_thread(active.clone(), cx));
         self.sync_sidebar_drafts(cx);
@@ -1068,7 +1072,32 @@ impl AppRoot {
                 store.set_maximized(key, !maximized);
             }),
             LayoutEvent::Toggle(PanelToggle::Details) => self.toggle_details(cx),
-            LayoutEvent::Changed => Self::persist_layout(layout, cx),
+            LayoutEvent::Changed => {
+                Self::persist_layout(layout, cx);
+                self.save_right_panel_width(cx);
+            }
+        }
+    }
+
+    /// The web keeps the right panel's width per thread (`t3code:preview-panel-width:<thread>`).
+    fn right_panel_width_key(&self) -> Option<String> {
+        self.shown_key().map(|key| format!("t3code:preview-panel-width:{}", scoped_key(&key)))
+    }
+
+    /// Gives the right panel the shown thread's saved width, or the web's default.
+    fn restore_right_panel_width(&self, cx: &mut Context<Self>) {
+        let Some(key) = self.right_panel_width_key() else { return };
+        let width = crate::client_persistence_storage::LocalStorage::get::<f32>(cx, &key).unwrap_or(RIGHT_PANEL_DEFAULT_WIDTH);
+        self.layout.update(cx, |layout, cx| layout.set_right_panel_width(px(width), cx));
+    }
+
+    /// Saves the right panel's width for the shown thread (after a drag, like the web).
+    fn save_right_panel_width(&self, cx: &mut Context<Self>) {
+        let Some(key) = self.right_panel_width_key() else { return };
+        let width = f32::from(self.layout.read(cx).right_panel_width());
+        let saved = crate::client_persistence_storage::LocalStorage::get::<f32>(cx, &key);
+        if saved.unwrap_or(RIGHT_PANEL_DEFAULT_WIDTH) != width {
+            crate::client_persistence_storage::LocalStorage::set(cx, &key, Some(&width));
         }
     }
 

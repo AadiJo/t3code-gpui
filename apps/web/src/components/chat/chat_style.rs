@@ -92,6 +92,29 @@ pub struct ChatColors {
     pub rem: f32,
 }
 
+/// The chat lane's widths at the Chat width setting: the message column
+/// (`--chat-content-max-width`: Comfortable 46rem, Wide 72rem, Full the pane) and the
+/// composer (`--chat-composer-max-width`, 2rem wider, never past the pane). `None` is the pane.
+#[derive(Clone, Copy, Debug)]
+pub struct ChatLane {
+    pub content: Option<Pixels>,
+    pub composer: Option<Pixels>,
+}
+
+impl ChatLane {
+    pub fn get(cx: &App) -> Self {
+        use crate::hooks::use_settings::ClientSettingsStore;
+        let rem = cx.app_theme().fonts.interface;
+        let width = cx.has_global::<ClientSettingsStore>().then(|| ClientSettingsStore::get(cx).chat_width);
+        let content = match width {
+            Some(t3code_contracts::ChatWidth::Full) => None,
+            Some(t3code_contracts::ChatWidth::Wide) => Some(px(72. * rem)),
+            _ => Some(px(46. * rem)),
+        };
+        Self { content, composer: content.map(|w| w + px(2. * rem)) }
+    }
+}
+
 impl ChatColors {
     /// A length the web writes in rem, given at a 16px root.
     pub fn r(&self, at16: Pixels) -> Pixels {

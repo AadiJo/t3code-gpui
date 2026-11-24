@@ -243,6 +243,14 @@ impl AppSidebarLayout {
         self.right_width
     }
 
+    /// Sets the right panel's width (a thread's saved width); the next layout clamps it.
+    pub fn set_right_panel_width(&mut self, width: Pixels, cx: &mut Context<Self>) {
+        if self.right_width != width {
+            self.right_width = width;
+            cx.notify();
+        }
+    }
+
     /// Restores saved widths and the sidebar's open state.
     pub fn restore(&mut self, sidebar_open: bool, sidebar_width: Pixels, right_width: Pixels, cx: &mut Context<Self>) {
         self.sidebar_open = sidebar_open;

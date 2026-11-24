@@ -1307,7 +1307,7 @@ impl Render for ChatComposer {
             .font_family(UI_FONT_FAMILY)
             .relative()
             .w_full()
-            .max_w(c.r(COMPOSER_MAX_WIDTH))
+            .when_some(super::chat_style::ChatLane::get(cx).composer, |d, w| d.max_w(w))
             .mx_auto()
             .flex()
             .flex_col()

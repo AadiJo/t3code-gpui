@@ -12,7 +12,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use gpui_kit::{
+use gpui_kit::{prelude::FluentBuilder as _, 
     AnyElement, App, AppContext as _, ClipboardItem, Context, Entity, IntoElement, ParentElement as _, Pixels,
     Render, SharedString, Styled as _, Task, WeakEntity, Window, div, px,
 };
@@ -32,7 +32,6 @@ use crate::{
 };
 
 /// `--chat-content-max-width` for the "comfortable" chat width (46rem).
-pub const CHAT_CONTENT_MAX_WIDTH: gpui_kit::Rems = gpui_kit::rems(46.0);
 /// Timeline gutter at ≥640px (`padding-inline: 3rem`); 12px below that.
 pub const TIMELINE_GUTTER: Pixels = px(48.);
 pub const TIMELINE_GUTTER_NARROW: Pixels = px(12.);
@@ -139,6 +138,8 @@ pub struct MessagesTimeline {
     pub(super) markdown_state: MarkdownUiState,
     pub(super) markdown: HashMap<SharedString, MessageMarkdown>,
     pub(super) colors: ChatColors,
+    /// The message column's width at the Chat width setting.
+    lane: super::chat_style::ChatLane,
     /// Advances every [`ANIMATION_STEP`] while something animates on screen.
     pub(super) animation_step: u64,
     animation_task: Option<Task<()>>,
@@ -189,6 +190,7 @@ impl MessagesTimeline {
             markdown_state: MarkdownUiState { run_shell_commands: true, ..Default::default() },
             markdown: HashMap::new(),
             colors: ChatColors::get(cx),
+            lane: super::chat_style::ChatLane::get(cx),
             animation_step: 0,
             animation_task: None,
             copied_task: None,
@@ -769,7 +771,7 @@ impl MessagesTimeline {
                 div()
                     .mx_auto()
                     .w_full()
-                    .max_w(CHAT_CONTENT_MAX_WIDTH)
+                    .when_some(self.lane.content, |d, w| d.max_w(w))
                     .overflow_x_hidden()
                     .pb(bottom)
                     .child(content),
@@ -786,6 +788,7 @@ impl MessagesTimeline {
 impl Render for MessagesTimeline {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.colors = ChatColors::get(cx);
+        self.lane = super::chat_style::ChatLane::get(cx);
         // The insets are rem lengths; re-read them in case the Interface size changed.
         self.list.set_insets(self.colors.r(TIMELINE_TOP_INSET), self.composer_inset + self.colors.r(TIMELINE_BOTTOM_PAD));
         self.now = Instant::now().max(self.now);

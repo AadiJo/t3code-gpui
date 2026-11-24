@@ -44,7 +44,6 @@ use super::chat::{
 };
 
 /// The composer lane is 2rem wider than the message lane (fork, `index.css:132-133`).
-pub const COMPOSER_MAX_WIDTH: Pixels = px(768.);
 /// Composer overlay `pt-1.5 sm:pt-2`; spacer under it `h-[1.25rem]` on desktop.
 const COMPOSER_TOP_PAD: Pixels = px(8.);
 const COMPOSER_BOTTOM_SPACER: Pixels = px(20.);
@@ -502,6 +501,7 @@ impl ChatView {
 impl Render for ChatView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let colors = ChatColors::get(cx);
+        let lane = crate::components::chat::chat_style::ChatLane::get(cx);
         let gutter = colors.r(if window.viewport_size().width >= SM_BREAKPOINT { TIMELINE_GUTTER } else { TIMELINE_GUTTER_NARROW });
         let timeline = self.timeline.clone();
         let (show_scroll_button, pending_question) = {
@@ -558,7 +558,7 @@ impl Render for ChatView {
                 div()
                     .mx_auto()
                     .w_full()
-                    .max_w(COMPOSER_MAX_WIDTH)
+                    .when_some(lane.composer, |d, w| d.max_w(w))
                     .flex()
                     .flex_col()
                     .when(self.hero, |d| d.child(Self::hero_headline(&colors)))
