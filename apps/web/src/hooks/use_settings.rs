@@ -711,8 +711,18 @@ impl ServerSettingsStore {
     /// `DEFAULT_SERVER_SETTINGS`, for telling a built-in value from one set
     /// on the environment.
     pub fn defaults() -> &'static ServerSettings {
+        // Keys whose dumped default this build's schema does not decode are
+        // left unset, so the rest still compare.
         static DEFAULTS: LazyLock<ServerSettings> = LazyLock::new(|| {
-            ServerSettings::deserialize(Value::Object(SERVER_DEFAULTS_DOCUMENT.clone())).expect("server settings defaults decode")
+            let mut kept = Map::new();
+            for (key, value) in SERVER_DEFAULTS_DOCUMENT.iter() {
+                let mut candidate = kept.clone();
+                candidate.insert(key.clone(), value.clone());
+                if ServerSettings::deserialize(Value::Object(candidate)).is_ok() {
+                    kept.insert(key.clone(), value.clone());
+                }
+            }
+            ServerSettings::deserialize(Value::Object(kept)).expect("an empty settings object decodes")
         });
         &DEFAULTS
     }
