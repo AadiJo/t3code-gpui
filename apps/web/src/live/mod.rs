@@ -194,8 +194,15 @@ impl LiveData {
         let shell = StateBridge::shell(cx);
         let row = shell.read(cx).snapshot().threads.iter().find(|t| t.key == *key).cloned();
         let source = shell.read(cx).row(key).cloned();
-        let project = row.as_ref().and_then(|row| self.project(&row.project_ref(), cx));
-        let project_icon = row.as_ref().and_then(|row| self.project_icon_of(&row.project_ref(), cx));
+        // Unlisted threads (side chats, subagents) and threads whose row has not arrived name
+        // their project themselves, as the web's header reads it from the thread.
+        let projection = thread.read(cx).projection().cloned();
+        let project_ref = row.as_ref().map(|row| row.project_ref()).or_else(|| {
+            let id = source.as_ref().map(|r| r.source.project_id.to_string()).or_else(|| projection.as_ref().map(|p| p.thread.project_id.to_string()))?;
+            Some(ProjectRef { environment_id: key.environment_id.clone(), project_id: crate::components::sidebar::model::ProjectId(id.into()) })
+        });
+        let project = project_ref.as_ref().and_then(|r| self.project(r, cx));
+        let project_icon = project_ref.as_ref().and_then(|r| self.project_icon_of(r, cx));
         let supports_rollback = self.supports_rollback(key, cx);
         let thread = thread.read(cx);
         let mut timeline: TimelineInput = thread.input().clone();
@@ -210,14 +217,19 @@ impl LiveData {
         ThreadView {
             key: crate::fixtures::scoped_key(key),
             project: project.map(|(title, _)| title).unwrap_or_default(),
-            title: row.as_ref().map(|r| r.title.clone()).or_else(|| source.as_ref().map(|r| r.source.title.clone().into())).unwrap_or_default(),
+            title: row
+                .as_ref()
+                .map(|r| r.title.clone())
+                .or_else(|| source.as_ref().map(|r| r.source.title.clone().into()))
+                .or_else(|| projection.as_ref().map(|p| p.thread.title.clone().into()))
+                .unwrap_or_default(),
             cwd,
             running: timeline.is_working,
             timeline,
             is_draft: false,
             questions: questions.into_iter().map(|(question, _)| question).collect(),
             branch: row.as_ref().and_then(|r| r.branch.clone()),
-            project_id: row.as_ref().map(|r| r.project_id.clone()),
+            project_id: project_ref.map(|r| r.project_id),
             project_icon,
         }
     }

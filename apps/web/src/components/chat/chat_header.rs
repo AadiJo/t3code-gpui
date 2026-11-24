@@ -18,7 +18,7 @@ use super::{
 pub const HEADER_PADDING: gpui_kit::Pixels = px(20.);
 /// Room kept clear of the fixed toggles (`pr-24`).
 const HEADER_TOGGLE_CLEARANCE: gpui_kit::Pixels = px(96.);
-/// Breadcrumb gap (`gap-3`), project crumb gap (`gap-1.5`), favicon 14px.
+/// Breadcrumb gap (`gap-3`), project crumb gap (`gap-1.5`), favicon 14px, at a 16px root.
 const CRUMB_GAP: gpui_kit::Pixels = px(12.);
 const PROJECT_CRUMB_GAP: gpui_kit::Pixels = px(6.);
 
@@ -57,7 +57,7 @@ pub fn chat_header(
                 .flex_1()
                 .min_w_0()
                 .items_center()
-                .gap(CRUMB_GAP)
+                .gap(colors.r(CRUMB_GAP))
                 .pr(HEADER_TOGGLE_CLEARANCE)
                 .text_size(TEXT_SM.size)
                 .line_height(TEXT_SM.line_height)
@@ -68,7 +68,7 @@ pub fn chat_header(
                         .flex()
                         .flex_none()
                         .items_center()
-                        .gap(PROJECT_CRUMB_GAP)
+                        .gap(colors.r(PROJECT_CRUMB_GAP))
                         .rounded(rems(0.25))
                         .cursor_pointer()
                         .text_color(colors.theme.muted_foreground)

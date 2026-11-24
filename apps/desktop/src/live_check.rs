@@ -66,7 +66,9 @@
 //   delete-thread  deletes `T3_DELETE_THREAD`, as another client would
 //   timer    the main pane's "Working for" on a running turn matches the server's run start and
 //            advances with the wall clock
-// Usage: live-check <seed|drive|restart|import|send|sidebar|notify|details|mentions|heic|wheel|workspace|banner|sidebardata|composer|composer-restart|sidechats|sidechats-ref|lineage|lineage-ref|sidepane|delete-thread|timer|probe> <out-dir>
+//   breadcrumb  an unlisted subagent thread and a side chat shown in the main pane name their
+//            project in the header breadcrumb
+// Usage: live-check <seed|drive|restart|import|send|sidebar|notify|details|mentions|heic|wheel|workspace|banner|sidebardata|composer|composer-restart|sidechats|sidechats-ref|lineage|lineage-ref|sidepane|delete-thread|timer|breadcrumb|probe> <out-dir>
 #[allow(dead_code)]
 #[path = "import/mod.rs"]
 mod import;
@@ -552,6 +554,7 @@ fn main() -> anyhow::Result<()> {
         "sidepane" => run_sidepane(&mut check),
         "delete-thread" => run_delete_thread(&mut check),
         "timer" => run_timer(&mut check),
+        "breadcrumb" => run_breadcrumb(&mut check),
         other => Err(anyhow::anyhow!("unknown phase {other}")),
     };
     check.finish(&phase, result)
@@ -3896,5 +3899,65 @@ fn run_timer(check: &mut Check) -> anyhow::Result<()> {
     let real = wall.elapsed().as_millis() as i64;
     check.check("Working for advances with the wall clock", ((second - first) - real).abs() < 150, format!("{first} -> {second} ms over {real} ms"));
     check.shot("t1-working-later.png")?;
+    Ok(())
+}
+
+/// The `breadcrumb` phase: threads the sidebar does not list, a provider subagent of "Native
+/// fan-out <T3_LINEAGE_TAG>" and a side chat of "Fork source <tag>" (made by `/side`), shown in
+/// the main pane name their project in the header breadcrumb.
+fn run_breadcrumb(check: &mut Check) -> anyhow::Result<()> {
+    let tag = std::env::var("T3_LINEAGE_TAG").context("T3_LINEAGE_TAG")?;
+    let paired = check.cx.update(|cx| !ConnectionRuntime::state(cx).read(cx).environments.is_empty());
+    if !paired {
+        let request = parse_pairing_url(&std::env::var("T3_PAIRING_URL").context("T3_PAIRING_URL")?)?;
+        let pairing = check.cx.update(|cx| ConnectionRuntime::global(cx).pair(request, None, cx));
+        check.wait_task(pairing)?.map_err(|e| anyhow::anyhow!("{}", e.0))?;
+    }
+    check.pump(|c| c.connected(), Duration::from_secs(30), "connected")?;
+    let id = check.cx.update(|cx| ConnectionRuntime::state(cx).read(cx).environments[0].entry.environment_id.to_string());
+    let environment_id = t3code_contracts::EnvironmentId::new(id.as_str());
+    let env = environment_id.clone();
+    let title = format!("Fork source {tag}");
+    check.pump(move |c| thread_titled(c, &env, &title, None).is_some(), Duration::from_secs(20), "the threads are listed")?;
+    let crumb = |c: &mut Check| c.read(|root, cx| root.thread_view().read(cx).chat().read(cx).project().to_string());
+    let listed = |c: &mut Check, key: &ThreadKey| sidebar_row(c, key).is_some();
+
+    // A provider subagent's child thread, opened from its Lineage row.
+    let host = thread_titled(check, &environment_id, &format!("Native fan-out {tag}"), None).context("fan-out")?;
+    check.go(&host);
+    open_details(check);
+    check.pump(|c| lineage_rows(c).iter().any(|r| r.agent.is_some()), Duration::from_secs(20), "subagent rows")?;
+    let child = lineage_rows(check).into_iter().find(|r| r.agent.is_some()).context("child")?;
+    let child_key = thread_key(&environment_id, &child.thread_id);
+    check.go(&child_key);
+    let k = child_key.clone();
+    check.pump(move |c| c.route() == Route::Thread(k.clone()), Duration::from_secs(20), "the subagent thread shows")?;
+    check.pump(move |c| !crumb(c).is_empty(), Duration::from_secs(10), "the breadcrumb names a project")?;
+    let unlisted = !listed(check, &child_key);
+    let name = crumb(check);
+    check.check("an unlisted subagent thread's breadcrumb names its project", unlisted && name == "orbit", format!("unlisted={unlisted} project={name:?}"));
+    check.wait(Duration::from_millis(400));
+    check.shot("b0-subagent-breadcrumb.png")?;
+
+    // A side chat opened in the main pane.
+    let source = thread_titled(check, &environment_id, &format!("Fork source {tag}"), None).context("host")?;
+    check.go(&source);
+    let k = source.clone();
+    check.pump(move |c| c.route() == Route::Thread(k.clone()) && !c.shown_input().entries.is_empty(), Duration::from_secs(20), "the host shows")?;
+    check.focus_composer();
+    check.type_text("/side Which project is this?");
+    check.press("enter");
+    let k = source.clone();
+    check.pump(move |c| side_chat_tab(c, &k).is_some(), Duration::from_secs(30), "the side chat tab opens")?;
+    let side = thread_key(&environment_id, &ThreadId::new(side_chat_tab(check, &source).context("tab")?.as_str()));
+    let s = side.clone();
+    check.pump(move |c| shell_thread(c, &s).is_some(), Duration::from_secs(20), "the side chat reaches the shell")?;
+    check.go(&side);
+    let s = side.clone();
+    check.pump(move |c| c.route() == Route::Thread(s.clone()) && !crumb(c).is_empty(), Duration::from_secs(20), "the side chat shows with a breadcrumb")?;
+    let name = crumb(check);
+    check.check("a side chat shown directly names its project", name == "orbit", format!("{name:?}"));
+    check.wait(Duration::from_millis(400));
+    check.shot("b1-side-chat-breadcrumb.png")?;
     Ok(())
 }
