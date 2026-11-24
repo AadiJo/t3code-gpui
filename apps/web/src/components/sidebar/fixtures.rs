@@ -556,10 +556,12 @@ pub fn owner_snapshot() -> SidebarSnapshot {
         threads.push(t);
     }
     for (id, project, title, branch, started) in [
-        ("o-profile", "t3code", "Profile the sync engine", "main", 2 * MIN + sec(20)),
+        ("o-profile", "t3code", "Profile the sync engine", "main", 2 * MIN + sec(30)),
+        ("o-rebase", "t3code-review", "Rebase the review branch", "review", 2 * MIN + sec(20)),
         ("o-deploy", "relay-ops", "Watch the relay deploy", "main", 2 * MIN + sec(10)),
-        ("o-rebase", "t3code-review", "Rebase the review branch", "review", 2 * MIN),
         ("o-profile-2", "t3code", "Profile the sync engine", "main", MIN + sec(40)),
+        ("o-deploy-2", "relay-ops", "Watch the relay deploy", "main", MIN + sec(30)),
+        ("o-rebase-2", "t3code-review", "Rebase the review branch", "review", MIN + sec(20)),
     ] {
         let mut t = running(thread(id, project, title, started), RunStatus::Running, started);
         t.branch = Some(branch.into());

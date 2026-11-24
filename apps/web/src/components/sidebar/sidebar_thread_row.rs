@@ -7,6 +7,7 @@ use crate::ActiveAppTheme as _;
 use crate::components::project_favicon::ProjectFavicon;
 use crate::components::icons::{Icon, IconName, IconSize};
 use gpui_kit::prelude::FluentBuilder as _;
+use gpui_kit::component::Sizable as _;
 use gpui_kit::*;
 
 use super::context_menu::MenuCommand;
@@ -565,13 +566,18 @@ impl Sidebar {
                     }
                 }))
                 .on_click(|_, _, cx| cx.stop_propagation())
+                // The web's ring is inset; the 18.75px (`h-5`) box holds the border too.
+                .h(colors.r(20.))
+                .overflow_hidden()
+                .flex()
+                .items_center()
                 .child(
                     gpui_kit::component::input::Input::new(&renaming.input)
                         .appearance(false)
                         .bordered(false)
                         .focus_bordered(false)
+                        .xsmall()
                         .p_0()
-                        .h(colors.r(18.))
                         .text_sm(),
                 )
                 .into_any_element(),

@@ -698,8 +698,8 @@ pub fn entry_height(entry: &SidebarListEntry, rem_scale: f32) -> f32 {
     match entry {
         // `my-1.5` scales; the `h-px` rule does not.
         SidebarListEntry::DraftDivider => 12. * rem_scale + 1.,
-        // `SIDEBAR_DRAG_LABEL_HEIGHT`, less the list gap that follows it.
-        SidebarListEntry::DragBoundary(_) => 24. * rem_scale - 1.,
+        // `SIDEBAR_DRAG_LABEL_HEIGHT` (24px at any rem), less the list gap that follows it.
+        SidebarListEntry::DragBoundary(_) => 23.,
         _ => entry_height_at16(entry) * rem_scale,
     }
 }

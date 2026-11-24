@@ -882,7 +882,7 @@ impl Sidebar {
         };
         let body = match entry {
             SidebarListEntry::Draft(draft) => self.render_draft_row(ix, &draft, &colors, window, cx),
-            SidebarListEntry::DraftDivider => return sidebar_draft_block::draft_divider(&colors),
+            SidebarListEntry::DraftDivider => sidebar_draft_block::draft_divider(&colors),
             SidebarListEntry::DragBoundary(marker) => self.render_drag_boundary(marker, &colors, cx),
             SidebarListEntry::DragPlaceholder => self.render_drag_placeholder(&colors, cx),
             SidebarListEntry::Thread { thread, variant, section } => {

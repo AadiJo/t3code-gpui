@@ -6343,6 +6343,593 @@
      ]
     }
    ]
+  },
+  "owner-sb-top": {
+   "elements": [
+    {
+     "name": "sidebar fill",
+     "kind": "fill",
+     "at": [
+      240,
+      40
+     ]
+    },
+    {
+     "name": "search placeholder",
+     "kind": "ink",
+     "at": [
+      38,
+      62,
+      110,
+      90
+     ],
+     "text": true
+    },
+    {
+     "name": "header actions",
+     "kind": "ink",
+     "at": [
+      150,
+      60,
+      250,
+      92
+     ]
+    },
+    {
+     "name": "draft 1 top/bottom",
+     "kind": "vscan",
+     "at": [
+      20,
+      95,
+      176
+     ]
+    },
+    {
+     "name": "draft 1 pen",
+     "kind": "ink",
+     "at": [
+      14,
+      104,
+      30,
+      122
+     ]
+    },
+    {
+     "name": "draft 1 project",
+     "kind": "ink",
+     "at": [
+      54,
+      106,
+      160,
+      124
+     ],
+     "text": true
+    },
+    {
+     "name": "draft 1 title",
+     "kind": "ink",
+     "at": [
+      16,
+      125,
+      240,
+      148
+     ],
+     "text": true
+    },
+    {
+     "name": "card 1 top/bottom",
+     "kind": "vscan",
+     "at": [
+      12,
+      250,
+      350
+     ]
+    },
+    {
+     "name": "card 1 project",
+     "kind": "ink",
+     "at": [
+      37,
+      274,
+      160,
+      295
+     ],
+     "text": true
+    },
+    {
+     "name": "card 1 time",
+     "kind": "ink",
+     "at": [
+      200,
+      274,
+      242,
+      295
+     ],
+     "text": "right"
+    },
+    {
+     "name": "card 1 title",
+     "kind": "ink",
+     "at": [
+      16,
+      296,
+      240,
+      319
+     ],
+     "text": true
+    },
+    {
+     "name": "card 1 branch",
+     "kind": "ink",
+     "at": [
+      16,
+      316,
+      60,
+      336
+     ],
+     "text": true
+    },
+    {
+     "name": "card 1 provider",
+     "kind": "ink",
+     "at": [
+      222,
+      318,
+      245,
+      338
+     ]
+    },
+    {
+     "name": "row 2 status",
+     "kind": "ink",
+     "at": [
+      175,
+      351,
+      242,
+      372
+     ],
+     "text": "right"
+    },
+    {
+     "name": "row 3 status",
+     "kind": "ink",
+     "at": [
+      175,
+      429,
+      242,
+      450
+     ],
+     "text": "right"
+    }
+   ],
+   "reference": "sb-top"
+  },
+  "owner-sb-shelves-collapsed": {
+   "elements": [
+    {
+     "name": "last card title",
+     "kind": "ink",
+     "at": [
+      16,
+      591,
+      240,
+      614
+     ],
+     "text": true
+    },
+    {
+     "name": "working label",
+     "kind": "ink",
+     "at": [
+      16,
+      644,
+      70,
+      664
+     ],
+     "text": true
+    },
+    {
+     "name": "snoozed label",
+     "kind": "ink",
+     "at": [
+      16,
+      675,
+      75,
+      695
+     ],
+     "text": true
+    },
+    {
+     "name": "settled label",
+     "kind": "ink",
+     "at": [
+      16,
+      706,
+      65,
+      726
+     ],
+     "text": true
+    },
+    {
+     "name": "shelf counts",
+     "kind": "ink",
+     "at": [
+      205,
+      640,
+      225,
+      730
+     ]
+    },
+    {
+     "name": "shelf chevrons",
+     "kind": "ink",
+     "at": [
+      228,
+      640,
+      245,
+      730
+     ]
+    }
+   ],
+   "reference": "sb-shelves-collapsed"
+  },
+  "owner-sb-shelves-expanded": {
+   "elements": [
+    {
+     "name": "snoozed 2 title",
+     "kind": "ink",
+     "at": [
+      41,
+      498,
+      195,
+      522
+     ],
+     "text": true
+    },
+    {
+     "name": "snoozed 2 time",
+     "kind": "ink",
+     "at": [
+      200,
+      500,
+      242,
+      520
+     ],
+     "text": "right"
+    },
+    {
+     "name": "settled label",
+     "kind": "ink",
+     "at": [
+      16,
+      533,
+      60,
+      553
+     ],
+     "text": true
+    },
+    {
+     "name": "settled 1 title",
+     "kind": "ink",
+     "at": [
+      41,
+      564,
+      200,
+      588
+     ],
+     "text": true
+    },
+    {
+     "name": "settled 1 time",
+     "kind": "ink",
+     "at": [
+      215,
+      566,
+      242,
+      586
+     ],
+     "text": "right"
+    },
+    {
+     "name": "hovered settled row",
+     "kind": "vscan",
+     "at": [
+      10,
+      690,
+      738
+     ]
+    },
+    {
+     "name": "settled 5 title",
+     "kind": "ink",
+     "at": [
+      41,
+      703,
+      200,
+      727
+     ],
+     "text": true
+    }
+   ],
+   "reference": "sb-shelves-expanded"
+  },
+  "owner-sb-thread-menu": {
+   "elements": [
+    {
+     "name": "menu left/right edges",
+     "kind": "hscan",
+     "at": [
+      600,
+      120,
+      330
+     ],
+     "blur": true
+    },
+    {
+     "name": "menu top/bottom",
+     "kind": "vscan",
+     "at": [
+      220,
+      390,
+      780
+     ],
+     "blur": true
+    },
+    {
+     "name": "item 1 label",
+     "kind": "ink",
+     "at": [
+      161,
+      406,
+      320,
+      429
+     ],
+     "text": true
+    },
+    {
+     "name": "rename label",
+     "kind": "ink",
+     "at": [
+      161,
+      519,
+      320,
+      543
+     ],
+     "text": true
+    },
+    {
+     "name": "delete label",
+     "kind": "ink",
+     "at": [
+      161,
+      746,
+      250,
+      770
+     ],
+     "text": true
+    }
+   ],
+   "reference": "sb-thread-menu"
+  },
+  "owner-sb-draft-menu": {
+   "elements": [
+    {
+     "name": "menu left/right edges",
+     "kind": "hscan",
+     "at": [
+      260,
+      120,
+      280
+     ],
+     "blur": true
+    },
+    {
+     "name": "menu top/bottom",
+     "kind": "vscan",
+     "at": [
+      200,
+      205,
+      315
+     ],
+     "blur": true
+    },
+    {
+     "name": "copy label",
+     "kind": "ink",
+     "at": [
+      161,
+      219,
+      240,
+      242
+     ],
+     "text": true
+    },
+    {
+     "name": "discard label",
+     "kind": "ink",
+     "at": [
+      161,
+      280,
+      265,
+      304
+     ],
+     "text": true
+    }
+   ],
+   "reference": "sb-draft-menu"
+  },
+  "owner-sb-rename": {
+   "elements": [
+    {
+     "name": "rename field edges",
+     "kind": "hscan",
+     "at": [
+      540,
+      5,
+      250
+     ]
+    },
+    {
+     "name": "rename field top/bottom",
+     "kind": "vscan",
+     "at": [
+      100,
+      525,
+      556
+     ]
+    },
+    {
+     "name": "rename text",
+     "kind": "ink",
+     "at": [
+      14,
+      533,
+      200,
+      550
+     ],
+     "text": true
+    }
+   ],
+   "reference": "sb-rename"
+  },
+  "owner-sb-jump-hints": {
+   "elements": [
+    {
+     "name": "hint 1 chip",
+     "kind": "vscan",
+     "at": [
+      232,
+      270,
+      300
+     ]
+    },
+    {
+     "name": "hint 1 label",
+     "kind": "ink",
+     "at": [
+      200,
+      274,
+      242,
+      295
+     ],
+     "exclude": "the headless shot runs on Linux, whose shortcut labels read Ctrl+1 where the owner's Mac reads \u23181"
+    }
+   ],
+   "reference": "sb-jump-hints"
+  },
+  "owner-sb-filter": {
+   "elements": [
+    {
+     "name": "popup left/right edges",
+     "kind": "hscan",
+     "at": [
+      200,
+      160,
+      450
+     ],
+     "blur": true
+    },
+    {
+     "name": "popup top/bottom",
+     "kind": "vscan",
+     "at": [
+      300,
+      85,
+      330
+     ],
+     "blur": true
+    },
+    {
+     "name": "search icon",
+     "kind": "ink",
+     "at": [
+      180,
+      105,
+      198,
+      123
+     ]
+    },
+    {
+     "name": "search placeholder",
+     "kind": "ink",
+     "at": [
+      200,
+      104,
+      330,
+      124
+     ],
+     "text": true
+    },
+    {
+     "name": "highlighted row fill",
+     "kind": "fill",
+     "at": [
+      300,
+      150
+     ]
+    },
+    {
+     "name": "all projects label",
+     "kind": "ink",
+     "at": [
+      203,
+      141,
+      280,
+      162
+     ],
+     "text": true
+    },
+    {
+     "name": "row 2 label",
+     "kind": "ink",
+     "at": [
+      203,
+      171,
+      310,
+      192
+     ],
+     "text": true
+    },
+    {
+     "name": "row 6 label",
+     "kind": "ink",
+     "at": [
+      203,
+      291,
+      240,
+      312
+     ],
+     "text": true
+    }
+   ],
+   "reference": "sb-filter"
+  },
+  "owner-sb-drag": {
+   "elements": [
+    {
+     "name": "pinned label",
+     "kind": "ink",
+     "at": [
+      16,
+      268,
+      58,
+      286
+     ],
+     "text": true
+    },
+    {
+     "name": "active label",
+     "kind": "ink",
+     "at": [
+      16,
+      292,
+      56,
+      310
+     ],
+     "text": true
+    }
+   ],
+   "reference": "sb-drag"
   }
  }
 }

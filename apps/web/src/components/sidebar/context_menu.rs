@@ -273,8 +273,10 @@ pub fn project_menu_items(pinned: bool) -> Vec<MenuItem> {
 
 /// Estimated menu height, for clamping it inside the window.
 pub fn menu_height(items: &[MenuItem], colors: &ShellColors) -> Pixels {
+    // `p-1`, the rows and each separator's `my-1` scale with the rem; the
+    // 1px border and the separators' 1px rules do not.
     let separators = items.iter().filter(|i| i.separator_before).count() as f32;
-    colors.r(8. + items.len() as f32 * f32::from(MENU_ROW_HEIGHT) + separators * 9.)
+    colors.r(8. + items.len() as f32 * f32::from(MENU_ROW_HEIGHT) + separators * 8.) + px(2. + separators)
 }
 
 /// One menu row's look (highlighted rows use `accent`; destructive ones a red tint).
@@ -296,9 +298,10 @@ pub fn menu_row(item: &MenuItem, highlighted: bool, colors: &ShellColors) -> Div
         .flex()
         .items_center()
         .gap_2()
-        .min_h(colors.s(MENU_ROW_HEIGHT))
-        .px_2()
-        .py_1()
+        // Rows are one line: a fixed height keeps fractional rems exact.
+        .h(colors.s(MENU_ROW_HEIGHT))
+        .flex_none()
+        .px(colors.r(8.))
         .rounded(colors.r(4.))
         .text_sm()
         .line_height(colors.r(20.))
@@ -355,9 +358,34 @@ pub fn menu_surface(colors: &ShellColors) -> Div {
         }])
 }
 
-/// The 1px separator (`margin 4px 8px`).
+/// The 1px separator (`margin 4px 8px`); its slot in a menu is [`separator_height`].
 pub fn menu_separator(colors: &ShellColors) -> Div {
-    div().mx_2().my_1().h(px(1.)).bg(colors.border)
+    div().mx(colors.r(8.)).mt(colors.r(4.)).h(px(1.)).flex_none().bg(colors.border)
+}
+
+/// Lays rows out at absolute, cumulative offsets. GPUI rounds every
+/// authored length to device pixels with midpoints toward zero, so rows of a
+/// fractional rem stacked in flow drift (13 menu rows at a 15px rem lose 3px
+/// against the browser); absolute tops round one by one and stay within a
+/// quarter pixel. Zero-height copies in flow keep the content's width.
+fn stacked(rows: Vec<(AnyElement, Option<AnyElement>, Pixels)>) -> Div {
+    let total = rows.iter().map(|(_, _, h)| *h).fold(px(0.), |a, b| a + b);
+    let mut sizers = div().flex().flex_col();
+    let mut layer = div().relative().h(total);
+    let mut y = px(0.);
+    for (row, sizer, height) in rows {
+        if let Some(sizer) = sizer {
+            sizers = sizers.child(div().h(px(0.)).overflow_hidden().child(sizer));
+        }
+        layer = layer.child(div().absolute().top(y).left_0().right_0().h(height).child(row));
+        y += height;
+    }
+    div().flex().flex_col().child(sizers).child(layer)
+}
+
+/// A separator's slot: its rule plus `my-1` on each side.
+fn separator_height(colors: &ShellColors) -> Pixels {
+    colors.r(8.) + px(1.)
 }
 
 /// The rows of an open menu and its open submenu, for any view that keeps a
@@ -370,10 +398,11 @@ pub fn menu_body<V: 'static>(
     pick: fn(&mut V, usize, Option<usize>, &mut Window, &mut Context<V>),
     cx: &mut Context<V>,
 ) -> Stateful<Div> {
-    let mut surface = menu_surface(colors).id("context-menu");
+    let row_height = colors.s(MENU_ROW_HEIGHT);
+    let mut rows: Vec<(AnyElement, Option<AnyElement>, Pixels)> = Vec::new();
     for (ix, item) in menu.items.iter().enumerate() {
         if item.separator_before {
-            surface = surface.child(menu_separator(colors));
+            rows.push((menu_separator(colors).into_any_element(), None, separator_height(colors)));
         }
         let highlighted = menu.highlighted == Some(ix) || menu.submenu.is_some_and(|(open, _)| open == ix);
         let has_children = !item.children.is_empty();
@@ -404,12 +433,12 @@ pub fn menu_body<V: 'static>(
         if let Some((open, child_highlight)) = menu.submenu
             && open == ix
         {
-            let mut sub = menu_surface(colors).id("context-submenu");
+            let mut sub_rows: Vec<(AnyElement, Option<AnyElement>, Pixels)> = Vec::new();
             for (cix, child) in item.children.iter().enumerate() {
                 if child.separator_before {
-                    sub = sub.child(menu_separator(colors));
+                    sub_rows.push((menu_separator(colors).into_any_element(), None, separator_height(colors)));
                 }
-                sub = sub.child(
+                sub_rows.push((
                     div()
                         .id(("submenu-item", cix))
                         .child(menu_row(child, child_highlight == Some(cix), colors))
@@ -421,15 +450,19 @@ pub fn menu_body<V: 'static>(
                                 cx.notify();
                             }
                         }))
-                        .on_click(cx.listener(move |this, _, window, cx| pick(this, ix, Some(cix), window, cx))),
-                );
+                        .on_click(cx.listener(move |this, _, window, cx| pick(this, ix, Some(cix), window, cx)))
+                        .into_any_element(),
+                    Some(menu_row(child, false, colors).into_any_element()),
+                    row_height,
+                ));
             }
+            let sub = menu_surface(colors).id("context-submenu").child(stacked(sub_rows));
             // `contextMenuFallback.ts`: the submenu opens at the trigger's right + 4px, at its top.
             row = row.child(deferred(div().absolute().left_full().top_0().pl(colors.r(4.)).child(sub)).with_priority(3));
         }
-        surface = surface.child(row);
+        rows.push((row.into_any_element(), Some(menu_row(item, false, colors).into_any_element()), row_height));
     }
-    surface
+    menu_surface(colors).id("context-menu").child(stacked(rows))
 }
 
 /// The picked row's command, if it is enabled.

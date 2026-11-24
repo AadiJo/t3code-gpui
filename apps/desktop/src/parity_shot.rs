@@ -163,7 +163,7 @@ fn rename_tls(sidebar: &mut Sidebar, window: &mut Window, cx: &mut Context<Sideb
 const OWNER_SCENES: &[Scene] = &[
     Scene { name: "owner-sb-top", reference: "sb-top", light: false, steps: &[] },
     Scene { name: "owner-sb-shelves-collapsed", reference: "sb-shelves-collapsed", light: false, steps: &[Step::Wheel(127., 400., -20_000.)] },
-    Scene { name: "owner-sb-shelves-expanded", reference: "sb-shelves-expanded", light: false, steps: &[Step::Sidebar(expand_shelves), Step::Wheel(127., 400., -20_000.), Step::Move(127., 715.)] },
+    Scene { name: "owner-sb-shelves-expanded", reference: "sb-shelves-expanded", light: false, steps: &[Step::Sidebar(expand_shelves), Step::Wheel(127., 400., -20_000.), Step::Wheel(127., 400., -20_000.), Step::Wheel(127., 400., -20_000.), Step::Move(127., 715.)] },
     Scene { name: "owner-sb-thread-menu", reference: "sb-thread-menu", light: false, steps: &[Step::RightClick(127., 520.)] },
     Scene { name: "owner-sb-draft-menu", reference: "sb-draft-menu", light: false, steps: &[Step::RightClick(127., 213.)] },
     Scene { name: "owner-sb-draft-hover", reference: "sb-draft-hover", light: false, steps: &[Step::Move(127.5, 213.), Step::Wait(100)] },

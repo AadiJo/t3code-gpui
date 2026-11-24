@@ -257,7 +257,8 @@ impl Sidebar {
                 DragMarker::Active => "drag-boundary-active",
             })
             .mx(colors.r(2.))
-            .h(colors.r(24.) - px(1.))
+            // `SIDEBAR_DRAG_LABEL_HEIGHT` is 24px at any rem, less the list gap.
+            .h(px(23.))
             .px(colors.r(8.))
             .pt(colors.r(4.))
             .child(

@@ -1,7 +1,9 @@
 """Visual parity between the GPUI port and the fork's web app.
 
-  record  <ref-dir>                       measure the reference PNGs once and write
-                                          expected.json (committed; the PNGs are not)
+  record  <ref-dir> [prefix]              measure the reference PNGs once and write
+                                          expected.json (committed; the PNGs are not);
+                                          with a prefix, only scenes starting with it,
+                                          kept alongside the others
   compare <port-dir> <out-dir> [ref-dir]  measure the port PNGs, write report.md and
                                           results.json, and side-by-side images when
                                           the reference PNGs are available
@@ -41,10 +43,12 @@ def channels(a, b):
     return max(abs(int(a[i : i + 2], 16) - int(b[i : i + 2], 16)) for i in (0, 2, 4))
 
 
-def record(ref_dir):
+def record(ref_dir, prefix=None):
     ref_dir = Path(ref_dir)
-    expected = {}
+    expected = json.loads(EXPECTED.read_text()) if prefix and EXPECTED.exists() else {}
     for scene, body in SPEC["scenes"].items():
+        if prefix and not scene.startswith(prefix):
+            continue
         im = m.load(ref_dir / f"{body.get('reference', scene)}.png")
         expected[scene] = {e["name"]: m.measure(im, e) for e in body["elements"]}
     EXPECTED.write_text(json.dumps(expected, indent=1) + "\n")
