@@ -57,6 +57,9 @@ pub struct RpcSession {
     pub direct_endpoints: Arc<[ReportedEndpoint]>,
     /// Every config event after the initial snapshot, including later snapshots.
     config_events: broadcast::Sender<ConfigEvent>,
+    /// The config with every event applied since the session opened, so a reader that
+    /// subscribes late misses nothing (the server follows its snapshot with the usage sources).
+    config: watch::Receiver<Arc<ServerConfig>>,
     /// Set when the socket closes or the config stream ends.
     ended: watch::Receiver<Option<ConnectionError>>,
     /// The config reader task; it holds the socket, so it stops with the session.
@@ -96,11 +99,10 @@ impl RpcSession {
                     ));
                 }
             };
-            let snapshot = chunk.into_iter().find_map(|event| match event {
-                ServerConfigStreamEvent::Snapshot(snapshot) => Some(snapshot.config),
-                _ => None,
-            });
-            if let Some(config) = snapshot {
+            let mut events = chunk.into_iter().skip_while(|event| !matches!(event, ServerConfigStreamEvent::Snapshot(_)));
+            if let Some(ServerConfigStreamEvent::Snapshot(snapshot)) = events.next() {
+                let mut config = snapshot.config;
+                events.for_each(|event| apply_config_event(&mut config, &event));
                 return Ok(config);
             }
         } };
@@ -125,6 +127,8 @@ impl RpcSession {
             })
             .collect();
         let (config_events, _) = broadcast::channel(64);
+        let config = Arc::new(config);
+        let (config_tx, config_rx) = watch::channel(Arc::clone(&config));
         let (ended_tx, ended) = watch::channel(None);
         let label = prepared.label.clone();
         let reader_client = client.clone();
@@ -137,6 +141,7 @@ impl RpcSession {
                     item = stream.next() => match item {
                         Some(Ok(chunk)) => {
                             for event in chunk {
+                                config_tx.send_modify(|config| apply_config_event(Arc::make_mut(config), &event));
                                 _ = config_events.send(Arc::new(event));
                             }
                         }
@@ -154,13 +159,19 @@ impl RpcSession {
         });
         Ok(Arc::new(Self {
             client,
-            initial_config: Arc::new(config),
+            initial_config: config,
+            config: config_rx,
             direct_endpoints,
             config_events,
             ended,
             reader: reader.abort_handle(),
             prepared,
         }))
+    }
+
+    /// The config with every event so far applied, and its changes.
+    pub fn config(&self) -> watch::Receiver<Arc<ServerConfig>> {
+        self.config.clone()
     }
 
     /// Config events after the initial snapshot. A receiver that lags
@@ -228,5 +239,17 @@ fn config_stream_error(label: &str, via: ConnectionVia, error: RpcError<Subscrib
         )
         .at(ConnectionHop::Server)
         .via(via),
+    }
+}
+
+/// Folds a config event into the config: snapshots, settings, provider statuses and usage
+/// sources (the events this client opts in to and decodes).
+fn apply_config_event(config: &mut ServerConfig, event: &ServerConfigStreamEvent) {
+    match event {
+        ServerConfigStreamEvent::Snapshot(snapshot) => *config = snapshot.config.clone(),
+        ServerConfigStreamEvent::SettingsUpdated(update) => config.settings = update.payload.settings.clone(),
+        ServerConfigStreamEvent::ProviderStatuses(statuses) => config.providers = statuses.payload.providers.clone(),
+        ServerConfigStreamEvent::UsageLimitSourcesUpdated(update) => config.usage_limit_sources = Some(update.payload.sources.clone()),
+        _ => {}
     }
 }

@@ -235,6 +235,7 @@ pub fn fixture_state(key: &str) -> ComposerState {
         voice_available: false,
         validation: None,
         file_attachment_limit: Some(crate::state::attachments::MAX_FILE_BYTES),
+        usage_limits: false,
         placeholder: None,
     }
 }
@@ -301,6 +302,8 @@ pub fn build_composer(state: SceneState, store: Rc<RefCell<dyn ComposerDraftStor
                 title: "Environment disconnected. Messages send when it reconnects.".into(),
                 description: None,
                 action: Some("Retry".into()),
+                dismiss: None,
+                body: None,
             }];
         }
         _ => {}

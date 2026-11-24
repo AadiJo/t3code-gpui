@@ -23,6 +23,8 @@ pub enum SlashCommand {
     Side,
     Btw,
     Clear,
+    /// The provider's `usage-limits`: opens the limits banner instead of sending.
+    UsageLimits,
 }
 
 /// What picking an item does.

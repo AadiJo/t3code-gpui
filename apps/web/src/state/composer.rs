@@ -155,6 +155,8 @@ pub fn composer_state(key: &ThreadKey, row: Option<&ThreadRow>, thread: &LiveThr
             title: t!("Your next message starts a fresh session"),
             description: Some(t!("The agent won't see earlier messages in this thread.")),
             action: Some(t!("Keep the current session")),
+            dismiss: None,
+            body: None,
         }]
     } else {
         Vec::new()
@@ -189,6 +191,7 @@ pub fn composer_state(key: &ThreadKey, row: Option<&ThreadRow>, thread: &LiveThr
         voice_available: false,
         validation: None,
         file_attachment_limit: super::attachments::file_limit(environment.config.as_deref()),
+        usage_limits: false,
     }
 }
 
@@ -229,6 +232,7 @@ pub fn slash_facts(row: Option<&ThreadRow>, thread: &LiveThread, environment: &L
         compact: connected && row.is_some() && compactable && !input.is_working && !worktree_pending && !pending,
         show_skills,
         pull_requests,
+        usage_limits: false,
     }
 }
 
@@ -367,6 +371,8 @@ pub fn handle_event(event: &ComposerEvent, thread: &Entity<LiveThread>, composer
     let draft_key_text = draft_key(&key).0.to_string();
     match event {
         ComposerEvent::Submit { prompt, attachments, model, dispatch, .. } => {
+            // Sending resumes quota-spending work (`clearUsageLimitsFor`).
+            UsagePanels::clear(&key, cx);
             let mode = match dispatch {
                 Some(FollowUpBehavior::Queue) => DeliveryMode::Queue,
                 Some(FollowUpBehavior::Steer) => DeliveryMode::Steer,
@@ -398,6 +404,20 @@ pub fn handle_event(event: &ComposerEvent, thread: &Entity<LiveThread>, composer
             }
         }
         ComposerEvent::BannerAction(id) if id.as_ref() == FRESH_SESSION_BANNER => FreshSessionArms::set(&key, false, cx),
+        ComposerEvent::UsageLimits => {
+            let Some(composer) = composer.upgrade() else { return EventOutcome::Done };
+            let instance = composer.read(cx).state().selection.instance_id.0.to_string();
+            let row = StateBridge::shell(cx).read(cx).row(&key).cloned();
+            let panel_key = usage_panel_key(&key, row.as_deref(), thread.read(cx).input(), &instance);
+            // Sent alone, the command clears the prompt once the banner opens.
+            let sent = composer.read(cx).editor().read(cx).text().trim().eq_ignore_ascii_case("/usage-limits");
+            if open_usage_limits(&key, panel_key, config.as_deref(), &instance, cx) && sent {
+                composer.update(cx, |composer, cx| composer.editor().update(cx, |editor, cx| editor.set_text("", cx)));
+            }
+        }
+        ComposerEvent::BannerDismissed(id) if id.starts_with("usage-limits:") => UsagePanels::clear(&key, cx),
+        ComposerEvent::RedeemResetCredit { account, choice } => redeem_reset_credit(&key, account, choice, cx),
+        ComposerEvent::OpenUrl(url) => cx.open_url(url),
         ComposerEvent::SideChat { prompt } => {
             // Where side chats are unavailable, `/side` is refused with the reason.
             if let Some(reason) = side_chat_disabled_reason(&key, thread.read(cx), environment.read(cx), cx) {
@@ -861,6 +881,8 @@ pub struct SlashFacts {
     pub show_skills: bool,
     /// Where `#` searches; `None` without a server config.
     pub pull_requests: Option<super::pull_request_mentions::PullRequestScope>,
+    /// `/usage-limits` opens the limits banner (`onUsageLimitsCommand`).
+    pub usage_limits: bool,
 }
 
 /// Menu items for `@` (workspace files) and `$` / `/` (provider skills). File results arrive
@@ -1018,6 +1040,12 @@ impl LiveMenuSource {
         *self.config.borrow_mut() = config.cloned();
     }
 
+    /// The environment's config now, so provider commands that arrive after the menu opened
+    /// (`/usage-limits` once the hub is read) are listed; the last one given otherwise.
+    fn current_config(&self) -> Option<Arc<ServerConfig>> {
+        self.store.config().borrow().clone().or_else(|| self.config.borrow().clone())
+    }
+
     /// Takes what the shown thread allows now.
     pub fn set_facts(&self, facts: SlashFacts) {
         *self.facts.borrow_mut() = facts;
@@ -1039,7 +1067,7 @@ impl LiveMenuSource {
 
     /// `$` matches: the sending provider's user-invocable skills for this workspace, ranked.
     fn skill_items(&self, query: &str) -> Vec<ComposerCommandItem> {
-        let config = self.config.borrow();
+        let config = self.current_config();
         let instance = self.facts.borrow().instance_id.clone();
         let Some(provider) = selected_provider(config.as_deref(), instance.as_deref()) else { return Vec::new() };
         let skills = provider_skills_for_cwd(provider, self.cwd.as_deref());
@@ -1291,7 +1319,7 @@ impl LiveMenuSource {
     /// ranked by `searchSlashCommandItems` when there is a query.
     fn slash_list(&self, trigger: &ComposerTrigger, context: &SlashMenuContext) -> Vec<ComposerCommandItem> {
         let facts = self.facts.borrow();
-        let config = self.config.borrow();
+        let config = self.current_config();
         let at_start = trigger.range.start == 0;
         let prompt = context.prompt;
         let provider = selected_provider(config.as_deref(), Some(context.instance_id.0.as_ref()));
@@ -1337,7 +1365,7 @@ impl LiveMenuSource {
         let skill_names: std::collections::HashSet<String> = skills.iter().map(|s| s.name.trim().to_lowercase()).collect();
         for command in provider.map(|p| provider_commands_for_cwd(p, self.cwd.as_deref())).unwrap_or_default() {
             let hidden = skill_names.contains(&command.name.trim().to_lowercase())
-                || command.name == USAGE_LIMITS_COMMAND
+                || (command.name == USAGE_LIMITS_COMMAND && !(facts.usage_limits && !context.has_attachments))
                 || (command.name == "compact" && !compact_available)
                 || (command.name == "clear" && facts.fresh_session);
             if hidden {
@@ -1352,7 +1380,11 @@ impl LiveMenuSource {
                     label_prefix: None,
                     description,
                     badge: None,
-                    action: ComposerCommandAction::Insert(SharedString::from(format!("/{}", command.name))),
+                    action: if command.name == USAGE_LIMITS_COMMAND {
+                        ComposerCommandAction::Slash(SlashCommand::UsageLimits)
+                    } else {
+                        ComposerCommandAction::Insert(SharedString::from(format!("/{}", command.name)))
+                    },
                 },
                 rank: SlashRank::Provider(command.name),
             });
@@ -1418,4 +1450,269 @@ impl ComposerMenuSource for LiveMenuSource {
             }
         }
     }
+}
+
+/// The limits banner opened on a thread (`useUsageLimitsPanel`'s panel): the key it was opened
+/// under, its clock, and its reset credit redemptions by account.
+#[derive(Clone, Debug, Default)]
+pub struct UsagePanel {
+    pub key: String,
+    pub now: f64,
+    /// The session may manage providers; `None` until the grants are read.
+    pub can_manage: Option<bool>,
+    pub busy: std::collections::HashSet<SharedString>,
+    pub status: HashMap<SharedString, SharedString>,
+}
+
+/// Every thread's open limits banner.
+#[derive(Default)]
+pub struct UsagePanels(HashMap<ThreadKey, UsagePanel>);
+
+impl gpui_kit::Global for UsagePanels {}
+
+impl UsagePanels {
+    /// The thread's panel while it was opened under `panel_key`; a panel opened under another
+    /// key (a new run, a request answered) is dropped, as the web drops it.
+    pub fn current(key: &ThreadKey, panel_key: Option<&str>, cx: &mut App) -> Option<UsagePanel> {
+        let panels = &mut cx.default_global::<Self>().0;
+        let panel = panels.get(key)?;
+        if panel_key == Some(panel.key.as_str()) {
+            return Some(panel.clone());
+        }
+        panels.remove(key);
+        None
+    }
+
+    fn update(key: &ThreadKey, cx: &mut App, f: impl FnOnce(&mut UsagePanel)) {
+        if let Some(panel) = cx.default_global::<Self>().0.get_mut(key) {
+            f(panel);
+        }
+    }
+
+    /// Closes the thread's panel (dismiss, a sent turn: `clearFor`).
+    pub fn clear(key: &ThreadKey, cx: &mut App) {
+        if cx.has_global::<Self>() {
+            cx.global_mut::<Self>().0.remove(key);
+        }
+    }
+}
+
+/// The key a panel lives under (`usageLimitsKey`): the thread, the sending instance, the latest
+/// run and the open request, so new quota-spending work closes it.
+pub fn usage_panel_key(key: &ThreadKey, row: Option<&ThreadRow>, input: &TimelineInput, instance_id: &str) -> Option<String> {
+    let row = row?;
+    if instance_id.is_empty() {
+        return None;
+    }
+    let run = row.latest_run.as_ref().map(|run| run.run_id.to_string()).unwrap_or_default();
+    let request = input
+        .pending_approval_ids
+        .first()
+        .map(|id| id.0.to_string())
+        .or_else(|| input.pending_question.as_ref().map(|q| q.request_id.0.to_string()))
+        .unwrap_or_default();
+    Some(format!("{}:{}:{instance_id}:{run}:{request}", key.environment_id.0, key.thread_id.0))
+}
+
+/// The selected instance's driver reports limits (`hasProviderUsageLimits`): the command is offered.
+pub fn usage_limits_offered(config: Option<&ServerConfig>, instance_id: &str) -> bool {
+    let Some(config) = config else { return false };
+    let Some(provider) = config.providers.iter().find(|p| p.instance_id.as_str() == instance_id) else { return false };
+    t3code_shared::usage_limits::has_provider_usage_limits(&provider.driver, &config.providers, config.usage_limit_sources.as_deref().unwrap_or_default())
+}
+
+/// The open limits banner of a thread, dropping a panel opened under another key.
+pub fn usage_banner(key: &ThreadKey, panel_key: Option<&str>, config: Option<&ServerConfig>, instance_id: &str, cx: &mut App) -> Option<ComposerBanner> {
+    let panel = UsagePanels::current(key, panel_key, cx)?;
+    let report = usage_report(config, instance_id)?;
+    Some(usage_limits_banner(&panel, &report, cx))
+}
+
+/// The selected instance's report, or `None` when it has no limits to show.
+fn usage_report(config: Option<&ServerConfig>, instance_id: &str) -> Option<t3code_shared::usage_limits::UsageLimitsReport> {
+    let config = config?;
+    t3code_shared::usage_limits::collect_provider_usage_limits(instance_id, &config.providers, config.usage_limit_sources.as_deref().unwrap_or_default())
+}
+
+/// `accountLabel`: the driver and instance for an instance's account, else the report's label.
+fn account_label(account: &t3code_shared::usage_limits::ReportAccount) -> SharedString {
+    let Some(instance_id) = &account.instance_id else { return account.label.clone().into() };
+    let driver = crate::components::usage::usage_providers::driver_label(&account.driver);
+    let display = account.display_name.as_deref().map(str::trim).filter(|name| !name.is_empty());
+    let instance = display.or((instance_id.as_str() != account.driver).then_some(instance_id.as_str())).unwrap_or("");
+    if !instance.is_empty() && instance.to_lowercase() != driver.to_lowercase() { format!("{driver} · {instance}").into() } else { driver.into() }
+}
+
+fn hex_color(hex: &str) -> Option<gpui_kit::Hsla> {
+    u32::from_str_radix(hex.strip_prefix('#')?, 16).ok().map(|rgb| gpui_kit::rgb(rgb).into())
+}
+
+/// The limits banner (`usageLimitsBannerItem`) for an open panel.
+pub fn usage_limits_banner(panel: &UsagePanel, report: &t3code_shared::usage_limits::UsageLimitsReport, cx: &App) -> ComposerBanner {
+    use crate::components::chat::composer_usage_limits::{AccountLabel, UsageAccount, UsageLimitsBody, UsageWindowRow};
+    use crate::components::usage::usage_limits::{ResetsInStyle, format_resets_in, limits_notice, reset_credit_choices};
+    use t3code_contracts::{ProviderConsumeResetCreditInput, ProviderConsumeResetCreditInputNoUndefined};
+    use t3code_shared::usage_limits::{limits_notice_reason, pace_of, pace_remaining_percent, remaining_percent};
+    let theme = crate::theme_palette::ActiveAppTheme::app_theme(cx);
+    let format = crate::hooks::settings_bridge::timestamp_format(cx);
+    let now = panel.now;
+    let accounts: Vec<UsageAccount> = report
+        .accounts
+        .iter()
+        .map(|account| {
+            let id = SharedString::from(account.id.clone());
+            let windows = account
+                .limits
+                .windows
+                .iter()
+                .map(|window| {
+                    let remaining = remaining_percent(window).round() as i64;
+                    let time_left = pace_remaining_percent(window, now).map(f64::round);
+                    let resets_in = format_resets_in(window, now, ResetsInStyle::Full);
+                    let resets_at = window.resets_at.as_deref().map(|at| crate::timestamp_format::format_upcoming_timestamp(at, format, now as i64, None));
+                    let mut tooltip = vec![match time_left {
+                        Some(left) => t!("{remaining}% left · {timeLeft}% of the window left", remaining = remaining, timeLeft = left as i64),
+                        None => t!("{remaining}% left", remaining = remaining),
+                    }];
+                    if time_left.is_some() {
+                        tooltip.push(t!("The line is where even spending would be."));
+                    }
+                    if let Some(at) = resets_at {
+                        tooltip.push(match &resets_in {
+                            Some(resets_in) => t!("Resets {resetsAt} · {resetsIn}", resetsAt = at.as_ref(), resetsIn = resets_in.as_ref()),
+                            None => t!("Resets {resetsAt}", resetsAt = at.as_ref()),
+                        });
+                    }
+                    UsageWindowRow {
+                        id: window.id.clone().into(),
+                        label: window.label.clone().into(),
+                        remaining,
+                        time_left,
+                        pace: pace_of(window, now),
+                        resets_in,
+                        tooltip,
+                    }
+                })
+                .collect();
+            let input = account.reset_credit_input.clone().or_else(|| {
+                account.instance_id.clone().map(|instance_id| ProviderConsumeResetCreditInput::NoUndefined(ProviderConsumeResetCreditInputNoUndefined { instance_id, credit_id: None }))
+            });
+            let credits = match (&input, &account.limits.reset_credits) {
+                (Some(input), Some(credits)) => reset_credit_choices(credits, input, now, false),
+                _ => Vec::new(),
+            };
+            let color = crate::provider_instances::normalize_provider_accent_color(account.accent_color.as_deref())
+                .and_then(|hex| hex_color(&hex))
+                .unwrap_or_else(|| crate::components::usage::usage_providers::driver_color(&account.driver, theme));
+            UsageAccount {
+                label: Some(AccountLabel { text: account_label(account), plan: account.plan.clone().map(SharedString::from) }),
+                notice: limits_notice_reason(&account.limits).map(limits_notice),
+                windows,
+                color,
+                manage_url: account.limits.external_usage.as_ref().map(|usage| SharedString::from(usage.url.clone())),
+                credits,
+                status: panel.status.get(&id).cloned(),
+                busy: panel.busy.contains(&id),
+                can_manage: panel.can_manage == Some(true),
+                id,
+            }
+        })
+        .collect();
+    let description = match accounts.as_slice() {
+        [single] => single.label.as_ref().map(|label| label.plain()),
+        _ => Some(t!("{count, plural, one {{count} account} other {{count} accounts}}", count = accounts.len())),
+    };
+    ComposerBanner {
+        // A fresh id per opening, as the web's stack keys it.
+        id: format!("usage-limits:{}:{}", panel.key, panel.now as i64).into(),
+        tone: BannerTone::Neutral,
+        icon: IconName::Gauge,
+        title: t!("Usage limits"),
+        description,
+        action: None,
+        dismiss: Some(t!("Dismiss usage limits")),
+        body: Some(Arc::new(UsageLimitsBody { accounts, notices: report.notices.iter().cloned().map(SharedString::from).collect() })),
+    }
+}
+
+/// Opens the limits banner (`useUsageLimitsPanel.open`); a provider without a report toasts.
+/// Returns whether it opened.
+fn open_usage_limits(key: &ThreadKey, panel_key: Option<String>, config: Option<&ServerConfig>, instance_id: &str, cx: &mut App) -> bool {
+    let (Some(panel_key), true) = (panel_key, usage_report(config, instance_id).is_some()) else {
+        UsagePanels::clear(key, cx);
+        Toaster::push(ToastData::new(ToastKind::Info, t!("Usage limits are unavailable for this provider")), cx);
+        return false;
+    };
+    let now = jiff::Timestamp::now().as_millisecond() as f64;
+    cx.default_global::<UsagePanels>().0.insert(key.clone(), UsagePanel { key: panel_key, now, ..UsagePanel::default() });
+    // The reset credit buttons need `AuthProvidersManageScope`.
+    let (environment_id, _) = runtime_ids(key);
+    if let Some(link) = crate::connection::ConnectionRuntime::global(cx).environment_link(&environment_id) {
+        let read = crate::connection::ConnectionRuntime::global(cx).spawn(
+            async move { link.session_state().await.map_err(|error| crate::connection::CommandError(error.to_string().into())) },
+            cx,
+        );
+        let key = key.clone();
+        cx.spawn(async move |cx| {
+            let can = read.await.is_ok_and(|state| state.grants_scope(t3code_contracts::AuthEnvironmentScope::ProvidersManage));
+            cx.update(|cx| {
+                UsagePanels::update(&key, cx, |panel| panel.can_manage = Some(can));
+                refresh_thread(&key, cx);
+            })
+        })
+        .detach();
+    }
+    true
+}
+
+/// Redraws the thread's composer state after the panel changed off an event.
+fn refresh_thread(key: &ThreadKey, cx: &mut App) {
+    if let Some(thread) = StateBridge::threads(cx).read(cx).find(key, cx).cloned() {
+        thread.update(cx, |_, cx| cx.emit(crate::thread_sync::LiveThreadEvent::Status));
+    }
+}
+
+/// Redeems a confirmed reset credit (`useResetCredit.redeem`) and keeps its outcome on the panel.
+fn redeem_reset_credit(key: &ThreadKey, account: &SharedString, choice: &crate::components::usage::usage_limits::ResetCreditChoice, cx: &mut App) {
+    use t3code_contracts::ProviderConsumeResetCreditOutcome as Outcome;
+    let Some(panel) = cx.try_global::<UsagePanels>().and_then(|panels| panels.0.get(key)) else { return };
+    if panel.can_manage != Some(true) {
+        return;
+    }
+    let (environment_id, _) = runtime_ids(key);
+    let Some(link) = crate::connection::ConnectionRuntime::global(cx).environment_link(&environment_id) else { return };
+    UsagePanels::update(key, cx, |panel| {
+        panel.busy.insert(account.clone());
+        panel.status.remove(account);
+    });
+    let input = choice.input.clone();
+    let call = crate::connection::ConnectionRuntime::global(cx).spawn(
+        async move {
+            let session = link.session(std::time::Duration::from_secs(10)).await.map_err(|error| crate::connection::CommandError(error.to_string().into()))?;
+            session.client.call::<t3code_contracts::rpc::methods::ProviderConsumeResetCredit>(input).await.map_err(|error| crate::connection::CommandError(error.to_string().into()))
+        },
+        cx,
+    );
+    let (key, account) = (key.clone(), account.clone());
+    cx.spawn(async move |cx| {
+        let result = call.await;
+        cx.update(|cx| {
+            let status = match result {
+                Ok(result) => result.warning.map(SharedString::from).unwrap_or_else(|| match result.outcome {
+                    Outcome::Reset => t!("Reset applied. Your windows have cleared."),
+                    Outcome::NothingToReset => t!("Nothing to reset right now."),
+                    Outcome::NoCredit => t!("No reset credit left."),
+                    Outcome::AlreadyRedeemed => t!("That credit was already redeemed."),
+                }),
+                Err(error) if !error.0.is_empty() => error.0,
+                Err(_) => t!("Could not use the reset credit."),
+            };
+            UsagePanels::update(&key, cx, |panel| {
+                panel.busy.remove(&account);
+                panel.status.insert(account.clone(), status);
+            });
+            refresh_thread(&key, cx);
+        })
+    })
+    .detach();
 }

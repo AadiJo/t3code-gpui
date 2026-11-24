@@ -68,7 +68,7 @@ pub(super) fn all_connected(check: &mut Check, count: usize) -> bool {
     })
 }
 
-fn project_at(check: &mut Check, environment_id: &t3code_contracts::EnvironmentId, root: &str) -> anyhow::Result<ProjectId> {
+pub(super) fn project_at(check: &mut Check, environment_id: &t3code_contracts::EnvironmentId, root: &str) -> anyhow::Result<ProjectId> {
     let id = environment_id.clone();
     let root_text = root.to_owned();
     check.pump(move |c| c.cx.update(|cx| StateBridge::environment(&id, cx).is_some_and(|env| env.read(cx).shell.snapshot.is_some())), Duration::from_secs(30), "shell loaded")?;

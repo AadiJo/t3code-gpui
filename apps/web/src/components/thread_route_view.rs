@@ -298,6 +298,8 @@ impl ThreadRouteView {
         } else {
             None
         };
+        // The view's workspace can arrive after `show`; the menu follows it.
+        *self.menu.0.borrow_mut() = Some(self.data.menu_source(view, &self.composer, cx));
         let state = self.data.composer_state(view, &self.base, cx);
         // The branch toolbar under the composer replaces the static strip.
         let state = ComposerState { context_strip: None, placeholder, ..state };
@@ -581,7 +583,7 @@ impl ThreadRouteView {
         match event {
             ComposerEvent::Submit { .. } => self.refresh(true, cx),
             // These change what the composer shows from the draft (model, mode, the `/clear` banner).
-            ComposerEvent::ModelChanged(_) | ComposerEvent::RuntimeModeChanged(_) | ComposerEvent::ClearSession | ComposerEvent::BannerAction(_) => {
+            ComposerEvent::ModelChanged(_) | ComposerEvent::RuntimeModeChanged(_) | ComposerEvent::ClearSession | ComposerEvent::BannerAction(_) | ComposerEvent::BannerDismissed(_) | ComposerEvent::UsageLimits => {
                 self.refresh(false, cx)
             }
             _ => {}

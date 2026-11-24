@@ -10,6 +10,7 @@
 
 use crate::components::ui::GlassExt as _;
 use crate::components::icons::{Icon, IconName, IconSize};
+use crate::components::ui::button::{Button, ButtonSize, ButtonVariant};
 use std::cell::RefCell;
 use std::ops::Range;
 use std::rc::Rc;
@@ -108,6 +109,10 @@ pub struct ComposerBanner {
     /// Muted text after the title, truncated first (`ComposerBannerStackItem.description`).
     pub description: Option<SharedString>,
     pub action: Option<SharedString>,
+    /// Shows the dismiss button (`ComposerBanner.Dismiss`) with this accessible label.
+    pub dismiss: Option<SharedString>,
+    /// Drawn under the row (`ComposerBannerStackItem.children`).
+    pub body: Option<Arc<super::composer_usage_limits::UsageLimitsBody>>,
 }
 
 /// The environment, workspace and branch strip under the card.
@@ -151,6 +156,9 @@ pub struct ComposerState {
     /// The largest file the server stages (`fileAttachmentStagingLimit`); `None` when it takes
     /// no files.
     pub file_attachment_limit: Option<u64>,
+    /// `/usage-limits` opens the limits banner (`onUsageLimitsCommand`): the provider reports
+    /// limits and the thread can show them.
+    pub usage_limits: bool,
 }
 
 /// What the composer asks the chat view to do.
@@ -184,6 +192,13 @@ pub enum ComposerEvent {
     ContextStripClicked(ContextStripControl),
     /// A banner's action button, by banner id.
     BannerAction(SharedString),
+    /// A banner's dismiss button, by banner id.
+    BannerDismissed(SharedString),
+    /// `/usage-limits`, picked from the menu or sent alone.
+    UsageLimits,
+    /// The limits banner's confirmed reset credit, for an account of its report.
+    RedeemResetCredit { account: SharedString, choice: crate::components::usage::usage_limits::ResetCreditChoice },
+    OpenUrl(SharedString),
 }
 
 /// A control in the context strip.
@@ -212,6 +227,10 @@ pub struct ChatComposer {
     draft_store: Rc<RefCell<dyn ComposerDraftStore>>,
     save_task: Option<Task<()>>,
     footer_width: Pixels,
+    /// Limits banner accounts whose email is shown.
+    pub(super) usage_revealed: std::collections::HashSet<SharedString>,
+    /// The reset credit awaiting confirmation, by account.
+    pub(super) usage_confirming: Option<(SharedString, crate::components::usage::usage_limits::ResetCreditChoice)>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -252,6 +271,8 @@ impl ChatComposer {
             draft_store,
             save_task: None,
             footer_width: COMPOSER_MAX_WIDTH,
+            usage_revealed: Default::default(),
+            usage_confirming: None,
             _subscriptions: vec![subscription, settings],
         };
         this.load_draft(cx);
@@ -467,6 +488,10 @@ impl ChatComposer {
                 replace(self, String::new(), cx);
                 cx.emit(ComposerEvent::ClearSession);
             }
+            ComposerCommandAction::Slash(SlashCommand::UsageLimits) => {
+                replace(self, String::new(), cx);
+                cx.emit(ComposerEvent::UsageLimits);
+            }
             ComposerCommandAction::Slash(command) => {
                 let word = if command == SlashCommand::Btw { "/btw " } else { "/side " };
                 replace(self, word.to_owned(), cx);
@@ -553,7 +578,10 @@ impl ChatComposer {
             return;
         }
         let prompt = self.editor.read(cx).text().to_owned();
-        if is_clear_command(&prompt) {
+        // `isUsageLimitsCommand`: the chat view opens the banner and clears the prompt.
+        if self.state.usage_limits && self.attachments.is_empty() && prompt.trim().eq_ignore_ascii_case("/usage-limits") {
+            cx.emit(ComposerEvent::UsageLimits);
+        } else if is_clear_command(&prompt) {
             cx.emit(ComposerEvent::ClearSession);
         } else if let Some(rest) = prompt.trim().strip_prefix("/side").or_else(|| prompt.trim().strip_prefix("/btw")) {
             cx.emit(ComposerEvent::SideChat { prompt: rest.trim().to_owned() });
@@ -1095,19 +1123,22 @@ impl ChatComposer {
         )
     }
 
-    fn render_banners(&self, c: &ComposerColors, cx: &mut Context<Self>) -> Option<AnyElement> {
+    fn render_banners(&self, c: &ComposerColors, window: &Window, cx: &mut Context<Self>) -> Option<AnyElement> {
         if self.state.banners.is_empty() {
             return None;
         }
+        // `ComposerBanner.Scroll`: `max-h-[min(24rem,40dvh)]`.
+        let max_body = c.r(px(384.)).min(window.viewport_size().height * 0.4);
         let rows = self.state.banners.iter().map(|banner| {
             let (tint, ink) = match banner.tone {
                 BannerTone::Neutral => (None, c.muted_foreground),
                 BannerTone::Warning => (Some(c.warning), c.warning),
                 BannerTone::Error => (Some(c.error), c.error_foreground),
             };
-            div()
+            // `min-h-(--composer-banner-icon-column)`: spacing(6) from `sm` up.
+            let row = div()
                 .id(SharedString::from(format!("banner-{}", banner.id)))
-                .min_h(c.r(px(28.)))
+                .min_h(c.r(px(24.)))
                 .flex()
                 .items_center()
                 .gap(c.r(px(4.)))
@@ -1136,14 +1167,32 @@ impl ChatComposer {
                         move |s| s.bg(h)
                     }).on_click(cx.listener(move |_, _, _, cx| cx.emit(ComposerEvent::BannerAction(id.clone())))).child(action))
                 })
+                .when(banner.dismiss.is_some(), |el| {
+                    let id = banner.id.clone();
+                    // `ComposerBanner.Actions min-w-12 justify-end` holding `ComposerBanner.Dismiss`.
+                    el.child(
+                        div().min_w(c.r(px(48.))).flex().justify_end().child(
+                            Button::new(SharedString::from(format!("banner-dismiss-{id}")))
+                                .icon(IconName::X)
+                                .icon_size(IconSize::Custom(c.r(px(14.))))
+                                .size(ButtonSize::IconXs)
+                                .variant(ButtonVariant::Ghost)
+                                .on_click(cx.listener(move |_, _, _, cx| cx.emit(ComposerEvent::BannerDismissed(id.clone())))),
+                        ),
+                    )
+                });
+            // `ComposerBanner.Children`: the body under the row.
+            let body = banner.body.as_ref().map(|body| self.render_usage_limits_body(&banner.id, body, c, max_body, cx));
+            div().flex().flex_col().child(row).children(body)
         });
         Some(
             div()
                 .mx(c.r(DRAWER_INSET))
                 .mb(-c.r(ATTACHMENT_OVERLAP))
-                .pb(c.r(ATTACHMENT_OVERLAP))
+                // `density="comfortable"`: 5px above and below, then the overlap.
+                .pb(c.r(ATTACHMENT_OVERLAP) + c.r(px(5.)))
                 .px(c.r(px(4.)))
-                .pt(c.r(px(4.)))
+                .pt(c.r(px(5.)))
                 .rounded_t(c.r(SURFACE_RADIUS))
                 .glass(c.glass_surface)
                 .border_1()
@@ -1388,7 +1437,8 @@ impl Render for ChatComposer {
             .capture_action(cx.listener(Self::capture_tab))
             .capture_action(cx.listener(Self::capture_escape))
             .on_modifiers_changed(cx.listener(Self::on_modifiers))
-            .children(self.render_banners(&c, cx))
+            .children(self.render_banners(&c, window, cx))
+            .children(self.render_reset_credit_dialog(&c, cx))
             .child(div().relative().w_full().children(menu).child(card))
             .children(self.render_context_strip(&c, cx))
     }
