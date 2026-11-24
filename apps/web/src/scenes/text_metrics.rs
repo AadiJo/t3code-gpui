@@ -119,7 +119,7 @@ impl Render for TextMetricsScene {
             let font = Self::font(style);
             let font_id = window.text_system().resolve_font(&font);
             let ascent = window.text_system().ascent(font_id, px(style.size));
-            let descent = window.text_system().descent(font_id, px(style.size));
+            let descent = window.text_system().descent(font_id, px(style.size)).abs();
             div()
                 .absolute()
                 .left(px(row.x))

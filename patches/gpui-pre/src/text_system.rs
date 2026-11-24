@@ -501,7 +501,8 @@ impl TextSystem {
         line_height: Pixels,
     ) -> Pixels {
         let ascent = self.ascent(font_id, font_size);
-        let descent = self.descent(font_id, font_size);
+        // Font metrics give the descent as a negative offset below the baseline.
+        let descent = self.descent(font_id, font_size).abs();
         line_baseline_offset(line_height, ascent, descent)
     }
 

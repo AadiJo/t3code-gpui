@@ -187,7 +187,7 @@ impl Element for RichText {
                 let text_system = window.text_system();
                 let font_id = text_system.resolve_font(&inline.font);
                 let ascent = text_system.ascent(font_id, size).round();
-                let descent = text_system.descent(font_id, size).round();
+                let descent = text_system.descent(font_id, size).abs().round();
                 let extra = size * inline.pad_y_em + inline.border;
                 let baseline = layout.line_layout_for_index(text_box.range.start).map_or(line_height, |line| {
                     line_baseline_offset(line_height, line.ascent(), line.descent())
@@ -195,7 +195,9 @@ impl Element for RichText {
                 (baseline - ascent - extra, baseline + descent + extra, size * inline.pad_x_em + inline.border)
             });
             for quad in range_quads(&layout, text_box.range.clone(), line_height) {
-                let pad_x = inline.map_or(text_box.pad_x, |(_, _, pad_x)| pad_x);
+                // An inline element's padding already takes space in the line: the range's
+                // first glyph sits after it and its end is the next glyph, past the trailing one.
+                let (pad_left, pad_right) = inline.map_or((text_box.pad_x, text_box.pad_x), |(_, _, pad_x)| (pad_x, px(0.)));
                 let (top, bottom) = match (inline, text_box.height_em) {
                     (Some((above, below, _)), _) => (quad.top() + above, quad.top() + below),
                     (None, Some(h)) => {
@@ -206,8 +208,8 @@ impl Element for RichText {
                     (None, None) => (quad.top(), quad.bottom()),
                 };
                 let quad = Bounds::from_corners(
-                    point(quad.left() - pad_x, top),
-                    point(quad.right() + pad_x, bottom),
+                    point(quad.left() - pad_left, top),
+                    point(quad.right() + pad_right, bottom),
                 );
                 window.paint_quad(fill(quad, text_box.color).corner_radii(Corners::all(text_box.radius)));
             }
