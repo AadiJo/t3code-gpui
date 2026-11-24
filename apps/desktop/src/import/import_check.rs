@@ -256,6 +256,10 @@ fn check_owner_install(owner: &Path, out: &Path, log: &mut String) -> anyhow::Re
     }
     writeln!(log, "custom themes: {} stored, {parsed} parse", custom.len())?;
     ensure!(parsed == custom.len(), "every custom theme parses");
+    // A custom theme's card exports its file (`ThemeStore::export_custom`): id, name, appearance, colors.
+    let exportable = custom.iter().filter(|t| ["id", "name", "appearance", "colors"].iter().all(|k| t.get(*k).is_some())).count();
+    writeln!(log, "custom themes with an exportable file: {exportable}")?;
+    ensure!(exportable == custom.len(), "every imported custom theme can be exported from its card");
     if let Some(theme) = &theme {
         let known = custom.iter().any(|t| t.get("id").and_then(|id| id.as_str()) == Some(theme.as_str()));
         writeln!(log, "selected theme is a custom theme: {known}")?;
