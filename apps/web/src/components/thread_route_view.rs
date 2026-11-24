@@ -125,6 +125,8 @@ pub struct ThreadRouteView {
     details_open: bool,
     /// The open "Edit from here?" confirmation.
     pending_revert: Option<PendingRevert>,
+    /// The shown thread's last view, for re-reading the details card when other threads change.
+    details_view: Option<ThreadView>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -176,6 +178,7 @@ impl ThreadRouteView {
             banner,
             details_open: false,
             pending_revert: None,
+            details_view: None,
             _subscriptions: subscriptions,
         }
     }
@@ -381,6 +384,7 @@ impl ThreadRouteView {
 
     /// Re-reads the shown thread's details card from the data, once built.
     fn sync_details(&mut self, view: &ThreadView, cx: &mut Context<Self>) {
+        self.details_view = Some(view.clone());
         let Some(front) = self.git.front().filter(|g| g.key == view.key) else { return };
         let Some(panel) = front.panel.clone() else { return };
         let input = self.data.thread_details(view, details_base(front.setup.is_git_repo), cx);
@@ -706,6 +710,12 @@ impl ThreadRouteView {
                 if let Some(target) = self.target.clone() {
                     let icon = self.data.project_icon(&target, cx);
                     self.chat.update(cx, |chat, cx| chat.set_project_icon(icon, cx));
+                    // Lineage and Side chats read other threads' shell rows.
+                    if self.details_open
+                        && let Some(view) = self.details_view.clone()
+                    {
+                        self.sync_details(&view, cx);
+                    }
                 }
             }
             DataEvent::ThreadChanged(_) | DataEvent::OpenThread(_) | DataEvent::OpenSideChat { .. } => {}

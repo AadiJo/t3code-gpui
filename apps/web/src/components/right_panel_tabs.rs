@@ -947,7 +947,8 @@ impl Render for RightPanel {
                     .overflow_x_scroll()
                     .child(div().h_full().flex().items_center().gap_1().children(tabs).child(add)),
             );
-        if !matches!(state.active(), Some(RightPanelSurface::SideChat { .. })) || !state.is_open {
+        // The pane (and its stream) lives while its tab is the active one, hidden panel or not.
+        if !matches!(state.active(), Some(RightPanelSurface::SideChat { .. })) {
             self.drop_side_chat(cx);
         }
         let body = match state.active() {

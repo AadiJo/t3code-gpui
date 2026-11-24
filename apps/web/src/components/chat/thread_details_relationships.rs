@@ -72,6 +72,12 @@ pub type RelationshipEmit = Rc<dyn Fn(RelationshipEvent, &mut Window, &mut App)>
 /// Changes the view state (expand a group, show more).
 pub type RelationshipState = Rc<dyn Fn(&dyn Fn(&mut RelationshipViewState), &mut Window, &mut App)>;
 
+/// `ThreadDetailsControl`: a row control with its 1px transparent border, which insets the
+/// content by a pixel.
+fn control(id: impl Into<gpui_kit::ElementId>, theme: &AppTheme, disabled: bool, open: bool) -> gpui_kit::Stateful<gpui_kit::Div> {
+    row_base(id, theme, disabled, open).border_1().border_color(gpui_kit::transparent_black())
+}
+
 /// `threadRelationshipStatusLabel`.
 pub fn status_label(status: Option<RelationshipStatus>) -> SharedString {
     use RelationshipStatus as S;
@@ -117,17 +123,21 @@ pub fn relationship_icon(theme: &AppTheme, icon: RelationshipIcon, status: Optio
         .items_center()
         .justify_center()
         .child(row_icon(theme, name))
+        // The 2px ring in the card colour, drawn as a filled circle under the dot: a GPUI border
+        // on a 0.5rem circle antialiases into a visible halo.
         .child(
             div()
                 .absolute()
                 .right(offset)
                 .when(badge_above, |d| d.top(offset))
                 .when(!badge_above, |d| d.bottom(offset))
+                .flex()
+                .items_center()
+                .justify_center()
                 .size(theme.rem(0.5))
                 .rounded_full()
-                .border_2()
-                .border_color(theme.colors.card())
-                .bg(dot),
+                .bg(theme.colors.card())
+                .child(div().size(theme.rem(0.5) - px(4.)).rounded_full().bg(dot)),
         )
         .into_any_element()
 }
@@ -185,7 +195,7 @@ fn relationship_row(
     let item = div().group(group.clone()).relative().flex().h(theme.rem(2.)).items_center().rounded(theme.radii.lg);
     let merge = input.merge.as_ref().filter(|_| row.merge_target);
     let Some(merge) = merge else {
-        let control = row_base((SharedString::from(format!("relationship-{section}")), index), theme, false, false)
+        let control = control((SharedString::from(format!("relationship-{section}")), index), theme, false, false)
             .w_full()
             .tooltip(tooltip(tip))
             .on_click(open)
@@ -195,7 +205,7 @@ fn relationship_row(
             .child(status_text(theme, row.status));
         return item.child(control).into_any_element();
     };
-    let primary = row_base((SharedString::from(format!("relationship-{section}")), index), theme, false, false)
+    let primary = control((SharedString::from(format!("relationship-{section}")), index), theme, false, false)
         .flex_1()
         .rounded_r(px(0.))
         .tooltip(tooltip(tip))
@@ -214,7 +224,7 @@ fn relationship_row(
     } else {
         Icon::new(IconName::GitMerge).size(IconSize::Custom(theme.rem(0.75))).color(with_alpha(theme.colors.foreground(), 0.8)).into_any_element()
     };
-    let secondary = row_base(SharedString::from(format!("relationship-{section}-merge")), theme, !can_merge, false)
+    let secondary = control(SharedString::from(format!("relationship-{section}-merge")), theme, !can_merge, false)
         .flex_none()
         .w(split_secondary_width(theme))
         .px(px(0.))
@@ -338,7 +348,7 @@ pub fn relationship_sections(
                 (None, _) => t!("Delegated from a linked environment. Connect to it to open the parent thread."),
             };
             let emit = emit.clone();
-            let row = row_base("relationship-delegated-from", theme, !from.connected, false)
+            let row = control("relationship-delegated-from", theme, !from.connected, false)
                 .w_full()
                 .tooltip(tooltip(TooltipSurface::new(from.title.clone()).line(hint)))
                 .when(from.connected, |r| r.on_click(move |_, window, cx| emit(RelationshipEvent::OpenDelegatedFrom, window, cx)))
@@ -365,7 +375,7 @@ pub fn relationship_sections(
                 let (state, id) = (state.clone(), group.id);
                 let default = group.expanded;
                 children.push(
-                    row_base(SharedString::from(format!("relationships-group-{id}")), theme, false, false)
+                    control(SharedString::from(format!("relationships-group-{id}")), theme, false, false)
                         .w_full()
                         .on_click(move |_, window, cx| {
                             state(&|s| {
@@ -401,7 +411,7 @@ pub fn relationship_sections(
         }
         let actions = input.can_detach.then(|| {
             let emit = emit.clone();
-            row_base("relationships-more", theme, busy.is_some(), false)
+            control("relationships-more", theme, busy.is_some(), false)
                 .flex_none()
                 .size(theme.rem(1.5))
                 .px(px(0.))
@@ -411,7 +421,7 @@ pub fn relationship_sections(
                 .when(busy.is_none(), |c| {
                     c.on_click(move |event, window, cx| emit(RelationshipEvent::ToggleMenu(Some(event.position())), window, cx))
                 })
-                .child(Icon::new(IconName::Ellipsis).size(IconSize::Custom(theme.rem(0.875))).color(theme.colors.muted_foreground))
+                .child(Icon::new(IconName::Ellipsis).size(IconSize::Custom(theme.rem(0.875))).color(theme.colors.foreground()))
                 .into_any_element()
         });
         let title = if input.running_count > 0 {

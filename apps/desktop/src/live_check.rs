@@ -3479,6 +3479,13 @@ fn run_sidechats(check: &mut Check) -> anyhow::Result<()> {
 fn run_sidechats_ref(check: &mut Check) -> anyhow::Result<()> {
     let ids: serde_json::Value = serde_json::from_slice(&std::fs::read(std::env::var("T3_REF_IDS").context("set T3_REF_IDS")?)?)?;
     let environment_id = t3code_contracts::EnvironmentId::new(std::env::var("T3_REF_ENV").context("set T3_REF_ENV")?);
+    let paired = check.cx.update(|cx| !ConnectionRuntime::state(cx).read(cx).environments.is_empty());
+    if !paired {
+        let request = parse_pairing_url(&std::env::var("T3_PAIRING_URL").context("T3_PAIRING_URL")?)?;
+        let pairing = check.cx.update(|cx| ConnectionRuntime::global(cx).pair(request, None, cx));
+        let label = check.wait_task(pairing)?.map_err(|e| anyhow::anyhow!("{}", e.0))?;
+        check.note(format!("paired {label}"));
+    }
     check.pump(|c| c.connected(), Duration::from_secs(30), "connected")?;
     let key_of = |name: &str| ids[name].as_str().map(|id| thread_key(&environment_id, &ThreadId::new(id)));
     let fork = key_of("fork").context("fork id")?;
@@ -3500,7 +3507,9 @@ fn run_sidechats_ref(check: &mut Check) -> anyhow::Result<()> {
         check.frame();
     };
     show(check, &fork)?;
+    check.note("closing the panel");
     close_panel(check, &fork);
+    check.note("opening the details card");
     open_details(check);
     check.pump(|c| details_input(c).and_then(|i| i.relationships).is_some(), Duration::from_secs(15), "lineage rows")?;
     check.wait(Duration::from_millis(500));
