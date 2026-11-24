@@ -12,6 +12,7 @@ use gpui_kit::{component::TitleBar, *};
 use serde::{Deserialize, Serialize};
 use t3code_web::app_root::{AppRootOptions, WindowRoot};
 use t3code_web::components::app_sidebar_layout::TitlebarPlatform;
+use t3code_web::components::ui::motion::PrefersReducedMotion;
 use t3code_web::theme_palette::ThemeSettings;
 use t3code_web::ui_state_store::StateDir;
 
@@ -113,6 +114,7 @@ pub fn open_main_window(options: WindowOptions, fixtures: bool, cx: &mut App) ->
     let platform = TitlebarPlatform::current();
     let app = if fixtures { AppRootOptions::fixtures(platform) } else { AppRootOptions::without_fixtures(platform) };
     let app = AppRootOptions { state_dir: StateDir(data_dir()), ..app };
+    follow_os_reduced_motion(cx);
     let (handle, root) = WindowRoot::open_window(options, app, cx)?;
     handle.update(cx, |_, window, cx| {
         ThemeSettings::follow_window(window, cx);
@@ -153,4 +155,46 @@ fn persist_bounds<T: 'static>(window: &mut Window, cx: &mut Context<T>) {
         .detach();
     })
     .detach();
+}
+
+/// Reads the OS "reduce motion" setting off the main thread and applies it
+/// as `prefers-reduced-motion` (Chromium reads the same settings).
+fn follow_os_reduced_motion(cx: &mut App) {
+    let read = cx.background_spawn(async { os_prefers_reduced_motion() });
+    cx.spawn(async move |cx| {
+        let reduce = read.await;
+        cx.update(|cx| {
+            cx.set_global(PrefersReducedMotion(reduce));
+            cx.refresh_windows();
+        });
+    })
+    .detach();
+}
+
+/// macOS: Accessibility > Display > Reduce motion.
+#[cfg(target_os = "macos")]
+fn os_prefers_reduced_motion() -> bool {
+    std::process::Command::new("/usr/bin/defaults")
+        .args(["read", "com.apple.universalaccess", "reduceMotion"])
+        .output()
+        .is_ok_and(|out| String::from_utf8_lossy(&out.stdout).trim() == "1")
+}
+
+/// Windows: "Show animations in Windows" (`SPI_GETCLIENTAREAANIMATION`).
+#[cfg(target_os = "windows")]
+fn os_prefers_reduced_motion() -> bool {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{SPI_GETCLIENTAREAANIMATION, SystemParametersInfoW};
+    let mut animate: i32 = 1;
+    // SAFETY: the out pointer is a live BOOL for the duration of the call.
+    let ok = unsafe { SystemParametersInfoW(SPI_GETCLIENTAREAANIMATION, 0, (&raw mut animate).cast(), 0) };
+    ok != 0 && animate == 0
+}
+
+/// Linux: GNOME's `enable-animations`, which GTK and Chromium follow.
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+fn os_prefers_reduced_motion() -> bool {
+    std::process::Command::new("gsettings")
+        .args(["get", "org.gnome.desktop.interface", "enable-animations"])
+        .output()
+        .is_ok_and(|out| String::from_utf8_lossy(&out.stdout).trim() == "false")
 }

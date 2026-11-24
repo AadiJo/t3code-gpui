@@ -11,6 +11,7 @@ use std::time::{Duration, Instant};
 use gpui_kit::{App, Window};
 
 use crate::ActiveAppTheme as _;
+use crate::components::ui::motion::prefers_reduced_motion;
 
 /// One panel's open state and its transition between closed (0) and open (1).
 #[derive(Clone, Copy, Debug)]
@@ -50,7 +51,7 @@ impl PanelTransition {
     /// reduced-motion preference (`usePanelAnimationSettings`).
     pub fn follow(&mut self, open: bool, cx: &App) {
         let duration = cx.app_theme().motion.panel;
-        self.set(open, !cx.reduce_motion(), duration);
+        self.set(open, !prefers_reduced_motion(cx), duration);
     }
 
     /// Jumps to `open` with no transition (restoring saved state).

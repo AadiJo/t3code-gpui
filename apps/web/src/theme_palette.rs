@@ -418,8 +418,10 @@ impl ThemeSettings {
     /// Applies the owner-setting overrides the headless tools take from the
     /// environment: `T3CODE_CONTRAST`, `T3CODE_GLASS_OPACITY`,
     /// `T3CODE_INTERFACE_SIZE` and `T3CODE_PANEL_MS`. Call after opening the
-    /// window so its rem follows the Interface size.
+    /// window so its rem follows the Interface size. Captures show settled
+    /// frames, so motion is off unless `T3CODE_MOTION=1`.
     pub fn apply_env_overrides(cx: &mut App) {
+        cx.set_reduce_motion(std::env::var("T3CODE_MOTION").map_or(true, |v| v != "1"));
         let var = |name: &str| std::env::var(name).ok().and_then(|v| v.trim().parse::<u32>().ok());
         let (contrast, glass, interface, panel) =
             (var("T3CODE_CONTRAST"), var("T3CODE_GLASS_OPACITY"), var("T3CODE_INTERFACE_SIZE"), var("T3CODE_PANEL_MS"));

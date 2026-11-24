@@ -3,6 +3,7 @@
 //! 12px gap while hovered. A corner orb dismisses; non-loading toasts expire
 //! after five seconds.
 
+use std::collections::HashSet;
 use std::rc::Rc;
 use std::time::Duration;
 
@@ -12,6 +13,7 @@ use gpui_kit::{
 };
 
 use super::TextStyleExt as _;
+use super::motion::Transition;
 use super::button::{Button, ButtonSize, ButtonVariant};
 use super::spinner::{Spinner, SpinnerSize};
 use crate::appearance_fonts::{TextSize, weight};
@@ -201,6 +203,8 @@ const TIMEOUT: Duration = Duration::from_secs(5);
 /// [`Toaster::push`], and render [`Toaster::view`] once at the window root.
 pub struct Toaster {
     toasts: Vec<(u64, ToastData)>,
+    /// Toasts playing their exit transition, removed when it ends.
+    closing: HashSet<u64>,
     next_id: u64,
     expanded: bool,
 }
@@ -212,7 +216,7 @@ impl Global for GlobalToaster {}
 impl Toaster {
     /// Creates the app-wide toaster.
     pub fn init(cx: &mut App) {
-        let toaster = cx.new(|_| Toaster { toasts: Vec::new(), next_id: 0, expanded: false });
+        let toaster = cx.new(|_| Toaster { toasts: Vec::new(), closing: HashSet::new(), next_id: 0, expanded: false });
         cx.set_global(GlobalToaster(toaster));
     }
 
@@ -246,8 +250,22 @@ impl Toaster {
         Self::view(cx).update(cx, |toaster, cx| toaster.remove(id, cx));
     }
 
+    /// Plays the exit transition, then drops the toast.
     fn remove(&mut self, id: u64, cx: &mut Context<Self>) {
-        self.toasts.retain(|(toast, _)| *toast != id);
+        if cx.reduce_motion() {
+            self.toasts.retain(|(toast, _)| *toast != id);
+        } else if self.toasts.iter().any(|(toast, _)| *toast == id) && self.closing.insert(id) {
+            cx.spawn(async move |this, cx| {
+                cx.background_executor().timer(Transition::TOAST.duration).await;
+                this.update(cx, |toaster, cx| {
+                    toaster.closing.remove(&id);
+                    toaster.toasts.retain(|(toast, _)| *toast != id);
+                    cx.notify();
+                })
+                .ok();
+            })
+            .detach();
+        }
         cx.notify();
     }
 }
@@ -266,7 +284,18 @@ impl Render for Toaster {
             let id = *id;
             let card = ToastSurface::new(data.clone()).on_close(move |_, cx| Toaster::dismiss(id, cx));
             if index == 0 || expanded {
-                return div().w_full().child(card).into_any_element();
+                let card = div().relative().w_full().child(card);
+                return if self.closing.contains(&id) {
+                    // `data-ending-style`: fades while sliding out past the right inset.
+                    let travel = width + inset;
+                    Transition::TOAST.run(("toast-exit", id), card, move |c, t| c.opacity(1. - t).left(travel * t))
+                } else {
+                    // `data-starting-style`: from one toast height (plus the inset) above, transparent.
+                    let card = div().relative().child(card);
+                    Transition::TOAST.run(("toast-enter", id), card, move |c, t| {
+                        c.opacity(t).top(relative(t - 1.)).mt(-inset * (1. - t))
+                    })
+                };
             }
             // A card further back: the frontmost's size, scaled from the top and peeking below it.
             let shrink = 0.1 * index as f32;

@@ -1,4 +1,6 @@
 pub mod add_project_to_machine_dialog;
+pub mod animated_height;
+pub mod animated_width;
 pub mod app_sidebar_layout;
 pub mod background_thread_announcer;
 pub mod chat;
