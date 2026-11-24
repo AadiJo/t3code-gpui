@@ -1,7 +1,7 @@
 //! Scene `math`: formulas drawn by the chat markdown renderer, one per block, the
 //! way the fork's comparison page sets them: an inline formula in `Text $…$ after.`
 //! and a display formula alone. `T3CODE_MATH_FORMULAS=<file>` names a JSON list of
-//! `[name, tex, display]`; with `T3CODE_MATH_DUMP=<file>` each painted formula is
+//! `[name, tex, display]` (a tex of `md:…` is markdown as written); with `T3CODE_MATH_DUMP=<file>` each painted formula is
 //! written out for comparison. Math renders when the Render math setting is on
 //! (`T3CODE_CLIENT_SETTINGS`); the scene turns it on otherwise.
 
@@ -15,7 +15,7 @@ use crate::{
     markdown_pipeline::{MarkdownFlavor, ParsedBlocks},
 };
 
-const SAMPLE: &str = r#"[["frac", "\\frac{a}{b}", false], ["quadratic", "x = \\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}", true], ["sum", "\\sum_{i=1}^{n} i", false], ["matrix", "\\begin{pmatrix} 1 & 2 \\\\ 3 & 4 \\end{pmatrix}", true], ["error", "\\foo{x}", false]]"#;
+const SAMPLE: &str = r#"[["frac", "\\frac{a}{b}", false], ["quadratic", "x = \\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}", true], ["sum", "\\sum_{i=1}^{n} i", false], ["matrix", "\\begin{pmatrix} 1 & 2 \\\\ 3 & 4 \\end{pmatrix}", true], ["error", "\\foo{x}", false], ["links", "md:See [the docs](https://example.com/docs), `src/main.rs` and $e^{i\\pi}+1=0$ in one line that is long enough to wrap onto a second row with $\\frac{a}{b}$ on it.", false]]"#;
 
 struct MathScene {
     blocks: Vec<(String, Vec<ParsedBlocks>)>,
@@ -29,7 +29,12 @@ pub fn build(_: &mut Window, cx: &mut App) -> AnyView {
     let blocks = formulas
         .into_iter()
         .map(|(name, tex, display)| {
-            let source = if display { format!("$$\n{tex}\n$$") } else { format!("Text ${tex}$ after.") };
+            // `md:` entries are markdown as written.
+            let source = match tex.strip_prefix("md:") {
+                Some(markdown) => markdown.to_owned(),
+                None if display => format!("$$\n{tex}\n$$"),
+                None => format!("Text ${tex}$ after."),
+            };
             (name, parse_message_blocks(&source, MarkdownFlavor::ASSISTANT, false))
         })
         .collect();

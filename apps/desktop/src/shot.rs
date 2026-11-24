@@ -89,6 +89,25 @@ fn main() -> anyhow::Result<()> {
     });
     cx.update_window(handle, |_, window, cx| window.render_frame(cx))?;
     cx.run_until_parked();
+    // `T3CODE_SHOT_EVENTS="drag:x1,y1,x2,y2;right:x,y"`: pointer input before the capture.
+    for step in std::env::var("T3CODE_SHOT_EVENTS").unwrap_or_default().split(';').filter(|s| !s.is_empty()) {
+        use gpui_kit::{InputEvent as _, Modifiers, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, point};
+        let (kind, args) = step.split_once(':').context("event kind")?;
+        let v: Vec<f32> = args.split(',').map(str::parse).collect::<Result<_, _>>()?;
+        let at = |i: usize| point(px(v[i]), px(v[i + 1]));
+        cx.update_window(handle, |_, w, cx| {
+            let none = Modifiers::default();
+            let (button, from, to) = if kind == "right" { (MouseButton::Right, at(0), at(0)) } else { (MouseButton::Left, at(0), at(2)) };
+            w.dispatch_event(MouseMoveEvent { position: from, pressed_button: None, modifiers: none }.to_platform_input(), cx);
+            w.dispatch_event(MouseDownEvent { button, position: from, modifiers: none, click_count: 1, first_mouse: false }.to_platform_input(), cx);
+            if from != to {
+                w.dispatch_event(MouseMoveEvent { position: to, pressed_button: Some(button), modifiers: none }.to_platform_input(), cx);
+            }
+            w.dispatch_event(MouseUpEvent { button, position: to, modifiers: none, click_count: 1 }.to_platform_input(), cx);
+        })?;
+        cx.update_window(handle, |_, window, cx| window.render_frame(cx))?;
+        cx.run_until_parked();
+    }
     cx.update_window(handle, |_, window, cx| window.render_frame(cx))?;
     let image = cx.capture_screenshot(handle)?;
     image.save(&out)?;

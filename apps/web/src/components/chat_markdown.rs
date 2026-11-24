@@ -106,6 +106,58 @@ pub struct MarkdownUiState {
     pub open_details: HashSet<u64>,
     /// The owner can run shell code blocks in a terminal (the chat timeline).
     pub run_shell_commands: bool,
+    /// What right clicks in the markdown offer beyond copying.
+    pub menus: MarkdownMenus,
+}
+
+/// A context menu item the owning view carries out: they need its thread's machine.
+#[derive(Clone, Debug, PartialEq)]
+pub enum MarkdownMenuAction {
+    /// "Open in integrated browser" on a web link or an HTML file link.
+    OpenInPreview(SharedString),
+    /// "Open in {editor}" on a file link.
+    OpenFileInEditor(SharedString),
+    /// "Reveal in …" on a file link.
+    RevealFile(SharedString),
+    /// "Preview media" on an image or video file link.
+    PreviewMedia(SharedString),
+}
+
+/// What the markdown context menus offer (`externalLinkContextMenu.ts`, `MarkdownFileLink.tsx`,
+/// and the desktop's edit menu elsewhere). Copying and the system browser always work;
+/// the rest appear when `actions` handles them and the flag or label says the host can.
+#[derive(Clone, Default)]
+pub struct MarkdownMenus {
+    pub actions: Option<Rc<dyn Fn(MarkdownMenuAction, &mut Window, &mut App)>>,
+    /// The thread can open pages in the integrated browser.
+    pub preview: bool,
+    /// "Open in {editor}" for the preferred editor; `None` when the host cannot open files.
+    pub editor_label: Option<SharedString>,
+    /// "Reveal in Finder" and the like; `None` when the host cannot reveal files.
+    pub reveal_label: Option<SharedString>,
+    /// The thread's working directory, for "Copy full path" of a relative file link.
+    pub cwd: Option<SharedString>,
+}
+
+/// What a right click in markdown landed on.
+#[derive(Clone, Debug, Default, PartialEq)]
+enum MenuTarget {
+    #[default]
+    Text,
+    Link(SharedString),
+    File(SharedString),
+}
+
+impl MenuTarget {
+    fn from_link(link: Option<SharedString>) -> Self {
+        match link {
+            None => Self::Text,
+            Some(target) if target.contains("://") || target.starts_with("mailto:") || target.starts_with('#') => {
+                Self::Link(target)
+            }
+            Some(target) => Self::File(target),
+        }
+    }
 }
 
 /// Everything one render of a message's markdown needs.
@@ -150,11 +202,18 @@ struct Renderer<'a> {
     wanted_favicons: Vec<String>,
     /// The Render math setting, for ```` ```math ```` fences (`$` math only parses with it on).
     math: bool,
+    /// Records what a right click lands on, for the message's context menu.
+    on_secondary: super::chat::rich_text::SecondaryHandler,
 }
 
 /// Renders a message's markdown as one column.
 pub fn render_markdown(view: &MarkdownView<'_>, window: &mut Window, cx: &mut App) -> Div {
     let actions = view.actions.clone();
+    let menu_target = window.use_keyed_state(ElementId::NamedInteger("markdown-menu-target".into(), view.key), cx, |_, _| MenuTarget::Text);
+    let on_secondary: super::chat::rich_text::SecondaryHandler = {
+        let menu_target = menu_target.clone();
+        Rc::new(move |link, _, cx| menu_target.update(cx, |target, _| *target = MenuTarget::from_link(link)))
+    };
     let mut renderer = Renderer {
         view,
         app: cx,
@@ -167,6 +226,7 @@ pub fn render_markdown(view: &MarkdownView<'_>, window: &mut Window, cx: &mut Ap
         text_system: window.text_system().clone(),
         wanted_favicons: Vec::new(),
         math: cx.client_settings().math_rendering_enabled,
+        on_secondary,
     };
     let mut rendered = Vec::new();
     let last_piece = view.pieces.len().saturating_sub(1);
@@ -186,15 +246,103 @@ pub fn render_markdown(view: &MarkdownView<'_>, window: &mut Window, cx: &mut Ap
     drop(renderer);
     super::chat::timeline_link_favicons::request(wanted, cx);
     let stacked = stack(rendered);
-    div()
+    let reset = menu_target.clone();
+    // Capture runs before the text's own handlers, so a right click off a link reads as text.
+    let column = div()
         .w_full()
         .min_w_0()
         .flex()
         .flex_col()
+        .capture_any_mouse_down(move |event, _, cx| {
+            if event.button == gpui_kit::MouseButton::Right {
+                reset.update(cx, |target, _| *target = MenuTarget::Text);
+            }
+        })
+        .children(stacked.0);
+    let menus = view.state.menus.clone();
+    let menu = crate::components::ui::menu::ContextMenu::new(
+        ElementId::NamedInteger("markdown-menu".into(), view.key),
+        column,
+        move |window, cx| context_menu(menu_target.read(cx).clone(), &menus, window, cx),
+    );
+    div()
+        .w_full()
+        .min_w_0()
         .text_size(TEXT_SM_RELAXED.size)
         .line_height(TEXT_SM_RELAXED.line_height)
         .text_color(text_color)
-        .children(stacked.0)
+        .child(menu)
+}
+
+/// The fork's menus: a web link's (`externalLinkContextMenu.ts`), a file link's
+/// (`MarkdownFileLink.tsx` `showFileContextMenu`), and elsewhere the desktop shell's edit menu
+/// (`DesktopWindow.ts`), whose Copy copies the selection.
+fn context_menu(target: MenuTarget, menus: &MarkdownMenus, window: &mut Window, cx: &mut App) -> crate::components::ui::menu::MenuPopup {
+    use crate::components::ui::menu::{MenuItem, MenuPopup};
+    use crate::i18n::t;
+    let copy = |text: String| move |_: &mut Window, cx: &mut App| cx.write_to_clipboard(gpui_kit::ClipboardItem::new_string(text.clone()));
+    let act = |action: MarkdownMenuAction| {
+        let actions = menus.actions.clone();
+        move |window: &mut Window, cx: &mut App| {
+            if let Some(actions) = &actions {
+                actions(action.clone(), window, cx);
+            }
+        }
+    };
+    let can = menus.actions.is_some();
+    let mut menu = MenuPopup::new().context();
+    match target {
+        MenuTarget::Link(url) if url.starts_with("http://") || url.starts_with("https://") => {
+            if can && menus.preview {
+                menu = menu.item(MenuItem::new(t!("Open in integrated browser")).on_select(act(MarkdownMenuAction::OpenInPreview(url.clone()))));
+            }
+            let open = url.clone();
+            menu = menu
+                .item(MenuItem::new(t!("Open in system browser")).on_select(move |_, cx| cx.open_url(&open)))
+                .item(MenuItem::new(t!("Copy Link")).on_select(copy(url.to_string())));
+        }
+        MenuTarget::File(path) => {
+            let file = path.split(':').next().unwrap_or(&path).to_lowercase();
+            let extension = file.rsplit_once('.').map_or("", |(_, ext)| ext);
+            let media = matches!(extension, "png" | "jpg" | "jpeg" | "gif" | "webp" | "svg" | "avif" | "bmp" | "mp4" | "webm" | "mov" | "m4v");
+            if can && media {
+                menu = menu.item(MenuItem::new(t!("Preview media")).on_select(act(MarkdownMenuAction::PreviewMedia(path.clone()))));
+            }
+            if let (true, Some(label)) = (can, menus.editor_label.clone()) {
+                menu = menu.item(MenuItem::new(label).on_select(act(MarkdownMenuAction::OpenFileInEditor(path.clone()))));
+            }
+            if can && menus.preview && matches!(extension, "html" | "htm") {
+                menu = menu.item(MenuItem::new(t!("Open in integrated browser")).on_select(act(MarkdownMenuAction::OpenInPreview(path.clone()))));
+            }
+            if let (true, Some(label)) = (can, menus.reveal_label.clone()) {
+                menu = menu.item(MenuItem::new(label).on_select(act(MarkdownMenuAction::RevealFile(path.clone()))));
+            }
+            let relative = !path.starts_with('/') && !path.starts_with('~');
+            let full = match (&menus.cwd, relative) {
+                (Some(cwd), true) => format!("{}/{}", cwd.trim_end_matches('/'), path.trim_start_matches("./")),
+                _ => path.to_string(),
+            };
+            if relative {
+                menu = menu.item(MenuItem::new(t!("Copy relative path")).on_select(copy(path.trim_start_matches("./").to_owned())));
+            }
+            menu = menu.item(MenuItem::new(t!("Copy full path")).on_select(copy(full)));
+        }
+        target => {
+            if let MenuTarget::Link(url) = &target
+                && let Some(address) = url.strip_prefix("mailto:")
+            {
+                menu = menu.item(MenuItem::new(t!("Copy Email Address")).on_select(copy(address.to_owned()))).separator();
+            }
+            let selected = gpui_kit::base::TextSelection::selected_text(window, cx);
+            let has_selection = !selected.is_empty();
+            menu = menu
+                .item(MenuItem::new(t!("Cut", context = "Edit menu item")).disabled(true))
+                .item(MenuItem::new(t!("Copy", context = "Edit menu item")).disabled(!has_selection).on_select(copy(selected)))
+                .item(MenuItem::new(t!("Paste", context = "Edit menu item")).disabled(true))
+                .item(MenuItem::new(t!("Select All", context = "Edit menu item")).disabled(true));
+        }
+    }
+    menu
 }
 
 /// Lays out siblings with collapsed margins. Returns the children (each
@@ -481,7 +629,7 @@ impl Renderer<'_> {
             .atoms(atoms)
             .selection_color(self.view.colors.selection);
         if !styled.links.is_empty() {
-            text = text.links(styled.links, self.link_handler.clone());
+            text = text.links(styled.links, self.link_handler.clone()).on_secondary(self.on_secondary.clone());
         }
         div().w_full().min_w_0().child(text).into_any_element()
     }

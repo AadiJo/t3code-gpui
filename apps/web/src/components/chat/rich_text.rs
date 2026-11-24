@@ -16,7 +16,7 @@ use std::{cell::RefCell, ops::Range, rc::Rc};
 use gpui_kit::{
     AnyElement, App, AvailableSpace, Bounds, Corners, CursorStyle, DispatchPhase, Element, ElementId, Font,
     GlobalElementId, Hitbox, HitboxBehavior, Hsla, InspectorElementId, IntoElement as _, LayoutId, MouseButton,
-    MouseUpEvent, Pixels, SharedString, Size, StyledText, Subscription, TextLayout, TextRun, WhiteSpace, Window, fill,
+    MouseDownEvent, MouseUpEvent, Pixels, SharedString, Size, StyledText, Subscription, TextLayout, TextRun, WhiteSpace, Window, fill,
     line_baseline_offset, point, px, size,
     base::{TextSelection, TextSelectionHandle, TextSelectionRegistration, TextSelectionRun},
 };
@@ -92,6 +92,9 @@ pub struct TextAtom {
 /// Called with a link target when a link is clicked.
 pub type LinkHandler = Rc<dyn Fn(&SharedString, &mut Window, &mut App)>;
 
+/// Called on a right click in the text with the link under the pointer, if any.
+pub type SecondaryHandler = Rc<dyn Fn(Option<SharedString>, &mut Window, &mut App)>;
+
 /// A paragraph of styled, selectable text.
 pub struct RichText {
     id: ElementId,
@@ -103,6 +106,7 @@ pub struct RichText {
     atoms: Rc<[TextAtom]>,
     links: Rc<[(Range<usize>, SharedString)]>,
     on_link: Option<LinkHandler>,
+    on_secondary: Option<SecondaryHandler>,
     selection_color: Hsla,
 }
 
@@ -120,6 +124,7 @@ impl RichText {
             atoms: Rc::from([]),
             links: Rc::from([]),
             on_link: None,
+            on_secondary: None,
             selection_color: Hsla::transparent_black(),
         }
     }
@@ -144,6 +149,12 @@ impl RichText {
     pub fn links(mut self, links: impl Into<Rc<[(Range<usize>, SharedString)]>>, handler: LinkHandler) -> Self {
         self.links = links.into();
         self.on_link = Some(handler);
+        self
+    }
+
+    /// Reports right clicks, with the link they land on, before an enclosing context menu opens.
+    pub fn on_secondary(mut self, handler: SecondaryHandler) -> Self {
+        self.on_secondary = Some(handler);
         self
     }
 
@@ -594,7 +605,7 @@ impl RichText {
 
     /// The pointing cursor over links and a click handler that opens them.
     fn listen_for_links(&self, prepaint: &RichTextPrepaint, window: &mut Window) {
-        if self.links.is_empty() {
+        if self.links.is_empty() && self.on_secondary.is_none() {
             return;
         }
         let segments: Vec<(TextLayout, usize)> = if prepaint.rows.is_empty() {
@@ -613,6 +624,15 @@ impl RichText {
         };
         if prepaint.hitbox.is_hovered(window) && link_at(window.mouse_position()).is_some() {
             window.set_cursor_style(CursorStyle::PointingHand, &prepaint.hitbox);
+        }
+        let link_at = Rc::new(link_at);
+        if let Some(on_secondary) = self.on_secondary.clone() {
+            let (hitbox, link_at) = (prepaint.hitbox.clone(), link_at.clone());
+            window.on_mouse_event(move |event: &MouseDownEvent, phase, window, cx| {
+                if phase == DispatchPhase::Bubble && event.button == MouseButton::Right && hitbox.is_hovered(window) {
+                    on_secondary(link_at(event.position), window, cx);
+                }
+            });
         }
         let hitbox = prepaint.hitbox.clone();
         let on_link = self.on_link.clone();
