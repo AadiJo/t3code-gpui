@@ -206,11 +206,11 @@ impl Element for RichText {
                 let descent = text_system.descent(font_id, size).abs().round();
                 let extra = size * inline.pad_y_em + inline.border;
                 let baseline = layout.line_layout_for_index(text_box.range.start).map_or(line_height, |line| {
-                    line_baseline_offset(line_height, line.ascent(), line.descent())
+                    line_baseline_offset(line_height, line.ascent(), line.descent(), window.scale_factor())
                 });
                 (baseline - ascent - extra, baseline + descent + extra, size * inline.pad_x_em + inline.border)
             });
-            for quad in range_quads(&layout, text_box.range.clone(), line_height) {
+            for quad in layout.fragment_bounds(text_box.range.clone()) {
                 // An inline element's padding already takes space in the line: the range's
                 // first glyph sits after it and its end is the next glyph, past the trailing one.
                 let (pad_left, pad_right) = inline.map_or((text_box.pad_x, text_box.pad_x), |(_, _, pad_x)| (pad_x, px(0.)));
@@ -245,7 +245,7 @@ impl Element for RichText {
                 None => origin.y + (line_height - text_icon.size) / 2.,
                 Some(drop) => {
                     let baseline = layout.line_layout_for_index(text_icon.index).map_or(line_height, |line| {
-                        line_baseline_offset(line_height, line.ascent(), line.descent())
+                        line_baseline_offset(line_height, line.ascent(), line.descent(), window.scale_factor())
                     });
                     origin.y + baseline + drop - text_icon.size
                 }

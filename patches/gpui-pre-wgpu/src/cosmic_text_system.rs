@@ -2,12 +2,13 @@ use anyhow::{Context as _, Ok, Result};
 use collections::HashMap;
 use cosmic_text::{
     Attrs, AttrsList, Ellipsize, Family, Font as CosmicTextFont,
-    FontFeatures as CosmicFontFeatures, FontSystem, ShapeBuffer, ShapeLine, Stretch, Style, Weight,
+    FontFeatures as CosmicFontFeatures, FontSystem, Metrics, ShapeBuffer, ShapeLine, Stretch, Style,
+    Weight,
 };
 use gpui::{
     Bounds, DevicePixels, FallbackFontClass, Font, FontFallbacks, FontFeatures, FontId,
     FontMetrics, FontRun, GlyphId, IsZero as _, LineLayout, MissingGlyph, MissingGlyphSink, Pixels,
-    PlatformTextSystem, RenderGlyphParams, SUBPIXEL_VARIANTS_X, SUBPIXEL_VARIANTS_Y, ShapedGlyph,
+    PlatformTextSystem, RenderGlyphParams, RunLayout, SUBPIXEL_VARIANTS_X, SUBPIXEL_VARIANTS_Y, ShapedGlyph,
     ShapedRun, SharedString, Size, TextRenderingMode, point, size,
 };
 
@@ -68,6 +69,9 @@ struct LoadedFont {
     /// resolved at load time so `layout_line` shares one chain across faces.
     /// `Arc` keeps clone cheap on the per-run hot path.
     user_fallback_chain: Arc<[(FontId, SharedString)]>,
+    /// How runs in this font sit in their line (`FontFeatures::with_run_layout`): they are
+    /// shaped and drawn at the scaled size and padded on both sides.
+    run_layout: Option<RunLayout>,
 }
 
 struct FontMatchProperties {
@@ -274,6 +278,12 @@ impl PlatformTextSystem for CosmicTextSystem {
         self.0.write().layout_line(text, font_size, runs)
     }
 
+    fn run_padding(&self, font_id: FontId, font_size: Pixels) -> Pixels {
+        self.0.read().loaded_font(font_id).run_layout.map_or(Pixels::ZERO, |layout| {
+            Pixels::from(layout.padding_em * f32::from(font_size) * layout.scale + layout.padding_px)
+        })
+    }
+
     fn recommended_rendering_mode(
         &self,
         _font_id: FontId,
@@ -392,7 +402,8 @@ impl CosmicTextSystemState {
             .map(|face| (face.id, face.post_script_name.clone()))
             .collect::<SmallVec<[_; 4]>>();
 
-        let cosmic_features = cosmic_font_features(features)?;
+        // The run layout's private tags are not OpenType features.
+        let cosmic_features = cosmic_font_features(&features.without_run_layout())?;
 
         let mut loaded_font_ids = SmallVec::new();
         for (database_id, postscript_name) in families {
@@ -438,6 +449,7 @@ impl CosmicTextSystemState {
                 features: cosmic_features.clone(),
                 is_known_emoji_font: check_is_known_emoji_font(&postscript_name),
                 user_fallback_chain: Arc::clone(&user_fallback_chain),
+                run_layout: features.run_layout(),
             });
             self.loaded_font_ids_by_key.insert(key, font_id);
         }
@@ -515,7 +527,8 @@ impl CosmicTextSystemState {
     ) -> Result<swash::scale::image::Image> {
         let loaded_font = &self.loaded_fonts[params.font_id.0];
         let font_ref = loaded_font.font.as_swash();
-        let pixel_size = f32::from(params.font_size);
+        let pixel_size = f32::from(params.font_size)
+            * loaded_font.run_layout.map_or(1., |run_layout| run_layout.scale);
 
         let subpixel_offset = Vector::new(
             params.subpixel_variant.x as f32 / SUBPIXEL_VARIANTS_X as f32 / params.scale_factor,
@@ -567,7 +580,8 @@ impl CosmicTextSystemState {
         if let Some(ix) = self
             .loaded_fonts
             .iter()
-            .position(|loaded_font| loaded_font.font.id() == id)
+            // A face loaded with a run layout is drawn scaled, so it never stands for the face.
+            .position(|loaded_font| loaded_font.font.id() == id && loaded_font.run_layout.is_none())
         {
             Ok(FontId(ix))
         } else {
@@ -587,6 +601,7 @@ impl CosmicTextSystemState {
                 features: CosmicFontFeatures::new(),
                 is_known_emoji_font: check_is_known_emoji_font(&face.post_script_name),
                 user_fallback_chain: Arc::from(Vec::new()),
+                run_layout: None,
             });
 
             Ok(font_id)
@@ -697,6 +712,8 @@ impl CosmicTextSystemState {
     ) -> LineLayout {
         let mut attrs_list = AttrsList::new(&Attrs::new());
         let mut offs = 0;
+        // Runs with a run layout: byte range and padding on each side.
+        let mut padded_runs = SmallVec::<[(Range<usize>, Pixels); 1]>::new();
         for run in font_runs {
             let run_end = offs + run.len;
 
@@ -705,11 +722,35 @@ impl CosmicTextSystemState {
                 continue;
             };
 
-            let primary_attrs = properties.attributes(run.font_id, &properties.primary_family_name);
+            let run_layout = self.loaded_font(run.font_id).run_layout;
+            // A run layout shapes the run at its own size, as CSS does `font-size: 0.85em`.
+            fn sized<'a>(attrs: Attrs<'a>, font_size: Pixels, run_layout: Option<RunLayout>) -> Attrs<'a> {
+                match run_layout {
+                    Some(run_layout) => {
+                        let run_size = f32::from(font_size) * run_layout.scale;
+                        attrs.metrics(Metrics::new(run_size, run_size))
+                    }
+                    None => attrs,
+                }
+            }
+            if let Some(run_layout) = run_layout {
+                let padding = run_layout.padding_em * f32::from(font_size) * run_layout.scale
+                    + run_layout.padding_px;
+                if padding != 0. {
+                    padded_runs.push((offs..run_end, Pixels::from(padding)));
+                }
+            }
+            let primary_attrs = sized(
+                properties.attributes(run.font_id, &properties.primary_family_name),
+                font_size,
+                run_layout,
+            );
             let fallback_attrs: SmallVec<[Attrs<'_>; 4]> = properties
                 .fallback_chain
                 .iter()
-                .map(|(font_id, family_name)| properties.attributes(*font_id, family_name))
+                .map(|(font_id, family_name)| {
+                    sized(properties.attributes(*font_id, family_name), font_size, run_layout)
+                })
                 .collect();
 
             let spans = if properties.fallback_chain.is_empty() {
@@ -840,9 +881,24 @@ impl CosmicTextSystemState {
             sink.report(missing_glyphs);
         }
 
+        // Inline padding moves everything from a padded run's start by its padding, and
+        // everything from its end by the padding again, as CSS lays out an inline box.
+        let mut width: Pixels = layout.w.into();
+        for (range, padding) in &padded_runs {
+            for glyph in runs.iter_mut().flat_map(|run| run.glyphs.iter_mut()) {
+                if glyph.index >= range.start {
+                    glyph.position.x += *padding;
+                }
+                if glyph.index >= range.end {
+                    glyph.position.x += *padding;
+                }
+            }
+            width += *padding * 2.;
+        }
+
         LineLayout {
             font_size,
-            width: layout.w.into(),
+            width,
             ascent: layout.max_ascent.into(),
             descent: layout.max_descent.into(),
             runs,

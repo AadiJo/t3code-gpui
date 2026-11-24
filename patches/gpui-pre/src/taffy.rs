@@ -332,6 +332,14 @@ impl TaffyLayoutEngine {
         self.absolute_layout_bounds.insert(id, bounds);
         bounds
     }
+
+    /// The outer origin of a node whose bounds [`Self::layout_bounds`] computed, before
+    /// its edges snapped to device pixels.
+    pub fn unsnapped_origin(&self, id: LayoutId, scale_factor: f32) -> Option<Point<Pixels>> {
+        self.absolute_outer_origins
+            .get(&id)
+            .map(|origin| origin.map(|c| Pixels(c / scale_factor)))
+    }
 }
 
 /// A unique identifier for a layout node, generated when requesting a layout from Taffy

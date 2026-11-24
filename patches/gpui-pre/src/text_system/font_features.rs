@@ -45,8 +45,8 @@ impl FontFeatures {
     }
 
     /// These features plus how the run is laid out inside its line (see [`RunLayout`]).
-    /// Only the macOS text system applies it; elsewhere the run is laid out as if it were
-    /// absent. It is carried as private feature tags, which shapers ignore.
+    /// The macOS, cosmic-text and DirectWrite text systems apply it. It is carried as
+    /// private feature tags, which they strip before shaping.
     pub fn with_run_layout(&self, layout: RunLayout) -> Self {
         let mut list: Vec<_> = self.0.iter().filter(|(tag, _)| !RUN_LAYOUT_TAGS.contains(&tag.as_str())).cloned().collect();
         let values = [layout.scale, layout.padding_em, layout.padding_px];

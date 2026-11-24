@@ -130,8 +130,15 @@ impl RenderOnce for PopoverSurface {
                 div().ui_text(theme, TextSize::Sm, weight::SEMIBOLD).line_height(px(TextSize::Sm.size(theme.fonts.interface))).child(title)
             }))
             .children(self.children);
-        // `data-starting-style:opacity-0`; `scale-98` needs a transform GPUI lacks.
-        Transition::STANDARD.fade_in("popover-enter", surface)
+        // `data-starting-style:opacity-0`; `scale-98` needs a transform GPUI lacks. On close,
+        // `data-ending-style:scale-98 opacity-0` about the top centre, below its trigger.
+        Transition::STANDARD.exit(
+            "popover-exit",
+            0.98,
+            point(0.5, 0.),
+            point(px(0.), px(0.)),
+            Transition::STANDARD.fade_in("popover-enter", surface),
+        )
     }
 }
 

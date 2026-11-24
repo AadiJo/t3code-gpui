@@ -149,6 +149,7 @@ impl ShapedLine {
             align_width,
             &self.decoration_runs,
             &[],
+            &[],
             window,
             cx,
             &mut paint_underline,
@@ -405,6 +406,7 @@ impl LineLayout {
             align_width,
             decoration_runs,
             &[],
+            &[],
             window,
             cx,
             &mut |_, origin, width, style, window| window.paint_underline(origin, width, style),
@@ -483,6 +485,7 @@ impl WrappedLine {
             align_width,
             &self.decoration_runs,
             &self.wrap_boundaries,
+            &self.layout.padded_runs,
             window,
             cx,
             &mut |_, origin, width, style, window| window.paint_underline(origin, width, style),
@@ -533,6 +536,7 @@ fn paint_line(
     align_width: Option<Pixels>,
     decoration_runs: &[DecorationRun],
     wrap_boundaries: &[WrapBoundary],
+    padded_runs: &[(Range<usize>, Pixels)],
     window: &mut Window,
     cx: &mut App,
     paint_underline: &mut dyn FnMut(
@@ -544,11 +548,20 @@ fn paint_line(
     ),
 ) -> Result<()> {
     window.paint_layer(|window| {
+        let scale_factor = window.scale_factor();
         let baseline_offset = point(
             px(0.),
-            line_baseline_offset(line_height, layout.ascent, layout.descent),
+            line_baseline_offset(line_height, layout.ascent, layout.descent, scale_factor),
         );
-        let underline_y_offset = underline_y_offset(line_height, layout.ascent, layout.descent);
+        let underline_y_offset =
+            underline_y_offset(line_height, layout.ascent, layout.descent, scale_factor);
+        // Each wrapped line's top snaps to a device pixel from the unsnapped origin, once,
+        // as Blink rounds each line box's top when it paints (`ComputePhysicalBoxGeometry`).
+        let line_top = |line: usize| {
+            px(crate::util::snap_edge((origin.y + line_height * line as f32).0 * scale_factor)
+                / scale_factor)
+        };
+        let mut line_ix = 0;
         let mut decoration_runs = decoration_runs.iter();
         let mut wraps = wrap_boundaries.iter().peekable();
         let mut run_end = 0;
@@ -565,7 +578,7 @@ fn paint_line(
                 layout,
                 wraps.peek(),
             ),
-            origin.y,
+            line_top(0),
         );
         let mut prev_glyph_position = Point::default();
         let mut max_glyph_size = size(px(0.), px(0.));
@@ -628,7 +641,10 @@ fn paint_line(
                         layout,
                         wraps.peek(),
                     );
-                    glyph_origin.y += line_height;
+                    // A run padded on both sides is padded again where it wraps.
+                    glyph_origin.x += crate::break_padding(padded_runs, glyph.index);
+                    line_ix += 1;
+                    glyph_origin.y = line_top(line_ix);
                 }
                 prev_glyph_position = glyph.position;
 
@@ -1107,7 +1123,7 @@ mod tests {
                     )
                     .unwrap();
                     let start = px(origin_x + offset);
-                    let y = origin.y + underline_y_offset(line_height, line.ascent, line.descent);
+                    let y = origin.y + underline_y_offset(line_height, line.ascent, line.descent, window.scale_factor());
                     assert_eq!(
                         strokes,
                         [
@@ -1193,7 +1209,7 @@ mod tests {
                 / 2.;
             let origin = point(px(40.25), px(10.25));
             let line_height = px(20.);
-            let y = origin.y + underline_y_offset(line_height, line.ascent, line.descent);
+            let y = origin.y + underline_y_offset(line_height, line.ascent, line.descent, window.scale_factor());
             for (align, offset) in [
                 (TextAlign::Left, 0.),
                 (TextAlign::Center, 16.),
@@ -1262,7 +1278,7 @@ mod tests {
                     / 2.;
                 let origin = point(px(40.25), px(10.25));
                 let line_height = px(20.);
-                let y = origin.y + underline_y_offset(line_height, line.ascent, line.descent);
+                let y = origin.y + underline_y_offset(line_height, line.ascent, line.descent, window.scale_factor());
                 let wrapped = WrappedLine {
                     layout: Arc::new(WrappedLineLayout {
                         unwrapped_layout: line.layout,
@@ -1271,6 +1287,7 @@ mod tests {
                             glyph_ix: 2,
                         }]),
                         wrap_width: Some(px(16.)),
+                        padded_runs: Default::default(),
                     }),
                     text: line.text,
                     decoration_runs: line.decoration_runs.into_vec(),
@@ -1290,6 +1307,7 @@ mod tests {
                     Some(px(16.)),
                     &wrapped.decoration_runs,
                     &wrapped.wrap_boundaries,
+                    &wrapped.padded_runs,
                     window,
                     cx,
                     &mut |range, origin, width, style, window| {

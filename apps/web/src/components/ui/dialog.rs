@@ -245,13 +245,15 @@ impl RenderOnce for Modal {
                             on_escape(window, cx);
                         }
                     })
-                    .child(
+                    // `data-ending-style:opacity-0` on the backdrop.
+                    .child(Transition::DIALOG.fade_exit(
+                        "backdrop-exit",
                         div()
                             .absolute()
                             .size_full()
                             .glass(backdrop)
                             .on_mouse_down(gpui_kit::MouseButton::Left, move |_, window, cx| on_backdrop(window, cx)),
-                    )
+                    ))
                     .child(match self.sheet {
                         // `w-[calc(100%-48px)] max-w-md`.
                         Some(side) => div()
@@ -268,7 +270,15 @@ impl RenderOnce for Modal {
                                     .h_full()
                                     .w((viewport.width - px(48.)).min(theme.rem(28.)))
                                     .child(self.content);
-                                Transition::DIALOG.run("sheet-slide", panel, move |p, t| p.left(slide * (1. - t)))
+                                // `data-ending-style:opacity-0 translate-x-8` (left: `-translate-x-8`).
+                                let leave = if side == SheetSide::Right { theme.rem(2.) } else { -theme.rem(2.) };
+                                Transition::DIALOG.exit(
+                                    "sheet-exit",
+                                    1.,
+                                    point(0.5, 0.5),
+                                    point(leave, px(0.)),
+                                    Transition::DIALOG.run("sheet-slide", panel, move |p, t| p.left(slide * (1. - t))),
+                                )
                             }),
                         None => div()
                             .absolute()
@@ -278,7 +288,14 @@ impl RenderOnce for Modal {
                             .justify_center()
                             .p(theme.sp(4.))
                             // Presses inside the dialog must not reach the backdrop.
-                            .child(div().occlude().w_full().flex().justify_center().child(self.content)),
+                            // `data-ending-style:scale-98 opacity-0`, about the popup's centre.
+                            .child(Transition::DIALOG.exit(
+                                "popup-exit",
+                                0.98,
+                                point(0.5, 0.5),
+                                point(px(0.), px(0.)),
+                                div().occlude().w_full().flex().justify_center().child(self.content),
+                            )),
                     }),
             )),
         )

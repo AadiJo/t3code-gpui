@@ -17,7 +17,7 @@ use core_text::{
     font::CTFont,
     font_collection::CTFontCollectionRef,
     font_descriptor::{
-        CTFontDescriptor, kCTFontSlantTrait, kCTFontSymbolicTrait, kCTFontWeightTrait,
+        CTFontDescriptor, SymbolicTraitAccessors as _, kCTFontSlantTrait, kCTFontSymbolicTrait, kCTFontWeightTrait,
         kCTFontWidthTrait,
     },
     line::CTLine,
@@ -87,6 +87,9 @@ struct AppleTextSystemState {
     scaled_faces: HashMap<FontId, (FontId, RunLayout)>,
     /// Each system UI face at each size it has been laid out or drawn at.
     sized_system_fonts: Mutex<HashMap<(FontId, u32), CTFont>>,
+    /// Faces drawn with synthetic bold: a weight above 500 asked of a family whose matched
+    /// face is not bold, as Blink decides it (`FontCache::CreateFontPlatformData`).
+    synthetic_bold_faces: HashSet<FontId>,
 }
 
 /// One weight and style of the system UI font. Chromium creates the system font for every
@@ -113,6 +116,7 @@ impl AppleTextSystem {
             system_ui_faces: HashMap::default(),
             scaled_faces: HashMap::default(),
             sized_system_fonts: Mutex::default(),
+            synthetic_bold_faces: HashSet::default(),
         }))
     }
 }
@@ -205,6 +209,12 @@ impl PlatformTextSystem for AppleTextSystem {
 
     fn layout_line(&self, text: &str, font_size: Pixels, font_runs: &[FontRun]) -> LineLayout {
         self.0.write().layout_line(text, font_size, font_runs)
+    }
+
+    fn run_padding(&self, font_id: FontId, font_size: Pixels) -> Pixels {
+        self.0.read().scaled_faces.get(&font_id).map_or(Pixels::ZERO, |(_, layout)| {
+            px(layout.padding_em * f32::from(font_size) * layout.scale + layout.padding_px)
+        })
     }
 
     fn recommended_rendering_mode(
@@ -313,9 +323,31 @@ impl AppleTextSystemState {
             },
         )?;
 
-        let font_id = candidates[ix];
+        let mut font_id = candidates[ix];
+        if font.weight.0 > 500. && !self.fonts[font_id.0].native_font().symbolic_traits().is_bold() {
+            font_id = self.load_synthetic_bold_face(font_id);
+        }
         self.font_selections.insert(font.clone(), font_id);
         Ok(font_id)
+    }
+
+    /// Registers `face` drawn with synthetic bold as its own font id. Its outlines and
+    /// advances stay the face's own; only rasterizing thickens them (see
+    /// [`synthetic_bold_stroke`]).
+    fn load_synthetic_bold_face(&mut self, face: FontId) -> FontId {
+        let font_id = FontId(self.fonts.len());
+        if let Some(postscript_name) = self.postscript_names_by_font_id.get(&face).cloned() {
+            self.postscript_names_by_font_id.insert(font_id, postscript_name);
+        }
+        self.fonts.push(self.fonts[face.0].clone());
+        self.synthetic_bold_faces.insert(font_id);
+        font_id
+    }
+
+    /// Whether `font_id`, or the face a run layout scales, is drawn with synthetic bold.
+    fn is_synthetic_bold(&self, font_id: FontId) -> bool {
+        self.synthetic_bold_faces.contains(&font_id)
+            || self.scaled_faces.get(&font_id).is_some_and(|(base, _)| self.is_synthetic_bold(*base))
     }
 
     /// Registers `font` with its run layout as its own font id over the face the font has
@@ -354,7 +386,9 @@ impl AppleTextSystemState {
 
     /// Whether `font_id` is drawn from a font made for each size (see [`Self::sized_font`]).
     fn is_made_per_size(&self, font_id: FontId) -> bool {
-        self.system_ui_faces.contains_key(&font_id) || self.scaled_faces.contains_key(&font_id)
+        self.system_ui_faces.contains_key(&font_id)
+            || self.scaled_faces.contains_key(&font_id)
+            || self.synthetic_bold_faces.contains(&font_id)
     }
 
     /// The font to lay out or draw `font_id` with at `size`: a system UI face made at that
@@ -542,8 +576,14 @@ impl AppleTextSystemState {
             font_kit::canvas::RasterizationOptions::GrayscaleAa,
         )?);
 
-        // Expand the bounds by 1 pixel on each side to give CG room for anti-aliasing.
-        Ok(bounds.dilate(DevicePixels(1)))
+        // Expand the bounds by 1 pixel on each side to give CG room for anti-aliasing, plus
+        // half a synthetic bold stroke.
+        let stroke = if self.is_synthetic_bold(params.font_id) {
+            (synthetic_bold_stroke(f32::from(params.font_size) * params.scale_factor) / 2.).ceil() as i32
+        } else {
+            0
+        };
+        Ok(bounds.dilate(DevicePixels(1 + stroke)))
     }
 
     fn rasterize_glyph(
@@ -604,7 +644,17 @@ impl AppleTextSystemState {
             let subpixel_shift = params
                 .subpixel_variant
                 .map(|v| v as f32 / SUBPIXEL_VARIANTS_X as f32);
-            cx.set_text_drawing_mode(CGTextDrawingMode::CGTextFill);
+            if self.is_synthetic_bold(params.font_id) {
+                // Skia's fake bold on macOS strokes and fills the outline with its default
+                // miter join (`useStrokeForFakeBold`). The context is scaled to logical pixels.
+                let stroke = synthetic_bold_stroke(f32::from(params.font_size) * params.scale_factor);
+                cx.set_text_drawing_mode(CGTextDrawingMode::CGTextFillStroke);
+                cx.set_line_width((stroke / params.scale_factor) as CGFloat);
+                cx.set_line_join(core_graphics::context::CGLineJoin::CGLineJoinMiter);
+                cx.set_miter_limit(4.);
+            } else {
+                cx.set_text_drawing_mode(CGTextDrawingMode::CGTextFill);
+            }
             cx.set_allows_antialiasing(true);
             cx.set_should_antialias(true);
             cx.set_allows_font_subpixel_positioning(true);
@@ -612,12 +662,20 @@ impl AppleTextSystemState {
             cx.set_allows_font_subpixel_quantization(false);
             cx.set_should_subpixel_quantize_fonts(false);
 
-            if cfg!(target_os = "macos") && params.dilation > 0 {
+            if params.dilation == gpui::GLYPH_ANTIALIASED {
+                // `-webkit-font-smoothing: antialiased`: Skia draws through CoreGraphics
+                // with font smoothing off.
+                cx.set_should_smooth_fonts(false);
+                cx.set_gray_fill_color(0.0, 1.0);
+                cx.set_rgb_stroke_color(0.0, 0.0, 0.0, 1.0);
+            } else if cfg!(target_os = "macos") && params.dilation > 0 {
                 let luminance = params.dilation as f64 * 0.25;
                 cx.set_should_smooth_fonts(true);
                 cx.set_gray_fill_color(luminance, 1.0);
+                cx.set_rgb_stroke_color(luminance, luminance, luminance, 1.0);
             } else {
                 cx.set_gray_fill_color(0.0, 1.0);
+                cx.set_rgb_stroke_color(0.0, 0.0, 0.0, 1.0);
             }
             self.sized_font(params.font_id, params.font_size.into())
                 .draw_glyphs(
@@ -1191,4 +1249,13 @@ mod tests {
         assert_eq!(layout.len, 0);
         assert!(layout.runs.is_empty());
     }
+}
+
+/// The width of the stroke Skia adds around a glyph drawn at `device_size` device pixels to
+/// fake bold: the size times 1/24 up to 9px, 1/32 from 36px, interpolated between
+/// (`kStdFakeBoldInterpKeys` and `kStdFakeBoldInterpValues` in `SkTextFormatParams.h`). Blink
+/// lays a page out zoomed by the device scale factor, so the size is in device pixels.
+fn synthetic_bold_stroke(device_size: f32) -> f32 {
+    let t = ((device_size - 9.) / (36. - 9.)).clamp(0., 1.);
+    device_size * (1. / 24. + t * (1. / 32. - 1. / 24.))
 }

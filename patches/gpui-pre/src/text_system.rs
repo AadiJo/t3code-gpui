@@ -55,19 +55,38 @@ pub const SUBPIXEL_VARIANTS_Y: u8 = 1;
 // Leave enough room below the underline for its stroke while keeping it below the baseline.
 const UNDERLINE_DESCENT_OFFSET_FACTOR: f32 = 0.618;
 
+/// The glyph dilation that asks for plain grayscale antialiasing with the platform's font
+/// smoothing off (CSS `-webkit-font-smoothing: antialiased`; see
+/// [`TextSystem::set_antialiased`]). Other dilations are smoothing levels.
+pub const GLYPH_ANTIALIASED: u8 = u8::MAX;
+
 /// The baseline's offset from the top of a line box, as Blink places it: ascent and
 /// descent each round to whole pixels (`FontMetrics::AscentDescentWithHacks`), and the
-/// leading above the text is floored (`CalculateLeadingSpace`), so a baseline always sits
-/// a whole number of logical pixels below its line's top.
-pub fn line_baseline_offset(line_height: Pixels, ascent: Pixels, descent: Pixels) -> Pixels {
-    let ascent = ascent.0.round();
-    let descent = descent.0.round();
-    px(((line_height.0 - ascent - descent) / 2.).floor() + ascent)
+/// leading above the text is floored (`CalculateLeadingSpace`). On a display with a device
+/// scale factor Blink lays the page out zoomed by it and shapes fonts at the zoomed size,
+/// so those pixels are device pixels: at 2x a baseline can sit on a half logical pixel.
+pub fn line_baseline_offset(
+    line_height: Pixels,
+    ascent: Pixels,
+    descent: Pixels,
+    scale_factor: f32,
+) -> Pixels {
+    let ascent = (ascent.0 * scale_factor).round();
+    let descent = (descent.0 * scale_factor).round();
+    // A line height is a layout unit, 1/64 of a (zoomed) pixel.
+    let line_height = (line_height.0 * scale_factor * 64.).round() / 64.;
+    px((((line_height - ascent - descent) / 2.).floor() + ascent) / scale_factor)
 }
 
 /// Returns the vertical offset used to paint an underline within a line.
-pub fn underline_y_offset(line_height: Pixels, ascent: Pixels, descent: Pixels) -> Pixels {
-    line_baseline_offset(line_height, ascent, descent) + descent * UNDERLINE_DESCENT_OFFSET_FACTOR
+pub fn underline_y_offset(
+    line_height: Pixels,
+    ascent: Pixels,
+    descent: Pixels,
+    scale_factor: f32,
+) -> Pixels {
+    line_baseline_offset(line_height, ascent, descent, scale_factor)
+        + descent * UNDERLINE_DESCENT_OFFSET_FACTOR
 }
 
 const MAX_REPORTED_MISSING_GLYPHS: usize = 1024;
@@ -247,6 +266,9 @@ pub struct TextSystem {
     font_generation: Arc<AtomicUsize>,
     missing_glyph_reporter: Arc<MissingGlyphReporter>,
     missing_glyph_receiver: Mutex<Option<MissingGlyphReceiver>>,
+    /// CSS `-webkit-font-smoothing: antialiased`: glyphs draw without the platform's
+    /// font smoothing, which on macOS thickens light text (see [`Self::set_antialiased`]).
+    antialiased: std::sync::atomic::AtomicBool,
 }
 
 #[derive(Clone)]
@@ -290,6 +312,7 @@ impl TextSystem {
                 generation: missing_glyph_generation,
                 receiver,
             })),
+            antialiased: Default::default(),
         }
     }
 
@@ -493,17 +516,19 @@ impl TextSystem {
         self.read_metrics(font_id, |metrics| metrics.descent(font_size))
     }
 
-    /// Get the recommended baseline offset for the given font and line height.
+    /// Get the recommended baseline offset for the given font and line height on a display
+    /// with `scale_factor` (see [`line_baseline_offset`]).
     pub fn baseline_offset(
         &self,
         font_id: FontId,
         font_size: Pixels,
         line_height: Pixels,
+        scale_factor: f32,
     ) -> Pixels {
         let ascent = self.ascent(font_id, font_size);
         // Font metrics give the descent as a negative offset below the baseline.
         let descent = self.descent(font_id, font_size).abs();
-        line_baseline_offset(line_height, ascent, descent)
+        line_baseline_offset(line_height, ascent, descent, scale_factor)
     }
 
     fn read_metrics<T>(&self, font_id: FontId, read: impl FnOnce(&FontMetrics) -> T) -> T {
@@ -561,7 +586,17 @@ impl TextSystem {
 
     /// Returns the dilation level to use for a glyph painted in the given color.
     pub(crate) fn glyph_dilation_for_color(&self, color: Hsla) -> u8 {
+        if self.antialiased.load(std::sync::atomic::Ordering::Relaxed) {
+            return GLYPH_ANTIALIASED;
+        }
         self.platform_text_system.glyph_dilation_for_color(color)
+    }
+
+    /// Draws glyphs as CSS `-webkit-font-smoothing: antialiased` does: plain grayscale
+    /// antialiasing, without the platform's font smoothing. Chromium on macOS then skips
+    /// CoreGraphics' smoothing, which otherwise thickens light text on dark backgrounds.
+    pub fn set_antialiased(&self, antialiased: bool) {
+        self.antialiased.store(antialiased, std::sync::atomic::Ordering::Relaxed);
     }
 
     /// Returns the text rendering mode recommended by the platform for the given font and size.

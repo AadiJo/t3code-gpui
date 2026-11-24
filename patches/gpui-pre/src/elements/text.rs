@@ -273,10 +273,10 @@ impl Element for &'static str {
         _inspector_id: Option<&InspectorElementId>,
         bounds: Bounds<Pixels>,
         text_layout: &mut Self::RequestLayoutState,
-        _window: &mut Window,
+        window: &mut Window,
         _cx: &mut App,
     ) {
-        text_layout.prepaint(bounds, self)
+        text_layout.prepaint(bounds, window.unsnapped_origin(bounds), self)
     }
 
     fn paint(
@@ -339,10 +339,10 @@ impl Element for SharedString {
         _inspector_id: Option<&InspectorElementId>,
         bounds: Bounds<Pixels>,
         text_layout: &mut Self::RequestLayoutState,
-        _window: &mut Window,
+        window: &mut Window,
         _cx: &mut App,
     ) {
-        text_layout.prepaint(bounds, self.as_ref())
+        text_layout.prepaint(bounds, window.unsnapped_origin(bounds), self.as_ref())
     }
 
     fn paint(
@@ -557,10 +557,10 @@ impl Element for StyledText {
         _inspector_id: Option<&InspectorElementId>,
         bounds: Bounds<Pixels>,
         _: &mut Self::RequestLayoutState,
-        _window: &mut Window,
+        window: &mut Window,
         _cx: &mut App,
     ) {
-        self.layout.prepaint(bounds, &self.text)
+        self.layout.prepaint(bounds, window.unsnapped_origin(bounds), &self.text)
     }
 
     fn paint(
@@ -596,6 +596,11 @@ struct TextLayoutInner {
     truncate_width: Option<Pixels>,
     size: Option<Size<Pixels>>,
     bounds: Option<Bounds<Pixels>>,
+    /// Where the lines are painted from: the layout box's left edge, and its top before it
+    /// snapped to device pixels. Blink rounds each line's top once
+    /// (`ComputePhysicalBoxGeometry`); starting from the snapped top would round a
+    /// fractional line twice.
+    paint_origin: Point<Pixels>,
 }
 
 impl TextLayout {
@@ -733,6 +738,7 @@ impl TextLayout {
                         truncate_width,
                         size: Some(Size::default()),
                         bounds: None,
+                        paint_origin: Point::default(),
                     });
                     return Size::default();
                 };
@@ -754,6 +760,7 @@ impl TextLayout {
                     truncate_width,
                     size: Some(size),
                     bounds: None,
+                    paint_origin: Point::default(),
                 });
 
                 size
@@ -761,13 +768,15 @@ impl TextLayout {
         })
     }
 
-    fn prepaint(&self, bounds: Bounds<Pixels>, text: &str) {
+    fn prepaint(&self, bounds: Bounds<Pixels>, paint_origin: Point<Pixels>, text: &str) {
         let mut element_state = self.0.borrow_mut();
         let element_state = element_state
             .as_mut()
             .with_context(|| format!("measurement has not been performed on {text}"))
             .unwrap();
         element_state.bounds = Some(bounds);
+        // Only the top: a box's left edge snaps, as glyph ink in Chromium at 2x shows.
+        element_state.paint_origin = crate::point(bounds.origin.x, paint_origin.y);
     }
 
     fn paint(&self, text: &str, window: &mut Window, cx: &mut App) {
@@ -803,7 +812,7 @@ impl TextLayout {
             .context("prepaint has not been performed")?;
 
         let line_height = element_state.line_height;
-        let mut line_origin = bounds.origin;
+        let mut line_origin = element_state.paint_origin;
         let text_style = window.text_style();
         for line in &element_state.lines {
             if matches!(pass, TextPaintPass::All | TextPaintPass::Background) {
@@ -896,6 +905,40 @@ impl TextLayout {
         }
 
         None
+    }
+
+    /// The box of each line's part of `range`, as painted: one per wrapped line it is on,
+    /// `line_height` tall. Where a line wraps inside a padded run (see
+    /// [`crate::LineLayout::break_padding`]) the part ends after its padding and the next
+    /// part starts after the same padding, so it can draw each fragment of an inline box.
+    pub fn fragment_bounds(&self, range: Range<usize>) -> Vec<Bounds<Pixels>> {
+        let element_state = self.0.borrow();
+        let element_state = element_state
+            .as_ref()
+            .expect("measurement has not been performed");
+        let bounds = element_state
+            .bounds
+            .expect("prepaint has not been performed");
+        let line_height = element_state.line_height;
+        let mut fragments = Vec::new();
+        let mut line_top = bounds.top();
+        let mut line_start_ix = 0;
+        for line in &element_state.lines {
+            let line_end_ix = line_start_ix + line.len();
+            if range.start <= line_end_ix && range.end > line_start_ix {
+                let local = range.start.saturating_sub(line_start_ix)..(range.end - line_start_ix).min(line.len());
+                for (wrapped, left, right) in line.layout.fragments(&line.text, local) {
+                    let top = line_top + line_height * wrapped as f32;
+                    fragments.push(Bounds::from_corners(
+                        crate::point(bounds.left() + left, top),
+                        crate::point(bounds.left() + right, top + line_height),
+                    ));
+                }
+            }
+            line_top += line.size(line_height).height;
+            line_start_ix = line_end_ix + 1;
+        }
+        fragments
     }
 
     /// Retrieve the layout for the line containing the given byte index.

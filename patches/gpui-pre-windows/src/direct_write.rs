@@ -31,6 +31,9 @@ struct FontInfo {
     features: IDWriteTypography,
     fallbacks: Option<IDWriteFontFallback>,
     font_collection: IDWriteFontCollection1,
+    /// How runs in this font sit in their line (`FontFeatures::with_run_layout`): they are
+    /// laid out and drawn at the scaled size and padded on both sides.
+    run_layout: Option<RunLayout>,
 }
 
 pub(crate) struct DirectWriteTextSystem {
@@ -183,6 +186,12 @@ impl PlatformTextSystem for DirectWriteTextSystem {
                 font_size,
                 ..Default::default()
             })
+    }
+
+    fn run_padding(&self, font_id: FontId, font_size: Pixels) -> Pixels {
+        self.state.read().fonts[font_id.0].run_layout.map_or(Pixels::ZERO, |layout| {
+            px(layout.padding_em * font_size.as_f32() * layout.scale + layout.padding_px)
+        })
     }
 
     fn recommended_rendering_mode(
@@ -386,8 +395,10 @@ impl DirectWriteState {
             let res = maybe!({
                 let font_face_ref = unsafe { font.GetFontFaceReference(index).log_err()? };
                 let font_face = unsafe { font_face_ref.CreateFontFace().log_err()? };
-                let direct_write_features =
-                    unsafe { Self::generate_font_features(factory, features).log_err()? };
+                // The run layout's private tags are not OpenType features.
+                let direct_write_features = unsafe {
+                    Self::generate_font_features(factory, &features.without_run_layout()).log_err()?
+                };
                 let fallbacks = fallbacks.as_ref().and_then(|fallbacks| {
                     Self::generate_font_fallbacks(fallbacks, factory, system_font_collection)
                         .log_err()
@@ -399,6 +410,7 @@ impl DirectWriteState {
                     features: direct_write_features,
                     fallbacks,
                     font_collection: collection.clone(),
+                    run_layout: features.run_layout(),
                 };
                 Some(font_info)
             });
@@ -530,6 +542,9 @@ impl DirectWriteState {
                     length: current_text_utf16_length,
                 };
                 layout.SetTypography(&font_info.features, text_range)?;
+                if let Some(run_layout) = font_info.run_layout {
+                    layout.SetFontSize(font_size.as_f32() * run_layout.scale, text_range)?;
+                }
                 utf16_offset += current_text_utf16_length;
 
                 layout
@@ -564,6 +579,7 @@ impl DirectWriteState {
                 } else {
                     font_size.as_f32()
                 };
+                let font_size = font_size * font_info.run_layout.map_or(1., |layout| layout.scale);
                 text_layout.SetFontSize(font_size, text_range)?;
                 text_layout.SetFontStyle(font_info.font_face.GetStyle(), text_range)?;
                 text_layout.SetFontWeight(font_info.font_face.GetWeight(), text_range)?;
@@ -587,7 +603,8 @@ impl DirectWriteState {
                 0.0,
                 0.0,
             )?;
-            let width = px(renderer_context.width);
+            let mut width = px(renderer_context.width);
+            self.apply_run_layouts(font_size, font_runs, &mut runs, &mut width);
 
             Ok(LineLayout {
                 font_size,
@@ -629,6 +646,65 @@ impl DirectWriteState {
         }
     }
 
+    /// Gives the glyphs of each run laid out with a run layout that run's font id (the
+    /// renderer reports them under the face's), and moves glyphs by the runs' padding, as
+    /// CSS lays out an inline box.
+    fn apply_run_layouts(
+        &self,
+        font_size: Pixels,
+        font_runs: &[FontRun],
+        runs: &mut Vec<ShapedRun>,
+        width: &mut Pixels,
+    ) {
+        let mut padded_runs = SmallVec::<[(std::ops::Range<usize>, Pixels); 1]>::new();
+        let mut start = 0;
+        let mut scaled = SmallVec::<[(std::ops::Range<usize>, FontId); 1]>::new();
+        for run in font_runs {
+            let range = start..start + run.len;
+            start = range.end;
+            let Some(run_layout) = self.fonts[run.font_id.0].run_layout else { continue };
+            scaled.push((range.clone(), run.font_id));
+            let padding = run_layout.padding_em * font_size.as_f32() * run_layout.scale + run_layout.padding_px;
+            if padding != 0. {
+                padded_runs.push((range, px(padding)));
+            }
+        }
+        if scaled.is_empty() {
+            return;
+        }
+        let glyphs = std::mem::take(runs).into_iter().flat_map(|run| {
+            let font_id = run.font_id;
+            run.glyphs.into_iter().map(move |glyph| (font_id, glyph))
+        });
+        for (font_id, mut glyph) in glyphs {
+            let font_id = scaled
+                .iter()
+                .find(|(range, _)| range.contains(&glyph.index))
+                .map_or(font_id, |(_, scaled_id)| *scaled_id);
+            for (range, padding) in &padded_runs {
+                if glyph.index >= range.start {
+                    glyph.position.x += *padding;
+                }
+                if glyph.index >= range.end {
+                    glyph.position.x += *padding;
+                }
+            }
+            match runs.last_mut() {
+                Some(run) if run.font_id == font_id => run.glyphs.push(glyph),
+                _ => runs.push(ShapedRun { font_id, glyphs: vec![glyph] }),
+            }
+        }
+        for (_, padding) in &padded_runs {
+            *width += *padding * 2.;
+        }
+    }
+
+    /// The size `params` draws its glyph at: a run layout's scale applies.
+    fn glyph_size(&self, params: &RenderGlyphParams) -> f32 {
+        let scale = self.fonts[params.font_id.0].run_layout.map_or(1., |layout| layout.scale);
+        params.font_size.as_f32() * scale * params.scale_factor
+    }
+
     fn with_glyph_run<R>(
         &self,
         params: &RenderGlyphParams,
@@ -640,7 +716,7 @@ impl DirectWriteState {
         let offset = [DWRITE_GLYPH_OFFSET::default()];
         let glyph_run = DWRITE_GLYPH_RUN {
             fontFace: ManuallyDrop::new(Some(unsafe { std::ptr::read(&***font.font_face) })),
-            fontEmSize: params.font_size.as_f32() * params.scale_factor,
+            fontEmSize: self.glyph_size(params),
             glyphCount: 1,
             glyphIndices: glyph_id.as_ptr(),
             glyphAdvances: advance.as_ptr(),
@@ -664,7 +740,7 @@ impl DirectWriteState {
         let mut grid_fit_mode = DWRITE_GRID_FIT_MODE::default();
         unsafe {
             font.font_face.GetRecommendedRenderingMode(
-                params.font_size.as_f32() * params.scale_factor,
+                self.glyph_size(params),
                 96.0,
                 96.0,
                 None,
