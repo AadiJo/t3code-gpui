@@ -260,6 +260,7 @@ pub fn showcase_snapshot() -> SidebarSnapshot {
             thread_id: ThreadId("a1".into()),
         }),
         environment_pill: None,
+        auto_settle_disabled: Default::default(),
         now: FIXTURE_NOW,
     }
 }
@@ -355,6 +356,7 @@ pub fn large_snapshot(thread_count: usize, project_count: usize) -> SidebarSnaps
         active_thread: None,
         environment_pill: None,
         now: FIXTURE_NOW,
+        auto_settle_disabled: Default::default(),
     }
 }
 
@@ -415,5 +417,6 @@ pub fn reference_snapshot() -> SidebarSnapshot {
         active_thread: Some(ThreadKey { environment_id: env(), thread_id: ThreadId("r-sync".into()) }),
         environment_pill: None,
         now: FIXTURE_NOW,
+        auto_settle_disabled: Default::default(),
     }
 }

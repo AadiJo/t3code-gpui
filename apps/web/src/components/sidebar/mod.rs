@@ -487,6 +487,8 @@ impl Sidebar {
         position: Point<Pixels>,
         cx: &mut Context<Self>,
     ) {
+        // Chromium reports whole-pixel client coordinates, and the fallback menu opens there.
+        let position = point(position.x.floor(), position.y.floor());
         let menu = match self.list.entries.get(entry) {
             Some(SidebarListEntry::Thread { thread, section, .. }) => {
                 let label = self
@@ -507,6 +509,9 @@ impl Sidebar {
                     ),
                     project_label: label,
                     project_filter_active: false,
+                    show_project_filter: true,
+                    can_find: false,
+                    auto_settle_enabled: !self.snapshot.auto_settle_disabled.contains(&thread.key),
                 });
                 ContextMenu {
                     target: MenuTarget::Thread(thread.key.clone()),
@@ -587,11 +592,7 @@ impl Sidebar {
     /// Runs a menu row (`child` picks a submenu row) and closes the menu.
     pub(crate) fn run_menu_item(&mut self, ix: usize, child: Option<usize>, cx: &mut Context<Self>) {
         let Some(menu) = self.context_menu.take() else { return };
-        let item = match child {
-            Some(c) => menu.items.get(ix).and_then(|i| i.children.get(c)),
-            None => menu.items.get(ix),
-        };
-        if let Some(command) = item.filter(|i| !i.disabled).and_then(|i| i.command) {
+        if let Some(command) = context_menu::picked_command(&menu, ix, child) {
             match menu.target {
                 MenuTarget::Thread(key) => {
                     let targets = self.command_targets(&key);

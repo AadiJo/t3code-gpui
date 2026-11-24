@@ -333,6 +333,7 @@ impl LiveShell {
             active_thread: self.active_thread.clone(),
             environment_pill: None,
             now: TimestampMs(now),
+            auto_settle_disabled: Default::default(),
         };
         self.revision += 1;
         self.rebuilds += 1;

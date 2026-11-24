@@ -311,4 +311,7 @@ pub struct SidebarSnapshot {
     pub environment_pill: Option<SharedString>,
     /// The clock the snapshot was taken against.
     pub now: TimestampMs,
+    /// Threads whose auto-settle is off (`autoSettleDisabledAt` set), for the
+    /// "Auto-settle behavior" menu. Empty means every thread follows the settings.
+    pub auto_settle_disabled: std::collections::HashSet<ThreadKey>,
 }
