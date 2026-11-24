@@ -48,7 +48,7 @@ impl Render for AccessSettingsPanel {
             .or_else(|| lock_reason(managed_by(policy, &["enablePreviewTunnel"]), ro));
         let environment = SettingsSection::new(t!("This environment"))
             .child(select_row("environmentIcon", t!("Environment icon"), Some(t!("Shown next to this environment's name in the sidebar and pickers.")), kinds.iter().map(|k| machine_label(*k)).collect(), kind_ix, lock_reason(managed_by(policy, &["environmentIcon"]), ro), move |ix, _, cx| {
-                save_patch(&icon_model, "environmentIcon", ClientServerSettingsPatch { environment_icon: Some(EnvironmentMachineKind::ALL[ix]), ..Default::default() }, cx);
+                save_patch(&icon_model, "environmentIcon", ClientServerSettingsPatch { environment_icon: Some(Some(EnvironmentMachineKind::ALL[ix])), ..Default::default() }, cx);
             }))
             .child(bool_setting(&self.model, "requireConnectDeviceApproval", t!("Require approval for new devices"), Some(t!("New T3 Connect devices wait until you approve them from a device that already has access.")), s.require_connect_device_approval.unwrap_or(true), lock_reason(managed_by(policy, &["requireConnectDeviceApproval"]), ro), |v| ClientServerSettingsPatch { require_connect_device_approval: Some(v), ..Default::default() }))
             .child(bool_setting(&self.model, "enablePreviewTunnel", t!("Preview tunnel"), Some(t!("Open this machine's local servers in browser tabs on other devices.")), s.enable_preview_tunnel.unwrap_or(true), tunnel_lock, |v| ClientServerSettingsPatch { enable_preview_tunnel: Some(v), ..Default::default() }));

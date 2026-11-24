@@ -201,6 +201,16 @@ impl<'de> Visitor<'de> for HasKeyVisitor<'_> {
     }
 }
 
+/// For a patch key that may be absent, null or a value: a present key decodes to `Some`, so a
+/// null stays distinguishable from an absent key (which `#[serde(default)]` makes `None`).
+pub fn double_option<'de, D, T>(d: D) -> Result<Option<Option<T>>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: serde::Deserialize<'de>,
+{
+    Option::<T>::deserialize(d).map(Some)
+}
+
 /// Decodes a forward-compatible field: a value this client cannot parse becomes `None` instead
 /// of failing the whole message, as the TypeScript contract does.
 pub fn lenient<'de, D, T>(d: D) -> Result<Option<T>, D::Error>

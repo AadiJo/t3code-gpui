@@ -63,7 +63,7 @@ impl Render for WorktreesSettingsPanel {
             ))
             .child(bool_setting(&model, "newWorktreesStartFromOrigin", t!("Start from remote"), Some(t!("Uses the latest commit of the base branch’s tracked remote branch, even if its name differs. Otherwise uses the same-named branch on origin. Uses your local branch if that remote branch is missing.")), s.new_worktrees_start_from_origin.unwrap_or(true), lock(&["newWorktreesStartFromOrigin"]), |v| ClientServerSettingsPatch { new_worktrees_start_from_origin: Some(v), ..Default::default() }))
             .child(select_row("worktreeSubmodules", t!("Submodules"), Some(t!("How new worktrees populate git submodules.")), vec![t!("Recursive"), t!("Top level only"), t!("Skip")], sub_ix, lock(&["worktreeSubmodules"]), move |ix, _, cx| {
-                save_patch(&sub_model, "worktreeSubmodules", ClientServerSettingsPatch { worktree_submodules: Some(submodules[ix]), ..Default::default() }, cx);
+                save_patch(&sub_model, "worktreeSubmodules", ClientServerSettingsPatch { worktree_submodules: Some(Some(submodules[ix])), ..Default::default() }, cx);
             }));
 
         let modes = [BranchNamingMode::Static, BranchNamingMode::Semantic, BranchNamingMode::Custom];

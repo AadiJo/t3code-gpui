@@ -145,12 +145,12 @@ impl Render for ThreadsSettingsPanel {
         let runtime_ix = runtime_modes.iter().position(|m| Some(*m) == s.default_runtime_mode).unwrap_or(3);
         let runtime_model = model.clone();
         let defaults = SettingsSection::new(t!("Project defaults and overrides"))
-            .child(model_select_row(model, "defaultModelSelection", t!("Default model"), Some(t!("Default model for new threads. Projects can override it.")), s.default_model_selection.as_ref(), None, lock(&["defaultModelSelection"]), |v| ClientServerSettingsPatch { default_model_selection: v, ..Default::default() }, cx))
+            .child(model_select_row(model, "defaultModelSelection", t!("Default model"), Some(t!("Default model for new threads. Projects can override it.")), s.default_model_selection.as_ref(), None, lock(&["defaultModelSelection"]), |v| ClientServerSettingsPatch { default_model_selection: Some(v), ..Default::default() }, cx))
             .child(select_row("defaultThreadEnvMode", t!("Workspace"), Some(t!("Where new threads start. Projects and their t3.json can override it.")), env_modes.iter().map(|(_, l)| l.clone()).collect(), env_ix, lock(&["defaultThreadEnvMode"]), move |ix, _, cx| {
-                let patch = ClientServerSettingsPatch { default_thread_env_mode: Some([ThreadEnvMode::Local, ThreadEnvMode::Worktree][ix]), ..Default::default() };
+                let patch = ClientServerSettingsPatch { default_thread_env_mode: Some(Some([ThreadEnvMode::Local, ThreadEnvMode::Worktree][ix])), ..Default::default() };
                 save_patch(&env_model, "defaultThreadEnvMode", patch, cx);
             }))
-            .child(model_select_row(model, "fallbackModelSelection", t!("Fallback model"), Some(t!("Used for new threads when the default model's provider is out of usage.")), s.fallback_model_selection.as_ref(), Some(t!("None", context = "no fallback model")), lock(&["fallbackModelSelection"]), |v| ClientServerSettingsPatch { fallback_model_selection: v, ..Default::default() }, cx))
+            .child(model_select_row(model, "fallbackModelSelection", t!("Fallback model"), Some(t!("Used for new threads when the default model's provider is out of usage.")), s.fallback_model_selection.as_ref(), Some(t!("None", context = "no fallback model")), lock(&["fallbackModelSelection"]), |v| ClientServerSettingsPatch { fallback_model_selection: Some(v), ..Default::default() }, cx))
             .child(select_row("defaultRuntimeMode", t!("Permissions"), Some(t!("Default permissions for new threads. Projects can override them.")), runtime_modes.iter().map(|m| runtime_mode_label(*m)).collect(), runtime_ix, lock(&["defaultRuntimeMode"]), move |ix, _, cx| {
                 let patch = ClientServerSettingsPatch { default_runtime_mode: Some(RuntimeMode::ALL[ix]), ..Default::default() };
                 save_patch(&runtime_model, "defaultRuntimeMode", patch, cx);
@@ -180,15 +180,14 @@ impl Render for ThreadsSettingsPanel {
         let mut auto_settle = SettingsSection::new(t!("Auto-settle"))
             .child(bool_setting(model, "sidebarAutoSettleOnMerge", t!("Auto-settle merged threads"), Some(t!("Settle a thread when its pull request merges. Closed pull requests still settle automatically.")), s.sidebar_auto_settle_on_merge.unwrap_or(true), lock(&["sidebarAutoSettleOnMerge"]), |v| ClientServerSettingsPatch { sidebar_auto_settle_on_merge: Some(v), ..Default::default() }))
             .child(super::server_settings_controls::switch_row("sidebarAutoSettleAfterDays", t!("Auto-settle inactive threads"), Some(t!("Sidebar threads with no activity for this long settle automatically.")), days.is_some(), lock(&["sidebarAutoSettleAfterDays"]), move |checked, _, cx| {
-                let value = if checked { serde_json::json!(AUTO_SETTLE_DEFAULT_DAYS) } else { serde_json::Value::Null };
-                let patch: ClientServerSettingsPatch = serde_json::from_value(serde_json::json!({ "sidebarAutoSettleAfterDays": value })).unwrap_or_default();
-                // Turning it off sends `null`, which the generated patch type cannot carry yet; see the report.
+                let value = checked.then_some(SidebarAutoSettleAfterDays::Number(AUTO_SETTLE_DEFAULT_DAYS));
+                let patch = ClientServerSettingsPatch { sidebar_auto_settle_after_days: Some(value), ..Default::default() };
                 save_patch(&inactive_model, "sidebarAutoSettleAfterDays", patch, cx);
             }));
         if let Some(days) = days {
             auto_settle = auto_settle
                 .child(SettingsRow::new(t!("Days of inactivity before auto-settle")).description(t!("Any new activity un-settles a thread automatically.")).control(interval_seconds_field("auto-settle-days", days as u64, 1, 1, ro, move |d, _, cx| {
-                    let patch = ClientServerSettingsPatch { sidebar_auto_settle_after_days: Some(SidebarAutoSettleAfterDays::Number(d as f64)), ..Default::default() };
+                    let patch = ClientServerSettingsPatch { sidebar_auto_settle_after_days: Some(Some(SidebarAutoSettleAfterDays::Number(d as f64))), ..Default::default() };
                     save_patch(&days_model, "sidebarAutoSettleAfterDays", patch, cx);
                 }, cx)))
                 .child(bool_setting(model, "sidebarAutoSettleKeepPullRequests", t!("Keep threads with a PR"), Some(t!("Inactivity does not settle threads with a pull request. Merge and close still do.")), s.sidebar_auto_settle_keep_pull_requests.unwrap_or(false), lock(&["sidebarAutoSettleKeepPullRequests"]), |v| ClientServerSettingsPatch { sidebar_auto_settle_keep_pull_requests: Some(v), ..Default::default() }));

@@ -773,8 +773,8 @@ pub struct ClientServerSettingsPatch {
     pub provider_model_preferences: Option<ProviderModelPreferences>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub migrate_model_preferences: Option<ClientServerSettingsPatchMigrateModelPreferences>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub worktree_cleanup: Option<ClientServerSettingsPatchWorktreeCleanup>,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "crate::wire::double_option")]
+    pub worktree_cleanup: Option<Option<ClientServerSettingsPatchWorktreeCleanup>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub storage_cleanup: Option<ClientServerSettingsPatchStorageCleanup>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -805,8 +805,8 @@ pub struct ClientServerSettingsPatch {
     pub speech_model_unload_timeout: Option<SpeechModelUnloadTimeout>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub speech_project_custom_words: Option<SpeechCustomWords>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub speech_post_processing_model_selection: Option<ModelSelection>,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "crate::wire::double_option")]
+    pub speech_post_processing_model_selection: Option<Option<ModelSelection>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub project_agent_browser_access_overrides: Option<::std::collections::BTreeMap<String, Option<bool>>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -817,12 +817,12 @@ pub struct ClientServerSettingsPatch {
     pub project_script_overrides: Option<::std::collections::BTreeMap<String, Option<Vec<ProjectScript>>>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub project_auto_pull_overrides: Option<::std::collections::BTreeMap<String, Option<bool>>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub default_model_selection: Option<ModelSelection>,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "crate::wire::double_option")]
+    pub default_model_selection: Option<Option<ModelSelection>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_runtime_mode: Option<RuntimeMode>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub fallback_model_selection: Option<ModelSelection>,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "crate::wire::double_option")]
+    pub fallback_model_selection: Option<Option<ModelSelection>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub project_settings_overrides: Option<::std::collections::BTreeMap<String, Option<ClientServerSettingsPatchProjectSettingsOverridesValue>>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -839,8 +839,8 @@ pub struct ClientServerSettingsPatch {
     pub simlock_device_hosts: Option<SimlockDeviceHostConfigs>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub simlock_device_hosts_enabled: Option<bool>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub sidebar_auto_settle_after_days: Option<SidebarAutoSettleAfterDays>,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "crate::wire::double_option")]
+    pub sidebar_auto_settle_after_days: Option<Option<SidebarAutoSettleAfterDays>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub compact_idle_threads: Option<ClientServerSettingsPatchCompactIdleThreads>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -873,14 +873,14 @@ pub struct ClientServerSettingsPatch {
     pub provider_health_refresh_interval: Option<SidebarAutoSettleAfterDays>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub background_activity_profile: Option<BackgroundActivityProfile>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub environment_icon: Option<EnvironmentMachineKind>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub default_thread_env_mode: Option<ThreadEnvMode>,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "crate::wire::double_option")]
+    pub environment_icon: Option<Option<EnvironmentMachineKind>>,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "crate::wire::double_option")]
+    pub default_thread_env_mode: Option<Option<ThreadEnvMode>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub new_worktrees_start_from_origin: Option<bool>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub worktree_submodules: Option<WorktreeSubmodules>,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "crate::wire::double_option")]
+    pub worktree_submodules: Option<Option<WorktreeSubmodules>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub add_project_base_directory: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -899,16 +899,16 @@ pub struct ClientServerSettingsPatch {
     pub remove_agent_credits_on_merge: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_control_writing_style: Option<ClientServerSettingsPatchSourceControlWritingStyle>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub source_control_writer_model_selection: Option<ModelSelection>,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "crate::wire::double_option")]
+    pub source_control_writer_model_selection: Option<Option<ModelSelection>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub review_guides_enabled: Option<bool>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub review_guide_model_selection: Option<ModelSelection>,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "crate::wire::double_option")]
+    pub review_guide_model_selection: Option<Option<ModelSelection>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub review_guide_instructions: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub pull_request_merge_method: Option<PullRequestMergeMethod>,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "crate::wire::double_option")]
+    pub pull_request_merge_method: Option<Option<PullRequestMergeMethod>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub observability: Option<ClientServerSettingsPatchObservability>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
