@@ -438,6 +438,11 @@ impl ChatView {
         cx.notify();
     }
 
+    /// The breadcrumb's project name, as drawn.
+    pub fn project(&self) -> &SharedString {
+        &self.project
+    }
+
     /// The breadcrumb's project icon source, as drawn.
     pub fn project_icon(&self) -> Option<&crate::components::project_favicon::ProjectIconSource> {
         self.project_icon.as_ref()

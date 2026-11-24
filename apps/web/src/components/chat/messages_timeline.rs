@@ -167,7 +167,10 @@ pub struct MessagesTimeline {
     pub(super) rendering_row: usize,
     pub(super) now: Instant,
     /// Wall-clock milliseconds the fixtures treat as "now", for running timers.
-    pub(super) now_millis: i64,
+    /// Added to the wall clock for running timers; fixtures pin the clock through it.
+    clock_offset: i64,
+    /// A side chat's timeline in the right panel: no "Fork from here" (a fork would promote it).
+    pub(super) embedded: bool,
     /// The list's top spacer at a 16px root: the header fade's height, or a side chat's `pt-2`
     /// above its "Context from" divider (the web's list header swaps the spacer for the divider block).
     top_inset: Pixels,
@@ -214,7 +217,8 @@ impl MessagesTimeline {
             find: None,
             rendering_row: 0,
             now: Instant::now(),
-            now_millis: 0,
+            clock_offset: 0,
+            embedded: false,
             top_inset: TIMELINE_TOP_INSET,
             weak,
         }
@@ -424,9 +428,34 @@ impl MessagesTimeline {
         &self.input
     }
 
-    /// The milliseconds clock running timers read ("Working for 1m 23s").
+    /// Marks this as an embedded side chat's timeline (`embedded` in `ChatView`).
+    pub fn set_embedded(&mut self, embedded: bool, cx: &mut Context<Self>) {
+        self.embedded = embedded;
+        cx.notify();
+    }
+
+    /// This is an embedded side chat's timeline.
+    pub fn is_embedded(&self) -> bool {
+        self.embedded
+    }
+
+    /// Pins the clock running timers read to `now` (fixtures and scenes); it advances with the
+    /// wall clock from there. Live timelines need not call it.
     pub fn set_now_millis(&mut self, now: i64) {
-        self.now_millis = now;
+        self.clock_offset = now - t3code_client_runtime::state::models::now_ms();
+    }
+
+    /// The running turn's "Working for" time as the row shows it, while one shows.
+    pub fn working_elapsed_ms(&self) -> Option<i64> {
+        self.rows.iter().find_map(|row| match &row.kind {
+            RowKind::Working { started_at: Some(at), .. } => Some((self.now_millis() - at.0).max(0)),
+            _ => None,
+        })
+    }
+
+    /// The milliseconds clock running timers read ("Working for 1m 23s"): the wall clock.
+    pub(super) fn now_millis(&self) -> i64 {
+        t3code_client_runtime::state::models::now_ms() + self.clock_offset
     }
 
     /// The composer overlay's measured height; the list reserves it at the bottom.
@@ -695,7 +724,6 @@ impl MessagesTimeline {
                     .update(cx, |this, cx| {
                         this.animation_step += 1;
                         this.now = Instant::now();
-                        this.now_millis += ANIMATION_STEP.as_millis() as i64;
                         cx.notify();
                         let viewport = this.list.viewport();
                         this.needs_animation(&viewport)

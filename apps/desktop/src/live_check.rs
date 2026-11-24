@@ -60,8 +60,21 @@
 //            the prompt (`live_check_setup.rs`)
 //   families-seed, families  older settled pages and thread families on two servers
 //            (`live_check_families.rs`)
-//
-// Usage: live-check <draft-banner|setup|families-seed|families|seed|drive|restart|import|send|sidebar|notify|details|mentions|heic|wheel|workspace|banner|sidebardata|composer|composer-restart|sidechats|sidechats-ref|probe> <out-dir>
+//   lineage  the details card's subagent rows on server data from a scripted fx stand-in: two
+//            provider-native subagents with the driver mark, live elapsed time, per-second redraw
+//            and hover card; an app-owned child (the server's `delegate_task`) stopped from its
+//            row's hover stop button and read back as stopped; the fx subagents released
+//            (`T3_CONTROL_DIR`) and settled Done; a fork whose source is then deleted drops the
+//            source's row once `orchestration.getThreadTitles` settles without it
+//   lineage-ref  shots of the states `capture-lineage.mjs` takes in the fork, same threads
+//   sidepane  a side chat's reply shows no "Fork from here" (the main pane keeps it); the side
+//            chat deleted from outside the pane reads "This side chat was deleted."
+//   delete-thread  deletes `T3_DELETE_THREAD`, as another client would
+//   timer    the main pane's "Working for" on a running turn matches the server's run start and
+//            advances with the wall clock
+//   breadcrumb  an unlisted subagent thread and a side chat shown in the main pane name their
+//            project in the header breadcrumb
+// Usage: live-check <draft-banner|setup|families-seed|families|seed|drive|restart|import|send|sidebar|notify|details|mentions|heic|wheel|workspace|banner|sidebardata|composer|composer-restart|sidechats|sidechats-ref|lineage|lineage-ref|sidepane|delete-thread|timer|breadcrumb|probe> <out-dir>
 #[allow(dead_code)]
 #[path = "import/mod.rs"]
 mod import;
@@ -548,6 +561,12 @@ fn main() -> anyhow::Result<()> {
         "families" => live_check_families::run_families(&mut check),
         "setup" => live_check_setup::run_setup(&mut check),
         "draft-banner" => live_check_setup::run_draft_banner(&mut check),
+        "lineage" => run_lineage(&mut check),
+        "lineage-ref" => run_lineage_ref(&mut check),
+        "sidepane" => run_sidepane(&mut check),
+        "delete-thread" => run_delete_thread(&mut check),
+        "timer" => run_timer(&mut check),
+        "breadcrumb" => run_breadcrumb(&mut check),
         other => Err(anyhow::anyhow!("unknown phase {other}")),
     };
     check.finish(&phase, result)
@@ -3553,5 +3572,404 @@ fn run_sidechats_ref(check: &mut Check) -> anyhow::Result<()> {
     open_details(check);
     check.wait(Duration::from_millis(800));
     check.shot("details-side-chats-running.png")?;
+    Ok(())
+}
+
+/// Moves the pointer to `at`, as a user hovering there.
+fn hover_at(check: &mut Check, at: Point<Pixels>) -> anyhow::Result<()> {
+    check.cx.update_window(check.window, |_, w, cx| {
+        w.dispatch_event(MouseMoveEvent { position: at, pressed_button: None, modifiers: Modifiers::default() }.to_platform_input(), cx);
+    })?;
+    check.frame();
+    Ok(())
+}
+
+/// Presses and releases the left button at `at`.
+fn click_at(check: &mut Check, at: Point<Pixels>) -> anyhow::Result<()> {
+    hover_at(check, at)?;
+    check.cx.update_window(check.window, |_, w, cx| {
+        w.dispatch_event(MouseDownEvent { button: MouseButton::Left, position: at, modifiers: Modifiers::default(), click_count: 1, first_mouse: false }.to_platform_input(), cx);
+        w.dispatch_event(MouseUpEvent { button: MouseButton::Left, position: at, modifiers: Modifiers::default(), click_count: 1 }.to_platform_input(), cx);
+    })?;
+    check.frame();
+    Ok(())
+}
+
+/// The shown thread's Lineage rows, every group flattened.
+fn lineage_rows(check: &mut Check) -> Vec<t3code_web::state::thread_relationships::RelationshipRow> {
+    details_input(check).and_then(|i| i.relationships).map(|r| r.groups.into_iter().flat_map(|g| g.rows).collect()).unwrap_or_default()
+}
+
+/// A shell thread of the paired environment by title, skipping ones in status `not`.
+fn thread_titled(check: &mut Check, environment_id: &t3code_contracts::EnvironmentId, title: &str, not: Option<&str>) -> Option<ThreadKey> {
+    let id = environment_id.clone();
+    let (title, status) = (title.to_owned(), not.map(str::to_owned));
+    check.cx.update(|cx| {
+        let snapshot = StateBridge::environment(&id, cx)?.read(cx).shell.snapshot.clone()?;
+        // `status` is a status the thread must not have.
+        let thread = snapshot.threads.iter().find(|t| t.title == title && status.as_deref().is_none_or(|s| t.status.as_str() != s))?;
+        Some(thread_key(&id, &thread.id))
+    })
+}
+
+/// The `lineage` phase. Needs threads a scripted fx stand-in made on the server, named by
+/// `T3_LINEAGE_TAG`: "Native fan-out <tag>" holding two fx subagents (released by writing
+/// `release-<tag>` in `T3_CONTROL_DIR`), and "Parent agent <tag>" waiting on an app-owned child
+/// made by the server's own `delegate_task`.
+fn run_lineage(check: &mut Check) -> anyhow::Result<()> {
+    use t3code_client_runtime::state::thread_relationships::RelationshipStatus;
+    use t3code_web::components::chat::thread_details_relationships::probed_bounds;
+    let control = PathBuf::from(std::env::var("T3_CONTROL_DIR").context("T3_CONTROL_DIR")?);
+    let tag = std::env::var("T3_LINEAGE_TAG").context("T3_LINEAGE_TAG")?;
+    let (fan_out, parent) = (format!("Native fan-out {tag}"), format!("Parent agent {tag}"));
+    let paired = check.cx.update(|cx| !ConnectionRuntime::state(cx).read(cx).environments.is_empty());
+    if !paired {
+        let request = parse_pairing_url(&std::env::var("T3_PAIRING_URL").context("T3_PAIRING_URL")?)?;
+        let pairing = check.cx.update(|cx| ConnectionRuntime::global(cx).pair(request, None, cx));
+        let label = check.wait_task(pairing)?.map_err(|e| anyhow::anyhow!("{}", e.0))?;
+        check.note(format!("paired {label}"));
+    }
+    check.pump(|c| c.connected(), Duration::from_secs(30), "connected")?;
+    let id = check.cx.update(|cx| ConnectionRuntime::state(cx).read(cx).environments[0].entry.environment_id.to_string());
+    let environment_id = t3code_contracts::EnvironmentId::new(id.as_str());
+    let env = environment_id.clone();
+    let (f, p) = (fan_out.clone(), parent.clone());
+    check.pump(move |c| thread_titled(c, &env, &f, None).is_some() && thread_titled(c, &env, &p, None).is_some(), Duration::from_secs(20), "the prepared threads are listed")?;
+    let native = thread_titled(check, &environment_id, &fan_out, None).context("fan-out")?;
+    let delegating = thread_titled(check, &environment_id, &parent, Some("failed")).context("the delegating parent")?;
+
+    // Provider-native subagents while they run: the driver mark, a ticking elapsed time and
+    // the hover card, read from the server's projection.
+    check.go(&native);
+    let k = native.clone();
+    check.pump(move |c| c.route() == Route::Thread(k.clone()), Duration::from_secs(20), "the fan-out shows")?;
+    open_details(check);
+    check.pump(|c| lineage_rows(c).iter().filter(|r| r.agent.is_some()).count() >= 2, Duration::from_secs(20), "two subagent rows")?;
+    let rows = lineage_rows(check);
+    let running = rows.iter().filter(|r| r.agent.as_ref().is_some_and(|a| a.clock.live && a.clock.started_at.is_some())).count();
+    check.check("both fx subagents run, with a start time from the server", running == 2, format!("{running} live of {}", rows.len()));
+    let marks: Vec<_> = rows.iter().map(|r| r.mark.as_ref().map(|m| m.driver.to_string())).collect();
+    check.check("subagent rows show the fx driver mark", marks.iter().all(|m| m.as_deref() == Some("fx")), format!("{marks:?}"));
+    let titles: Vec<_> = rows.iter().map(|r| r.title.to_string()).collect();
+    // The child thread's title wins over the projected subagent's, as in the fork.
+    check.check("rows are titled by their child threads", titles.iter().any(|t| t == "Read file one"), format!("{titles:?}"));
+    let heading = details_input(check).and_then(|i| i.relationships).map(|r| r.running_count);
+    check.check("the heading counts the running subagents", heading == Some(2), format!("{heading:?}"));
+    check.wait(Duration::from_millis(1200));
+    let ticking = check.read(|root, cx| root.thread_view().read(cx).details().is_some_and(|d| d.read(cx).ticking()));
+    check.check("the card redraws each second while a subagent runs", ticking, "");
+    check.shot("l0-native-running.png")?;
+    let first = rows.first().map(|r| r.thread_id.to_string()).unwrap_or_default();
+    let at = probed_bounds(&format!("relationship-row-{first}")).context("first row bounds")?;
+    hover_at(check, at.center())?;
+    check.wait(Duration::from_millis(700));
+    check.shot("l1-native-hover-card.png")?;
+    check.wait(Duration::from_millis(2100));
+    check.shot("l2-native-hover-card-later.png")?;
+    hover_at(check, point(px(5.), px(700.)))?;
+
+    // An app-owned child: the stop button shows on hover and stops it on the server.
+    check.go(&delegating);
+    let k = delegating.clone();
+    check.pump(move |c| c.route() == Route::Thread(k.clone()), Duration::from_secs(20), "the delegating thread shows")?;
+    open_details(check);
+    check.pump(|c| lineage_rows(c).iter().any(|r| r.agent.as_ref().is_some_and(|a| a.can_stop)), Duration::from_secs(20), "a stoppable child row")?;
+    let child = lineage_rows(check).into_iter().find(|r| r.agent.as_ref().is_some_and(|a| a.can_stop)).context("child row")?;
+    check.note(format!("child row {} ({:?})", child.title, child.status));
+    let row_at = probed_bounds(&format!("relationship-row-{}", child.thread_id)).context("child row bounds")?;
+    hover_at(check, row_at.center())?;
+    check.wait(Duration::from_millis(700));
+    check.shot("l3-app-owned-hover-stop.png")?;
+    let stop = (0..8).find_map(|ix| probed_bounds(&format!("relationship-active-stop-{ix}"))).context("stop button bounds")?;
+    let stop_inside = stop.left() > row_at.left() && stop.right() <= row_at.right() + px(1.);
+    check.check("the stop button sits at the row's right end", stop_inside, format!("stop {stop:?} row {row_at:?}"));
+    hover_at(check, stop.center())?;
+    check.wait(Duration::from_millis(500));
+    check.shot("l4-stop-tooltip.png")?;
+    click_at(check, stop.center())?;
+    let child_id = child.thread_id.clone();
+    check.pump(
+        move |c| lineage_rows(c).iter().any(|r| r.thread_id == child_id && r.status.is_some_and(RelationshipStatus::is_finished_agent)),
+        Duration::from_secs(30),
+        "the stopped child settles",
+    )?;
+    let k = delegating.clone();
+    let stopped = projection_of(check, &k).is_some_and(|p| p.subagents.iter().any(|a| a.child_thread_id.as_ref() == Some(&child.thread_id) && !matches!(a.status.as_str(), "running" | "pending" | "waiting")));
+    check.check("the server recorded the child as stopped", stopped, "");
+    let previous = details_input(check).and_then(|i| i.relationships).is_some_and(|r| r.groups.iter().any(|g| g.id == "previous" && g.rows.iter().any(|row| row.thread_id == child.thread_id)));
+    check.check("the stopped child moves under Previous agents", previous, "");
+    hover_at(check, point(px(5.), px(700.)))?;
+    check.wait(Duration::from_millis(300));
+    check.shot("l5-app-owned-stopped.png")?;
+
+    // Releasing the fx subagents: rows settle as Done with frozen times.
+    std::fs::write(control.join(format!("release-{tag}")), "")?;
+    check.go(&native);
+    open_details(check);
+    check.pump(
+        |c| { let rows = lineage_rows(c); !rows.is_empty() && rows.iter().all(|r| r.agent.as_ref().is_some_and(|a| !a.clock.live)) },
+        Duration::from_secs(60),
+        "the fx subagents finish",
+    )?;
+    let done = lineage_rows(check).iter().filter(|r| r.status == Some(RelationshipStatus::Completed)).count();
+    check.check("both fx subagents end Done", done == 2, format!("{done}"));
+    check.wait(Duration::from_millis(1500));
+    let ticking = check.read(|root, cx| root.thread_view().read(cx).details().is_some_and(|d| d.read(cx).ticking()));
+    check.check("the card stops its per-second redraw once nothing runs", !ticking, "");
+    check.shot("l6-native-done.png")?;
+
+    // A fork whose source is deleted: the shell rebuilds the parent from lineage, the card asks
+    // the server for its title, and a settled lookup without it drops the row (the fork does not
+    // show a bare thread id).
+    let source = thread_titled(check, &environment_id, &format!("Fork source {tag}"), None).context("the fork source")?;
+    check.go(&source);
+    let k = source.clone();
+    check.pump(move |c| c.route() == Route::Thread(k.clone()) && !c.shown_input().entries.is_empty(), Duration::from_secs(20), "the fork source shows")?;
+    let reply = check.shown_input().entries.iter().rev().find_map(|e| match &e.kind {
+        EntryKind::Message(m) if m.role == t3code_web::components::chat::timeline_entries::MessageRole::Assistant => Some(m.id.clone()),
+        _ => None,
+    });
+    let reply = reply.context("a reply to fork from")?;
+    let root = check.root.clone();
+    check.cx.update(|cx| {
+        let timeline = root.read(cx).thread_view().read(cx).chat().read(cx).timeline().clone();
+        timeline.update(cx, |_, cx| cx.emit(TimelineAction::Fork(reply.clone())));
+    });
+    let original = source.clone();
+    check.pump(move |c| matches!(c.route(), Route::Thread(k) if k != original), Duration::from_secs(30), "the fork opens")?;
+    let fork = match check.route() {
+        Route::Thread(k) => k,
+        _ => anyhow::bail!("no fork route"),
+    };
+    open_details(check);
+    let parent = tid(&source);
+    let p = parent.clone();
+    check.pump(move |c| lineage_rows(c).iter().any(|r| r.thread_id == p), Duration::from_secs(15), "the fork lists its source")?;
+    let commands = commands_of(check, &environment_id)?;
+    let target = parent.clone();
+    check.block(async move { commands.delete(&target, false).await })?.map_err(|e| anyhow::anyhow!("{e}"))?;
+    let s = source.clone();
+    check.pump(move |c| shell_thread(c, &s).is_none(), Duration::from_secs(20), "the source leaves the shell")?;
+    check.go(&fork);
+    open_details(check);
+    let p = parent.clone();
+    let gone = check.pump(move |c| !lineage_rows(c).iter().any(|r| r.thread_id == p), Duration::from_secs(15), "the deleted source's row goes");
+    let rows: Vec<_> = lineage_rows(check).iter().map(|r| r.title.to_string()).collect();
+    let still_named = shell_thread(check, &fork).is_some_and(|t| t.lineage.parent_thread_id.as_ref() == Some(&parent));
+    check.check("the fork's shell still names the deleted source as its parent", still_named, "");
+    check.check("the fork's card drops its deleted source after the title lookup", gone.is_ok(), format!("{rows:?}"));
+    check.shot("l7-fork-of-deleted.png")?;
+    Ok(())
+}
+
+/// The `lineage-ref` phase: the port's shots of the states `capture-lineage.mjs` captures in the
+/// fork, on the same server threads (`T3_LINEAGE_TAG`), with the right panel closed.
+fn run_lineage_ref(check: &mut Check) -> anyhow::Result<()> {
+    use t3code_web::components::chat::thread_details_relationships::probed_bounds;
+    let tag = std::env::var("T3_LINEAGE_TAG").context("T3_LINEAGE_TAG")?;
+    let paired = check.cx.update(|cx| !ConnectionRuntime::state(cx).read(cx).environments.is_empty());
+    if !paired {
+        let request = parse_pairing_url(&std::env::var("T3_PAIRING_URL").context("T3_PAIRING_URL")?)?;
+        let pairing = check.cx.update(|cx| ConnectionRuntime::global(cx).pair(request, None, cx));
+        check.wait_task(pairing)?.map_err(|e| anyhow::anyhow!("{}", e.0))?;
+    }
+    check.pump(|c| c.connected(), Duration::from_secs(30), "connected")?;
+    let id = check.cx.update(|cx| ConnectionRuntime::state(cx).read(cx).environments[0].entry.environment_id.to_string());
+    let environment_id = t3code_contracts::EnvironmentId::new(id.as_str());
+    let env = environment_id.clone();
+    let title = format!("Parent agent {tag}");
+    check.pump(move |c| thread_titled(c, &env, &title, None).is_some(), Duration::from_secs(20), "the prepared threads are listed")?;
+    for (title, name) in [(format!("Native fan-out {tag}"), "lineage-running"), (format!("Parent agent {tag}"), "lineage-app-owned")] {
+        let key = thread_titled(check, &environment_id, &title, None).context("thread")?;
+        check.go(&key);
+        let k = key.clone();
+        check.pump(move |c| c.route() == Route::Thread(k.clone()), Duration::from_secs(20), "thread shows")?;
+        let panel_key = t3code_web::fixtures::scoped_key(&key);
+        if check.read(|root, cx| root.right_panels().read(cx).is_open(&panel_key)) {
+            check.action(t3code_web::shortcuts::commands::ToggleRightPanel);
+            check.wait(Duration::from_millis(400));
+        }
+        open_details(check);
+        check.pump(|c| lineage_rows(c).iter().any(|r| r.agent.is_some()), Duration::from_secs(20), "agent rows")?;
+        hover_at(check, point(px(5.), px(700.)))?;
+        check.wait(Duration::from_millis(800));
+        check.shot(&format!("{name}.png"))?;
+        let first = lineage_rows(check).first().map(|r| r.thread_id.to_string()).unwrap_or_default();
+        let at = probed_bounds(&format!("relationship-row-{first}")).context("row bounds")?;
+        hover_at(check, at.center())?;
+        check.wait(Duration::from_millis(1000));
+        check.shot(&format!("{}.png", if name == "lineage-running" { "lineage-hover-card" } else { "lineage-app-owned-hover" }))?;
+        if name == "lineage-app-owned" {
+            let stop = (0..8).find_map(|ix| probed_bounds(&format!("relationship-active-stop-{ix}"))).context("stop bounds")?;
+            hover_at(check, stop.center())?;
+            check.wait(Duration::from_millis(1200));
+            check.shot("lineage-stop-tooltip.png")?;
+        }
+    }
+    Ok(())
+}
+
+/// The `sidepane` phase: a side chat of "Fork source <T3_LINEAGE_TAG>" (made by `/side`) shows
+/// its reply without "Fork from here" while the main pane keeps it; deleted from outside the pane
+/// it reads "This side chat was deleted.".
+fn run_sidepane(check: &mut Check) -> anyhow::Result<()> {
+    let tag = std::env::var("T3_LINEAGE_TAG").context("T3_LINEAGE_TAG")?;
+    let paired = check.cx.update(|cx| !ConnectionRuntime::state(cx).read(cx).environments.is_empty());
+    if !paired {
+        let request = parse_pairing_url(&std::env::var("T3_PAIRING_URL").context("T3_PAIRING_URL")?)?;
+        let pairing = check.cx.update(|cx| ConnectionRuntime::global(cx).pair(request, None, cx));
+        check.wait_task(pairing)?.map_err(|e| anyhow::anyhow!("{}", e.0))?;
+    }
+    check.pump(|c| c.connected(), Duration::from_secs(30), "connected")?;
+    let id = check.cx.update(|cx| ConnectionRuntime::state(cx).read(cx).environments[0].entry.environment_id.to_string());
+    let environment_id = t3code_contracts::EnvironmentId::new(id.as_str());
+    let env = environment_id.clone();
+    let title = format!("Fork source {tag}");
+    check.pump(move |c| thread_titled(c, &env, &title, None).is_some(), Duration::from_secs(20), "the host is listed")?;
+    let key = thread_titled(check, &environment_id, &format!("Fork source {tag}"), None).context("host")?;
+    check.go(&key);
+    let k = key.clone();
+    check.pump(move |c| c.route() == Route::Thread(k.clone()) && !c.shown_input().entries.is_empty(), Duration::from_secs(20), "the host shows")?;
+    check.focus_composer();
+    check.type_text("/side Why does it say that?");
+    check.press("enter");
+    let k = key.clone();
+    check.pump(move |c| side_chat_tab(c, &k).is_some(), Duration::from_secs(30), "the side chat tab opens")?;
+    let side = thread_key(&environment_id, &ThreadId::new(side_chat_tab(check, &key).context("tab")?.as_str()));
+    let s = side.clone();
+    check.pump(
+        move |c| shell_thread(c, &s).is_some_and(|t| t.status.as_str() == "completed") && c.read(|root, cx| {
+            root.right_panel().read(cx).side_chat_pane().is_some_and(|pane| {
+                pane.read(cx).chat().read(cx).timeline().read(cx).input().entries.iter().any(|e| matches!(&e.kind, EntryKind::Message(m) if m.role == t3code_web::components::chat::timeline_entries::MessageRole::Assistant))
+            })
+        }),
+        Duration::from_secs(60),
+        "the side chat replies",
+    )?;
+    let embedded = check.read(|root, cx| root.right_panel().read(cx).side_chat_pane().is_some_and(|pane| pane.read(cx).chat().read(cx).timeline().read(cx).is_embedded()));
+    let main = check.read(|root, cx| root.thread_view().read(cx).chat().read(cx).timeline().read(cx).is_embedded());
+    check.check("the side chat's timeline is embedded (no fork) and the main pane's is not", embedded && !main, format!("side {embedded} main {main}"));
+    check.wait(Duration::from_millis(600));
+    check.shot("p0-side-chat-reply.png")?;
+    let commands = commands_of(check, &environment_id)?;
+    let target = tid(&side);
+    check.block(async move { commands.delete(&target, false).await })?.map_err(|e| anyhow::anyhow!("{e}"))?;
+    let s = side.clone();
+    check.pump(move |c| shell_thread(c, &s).is_none(), Duration::from_secs(20), "the side chat leaves the shell")?;
+    check.wait(Duration::from_millis(600));
+    let deleted = check.read(|root, cx| root.right_panel().read(cx).side_chat_pane().is_some_and(|pane| pane.read(cx).deleted(cx)));
+    check.check("the open tab says the side chat was deleted", deleted, "");
+    check.shot("p1-side-chat-deleted.png")?;
+    Ok(())
+}
+
+/// The `delete-thread` phase: deletes `T3_DELETE_THREAD` on the paired server, as another client
+/// would (for reference captures of a side chat deleted elsewhere).
+fn run_delete_thread(check: &mut Check) -> anyhow::Result<()> {
+    let thread = ThreadId::new(std::env::var("T3_DELETE_THREAD").context("T3_DELETE_THREAD")?.as_str());
+    check.pump(|c| c.connected(), Duration::from_secs(30), "connected")?;
+    let id = check.cx.update(|cx| ConnectionRuntime::state(cx).read(cx).environments[0].entry.environment_id.to_string());
+    let commands = commands_of(check, &t3code_contracts::EnvironmentId::new(id.as_str()))?;
+    check.block(async move { commands.delete(&thread, false).await })?.map_err(|e| anyhow::anyhow!("{e}"))?;
+    check.check("deleted", true, "");
+    Ok(())
+}
+
+/// The `timer` phase: the main pane's "Working for" on a running turn ("Native fan-out
+/// <T3_LINEAGE_TAG>", held by its fx subagents) reads the wall clock: it matches the time since
+/// the server started the run and advances with real time between two reads.
+fn run_timer(check: &mut Check) -> anyhow::Result<()> {
+    let tag = std::env::var("T3_LINEAGE_TAG").context("T3_LINEAGE_TAG")?;
+    let paired = check.cx.update(|cx| !ConnectionRuntime::state(cx).read(cx).environments.is_empty());
+    if !paired {
+        let request = parse_pairing_url(&std::env::var("T3_PAIRING_URL").context("T3_PAIRING_URL")?)?;
+        let pairing = check.cx.update(|cx| ConnectionRuntime::global(cx).pair(request, None, cx));
+        check.wait_task(pairing)?.map_err(|e| anyhow::anyhow!("{}", e.0))?;
+    }
+    check.pump(|c| c.connected(), Duration::from_secs(30), "connected")?;
+    let id = check.cx.update(|cx| ConnectionRuntime::state(cx).read(cx).environments[0].entry.environment_id.to_string());
+    let environment_id = t3code_contracts::EnvironmentId::new(id.as_str());
+    let env = environment_id.clone();
+    let title = format!("Native fan-out {tag}");
+    check.pump(move |c| thread_titled(c, &env, &title, None).is_some(), Duration::from_secs(20), "the running thread is listed")?;
+    let key = thread_titled(check, &environment_id, &format!("Native fan-out {tag}"), None).context("thread")?;
+    check.go(&key);
+    let elapsed = |c: &mut Check| c.read(|root, cx| root.thread_view().read(cx).chat().read(cx).timeline().read(cx).working_elapsed_ms());
+    check.pump(move |c| elapsed(c).is_some(), Duration::from_secs(20), "the Working row shows")?;
+    let started = shell_thread(check, &key).and_then(|t| t.activity_run_started_at.clone().or(t.latest_run_started_at.clone()));
+    let server_ms = started.as_deref().and_then(t3code_shared::usage_format::parse_instant_ms).map(|at| now_ms() - at);
+    let first = elapsed(check).unwrap_or_default();
+    check.check(
+        "Working for matches the time since the server started the run",
+        server_ms.is_some_and(|s| (s - first).abs() < 1500),
+        format!("shown {first} ms, server {server_ms:?} ms"),
+    );
+    let wall = Instant::now();
+    check.shot("t0-working.png")?;
+    check.wait(Duration::from_millis(2500));
+    let second = elapsed(check).unwrap_or_default();
+    let real = wall.elapsed().as_millis() as i64;
+    check.check("Working for advances with the wall clock", ((second - first) - real).abs() < 150, format!("{first} -> {second} ms over {real} ms"));
+    check.shot("t1-working-later.png")?;
+    Ok(())
+}
+
+/// The `breadcrumb` phase: threads the sidebar does not list, a provider subagent of "Native
+/// fan-out <T3_LINEAGE_TAG>" and a side chat of "Fork source <tag>" (made by `/side`), shown in
+/// the main pane name their project in the header breadcrumb.
+fn run_breadcrumb(check: &mut Check) -> anyhow::Result<()> {
+    let tag = std::env::var("T3_LINEAGE_TAG").context("T3_LINEAGE_TAG")?;
+    let paired = check.cx.update(|cx| !ConnectionRuntime::state(cx).read(cx).environments.is_empty());
+    if !paired {
+        let request = parse_pairing_url(&std::env::var("T3_PAIRING_URL").context("T3_PAIRING_URL")?)?;
+        let pairing = check.cx.update(|cx| ConnectionRuntime::global(cx).pair(request, None, cx));
+        check.wait_task(pairing)?.map_err(|e| anyhow::anyhow!("{}", e.0))?;
+    }
+    check.pump(|c| c.connected(), Duration::from_secs(30), "connected")?;
+    let id = check.cx.update(|cx| ConnectionRuntime::state(cx).read(cx).environments[0].entry.environment_id.to_string());
+    let environment_id = t3code_contracts::EnvironmentId::new(id.as_str());
+    let env = environment_id.clone();
+    let title = format!("Fork source {tag}");
+    check.pump(move |c| thread_titled(c, &env, &title, None).is_some(), Duration::from_secs(20), "the threads are listed")?;
+    let crumb = |c: &mut Check| c.read(|root, cx| root.thread_view().read(cx).chat().read(cx).project().to_string());
+    let listed = |c: &mut Check, key: &ThreadKey| sidebar_row(c, key).is_some();
+
+    // A provider subagent's child thread, opened from its Lineage row.
+    let host = thread_titled(check, &environment_id, &format!("Native fan-out {tag}"), None).context("fan-out")?;
+    check.go(&host);
+    open_details(check);
+    check.pump(|c| lineage_rows(c).iter().any(|r| r.agent.is_some()), Duration::from_secs(20), "subagent rows")?;
+    let child = lineage_rows(check).into_iter().find(|r| r.agent.is_some()).context("child")?;
+    let child_key = thread_key(&environment_id, &child.thread_id);
+    check.go(&child_key);
+    let k = child_key.clone();
+    check.pump(move |c| c.route() == Route::Thread(k.clone()), Duration::from_secs(20), "the subagent thread shows")?;
+    check.pump(move |c| !crumb(c).is_empty(), Duration::from_secs(10), "the breadcrumb names a project")?;
+    let unlisted = !listed(check, &child_key);
+    let name = crumb(check);
+    check.check("an unlisted subagent thread's breadcrumb names its project", unlisted && name == "orbit", format!("unlisted={unlisted} project={name:?}"));
+    check.wait(Duration::from_millis(400));
+    check.shot("b0-subagent-breadcrumb.png")?;
+
+    // A side chat opened in the main pane.
+    let source = thread_titled(check, &environment_id, &format!("Fork source {tag}"), None).context("host")?;
+    check.go(&source);
+    let k = source.clone();
+    check.pump(move |c| c.route() == Route::Thread(k.clone()) && !c.shown_input().entries.is_empty(), Duration::from_secs(20), "the host shows")?;
+    check.focus_composer();
+    check.type_text("/side Which project is this?");
+    check.press("enter");
+    let k = source.clone();
+    check.pump(move |c| side_chat_tab(c, &k).is_some(), Duration::from_secs(30), "the side chat tab opens")?;
+    let side = thread_key(&environment_id, &ThreadId::new(side_chat_tab(check, &source).context("tab")?.as_str()));
+    let s = side.clone();
+    check.pump(move |c| shell_thread(c, &s).is_some(), Duration::from_secs(20), "the side chat reaches the shell")?;
+    check.go(&side);
+    let s = side.clone();
+    check.pump(move |c| c.route() == Route::Thread(s.clone()) && !crumb(c).is_empty(), Duration::from_secs(20), "the side chat shows with a breadcrumb")?;
+    let name = crumb(check);
+    check.check("a side chat shown directly names its project", name == "orbit", format!("{name:?}"));
+    check.wait(Duration::from_millis(400));
+    check.shot("b1-side-chat-breadcrumb.png")?;
     Ok(())
 }

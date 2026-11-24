@@ -49,7 +49,7 @@ impl MessagesTimeline {
     pub(super) fn render_worktree_setup(&mut self, setup: &WorktreeSetup, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let theme = cx.app_theme().clone();
         let colors = self.colors;
-        let now = self.now_millis;
+        let now = self.now_millis();
         let running = setup.phase == SetupPhase::Running;
         let details = window.use_keyed_state("worktree-setup-details", cx, |_, _| false);
         let details_open = *details.read(cx);

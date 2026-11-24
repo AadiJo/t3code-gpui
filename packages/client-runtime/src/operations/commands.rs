@@ -838,7 +838,7 @@ impl EnvironmentCommands {
                     command_id: new_command_id(),
                     thread_id: thread_id.clone(),
                     provider_session_id: session.id.clone(),
-                    reason: None,
+                    reason: Some("client-requested".into()),
                 }))
                 .await?;
         }

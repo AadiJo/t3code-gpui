@@ -26,7 +26,7 @@ use super::thread_details_sections::{
     ContextWindowRow, SERVER_PAGE_COUNT, SectionEmit, ThreadAutomationRow, ThreadDetailsSectionEvent, ThreadServerRow,
     UsageLimitsInput, automations_section, context_section, servers_section, usage_limits_section,
 };
-use super::thread_details_relationships::{RelationshipBusy, RelationshipEvent, RelationshipViewState, relationship_sections};
+use super::thread_details_relationships::{RelationshipBusy, RelationshipEvent, RelationshipViewState, has_live_clock, relationship_sections};
 use super::thread_details_pr_row::{
     PullRequestRowAction, PullRequestRowData, PullRequestRowHandlers, checks_popover, issue_row, merge_method_key,
     pull_request_row, resolve_row_action,
@@ -137,11 +137,43 @@ pub struct ThreadDetailsPanel {
     relationship_view: RelationshipViewState,
     /// The Lineage heading's "More thread actions" menu, at a window position.
     relationship_menu: Option<Point<Pixels>>,
+    /// The window height, for an expanded workflow's `55dvh` list.
+    viewport: Pixels,
+    /// Redraws once a second while a Lineage row runs a timer (`tickTextContent`).
+    relationship_tick: Option<gpui_kit::Task<()>>,
 }
 
 impl EventEmitter<ThreadDetailsEvent> for ThreadDetailsPanel {}
 
 impl ThreadDetailsPanel {
+    /// A Lineage row's timer is live and the card redraws each second.
+    pub fn ticking(&self) -> bool {
+        self.relationship_tick.is_some()
+    }
+
+    /// Keeps a one-second redraw running while a Lineage row's timer is live; it stops itself.
+    fn ensure_relationship_tick(&mut self, cx: &mut Context<Self>) {
+        let live = |this: &Self| this.input.relationships.as_ref().is_some_and(has_live_clock);
+        if self.relationship_tick.is_some() || !live(self) {
+            return;
+        }
+        self.relationship_tick = Some(cx.spawn(async move |this, cx| {
+            loop {
+                cx.background_executor().timer(std::time::Duration::from_secs(1)).await;
+                let keep = this
+                    .update(cx, |this, cx| {
+                        cx.notify();
+                        live(this)
+                    })
+                    .unwrap_or(false);
+                if !keep {
+                    break;
+                }
+            }
+            this.update(cx, |this, _| this.relationship_tick = None).ok();
+        }));
+    }
+
     pub fn new(
         input: ThreadDetailsInput,
         workspace: Entity<BranchToolbar>,
@@ -152,7 +184,7 @@ impl ThreadDetailsPanel {
         cx: &mut Context<Self>,
     ) -> Self {
         cx.observe_global::<ThreadDetailsItemSettings>(|_, cx| cx.notify()).detach();
-        Self { input, workspace, branch, git, scripts, open_in, items_menu: None, checks: None, confirming_merge: false, server_page: SERVER_PAGE_COUNT, relationship_view: RelationshipViewState::default(), relationship_menu: None }
+        Self { input, workspace, branch, git, scripts, open_in, items_menu: None, checks: None, confirming_merge: false, server_page: SERVER_PAGE_COUNT, relationship_view: RelationshipViewState::default(), relationship_menu: None, viewport: px(0.), relationship_tick: None }
     }
 
     /// The facts the card shows now.
@@ -509,7 +541,7 @@ impl ThreadDetailsPanel {
                 })
                 .ok();
             });
-            out.extend(relationship_sections(theme, &relationships, &self.relationship_view, self.input.relationship_busy, emit, state));
+            out.extend(relationship_sections(theme, &relationships, &self.relationship_view, self.input.relationship_busy, emit, state, self.viewport));
         }
         if visible(ThreadDetailsItem::Usage)
             && let Some(limits) = &self.input.usage_limits
@@ -526,8 +558,10 @@ impl ThreadDetailsPanel {
 }
 
 impl Render for ThreadDetailsPanel {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.app_theme().clone();
+        self.viewport = window.viewport_size().height;
+        self.ensure_relationship_tick(cx);
         let sections = self.sections(&theme, cx);
         // Shown only when no section has content, so an emptied card can be refilled.
         let empty = sections.is_empty().then(|| {

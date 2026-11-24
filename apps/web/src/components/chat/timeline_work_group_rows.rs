@@ -107,7 +107,7 @@ impl MessagesTimeline {
     /// "Working for 1m 23s" under the running turn's prompt.
     pub(super) fn render_working(&mut self, started_at: Option<Timestamp>, compacting: bool) -> AnyElement {
         let colors = self.colors;
-        let elapsed = started_at.map(|t| format_duration((self.now_millis - t.0).max(0)));
+        let elapsed = started_at.map(|t| format_duration((self.now_millis() - t.0).max(0)));
         let label: SharedString = match (compacting, elapsed) {
             (true, Some(e)) => format!("Compacting for {e}").into(),
             (true, None) => "Compacting".into(),
