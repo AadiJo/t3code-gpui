@@ -82,6 +82,9 @@ struct AppleTextSystemState {
     postscript_names_by_font_id: HashMap<FontId, String>,
     /// Faces of the `.SystemUIFont` family, which are made per size (see [`SystemUiFace`]).
     system_ui_faces: HashMap<FontId, SystemUiFace>,
+    /// Faces drawn at a size relative to their line's (`FontFeatures::with_relative_size`):
+    /// the face they scale and the scale.
+    scaled_faces: HashMap<FontId, (FontId, f32)>,
     /// Each system UI face at each size it has been laid out or drawn at.
     sized_system_fonts: Mutex<HashMap<(FontId, u32), CTFont>>,
 }
@@ -108,6 +111,7 @@ impl AppleTextSystem {
             font_ids_by_font_key: HashMap::default(),
             postscript_names_by_font_id: HashMap::default(),
             system_ui_faces: HashMap::default(),
+            scaled_faces: HashMap::default(),
             sized_system_fonts: Mutex::default(),
         }))
     }
@@ -163,41 +167,7 @@ impl PlatformTextSystem for AppleTextSystem {
         if let Some(font_id) = lock.font_selections.get(font) {
             Ok(*font_id)
         } else {
-            let mut lock = RwLockUpgradableReadGuard::upgrade(lock);
-            if font.family.as_ref() == ".SystemUIFont" {
-                return lock.load_system_ui_face(font);
-            }
-            let font_key = FontKey {
-                font_family: font.family.clone(),
-                font_features: font.features.clone(),
-                font_fallbacks: font.fallbacks.clone(),
-            };
-            let candidates = if let Some(font_ids) = lock.font_ids_by_font_key.get(&font_key) {
-                font_ids.as_slice()
-            } else {
-                let font_ids =
-                    lock.load_family(&font.family, &font.features, font.fallbacks.as_ref())?;
-                lock.font_ids_by_font_key.insert(font_key.clone(), font_ids);
-                lock.font_ids_by_font_key[&font_key].as_ref()
-            };
-
-            let candidate_properties = candidates
-                .iter()
-                .map(|font_id| lock.fonts[font_id.0].properties())
-                .collect::<SmallVec<[_; 4]>>();
-
-            let ix = font_kit::matching::find_best_match(
-                &candidate_properties,
-                &font_kit::properties::Properties {
-                    style: fontkit_style(font.style),
-                    weight: fontkit_weight(font.weight),
-                    stretch: Default::default(),
-                },
-            )?;
-
-            let font_id = candidates[ix];
-            lock.font_selections.insert(font.clone(), font_id);
-            Ok(font_id)
+            RwLockUpgradableReadGuard::upgrade(lock).select_font(font)
         }
     }
 
@@ -206,8 +176,10 @@ impl PlatformTextSystem for AppleTextSystem {
     }
 
     fn typographic_bounds(&self, font_id: FontId, glyph_id: GlyphId) -> Result<Bounds<f32>> {
+        let state = self.0.read();
+        let scale = state.scaled_faces.get(&font_id).map_or(1., |(_, scale)| *scale);
         Ok(bounds_from_rect(
-            self.0.read().fonts[font_id.0].typographic_bounds(glyph_id.0)?,
+            state.fonts[font_id.0].typographic_bounds(glyph_id.0)? * scale,
         ))
     }
 
@@ -303,6 +275,64 @@ impl AppleTextSystemState {
         Ok(())
     }
 
+    /// Picks the face for `font` and remembers the choice.
+    fn select_font(&mut self, font: &Font) -> Result<FontId> {
+        if let Some(font_id) = self.font_selections.get(font) {
+            return Ok(*font_id);
+        }
+        if let Some(scale) = font.features.relative_size() {
+            return self.load_scaled_face(font, scale);
+        }
+        if font.family.as_ref() == ".SystemUIFont" {
+            return self.load_system_ui_face(font);
+        }
+        let font_key = FontKey {
+            font_family: font.family.clone(),
+            font_features: font.features.clone(),
+            font_fallbacks: font.fallbacks.clone(),
+        };
+        let candidates = if let Some(font_ids) = self.font_ids_by_font_key.get(&font_key) {
+            font_ids.as_slice()
+        } else {
+            let font_ids = self.load_family(&font.family, &font.features, font.fallbacks.as_ref())?;
+            self.font_ids_by_font_key.insert(font_key.clone(), font_ids);
+            self.font_ids_by_font_key[&font_key].as_ref()
+        };
+
+        let candidate_properties = candidates
+            .iter()
+            .map(|font_id| self.fonts[font_id.0].properties())
+            .collect::<SmallVec<[_; 4]>>();
+
+        let ix = font_kit::matching::find_best_match(
+            &candidate_properties,
+            &font_kit::properties::Properties {
+                style: fontkit_style(font.style),
+                weight: fontkit_weight(font.weight),
+                stretch: Default::default(),
+            },
+        )?;
+
+        let font_id = candidates[ix];
+        self.font_selections.insert(font.clone(), font_id);
+        Ok(font_id)
+    }
+
+    /// Registers `font` at `scale` times the line's size as its own font id over the face
+    /// the font has without the relative size.
+    fn load_scaled_face(&mut self, font: &Font, scale: f32) -> Result<FontId> {
+        let base = self.select_font(&Font { features: font.features.without_relative_size(), ..font.clone() })?;
+        let font_id = FontId(self.fonts.len());
+        let face = self.fonts[base.0].clone();
+        if let Some(postscript_name) = self.postscript_names_by_font_id.get(&base).cloned() {
+            self.postscript_names_by_font_id.insert(font_id, postscript_name);
+        }
+        self.fonts.push(face);
+        self.scaled_faces.insert(font_id, (base, scale));
+        self.font_selections.insert(font.clone(), font_id);
+        Ok(font_id)
+    }
+
     /// Registers one weight and style of the system UI font as its own font id.
     fn load_system_ui_face(&mut self, font: &Font) -> Result<FontId> {
         let weight = font.weight.0;
@@ -322,9 +352,17 @@ impl AppleTextSystemState {
         Ok(font_id)
     }
 
+    /// Whether `font_id` is drawn from a font made for each size (see [`Self::sized_font`]).
+    fn is_made_per_size(&self, font_id: FontId) -> bool {
+        self.system_ui_faces.contains_key(&font_id) || self.scaled_faces.contains_key(&font_id)
+    }
+
     /// The font to lay out or draw `font_id` with at `size`: a system UI face made at that
     /// size, or any other font scaled to it.
     fn sized_font(&self, font_id: FontId, size: f32) -> CTFont {
+        if let Some(&(base, scale)) = self.scaled_faces.get(&font_id) {
+            return self.sized_font(base, size * scale);
+        }
         let Some(face) = self.system_ui_faces.get(&font_id) else {
             return self.fonts[font_id.0]
                 .native_font()
@@ -450,8 +488,9 @@ impl AppleTextSystemState {
     }
 
     fn advance(&self, font_id: FontId, glyph_id: GlyphId) -> Result<Size<f32>> {
+        let scale = self.scaled_faces.get(&font_id).map_or(1., |(_, scale)| *scale);
         Ok(size_from_vector2f(
-            self.fonts[font_id.0].advance(glyph_id.0)?,
+            self.fonts[font_id.0].advance(glyph_id.0)? * scale,
         ))
     }
 
@@ -487,7 +526,7 @@ impl AppleTextSystemState {
 
     fn raster_bounds(&self, params: &RenderGlyphParams) -> Result<Bounds<DevicePixels>> {
         let sized;
-        let font = if self.system_ui_faces.contains_key(&params.font_id) {
+        let font = if self.is_made_per_size(params.font_id) {
             let native = self.sized_font(params.font_id, params.font_size.into());
             sized = unsafe { FontKitFont::from_native_font(&native) };
             &sized
@@ -606,8 +645,9 @@ impl AppleTextSystemState {
         let mut string = CFMutableAttributedString::new();
         let mut max_ascent = 0.0f32;
         let mut max_descent = 0.0f32;
-        // The system UI fonts set on this line and their ids. Weights of SF can share a
-        // PostScript name, so the global by-name lookup can't map them back.
+        // The fonts made per size set on this line and their ids. Weights of SF share a
+        // PostScript name, as does a scaled face with its base, so the global by-name lookup
+        // can't map them back.
         let mut system_runs = SmallVec::<[(CTFont, FontId); 2]>::new();
 
         {
@@ -637,7 +677,7 @@ impl AppleTextSystemState {
                 let native = self.sized_font(run.font_id, font_size.into());
                 max_ascent = max_ascent.max(native.ascent() as f32);
                 max_descent = max_descent.max(native.descent() as f32);
-                if self.system_ui_faces.contains_key(&run.font_id) {
+                if self.is_made_per_size(run.font_id) {
                     system_runs.push((native.clone(), run.font_id));
                 }
                 unsafe {

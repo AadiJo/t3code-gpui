@@ -7,9 +7,9 @@
 use std::{ops::Range, rc::Rc};
 
 use gpui_kit::{
-    App, Bounds, Corners, CursorStyle, DispatchPhase, Element, ElementId, GlobalElementId, Hitbox,
+    App, Bounds, Corners, CursorStyle, DispatchPhase, Element, ElementId, Font, GlobalElementId, Hitbox,
     HitboxBehavior, Hsla, InspectorElementId, LayoutId, MouseButton, MouseUpEvent,
-    Pixels, SharedString, StyledText, Subscription, TextRun, Window, fill, point, px,
+    Pixels, SharedString, StyledText, Subscription, TextRun, Window, fill, line_baseline_offset, point, px,
     base::{TextSelection, TextSelectionHandle, TextSelectionRegistration, TextSelectionRun},
 };
 
@@ -23,6 +23,23 @@ pub struct TextBox {
     pub radius: Pixels,
     /// Box height in ems of the paragraph's font, centred on the line; `None` fills the line.
     pub height_em: Option<f32>,
+    /// When set, the box is an inline element's background in this font instead, as Blink
+    /// draws one: the font's rounded ascent above the line's baseline and rounded descent
+    /// below it, plus padding and border; `pad_x` is then unused.
+    pub inline_font: Option<InlineFontBox>,
+}
+
+/// The font and box of an inline element such as inline code (see [`TextBox::inline_font`]).
+#[derive(Clone, Debug)]
+pub struct InlineFontBox {
+    pub font: Font,
+    /// The font size in ems of the paragraph's font (`font-size: 0.85em`).
+    pub size_em: f32,
+    /// Horizontal padding in ems of the element's own font size (`padding-inline: 0.35em`).
+    pub pad_x_em: f32,
+    /// Vertical padding in ems of the element's own font size (`padding-block: 0.1em`).
+    pub pad_y_em: f32,
+    pub border: Pixels,
 }
 
 /// An icon painted over a placeholder glyph, such as the file icon of a file chip.
@@ -165,18 +182,32 @@ impl Element for RichText {
         let line_height = layout.line_height();
         let em = window.text_style().font_size.to_pixels(window.rem_size());
         for text_box in self.boxes.iter() {
+            let inline = text_box.inline_font.as_ref().map(|inline| {
+                let size = em * inline.size_em;
+                let text_system = window.text_system();
+                let font_id = text_system.resolve_font(&inline.font);
+                let ascent = text_system.ascent(font_id, size).round();
+                let descent = text_system.descent(font_id, size).round();
+                let extra = size * inline.pad_y_em + inline.border;
+                let baseline = layout.line_layout_for_index(text_box.range.start).map_or(line_height, |line| {
+                    line_baseline_offset(line_height, line.ascent(), line.descent())
+                });
+                (baseline - ascent - extra, baseline + descent + extra, size * inline.pad_x_em + inline.border)
+            });
             for quad in range_quads(&layout, text_box.range.clone(), line_height) {
-                let (top, bottom) = match text_box.height_em {
-                    Some(h) => {
+                let pad_x = inline.map_or(text_box.pad_x, |(_, _, pad_x)| pad_x);
+                let (top, bottom) = match (inline, text_box.height_em) {
+                    (Some((above, below, _)), _) => (quad.top() + above, quad.top() + below),
+                    (None, Some(h)) => {
                         let h = em * h;
                         let top = quad.top() + (quad.size.height - h) / 2. + px(0.5);
                         (top, top + h)
                     }
-                    None => (quad.top(), quad.bottom()),
+                    (None, None) => (quad.top(), quad.bottom()),
                 };
                 let quad = Bounds::from_corners(
-                    point(quad.left() - text_box.pad_x, top),
-                    point(quad.right() + text_box.pad_x, bottom),
+                    point(quad.left() - pad_x, top),
+                    point(quad.right() + pad_x, bottom),
                 );
                 window.paint_quad(fill(quad, text_box.color).corner_radii(Corners::all(text_box.radius)));
             }

@@ -3,6 +3,9 @@ use std::sync::Arc;
 
 use schemars::{JsonSchema, json_schema};
 
+/// The private tag [`FontFeatures::with_relative_size`] stores its scale under, in thousandths.
+const RELATIVE_SIZE_TAG: &str = "T3SZ";
+
 /// The OpenType features that can be configured for a given font.
 #[derive(Clone, Eq, PartialEq, Hash)]
 pub struct FontFeatures(pub Arc<Vec<(String, u32)>>);
@@ -26,6 +29,29 @@ impl FontFeatures {
     /// only enabled or disabled features are returned
     pub fn tag_value_list(&self) -> &[(String, u32)] {
         self.0.as_slice()
+    }
+
+    /// These features plus a size for the run of `scale` times its line's font size, the way
+    /// CSS `font-size: 0.85em` sizes inline code inside a sentence. Only the macOS text system
+    /// applies it; elsewhere the run keeps the line's size. It is carried as a private feature
+    /// tag, which shapers ignore.
+    pub fn with_relative_size(&self, scale: f32) -> Self {
+        let mut list: Vec<_> = self.0.iter().filter(|(tag, _)| tag != RELATIVE_SIZE_TAG).cloned().collect();
+        list.push((RELATIVE_SIZE_TAG.into(), (scale * 1000.).round() as u32));
+        Self(Arc::new(list))
+    }
+
+    /// The scale [`Self::with_relative_size`] set, if any.
+    pub fn relative_size(&self) -> Option<f32> {
+        self.0
+            .iter()
+            .find(|(tag, _)| tag == RELATIVE_SIZE_TAG)
+            .map(|(_, value)| *value as f32 / 1000.)
+    }
+
+    /// These features without a relative size.
+    pub fn without_relative_size(&self) -> Self {
+        Self(Arc::new(self.0.iter().filter(|(tag, _)| tag != RELATIVE_SIZE_TAG).cloned().collect()))
     }
 
     /// Returns whether the `calt` feature is enabled.
