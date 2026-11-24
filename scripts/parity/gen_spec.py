@@ -212,6 +212,28 @@ scene("terminal-drawer", chrome(), [
     fill("terminal fill", 900, 650),
 ])
 
+scene("terminal-menu", chrome(), [
+    hscan("menu left/right edges", 700, 390, 540),
+    vscan("menu top/bottom", 470, 615, 779),
+    fill("menu fill", 515, 700),
+    ink("menu add to chat (disabled)", 405, 634, 520, 657, **T),
+    ink("menu copy (disabled)", 405, 662, 520, 685, **T),
+    ink("menu paste", 405, 690, 520, 713, **T),
+    ink("menu select all", 405, 718, 520, 741, **T),
+    ink("menu jump to latest", 405, 746, 525, 769, **T),
+])
+
+scene("terminal-close-confirm", [
+    hscan("dialog left/right edges", 400, 280, 820),
+    vscan("dialog top/bottom", 550, 290, 490),
+    fill("dialog body fill", 700, 390),
+    fill("dialog footer fill", 450, 445),
+    ink("dialog title", 315, 330, 640, 362, **T),
+    ink("dialog description", 315, 365, 700, 392, **T),
+    ink("cancel and confirm", 615, 420, 790, 462),
+    fill("backdrop", 150, 600, **BL),
+])
+
 scene("right-panel-diff", chrome(), [
     hscan("panel left edge", 400, 600, 640),
     fill("panel fill", 900, 600),

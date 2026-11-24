@@ -3731,6 +3731,269 @@
     }
    ]
   },
+  "terminal-menu": {
+   "elements": [
+    {
+     "name": "titlebar fill",
+     "kind": "fill",
+     "at": [
+      600,
+      30
+     ]
+    },
+    {
+     "name": "sidebar fill (top)",
+     "kind": "fill",
+     "at": [
+      240,
+      40
+     ]
+    },
+    {
+     "name": "sidebar edge",
+     "kind": "hscan",
+     "at": [
+      400,
+      250,
+      262
+     ]
+    },
+    {
+     "name": "sidebar toggle",
+     "kind": "ink",
+     "at": [
+      84,
+      14,
+      112,
+      40
+     ]
+    },
+    {
+     "name": "right toggles",
+     "kind": "ink",
+     "at": [
+      995,
+      14,
+      1090,
+      40
+     ]
+    },
+    {
+     "name": "breadcrumb monogram",
+     "kind": "ink",
+     "at": [
+      272,
+      16,
+      293,
+      37
+     ]
+    },
+    {
+     "name": "breadcrumb project",
+     "kind": "ink",
+     "at": [
+      294,
+      14,
+      350,
+      40
+     ],
+     "text": true
+    },
+    {
+     "name": "breadcrumb slash",
+     "kind": "ink",
+     "at": [
+      350,
+      14,
+      366,
+      40
+     ],
+     "text": true
+    },
+    {
+     "name": "breadcrumb title",
+     "kind": "ink",
+     "at": [
+      368,
+      14,
+      520,
+      40
+     ],
+     "text": true
+    },
+    {
+     "name": "dev badge",
+     "kind": "ink",
+     "at": [
+      2,
+      15,
+      34,
+      37
+     ],
+     "exclude": "dev builds only; never on the owner's build"
+    },
+    {
+     "name": "menu left/right edges",
+     "kind": "hscan",
+     "at": [
+      700,
+      390,
+      540
+     ]
+    },
+    {
+     "name": "menu top/bottom",
+     "kind": "vscan",
+     "at": [
+      470,
+      615,
+      779
+     ]
+    },
+    {
+     "name": "menu fill",
+     "kind": "fill",
+     "at": [
+      515,
+      700
+     ]
+    },
+    {
+     "name": "menu add to chat (disabled)",
+     "kind": "ink",
+     "at": [
+      405,
+      634,
+      520,
+      657
+     ],
+     "text": true
+    },
+    {
+     "name": "menu copy (disabled)",
+     "kind": "ink",
+     "at": [
+      405,
+      662,
+      520,
+      685
+     ],
+     "text": true
+    },
+    {
+     "name": "menu paste",
+     "kind": "ink",
+     "at": [
+      405,
+      690,
+      520,
+      713
+     ],
+     "text": true
+    },
+    {
+     "name": "menu select all",
+     "kind": "ink",
+     "at": [
+      405,
+      718,
+      520,
+      741
+     ],
+     "text": true
+    },
+    {
+     "name": "menu jump to latest",
+     "kind": "ink",
+     "at": [
+      405,
+      746,
+      525,
+      769
+     ],
+     "text": true
+    }
+   ]
+  },
+  "terminal-close-confirm": {
+   "elements": [
+    {
+     "name": "dialog left/right edges",
+     "kind": "hscan",
+     "at": [
+      400,
+      280,
+      820
+     ]
+    },
+    {
+     "name": "dialog top/bottom",
+     "kind": "vscan",
+     "at": [
+      550,
+      290,
+      490
+     ]
+    },
+    {
+     "name": "dialog body fill",
+     "kind": "fill",
+     "at": [
+      700,
+      390
+     ]
+    },
+    {
+     "name": "dialog footer fill",
+     "kind": "fill",
+     "at": [
+      450,
+      445
+     ]
+    },
+    {
+     "name": "dialog title",
+     "kind": "ink",
+     "at": [
+      315,
+      330,
+      640,
+      362
+     ],
+     "text": true
+    },
+    {
+     "name": "dialog description",
+     "kind": "ink",
+     "at": [
+      315,
+      365,
+      700,
+      392
+     ],
+     "text": true
+    },
+    {
+     "name": "cancel and confirm",
+     "kind": "ink",
+     "at": [
+      615,
+      420,
+      790,
+      462
+     ]
+    },
+    {
+     "name": "backdrop",
+     "kind": "fill",
+     "at": [
+      150,
+      600
+     ],
+     "blur": true
+    }
+   ]
+  },
   "right-panel-diff": {
    "elements": [
     {
