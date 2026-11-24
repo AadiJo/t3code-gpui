@@ -19,7 +19,9 @@ use crate::components::chat::composer_icons::provider_icon;
 use crate::components::chat::composer_permissions::RuntimeMode;
 use crate::components::chat::composer_theme::ComposerColors;
 use crate::components::chat::model_picker::{ModelPicker, ModelPickerEvent, input_handler_canvas};
+use crate::components::icons::{BrandIcon, Icon, IconSize};
 use crate::components::ui::{ControlHighlightExt as _, TextStyleExt as _};
+use crate::provider_instances::provider_instance_initials;
 use crate::model_selection::{ModelCatalog, ModelSelection, ProviderIcon, ProviderInstanceId, display_model_name};
 
 /// The open picker for one trigger, kept with `window.use_keyed_state`.
@@ -94,13 +96,41 @@ impl RenderOnce for SettingsModelPicker {
         });
         let colors = ComposerColors::new(cx);
         let mark = match (&self.label, &entry, &self.selection) {
-            (None, Some(entry), Some(selection)) => Some(provider_icon(
-                ProviderIcon::for_model(&entry.driver_kind, Some(&selection.model)),
-                sp(4.),
-                &entry.display_name,
-                &colors,
-                cx,
-            )),
+            (None, Some(entry), Some(selection)) => {
+                // `ProviderInstanceIcon size-4`: ACP registry agents draw the package mark.
+                let icon = if entry.driver_kind.as_str() == "acpRegistry" {
+                    Icon::new(BrandIcon::AcpRegistry).size(IconSize::Custom(sp(4.))).color(c.foreground()).into_any_element()
+                } else {
+                    provider_icon(ProviderIcon::for_model(&entry.driver_kind, Some(&selection.model)), sp(4.), &entry.display_name, &colors, cx)
+                };
+                // The trigger's badge (`right/bottom -0.125rem h-3 min-w-3 px-0.5 text-5xs`, ringed in
+                // the input colour) tells apart instances that share a driver. The catalog carries no
+                // accent colours, so an accent-coloured badge draws in the card colour here.
+                let shared = self.catalog.instances.iter().filter(|other| other.driver_kind == entry.driver_kind).count() > 1;
+                let badge = shared.then(|| {
+                    let (bg, fg) = (c.card(), c.muted_foreground);
+                    div()
+                        .absolute()
+                        .right(-theme.rem(0.125))
+                        .bottom(-theme.rem(0.125))
+                        .flex()
+                        .h(sp(3.))
+                        .min_w(sp(3.))
+                        .px(sp(0.5))
+                        .items_center()
+                        .justify_center()
+                        .rounded_full()
+                        .border_1()
+                        .border_color(c.input)
+                        .bg(bg)
+                        .shadow(theme.shadows.sm5.clone())
+                        .ui_text(theme, TextSize::Xs5, weight::SEMIBOLD)
+                        .line_height(px(TextSize::Xs5.size(theme.fonts.interface)))
+                        .text_color(fg)
+                        .child(provider_instance_initials(&entry.display_name))
+                });
+                Some(div().relative().flex().flex_none().size(sp(4.)).items_center().justify_center().child(icon).children(badge).into_any_element())
+            }
             _ => None,
         };
         let text = self.label.clone().or(model_name).unwrap_or_default();
