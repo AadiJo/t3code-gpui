@@ -85,6 +85,7 @@ pub mod thread_notifications;
 pub mod timestamp_format;
 pub mod worktree_cleanup;
 pub mod ui_state_store;
+pub mod version_skew;
 pub mod open_vsx_themes;
 pub mod vscode_theme_import;
 

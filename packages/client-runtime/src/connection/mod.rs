@@ -7,10 +7,12 @@ pub mod driver;
 pub mod errors;
 pub mod model;
 pub mod onboarding;
+pub mod outdated_host_update;
 pub mod profile_store;
 pub mod registry;
 pub mod resolver;
 pub mod routes;
+pub mod server_update;
 pub mod supervisor;
 
 pub use catalog::{CatalogEntry, ConnectionCredential, ConnectionRoute};
