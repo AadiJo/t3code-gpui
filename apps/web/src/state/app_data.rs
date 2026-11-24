@@ -68,8 +68,38 @@ pub enum DataEvent {
     Text { thread: ThreadKey, changes: Arc<[(MessageId, SharedString, bool)]> },
     /// A draft got its first message and is now a server thread.
     DraftPromoted { draft: DraftId, thread: ThreadKey },
-    /// Show this thread (a fork or side chat that just arrived).
+    /// Show this thread (a fork that just arrived).
     OpenThread(ThreadKey),
+    /// Show `parent` with the side chat's tab open in its right panel (`openSideChat`).
+    OpenSideChat { parent: ThreadKey, side_chat: ThreadKey },
+}
+
+/// A side chat's facts for its tab and pane header.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SideChatFacts {
+    pub title: SharedString,
+    /// It has a first message, so "Add to chat" can link it.
+    pub has_user_message: bool,
+    /// The tab's dot: running, or waiting on the user.
+    pub state: Option<SideChatState>,
+}
+
+/// `sideChatTabState`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SideChatState {
+    NeedsApproval,
+    NeedsInput,
+    Running,
+}
+
+/// Whether a side chat the panel names still exists.
+#[derive(Clone, Debug, PartialEq)]
+pub enum SideChatLookup {
+    Found(SideChatFacts),
+    /// The environment's shell has loaded and does not hold it.
+    Deleted,
+    /// Nothing to tell yet (the shell has not loaded).
+    Unknown,
 }
 
 /// The emitter every [`AppData`] publishes on. It also owns the source's subscriptions.
@@ -263,6 +293,25 @@ pub trait AppData: 'static {
 
     /// The server settings pages' model, for the environment the window shows.
     fn server_settings(&self, cx: &mut App) -> Option<Entity<ServerPanelsModel>>;
+
+    /// A side chat for its panel tab, on top of the main pane's thread.
+    fn side_chat(&self, _key: &ThreadKey, _cx: &App) -> SideChatLookup {
+        SideChatLookup::Unknown
+    }
+
+    /// Opens a side chat's own stream beside the main pane's and maps it; the timeline starts
+    /// with its "Context from" divider.
+    fn side_chat_view(&self, _key: &ThreadKey, _cx: &mut App) -> Option<ThreadView> {
+        None
+    }
+
+    /// Unmounts the side chat's stream.
+    fn close_side_chat(&self, _key: &ThreadKey, _cx: &mut App) {}
+
+    /// Deletes a side chat (`thread.delete`); `only_if_unused` keeps one that got a message.
+    fn delete_thread(&self, _key: &ThreadKey, _only_if_unused: bool, _cx: &mut App) -> Task<Result<(), SharedString>> {
+        Task::ready(Ok(()))
+    }
 
     /// One environment's streamed browser preview.
     fn preview_source(&self, environment: &EnvironmentId, cx: &mut App) -> Option<Rc<dyn PreviewSource>>;

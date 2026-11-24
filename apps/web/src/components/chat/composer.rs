@@ -446,6 +446,10 @@ impl ChatComposer {
     pub fn pick_menu_item(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
         let Some(menu) = self.menu.take() else { return };
         let Some(item) = menu.items.get(index).cloned() else { return };
+        if item.action == ComposerCommandAction::Refused {
+            self.menu = Some(menu);
+            return;
+        }
         let trigger: ComposerTrigger = menu.trigger;
         let text = self.editor.read(cx).text().to_owned();
         let replace = |this: &mut Self, replacement: String, cx: &mut Context<Self>| {
@@ -454,6 +458,7 @@ impl ChatComposer {
         };
         match item.action {
             ComposerCommandAction::Insert(insert) => replace(self, format!("{insert} "), cx),
+            ComposerCommandAction::Refused => {}
             ComposerCommandAction::Slash(SlashCommand::Model) => {
                 replace(self, String::new(), cx);
                 self.open_picker(window, cx);

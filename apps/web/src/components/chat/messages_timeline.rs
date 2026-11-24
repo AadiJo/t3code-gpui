@@ -164,6 +164,9 @@ pub struct MessagesTimeline {
     pub(super) now: Instant,
     /// Wall-clock milliseconds the fixtures treat as "now", for running timers.
     pub(super) now_millis: i64,
+    /// The list's top spacer at a 16px root: the header fade's height, or a side chat's `pt-2`
+    /// above its "Context from" divider (the web's list header swaps the spacer for the divider block).
+    top_inset: Pixels,
     weak: WeakEntity<Self>,
 }
 
@@ -208,6 +211,7 @@ impl MessagesTimeline {
             rendering_row: 0,
             now: Instant::now(),
             now_millis: 0,
+            top_inset: TIMELINE_TOP_INSET,
             weak,
         }
     }
@@ -427,7 +431,20 @@ impl MessagesTimeline {
             return;
         }
         self.composer_inset = height;
+        self.apply_insets();
         cx.notify();
+    }
+
+    /// Replaces the top spacer, given at a 16px root (see `top_inset`).
+    pub fn set_top_inset(&mut self, at16: Pixels, cx: &mut Context<Self>) {
+        self.top_inset = at16;
+        self.apply_insets();
+        cx.notify();
+    }
+
+    /// The insets are rem lengths, so every change and every render sets them at the current root size.
+    fn apply_insets(&self) {
+        self.list.set_insets(self.colors.r(self.top_inset), self.composer_inset + self.colors.r(TIMELINE_BOTTOM_PAD));
     }
 
     /// Pins the last user message near the top, as sending a message does.
@@ -789,8 +806,7 @@ impl Render for MessagesTimeline {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.colors = ChatColors::get(cx);
         self.lane = super::chat_style::ChatLane::get(cx);
-        // The insets are rem lengths; re-read them in case the Interface size changed.
-        self.list.set_insets(self.colors.r(TIMELINE_TOP_INSET), self.composer_inset + self.colors.r(TIMELINE_BOTTOM_PAD));
+        self.apply_insets();
         self.now = Instant::now().max(self.now);
         let weak = self.weak.clone();
         let colors = self.colors;

@@ -23,6 +23,7 @@ use t3code_contracts::ProjectScript;
 use crate::components::diff_panel::{DiffPanel, DiffPanelEvent};
 use crate::components::diff_panel_shell::DiffPanelLoadingState;
 use crate::components::files::file_preview_panel::{FilesPanel, FilesPanelEvent};
+use crate::components::side_chat_pane::{SideChatPane, SideChatPaneEvent};
 use crate::components::thread_terminal_drawer::{BackendFactory, TerminalLaunch, next_terminal_id};
 use crate::diff_panel_store::{DiffPanelSelection, DiffPanelStore};
 use crate::file_source::SharedWorkspaceFiles;
@@ -55,6 +56,8 @@ pub enum RightPanelEvent {
     Changed,
     /// "Add to chat" in the Files tab: insert this mention in the composer.
     InsertReference(String),
+    /// "Add to chat" on a side chat: a thread chip for the main thread's next message.
+    AddThreadContext(String),
 }
 
 /// Starts a project script in a new terminal session: the launch and the command.
@@ -131,6 +134,8 @@ pub struct RightPanel {
     pending_scripts: HashMap<(SharedString, String), ProjectScript>,
     /// Pull request, issue and browser tab views, by thread and surface id.
     surface_views: HashMap<(SharedString, String), AnyView>,
+    /// The side chat tab on screen; one side chat streams at a time.
+    side_chat: Option<(crate::components::sidebar::model::ThreadKey, Entity<SideChatPane>, Subscription)>,
     /// Read for the titlebar row's height and the insets around the fixed toggles.
     layout: WeakEntity<AppSidebarLayout>,
     topbar_height: Pixels,
@@ -260,6 +265,7 @@ impl RightPanel {
             terminals: HashMap::new(),
             pending_scripts: HashMap::new(),
             surface_views: HashMap::new(),
+            side_chat: None,
             layout,
             topbar_height: px(40.),
             focus: cx.focus_handle(),
@@ -556,6 +562,10 @@ impl RightPanel {
                 Some(terminal) => div().flex_1().min_h_0().px_2().pb_2().child(terminal).into_any_element(),
                 None => self.render_empty(surface, cx),
             },
+            RightPanelSurface::SideChat { thread_id, .. } => match self.ensure_side_chat_pane(thread_id, window, cx) {
+                Some(pane) => div().flex_1().min_h_0().child(pane).into_any_element(),
+                None => self.render_empty(surface, cx),
+            },
             RightPanelSurface::PullRequest { .. } | RightPanelSurface::Issue { .. } | RightPanelSurface::Preview { .. } => {
                 match self.surface_view(surface, window, cx) {
                     Some(view) => div().flex_1().min_h_0().child(view).into_any_element(),
@@ -563,6 +573,69 @@ impl RightPanel {
                 }
             }
             _ => self.render_empty(surface, cx),
+        }
+    }
+
+    /// The side chat's key on the shown thread's environment.
+    fn side_chat_key(&self, thread_id: &str) -> Option<crate::components::sidebar::model::ThreadKey> {
+        let thread = self.thread.clone()?;
+        let (environment, _) = thread.split_once(':')?;
+        Some(crate::state::shell::thread_key(&t3code_contracts::EnvironmentId::new(environment), &t3code_contracts::ThreadId::new(thread_id)))
+    }
+
+    /// The pane of the side chat tab on screen, built when it first shows (`SideChatPane`).
+    fn ensure_side_chat_pane(&mut self, thread_id: &str, window: &mut Window, cx: &mut Context<Self>) -> Option<Entity<SideChatPane>> {
+        let key = self.side_chat_key(thread_id)?;
+        if let Some((shown, pane, _)) = &self.side_chat
+            && shown == &key
+        {
+            return Some(pane.clone());
+        }
+        self.drop_side_chat(cx);
+        let data = self.data.clone();
+        let pane = cx.new(|cx| SideChatPane::new(data, key.clone(), window, cx));
+        let surface_id = format!("side-chat:{thread_id}");
+        let subscription = cx.subscribe_in(&pane, window, move |this, _, event: &SideChatPaneEvent, _, cx| match event {
+            SideChatPaneEvent::Close => this.close_surface(&surface_id, cx),
+            SideChatPaneEvent::AddToChat(reference) => cx.emit(RightPanelEvent::AddThreadContext(reference.clone())),
+        });
+        self.side_chat = Some((key, pane.clone(), subscription));
+        Some(pane)
+    }
+
+    /// The side chat tab's pane, while one is on screen.
+    pub fn side_chat_pane(&self) -> Option<&Entity<SideChatPane>> {
+        self.side_chat.as_ref().map(|(_, pane, _)| pane)
+    }
+
+    /// Unmounts the side chat's stream when its tab leaves the screen.
+    fn drop_side_chat(&mut self, cx: &mut Context<Self>) {
+        if let Some((key, _, _)) = self.side_chat.take() {
+            self.data.close_side_chat(&key, cx);
+        }
+    }
+
+    /// Closes a tab (`useRightPanelSurfaceClose`): a side chat with no run or message is deleted
+    /// with it, unless the shell already shows it gone.
+    pub fn close_surface(&mut self, surface_id: &str, cx: &mut Context<Self>) {
+        let thread = self.thread.clone();
+        let side = thread
+            .as_ref()
+            .map(|t| self.store.read(cx).state(t))
+            .and_then(|state| state.surfaces.into_iter().find(|s| s.id() == surface_id))
+            .and_then(|surface| match surface {
+                RightPanelSurface::SideChat { thread_id, .. } => self.side_chat_key(&thread_id),
+                _ => None,
+            });
+        let id = surface_id.to_owned();
+        self.edit(cx, |store, thread| store.close_surface(thread, &id));
+        if let Some(key) = side {
+            if self.side_chat.as_ref().is_some_and(|(shown, _, _)| shown == &key) {
+                self.drop_side_chat(cx);
+            }
+            if !matches!(self.data.side_chat(&key, cx), crate::state::app_data::SideChatLookup::Deleted) {
+                self.data.delete_thread(&key, true, cx).detach();
+            }
         }
     }
 
@@ -665,13 +738,25 @@ impl RightPanel {
         let theme = cx.app_theme();
         let c = &theme.colors;
         let id: SharedString = surface.id().to_string().into();
-        let title = surface_title(surface);
+        // A side chat tab names its side chat and dots its state (`SideChatTabIcon`).
+        let side_chat = match surface {
+            RightPanelSurface::SideChat { thread_id, .. } => self.side_chat_key(thread_id).map(|key| self.data.side_chat(&key, cx)),
+            _ => None,
+        };
+        let side_facts = match &side_chat {
+            Some(crate::state::app_data::SideChatLookup::Found(facts)) => Some(facts.clone()),
+            _ => None,
+        };
+        let title = side_facts.as_ref().map(|f| f.title.clone()).unwrap_or_else(|| surface_title(surface));
+        let side_dot = side_facts.as_ref().and_then(|f| f.state).map(|state| match state {
+            crate::state::app_data::SideChatState::Running => c.muted_foreground,
+            _ => theme.fixed.info,
+        });
         let group: SharedString = format!("tab-{id}").into();
         let close = {
             let id = id.clone();
             cx.listener(move |this, _: &ClickEvent, _, cx| {
-                let id = id.clone();
-                this.edit(cx, |store, thread| store.close_surface(thread, &id));
+                this.close_surface(&id, cx);
                 cx.stop_propagation();
             })
         };
@@ -686,8 +771,12 @@ impl RightPanel {
             .hover(|s| s.bg(c.muted))
             .child(
                 div()
+                    .relative()
                     .group_hover(group.clone(), |s| s.invisible())
-                    .child(Icon::new(surface_icon(surface.kind())).size(IconSize::Xs)),
+                    .child(Icon::new(surface_icon(surface.kind())).size(IconSize::Xs))
+                    .children(side_dot.map(|dot| {
+                        div().absolute().top(theme.rem(-0.125)).right(theme.rem(-0.125)).size(theme.rem(0.375)).rounded_full().bg(dot)
+                    })),
             )
             .child(
                 div()
@@ -730,10 +819,7 @@ impl RightPanel {
             })
             .on_mouse_up(MouseButton::Middle, {
                 let id = id.clone();
-                cx.listener(move |this, _: &MouseUpEvent, _, cx| {
-                    let id = id.clone();
-                    this.edit(cx, |store, thread| store.close_surface(thread, &id));
-                })
+                cx.listener(move |this, _: &MouseUpEvent, _, cx| this.close_surface(&id, cx))
             })
             .on_drag(DraggedTab { id: id.clone(), title: title.clone() }, |tab, _, _, cx| cx.new(|_| tab.clone()))
             .drag_over::<DraggedTab>(move |s, _, _, _| s.bg(hover_bg))
@@ -751,7 +837,12 @@ impl RightPanel {
                 })
             };
             MenuPopup::new()
-                .item(action(t!("Close"), |s, t, id| s.close_surface(t, id)))
+                .item({
+                    let (weak, id) = (weak.clone(), id.clone());
+                    MenuItem::new(t!("Close")).on_select(move |_, cx| {
+                        weak.update(cx, |this, cx| this.close_surface(&id, cx)).ok();
+                    })
+                })
                 .item(action(t!("Close others"), |s, t, id| s.close_other_surfaces(t, id)))
                 .item(action(t!("Close to the right"), |s, t, id| s.close_surfaces_to_right(t, id)))
                 .separator()
@@ -857,6 +948,10 @@ impl Render for RightPanel {
                     .overflow_x_scroll()
                     .child(div().h_full().flex().items_center().gap_1().children(tabs).child(add)),
             );
+        // The pane (and its stream) lives while its tab is the active one, hidden panel or not.
+        if !matches!(state.active(), Some(RightPanelSurface::SideChat { .. })) {
+            self.drop_side_chat(cx);
+        }
         let body = match state.active() {
             Some(surface) => self.render_body(surface, window, cx),
             None => self.render_launcher(cx).into_any_element(),

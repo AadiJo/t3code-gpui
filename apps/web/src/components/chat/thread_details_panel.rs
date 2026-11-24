@@ -26,6 +26,7 @@ use super::thread_details_sections::{
     ContextWindowRow, SERVER_PAGE_COUNT, SectionEmit, ThreadAutomationRow, ThreadDetailsSectionEvent, ThreadServerRow,
     UsageLimitsInput, automations_section, context_section, servers_section, usage_limits_section,
 };
+use super::thread_details_relationships::{RelationshipBusy, RelationshipEvent, RelationshipViewState, relationship_sections};
 use super::thread_details_pr_row::{
     PullRequestRowAction, PullRequestRowData, PullRequestRowHandlers, checks_popover, issue_row, merge_method_key,
     pull_request_row, resolve_row_action,
@@ -95,6 +96,10 @@ pub struct ThreadDetailsInput {
     pub usage_limits: Option<UsageLimitsInput>,
     /// The card's height limit (`max-h-[min(100dvh-6.5rem, …)]`).
     pub max_height: Option<Pixels>,
+    /// The Lineage and Side chats rows; `None` hides both sections.
+    pub relationships: Option<crate::state::thread_relationships::RelationshipsInput>,
+    /// The merge or disconnect waiting on the server.
+    pub relationship_busy: Option<RelationshipBusy>,
 }
 
 /// What the card asks its owner to do.
@@ -108,6 +113,8 @@ pub enum ThreadDetailsEvent {
     StopWatching,
     /// A server, automation or context row was used.
     Section(ThreadDetailsSectionEvent),
+    /// A Lineage or Side chats control was used.
+    Relationship(RelationshipEvent),
 }
 
 /// The card and the controls it hosts.
@@ -126,6 +133,10 @@ pub struct ThreadDetailsPanel {
     confirming_merge: bool,
     /// Servers shown before "Show N more".
     server_page: usize,
+    /// Lineage groups' expansion and paging.
+    relationship_view: RelationshipViewState,
+    /// The Lineage heading's "More thread actions" menu, at a window position.
+    relationship_menu: Option<Point<Pixels>>,
 }
 
 impl EventEmitter<ThreadDetailsEvent> for ThreadDetailsPanel {}
@@ -141,7 +152,7 @@ impl ThreadDetailsPanel {
         cx: &mut Context<Self>,
     ) -> Self {
         cx.observe_global::<ThreadDetailsItemSettings>(|_, cx| cx.notify()).detach();
-        Self { input, workspace, branch, git, scripts, open_in, items_menu: None, checks: None, confirming_merge: false, server_page: SERVER_PAGE_COUNT }
+        Self { input, workspace, branch, git, scripts, open_in, items_menu: None, checks: None, confirming_merge: false, server_page: SERVER_PAGE_COUNT, relationship_view: RelationshipViewState::default(), relationship_menu: None }
     }
 
     /// The facts the card shows now.
@@ -352,6 +363,43 @@ impl ThreadDetailsPanel {
         .into_any_element()
     }
 
+    /// The Lineage heading's menu: "Disconnect agent session".
+    fn render_relationship_menu(&self, at: Point<Pixels>, cx: &mut Context<Self>) -> AnyElement {
+        let this = cx.weak_entity();
+        let close = cx.weak_entity();
+        let menu = MenuPopup::new()
+            .min_width(cx.app_theme().rem(15.))
+            .item(MenuItem::new(t!("Disconnect agent session")).icon(IconName::Unplug).on_select(move |_, cx| {
+                this.update(cx, |this, cx| {
+                    this.relationship_menu = None;
+                    cx.emit(ThreadDetailsEvent::Relationship(RelationshipEvent::Disconnect));
+                    cx.notify();
+                })
+                .ok();
+            }))
+            .on_dismiss(move |_, cx| {
+                close
+                    .update(cx, |this, cx| {
+                        this.relationship_menu = None;
+                        cx.notify();
+                    })
+                    .ok();
+            });
+        deferred(
+            anchored().position(at).snap_to_window_with_margin(px(8.)).child(
+                div()
+                    .occlude()
+                    .on_mouse_down_out(cx.listener(|this, _, _, cx| {
+                        this.relationship_menu = None;
+                        cx.notify();
+                    }))
+                    .child(menu),
+            ),
+        )
+        .with_priority(2)
+        .into_any_element()
+    }
+
     fn sections(&self, theme: &AppTheme, cx: &mut Context<Self>) -> Vec<AnyElement> {
         let settings = ThreadDetailsItemSettings::get(cx);
         let visible = |item| settings.visible(item);
@@ -435,6 +483,34 @@ impl ThreadDetailsPanel {
                 emit.clone(),
             ));
         }
+        if full
+            && (visible(ThreadDetailsItem::Lineage) || visible(ThreadDetailsItem::SideChats))
+            && let Some(relationships) = &self.input.relationships
+        {
+            let mut relationships = relationships.clone();
+            relationships.lineage_visible &= visible(ThreadDetailsItem::Lineage);
+            relationships.side_chats_visible &= visible(ThreadDetailsItem::SideChats);
+            let this = cx.weak_entity();
+            let emit = Rc::new(move |event: RelationshipEvent, _: &mut Window, cx: &mut App| {
+                this.update(cx, |this, cx| match event {
+                    RelationshipEvent::ToggleMenu(at) => {
+                        this.relationship_menu = if this.relationship_menu.is_some() { None } else { at };
+                        cx.notify();
+                    }
+                    event => cx.emit(ThreadDetailsEvent::Relationship(event)),
+                })
+                .ok();
+            });
+            let this = cx.weak_entity();
+            let state = Rc::new(move |edit: &dyn Fn(&mut RelationshipViewState), _: &mut Window, cx: &mut App| {
+                this.update(cx, |this, cx| {
+                    edit(&mut this.relationship_view);
+                    cx.notify();
+                })
+                .ok();
+            });
+            out.extend(relationship_sections(theme, &relationships, &self.relationship_view, self.input.relationship_busy, emit, state));
+        }
         if visible(ThreadDetailsItem::Usage)
             && let Some(limits) = &self.input.usage_limits
         {
@@ -464,6 +540,7 @@ impl Render for ThreadDetailsPanel {
         });
         let menu = self.items_menu.map(|at| self.render_items_menu(at, cx));
         let merge = self.render_merge_confirm(cx);
+        let relationship_menu = self.relationship_menu.map(|at| self.render_relationship_menu(at, cx));
         glass_surface(&theme)
             .id("thread-details-card")
             .rounded(theme.radii.xxl)
@@ -479,6 +556,7 @@ impl Render for ThreadDetailsPanel {
             .children(empty)
             .children(menu)
             .children(merge)
+            .children(relationship_menu)
             .test_support()
     }
 }

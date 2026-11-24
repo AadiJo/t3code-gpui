@@ -58,6 +58,7 @@ impl MessagesTimeline {
             super::timeline_entries::DividerKind::RunInterrupted => IconName::CircleAlert,
             super::timeline_entries::DividerKind::Forked => IconName::GitFork,
             super::timeline_entries::DividerKind::ParentLink => IconName::Link,
+            super::timeline_entries::DividerKind::SideChatParent => IconName::MessagesSquare,
             super::timeline_entries::DividerKind::NewSession => IconName::RotateCcw,
             super::timeline_entries::DividerKind::Handoff => IconName::ArrowUp,
         };

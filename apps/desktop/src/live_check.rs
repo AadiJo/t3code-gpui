@@ -48,7 +48,13 @@
 //            `import-check`, encrypted with the fixture macOS key): the launch import runs,
 //            the window explains the Keychain read, environments and settings arrive
 //
-// Usage: live-check <seed|drive|restart|import|send|sidebar|notify|details|mentions|heic|wheel|workspace|banner|sidebardata|composer|composer-restart|probe> <out-dir>
+//   sidechats  `/side` opens the side chat as a right panel tab (the route stays), a send in its
+//            own composer, the details card's Side chats row, close (kept: it has a message)
+//            and reopen from that row, merge back from the side chat's own card (a merge_back
+//            transfer on the parent), a fork with the lineage on both ends, and `/side` refused
+//            inside a side chat; each read back from the server
+//   sidechats-ref  shots of the fork capture's states on its server (`T3_REF_IDS`: ids.json)
+// Usage: live-check <seed|drive|restart|import|send|sidebar|notify|details|mentions|heic|wheel|workspace|banner|sidebardata|composer|composer-restart|sidechats|sidechats-ref|probe> <out-dir>
 #[allow(dead_code)]
 #[path = "import/mod.rs"]
 mod import;
@@ -161,6 +167,14 @@ fn cpu_time() -> Duration {
     Duration::from_millis(ticks * 10)
 }
 
+/// The window size: 1280x860, or `T3_LIVE_WINDOW=<w>x<h>` (the fork captures use 1100x780).
+fn window_size() -> Size<Pixels> {
+    std::env::var("T3_LIVE_WINDOW")
+        .ok()
+        .and_then(|v| v.split_once('x').and_then(|(w, h)| Some(size(px(w.parse().ok()?), px(h.parse().ok()?)))))
+        .unwrap_or(size(px(1280.), px(860.)))
+}
+
 fn data_dir() -> anyhow::Result<PathBuf> {
     std::env::var_os("T3CODE_DATA_DIR").map(PathBuf::from).context("set T3CODE_DATA_DIR")
 }
@@ -200,7 +214,7 @@ impl Check {
         let options = AppRootOptions { data: DataSource::Live, platform: TitlebarPlatform::Overlay, state_dir: StateDir(Some(ui)) };
         let (window, parts) = cx.update(|cx| {
             let window_options = WindowOptions {
-                window_bounds: Some(WindowBounds::centered(None, size(px(1280.), px(860.)), cx)),
+                window_bounds: Some(WindowBounds::centered(None, window_size(), cx)),
                 show: false,
                 focus: true,
                 ..component::TitleBar::window_options()
@@ -519,6 +533,8 @@ fn main() -> anyhow::Result<()> {
         "sidebardata" => run_sidebar_data(&mut check),
         "composer" => run_composer(&mut check),
         "composer-restart" => run_composer_restart(&mut check),
+        "sidechats" => run_sidechats(&mut check),
+        "sidechats-ref" => run_sidechats_ref(&mut check),
         other => Err(anyhow::anyhow!("unknown phase {other}")),
     };
     check.finish(&phase, result)
@@ -1175,7 +1191,7 @@ mod timeline_dump {
                 DividerKind::RunInterrupted => "run_interrupt_result",
                 DividerKind::Forked => "fork",
                 DividerKind::Handoff => "handoff",
-                DividerKind::ParentLink => "thread_created",
+                DividerKind::ParentLink | DividerKind::SideChatParent => "thread_created",
                 DividerKind::NewSession => "new_session",
             },
         }
@@ -1353,9 +1369,8 @@ fn projection_of(check: &mut Check, key: &ThreadKey) -> Option<Arc<t3code_shared
     let key = key.clone();
     check.cx.update(|cx| {
         let threads = StateBridge::threads(cx);
-        let active = threads.read(cx).active()?.clone();
-        let thread = active.read(cx);
-        (thread.key() == &key).then(|| thread.projection().cloned()).flatten()
+        let thread = threads.read(cx).find(&key, cx)?.clone();
+        thread.read(cx).projection().cloned()
     })
 }
 
@@ -1647,7 +1662,9 @@ fn run_send(check: &mut Check) -> anyhow::Result<()> {
     check.type_text("/side What does the retry helper return?");
     check.press("enter");
     let original = key.clone();
-    check.pump(move |c| matches!(c.route(), Route::Thread(k) if k != original), Duration::from_secs(30), "the side chat opens")?;
+    check.pump(move |c| side_chat_tab(c, &original).is_some(), Duration::from_secs(30), "the side chat opens in the right panel")?;
+    let route = check.route();
+    check.check("the main pane keeps the thread while the side chat opens", route == Route::Thread(key.clone()), format!("{route:?}"));
     check.shot("36-side-chat.png")?;
     Ok(())
 }
@@ -2323,8 +2340,9 @@ fn run_mentions(check: &mut Check) -> anyhow::Result<()> {
     check.type_text("/side Where does the quokka helper live?");
     check.press("enter");
     let p = parent.clone();
-    check.pump(move |c| matches!(c.route(), Route::Thread(k) if k != p), Duration::from_secs(30), "the side chat opens")?;
-    let Route::Thread(side) = check.route() else { bail!("no side chat route") };
+    check.pump(move |c| side_chat_tab(c, &p).is_some(), Duration::from_secs(30), "the side chat opens in the right panel")?;
+    let side_id = side_chat_tab(check, &parent).context("no side chat tab")?;
+    let side = thread_key(&tid_environment(&parent), &ThreadId::new(side_id.as_str()));
     let s = side.clone();
     check.pump(
         move |c| c.cx.update(|cx| StateBridge::shell(cx).read(cx).row(&s).is_some_and(|row| row.latest_user_message_at.is_some())),
@@ -3201,4 +3219,326 @@ fn run_composer_restart(check: &mut Check) -> anyhow::Result<()> {
     );
     check.check("the restored draft sends with its image", sent.is_ok(), format!("{sent:?}"));
     check.shot("c7-restored-sent.png")
+}
+
+/// The server environment id of a scoped key.
+fn tid_environment(key: &ThreadKey) -> t3code_contracts::EnvironmentId {
+    t3code_web::state::shell::runtime_ids(key).0
+}
+
+/// The server thread id of a scoped key.
+fn tid(key: &ThreadKey) -> ThreadId {
+    t3code_web::state::shell::runtime_ids(key).1
+}
+
+/// The side chat tab showing on `parent`'s right panel: its thread id, when open and active.
+fn side_chat_tab(check: &mut Check, parent: &ThreadKey) -> Option<String> {
+    let panel_key = t3code_web::fixtures::scoped_key(parent);
+    check.read(|root, cx| {
+        let state = root.right_panels().read(cx).state(&panel_key);
+        match state.active() {
+            Some(t3code_web::right_panel_store::RightPanelSurface::SideChat { thread_id, .. }) if state.is_open => Some(thread_id.clone()),
+            _ => None,
+        }
+    })
+}
+
+/// A thread's row in its environment's shell, as the server last sent it.
+fn shell_thread(check: &mut Check, key: &ThreadKey) -> Option<Arc<t3code_contracts::OrchestrationV2ThreadShell>> {
+    let key = key.clone();
+    check.cx.update(|cx| {
+        let (environment_id, thread_id) = t3code_web::state::shell::runtime_ids(&key);
+        let snapshot = StateBridge::environment(&environment_id, cx)?.read(cx).shell.snapshot.clone()?;
+        snapshot.threads.iter().find(|t| t.id == thread_id).cloned()
+    })
+}
+
+/// The shown thread's details card input, once the card is built.
+fn details_input(check: &mut Check) -> Option<t3code_web::components::chat::thread_details_panel::ThreadDetailsInput> {
+    check.read(|root, cx| root.thread_view().read(cx).details().map(|d| d.read(cx).input().clone()))
+}
+
+/// Opens the details card on the shown thread.
+fn open_details(check: &mut Check) {
+    let root = check.root.clone();
+    check.cx.update(|cx| root.read(cx).thread_view().clone().update(cx, |view, cx| view.set_details_open(true, cx)));
+    check.frame();
+}
+
+/// Emits a Lineage or Side chats click from the shown thread's card.
+fn relationship_click(check: &mut Check, event: t3code_web::components::chat::thread_details_relationships::RelationshipEvent) {
+    let root = check.root.clone();
+    check.cx.update(|cx| {
+        if let Some(panel) = root.read(cx).thread_view().read(cx).details().cloned() {
+            panel.update(cx, |_, cx| cx.emit(t3code_web::components::chat::thread_details_panel::ThreadDetailsEvent::Relationship(event)));
+        }
+    });
+    check.frame();
+}
+
+/// The side chat pane's composer, while a side chat tab shows.
+fn side_composer(check: &mut Check) -> Option<Entity<t3code_web::components::chat::composer::ChatComposer>> {
+    check.read(|root, cx| root.right_panel().read(cx).side_chat_pane().map(|p| p.read(cx).composer().clone()))
+}
+
+/// Types `text` in the side chat's composer and sends it.
+fn send_in_side_chat(check: &mut Check, text: &str) -> anyhow::Result<()> {
+    let composer = side_composer(check).context("no side chat composer")?;
+    let root = check.root.clone();
+    check.cx.update_window(check.window, |_, w, cx| {
+        let _ = &root;
+        let focus = composer.read(cx).editor().focus_handle(cx);
+        w.focus(&focus, cx);
+    })?;
+    check.frame();
+    check.type_text(text);
+    check.press("enter");
+    Ok(())
+}
+
+/// The `sidechats` phase. See the header.
+fn run_sidechats(check: &mut Check) -> anyhow::Result<()> {
+    use t3code_client_runtime::state::thread_relationships::RelationshipStatus;
+    use t3code_web::components::chat::thread_details_relationships::RelationshipEvent;
+    let state = load_state(&check.out)?;
+    let environment_id = t3code_contracts::EnvironmentId::new(state.environment_id.as_str());
+    check.pump(|c| c.connected(), Duration::from_secs(30), "connected")?;
+    let key = thread_with_turn(check, &state, "Side chat host")?;
+    check.go(&key);
+    let k = key.clone();
+    check.pump(move |c| c.route() == Route::Thread(k.clone()) && !c.shown_input().entries.is_empty(), Duration::from_secs(20), "the host thread shows")?;
+
+    // `/side` with a question: the side chat opens as a tab of this thread's panel.
+    check.focus_composer();
+    check.type_text("/side What does the retry helper return?");
+    check.press("enter");
+    let k = key.clone();
+    check.pump(move |c| side_chat_tab(c, &k).is_some(), Duration::from_secs(30), "the side chat tab opens")?;
+    let side_id = side_chat_tab(check, &key).context("side chat tab")?;
+    let side = thread_key(&environment_id, &ThreadId::new(side_id.as_str()));
+    let route = check.route();
+    check.check("the main pane keeps the host thread", route == Route::Thread(key.clone()), format!("{route:?}"));
+    let s = side.clone();
+    check.pump(move |c| shell_thread(c, &s).is_some(), Duration::from_secs(20), "the side chat reaches the shell")?;
+    let shell = shell_thread(check, &side).context("side chat shell")?;
+    check.check(
+        "the server records a side chat of the host",
+        shell.lineage.side_chat == Some(true) && shell.lineage.parent_thread_id.as_ref() == Some(&tid(&key)),
+        format!("side_chat={:?} parent={:?}", shell.lineage.side_chat, shell.lineage.parent_thread_id),
+    );
+    let s = side.clone();
+    check.pump(
+        move |c| shell_thread(c, &s).is_some_and(|t| t.latest_user_message_at.is_some() && t.status.as_str() == "completed"),
+        Duration::from_secs(60),
+        "the side chat's first turn settles",
+    )?;
+    check.wait(Duration::from_millis(300));
+    let pane_shows = check.read(|root, cx| {
+        root.right_panel().read(cx).side_chat_pane().is_some_and(|pane| {
+            let input = pane.read(cx).chat().read(cx).timeline().read(cx).input().clone();
+            input.entries.iter().any(|e| matches!(&e.kind, EntryKind::Message(m) if m.text.contains("retry helper")))
+        })
+    });
+    check.check("the panel shows the side chat's own timeline with the question", pane_shows, "");
+    check.shot("s0-side-chat-open.png")?;
+
+    // A send in the side chat's own composer goes to the side chat.
+    send_in_side_chat(check, "And what does it log?")?;
+    let s = side.clone();
+    check.pump(
+        move |c| c.read(|root, cx| {
+            root.right_panel().read(cx).side_chat_pane().is_some_and(|pane| {
+                pane.read(cx).chat().read(cx).timeline().read(cx).input().entries.iter().any(|e| matches!(&e.kind, EntryKind::Message(m) if m.text.contains("what does it log")))
+            })
+        }) && shell_thread(c, &s).is_some_and(|t| t.status.as_str() == "completed"),
+        Duration::from_secs(60),
+        "the side chat's second turn settles",
+    )?;
+    let host_untouched = !check.shown_input().entries.iter().any(|e| matches!(&e.kind, EntryKind::Message(m) if m.text.contains("what does it log")));
+    check.check("the side chat's send stays out of the host thread", host_untouched, "");
+    check.shot("s1-side-chat-sent.png")?;
+
+    // The details card lists it under Side chats.
+    open_details(check);
+    let side_ref = side.clone();
+    check.pump(
+        move |c| details_input(c).and_then(|i| i.relationships).is_some_and(|r| r.side_chats.iter().any(|row| row.thread_id == tid(&side_ref))),
+        Duration::from_secs(10),
+        "the details card lists the side chat",
+    )?;
+    let row = details_input(check).and_then(|i| i.relationships).and_then(|r| r.side_chats.into_iter().find(|row| row.thread_id == tid(&side)));
+    check.check(
+        "the Side chats row is Done with the side chat's title",
+        row.as_ref().is_some_and(|r| r.status == Some(RelationshipStatus::Completed) && !r.title.is_empty()),
+        format!("{row:?}"),
+    );
+    check.shot("s2-details-side-chats.png")?;
+
+    // Close: the tab goes, the side chat stays (it has messages). Reopen from the card's row.
+    let surface = format!("side-chat:{side_id}");
+    let panel = check.read(|root, _| root.right_panel().clone());
+    check.cx.update(|cx| panel.update(cx, |panel, cx| panel.close_surface(&surface, cx)));
+    check.wait(Duration::from_millis(1500));
+    let closed = side_chat_tab(check, &key).is_none();
+    let kept = shell_thread(check, &side).is_some();
+    check.check("close hides the tab and keeps a used side chat", closed && kept, format!("closed={closed} kept={kept}"));
+    relationship_click(check, RelationshipEvent::Open(tid(&side)));
+    let k = key.clone();
+    check.pump(move |c| side_chat_tab(c, &k).is_some(), Duration::from_secs(10), "the Side chats row reopens the tab")?;
+    let reopened = side_chat_tab(check, &key).as_deref() == Some(side_id.as_str()) && check.route() == Route::Thread(key.clone());
+    check.check("reopen shows the same side chat beside the host", reopened, "");
+    check.shot("s3-side-chat-reopened.png")?;
+
+    // `/side` inside the side chat is refused and starts nothing.
+    let before = check.cx.update(|cx| {
+        StateBridge::environment(&environment_id, cx)
+            .and_then(|e| e.read(cx).shell.snapshot.clone())
+            .map_or(0, |s| s.threads.iter().filter(|t| t.lineage.side_chat == Some(true)).count())
+    });
+    send_in_side_chat(check, "/side nested?")?;
+    check.wait(Duration::from_secs(3));
+    let after = check.cx.update(|cx| {
+        StateBridge::environment(&environment_id, cx)
+            .and_then(|e| e.read(cx).shell.snapshot.clone())
+            .map_or(0, |s| s.threads.iter().filter(|t| t.lineage.side_chat == Some(true)).count())
+    });
+    check.check("`/side` in a side chat starts no side chat", before == after, format!("{before} -> {after}"));
+    check.shot("s4-side-in-side-refused.png")?;
+
+    // Merge back from the side chat's own card: a merge_back transfer lands on the host.
+    check.go(&side);
+    let s = side.clone();
+    check.pump(move |c| c.route() == Route::Thread(s.clone()) && !c.shown_input().entries.is_empty(), Duration::from_secs(20), "the side chat shows in the main pane")?;
+    open_details(check);
+    check.pump(
+        |c| details_input(c).and_then(|i| i.relationships).and_then(|r| r.merge).is_some_and(|m| m.run_id.is_some()),
+        Duration::from_secs(10),
+        "the side chat's card offers merge back",
+    )?;
+    let merge = details_input(check).and_then(|i| i.relationships).and_then(|r| r.merge);
+    check.check("merge back targets the host", merge.as_ref().is_some_and(|m| m.target == tid(&key)), format!("{merge:?}"));
+    check.shot("s5-side-chat-own-card.png")?;
+    relationship_click(check, RelationshipEvent::MergeBack);
+    let k = key.clone();
+    check.pump(move |c| c.route() == Route::Thread(k.clone()), Duration::from_secs(30), "merge back opens the host")?;
+    let (k, s) = (key.clone(), side.clone());
+    check.pump(
+        move |c| projection_of(c, &k).is_some_and(|p| {
+            p.context_transfers.iter().any(|t| t.r#type.as_str() == "merge_back" && t.source_thread_id == tid(&s))
+        }),
+        Duration::from_secs(30),
+        "the host records the merge_back transfer",
+    )?;
+    check.check("the server recorded the merge back on the host", true, "");
+
+    // Fork the host: the fork's card shows the host as parent with merge back, the host's shows the fork.
+    let reply = check.shown_input().entries.iter().rev().find_map(|e| match &e.kind {
+        EntryKind::Message(m) if m.role == t3code_web::components::chat::timeline_entries::MessageRole::Assistant => Some(m.id.clone()),
+        _ => None,
+    });
+    let reply = reply.context("a reply to fork from")?;
+    let root = check.root.clone();
+    check.cx.update(|cx| {
+        let timeline = root.read(cx).thread_view().read(cx).chat().read(cx).timeline().clone();
+        timeline.update(cx, |_, cx| cx.emit(TimelineAction::Fork(reply.clone())));
+    });
+    let original = key.clone();
+    check.pump(move |c| matches!(c.route(), Route::Thread(k) if k != original), Duration::from_secs(30), "the fork opens")?;
+    let fork = match check.route() {
+        Route::Thread(k) => k,
+        _ => bail!("no fork route"),
+    };
+    open_details(check);
+    let host = tid(&key);
+    check.pump(
+        move |c| details_input(c).and_then(|i| i.relationships).is_some_and(|r| r.groups.iter().flat_map(|g| &g.rows).any(|row| row.thread_id == host && row.merge_target)),
+        Duration::from_secs(15),
+        "the fork's Lineage lists the host as its merge-back parent",
+    )?;
+    let fork_shell = shell_thread(check, &fork);
+    check.check(
+        "the server records the fork's parent",
+        fork_shell.as_ref().is_some_and(|t| t.lineage.parent_thread_id.as_ref() == Some(&tid(&key))),
+        format!("{:?}", fork_shell.map(|t| t.lineage.clone())),
+    );
+    check.shot("s6-fork-lineage.png")?;
+    check.go(&key);
+    let k = key.clone();
+    check.pump(move |c| c.route() == Route::Thread(k.clone()), Duration::from_secs(10), "back on the host")?;
+    open_details(check);
+    let fork_id = tid(&fork);
+    let side_id_contract = tid(&side);
+    check.pump(
+        move |c| details_input(c).and_then(|i| i.relationships).is_some_and(|r| {
+            r.groups.iter().flat_map(|g| &g.rows).any(|row| row.thread_id == fork_id) && r.side_chats.iter().any(|row| row.thread_id == side_id_contract)
+        }),
+        Duration::from_secs(15),
+        "the host's card lists the fork in Lineage and the side chat in Side chats",
+    )?;
+    check.check("lineage shows on both ends", true, "");
+    check.shot("s7-host-lineage.png")?;
+    Ok(())
+}
+
+/// The `sidechats-ref` phase: the fork capture's states on its own server (`T3_REF_IDS` names
+/// the threads), shot at the capture's window size for the side-by-side measures.
+fn run_sidechats_ref(check: &mut Check) -> anyhow::Result<()> {
+    let ids: serde_json::Value = serde_json::from_slice(&std::fs::read(std::env::var("T3_REF_IDS").context("set T3_REF_IDS")?)?)?;
+    let environment_id = t3code_contracts::EnvironmentId::new(std::env::var("T3_REF_ENV").context("set T3_REF_ENV")?);
+    let paired = check.cx.update(|cx| !ConnectionRuntime::state(cx).read(cx).environments.is_empty());
+    if !paired {
+        let request = parse_pairing_url(&std::env::var("T3_PAIRING_URL").context("T3_PAIRING_URL")?)?;
+        let pairing = check.cx.update(|cx| ConnectionRuntime::global(cx).pair(request, None, cx));
+        let label = check.wait_task(pairing)?.map_err(|e| anyhow::anyhow!("{}", e.0))?;
+        check.note(format!("paired {label}"));
+    }
+    check.pump(|c| c.connected(), Duration::from_secs(30), "connected")?;
+    let key_of = |name: &str| ids[name].as_str().map(|id| thread_key(&environment_id, &ThreadId::new(id)));
+    let fork = key_of("fork").context("fork id")?;
+    let root_thread = key_of("root").context("root id")?;
+    let side_done = key_of("sideDone").context("side chat id")?;
+    let show = |check: &mut Check, key: &ThreadKey| -> anyhow::Result<()> {
+        check.go(key);
+        let k = key.clone();
+        check.pump(move |c| c.route() == Route::Thread(k.clone()) && !c.shown_input().entries.is_empty(), Duration::from_secs(30), "thread shows")?;
+        Ok(())
+    };
+    let close_panel = |check: &mut Check, key: &ThreadKey| {
+        let panel_key = t3code_web::fixtures::scoped_key(key);
+        let open = check.read(|root, cx| root.right_panels().read(cx).is_open(&panel_key));
+        if open {
+            check.action(t3code_web::shortcuts::commands::ToggleRightPanel);
+            check.wait(Duration::from_millis(400));
+        }
+    };
+    show(check, &fork)?;
+    check.note("closing the panel");
+    close_panel(check, &fork);
+    check.note("opening the details card");
+    open_details(check);
+    check.pump(|c| details_input(c).and_then(|i| i.relationships).is_some(), Duration::from_secs(15), "lineage rows")?;
+    check.wait(Duration::from_millis(500));
+    check.shot("details-lineage.png")?;
+    show(check, &root_thread)?;
+    close_panel(check, &root_thread);
+    open_details(check);
+    check.wait(Duration::from_millis(800));
+    check.shot("details-root.png")?;
+    show(check, &side_done)?;
+    open_details(check);
+    check.wait(Duration::from_millis(800));
+    check.shot("details-side-chat-own.png")?;
+    // A fresh slow side chat, mid-turn, open beside the fork.
+    show(check, &fork)?;
+    check.focus_composer();
+    check.type_text("/side Trace a dropped socket.");
+    check.press("enter");
+    let k = fork.clone();
+    check.pump(move |c| side_chat_tab(c, &k).is_some(), Duration::from_secs(30), "side chat tab")?;
+    check.wait(Duration::from_secs(8));
+    check.shot("side-chat-running.png")?;
+    open_details(check);
+    check.wait(Duration::from_millis(800));
+    check.shot("details-side-chats-running.png")?;
+    Ok(())
 }

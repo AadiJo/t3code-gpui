@@ -269,6 +269,8 @@ pub enum DividerKind {
     RunInterrupted,
     Forked,
     ParentLink,
+    /// A side chat's opening: "Context from" its parent.
+    SideChatParent,
     NewSession,
     Handoff,
 }

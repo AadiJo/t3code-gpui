@@ -127,6 +127,8 @@ pub struct ThreadRouteView {
     details_open: bool,
     /// The open "Edit from here?" confirmation.
     pending_revert: Option<PendingRevert>,
+    /// The shown thread's last view, for re-reading the details card when other threads change.
+    details_view: Option<ThreadView>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -178,6 +180,7 @@ impl ThreadRouteView {
             banner,
             details_open: false,
             pending_revert: None,
+            details_view: None,
             _subscriptions: subscriptions,
         }
     }
@@ -384,6 +387,7 @@ impl ThreadRouteView {
 
     /// Re-reads the shown thread's details card from the data, once built.
     fn sync_details(&mut self, view: &ThreadView, cx: &mut Context<Self>) {
+        self.details_view = Some(view.clone());
         let Some(front) = self.git.front().filter(|g| g.key == view.key) else { return };
         let Some(panel) = front.panel.clone() else { return };
         let mode = self.chat.read(cx).details_mode();
@@ -513,6 +517,22 @@ impl ThreadRouteView {
         let editor = self.composer.read(cx).editor().clone();
         editor.update(cx, |editor, cx| editor.insert(&format!("{text} "), cx));
         window.focus(&self.composer.focus_handle(cx), cx);
+    }
+
+    /// Adds a reference chip to the composer without moving focus (`addThreadContexts` with
+    /// `insertAtCaret: false`), unless it is already there.
+    pub fn append_reference(&mut self, text: &str, cx: &mut Context<Self>) {
+        let editor = self.composer.read(cx).editor().clone();
+        editor.update(cx, |editor, cx| {
+            if editor.text().contains(text) {
+                return;
+            }
+            let current = editor.text().trim_end().to_owned();
+            let next = if current.is_empty() { format!("{text} ") } else { format!("{current} {text} ") };
+            let end = next.len();
+            editor.set_text(next, cx);
+            editor.set_cursor(end, cx);
+        });
     }
 
     /// Puts `text` in the composer (edit from here, edit a queued message).
@@ -715,9 +735,15 @@ impl ThreadRouteView {
                 if let Some(target) = self.target.clone() {
                     let icon = self.data.project_icon(&target, cx);
                     self.chat.update(cx, |chat, cx| chat.set_project_icon(icon, cx));
+                    // Lineage and Side chats read other threads' shell rows.
+                    if self.details_open
+                        && let Some(view) = self.details_view.clone()
+                    {
+                        self.sync_details(&view, cx);
+                    }
                 }
             }
-            DataEvent::ThreadChanged(_) | DataEvent::OpenThread(_) => {}
+            DataEvent::ThreadChanged(_) | DataEvent::OpenThread(_) | DataEvent::OpenSideChat { .. } => {}
         }
     }
 }
