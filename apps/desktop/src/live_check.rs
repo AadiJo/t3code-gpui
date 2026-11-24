@@ -26,6 +26,9 @@
 //            filter closes a hidden thread's notification and keeps it quiet
 //   details  a thread launched into a new worktree: the timeline's setup row follows the
 //            server's worktree setup stream (stages and their states)
+//   wiring   thread and project commands from the focused composer, read back from the server:
+//            settle and undo, pin, unpin and undo, header Archive and undo, palette Pin project,
+//            no visit while the window is in the background, chat.newLocal
 //   mentions `@` offers a thread's own used side chat (as "Side chat") and no other
 //            thread's, never the composer's own thread, best title match first
 //   heic     a HEIC photo attaches as a JPEG fitted to 2000px and uploads; an unreadable one is
@@ -78,6 +81,7 @@
 #[allow(dead_code)]
 #[path = "import/mod.rs"]
 mod import;
+mod live_check_commands;
 mod live_check_families;
 mod live_check_palette;
 mod live_check_setup;
@@ -564,6 +568,7 @@ fn main() -> anyhow::Result<()> {
         "families" => live_check_families::run_families(&mut check),
         "families-search" => live_check_families::run_families_search(&mut check),
         "palette" => live_check_palette::run_palette(&mut check),
+        "wiring" => live_check_commands::run_commands(&mut check),
         "setup" => live_check_setup::run_setup(&mut check),
         "draft-banner" => live_check_setup::run_draft_banner(&mut check),
         "lineage" => run_lineage(&mut check),
