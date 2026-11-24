@@ -7,6 +7,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use gpui_kit::{
+    TestSupportExt as _,
     App, AppContext as _, ElementId, Entity, Focusable as _, IntoElement, Pixels, Point, RenderOnce, SharedString,
     Subscription, Window, div, prelude::*, px,
 };
@@ -34,7 +35,7 @@ struct PickerSlot {
 /// replaces the trigger's mark and name ("None" for an unset fallback).
 #[derive(IntoElement)]
 pub struct SettingsModelPicker {
-    id: ElementId,
+    id: SharedString,
     catalog: Arc<ModelCatalog>,
     selection: Option<SavedSelection>,
     label: Option<SharedString>,
@@ -43,8 +44,9 @@ pub struct SettingsModelPicker {
 }
 
 impl SettingsModelPicker {
+    /// `id` names the control; its trigger is `model-trigger-<id>`.
     pub fn new(
-        id: impl Into<ElementId>,
+        id: impl Into<SharedString>,
         catalog: Arc<ModelCatalog>,
         selection: Option<SavedSelection>,
         on_pick: impl Fn(SavedSelection, &mut App) + 'static,
@@ -74,7 +76,7 @@ fn picked(current: Option<&SavedSelection>, next: &ModelSelection) -> SavedSelec
 
 impl RenderOnce for SettingsModelPicker {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let slot = window.use_keyed_state(self.id.clone(), cx, |_, _| PickerSlot::default());
+        let slot = window.use_keyed_state(ElementId::from(self.id.clone()), cx, |_, _| PickerSlot::default());
         let theme = cx.app_theme();
         let c = &theme.colors;
         let sp = |n: f32| theme.sp(n);
@@ -105,7 +107,8 @@ impl RenderOnce for SettingsModelPicker {
         let open = slot.read(cx).open.as_ref().map(|(picker, _)| picker.clone());
         let disabled = self.disabled;
         let trigger = div()
-            .id("trigger")
+            .id(SharedString::from(format!("model-trigger-{}", self.id)))
+            .test_support()
             .flex()
             .flex_none()
             .items_center()
@@ -145,7 +148,14 @@ impl RenderOnce for SettingsModelPicker {
                     }
                     let selection = saved.as_ref().map_or_else(
                         || ModelSelection {
-                            instance_id: catalog.instances.first().map(|e| e.instance_id.clone()).unwrap_or(ProviderInstanceId(SharedString::default())),
+                            // Nothing saved: open on the first ready instance with a current model.
+                            instance_id: catalog
+                                .instances
+                                .iter()
+                                .find(|e| e.ready && catalog.models.get(&e.instance_id).is_some_and(|m| m.iter().any(|m| !m.is_legacy && !m.is_unavailable)))
+                                .or(catalog.instances.first())
+                                .map(|e| e.instance_id.clone())
+                                .unwrap_or(ProviderInstanceId(SharedString::default())),
                             model: SharedString::default(),
                             effort: None,
                             speed: None,

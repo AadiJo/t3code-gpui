@@ -4,6 +4,7 @@
 use std::rc::Rc;
 
 use gpui_kit::{
+    TestSupportExt as _,
     App, ElementId, Entity, Focusable as _, IntoElement, RenderOnce, SharedString, Styled, TextAlign, Window,
     component::input::{Input, InputState},
     div, prelude::*, px,
@@ -70,6 +71,7 @@ impl RenderOnce for NumberField {
                 .when_some(next.filter(|_| enabled).zip(on_step), |d, (next, on_step)| {
                     d.on_click(move |_, window, cx| on_step(next, window, cx))
                 })
+                .test_support()
         };
         let down = self.value.checked_sub(1).filter(|n| *n >= self.min);
         let up = Some(self.value + 1).filter(|n| *n <= self.max);

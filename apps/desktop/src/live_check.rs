@@ -67,6 +67,7 @@
 mod import;
 mod live_check_families;
 mod live_check_setup;
+mod live_check_settings;
 #[allow(dead_code)]
 #[path = "notifications/mod.rs"]
 mod notifications;
@@ -548,6 +549,7 @@ fn main() -> anyhow::Result<()> {
         "families" => live_check_families::run_families(&mut check),
         "setup" => live_check_setup::run_setup(&mut check),
         "draft-banner" => live_check_setup::run_draft_banner(&mut check),
+        "settings" => live_check_settings::run_settings(&mut check),
         other => Err(anyhow::anyhow!("unknown phase {other}")),
     };
     check.finish(&phase, result)
