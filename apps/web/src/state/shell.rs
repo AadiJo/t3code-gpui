@@ -15,6 +15,7 @@ use t3code_client_runtime::state::models::{EpochMs, ThreadRow, now_ms, parse_ms}
 use t3code_client_runtime::state::sidebar::last_visited_at;
 use t3code_client_runtime::state::thread_settled::thread_woke_at;
 use t3code_client_runtime::state::thread_shell::{ShellRows, navigation_rows};
+use t3code_client_runtime::state::thread_tag_filter::{hidden_tags, hidden_thread_keys};
 use t3code_client_runtime::state::ui_state::UiState;
 use t3code_contracts::{
     OrchestrationProjectShell, OrchestrationV2ProviderFailureClass as FailureClass, OrchestrationV2ProviderGoalStatus,
@@ -28,7 +29,7 @@ use crate::components::sidebar::model::{
     SidebarSettings, SidebarSnapshot, SidebarThread, SubagentRequest, ThreadKey, ThreadRuntime, TimestampMs,
 };
 
-type RowKey = (t3code_contracts::EnvironmentId, t3code_contracts::ThreadId);
+pub type RowKey = (t3code_contracts::EnvironmentId, t3code_contracts::ThreadId);
 
 /// What a mapped row was built from; equal inputs reuse the mapped `Arc`.
 struct MappedRow {
@@ -37,6 +38,7 @@ struct MappedRow {
     woke_at: Option<EpochMs>,
     has_draft: bool,
     remote: bool,
+    unread_completion: bool,
     thread: Arc<SidebarThread>,
 }
 
@@ -57,6 +59,10 @@ pub struct LiveShell {
     rebuilds: u64,
     /// The server's message matches for the sidebar search.
     search_matches: Option<model::SearchContentMatches>,
+    /// Threads the servers' tag filters hide.
+    hidden: Arc<HashSet<RowKey>>,
+    /// Whether some environment's tag filter is on.
+    hiding: bool,
     _environment_subscriptions: Vec<Subscription>,
     _subscriptions: Vec<Subscription>,
 }
@@ -157,15 +163,21 @@ fn row_provider(row: &ThreadRow, marks: &HashMap<String, InstanceMark>) -> Optio
     })
 }
 
+/// What a row shows beyond its shell row.
+#[derive(Clone, Default)]
+pub(super) struct RowExtras {
+    pub local_visit: Option<EpochMs>,
+    pub woke_at: Option<EpochMs>,
+    pub has_draft: bool,
+    pub remote: bool,
+    /// The inbox holds an unread completion for it: the sidebar's Done marker.
+    pub unread_completion: bool,
+    pub provider: Option<model::SidebarProvider>,
+}
+
 /// One presented row as the sidebar draws it (`SidebarThreadSummary`).
-fn map_row(
-    row: &ThreadRow,
-    local_visit: Option<EpochMs>,
-    woke_at: Option<EpochMs>,
-    has_draft: bool,
-    remote: bool,
-    provider: Option<model::SidebarProvider>,
-) -> SidebarThread {
+pub(super) fn map_row(row: &ThreadRow, extras: RowExtras) -> SidebarThread {
+    let RowExtras { local_visit, woke_at, has_draft, remote, unread_completion, provider } = extras;
     let source: &OrchestrationV2ThreadShell = &row.source;
     SidebarThread {
         key: thread_key(&row.environment_id, &source.id),
@@ -204,7 +216,7 @@ fn map_row(
         pending_guest_message_count: source.pending_guest_message_count.unwrap_or(0) as u32,
         goal_active: source.goal.as_ref().is_some_and(|goal| goal.status == OrchestrationV2ProviderGoalStatus::Active),
         last_visited_at: ts(last_visited_at(row, local_visit)),
-        has_unread_completion_notification: false,
+        has_unread_completion_notification: unread_completion,
         settled_override: source.settled_override.map(|value| match value {
             Settled::Settled => SettledOverride::Settled,
             Settled::Active => SettledOverride::Active,
@@ -292,6 +304,7 @@ impl LiveShell {
         cx: &mut Context<Self>,
     ) -> Self {
         let settings = cx.observe_global::<crate::hooks::use_settings::ClientSettingsStore>(|this, cx| this.schedule(cx));
+        let inbox = cx.observe(&crate::desktop_notifications::NotificationInbox::global(cx), |this, _, cx| this.schedule(cx));
         let subscription = cx.observe(&environments, |this, environments, cx| {
             let list = environments.read(cx).list.clone();
             this._environment_subscriptions = list.iter().map(|env| cx.observe(env, |this, _, cx| this.schedule(cx))).collect();
@@ -310,8 +323,10 @@ impl LiveShell {
             rebuild_pending: false,
             rebuilds: 0,
             search_matches: None,
+            hidden: Arc::default(),
+            hiding: false,
             _environment_subscriptions: Vec::new(),
-            _subscriptions: vec![subscription, settings],
+            _subscriptions: vec![subscription, settings, inbox],
         };
         this.rebuild_now(cx);
         this
@@ -334,6 +349,11 @@ impl LiveShell {
     /// How many times the snapshot was rebuilt, for measurements.
     pub fn rebuild_count(&self) -> u64 {
         self.rebuilds
+    }
+
+    /// Threads the servers' tag filters hide, and whether any filter is on.
+    pub fn hidden(&self) -> (&Arc<HashSet<RowKey>>, bool) {
+        (&self.hidden, self.hiding)
     }
 
     /// The presented row of a thread.
@@ -381,7 +401,17 @@ impl LiveShell {
             .collect();
         let borrowed: Vec<_> = shells.iter().map(|(id, threads)| (id.clone(), threads.as_slice())).collect();
         self.presented = self.rows.present(&borrowed);
-        let listed = navigation_rows(&self.presented, &HashSet::new());
+        let filters: HashMap<_, _> = envs
+            .iter()
+            .filter_map(|env| Some((env.environment_id().clone(), hidden_tags(env.config.as_deref().map(|config| &config.settings))?)))
+            .collect();
+        let hidden = hidden_thread_keys(&self.presented, &filters);
+        if *self.hidden != hidden {
+            self.hidden = Arc::new(hidden);
+        }
+        self.hiding = !filters.is_empty();
+        let listed = navigation_rows(&self.presented, &self.hidden);
+        let unread = crate::desktop_notifications::NotificationInbox::global(cx).read(cx).unread_completion_threads();
         let now = now_ms();
         let drafts = self.drafts.current();
         let ui_state = self.ui_state.current();
@@ -398,6 +428,7 @@ impl LiveShell {
                 let woke_at = thread_woke_at(row, now);
                 let key = (row.environment_id.clone(), row.id().clone());
                 let provider = row_provider(row, marks.get(&row.environment_id).unwrap_or(&no_marks));
+                let unread_completion = !unread.is_empty() && unread.contains(&thread_key(&row.environment_id, row.id()));
                 let reused = self.mapped.remove(&key).filter(|mapped| {
                     mapped.thread.provider == provider &&
                     Arc::ptr_eq(&mapped.source, row)
@@ -405,6 +436,7 @@ impl LiveShell {
                         && mapped.woke_at == woke_at
                         && mapped.has_draft == has_draft
                         && mapped.remote == remote
+                        && mapped.unread_completion == unread_completion
                 });
                 let mapped = reused.unwrap_or_else(|| MappedRow {
                     source: Arc::clone(row),
@@ -412,7 +444,8 @@ impl LiveShell {
                     woke_at,
                     has_draft,
                     remote,
-                    thread: Arc::new(map_row(row, local_visit, woke_at, has_draft, remote, provider)),
+                    unread_completion,
+                    thread: Arc::new(map_row(row, RowExtras { local_visit, woke_at, has_draft, remote, unread_completion, provider })),
                 });
                 let thread = Arc::clone(&mapped.thread);
                 next.insert(key, mapped);

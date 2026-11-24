@@ -19,6 +19,7 @@ pub mod attachments;
 pub mod composer;
 pub mod favicons;
 pub mod favorites;
+pub mod notifications;
 pub mod palette;
 pub mod shell;
 pub mod sidebar_actions;
