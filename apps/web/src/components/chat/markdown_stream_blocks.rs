@@ -251,6 +251,7 @@ fn cache_key(source: &str, flavor: MarkdownFlavor) -> u64 {
     let mut hasher = DefaultHasher::new();
     source.hash(&mut hasher);
     flavor.hash(&mut hasher);
+    crate::markdown_pipeline::math_enabled().hash(&mut hasher);
     hasher.finish()
 }
 

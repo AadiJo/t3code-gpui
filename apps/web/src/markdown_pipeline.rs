@@ -1,12 +1,13 @@
 //! Chat markdown parsed into typed blocks the renderer draws. Ports the parts
 //! of `packages/shared/src/markdownPipeline.ts` the chat view shows: GFM,
-//! single-dollar math, GitHub alerts, absolute file-path links, kept list
+//! single-dollar math (only with the Render math setting, as the fork adds
+//! `remark-math` only then), GitHub alerts, absolute file-path links, kept list
 //! numbers, `<details>` blocks and remark-breaks for user messages.
 //!
 //! Inline content is flattened to one string per paragraph with styled
 //! ranges, which is what a selectable text run lays out.
 
-use std::{ops::Range, sync::Arc};
+use std::{cell::Cell, ops::Range, sync::Arc};
 
 use gpui_kit::SharedString;
 use markdown::{
@@ -42,7 +43,7 @@ pub enum Block {
     /// A paragraph that holds only images.
     Images(Vec<Image>),
     Details { summary: Inlines, blocks: Vec<Block> },
-    /// Display math, shown as its TeX source.
+    /// Display math (`$$ … $$`): its TeX.
     Math(SharedString),
     /// Footnote definitions collected at the end of the document.
     Footnotes(Vec<(SharedString, Vec<Block>)>),
@@ -166,7 +167,8 @@ pub enum InlineStyle {
     Emphasis,
     Strikethrough,
     Code,
-    Math,
+    /// Inline math (`$ … $`); the range holds the TeX.
+    Math(SharedString),
     Link(SharedString),
     /// A workspace file reference shown as a chip (`MarkdownFileLink`).
     FileLink(SharedString),
@@ -188,9 +190,25 @@ pub fn parse_markdown(source: &str, flavor: MarkdownFlavor) -> Vec<Block> {
     blocks
 }
 
+thread_local! {
+    static MATH: Cell<bool> = const { Cell::new(false) };
+}
+
+/// Turns math parsing on or off (`mathRenderingEnabled`); true when that changed it.
+/// Parses cached before then were made with the old value.
+pub fn set_math_enabled(enabled: bool) -> bool {
+    MATH.replace(enabled) != enabled
+}
+
+/// Whether `$…$` and `$$…$$` parse as math.
+pub fn math_enabled() -> bool {
+    MATH.get()
+}
+
 fn parse_options(flavor: MarkdownFlavor) -> ParseOptions {
+    let math = math_enabled();
     ParseOptions {
-        constructs: Constructs { math_text: true, math_flow: true, ..Constructs::gfm() },
+        constructs: Constructs { math_text: math, math_flow: math, ..Constructs::gfm() },
         math_text_single_dollar: true,
         gfm_strikethrough_single_tilde: !flavor.literal_single_tilde,
         ..ParseOptions::gfm()
@@ -401,7 +419,7 @@ impl InlineBuilder {
             }
             Node::InlineMath(math) => {
                 self.text.push_str(&math.value);
-                InlineStyle::Math
+                InlineStyle::Math(math.value.clone().into())
             }
             Node::Strong(n) => {
                 n.children.iter().for_each(|c| self.push(c, flavor));

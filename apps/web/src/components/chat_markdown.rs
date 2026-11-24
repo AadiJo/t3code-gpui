@@ -21,14 +21,15 @@ use gpui_kit::{
 
 use super::chat::{
     chat_style::{ChatColors, TEXT_2XS, TEXT_SM_RELAXED, TEXT_XS, alpha, mono, sans, text_code},
-    rich_text::{IconPaint, InlineFontBox, LinkHandler, RichText, TextBox, TextIcon},
+    rich_text::{IconPaint, InlineFontBox, LinkHandler, RichText, TextAtom, TextBox, TextIcon},
     timeline_link_favicons::{LINK_FAVICON_PLACEHOLDER, LinkFavicon, external_link_host, link_favicon},
     syntax_highlighting::{highlight, highlight_or_schedule, is_plain_language},
     syntax_theme::SyntaxTheme,
 };
 use crate::markdown_pipeline::{
-    AlertKind, Block, CodeBlock, FILE_CHIP_PLACEHOLDER, Inlines, InlineStyle, List, ParsedBlocks, Table, TableAlign,
+    AlertKind, Block, CodeBlock, FILE_CHIP_PLACEHOLDER, InlineSpan, Inlines, InlineStyle, List, ParsedBlocks, Table, TableAlign,
 };
+use crate::{hooks::use_settings::ActiveClientSettings as _, math};
 
 /// Block spacing for `p, ul, ol, blockquote, pre, table`: `margin: 0.65rem 0`.
 pub const BLOCK_MARGIN: Pixels = px(10.4);
@@ -147,6 +148,8 @@ struct Renderer<'a> {
     text_system: Rc<gpui_kit::WindowTextSystem>,
     /// Link hosts whose favicon nobody asked for yet, requested once the render is done.
     wanted_favicons: Vec<String>,
+    /// The Render math setting, for ```` ```math ```` fences (`$` math only parses with it on).
+    math: bool,
 }
 
 /// Renders a message's markdown as one column.
@@ -163,6 +166,7 @@ pub fn render_markdown(view: &MarkdownView<'_>, window: &mut Window, cx: &mut Ap
         find_seen: 0,
         text_system: window.text_system().clone(),
         wanted_favicons: Vec::new(),
+        math: cx.client_settings().math_rendering_enabled,
     };
     let mut rendered = Vec::new();
     let last_piece = view.pieces.len().saturating_sub(1);
@@ -270,6 +274,12 @@ impl Renderer<'_> {
                 Rendered { element: element.into_any_element(), top: self.view.colors.r(BLOCK_MARGIN).max(top), bottom: self.view.colors.r(BLOCK_MARGIN).max(bottom) }
             }
             Block::Alert { kind, blocks } => self.alert(*kind, blocks, depth),
+            // A ```math fence typesets once it is closed or the message is done (`ChatMarkdown.tsx` `pre`).
+            Block::Code(code)
+                if self.math && code.language.as_deref() == Some("math") && (code.closed || !self.view.streaming) =>
+            {
+                self.display_math(&code.code)
+            }
             Block::Code(code) => Rendered { element: self.code_block(code), top: self.view.colors.r(BLOCK_MARGIN), bottom: self.view.colors.r(BLOCK_MARGIN) },
             Block::Table(table) => Rendered { element: self.table(table), top: self.view.colors.r(BLOCK_MARGIN), bottom: self.view.colors.r(BLOCK_MARGIN) },
             Block::Rule => {
@@ -292,14 +302,7 @@ impl Renderer<'_> {
                 Rendered { element: element.into_any_element(), top: self.view.colors.r(BLOCK_MARGIN), bottom: self.view.colors.r(BLOCK_MARGIN) }
             }
             Block::Details { summary, blocks } => self.details(summary, blocks, depth),
-            Block::Math(tex) => {
-                let (_, id) = self.element_id("math");
-                let runs = self.find_runs(tex, vec![run(tex.len(), sans(FontWeight::NORMAL), self.text_color)]);
-                let text = RichText::new(id, tex.clone(), runs)
-                    .selection_color(colors.selection);
-                let element = div().px(self.view.colors.r(px(2.))).py(self.view.colors.r(px(3.))).italic().child(text);
-                Rendered { element: element.into_any_element(), top: self.view.colors.r(BLOCK_MARGIN), bottom: self.view.colors.r(BLOCK_MARGIN) }
-            }
+            Block::Math(tex) => self.display_math(tex),
             Block::Footnotes(notes) => {
                 let items = notes
                     .iter()
@@ -419,6 +422,44 @@ impl Renderer<'_> {
         Some((Inlines { text: text.into(), spans }, icons))
     }
 
+    /// The inline formulas in a paragraph whose math spans hold spacer slots ([`math_slots`]).
+    fn math_atoms(&self, inlines: &Inlines, color: Hsla) -> Vec<TextAtom> {
+        inlines
+            .spans
+            .iter()
+            .filter_map(|span| match &span.style {
+                InlineStyle::Math(tex) => Some(TextAtom {
+                    range: span.range.clone(),
+                    math: Rc::new(math::atom::InlineMath { tex: tex.clone(), formula: math::typeset(tex, false), color }),
+                }),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// A display formula (`MarkdownMath` with `display`): `my-[0.65rem]`, centred, scrolling
+    /// sideways when wide; unparsable TeX shows as its `\[ … \]` source.
+    fn display_math(&mut self, tex: &SharedString) -> Rendered {
+        let colors = self.view.colors;
+        let (key, id) = self.element_id("math");
+        let tex: SharedString = tex.trim().to_owned().into();
+        let element = match math::typeset(&tex, true) {
+            Some(formula) => div()
+                .id(("math-scroll", key))
+                .w_full()
+                .overflow_x_scroll()
+                .child(math::display::DisplayMath::new(id, tex, formula, self.text_color, colors.selection))
+                .into_any_element(),
+            None => {
+                let source = math::atom::display_source(&tex);
+                let runs = self.find_runs(&source, vec![run(source.len(), sans(FontWeight::NORMAL), self.text_color)]);
+                let text = RichText::new(id, source, runs).selection_color(colors.selection);
+                div().px(colors.r(px(2.))).py(colors.r(px(3.))).child(text).into_any_element()
+            }
+        };
+        Rendered { element, top: colors.r(BLOCK_MARGIN), bottom: colors.r(BLOCK_MARGIN) }
+    }
+
     /// A paragraph of inline content as one selectable text run.
     fn paragraph(&mut self, inlines: &Inlines, weight: Option<FontWeight>, color: Option<Hsla>) -> AnyElement {
         let (_, id) = self.element_id("p");
@@ -426,14 +467,18 @@ impl Renderer<'_> {
             weight: weight.unwrap_or(FontWeight::NORMAL),
             color: color.unwrap_or(self.text_color),
         };
+        let slotted = math_slots(inlines);
+        let inlines = slotted.as_ref().unwrap_or(inlines);
         let favicons = self.link_favicons(inlines);
         let inlines = favicons.as_ref().map_or(inlines, |(inlines, _)| inlines);
+        let atoms = self.math_atoms(inlines, base.color);
         let mut styled = style_inlines(inlines, base, self.view.colors, self.view.user);
         styled.icons.extend(favicons.as_ref().into_iter().flat_map(|(_, icons)| icons.iter().cloned()));
         let runs = self.find_runs(&inlines.text, styled.runs);
         let mut text = RichText::new(id, inlines.text.clone(), runs)
             .boxes(styled.boxes)
             .icons(styled.icons)
+            .atoms(atoms)
             .selection_color(self.view.colors.selection);
         if !styled.links.is_empty() {
             text = text.links(styled.links, self.link_handler.clone());
@@ -799,7 +844,8 @@ fn style_inlines(inlines: &Inlines, base: InlineBase, colors: &ChatColors, user:
         for span in inlines.spans.iter().filter(|s| s.range.start <= start && s.range.end >= end) {
             match &span.style {
                 InlineStyle::Strong => font.weight = FontWeight::BOLD,
-                InlineStyle::Emphasis | InlineStyle::Math => font.style = FontStyle::Italic,
+                InlineStyle::Emphasis => font.style = FontStyle::Italic,
+                InlineStyle::Math(_) => font = math::spacer_font(),
                 InlineStyle::Strikethrough => {
                     strikethrough = Some(StrikethroughStyle { thickness: px(1.), color: None });
                 }
@@ -863,6 +909,53 @@ fn style_inlines(inlines: &Inlines, base: InlineBase, colors: &ChatColors, user:
         }
     }
     styled
+}
+
+/// The inlines with each formula's TeX replaced by a blank spacer slot the text layout
+/// widens to the formula's box; `None` without inline math. Spans keep covering what
+/// they covered, so a formula inside bold or a link stays inside it.
+fn math_slots(inlines: &Inlines) -> Option<Inlines> {
+    let mut slots: Vec<Range<usize>> = inlines
+        .spans
+        .iter()
+        .filter(|span| matches!(span.style, InlineStyle::Math(_)))
+        .map(|span| span.range.clone())
+        .collect();
+    if slots.is_empty() {
+        return None;
+    }
+    slots.sort_by_key(|range| range.start);
+    let blank = math::spacer_text(px(0.), px(1.));
+    let text = inlines.text.as_ref();
+    let mut out = String::with_capacity(text.len() + slots.len() * blank.len());
+    let mut cursor = 0;
+    for slot in &slots {
+        out.push_str(&text[cursor..slot.start]);
+        out.push_str(&blank);
+        cursor = slot.end;
+    }
+    out.push_str(&text[cursor..]);
+    // An offset after a slot moves by how much each earlier slot grew; inside one, to its edge.
+    let shift = |at: usize, end: bool| {
+        let mut moved = at as isize;
+        for slot in &slots {
+            if at >= slot.end {
+                moved += blank.len() as isize - slot.len() as isize;
+            } else if at > slot.start {
+                moved = moved - (at - slot.start) as isize + if end { blank.len() as isize } else { 0 };
+                break;
+            } else {
+                break;
+            }
+        }
+        moved as usize
+    };
+    let spans = inlines
+        .spans
+        .iter()
+        .map(|span| InlineSpan { range: shift(span.range.start, false)..shift(span.range.end, true), style: span.style.clone() })
+        .collect();
+    Some(Inlines { text: out.into(), spans })
 }
 
 /// Runs for a code block: highlighted ranges in theme colours, the rest in `foreground`.

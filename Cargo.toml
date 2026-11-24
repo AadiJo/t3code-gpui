@@ -73,6 +73,8 @@ smallvec = "1"
 syntect = { version = "5.3", default-features = false, features = ["parsing", "default-syntaxes", "regex-fancy"] }
 unicode-segmentation = "1"
 markdown = "=1.0.0"
+# KaTeX layout in Rust (MIT; katex-rs 0.3, MIT). Its fonts ship renamed in apps/web/assets/fonts/math (OFL-1.1).
+katex-native = "=0.1.1"
 wasmi = { version = "0.51", default-features = false, features = ["std", "simd"] }
 unicode-ident = "1"
 regex = "1"
@@ -103,6 +105,9 @@ ttf-parser = { opt-level = 3 }
 smol = { opt-level = 3 }
 ropey = { opt-level = 3 }
 markdown = { opt-level = 3 }
+# Math layout runs once per formula, during streaming too.
+katex-native = { opt-level = 3 }
+katex-rs = { opt-level = 3 }
 alacritty_terminal = { opt-level = 3 }
 vte = { opt-level = 3 }
 cosmic-text = { opt-level = 3 }

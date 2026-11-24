@@ -98,6 +98,8 @@ struct TimelineFind {
 pub(super) struct MessageMarkdown {
     text: SharedString,
     streaming: bool,
+    /// Whether math parsed (the Render math setting) when the pieces were made.
+    math: bool,
     pub(super) pieces: Vec<ParsedBlocks>,
     /// When each piece first appeared, for the streaming fade.
     pub(super) first_seen: Vec<Instant>,
@@ -600,10 +602,12 @@ impl MessagesTimeline {
         let entry = self.markdown.entry(id.clone()).or_insert_with(|| MessageMarkdown {
             text: SharedString::default(),
             streaming,
+            math: crate::markdown_pipeline::math_enabled(),
             pieces: Vec::new(),
             first_seen: Vec::new(),
         });
-        if entry.text != *text || entry.streaming != streaming || entry.pieces.is_empty() && !text.is_empty() {
+        let math = crate::markdown_pipeline::math_enabled();
+        if entry.text != *text || entry.streaming != streaming || entry.math != math || entry.pieces.is_empty() && !text.is_empty() {
             let was_streaming = entry.streaming;
             entry.pieces = parse_message_blocks(text, flavor, streaming);
             // Pieces seen before keep their time; new ones fade in only while streaming.
@@ -611,6 +615,7 @@ impl MessagesTimeline {
             entry.first_seen.resize(entry.pieces.len(), seen_at);
             entry.text = text.clone();
             entry.streaming = streaming;
+            entry.math = math;
         }
         entry
     }
