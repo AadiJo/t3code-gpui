@@ -90,6 +90,8 @@ impl AgentClock {
 #[derive(Clone, Debug, PartialEq)]
 pub struct ProviderMark {
     pub driver: SharedString,
+    /// The model the mark is chosen by (`subagentIconModel`): some models have their own brand.
+    pub model: Option<SharedString>,
     pub display_name: SharedString,
     pub accent: Option<SharedString>,
     pub show_badge: bool,
@@ -103,11 +105,20 @@ pub struct SubagentCard {
     /// The model line: its label, with the instance name when the badge shows.
     pub model: SharedString,
     pub effort: Option<SharedString>,
+    /// The saved speed's mark (`TraitsSpeedIcon`), when the model offers fast tiers.
+    pub speed: Option<SpeedIcon>,
     pub status: ItemStatus,
     pub clock: AgentClock,
     /// Project and branch, worktree or workspace rows; `branch` picks the branch icon.
     pub metadata: Vec<(SharedString, bool)>,
     pub preview: Option<SharedString>,
+}
+
+/// `getTraitsSpeedDisplay(...).speedIcon`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SpeedIcon {
+    Fast,
+    Ultrafast,
 }
 
 /// A child agent row's projected subagent.
@@ -396,10 +407,11 @@ fn option_text(selection: &ModelSelection, ids: &[&str]) -> Option<String> {
 const EFFORT_OPTION_IDS: [&str; 6] = ["reasoningEffort", "effort", "reasoning", "variant", "reasoning_effort", "thinking_level"];
 
 /// The row's driver mark (`ThreadRelationshipIcon` with a driver).
-fn mark(driver: &str, provider: Option<&ServerProvider>, entries: &[ProviderInstanceEntry]) -> ProviderMark {
+fn mark(driver: &str, model: Option<&str>, provider: Option<&ServerProvider>, entries: &[ProviderInstanceEntry]) -> ProviderMark {
     let entry = provider.and_then(|p| entries.iter().find(|e| e.instance_id == p.instance_id));
     ProviderMark {
         driver: SharedString::from(driver.to_owned()),
+        model: model.map(|m| SharedString::from(m.to_owned())),
         display_name: entry
             .map(|e| e.display_name.clone())
             .or_else(|| provider.and_then(|p| p.display_name.clone()))
@@ -457,7 +469,11 @@ fn card(source: CardSource<'_>, entries: &[ProviderInstanceEntry]) -> SubagentCa
     let matching = selection.filter(|s| child_model.as_deref() == slug.or(model) && s.instance_id == source.instance_id);
     let effort = matching.and_then(|s| option_text(s, &EFFORT_OPTION_IDS)).map(SharedString::from);
     let driver = source.provider.map(|p| p.driver.as_str()).or(source.driver);
-    let mark = driver.map(|d| mark(d, source.provider, entries));
+    let icon_model = selection.map(|s| s.model.as_str()).or(source.model);
+    let mark = driver.map(|d| mark(d, icon_model, source.provider, entries));
+    let speed = catalog.and_then(|m| m.capabilities.as_ref()?.option_descriptors.as_deref()).and_then(|descriptors| {
+        descriptors.iter().find_map(|descriptor| speed_display(descriptor, source.provider.and(matching)))
+    }).flatten();
     let model_line = match mark.as_ref().filter(|m| m.show_badge) {
         Some(m) => format!("{label} · {}", m.display_name),
         None => label,
@@ -486,10 +502,58 @@ fn card(source: CardSource<'_>, entries: &[ProviderInstanceEntry]) -> SubagentCa
         mark,
         model: model_line.into(),
         effort,
+        speed,
         status: source.status,
         clock: source.clock,
         metadata,
         preview: detail_preview(source.status, source.result, source.progress).map(Into::into),
+    }
+}
+
+/// `getTraitsSpeedDisplay` for a descriptor with the selection's saved value: `None` when it
+/// says nothing about speed, else the speed's mark (`None` at normal speed).
+fn speed_display(
+    descriptor: &t3code_contracts::ServerConfigProvidersItemModelsItemCapabilitiesOptionDescriptorsItem,
+    selection: Option<&ModelSelection>,
+) -> Option<Option<SpeedIcon>> {
+    use t3code_contracts::{
+        ProviderOptionSelectionValue as V, ProviderOptionSelections as O,
+        ServerConfigProvidersItemModelsItemCapabilitiesOptionDescriptorsItem as D,
+    };
+    let saved = |id: &str| -> Option<V> {
+        match selection?.options.as_ref()? {
+            O::List(list) => list.iter().find(|o| o.id == id).map(|o| o.value.clone()),
+            O::Map(map) => match map.get(id)? {
+                serde_json::Value::Bool(b) => Some(V::Bool(*b)),
+                serde_json::Value::String(s) => Some(V::Text(s.clone())),
+                _ => None,
+            },
+        }
+    };
+    match descriptor {
+        D::Boolean(boolean) if boolean.id == "fastMode" => match saved(&boolean.id)? {
+            V::Bool(fast) => Some(fast.then_some(SpeedIcon::Fast)),
+            V::Text(_) => None,
+        },
+        D::Select(select) if select.id == "serviceTier" => {
+            let V::Text(value) = saved(&select.id)? else { return None };
+            if !select.options.iter().any(|o| o.id == value) {
+                return None;
+            }
+            let fast = select.options.iter().find(|o| o.label == "Fast");
+            let ultrafast = select.options.iter().find(|o| o.label == "Ultrafast");
+            let speed = if ultrafast.is_some_and(|o| o.id == value) {
+                Some(SpeedIcon::Ultrafast)
+            } else if fast.is_some_and(|o| o.id == value) {
+                Some(SpeedIcon::Fast)
+            } else if (fast.is_some() || ultrafast.is_some()) && value == "default" {
+                None
+            } else {
+                return None;
+            };
+            Some(speed)
+        }
+        _ => None,
     }
 }
 
@@ -689,7 +753,7 @@ pub fn derive(sources: RelationshipSources<'_>) -> Option<RelationshipsInput> {
             WorkflowRow {
                 coordinator: agent.id.clone(),
                 label: group.workflow.workflow_name.clone().unwrap_or_else(|| group.workflow.title.clone()).into(),
-                mark: driver.map(|d| mark(d, provider, entries)),
+                mark: driver.map(|d| mark(d, agent.model_selection.as_ref().map(|s| s.model.as_str()).or(agent.model.as_deref()), provider, entries)),
                 can_stop: sources.can_operate_workflow && group.workflow.status == ItemStatus::Running && agent.origin == SubagentOrigin::ProviderNative && driver == Some("claudeAgent"),
                 phases: group
                     .phases
@@ -709,7 +773,8 @@ pub fn derive(sources: RelationshipSources<'_>) -> Option<RelationshipsInput> {
             }
         });
         // `ThreadRelationshipIcon` takes a driver only for child agents.
-        let row_mark = (is_subagent && !is_parent).then(|| driver.map(|d| mark(d, provider, entries))).flatten();
+        let icon_model = agent.and_then(|a| a.model_selection.as_ref().map(|s| s.model.as_str()).or(a.model.as_deref()));
+        let row_mark = (is_subagent && !is_parent).then(|| driver.map(|d| mark(d, icon_model, provider, entries))).flatten();
         RelationshipRow {
             thread_id: row.thread_id.clone(),
             title,
@@ -757,7 +822,7 @@ pub fn derive(sources: RelationshipSources<'_>) -> Option<RelationshipsInput> {
             icon: RelationshipIcon::Agent,
             status: Some(status),
             merge_target: false,
-            mark: provider.as_deref().map(|p| mark(&p.driver, Some(p), &[])),
+            mark: provider.as_deref().map(|p| mark(&p.driver, None, Some(p), &[])),
             agent: None,
             workflow: None,
             remote: Some(RemoteRow { environment_id: remote.environment_id.clone(), label, connected, raw_status: agent.status }),
