@@ -41,12 +41,10 @@ const NAVIGATION_REACH: Pixels = px(14.);
 /// The preview reads at most this much of a message.
 const PREVIEW_SOURCE_CHARS: usize = 1_500;
 
-/// One user message on the rail.
-#[derive(Clone, Debug)]
+/// One user message on the rail; its texts are read from the rows when it is previewed.
+#[derive(Clone, Copy, Debug)]
 pub struct MinimapItem {
     pub row_index: usize,
-    pub user_text: SharedString,
-    pub assistant_text: Option<SharedString>,
 }
 
 /// The minimap's state between frames, held by the timeline.
@@ -58,25 +56,36 @@ pub struct MinimapState {
     active: Option<usize>,
     /// The rail's window bounds from the last paint, for pointer hit tests.
     rail: Rc<Cell<Bounds<Pixels>>>,
+    /// The pointer is over the minimap: only then are its turn buttons built.
+    hovered: bool,
 }
 
-/// `deriveTimelineMinimapItems`: each user message with its turn's last assistant reply.
+/// `deriveTimelineMinimapItems`: each user message.
 fn derive_items(rows: &[TimelineRow]) -> Arc<[MinimapItem]> {
-    let mut items: Vec<MinimapItem> = Vec::new();
-    for (index, row) in rows.iter().enumerate() {
-        let RowKind::Message(message) = &row.kind else { continue };
-        match message.message.role {
-            MessageRole::User => {
-                items.push(MinimapItem { row_index: index, user_text: message.message.text.clone(), assistant_text: None });
-            }
-            MessageRole::Assistant => {
-                if let Some(item) = items.last_mut() {
-                    item.assistant_text = Some(message.message.text.clone());
-                }
-            }
+    rows.iter()
+        .enumerate()
+        .filter(|(_, row)| matches!(&row.kind, RowKind::Message(m) if m.message.role == MessageRole::User))
+        .map(|(row_index, _)| MinimapItem { row_index })
+        .collect()
+}
+
+/// The user message's text and the last assistant reply of its turn
+/// (`resolveFinalAssistantTextForTurn`).
+fn turn_texts(rows: &[TimelineRow], user_row: usize) -> (SharedString, Option<SharedString>) {
+    let text = |row: &TimelineRow| match &row.kind {
+        RowKind::Message(m) => Some((m.message.role, m.message.text.clone())),
+        _ => None,
+    };
+    let user = rows.get(user_row).and_then(text).map(|(_, t)| t).unwrap_or_default();
+    let mut assistant = None;
+    for row in rows.iter().skip(user_row + 1) {
+        match text(row) {
+            Some((MessageRole::User, _)) => break,
+            Some((MessageRole::Assistant, t)) => assistant = Some(t),
+            None => {}
         }
     }
-    items.into()
+    (user, assistant)
 }
 
 /// `markdownMinimapPreview`: the first stretch of a message as one line of rendered text.
@@ -156,8 +165,8 @@ impl MessagesTimeline {
             return None;
         }
         let colors = self.colors;
-        let viewport = self.list.viewport();
-        let width = viewport.bounds.size.width;
+        let (bounds, content_height, scroll_top, visible) = self.list.viewport_metrics();
+        let width = bounds.size.width;
         if width <= px(0.) {
             return None;
         }
@@ -169,10 +178,10 @@ impl MessagesTimeline {
         // `min((n - 1) * 8px, max(4rem, 100% - 14.75rem))`.
         let rail_height = (ITEM_SPACING * (items.len() - 1) as f32)
             .max(px(1.))
-            .min(colors.r(px(64.)).max(viewport.bounds.size.height - colors.r(px(236.))));
+            .min(colors.r(px(64.)).max(bounds.size.height - colors.r(px(236.))));
         let active = self.minimap.active.filter(|index| *index < items.len());
-        let current = current_index(&items, &viewport.visible);
-        let at_end = viewport.content_height - viewport.scroll_top - viewport.bounds.size.height <= px(1.);
+        let current = current_index(&items, &visible);
+        let at_end = content_height - scroll_top - bounds.size.height <= px(1.);
         let previous = current.and_then(|c| c.checked_sub(1));
         let next = current.filter(|_| !at_end).map(|c| c + 1).filter(|n| *n < items.len());
         let rail_cell = self.minimap.rail.clone();
@@ -192,8 +201,9 @@ impl MessagesTimeline {
             .size_full()
         };
         let preview_card = active.and_then(|index| items.get(index)).map(|item| {
-            let user = preview(&item.user_text).unwrap_or_else(|| t!("User message"));
-            let assistant = item.assistant_text.as_deref().and_then(preview);
+            let (user_text, assistant_text) = turn_texts(&self.rows, item.row_index);
+            let user = preview(&user_text).unwrap_or_else(|| t!("User message"));
+            let assistant = assistant_text.as_deref().and_then(preview);
             let theme = crate::ActiveAppTheme::app_theme(&**cx);
             div()
                 .absolute()
@@ -274,8 +284,7 @@ impl MessagesTimeline {
                 })
             })
             .child(strips)
-            .child(nav(true, previous, cx))
-            .child(nav(false, next, cx))
+            .when(self.minimap.hovered, |d| d.child(nav(true, previous, cx)).child(nav(false, next, cx)))
             .children(preview_card);
         Some(
             div()
@@ -289,9 +298,11 @@ impl MessagesTimeline {
                 .items_center()
                 .when(!persistent, |d| d.opacity(0.).hover(|s| s.opacity(1.)))
                 .on_hover(cx.listener(|this, hovered: &bool, _, cx| {
-                    if !hovered && this.minimap.active.take().is_some() {
-                        cx.notify();
+                    this.minimap.hovered = *hovered;
+                    if !hovered {
+                        this.minimap.active = None;
                     }
+                    cx.notify();
                 }))
                 .child(rail)
                 .into_any_element(),
@@ -307,7 +318,10 @@ impl MessagesTimeline {
 }
 
 /// Paints every strip: `h-0.5 w-6` at its scale, `muted-foreground/25` (`/60` hovered), with
-/// `foreground/55` over it while its turn is on screen.
+/// `foreground/55` over it while its turn is on screen. On a rail denser than a strip is tall the
+/// strips overlap into a band: a run of overlapping strips that look alike is painted as one quad
+/// in the colour that many translucent strips stacked give, so a thread with hundreds of turns
+/// paints a handful of quads instead of one per turn.
 fn paint_strips(
     items: &[MinimapItem],
     list: &VirtualListState,
@@ -316,18 +330,42 @@ fn paint_strips(
     colors: &super::chat_style::ChatColors,
     window: &mut gpui_kit::Window,
 ) {
-    let visible = list.viewport().visible;
+    let visible = list.viewport_metrics().3;
     let height = colors.r(px(2.));
     let full = colors.r(px(24.));
-    for index in 0..items.len() {
-        let distance = active.map(|active| active.abs_diff(index));
-        let width = full * strip_scale(distance);
-        let center = bounds.top() + bounds.size.height * top_fraction(index, items.len());
-        let strip = Bounds::new(point(bounds.left(), center - height / 2.), size(width, height));
-        let base = alpha(colors.theme.muted_foreground, if distance == Some(0) { 0.6 } else { 0.25 });
+    let count = items.len();
+    let spacing = if count > 1 { bounds.size.height / (count - 1) as f32 } else { height };
+    // How many strips cover one point of an overlapping run.
+    let depth = (f32::from(height) / f32::from(spacing).max(0.001)).ceil().max(1.);
+    let mut paint = |look: (usize, bool), first: usize, last: usize, window: &mut gpui_kit::Window| {
+        let (distance, in_view) = look;
+        let stacked = if last > first { depth.min((last - first + 1) as f32) } else { 1. };
+        let layered = |alpha: f32| 1. - (1. - alpha).powf(stacked);
+        let top = bounds.top() + bounds.size.height * top_fraction(first, count) - height / 2.;
+        let bottom = bounds.top() + bounds.size.height * top_fraction(last, count) + height / 2.;
+        let strip = Bounds::new(point(bounds.left(), top), size(full * strip_scale(Some(distance).filter(|d| *d < 3)), bottom - top));
+        let base = alpha(colors.theme.muted_foreground, layered(if distance == 0 { 0.6 } else { 0.25 }));
         window.paint_quad(fill(strip, base).corner_radii(Corners::all(height / 2.)));
-        if turn_visible(items, index, &visible) {
-            window.paint_quad(fill(strip, alpha(colors.theme.text, 0.55)).corner_radii(Corners::all(height / 2.)));
+        if in_view {
+            window.paint_quad(fill(strip, alpha(colors.theme.text, layered(0.55))).corner_radii(Corners::all(height / 2.)));
         }
+    };
+    let overlapping = spacing < height;
+    let mut run: Option<((usize, bool), usize, usize)> = None;
+    for index in 0..count {
+        let distance = active.map_or(usize::MAX, |active| active.abs_diff(index)).min(3);
+        let look = (distance, turn_visible(items, index, &visible));
+        match run {
+            Some((current, first, _)) if overlapping && current == look => run = Some((current, first, index)),
+            _ => {
+                if let Some((current, first, last)) = run.take() {
+                    paint(current, first, last, window);
+                }
+                run = Some((look, index, index));
+            }
+        }
+    }
+    if let Some((current, first, last)) = run {
+        paint(current, first, last, window);
     }
 }

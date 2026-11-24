@@ -78,6 +78,8 @@ struct FollowAnimation {
     from: Pixels,
     start: Instant,
     duration: Duration,
+    /// The curve's progress for the frame being drawn.
+    eased: f32,
 }
 
 /// Visible geometry from the last layout, for overlays like the scroll-to-end button.
@@ -196,6 +198,14 @@ impl VirtualListState {
 
     pub fn viewport(&self) -> ListViewport {
         self.0.borrow().viewport.clone()
+    }
+
+    /// The last layout's viewport bounds, content height, scroll top and visible rows, without
+    /// copying its row bounds (for overlays drawn every frame).
+    pub fn viewport_metrics(&self) -> (Bounds<Pixels>, Pixels, Pixels, Range<usize>) {
+        let inner = self.0.borrow();
+        let v = &inner.viewport;
+        (v.bounds, v.content_height, v.scroll_top, v.visible.clone())
     }
 
     /// Called after every scroll and layout that moved the viewport.
@@ -357,12 +367,7 @@ impl Inner {
             self.follow_animation = None;
             return target;
         }
-        let progress = (self.now.saturating_duration_since(animation.start).as_secs_f32() / animation.duration.as_secs_f32()).min(1.);
-        if progress >= 1. {
-            self.follow_animation = None;
-            return target;
-        }
-        animation.from + (target - animation.from) * SMOOTH_SCROLL_CURVE.ease(progress)
+        animation.from + (target - animation.from) * animation.eased
     }
 
     /// Starts or retargets the follow animation when the end moved since the last layout.
@@ -371,13 +376,22 @@ impl Inner {
             self.follow_animation = None;
             return;
         }
+        // The curve is solved once per frame; every read this frame uses it.
+        if let Some(animation) = self.follow_animation.as_mut() {
+            let progress = self.now.saturating_duration_since(animation.start).as_secs_f32() / animation.duration.as_secs_f32().max(f32::EPSILON);
+            if progress >= 1. {
+                self.follow_animation = None;
+            } else {
+                animation.eased = SMOOTH_SCROLL_CURVE.ease(progress);
+            }
+        }
         let end = self.max_scroll();
         let Some((last_end, drawn)) = self.last_end else { return };
         if end > last_end + px(0.5) {
             let from = if self.follow_animation.is_some() { self.scroll_top() } else { drawn };
             let seconds = f32::from(end - from).abs().sqrt() / 60.;
             let duration = Duration::from_secs_f32(seconds).min(SMOOTH_SCROLL_MAX);
-            self.follow_animation = Some(FollowAnimation { from, start: self.now, duration });
+            self.follow_animation = Some(FollowAnimation { from, start: self.now, duration, eased: 0. });
         }
     }
 
