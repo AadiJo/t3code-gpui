@@ -499,8 +499,8 @@ scene("usage-limits-empty", [
 
 LINUX_TOPBAR = "Linux topbar is 40px, the Mac's 52px (theme_tokens.rs); the scene has no sidebar"
 # The fork's list reserves a 6px scrollbar gutter (classic scrollbars in the capture browser); overlay scrollbars on macOS reserve none.
-SIDEBAR = {"port_dx": -262, "port_dy": -12, "note": LINUX_TOPBAR + "; 6px scrollbar gutter in the capture"}
-RIGHT = {"port_dx": 6, "port_dy": -12, "note": LINUX_TOPBAR + "; 6px scrollbar gutter in the capture"}
+SIDEBAR = {"port_dx": -256, "port_dy": -12, "note": LINUX_TOPBAR + "; the scene has no 256px sidebar"}
+RIGHT = {"port_dx": 0, "port_dy": -12, "note": LINUX_TOPBAR}
 scene("pull-requests-toolbar", [
     hscan("search box left edge", 93, 280, 300, **SIDEBAR),
     vscan("search box top/bottom", 500, 70, 116, **SIDEBAR),

@@ -7118,9 +7118,9 @@
       280,
       300
      ],
-     "port_dx": -262,
+     "port_dx": -256,
      "port_dy": -12,
-     "note": "Linux topbar is 40px, the Mac's 52px (theme_tokens.rs); the scene has no sidebar; 6px scrollbar gutter in the capture"
+     "note": "Linux topbar is 40px, the Mac's 52px (theme_tokens.rs); the scene has no sidebar; the scene has no 256px sidebar"
     },
     {
      "name": "search box top/bottom",
@@ -7130,9 +7130,9 @@
       70,
       116
      ],
-     "port_dx": -262,
+     "port_dx": -256,
      "port_dy": -12,
-     "note": "Linux topbar is 40px, the Mac's 52px (theme_tokens.rs); the scene has no sidebar; 6px scrollbar gutter in the capture"
+     "note": "Linux topbar is 40px, the Mac's 52px (theme_tokens.rs); the scene has no sidebar; the scene has no 256px sidebar"
     },
     {
      "name": "search icon",
@@ -7143,9 +7143,9 @@
       314,
       103
      ],
-     "port_dx": -262,
+     "port_dx": -256,
      "port_dy": -12,
-     "note": "Linux topbar is 40px, the Mac's 52px (theme_tokens.rs); the scene has no sidebar; 6px scrollbar gutter in the capture"
+     "note": "Linux topbar is 40px, the Mac's 52px (theme_tokens.rs); the scene has no sidebar; the scene has no 256px sidebar"
     },
     {
      "name": "search placeholder",
@@ -7157,9 +7157,9 @@
       103
      ],
      "text": true,
-     "port_dx": -262,
+     "port_dx": -256,
      "port_dy": -12,
-     "note": "Linux topbar is 40px, the Mac's 52px (theme_tokens.rs); the scene has no sidebar; 6px scrollbar gutter in the capture"
+     "note": "Linux topbar is 40px, the Mac's 52px (theme_tokens.rs); the scene has no sidebar; the scene has no 256px sidebar"
     },
     {
      "name": "sort button",
@@ -7170,9 +7170,9 @@
       756,
       109
      ],
-     "port_dx": 6,
+     "port_dx": 0,
      "port_dy": -12,
-     "note": "Linux topbar is 40px, the Mac's 52px (theme_tokens.rs); the scene has no sidebar; 6px scrollbar gutter in the capture"
+     "note": "Linux topbar is 40px, the Mac's 52px (theme_tokens.rs); the scene has no sidebar"
     },
     {
      "name": "views button",
@@ -7183,9 +7183,9 @@
       960,
       109
      ],
-     "port_dx": 6,
+     "port_dx": 0,
      "port_dy": -12,
-     "note": "Linux topbar is 40px, the Mac's 52px (theme_tokens.rs); the scene has no sidebar; 6px scrollbar gutter in the capture"
+     "note": "Linux topbar is 40px, the Mac's 52px (theme_tokens.rs); the scene has no sidebar"
     },
     {
      "name": "provider filter",
@@ -7196,9 +7196,9 @@
       1030,
       109
      ],
-     "port_dx": 6,
+     "port_dx": 0,
      "port_dy": -12,
-     "note": "Linux topbar is 40px, the Mac's 52px (theme_tokens.rs); the scene has no sidebar; 6px scrollbar gutter in the capture"
+     "note": "Linux topbar is 40px, the Mac's 52px (theme_tokens.rs); the scene has no sidebar"
     },
     {
      "name": "refresh button",
@@ -7209,9 +7209,9 @@
       1070,
       109
      ],
-     "port_dx": 6,
+     "port_dx": 0,
      "port_dy": -12,
-     "note": "Linux topbar is 40px, the Mac's 52px (theme_tokens.rs); the scene has no sidebar; 6px scrollbar gutter in the capture"
+     "note": "Linux topbar is 40px, the Mac's 52px (theme_tokens.rs); the scene has no sidebar"
     }
    ],
    "reference": "pull-requests"
@@ -7226,9 +7226,9 @@
       280,
       300
      ],
-     "port_dx": -262,
+     "port_dx": -256,
      "port_dy": -12,
-     "note": "Linux topbar is 40px, the Mac's 52px (theme_tokens.rs); the scene has no sidebar; 6px scrollbar gutter in the capture"
+     "note": "Linux topbar is 40px, the Mac's 52px (theme_tokens.rs); the scene has no sidebar; the scene has no 256px sidebar"
     },
     {
      "name": "search box top/bottom",
@@ -7238,9 +7238,9 @@
       70,
       116
      ],
-     "port_dx": -262,
+     "port_dx": -256,
      "port_dy": -12,
-     "note": "Linux topbar is 40px, the Mac's 52px (theme_tokens.rs); the scene has no sidebar; 6px scrollbar gutter in the capture"
+     "note": "Linux topbar is 40px, the Mac's 52px (theme_tokens.rs); the scene has no sidebar; the scene has no 256px sidebar"
     },
     {
      "name": "search icon",
@@ -7251,9 +7251,9 @@
       314,
       103
      ],
-     "port_dx": -262,
+     "port_dx": -256,
      "port_dy": -12,
-     "note": "Linux topbar is 40px, the Mac's 52px (theme_tokens.rs); the scene has no sidebar; 6px scrollbar gutter in the capture"
+     "note": "Linux topbar is 40px, the Mac's 52px (theme_tokens.rs); the scene has no sidebar; the scene has no 256px sidebar"
     },
     {
      "name": "search placeholder",
@@ -7265,9 +7265,9 @@
       103
      ],
      "text": true,
-     "port_dx": -262,
+     "port_dx": -256,
      "port_dy": -12,
-     "note": "Linux topbar is 40px, the Mac's 52px (theme_tokens.rs); the scene has no sidebar; 6px scrollbar gutter in the capture"
+     "note": "Linux topbar is 40px, the Mac's 52px (theme_tokens.rs); the scene has no sidebar; the scene has no 256px sidebar"
     },
     {
      "name": "sort button",
@@ -7278,9 +7278,9 @@
       826,
       109
      ],
-     "port_dx": 6,
+     "port_dx": 0,
      "port_dy": -12,
-     "note": "Linux topbar is 40px, the Mac's 52px (theme_tokens.rs); the scene has no sidebar; 6px scrollbar gutter in the capture"
+     "note": "Linux topbar is 40px, the Mac's 52px (theme_tokens.rs); the scene has no sidebar"
     },
     {
      "name": "filters button",
@@ -7291,9 +7291,9 @@
       920,
       109
      ],
-     "port_dx": 6,
+     "port_dx": 0,
      "port_dy": -12,
-     "note": "Linux topbar is 40px, the Mac's 52px (theme_tokens.rs); the scene has no sidebar; 6px scrollbar gutter in the capture"
+     "note": "Linux topbar is 40px, the Mac's 52px (theme_tokens.rs); the scene has no sidebar"
     },
     {
      "name": "views button",
@@ -7304,9 +7304,9 @@
       1030,
       109
      ],
-     "port_dx": 6,
+     "port_dx": 0,
      "port_dy": -12,
-     "note": "Linux topbar is 40px, the Mac's 52px (theme_tokens.rs); the scene has no sidebar; 6px scrollbar gutter in the capture"
+     "note": "Linux topbar is 40px, the Mac's 52px (theme_tokens.rs); the scene has no sidebar"
     },
     {
      "name": "refresh button",
@@ -7317,9 +7317,9 @@
       1070,
       109
      ],
-     "port_dx": 6,
+     "port_dx": 0,
      "port_dy": -12,
-     "note": "Linux topbar is 40px, the Mac's 52px (theme_tokens.rs); the scene has no sidebar; 6px scrollbar gutter in the capture"
+     "note": "Linux topbar is 40px, the Mac's 52px (theme_tokens.rs); the scene has no sidebar"
     }
    ],
    "reference": "issues"

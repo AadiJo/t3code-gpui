@@ -6,6 +6,7 @@
 //!   pull request open in the right panel on that tab.
 //! - `pull-requests-save-view`: the page with the Save PR view dialog open.
 //! - `pull-requests-empty`: the page with no pull requests listed.
+//! - `issues-page`: the issues page alone, full width.
 //! - `issues`: the issues page with the issue panel open.
 //!
 //! `-light` variants render in the light appearance.
@@ -224,6 +225,19 @@ impl Render for IssuesWorkspace {
             .child(div().flex_1().min_w_0().h_full().child(self.page.clone()))
             .children(self.panel.clone().map(|p| div().w(px(560.)).h_full().border_l_1().border_color(border).child(p)))
     }
+}
+
+/// The issues page alone, full width, as the fork capture shows it with no issue open.
+pub fn build_issues_page(window: &mut Window, cx: &mut App) -> AnyView {
+    let fixture = FixtureSource::standard();
+    let source: Rc<dyn IssueSource> = Rc::new(fixture);
+    let sources = vec![EnvironmentIssueSource { environment_id: EnvironmentId::new("env-studio"), label: "Studio".into(), source }];
+    cx.new(|cx| {
+        let mut page = IssuesPage::new(sources, window, cx);
+        page.now_ms = Some(SCENE_NOW_MS);
+        page
+    })
+    .into()
 }
 
 pub fn build_issues(window: &mut Window, cx: &mut App) -> AnyView {

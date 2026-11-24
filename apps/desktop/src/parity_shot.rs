@@ -147,7 +147,7 @@ const SCENES: &[Scene] = &[
 
 /// Views the app window cannot reach yet (their routes are not mounted in
 /// `AppRoot`), captured from their registered scenes instead: (image name, scene).
-const SCENE_VIEWS: &[(&str, &str)] = &[("usage-limits-empty", "usage-empty"), ("pull-requests-toolbar", "pull-requests"), ("issues-toolbar", "issues")];
+const SCENE_VIEWS: &[(&str, &str)] = &[("usage-limits-empty", "usage-empty"), ("pull-requests-toolbar", "pull-requests"), ("issues-toolbar", "issues-page")];
 
 /// Renders a registered scene at the reference size with the owner's glass opacity.
 fn render_scene_view(name: &str, scene: &str, out: &std::path::Path) -> anyhow::Result<()> {
