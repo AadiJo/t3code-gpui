@@ -18,7 +18,10 @@ use t3code_client_runtime::state::{ThreadHandle, ThreadState, ThreadStatus};
 use t3code_contracts::{MessageId as RuntimeMessageId, TurnItemId};
 use t3code_shared::thread_projection::ThreadProjection;
 
-use crate::components::chat::timeline_entries::{MessageId, TimelineInput};
+use t3code_contracts::{WorktreeSetupPhase as Phase, WorktreeSetupSnapshot, WorktreeSetupStageId as StageId, WorktreeSetupStageStatus as StageStatus};
+
+use crate::components::chat::timeline_entries::{EntryKind, MessageId, TimelineInput, Timestamp, ToolStatus, WorktreeSetup};
+use crate::i18n::t;
 use crate::components::sidebar::model::ThreadKey;
 use crate::session_logic::{TimelineMapper, changed_message_text, timeline_input};
 use crate::state::follow_watch;
@@ -64,6 +67,10 @@ pub struct LiveThread {
     stats: ThreadUpdateStats,
     /// Attachment images already asked for, so each downloads once.
     requested_images: std::collections::HashSet<String>,
+    /// The newest worktree setup snapshot the server streamed for this thread (`heldSnapshot`).
+    worktree: Option<Arc<WorktreeSetupSnapshot>>,
+    /// The `subscribeWorktreeSetup` stream, once the thread has a worktree or prepares one.
+    worktree_task: Option<Task<()>>,
     _follow: Task<()>,
 }
 
@@ -103,10 +110,52 @@ impl LiveThread {
             optimistic: OptimisticMessages::default(),
             stats,
             requested_images: Default::default(),
+            worktree: None,
+            worktree_task: None,
             _follow: follow,
         };
         this.fetch_images(cx);
+        this.follow_worktree_setup(cx);
         this
+    }
+
+    /// Subscribes to the thread's worktree setup once it has a worktree or a run prepares one
+    /// (`useWorktreeSetup`'s query condition). Snapshots of a lower sequence never replace a newer one.
+    fn follow_worktree_setup(&mut self, cx: &mut Context<Self>) {
+        use futures::StreamExt as _;
+        use t3code_contracts::rpc::methods::SubscribeWorktreeSetup;
+        if self.worktree_task.is_some() {
+            return;
+        }
+        let Some(data) = &self.state.data else { return };
+        let preparing = data.runs.iter().any(|run| run.status == t3code_contracts::OrchestrationV2RunStatus::Preparing);
+        if data.thread.worktree_path.is_none() && !preparing {
+            return;
+        }
+        let (environment_id, thread_id) = crate::state::shell::runtime_ids(&self.key);
+        let Some(link) = crate::live::rpc::RpcLink::new(&environment_id, cx) else { return };
+        let mut stream = link.stream::<SubscribeWorktreeSetup>(t3code_contracts::WorktreeSetupSubscribeInput { thread_id: thread_id.clone() });
+        self.worktree_task = Some(cx.spawn(async move |this, cx| {
+            while let Some(event) = stream.next().await {
+                let Ok(Some(snapshot)) = event else { continue };
+                if snapshot.thread_id != thread_id {
+                    continue;
+                }
+                let kept = this.update(cx, |this, cx| {
+                    if this.worktree.as_ref().is_some_and(|held| held.sequence > snapshot.sequence) {
+                        return;
+                    }
+                    this.worktree = Some(Arc::new(snapshot));
+                    this.remap();
+                    this.stats.structure += 1;
+                    cx.emit(LiveThreadEvent::Structure);
+                    cx.notify();
+                });
+                if kept.is_err() {
+                    return;
+                }
+            }
+        }));
     }
 
     /// Downloads the images of sent messages that are not in the image cache yet
@@ -218,6 +267,7 @@ impl LiveThread {
         } else {
             self.mapped.input = TimelineInput::default();
         }
+        self.mapped.input.worktree_setup = self.state.data.as_deref().and_then(|data| visible_worktree_setup(self.worktree.as_deref(), data, &self.mapped.input));
         self.mapped.projection = self.state.data.clone();
         self.stats.map_micros += started.elapsed().as_micros() as u64;
     }
@@ -247,6 +297,7 @@ impl LiveThread {
         let before = Arc::clone(&self.mapped.input.entries);
         self.remap();
         self.fetch_images(cx);
+        self.follow_worktree_setup(cx);
         if structure_changed || reconciled {
             self.stats.structure += 1;
             cx.emit(LiveThreadEvent::Structure);
@@ -287,4 +338,49 @@ impl LiveThread {
         let handle = Arc::clone(&self.handle);
         cx.background_executor().spawn(async move { handle.expand_work_group(anchor).await })
     }
+}
+
+/// The setup card the timeline shows, if any (`resolveVisibleWorktreeSetup` with no recorded
+/// snapshot): while running; until a follow-up is sent, when it did not finish cleanly or before
+/// any run started; after that only when a stage failed.
+fn visible_worktree_setup(snapshot: Option<&WorktreeSetupSnapshot>, data: &ThreadProjection, input: &TimelineInput) -> Option<WorktreeSetup> {
+    let snapshot = snapshot?;
+    let follow_up_sent = input.entries.iter().filter(|entry| matches!(&entry.kind, EntryKind::Message(message) if message.role == crate::components::chat::timeline_entries::MessageRole::User)).count() > 1;
+    let shown = match snapshot.phase {
+        Phase::Running => true,
+        _ if follow_up_sent => false,
+        Phase::Done => !data.runs.iter().any(|run| run.started_at.is_some()) || snapshot.stages.iter().any(|stage| stage.status == StageStatus::Failed),
+        _ => true,
+    };
+    if !shown {
+        return None;
+    }
+    let steps = snapshot
+        .stages
+        .iter()
+        .map(|stage| {
+            // `worktreeSetupStageLabel`: the contracts' English label, translated.
+            let label = match stage.id {
+                StageId::Fetch => t!("Fetch base branch"),
+                StageId::Checkout => t!("Check out files"),
+                StageId::Submodules => t!("Init submodules"),
+                StageId::SetupScript => t!("Run setup script"),
+                _ => t!("Start agent"),
+            };
+            let status = match stage.status {
+                StageStatus::Done | StageStatus::Skipped => ToolStatus::Completed,
+                StageStatus::Running => ToolStatus::InProgress,
+                StageStatus::Failed => ToolStatus::Failed,
+                StageStatus::Warning => ToolStatus::Declined,
+                _ => ToolStatus::Stopped,
+            };
+            (label, status)
+        })
+        .collect();
+    Some(WorktreeSetup {
+        started_at: Timestamp(t3code_client_runtime::state::models::parse_ms(&snapshot.started_at).unwrap_or_default()),
+        running: snapshot.phase == Phase::Running,
+        branch: snapshot.branch.clone().map(SharedString::from).unwrap_or_default(),
+        steps,
+    })
 }

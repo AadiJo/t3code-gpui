@@ -24,11 +24,13 @@
 //            threads not shown while the window is unfocused, each checked against the model
 //            (request sent, inbox entry, badge, sidebar Done); a click opens the thread; the tag
 //            filter closes a hidden thread's notification and keeps it quiet
+//   details  a thread launched into a new worktree: the timeline's setup row follows the
+//            server's worktree setup stream (stages and their states)
 //   import   a fresh data directory and a stand-in install (`T3CODE_IMPORT_HOME`, made by
 //            `import-check`, encrypted with the fixture macOS key): the launch import runs,
 //            the window explains the Keychain read, environments and settings arrive
 //
-// Usage: live-check <seed|drive|restart|import|send|sidebar|notify> <out-dir>
+// Usage: live-check <seed|drive|restart|import|send|sidebar|notify|details> <out-dir>
 #[allow(dead_code)]
 #[path = "import/mod.rs"]
 mod import;
@@ -412,7 +414,7 @@ fn key_of(state: &Seeded, thread: &str) -> ThreadKey {
 
 fn main() -> anyhow::Result<()> {
     let mut args = std::env::args().skip(1);
-    let usage = "usage: live-check <seed|drive|restart|import|send|sidebar|notify> <out-dir> | live-check timeline <projections-dir> <out-dir> | live-check commands <corpus.json> <out.json>";
+    let usage = "usage: live-check <seed|drive|restart|import|send|sidebar|notify|details> <out-dir> | live-check timeline <projections-dir> <out-dir> | live-check commands <corpus.json> <out.json>";
     let phase = args.next().context(usage)?;
     let out = PathBuf::from(args.next().context(usage)?);
     if phase == "timeline" {
@@ -432,6 +434,7 @@ fn main() -> anyhow::Result<()> {
         "send" => run_send(&mut check),
         "sidebar" => run_sidebar(&mut check),
         "notify" => run_notify(&mut check),
+        "details" => run_details(&mut check),
         other => Err(anyhow::anyhow!("unknown phase {other}")),
     };
     check.finish(&phase, result)
@@ -2138,4 +2141,81 @@ fn blur(check: &mut Check) -> anyhow::Result<()> {
     check.cx.update_window(helper.into(), |_, window, _| window.remove_window())?;
     let window = check.window;
     check.pump(move |c| !c.cx.update_window(window, |_, w, _| w.is_window_active()).unwrap_or(true), Duration::from_secs(5), "window unfocused")
+}
+
+/// The `details` phase. See the header.
+fn run_details(check: &mut Check) -> anyhow::Result<()> {
+    use t3code_contracts::{
+        OrchestrationV2ThreadLaunchInput, OrchestrationV2ThreadLaunchInputInitialMessage, OrchestrationV2ThreadLaunchWorkspaceStrategy,
+        OrchestrationV2ThreadLaunchWorkspaceStrategyWorktree,
+    };
+    let state = load_state(&check.out)?;
+    let environment_id = t3code_contracts::EnvironmentId::new(state.environment_id.as_str());
+    check.pump(|c| c.connected(), Duration::from_secs(30), "connected")?;
+    let commands = commands_of(check, &environment_id)?;
+    let project = check
+        .cx
+        .update(|cx| {
+            let shell = StateBridge::environment(&environment_id, cx)?.read(cx).shell.clone();
+            shell.snapshot.as_ref()?.projects.iter().find(|p| p.workspace_root == state.project_root).map(|p| p.id.clone())
+        })
+        .context("seeded project")?;
+    let thread_id = ThreadId::new(uuid::Uuid::new_v4().to_string());
+    let branch = format!("live-setup-{}", now_ms() % 1_000_000);
+    let input = OrchestrationV2ThreadLaunchInput {
+        command_id: CommandId::new(uuid::Uuid::new_v4().to_string()),
+        creation_source: None,
+        thread_id: Some(thread_id.clone()),
+        reuse_existing_thread: None,
+        project_id: project,
+        title: "Worktree setup".into(),
+        generate_title: Some(false),
+        model_selection: ModelSelection { instance_id: "devReplay".into(), model: "multi-turn".into(), options: None },
+        runtime_mode: RuntimeMode::FullAccess,
+        interaction_mode: ProviderInteractionMode::Default,
+        workspace_strategy: OrchestrationV2ThreadLaunchWorkspaceStrategy::Worktree(OrchestrationV2ThreadLaunchWorkspaceStrategyWorktree {
+            base_ref: "main".into(),
+            branch: Some(branch.clone()),
+            start_from_origin: Some(false),
+        }),
+        initial_message: Some(OrchestrationV2ThreadLaunchInputInitialMessage {
+            message_id: None,
+            text: "Start the review.".into(),
+            context: None,
+            attachments: Vec::new(),
+        }),
+    };
+    let c = commands.clone();
+    check.block(async move { c.launch_thread(input).await })?.map_err(|e| anyhow::anyhow!("{e}"))?;
+    let key = thread_key(&environment_id, &thread_id);
+    let k = key.clone();
+    check.pump(move |c| sidebar_row(c, &k).is_some(), Duration::from_secs(20), "launched thread listed")?;
+    check.go(&key);
+    let mut seen: Vec<String> = Vec::new();
+    let deadline = Instant::now() + Duration::from_secs(60);
+    while Instant::now() < deadline {
+        check.wait(Duration::from_millis(100));
+        let setup = check.shown_input().worktree_setup;
+        let line = match &setup {
+            Some(setup) => format!(
+                "running={} branch={} steps={:?}",
+                setup.running,
+                setup.branch,
+                setup.steps.iter().map(|(label, status)| format!("{label}:{status:?}")).collect::<Vec<_>>()
+            ),
+            None => "none".into(),
+        };
+        if seen.last() != Some(&line) {
+            check.note(format!("setup row: {line}"));
+            seen.push(line);
+        }
+        if setup.as_ref().is_some_and(|s| !s.running) || (seen.len() > 1 && setup.is_none()) {
+            break;
+        }
+    }
+    let shown = seen.iter().any(|line| line.contains(&format!("branch={branch}")) && line.contains("steps=["));
+    check.check("worktree setup: the timeline row follows the server's stream", shown, seen.join(" | "));
+    let ran = seen.iter().any(|line| line.contains("Check out files:"));
+    check.check("worktree setup: stages carry their labels", ran, seen.last().cloned().unwrap_or_default());
+    check.shot("70-worktree-setup.png")
 }
