@@ -116,13 +116,17 @@ fn main() -> anyhow::Result<()> {
     let p = page.clone();
     check.step(w, "03-query-cleared", |win, cx| p.update(cx, |p, cx| p.set_query("", win, cx)))?;
     check.step(w, "04-filters-menu", |win, cx| win.click("pr-filters-trigger", cx))?;
-    check.step(w, "05-filter-approved", |win, cx| win.click(("menu-item", 16usize), cx))?;
+    check.step(w, "05a-filter-review-submenu", |win, cx| win.click("pr-filter-sub-review", cx))?;
+    check.step(w, "05-filter-approved", |win, cx| win.click("pr-filter-opt-approved", cx))?;
     { let line = format!("after Review: Approved: {:?}", visible(&mut check)); check.note(line); }
-    check.step(w, "06-views-menu", |win, cx| win.click("pr-views-trigger", cx))?;
-    check.step(w, "07-save-view-editor", |win, cx| win.click(("menu-item", 1usize), cx))?;
+    check.step(w, "06-views-menu", |win, cx| win.click("saved-views-trigger", cx))?;
+    check.step(w, "07-save-view-dialog", |win, cx| win.click("saved-views-save", cx))?;
     check.step(w, "08-save-view-named", |win, cx| win.input("Approved work", cx))?;
-    check.step(w, "09-view-saved", |win, cx| win.click("pr-view-save", cx))?;
-    let views = check.cx.update(|cx| page.read(cx).saved_views().iter().map(|v| (v.name.clone(), serde_json::to_string(&v.search).unwrap())).collect::<Vec<_>>());
+    check.step(w, "09-view-saved", |win, cx| win.click("saved-view-save", cx))?;
+    let views = check.cx.update(|cx| {
+        let menu = page.read(cx).views_menu().clone();
+        menu.read(cx).views().iter().map(|v| (v.name.clone(), serde_json::to_string(&v.preferences).unwrap())).collect::<Vec<_>>()
+    });
     { let line = format!("saved views: {views:?}"); check.note(line); }
     let p = page.clone();
     check.step(w, "10-filters-cleared", |_, cx| p.update(cx, |p, cx| p.set_menu_filters(Default::default(), cx)))?;

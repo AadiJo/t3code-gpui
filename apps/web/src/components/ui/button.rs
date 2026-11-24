@@ -2,7 +2,7 @@
 
 use gpui_kit::TestSupportExt as _;
 use gpui_kit::{
-    App, BoxShadow, ClickEvent, ElementId, FocusHandle, Hsla, IntoElement, Pixels, RenderOnce,
+    AnyElement, App, BoxShadow, ClickEvent, ElementId, FocusHandle, Hsla, IntoElement, Pixels, RenderOnce,
     SharedString, StyleRefinement, Window, black, div, prelude::*, px, white,
 };
 
@@ -369,6 +369,9 @@ pub struct Button {
     label: Option<SharedString>,
     icon: Option<IconSource>,
     trailing_icon: Option<IconName>,
+    trailing_icon_size: Option<IconSize>,
+    label_max_width: Option<Pixels>,
+    accessory: Option<AnyElement>,
     variant: ButtonVariant,
     size: ButtonSize,
     disabled: bool,
@@ -385,6 +388,9 @@ impl Button {
             label: None,
             icon: None,
             trailing_icon: None,
+            trailing_icon_size: None,
+            label_max_width: None,
+            accessory: None,
             variant: ButtonVariant::Default,
             size: ButtonSize::Default,
             disabled: false,
@@ -408,6 +414,24 @@ impl Button {
 
     pub fn trailing_icon(mut self, icon: IconName) -> Self {
         self.trailing_icon = Some(icon);
+        self
+    }
+
+    /// Truncates the label past this width (`max-w-40 truncate`).
+    pub fn label_max_width(mut self, width: Pixels) -> Self {
+        self.label_max_width = Some(width);
+        self
+    }
+
+    /// An element after the label and before the trailing icon, such as a count badge.
+    pub fn accessory(mut self, element: impl IntoElement) -> Self {
+        self.accessory = Some(element.into_any_element());
+        self
+    }
+
+    /// The trailing icon's size when it differs from the leading icon's (a `size-3` chevron).
+    pub fn trailing_icon_size(mut self, size: IconSize) -> Self {
+        self.trailing_icon_size = Some(size);
         self
     }
 
@@ -472,10 +496,10 @@ impl RenderOnce for Button {
         let ring = focus_ring_inset(theme, BORDER);
         let text_weight = weight::MEDIUM;
         let icon_margin = if self.size.is_icon() { px(0.) } else { px(-2.) };
-        let icon = |name: IconSource| {
+        let icon = |name: IconSource, size: Option<IconSize>| {
             div().mx(icon_margin).child(
                 Icon::new(name)
-                    .size(IconSize::Custom(spec.icon))
+                    .size(size.unwrap_or(IconSize::Custom(spec.icon)))
                     .color(rest.icon)
                     .group_color(GROUP, hover.icon),
             )
@@ -505,9 +529,13 @@ impl RenderOnce for Button {
             ButtonText::Px(size) => button.ui_text(theme, TextSize::Xs, text_weight).text_size(px(size)),
         };
         button
-            .children(self.icon.map(icon))
-            .children(self.label)
-            .children(self.trailing_icon.map(|name| icon(name.into())))
+            .children(self.icon.map(|name| icon(name, None)))
+            .children(self.label.map(|label| match self.label_max_width {
+                Some(width) => div().max_w(width).truncate().child(label).into_any_element(),
+                None => label.into_any_element(),
+            }))
+            .children(self.accessory)
+            .children(self.trailing_icon.map(|name| icon(name.into(), self.trailing_icon_size)))
             .when(disabled, |b| b.opacity(DISABLED_OPACITY))
             .when(live, |b| {
                 b.cursor_pointer()

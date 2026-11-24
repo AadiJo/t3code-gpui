@@ -27,6 +27,7 @@ pub mod persistent_thread_terminals;
 pub mod right_panel_tabs;
 pub mod provider_updates_action;
 pub mod relative_time;
+pub mod saved_views_menu;
 pub mod settings;
 pub mod search;
 pub mod icons;

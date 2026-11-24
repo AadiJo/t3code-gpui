@@ -17,14 +17,14 @@ use gpui_kit::component::input::{InputEvent, InputState};
 use gpui_kit::base::TestSupportExt as _;
 use gpui_kit::{
     AnyElement, App, AppContext as _, Context, Entity, EventEmitter, FocusHandle, Focusable, InteractiveElement as _,
-    IntoElement, KeyBinding, ListAlignment, ListState, ParentElement as _, Render, SharedString,
+    IntoElement, KeyBinding, ListAlignment, ListState, ParentElement as _, Pixels, Render, SharedString,
     StatefulInteractiveElement as _, Styled as _, Subscription, Window, actions, div, list, prelude::FluentBuilder as _, px,
 };
 use serde::{Deserialize, Serialize};
 use t3code_client_runtime::pull_request_query::{has_pull_request_filters, parse_pull_request_query};
-use t3code_client_runtime::saved_views::{SavedView, saved_view_name_error};
+use futures::StreamExt as _;
 use t3code_contracts::{
-    EnvironmentId, PullRequestAction, PullRequestActionInput, PullRequestInvolvement, PullRequestListFilters,
+    EnvironmentId, ProjectId, PullRequestAction, PullRequestActionInput, PullRequestInvolvement, PullRequestListFilters,
     PullRequestListFiltersChecks, PullRequestListFiltersDraft, PullRequestListFiltersReview, PullRequestListInput,
     PullRequestListResult, PullRequestListState, PullRequestRef,
 };
@@ -37,7 +37,11 @@ use crate::components::icons::{Icon, IconName, IconSize};
 use crate::components::ui::TextStyleExt as _;
 use crate::components::ui::button::{Button, ButtonSize, ButtonVariant};
 use crate::components::ui::input::{InputSize, TextInput};
+use crate::client_persistence_storage::LocalStorage;
+use crate::components::saved_views_menu::{ApplySavedView, SavedViewsKind, SavedViewsList, SavedViewsMenu};
 use crate::components::ui::menu::{MenuItem, MenuItemKind, MenuPopup, dropdown_menu};
+use crate::components::ui::popover::{Popover, PopupHandle};
+use crate::components::ui::spinner::{Spinner, SpinnerSize};
 use crate::i18n::t;
 use crate::{ActiveAppTheme as _, AppTheme};
 
@@ -57,12 +61,19 @@ pub fn init(cx: &mut App) {
     ]);
 }
 
-/// The list controls a saved view keeps. Ports `PullRequestListPreferences`.
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+/// The list controls the page remembers and a saved view keeps, in the web's
+/// stored shape (`t3.pullRequests.preferences`). Ports `PullRequestListPreferences`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PullRequestListPreferences {
-    pub involvement: Option<PullRequestInvolvement>,
-    pub state: Option<PullRequestListState>,
+    pub involvement: PullRequestInvolvement,
+    pub state: PullRequestListState,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub environment_id: Option<EnvironmentId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_id: Option<ProjectId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub q: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -77,6 +88,98 @@ pub struct PullRequestListPreferences {
     pub labels: Option<Vec<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sort: Option<PullRequestListSort>,
+}
+
+impl Default for PullRequestListPreferences {
+    fn default() -> Self {
+        Self {
+            involvement: PullRequestInvolvement::All,
+            state: PullRequestListState::Open,
+            environment_id: None,
+            project_id: None,
+            host: None,
+            q: None,
+            draft: None,
+            review: None,
+            checks: None,
+            author: None,
+            labels: None,
+            sort: None,
+        }
+    }
+}
+
+impl PullRequestListPreferences {
+    /// `pullRequestListPreferences`: drops empty fields and the default sort.
+    pub fn normalized(&self) -> Self {
+        let text = |v: &Option<String>| v.clone().filter(|s| !s.is_empty());
+        Self {
+            host: text(&self.host),
+            q: text(&self.q),
+            author: text(&self.author),
+            labels: self.labels.clone().filter(|l| !l.is_empty()),
+            sort: self.sort.filter(|s| *s != PullRequestListSort::Ready),
+            ..self.clone()
+        }
+    }
+}
+
+/// The pull request list's saved views (`PULL_REQUEST_SAVED_VIEWS`).
+pub struct PullRequestSavedViews;
+
+impl SavedViewsKind for PullRequestSavedViews {
+    type Preferences = PullRequestListPreferences;
+    const STORAGE_KEY: &'static str = "t3.pullRequests.savedViews";
+    const LIST: SavedViewsList = SavedViewsList::PullRequest;
+
+    fn placeholder() -> SharedString {
+        t!("PRs Requesting My Review")
+    }
+
+    fn suggested_name(p: &PullRequestListPreferences) -> SharedString {
+        if p.involvement == PullRequestInvolvement::Reviewing { t!("PRs Requesting My Review") } else { SharedString::default() }
+    }
+
+    fn matches(view: &PullRequestListPreferences, current: &PullRequestListPreferences) -> bool {
+        let key = |p: &PullRequestListPreferences| {
+            let mut p = p.normalized();
+            if let Some(labels) = &mut p.labels {
+                labels.sort();
+            }
+            p
+        };
+        key(view) == key(current)
+    }
+}
+
+/// Where the page remembers its controls between visits.
+const PREFERENCES_KEY: &str = "t3.pullRequests.preferences";
+
+/// The rows the host returns per page (`PAGE_SIZE`) and the most one listing grows to.
+const PAGE_SIZE: u64 = 99;
+const MAX_PAGE_SIZE: u64 = 500;
+
+/// A project the Project filter offers.
+#[derive(Clone, Debug)]
+pub struct PullRequestProjectChoice {
+    pub environment_id: EnvironmentId,
+    pub project_id: ProjectId,
+    pub title: SharedString,
+}
+
+/// Which filter submenu is open.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum FilterSubmenu {
+    State,
+    Involvement,
+    Author,
+    Labels,
+    Draft,
+    Review,
+    Checks,
+    Host,
+    Server,
+    Project,
 }
 
 /// One environment the page reads.
@@ -106,6 +209,8 @@ pub enum PullRequestsPageEvent {
 enum ListItem {
     Header(PullRequestGroupKey, usize),
     Row(Row),
+    /// The Load more row under a truncated listing.
+    LoadMore,
 }
 
 /// How long the last refilter took, for the performance check.
@@ -120,6 +225,8 @@ pub struct FilterTiming {
 pub struct PullRequestsPage {
     sources: Vec<EnvironmentListSource>,
     loads: BTreeMap<EnvironmentId, EnvironmentLoad>,
+    /// Each environment's last answer, kept while a newer read travels.
+    answers: BTreeMap<EnvironmentId, EnvironmentLoad>,
     merged: Option<MergedPullRequestList>,
     search: Entity<InputState>,
     query: String,
@@ -133,14 +240,20 @@ pub struct PullRequestsPage {
     rows: usize,
     selected: Option<SharedString>,
     list: ListState,
-    saved_views: Vec<SavedView<PullRequestListPreferences>>,
-    view_editor: Option<Entity<InputState>>,
-    view_error: Option<SharedString>,
+    host: Option<String>,
+    environment: Option<EnvironmentId>,
+    project: Option<(EnvironmentId, ProjectId)>,
+    projects: Vec<PullRequestProjectChoice>,
+    filters_submenu: Option<FilterSubmenu>,
+    /// Rows asked of each host (`PAGE_SIZE` growing to `MAX_PAGE_SIZE`).
+    page_size: u64,
+    loading_more: bool,
+    views_menu: Entity<SavedViewsMenu<PullRequestSavedViews>>,
     /// Fixed clock for scenes; `None` reads the system clock.
     pub now_ms: Option<i64>,
     pub last_filter: FilterTiming,
     focus: FocusHandle,
-    _search_events: Subscription,
+    _subscriptions: Vec<Subscription>,
 }
 
 impl EventEmitter<PullRequestsPageEvent> for PullRequestsPage {}
@@ -161,15 +274,42 @@ impl PullRequestsPage {
                 this.refilter(cx);
             }
         });
+        let remembered: PullRequestListPreferences = LocalStorage::get(cx, PREFERENCES_KEY).unwrap_or_default();
+        let views_menu = cx.new(|cx| SavedViewsMenu::new(remembered.normalized(), cx));
+        let apply = cx.subscribe_in(&views_menu, window, |this, _, event: &ApplySavedView<PullRequestListPreferences>, window, cx| {
+            this.apply_preferences(&event.0, window, cx);
+        });
+        let subscriptions = vec![events, apply];
+        // `useLiveRefresh`: an open list reads again whenever a host says it changed.
+        for env in &sources {
+            let mut ticks = env.source.subscribe_refreshes();
+            cx.spawn(async move |this, cx| {
+                let mut first = true;
+                while let Some(tick) = ticks.next().await {
+                    if tick.is_err() {
+                        continue;
+                    }
+                    // The stream's first value is the current count, not a change.
+                    if std::mem::take(&mut first) {
+                        continue;
+                    }
+                    if this.update(cx, |this, cx| this.load(false, cx)).is_err() {
+                        break;
+                    }
+                }
+            })
+            .detach();
+        }
         let mut page = Self {
             sources,
             loads: BTreeMap::new(),
+            answers: BTreeMap::new(),
             merged: None,
             search,
             query: String::new(),
             state: PullRequestListState::Open,
             involvement: PullRequestInvolvement::All,
-            sort: PullRequestListSort::Updated,
+            sort: PullRequestListSort::Ready,
             menu_filters: PullRequestListFilters::default(),
             overrides: HashMap::new(),
             next_token: 0,
@@ -177,16 +317,28 @@ impl PullRequestsPage {
             rows: 0,
             selected: None,
             list: ListState::new(0, ListAlignment::Top, px(600.)),
-            saved_views: Vec::new(),
-            view_editor: None,
-            view_error: None,
+            host: None,
+            environment: None,
+            project: None,
+            projects: Vec::new(),
+            filters_submenu: None,
+            page_size: PAGE_SIZE,
+            loading_more: false,
+            views_menu,
             now_ms: None,
             last_filter: FilterTiming::default(),
             focus: cx.focus_handle(),
-            _search_events: events,
+            _subscriptions: subscriptions,
         };
+        page.restore(&remembered, window, cx);
         page.load(false, cx);
         page
+    }
+
+    /// The projects the Project filter offers, from the owner's shell.
+    pub fn set_projects(&mut self, projects: Vec<PullRequestProjectChoice>, cx: &mut Context<Self>) {
+        self.projects = projects;
+        cx.notify();
     }
 
     /// Moves keyboard focus to the search box.
@@ -204,51 +356,83 @@ impl PullRequestsPage {
         self.selected.clone()
     }
 
-    /// The saved views the menu offers.
-    pub fn set_saved_views(&mut self, views: Vec<SavedView<PullRequestListPreferences>>, cx: &mut Context<Self>) {
-        self.saved_views = views;
-        cx.notify();
+    /// The saved views menu.
+    pub fn views_menu(&self) -> &Entity<SavedViewsMenu<PullRequestSavedViews>> {
+        &self.views_menu
     }
 
-    /// The saved views, for the owner to persist.
-    pub fn saved_views(&self) -> &[SavedView<PullRequestListPreferences>] {
-        &self.saved_views
-    }
-
-    /// Loads every environment, or with `only_failed` only those whose last load failed.
-    pub fn load(&mut self, only_failed: bool, cx: &mut Context<Self>) {
-        let input = PullRequestListInput {
+    fn list_input(&self, cursors: Option<BTreeMap<String, String>>) -> PullRequestListInput {
+        PullRequestListInput {
             state: self.state,
             involvement: None,
             filters: None,
             project_id: None,
             project_ids: None,
             host: None,
-            limit: Some(100),
-            cursors: None,
+            limit: Some(self.page_size),
+            cursors,
             query: None,
-        };
+        }
+    }
+
+    /// Loads every environment, or with `only_failed` only those whose last load failed.
+    pub fn load(&mut self, only_failed: bool, cx: &mut Context<Self>) {
+        let input = self.list_input(None);
         for env in self.sources.clone() {
             let failed = matches!(self.loads.get(&env.environment_id), Some(EnvironmentLoad::Failed(_)));
             if only_failed && !failed {
                 continue;
             }
             self.loads.insert(env.environment_id.clone(), EnvironmentLoad::Loading);
-            let request = env.source.list(input.clone());
-            let id = env.environment_id.clone();
-            cx.spawn(async move |this, cx| {
-                let result = request.await;
-                this.update(cx, |this, cx| {
-                    let load = match result {
-                        Ok(answer) => EnvironmentLoad::Loaded(Arc::new(answer)),
-                        Err(error) => EnvironmentLoad::Failed(error.0),
-                    };
-                    this.loads.insert(id, load);
-                    this.remerge(cx);
-                })
-                .ok();
+            self.spawn_list(env, input.clone(), false, cx);
+        }
+        cx.notify();
+    }
+
+    /// Asks one environment for a page; `append` adds its rows to the ones already held.
+    fn spawn_list(&mut self, env: EnvironmentListSource, input: PullRequestListInput, append: bool, cx: &mut Context<Self>) {
+        let request = env.source.list(input);
+        let id = env.environment_id;
+        cx.spawn(async move |this, cx| {
+            let result = request.await;
+            this.update(cx, |this, cx| {
+                let load = match result {
+                    Ok(mut answer) => {
+                        if append && let Some(EnvironmentLoad::Loaded(held)) = this.answers.get(&id) {
+                            let mut entries = held.entries.clone();
+                            entries.extend(answer.entries);
+                            answer.entries = entries;
+                        }
+                        let answer = Arc::new(answer);
+                        this.answers.insert(id.clone(), EnvironmentLoad::Loaded(answer.clone()));
+                        EnvironmentLoad::Loaded(answer)
+                    }
+                    Err(error) => EnvironmentLoad::Failed(error.0),
+                };
+                this.loads.insert(id, load);
+                this.loading_more = this.loading_more && this.loads.values().any(|l| matches!(l, EnvironmentLoad::Loading));
+                this.remerge(cx);
             })
-            .detach();
+            .ok();
+        })
+        .detach();
+    }
+
+    /// `loadMore`: continues from each host's cursor, or asks for a longer first page.
+    pub fn load_more(&mut self, cx: &mut Context<Self>) {
+        let Some(merged) = &self.merged else { return };
+        let cursors = merged.next_cursors.clone();
+        self.loading_more = true;
+        if cursors.is_empty() {
+            self.page_size = (self.page_size + PAGE_SIZE).min(MAX_PAGE_SIZE);
+            self.load(false, cx);
+            return;
+        }
+        for env in self.sources.clone() {
+            let Some(cursor) = cursors.get(env.environment_id.as_str()) else { continue };
+            let input = self.list_input(Some(cursor.clone()));
+            self.loads.insert(env.environment_id.clone(), EnvironmentLoad::Loading);
+            self.spawn_list(env, input, true, cx);
         }
         cx.notify();
     }
@@ -262,7 +446,7 @@ impl PullRequestsPage {
         let answers: Vec<(EnvironmentId, Arc<PullRequestListResult>)> = self
             .sources
             .iter()
-            .filter_map(|s| match self.loads.get(&s.environment_id) {
+            .filter_map(|s| match self.answers.get(&s.environment_id) {
                 Some(EnvironmentLoad::Loaded(answer)) => Some((s.environment_id.clone(), answer.clone())),
                 _ => None,
             })
@@ -294,7 +478,12 @@ impl PullRequestsPage {
 
     /// The list's state filter.
     pub fn set_state(&mut self, state: PullRequestListState, cx: &mut Context<Self>) {
+        if self.state == state {
+            return;
+        }
         self.state = state;
+        self.page_size = PAGE_SIZE;
+        self.load(false, cx);
         self.refilter(cx);
     }
 
@@ -310,12 +499,15 @@ impl PullRequestsPage {
         self.refilter(cx);
     }
 
-    /// The controls as a saved view would keep them.
+    /// The controls as the page remembers them and a saved view keeps them.
     pub fn preferences(&self) -> PullRequestListPreferences {
         let labels = self.menu_filters.labels.as_ref().map(|g| g.iter().flatten().cloned().collect());
         PullRequestListPreferences {
-            involvement: Some(self.involvement),
-            state: Some(self.state),
+            involvement: self.involvement,
+            state: self.state,
+            environment_id: self.project.as_ref().map(|(e, _)| e.clone()).or_else(|| self.environment.clone()),
+            project_id: self.project.as_ref().map(|(_, p)| p.clone()),
+            host: self.host.clone(),
             q: (!self.query.is_empty()).then(|| self.query.clone()),
             draft: self.menu_filters.draft,
             review: self.menu_filters.review,
@@ -324,13 +516,16 @@ impl PullRequestsPage {
             labels,
             sort: Some(self.sort),
         }
+        .normalized()
     }
 
-    /// Restores the controls a saved view kept.
-    pub fn apply_preferences(&mut self, p: &PullRequestListPreferences, window: &mut Window, cx: &mut Context<Self>) {
-        self.involvement = p.involvement.unwrap_or(PullRequestInvolvement::All);
-        self.state = p.state.unwrap_or(PullRequestListState::Open);
-        self.sort = p.sort.unwrap_or_default();
+    fn restore(&mut self, p: &PullRequestListPreferences, window: &mut Window, cx: &mut Context<Self>) {
+        self.involvement = p.involvement;
+        self.state = p.state;
+        self.sort = p.sort.unwrap_or(PullRequestListSort::Ready);
+        self.host = p.host.clone();
+        self.project = p.environment_id.clone().zip(p.project_id.clone());
+        self.environment = if self.project.is_some() { None } else { p.environment_id.clone() };
         self.menu_filters = PullRequestListFilters {
             draft: p.draft,
             review: p.review,
@@ -340,7 +535,36 @@ impl PullRequestsPage {
             author: p.author.clone(),
         };
         let q = p.q.clone().unwrap_or_default();
-        self.set_query(&q, window, cx);
+        self.search.update(cx, |input, cx| input.set_value(q.clone(), window, cx));
+        self.query = q;
+    }
+
+    /// Restores the controls a saved view kept.
+    pub fn apply_preferences(&mut self, p: &PullRequestListPreferences, window: &mut Window, cx: &mut Context<Self>) {
+        let state_changed = p.state != self.state;
+        self.restore(p, window, cx);
+        if state_changed {
+            self.page_size = PAGE_SIZE;
+            self.load(false, cx);
+        }
+        self.refilter(cx);
+    }
+
+    /// The host filter (`host` search param); `None` is every host.
+    pub fn set_host(&mut self, host: Option<String>, cx: &mut Context<Self>) {
+        self.host = host;
+        self.refilter(cx);
+    }
+
+    fn set_environment(&mut self, environment: Option<EnvironmentId>, cx: &mut Context<Self>) {
+        self.environment = environment;
+        self.project = None;
+        self.refilter(cx);
+    }
+
+    fn set_project(&mut self, project: Option<(EnvironmentId, ProjectId)>, cx: &mut Context<Self>) {
+        self.project = project;
+        self.refilter(cx);
     }
 
     /// The typed qualifiers over the menu filters, the typed ones winning.
@@ -366,6 +590,13 @@ impl PullRequestsPage {
         (parsed.text, filters)
     }
 
+    /// Stores the controls for the next visit and shows them to the Views menu.
+    fn remember(&mut self, cx: &mut Context<Self>) {
+        let preferences = self.preferences();
+        LocalStorage::set(cx, PREFERENCES_KEY, Some(&preferences));
+        self.views_menu.update(cx, |menu, cx| menu.set_current(preferences, cx));
+    }
+
     /// Recomputes the visible rows from the held answers. Runs per keystroke.
     pub fn refilter(&mut self, cx: &mut Context<Self>) {
         let started = Instant::now();
@@ -373,6 +604,7 @@ impl PullRequestsPage {
             self.items.clear();
             self.rows = 0;
             self.list.reset(0);
+            self.remember(cx);
             cx.notify();
             return;
         };
@@ -396,7 +628,15 @@ impl PullRequestsPage {
         });
         let groups = sort_pull_request_groups(groups, self.sort, &text, self.involvement);
         // The contract's checks filter narrows on the host; rows carry the rollup, so narrow here too.
-        let keep = |row: &Row| match checks {
+        let host = self.host.as_deref();
+        let environment = self.environment.as_ref();
+        let project = self.project.as_ref();
+        let in_scope = |row: &Row| {
+            host.is_none_or(|h| row.entry.host.eq_ignore_ascii_case(h))
+                && environment.is_none_or(|e| &row.environment_id == e)
+                && project.is_none_or(|(e, p)| &row.environment_id == e && &row.entry.project_id == p)
+        };
+        let keep = |row: &Row| in_scope(row) && match checks {
             None => true,
             Some(PullRequestListFiltersChecks::Passing) => row.entry.checks_state == Some(t3code_contracts::PullRequestChecksState::Passing),
             Some(PullRequestListFiltersChecks::Failing) => row.entry.checks_state == Some(t3code_contracts::PullRequestChecksState::Failing),
@@ -415,11 +655,15 @@ impl PullRequestsPage {
             self.rows += rows.len();
             self.items.extend(rows.into_iter().map(ListItem::Row));
         }
+        if merged.truncated && self.rows > 0 {
+            self.items.push(ListItem::LoadMore);
+        }
         self.list.reset(self.items.len());
         if self.selected.as_ref().is_some_and(|key| !self.items.iter().any(|i| matches!(i, ListItem::Row(r) if pull_request_entry_key(r) == key.as_ref()))) {
             self.selected = None;
         }
         self.last_filter = FilterTiming { rows_in: merged.entries.len(), rows_out: self.rows, micros: started.elapsed().as_micros() };
+        self.remember(cx);
         cx.notify();
     }
 
@@ -513,47 +757,65 @@ impl PullRequestsPage {
         self.refilter(cx);
     }
 
-    // --- saved views -----------------------------------------------------
-
-    /// Opens the name editor for a new view of the current controls.
-    pub fn begin_save_view(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let suggested = if self.involvement == PullRequestInvolvement::Reviewing { t!("PRs Requesting My Review").to_string() } else { String::new() };
-        let editor = cx.new(|cx| InputState::new(window, cx).placeholder(t!("PRs Requesting My Review")).default_value(suggested));
-        editor.update(cx, |e, cx| e.focus(window, cx));
-        self.view_editor = Some(editor);
-        self.view_error = None;
-        cx.notify();
-    }
-
-    /// Saves the view under the editor's name, or shows why it cannot.
-    pub fn save_view(&mut self, cx: &mut Context<Self>) -> bool {
-        let Some(editor) = &self.view_editor else { return false };
-        let name = editor.read(cx).value().to_string();
-        let error = saved_view_name_error(&name, self.saved_views.iter().map(|v| (v.id.as_str(), v.name.as_str())), None);
-        if let Some(error) = error {
-            self.view_error = Some(error.message().into());
-            cx.notify();
-            return false;
-        }
-        let id = format!("view-{}", self.saved_views.len() + 1);
-        self.saved_views.push(SavedView { id, name: name.trim().to_owned(), search: self.preferences() });
-        self.view_editor = None;
-        self.view_error = None;
-        cx.notify();
-        true
-    }
-
-    fn delete_view(&mut self, id: &str, cx: &mut Context<Self>) {
-        self.saved_views.retain(|v| v.id != id);
-        cx.notify();
-    }
-
-    fn active_view(&self) -> Option<&SavedView<PullRequestListPreferences>> {
-        let current = self.preferences();
-        self.saved_views.iter().find(|v| v.search == current)
-    }
-
     // --- render ----------------------------------------------------------
+
+    /// The hosts the list read, as the provider filter offers them (`hostMenuOptions`).
+    fn host_options(&self) -> Vec<FilterOption> {
+        let providers = self.merged.as_ref().map(|m| m.providers.as_slice()).unwrap_or_default();
+        let mut options = vec![FilterOption::new("", t!("All", context = "all hosts"), IconName::Plug2)];
+        for provider in providers {
+            let definition = crate::source_control_presentation::source_control_definition(Some(provider.kind.as_str()));
+            let sharing = providers.iter().filter(|p| p.kind == provider.kind).count();
+            let label: SharedString = if sharing > 1 { provider.host.clone().into() } else { definition.label.into() };
+            let mut option = FilterOption::new(&provider.host, label, IconName::GitPullRequestArrow);
+            if !provider.configured {
+                option.unavailable = Some(provider.detail.clone().map(SharedString::from).unwrap_or_else(|| t!("This host could not be read.")));
+            }
+            options.push(option);
+        }
+        options
+    }
+
+    fn server_options(&self) -> Vec<FilterOption> {
+        std::iter::once(FilterOption::new("", t!("All servers"), IconName::Layers))
+            .chain(self.sources.iter().map(|s| FilterOption::new(s.environment_id.as_str(), s.label.clone(), IconName::Server)))
+            .collect()
+    }
+
+    fn project_options(&self) -> Vec<FilterOption> {
+        std::iter::once(FilterOption::new("", t!("All projects"), IconName::Layers))
+            .chain(self.projects.iter().map(|p| {
+                FilterOption::new(&format!("{}\u{0}{}", p.environment_id.as_str(), p.project_id.as_str()), p.title.clone(), IconName::FolderGit2)
+            }))
+            .collect()
+    }
+
+    /// `filterCount`: every control away from its default.
+    fn filter_count(&self) -> usize {
+        let f = &self.menu_filters;
+        [
+            self.state != PullRequestListState::Open,
+            self.involvement != PullRequestInvolvement::All,
+            self.host.is_some(),
+            self.environment.is_some(),
+            self.project.is_some(),
+            f.draft.is_some(),
+            f.review.is_some(),
+            f.checks.is_some(),
+            f.author.is_some(),
+        ]
+        .into_iter()
+        .filter(|on| *on)
+        .count()
+            + f.labels.iter().flatten().flatten().count()
+    }
+
+    fn set_filters_submenu(&mut self, submenu: Option<FilterSubmenu>, cx: &mut Context<Self>) {
+        if self.filters_submenu != submenu {
+            self.filters_submenu = submenu;
+            cx.notify();
+        }
+    }
 
     fn render_toolbar(&self, theme: &AppTheme, cx: &mut Context<Self>) -> impl IntoElement {
         let this = cx.entity();
@@ -564,11 +826,13 @@ impl PullRequestsPage {
                 "pr-sort",
                 Button::new("pr-sort-trigger").variant(ButtonVariant::Outline).icon(IconName::ArrowDownUp).label(t!("Sort", context = "verb, sort a list")),
                 move |_, _| {
-                    let mut menu = MenuPopup::new().label(t!("Sort pull requests"));
-                    for option in PullRequestListSort::ALL {
+                    let mut menu = MenuPopup::new();
+                    for option in SORT_MENU {
                         let this = this.clone();
                         menu = menu.item(
                             MenuItem::new(sort_label(option))
+                                .icon(sort_icon(option))
+                                .icon_size(IconSize::Sm)
                                 .kind(MenuItemKind::Radio(option == sort))
                                 .on_select(move |_, cx| this.update(cx, |p, cx| p.set_sort(option, cx))),
                         );
@@ -577,61 +841,67 @@ impl PullRequestsPage {
                 },
             )
         };
+        let count = self.filter_count();
+        let filters_trigger = Button::new("pr-filters-trigger")
+            .variant(ButtonVariant::Outline)
+            .icon(IconName::ListFilter)
+            .label(t!("Filters"))
+            .when(count > 0, |b| {
+                b.accessory(
+                    div()
+                        .rounded_full()
+                        .bg(theme.colors.muted)
+                        .px(theme.sp(1.5))
+                        .ui_text(theme, TextSize::Xs, weight::NORMAL)
+                        .text_color(theme.colors.muted_foreground)
+                        .child(count.to_string()),
+                )
+            });
         let filters_menu = {
             let this = this.clone();
-            let state = self.state;
-            let involvement = self.involvement;
-            let filters = self.menu_filters.clone();
-            let facets = self.merged.as_ref().map(|m| collect_pull_request_list_facets(&m.entries, state)).unwrap_or_default();
-            dropdown_menu(
-                "pr-filters",
-                Button::new("pr-filters-trigger").variant(ButtonVariant::Outline).icon(IconName::ListFilter).label(t!("Filters")),
-                move |_, _| filters_popup(&this, state, involvement, &filters, &facets),
-            )
+            Popover::new("pr-filters", filters_trigger, move |handle, _, cx| filters_popup(&this, handle, cx))
         };
-        let views_menu = {
+        let host = self.host.clone();
+        let host_options = self.host_options();
+        let current_host = host_options.iter().find(|o| Some(o.value.as_ref()) == host.as_deref()).map(|o| (o.icon, o.label.clone()));
+        let provider_trigger = match (&host, current_host) {
+            (Some(_), Some((icon, _))) => Button::new("pr-provider-trigger").variant(ButtonVariant::Outline).size(ButtonSize::Icon).icon(icon),
+            _ => Button::new("pr-provider-trigger")
+                .variant(ButtonVariant::Outline)
+                .icon(IconName::Plug2)
+                .label(t!("All", context = "all providers")),
+        };
+        let provider_menu = {
             let this = this.clone();
-            let views: Vec<(String, String)> = self.saved_views.iter().map(|v| (v.id.clone(), v.name.clone())).collect();
-            let active = self.active_view().map(|v| v.id.clone());
-            let label: SharedString = self.active_view().map(|v| SharedString::from(v.name.clone())).unwrap_or_else(|| t!("Views", context = "saved filter views menu"));
-            dropdown_menu(
-                "pr-views",
-                Button::new("pr-views-trigger").variant(ButtonVariant::Outline).icon(IconName::Bookmark).label(label).trailing_icon(IconName::ChevronDown),
-                move |_, cx| {
-                    let mut menu = MenuPopup::new().label(t!("{list, select, pullRequest {Saved pull request views} other {Saved issue views}}", list = "pullRequest"));
-                    let prefs: Vec<_> = this.read(cx).saved_views.iter().map(|v| (v.id.clone(), v.search.clone())).collect();
-                    for (id, name) in &views {
-                        let this = this.clone();
-                        let search = prefs.iter().find(|(i, _)| i == id).map(|(_, s)| s.clone()).unwrap_or_default();
-                        menu = menu.item(
-                            MenuItem::new(SharedString::from(name.clone()))
-                                .kind(MenuItemKind::Radio(active.as_deref() == Some(id)))
-                                .on_select(move |window, cx| this.update(cx, |p, cx| p.apply_preferences(&search, window, cx))),
-                        );
-                    }
-                    if !views.is_empty() {
-                        menu = menu.separator();
-                    }
-                    let save = this.clone();
-                    menu = menu.item(MenuItem::new(t!("Save current view…")).icon(IconName::Plus).on_select(move |window, cx| save.update(cx, |p, cx| p.begin_save_view(window, cx))));
-                    if let Some(id) = active.clone() {
-                        let del = this.clone();
-                        menu = menu.item(MenuItem::new(t!("Delete view")).destructive().on_select(move |_, cx| del.update(cx, |p, cx| p.delete_view(&id, cx))));
-                    }
-                    menu
-                },
-            )
+            dropdown_menu("pr-provider", provider_trigger, move |_, _| {
+                let mut menu = MenuPopup::new();
+                for option in &host_options {
+                    let this = this.clone();
+                    let value = (!option.value.is_empty()).then(|| option.value.to_string());
+                    let on = value == host;
+                    menu = menu.item(
+                        MenuItem::new(option.label.clone())
+                            .icon(option.icon)
+                            .icon_size(IconSize::Sm)
+                            .kind(MenuItemKind::Radio(on))
+                            .disabled(option.unavailable.is_some())
+                            .on_select(move |_, cx| this.update(cx, |p, cx| p.set_host(value.clone(), cx))),
+                    );
+                }
+                menu
+            })
         };
         let refreshing = self.loads.values().any(|l| matches!(l, EnvironmentLoad::Loading));
         div()
             .flex()
             .flex_wrap()
             .items_center()
-            .gap(px(8.))
-            .child(div().id("pr-search").min_w(px(240.)).flex_1().child(TextInput::new(&self.search).size(InputSize::Lg).leading_icon(IconName::Search)))
+            .gap(theme.sp(2.))
+            .child(div().id("pr-search").min_w_0().flex_1().child(TextInput::new(&self.search).size(InputSize::Lg).leading_icon(IconName::Search)))
             .child(sort_menu)
             .child(filters_menu)
-            .child(views_menu)
+            .child(self.views_menu.clone())
+            .child(provider_menu)
             .child(
                 Button::new("pr-refresh")
                     .variant(ButtonVariant::Outline)
@@ -640,28 +910,6 @@ impl PullRequestsPage {
                     .disabled(refreshing)
                     .on_click(cx.listener(|this, _, _, cx| this.load(false, cx))),
             )
-            .when_some(self.view_editor.clone(), |el, editor| {
-                el.child(
-                    div()
-                        .w_full()
-                        .flex()
-                        .items_center()
-                        .gap(px(8.))
-                        .child(div().ui_text(theme, TextSize::Xs, weight::MEDIUM).text_color(theme.colors.muted_foreground).child(t!("View name")))
-                        .child(div().id("pr-view-name").w(px(260.)).child(TextInput::new(&editor).invalid(self.view_error.is_some())))
-                        .child(Button::new("pr-view-save").size(ButtonSize::Sm).label(t!("Save")).on_click(cx.listener(|this, _, _, cx| {
-                            this.save_view(cx);
-                        })))
-                        .child(Button::new("pr-view-cancel").variant(ButtonVariant::Ghost).size(ButtonSize::Sm).label(t!("Cancel")).on_click(cx.listener(|this, _, _, cx| {
-                            this.view_editor = None;
-                            this.view_error = None;
-                            cx.notify();
-                        })))
-                        .when_some(self.view_error.clone(), |el, error| {
-                            el.child(div().ui_text(theme, TextSize::Xs, weight::NORMAL).text_color(theme.colors.destructive()).child(error))
-                        }),
-                )
-            })
     }
 
     fn render_chips(&self, theme: &AppTheme, cx: &mut Context<Self>) -> Option<AnyElement> {
@@ -810,94 +1058,274 @@ fn review_filter_label(review: PullRequestListFiltersReview) -> SharedString {
     }
 }
 
-fn state_label(state: PullRequestListState) -> SharedString {
-    match state {
-        PullRequestListState::Open => t!("Open", context = "pull request state"),
-        PullRequestListState::Closed => t!("Closed", context = "pull request state"),
-        PullRequestListState::Merged => t!("Merged", context = "pull request state"),
-        PullRequestListState::All => t!("All", context = "pull request filter"),
+/// One choice in a filter submenu or the provider menu (`PullRequestFilterOption`).
+#[derive(Clone)]
+struct FilterOption {
+    value: SharedString,
+    label: SharedString,
+    icon: IconName,
+    unavailable: Option<SharedString>,
+}
+
+impl FilterOption {
+    fn new(value: &str, label: SharedString, icon: IconName) -> Self {
+        Self { value: SharedString::from(value.to_owned()), label, icon, unavailable: None }
     }
 }
 
-fn involvement_label(involvement: PullRequestInvolvement) -> SharedString {
-    match involvement {
-        PullRequestInvolvement::All => t!("All", context = "pull request filter"),
-        PullRequestInvolvement::Reviewing => t!("Reviewing", context = "pull request filter"),
-        PullRequestInvolvement::Authored => t!("Authored", context = "pull request filter"),
+/// `SORT_OPTIONS`, in menu order.
+const SORT_MENU: [PullRequestListSort; 7] = [
+    PullRequestListSort::Ready,
+    PullRequestListSort::Blocked,
+    PullRequestListSort::Updated,
+    PullRequestListSort::Newest,
+    PullRequestListSort::Oldest,
+    PullRequestListSort::Largest,
+    PullRequestListSort::Smallest,
+];
+
+fn sort_icon(sort: PullRequestListSort) -> IconName {
+    match sort {
+        PullRequestListSort::Ready => IconName::ListChecks,
+        PullRequestListSort::Blocked => IconName::UserLock,
+        PullRequestListSort::Updated => IconName::Clock,
+        PullRequestListSort::Newest => IconName::CalendarArrowDown,
+        PullRequestListSort::Oldest => IconName::CalendarArrowUp,
+        PullRequestListSort::Largest => IconName::Maximize2,
+        PullRequestListSort::Smallest => IconName::Minimize2,
     }
 }
 
-fn filters_popup(
-    this: &Entity<PullRequestsPage>,
-    state: PullRequestListState,
-    involvement: PullRequestInvolvement,
-    filters: &PullRequestListFilters,
-    facets: &(Vec<PullRequestAuthorFacet>, Vec<PullRequestLabelFacet>),
-) -> MenuPopup {
-    let mut menu = MenuPopup::new().min_width(px(220.)).label(t!("State", context = "pull request filter"));
-    for option in [PullRequestListState::Open, PullRequestListState::Merged, PullRequestListState::Closed, PullRequestListState::All] {
-        let this = this.clone();
-        menu = menu.item(MenuItem::new(state_label(option)).kind(MenuItemKind::Radio(option == state)).on_select(move |_, cx| this.update(cx, |p, cx| p.set_state(option, cx))));
-    }
-    menu = menu.separator().label(t!("Involvement"));
-    for option in [PullRequestInvolvement::All, PullRequestInvolvement::Reviewing, PullRequestInvolvement::Authored] {
-        let this = this.clone();
-        menu = menu.item(
-            MenuItem::new(involvement_label(option))
-                .kind(MenuItemKind::Radio(option == involvement))
-                .on_select(move |_, cx| this.update(cx, |p, cx| p.set_involvement(option, cx))),
-        );
-    }
-    let with = |update: Box<dyn Fn(&mut PullRequestListFilters)>| {
-        let this = this.clone();
-        let mut next = filters.clone();
-        update(&mut next);
-        move |_: &mut Window, cx: &mut App| this.update(cx, |p, cx| p.set_menu_filters(next.clone(), cx))
+const UNFILTERED: &str = "__all__";
+
+/// The Filters menu: one submenu per control, the open one beside its row.
+/// Ports `PullRequestFiltersMenu`.
+fn filters_popup(this: &Entity<PullRequestsPage>, handle: PopupHandle, cx: &mut App) -> AnyElement {
+    let page = this.read(cx);
+    let theme = cx.app_theme().clone();
+    let f = page.menu_filters.clone();
+    let state_options = vec![
+        FilterOption::new("all", t!("All", context = "pull request filter"), IconName::Layers),
+        FilterOption::new("open", t!("Open", context = "pull request state"), IconName::GitPullRequestArrow),
+        FilterOption::new("closed", t!("Closed", context = "pull request state"), IconName::GitPullRequestClosed),
+        FilterOption::new("merged", t!("Merged", context = "pull request state"), IconName::GitMerge),
+    ];
+    let involvement_options = vec![
+        FilterOption::new("all", t!("All", context = "pull request filter"), IconName::Layers),
+        FilterOption::new("reviewing", t!("Reviewing", context = "pull request filter"), IconName::Eye),
+        FilterOption::new("authored", t!("Authored", context = "pull request filter"), IconName::PenLine),
+    ];
+    let all = || FilterOption::new(UNFILTERED, t!("All", context = "pull request filter"), IconName::Layers);
+    let draft_options = vec![
+        all(),
+        FilterOption::new("only", t!("Drafts only"), IconName::GitPullRequestDraft),
+        FilterOption::new("hide", t!("Hide drafts"), IconName::EyeOff),
+    ];
+    let review_options = vec![
+        all(),
+        FilterOption::new("approved", t!("Approved", context = "review decision"), IconName::CircleCheck),
+        FilterOption::new("changes-requested", t!("Changes requested"), IconName::CircleX),
+        FilterOption::new("review-required", t!("Review required"), IconName::CircleDashed),
+        FilterOption::new("none", t!("No reviews"), IconName::CircleSlash),
+    ];
+    let checks_options = vec![
+        all(),
+        FilterOption::new("passing", t!("Passing", context = "checks filter"), IconName::CircleCheck),
+        FilterOption::new("failing", t!("Failing", context = "checks filter"), IconName::CircleX),
+    ];
+    let host_options = page.host_options();
+    let server_options = page.server_options();
+    let project_options = page.project_options();
+    let facets = page.merged.as_ref().map(|m| collect_pull_request_list_facets(&m.entries, page.state)).unwrap_or_default();
+    let state_value = page.state.as_str().to_owned();
+    let involvement_value = page.involvement.as_str().to_owned();
+    let draft_value = f.draft.map(|d| d.as_str().to_owned()).unwrap_or_else(|| UNFILTERED.into());
+    let review_value = f.review.map(|r| r.as_str().to_owned()).unwrap_or_else(|| UNFILTERED.into());
+    let checks_value = f.checks.map(|c| c.as_str().to_owned()).unwrap_or_else(|| UNFILTERED.into());
+    let host_value = page.host.clone().unwrap_or_default();
+    let server_value = page.environment.as_ref().map(|e| e.as_str().to_owned()).unwrap_or_default();
+    let project_value = page.project.as_ref().map(|(e, p)| format!("{}\u{0}{}", e.as_str(), p.as_str())).unwrap_or_default();
+    let open = page.filters_submenu;
+    let selected_labels: Vec<String> = f.labels.iter().flatten().flatten().cloned().collect();
+
+    // Rows of the main menu, top to bottom, for placing the open submenu.
+    let mut offsets: Vec<(FilterSubmenu, Pixels)> = Vec::new();
+    let mut y = Pixels::ZERO;
+    let row_h = theme.sp(7.);
+    let sep_h = theme.sp(2.) + px(1.);
+    let mut menu = MenuPopup::new();
+    let trigger = |menu: MenuPopup, y: &mut Pixels, offsets: &mut Vec<(FilterSubmenu, Pixels)>, submenu: FilterSubmenu, label: SharedString, options: &[FilterOption], value: &str| {
+        let current = options.iter().find(|o| o.value.as_ref() == value).or(options.first());
+        offsets.push((submenu, *y));
+        *y += row_h;
+        let hover = this.clone();
+        let click = this.clone();
+        let mut item = MenuItem::new(label)
+            .id(format!("pr-filter-sub-{submenu:?}").to_lowercase())
+            .kind(MenuItemKind::Submenu)
+            .icon(current.map_or(IconName::Layers, |c| c.icon))
+            .icon_size(IconSize::Sm)
+            .detail(current.map(|c| c.label.clone()).unwrap_or_default())
+            .on_hover(move |hovered, _, cx| {
+                if *hovered {
+                    hover.update(cx, |p, cx| p.set_filters_submenu(Some(submenu), cx));
+                }
+            })
+            .on_select(move |_, cx| click.update(cx, |p, cx| p.set_filters_submenu(Some(submenu), cx)));
+        if open == Some(submenu) {
+            item = item.highlighted();
+        }
+        menu.item(item)
     };
-    menu = menu.separator().label(t!("Draft", context = "pull request filter"));
-    for (label, value) in [(t!("Drafts only"), Some(PullRequestListFiltersDraft::Only)), (t!("Hide drafts"), Some(PullRequestListFiltersDraft::Hide))] {
-        let toggled = if filters.draft == value { None } else { value };
-        menu = menu.item(MenuItem::new(label).kind(MenuItemKind::Checkbox(filters.draft == value)).on_select(with(Box::new(move |f| f.draft = toggled))));
+    menu = trigger(menu, &mut y, &mut offsets, FilterSubmenu::State, t!("State", context = "pull request filter"), &state_options, &state_value);
+    menu = trigger(menu, &mut y, &mut offsets, FilterSubmenu::Involvement, t!("Involvement"), &involvement_options, &involvement_value);
+    menu = menu.separator();
+    y += sep_h;
+    let author_options: Vec<FilterOption> = std::iter::once(FilterOption::new(UNFILTERED, t!("Anyone"), IconName::User))
+        .chain(facets.0.iter().map(|a| FilterOption::new(&a.actor.login, a.actor.login.clone().into(), IconName::User)))
+        .collect();
+    let author_value = f.author.clone().unwrap_or_else(|| UNFILTERED.into());
+    menu = trigger(menu, &mut y, &mut offsets, FilterSubmenu::Author, t!("Author"), &author_options, &author_value);
+    let labels_detail = if selected_labels.is_empty() {
+        t!("Any", context = "no label filter")
+    } else {
+        t!("{count, plural, one {{count} selected} other {{count} selected}}", count = selected_labels.len())
+    };
+    let label_options = [FilterOption::new(UNFILTERED, labels_detail, IconName::Tag)];
+    menu = trigger(menu, &mut y, &mut offsets, FilterSubmenu::Labels, t!("Labels"), &label_options, UNFILTERED);
+    menu = trigger(menu, &mut y, &mut offsets, FilterSubmenu::Draft, t!("Draft", context = "pull request filter"), &draft_options, &draft_value);
+    menu = trigger(menu, &mut y, &mut offsets, FilterSubmenu::Review, t!("Review", context = "pull request filter"), &review_options, &review_value);
+    menu = trigger(menu, &mut y, &mut offsets, FilterSubmenu::Checks, t!("Checks", context = "pull request filter"), &checks_options, &checks_value);
+    if host_options.len() > 2 {
+        menu = menu.separator();
+        y += sep_h;
+        menu = trigger(menu, &mut y, &mut offsets, FilterSubmenu::Host, t!("Host", context = "pull request filter"), &host_options, &host_value);
     }
-    menu = menu.separator().label(t!("Review", context = "pull request filter"));
-    for value in [PullRequestListFiltersReview::Approved, PullRequestListFiltersReview::ChangesRequested, PullRequestListFiltersReview::ReviewRequired, PullRequestListFiltersReview::NoneType] {
-        let toggled = if filters.review == Some(value) { None } else { Some(value) };
-        menu = menu.item(MenuItem::new(review_filter_label(value)).kind(MenuItemKind::Checkbox(filters.review == Some(value))).on_select(with(Box::new(move |f| f.review = toggled))));
+    if server_options.len() > 2 {
+        menu = menu.separator();
+        y += sep_h;
+        menu = trigger(menu, &mut y, &mut offsets, FilterSubmenu::Server, t!("Server", context = "pull request filter"), &server_options, &server_value);
     }
-    menu = menu.separator().label(t!("Checks", context = "pull request filter"));
-    for (label, value) in [(t!("Passing", context = "checks filter"), PullRequestListFiltersChecks::Passing), (t!("Failing", context = "checks filter"), PullRequestListFiltersChecks::Failing)] {
-        let toggled = if filters.checks == Some(value) { None } else { Some(value) };
-        menu = menu.item(MenuItem::new(label).kind(MenuItemKind::Checkbox(filters.checks == Some(value))).on_select(with(Box::new(move |f| f.checks = toggled))));
-    }
-    if !facets.0.is_empty() {
-        menu = menu.separator().label(t!("Author"));
-        for facet in facets.0.iter().take(6) {
-            let login = facet.actor.login.clone();
-            let on = filters.author.as_deref().is_some_and(|a| a.eq_ignore_ascii_case(&login));
-            let value = (!on).then(|| login.clone());
-            menu = menu.item(
-                MenuItem::new(SharedString::from(format!("{login} ({})", facet.count)))
-                    .kind(MenuItemKind::Checkbox(on))
-                    .on_select(with(Box::new(move |f| f.author = value.clone()))),
+    menu = menu.separator();
+    y += sep_h;
+    menu = trigger(menu, &mut y, &mut offsets, FilterSubmenu::Project, t!("Project", context = "pull request filter"), &project_options, &project_value);
+    let close = handle.clone();
+    let reset = this.clone();
+    let menu = menu.on_dismiss(move |_, cx| {
+        reset.update(cx, |p, cx| p.set_filters_submenu(None, cx));
+        close.close(cx);
+    });
+
+    let submenu = open.map(|submenu| {
+        let page = this.clone();
+        let update = move |change: Box<dyn Fn(&mut PullRequestsPage, &str, &mut Context<PullRequestsPage>)>| {
+            let page = page.clone();
+            let change = Rc::new(change);
+            move |value: SharedString| {
+                let page = page.clone();
+                let change = change.clone();
+                move |_: &mut Window, cx: &mut App| page.update(cx, |p, cx| change(p, value.as_ref(), cx))
+            }
+        };
+        let (label, options, value, pick): (SharedString, Vec<FilterOption>, String, _) = match submenu {
+            FilterSubmenu::State => (t!("State", context = "pull request filter"), state_options, state_value, update(Box::new(|p, v, cx| {
+                if let Some(s) = list_state_from(v) {
+                    p.set_state(s, cx)
+                }
+            }))),
+            FilterSubmenu::Involvement => (t!("Involvement"), involvement_options, involvement_value, update(Box::new(|p, v, cx| {
+                if let Some(i) = involvement_from(v) {
+                    p.set_involvement(i, cx)
+                }
+            }))),
+            FilterSubmenu::Author => (t!("Author"), author_options, author_value, update(Box::new(|p, v, cx| {
+                let author = (v != UNFILTERED).then(|| v.to_owned());
+                p.set_menu_filters(PullRequestListFilters { author, ..p.menu_filters.clone() }, cx)
+            }))),
+            FilterSubmenu::Draft => (t!("Draft", context = "pull request filter"), draft_options, draft_value, update(Box::new(|p, v, cx| {
+                let draft = PullRequestListFiltersDraft::ALL.iter().copied().find(|d| d.as_str() == v);
+                p.set_menu_filters(PullRequestListFilters { draft, ..p.menu_filters.clone() }, cx)
+            }))),
+            FilterSubmenu::Review => (t!("Review", context = "pull request filter"), review_options, review_value, update(Box::new(|p, v, cx| {
+                let review = PullRequestListFiltersReview::ALL.iter().copied().find(|r| r.as_str() == v);
+                p.set_menu_filters(PullRequestListFilters { review, ..p.menu_filters.clone() }, cx)
+            }))),
+            FilterSubmenu::Checks => (t!("Checks", context = "pull request filter"), checks_options, checks_value, update(Box::new(|p, v, cx| {
+                let checks = PullRequestListFiltersChecks::ALL.iter().copied().find(|c| c.as_str() == v);
+                p.set_menu_filters(PullRequestListFilters { checks, ..p.menu_filters.clone() }, cx)
+            }))),
+            FilterSubmenu::Host => (t!("Host", context = "pull request filter"), host_options, host_value, update(Box::new(|p, v, cx| {
+                p.set_host((!v.is_empty()).then(|| v.to_owned()), cx)
+            }))),
+            FilterSubmenu::Server => (t!("Server", context = "pull request filter"), server_options, server_value, update(Box::new(|p, v, cx| {
+                p.set_environment((!v.is_empty()).then(|| EnvironmentId::new(v)), cx)
+            }))),
+            FilterSubmenu::Project => (t!("Project", context = "pull request filter"), project_options, project_value, update(Box::new(|p, v, cx| {
+                let project = v.split_once('\u{0}').map(|(e, id)| (EnvironmentId::new(e), ProjectId::new(id)));
+                p.set_project(project, cx)
+            }))),
+            FilterSubmenu::Labels => {
+                // Labels toggle; the menu stays open between picks.
+                let mut popup = MenuPopup::new().label(t!("Labels"));
+                if facets.1.is_empty() {
+                    popup = popup.item(MenuItem::new(t!("No labels found")).disabled(true));
+                }
+                for facet in facets.1.iter() {
+                    let name = facet.label.name.clone();
+                    let on = selected_labels.iter().any(|l| l.eq_ignore_ascii_case(&name));
+                    let held = selected_labels.clone();
+                    let page = this.clone();
+                    popup = popup.item(MenuItem::new(SharedString::from(name.clone())).kind(MenuItemKind::Checkbox(on)).on_select(move |_, cx| {
+                        let next: Vec<String> = if on {
+                            held.iter().filter(|l| !l.eq_ignore_ascii_case(&name)).cloned().collect()
+                        } else {
+                            held.iter().cloned().chain([name.clone()]).take(10).collect()
+                        };
+                        page.update(cx, |p, cx| {
+                            let labels = (!next.is_empty()).then(|| next.iter().map(|l| vec![l.clone()]).collect());
+                            p.set_menu_filters(PullRequestListFilters { labels, ..p.menu_filters.clone() }, cx)
+                        })
+                    }));
+                }
+                return (submenu, popup);
+            }
+        };
+        let mut popup = MenuPopup::new().label(label);
+        for option in options {
+            let on = option.value.as_ref() == value;
+            popup = popup.item(
+                MenuItem::new(option.label.clone())
+                    .id(format!("pr-filter-opt-{}", option.value))
+                    .icon(option.icon)
+                    .icon_size(IconSize::Sm)
+                    .kind(MenuItemKind::Radio(on))
+                    .disabled(option.unavailable.is_some())
+                    .detail(if option.unavailable.is_some() { format!("· {}", t!("Unavailable", context = "filter option")).into() } else { SharedString::default() })
+                    .on_select(pick(option.value.clone())),
             );
         }
+        let close = handle.clone();
+        let reset = this.clone();
+        (submenu, popup.on_dismiss(move |_, cx| {
+            reset.update(cx, |p, cx| p.set_filters_submenu(None, cx));
+            close.close(cx);
+        }))
+    });
+    let mut row = div().flex().items_start().child(menu);
+    if let Some((submenu, popup)) = submenu {
+        let top = offsets.iter().find(|(s, _)| *s == submenu).map_or(Pixels::ZERO, |(_, y)| *y);
+        // Base UI's sub popup: inline-end, aligned to its trigger row 5px up.
+        row = row.child(div().mt(px(1.) + theme.sp(1.) + top - px(5.)).max_h(px(320.)).child(popup));
     }
-    if !facets.1.is_empty() {
-        menu = menu.separator().label(t!("Labels"));
-        for facet in facets.1.iter().take(8) {
-            let name = facet.label.name.clone();
-            let held: Vec<Vec<String>> = filters.labels.clone().unwrap_or_default();
-            let on = held.iter().any(|g| g.iter().any(|l| l.eq_ignore_ascii_case(&name)));
-            let next: Vec<Vec<String>> =
-                if on { held.into_iter().filter(|g| !g.iter().any(|l| l.eq_ignore_ascii_case(&name))).collect() } else { held.into_iter().chain([vec![name.clone()]]).collect() };
-            menu = menu.item(
-                MenuItem::new(SharedString::from(format!("{name} ({})", facet.count)))
-                    .kind(MenuItemKind::Checkbox(on))
-                    .on_select(with(Box::new(move |f| f.labels = (!next.is_empty()).then(|| next.clone())))),
-            );
-        }
-    }
-    menu
+    row.into_any_element()
+}
+
+fn list_state_from(value: &str) -> Option<PullRequestListState> {
+    [PullRequestListState::Open, PullRequestListState::Closed, PullRequestListState::Merged, PullRequestListState::All].into_iter().find(|s| s.as_str() == value)
+}
+
+fn involvement_from(value: &str) -> Option<PullRequestInvolvement> {
+    [PullRequestInvolvement::All, PullRequestInvolvement::Reviewing, PullRequestInvolvement::Authored].into_iter().find(|i| i.as_str() == value)
 }
 
 /// Height of a list row: `py-2.5` around two lines.
@@ -1065,6 +1493,8 @@ impl Render for PullRequestsPage {
         let items = self.items.clone();
         let selected = self.selected.clone();
         let theme_rows = theme.clone();
+        let loading_more = self.loading_more.then(|| self.merged.as_ref().is_some_and(|m| !m.next_cursors.is_empty()));
+        let can_continue = self.merged.as_ref().is_some_and(|m| !m.next_cursors.is_empty()) || self.page_size < MAX_PAGE_SIZE;
         let loading = self.merged.is_none() && self.loads.values().any(|l| matches!(l, EnvironmentLoad::Loading));
         let body: AnyElement = if loading {
             div().p(px(24.)).text_color(theme.colors.muted_foreground).child(t!("Loading pull requests…")).into_any_element()
@@ -1095,6 +1525,7 @@ impl Render for PullRequestsPage {
                     .child(group_label(*key))
                     .child(div().text_color(theme_rows.colors.muted_foreground.opacity(0.7)).child(count.to_string()))
                     .into_any_element(),
+                ListItem::LoadMore => render_load_more(&page, &theme_rows, loading_more, can_continue),
                 ListItem::Row(row) => {
                     let host = row.entry.host.to_lowercase();
                     let actions = host_actions.get(&host).cloned().unwrap_or_default();
@@ -1145,6 +1576,42 @@ impl Render for PullRequestsPage {
                     .children(self.render_banners(&theme, cx))
                     .child(div().flex().flex_col().flex_1().min_h_0().child(body)),
             )
+    }
+}
+
+/// The row under a truncated listing: Load more, its progress, or why there is no more.
+/// `loading` is `Some(continuing)` while a read travels.
+fn render_load_more(page: &Entity<PullRequestsPage>, theme: &AppTheme, loading: Option<bool>, can_continue: bool) -> AnyElement {
+    let row = div()
+        .w_full()
+        .flex()
+        .justify_center()
+        .py(theme.sp(3.))
+        .ui_text(theme, TextSize::Xs, weight::NORMAL)
+        .text_color(theme.colors.muted_foreground);
+    match loading {
+        Some(continuing) => row
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(theme.sp(2.))
+                    .child(Spinner::new(SpinnerSize::Sm))
+                    .child(if continuing { t!("Loading more") } else { t!("Updating pull requests") }),
+            )
+            .into_any_element(),
+        None if can_continue => {
+            let page = page.clone();
+            row.child(
+                Button::new("pr-load-more")
+                    .variant(ButtonVariant::Outline)
+                    .size(ButtonSize::Sm)
+                    .label(t!("Load more pull requests"))
+                    .on_click(move |_, _, cx| page.update(cx, |p, cx| p.load_more(cx))),
+            )
+            .into_any_element()
+        }
+        None => row.child(t!("Narrow your search to find more pull requests.")).into_any_element(),
     }
 }
 
