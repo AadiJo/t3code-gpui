@@ -152,6 +152,7 @@ pub fn composer_state(key: &ThreadKey, row: Option<&ThreadRow>, thread: &LiveThr
             tone: BannerTone::Neutral,
             icon: IconName::Eraser,
             title: t!("Your next message starts a fresh session"),
+            description: Some(t!("The agent won't see earlier messages in this thread.")),
             action: Some(t!("Keep the current session")),
         }]
     } else {
@@ -655,7 +656,7 @@ pub struct LiveMenuSource {
     landed: futures::channel::mpsc::UnboundedSender<(SearchKey, Vec<ComposerCommandItem>)>,
     composer: RefCell<Option<WeakEntity<ChatComposer>>>,
     /// The shell's threads for `@` mentions, and the thread the composer is on.
-    threads: Rc<dyn crate::components::command_palette_lookups::CommandPaletteSource>,
+    threads: Rc<crate::state::palette::LivePaletteSource>,
     environment_id: t3code_contracts::EnvironmentId,
     shown: RefCell<Option<ThreadKey>>,
     _receive: Task<()>,
@@ -666,7 +667,7 @@ impl LiveMenuSource {
     pub fn new(
         environment: &Entity<LiveEnvironment>,
         cwd: Option<String>,
-        threads: Rc<dyn crate::components::command_palette_lookups::CommandPaletteSource>,
+        threads: Rc<crate::state::palette::LivePaletteSource>,
         cx: &mut App,
     ) -> Rc<Self> {
         let (landed, mut receiver) = futures::channel::mpsc::unbounded::<(SearchKey, Vec<ComposerCommandItem>)>();
@@ -718,44 +719,54 @@ impl LiveMenuSource {
         *self.shown.borrow_mut() = key;
     }
 
-    /// Up to five of this environment's threads matching `query`, ranked like the palette
-    /// (`matchComposerThreadItems`); inserting one adds a thread chip.
+    /// Up to five threads matching `query` (`matchComposerThreadItems`): this environment's
+    /// listed threads and the composer thread's own used side chats, without the composer's
+    /// thread, ranked like the palette without picks; inserting one adds a thread chip.
     fn thread_items(&self, query: &str) -> Vec<ComposerCommandItem> {
-        use t3code_shared::palette_search::{SearchQuery, fold_search_query, score_thread_search};
+        use t3code_shared::palette_search::{RankKey, SearchQuery, fold_search_query, rank_search_groups, score_thread_search};
         let folded = fold_search_query(query);
         if folded.is_empty() {
             return Vec::new();
         }
         let search = SearchQuery::new(&folded);
-        let now = t3code_client_runtime::state::models::now_ms() as i64;
+        let now = t3code_client_runtime::state::models::now_ms();
         let shown = self.shown.borrow().clone();
-        let threads = self.threads.threads();
-        let candidates = threads.iter().filter(|t| {
-            t.key.environment_id.0.as_ref() == self.environment_id.as_str() && Some(&t.key) != shown.as_ref()
-        });
-        let mut ranked: Vec<_> = candidates
-            .clone()
-            .filter_map(|t| score_thread_search(&search, &t.subject, now, false, false).map(|m| (m.score, t)))
+        let all = self.threads.mention_candidates();
+        let own_side_chat = |t: &crate::state::palette::MentionCandidate| {
+            t.side_chat_of.is_some() && t.side_chat_of == shown && t.has_user_message
+        };
+        let candidates: Vec<&Arc<crate::state::palette::MentionCandidate>> = all
+            .iter()
+            .filter(|t| {
+                t.key.environment_id.0.as_ref() == self.environment_id.as_str()
+                    && Some(&t.key) != shown.as_ref()
+                    && (t.side_chat_of.is_none() || own_side_chat(t))
+            })
             .collect();
-        if ranked.is_empty() {
-            ranked = candidates.filter_map(|t| score_thread_search(&search, &t.subject, now, true, false).map(|m| (m.score, t))).collect();
-        }
-        ranked.sort_by(|a, b| b.0.total_cmp(&a.0));
+        let ranked = rank_search_groups(&[candidates.len()], |_, item, typos| {
+            let found = score_thread_search(&search, &candidates[item].subject, now, typos, false)?;
+            let key = RankKey::from(&found);
+            Some(((), key))
+        });
         ranked
             .into_iter()
+            .flat_map(|(_, items)| items)
             .take(5)
-            .map(|(_, thread)| ComposerCommandItem {
-                id: SharedString::from(format!("thread:{}:{}", thread.key.environment_id.0, thread.key.thread_id.0)),
-                icon: ComposerCommandIcon::Icon(IconName::MessageSquare),
-                label: thread.title.clone(),
-                label_prefix: None,
-                description: t!("Thread", context = "noun, search result type"),
-                badge: None,
-                action: ComposerCommandAction::Insert(SharedString::from(crate::composer_editor_mentions::format_context_reference(
-                    "thread",
-                    &format!("thread_{}", thread.key.thread_id.0),
-                    &thread.title,
-                ))),
+            .map(|(index, _, _)| {
+                let thread = candidates[index];
+                ComposerCommandItem {
+                    id: SharedString::from(format!("thread:{}:{}", thread.key.environment_id.0, thread.key.thread_id.0)),
+                    icon: ComposerCommandIcon::Icon(IconName::MessageSquare),
+                    label: thread.title.clone(),
+                    label_prefix: None,
+                    description: if own_side_chat(thread) { t!("Side chat") } else { t!("Thread", context = "noun, search result type") },
+                    badge: None,
+                    action: ComposerCommandAction::Insert(SharedString::from(crate::composer_editor_mentions::format_context_reference(
+                        "thread",
+                        &format!("thread_{}", thread.key.thread_id.0),
+                        &thread.title,
+                    ))),
+                }
             })
             .collect()
     }

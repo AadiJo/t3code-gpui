@@ -735,6 +735,12 @@ impl EnvironmentCommands {
         .await
     }
 
+    /// Adds or removes one tag on a thread (`thread.tag.set`).
+    pub async fn set_tag(&self, thread_id: &ThreadId, tag: impl Into<String>, tagged: bool) -> Result<Accepted, CommandError> {
+        let command = Command::ThreadTagSet(t3code_contracts::OrchestrationV2CommandThreadTagSet { command_id: new_command_id(), thread_id: thread_id.clone(), tag: tag.into(), tagged });
+        self.on_thread(thread_id, command).await
+    }
+
     pub async fn mark_unread(&self, thread_id: &ThreadId) -> Result<Accepted, CommandError> {
         self.on_thread(thread_id, Command::ThreadMarkUnread(t3code_contracts::OrchestrationV2CommandThreadMarkUnread { command_id: new_command_id(), thread_id: thread_id.clone() })).await
     }

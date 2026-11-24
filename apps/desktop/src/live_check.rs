@@ -18,14 +18,30 @@
 //            repository group across them and the per-project override, favicons, provider
 //            marks, a turn on one server leaving the other alone, unread and visits, message
 //            search, snooze, archive and the Archive list, the composer draft on disk
+//   notify   with a stand-in notification service on a private session bus (`T3_NOTIFY_LOG`,
+//            `T3_NOTIFY_CONTROL`) and `T3_NOTIFY_MODE` linux (system notifications) or inbox (the
+//            macOS and Windows inbox, run here): completion, approval, input and failure on
+//            threads not shown while the window is unfocused, each checked against the model
+//            (request sent, inbox entry, badge, sidebar Done); a click opens the thread; the tag
+//            filter closes a hidden thread's notification and keeps it quiet
+//   details  a thread launched into a new worktree: the timeline's setup row follows the
+//            server's worktree setup stream (stages and their states)
+//   mentions `@` offers a thread's own used side chat (as "Side chat") and no other
+//            thread's, never the composer's own thread, best title match first
+//   heic     a HEIC photo attaches as a JPEG fitted to 2000px and uploads; an unreadable one is
+//            refused. Linux has no HEIC decoder here, so run it with a stand-in `heif-convert`
+//            on PATH (the macOS build decodes with `sips`)
 //   import   a fresh data directory and a stand-in install (`T3CODE_IMPORT_HOME`, made by
 //            `import-check`, encrypted with the fixture macOS key): the launch import runs,
 //            the window explains the Keychain read, environments and settings arrive
 //
-// Usage: live-check <seed|drive|restart|import|send|sidebar> <out-dir>
+// Usage: live-check <seed|drive|restart|import|send|sidebar|notify|details|mentions|heic> <out-dir>
 #[allow(dead_code)]
 #[path = "import/mod.rs"]
 mod import;
+#[allow(dead_code)]
+#[path = "notifications/mod.rs"]
+mod notifications;
 
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
@@ -58,6 +74,7 @@ use t3code_web::connection::{ConnectionRuntime, ConnectionsState, ElectronImport
 use t3code_web::diff_panel_store::DiffPanelSelection;
 use t3code_web::router::{Route, ThreadTarget};
 use t3code_web::shortcuts::ShortcutRoot;
+use t3code_web::components::thread_notification_coordinator::ThreadNotificationCoordinator;
 use t3code_web::state::StateBridge;
 use t3code_web::state::shell::thread_key;
 use t3code_web::ui_state_store::StateDir;
@@ -138,8 +155,13 @@ impl Check {
             presentation: ClientPresentation { label: "t3code-gpui live check".into(), ..Default::default() },
             electron: launch.install.as_ref().map(|install| ElectronImportSource { paths: install.paths.clone(), key: import_key }),
         };
+        let inbox = notify_mode() == Some(NotifyMode::Inbox);
         cx.update(|cx| {
             t3code_web::init(cx);
+            if inbox {
+                // The macOS and Windows inbox, run on this platform for the check.
+                ThreadNotificationCoordinator::init(true, Default::default(), cx);
+            }
             ConnectionRuntime::init(config, cx)?;
             t3code_web::hooks::load(&data, cx);
             import::apply_client_settings(&launch, cx);
@@ -156,6 +178,11 @@ impl Check {
             WindowRoot::open_window(window_options, options, cx)
         })?;
         let WindowRoot { shortcuts, shell, app: root } = parts;
+        if notify_mode().is_some() {
+            let path = data.join("ui").join("notifications.json");
+            cx.update(|cx| notifications::install_with(inbox, Some(path), cx));
+            cx.update_window(window, |_, window, cx| ThreadNotificationCoordinator::watch_window(window, cx))?;
+        }
         cx.update(|cx| import::import_connections(launch, cx));
         let mut check = Self { cx, out: out.to_owned(), started: Instant::now(), log: String::new(), failures: 0, window, root, shell, shortcuts };
         check.frame();
@@ -392,7 +419,7 @@ fn key_of(state: &Seeded, thread: &str) -> ThreadKey {
 
 fn main() -> anyhow::Result<()> {
     let mut args = std::env::args().skip(1);
-    let usage = "usage: live-check <seed|drive|restart|import|send|sidebar> <out-dir> | live-check timeline <projections-dir> <out-dir> | live-check commands <corpus.json> <out.json>";
+    let usage = "usage: live-check <seed|drive|restart|import|send|sidebar|notify|details|mentions|heic> <out-dir> | live-check timeline <projections-dir> <out-dir> | live-check commands <corpus.json> <out.json>";
     let phase = args.next().context(usage)?;
     let out = PathBuf::from(args.next().context(usage)?);
     if phase == "timeline" {
@@ -411,6 +438,11 @@ fn main() -> anyhow::Result<()> {
         "import" => run_import(&mut check),
         "send" => run_send(&mut check),
         "sidebar" => run_sidebar(&mut check),
+        "notify" => run_notify(&mut check),
+        "details" => run_details(&mut check),
+        "mentions" => run_mentions(&mut check),
+        "heic" => run_heic(&mut check),
+        "probe" => run_probe(&mut check),
         other => Err(anyhow::anyhow!("unknown phase {other}")),
     };
     check.finish(&phase, result)
@@ -578,6 +610,20 @@ fn run_drive(check: &mut Check) -> anyhow::Result<()> {
     let rows = check.sidebar_threads();
     check.check("sidebar paints rows from cache at launch", rows >= 5, format!("{rows} rows"));
     check.pump(|c| c.connected(), Duration::from_secs(30), "connected")?;
+    // Later phases add threads that sort above these, and the list is virtualized: a row below
+    // the fold has no bounds to click. Pinning keeps the two clicked rows at the top.
+    let environment_id = t3code_contracts::EnvironmentId::new(state.environment_id.as_str());
+    let commands = commands_of(check, &environment_id)?;
+    for key in [&long, &edit] {
+        if check.row_center(key).is_some_and(|at| at.y < px(780.)) {
+            continue;
+        }
+        let (_, thread_id) = t3code_web::state::shell::runtime_ids(key);
+        let c = commands.clone();
+        check.block(async move { c.pin(&thread_id, None).await })?.map_err(|e| anyhow::anyhow!("{e}"))?;
+        let k = key.clone();
+        check.pump(move |c| c.row_center(&k).is_some_and(|at| at.y < px(780.)), Duration::from_secs(10), "pinned row in view")?;
+    }
     check.shot("01-sidebar.png")?;
 
     // Cold open, then cached switches between two threads.
@@ -1755,5 +1801,584 @@ fn run_sidebar(check: &mut Check) -> anyhow::Result<()> {
     check.cx.update(|cx| router.update(cx, |r, cx| r.navigate(Route::parse("/settings/archived"), cx)));
     check.wait(Duration::from_secs(2));
     check.shot("45-archive-settings.png")?;
+    Ok(())
+}
+
+/// How the `notify` phase runs notifications (`T3_NOTIFY_MODE`).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum NotifyMode {
+    /// One system notification per thread, replaced by tag, and the pending count as the badge.
+    Linux,
+    /// The macOS and Windows inbox: an entry per request or turn end, natively shown while no
+    /// window has focus, the unread count as the badge and the sidebar's Done.
+    Inbox,
+}
+
+fn notify_mode() -> Option<NotifyMode> {
+    match std::env::var("T3_NOTIFY_MODE").ok()?.as_str() {
+        "inbox" => Some(NotifyMode::Inbox),
+        _ => Some(NotifyMode::Linux),
+    }
+}
+
+/// One line the stand-in notification service logged.
+#[derive(Deserialize, Serialize, Debug, Clone, Default)]
+struct BusRecord {
+    method: Option<String>,
+    id: Option<u32>,
+    replaces: Option<u32>,
+    summary: Option<String>,
+    body: Option<String>,
+    signal: Option<String>,
+    count: Option<i64>,
+    click: Option<u32>,
+}
+
+fn bus_log() -> Vec<BusRecord> {
+    let Some(path) = std::env::var_os("T3_NOTIFY_LOG") else { return Vec::new() };
+    std::fs::read_to_string(path).unwrap_or_default().lines().filter_map(|line| serde_json::from_str(line).ok()).collect()
+}
+
+/// The badge count the service last saw.
+fn bus_badge(log: &[BusRecord]) -> Option<i64> {
+    log.iter().rev().find(|r| r.signal.is_some()).and_then(|r| r.count)
+}
+
+/// What the model predicts one alert produces, and what happened.
+#[derive(Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct NotifyStep {
+    case: String,
+    thread: String,
+    expected_summary: String,
+    expected_body: String,
+    expected_badge: usize,
+    expected_done: bool,
+    expected_inbox_kind: Option<String>,
+    request: Option<BusRecord>,
+    badge: usize,
+    bus_badge: Option<i64>,
+    done: bool,
+    inbox: Vec<String>,
+}
+
+/// The `notify` phase. See the header.
+fn run_notify(check: &mut Check) -> anyhow::Result<()> {
+    use t3code_web::components::sidebar::model::RunStatus;
+    use t3code_web::desktop_notifications::{DesktopNotificationKind as Kind, NotificationInbox};
+    let mode = notify_mode().context("set T3_NOTIFY_MODE")?;
+    let inbox = mode == NotifyMode::Inbox;
+    let control = PathBuf::from(std::env::var_os("T3_NOTIFY_CONTROL").context("T3_NOTIFY_CONTROL")?);
+    let state = load_state(&check.out)?;
+    let environment_id = t3code_contracts::EnvironmentId::new(state.environment_id.as_str());
+    check.cx.update(|cx| {
+        t3code_web::hooks::use_settings::ClientSettingsStore::update(cx, |s| {
+            s.notification_mode = t3code_contracts::NotificationMode::Notifications;
+            s.in_app_notifications_enabled = false;
+            s.notification_inbox_enabled = true;
+            s.app_icon_badge_enabled = true;
+        })
+    });
+    check.pump(|c| c.connected(), Duration::from_secs(30), "connected")?;
+    let commands = commands_of(check, &environment_id)?;
+    let filter = |check: &mut Check, on: bool| -> anyhow::Result<()> {
+        let patch = t3code_contracts::ClientServerSettingsPatch {
+            hide_tagged_threads: Some(on),
+            hidden_thread_tags: Some(vec!["quiet".into()]),
+            ..Default::default()
+        };
+        let id = environment_id.clone();
+        let task = check.cx.update(|cx| t3code_web::hooks::use_settings::ServerSettingsStore::update(id, patch, cx));
+        check.wait_task(task)?.map_err(|e| anyhow::anyhow!("{}", e.0))?;
+        let id = environment_id.clone();
+        check.pump(
+            move |c| c.cx.update(|cx| StateBridge::shell(cx).read(cx).hidden().1 == on || StateBridge::environment(&id, cx).is_none()),
+            Duration::from_secs(10),
+            if on { "tag filter on" } else { "tag filter off" },
+        )
+    };
+    filter(check, false)?;
+    let project = check
+        .cx
+        .update(|cx| {
+            let shell = StateBridge::environment(&environment_id, cx)?.read(cx).shell.clone();
+            shell.snapshot.as_ref()?.projects.iter().find(|p| p.workspace_root == state.project_root).map(|p| (p.id.clone(), p.title.clone()))
+        })
+        .context("seeded project")?;
+    let create = |check: &mut Check, title: &str, model: &str, mode: RuntimeMode| -> anyhow::Result<ThreadKey> {
+        let thread_id = ThreadId::new(uuid::Uuid::new_v4().to_string());
+        let input = CreateThread {
+            thread_id: thread_id.clone(),
+            project_id: project.0.clone(),
+            title: title.into(),
+            model_selection: ModelSelection { instance_id: "devReplay".into(), model: model.into(), options: None },
+            runtime_mode: mode,
+            interaction_mode: ProviderInteractionMode::Default,
+            branch: Some("feature/clamp".into()),
+            worktree_path: None,
+        };
+        let c = commands.clone();
+        check.block(async move { c.create_thread(input).await })?.map_err(|e| anyhow::anyhow!("{e}"))?;
+        let key = thread_key(&environment_id, &thread_id);
+        let k = key.clone();
+        check.pump(move |c| sidebar_row(c, &k).is_some(), Duration::from_secs(10), &format!("{title} listed"))?;
+        Ok(key)
+    };
+    let send = |check: &mut Check, key: &ThreadKey, text: &str| -> anyhow::Result<()> {
+        let (_, thread_id) = t3code_web::state::shell::runtime_ids(key);
+        let c = commands.clone();
+        let message = SendMessage::text(thread_id, text);
+        check.block(async move { c.send_message(message).await })?.map_err(|e| anyhow::anyhow!("{e}"))?;
+        Ok(())
+    };
+    let shown = create(check, "Notify shown", "multi-turn", RuntimeMode::FullAccess)?;
+    let done = create(check, "Notify done", "multi-turn", RuntimeMode::FullAccess)?;
+    let approval = create(check, "Notify approval", "approval", RuntimeMode::ApprovalRequired)?;
+    let question = create(check, "Notify question", "question", RuntimeMode::ApprovalRequired)?;
+    let failed = create(check, "Notify failed", "no-such-scenario", RuntimeMode::FullAccess)?;
+    check.go(&shown);
+    // The app starts focused, as after a launch.
+    let window = check.window;
+    check.cx.update_window(window, |_, w, _| w.activate_window())?;
+    check.pump(move |c| c.cx.update_window(window, |_, w, _| w.is_window_active()).unwrap_or(false), Duration::from_secs(5), "window focused at start")?;
+    check.wait(Duration::from_secs(1));
+    let label = check.cx.update(|cx| {
+        ConnectionRuntime::state(cx).read(cx).environment(&environment_id).map(|env| env.entry.label.clone()).unwrap_or_default()
+    });
+    blur(check)?;
+    // Requests left open by earlier runs on this profile are unread entries too.
+    let baseline = if inbox { check.cx.update(|cx| NotificationInbox::global(cx).read(cx).unread_count()) } else { 0 };
+    check.note(format!("unread entries before the cases: {baseline}"));
+    let mut steps: Vec<NotifyStep> = Vec::new();
+    let cases: [(&str, &ThreadKey, &str, &str, Kind); 4] = [
+        ("completion", &done, "Thread completed", "Turn completed", Kind::Completed),
+        ("approval", &approval, "Approval needed", "Approval required", Kind::Approval),
+        ("input", &question, "Input needed", "Input required", Kind::Input),
+        ("failed", &failed, "Thread failed", "Turn failed", Kind::Failed),
+    ];
+    for (index, (case, key, linux_title, inbox_title, kind)) in cases.into_iter().enumerate() {
+        let before = bus_log().iter().filter(|r| r.method.as_deref() == Some("Notify")).count();
+        send(check, key, "Start the review.")?;
+        let k = key.clone();
+        check.pump(
+            move |c| {
+                sidebar_row(c, &k).is_some_and(|row| match kind {
+                    Kind::Completed => row.latest_run.is_some_and(|run| run.status == RunStatus::Completed && run.completed_at.is_some()),
+                    Kind::Approval => row.has_pending_approvals,
+                    Kind::Input => row.has_pending_user_input,
+                    Kind::Failed => row.latest_run.is_some_and(|run| run.status == RunStatus::Failed),
+                })
+            },
+            Duration::from_secs(60),
+            &format!("{case}: thread state"),
+        )?;
+        let title = sidebar_row(check, key).map(|row| row.title.to_string()).unwrap_or_default();
+        let (summary, body) = match mode {
+            NotifyMode::Linux => (linux_title.to_string(), title.clone()),
+            NotifyMode::Inbox => (inbox_title.to_string(), format!("{title}\n{} · {label}", project.1)),
+        };
+        let got = check.pump(
+            move |_| bus_log().iter().filter(|r| r.method.as_deref() == Some("Notify")).count() > before,
+            Duration::from_secs(10),
+            &format!("{case}: notification request"),
+        );
+        let request = got.ok().and_then(|_| bus_log().into_iter().filter(|r| r.method.as_deref() == Some("Notify")).nth(before));
+        check.wait(Duration::from_millis(300));
+        let expected_badge = baseline + index + 1;
+        let (badge, items, done_marker) = check.cx.update(|cx| {
+            let badge = ThreadNotificationCoordinator::global(cx).read(cx).badge();
+            let items = NotificationInbox::global(cx).read(cx).items().clone();
+            (badge, items, false)
+        });
+        let done_marker = done_marker || sidebar_row(check, key).is_some_and(|row| row.has_unread_completion_notification);
+        let inbox_entries: Vec<String> = items
+            .iter()
+            .filter(|item| item.is_for(key))
+            .map(|item| format!("{:?} read={} resolved={}", item.kind, item.read, item.resolved))
+            .collect();
+        let step = NotifyStep {
+            case: case.into(),
+            thread: title.clone(),
+            expected_summary: summary.clone(),
+            expected_body: body.clone(),
+            expected_badge,
+            expected_done: inbox && kind == Kind::Completed,
+            expected_inbox_kind: inbox.then(|| format!("{kind:?}")),
+            request: request.clone(),
+            badge,
+            bus_badge: bus_badge(&bus_log()),
+            done: done_marker,
+            inbox: inbox_entries.clone(),
+        };
+        let sent = request.as_ref().is_some_and(|r| r.summary.as_deref() == Some(summary.as_str()) && r.body.as_deref() == Some(body.as_str()));
+        check.check(&format!("{case}: OS notification request"), sent, format!("expected {summary:?} / {body:?}, got {request:?}"));
+        check.check(&format!("{case}: badge"), badge == expected_badge && step.bus_badge == Some(expected_badge as i64), format!("engine {badge}, service {:?}, expected {expected_badge}", step.bus_badge));
+        check.check(&format!("{case}: sidebar Done"), done_marker == step.expected_done, format!("{done_marker}, expected {}", step.expected_done));
+        let entry_ok = if inbox {
+            items.iter().any(|item| item.is_for(key) && item.kind == kind && !item.read)
+        } else {
+            items.is_empty()
+        };
+        check.check(&format!("{case}: inbox entry"), entry_ok, format!("{inbox_entries:?}, expected {}", step.expected_inbox_kind.as_deref().unwrap_or("none (no inbox on Linux)")));
+        steps.push(step);
+        check.shot(&format!("60-notify-{index}-{case}.png"))?;
+    }
+
+    // A click on the completion's notification opens its thread and focuses the window.
+    let done_request = steps[0].request.clone().context("completion request")?;
+    let ids: Vec<u32> = steps.iter().filter_map(|s| s.request.as_ref()?.id).collect();
+    std::fs::write(&control, format!("{}\n", done_request.id.unwrap_or_default()))?;
+    let k = done.clone();
+    check.pump(move |c| c.route() == Route::Thread(k.clone()), Duration::from_secs(10), "click opens the completed thread")?;
+    let window = check.window;
+    check.pump(move |c| c.cx.update_window(window, |_, w, _| w.is_window_active()).unwrap_or(false), Duration::from_secs(5), "window focused")?;
+    check.wait(Duration::from_millis(500));
+    let log = bus_log();
+    let closed: Vec<u32> = log.iter().filter(|r| r.method.as_deref() == Some("CloseNotification")).filter_map(|r| r.id).collect();
+    let badge = check.cx.update(|cx| ThreadNotificationCoordinator::global(cx).read(cx).badge());
+    match mode {
+        NotifyMode::Linux => {
+            // Focus clears every pending notification and the badge (`clearPending`).
+            let all = ids.iter().all(|id| closed.contains(id));
+            check.check("click: focus closes every notification", all, format!("closed {closed:?} of {ids:?}"));
+            check.check("click: badge cleared", badge == 0 && bus_badge(&log) == Some(0), format!("engine {badge}, service {:?}", bus_badge(&log)));
+        }
+        NotifyMode::Inbox => {
+            let done_id = done_request.id.unwrap_or_default();
+            check.check("click: the read entry's notification is removed", closed.contains(&done_id), format!("closed {closed:?}"));
+            check.check("click: badge counts the other unread entries", badge == baseline + 3 && bus_badge(&log) == Some((baseline + 3) as i64), format!("engine {badge}, service {:?}, expected {}", bus_badge(&log), baseline + 3));
+            // The read completion counts as a visit (`deriveAcknowledgedCompletions`) and the Done goes.
+            let k = done.clone();
+            let visited = check.pump(
+                move |c| {
+                    c.cx.update(|cx| {
+                        StateBridge::shell(cx).read(cx).row(&k).is_some_and(|row| {
+                            row.last_visited_at.zip(row.latest_run.as_ref().and_then(|run| run.completed_at)).is_some_and(|(v, c)| v >= c)
+                        })
+                    })
+                },
+                Duration::from_secs(10),
+                "thread.visit recorded on the server",
+            );
+            check.check("click: thread.visit reached the server", visited.is_ok(), format!("{visited:?}"));
+            let marker = sidebar_row(check, &done).is_some_and(|row| row.has_unread_completion_notification);
+            check.check("click: sidebar Done cleared", !marker, marker);
+        }
+    }
+    check.shot("64-notify-clicked.png")?;
+
+    // The tag filter: a hidden thread's pending notification closes and it stays quiet.
+    check.go(&shown);
+    blur(check)?;
+    let before = bus_log().iter().filter(|r| r.method.as_deref() == Some("Notify")).count();
+    send(check, &done, "Keep going.")?;
+    check.pump(move |_| bus_log().iter().filter(|r| r.method.as_deref() == Some("Notify")).count() > before, Duration::from_secs(60), "second completion notified")?;
+    let pending_id = bus_log().into_iter().filter(|r| r.method.as_deref() == Some("Notify")).nth(before).and_then(|r| r.id);
+    filter(check, true)?;
+    let (_, done_id) = t3code_web::state::shell::runtime_ids(&done);
+    let c = commands.clone();
+    let t = done_id.clone();
+    check.block(async move { c.set_tag(&t, "quiet", true).await })?.map_err(|e| anyhow::anyhow!("{e}"))?;
+    let k = done.clone();
+    check.pump(move |c| c.cx.update(|cx| StateBridge::shell(cx).read(cx).snapshot().threads.iter().all(|t| t.key != k)), Duration::from_secs(10), "tagged thread leaves the sidebar")?;
+    check.wait(Duration::from_millis(500));
+    let log = bus_log();
+    let closed = log.iter().any(|r| r.method.as_deref() == Some("CloseNotification") && r.id == pending_id && pending_id.is_some());
+    match mode {
+        NotifyMode::Linux => check.check("tag filter: hidden thread's notification closed", closed, format!("pending {pending_id:?}")),
+        // The inbox reads every thread of the shell; the tag filter does not reach it.
+        NotifyMode::Inbox => check.check("tag filter: inbox entries stay (the inbox ignores the filter)", !closed, format!("pending {pending_id:?}")),
+    }
+    let listed = sidebar_row(check, &done).is_some();
+    let shown_rows = check.read(|root, cx| root.sidebar().read(cx).list().entries.iter().any(|e| matches!(e, SidebarListEntry::Thread { thread, .. } if thread.key == done)));
+    check.check("tag filter: sidebar hides the tagged thread", !listed && !shown_rows, format!("in snapshot {listed}, drawn {shown_rows}"));
+    let before = bus_log().iter().filter(|r| r.method.as_deref() == Some("Notify")).count();
+    let k = done.clone();
+    let run_before = check.cx.update(|cx| StateBridge::shell(cx).read(cx).row(&k).and_then(|row| row.latest_run.as_ref().map(|r| r.run_id.to_string())));
+    send(check, &done, "One more.")?;
+    let k = done.clone();
+    check.pump(
+        move |c| {
+            c.cx.update(|cx| {
+                StateBridge::shell(cx).read(cx).row(&k).is_some_and(|row| {
+                    row.latest_run.as_ref().is_some_and(|r| Some(r.run_id.to_string()) != run_before && r.completed_at.is_some())
+                })
+            })
+        },
+        Duration::from_secs(60),
+        "hidden thread's turn settled",
+    )?;
+    check.wait(Duration::from_secs(2));
+    let after: Vec<BusRecord> = bus_log().into_iter().filter(|r| r.method.as_deref() == Some("Notify")).skip(before).collect();
+    match mode {
+        NotifyMode::Linux => check.check("tag filter: hidden thread's completion is quiet", after.is_empty(), format!("{after:?}")),
+        NotifyMode::Inbox => check.check("tag filter: the inbox still records it", after.len() == 1, format!("{after:?}")),
+    }
+    let c = commands.clone();
+    check.block(async move { c.set_tag(&done_id, "quiet", false).await })?.map_err(|e| anyhow::anyhow!("{e}"))?;
+    filter(check, false)?;
+    if inbox {
+        // Reading a completion in the inbox, with another thread open, sends the visit itself.
+        let k = done.clone();
+        let completed_at = check.cx.update(|cx| StateBridge::shell(cx).read(cx).row(&k).and_then(|row| Some((row.latest_run.as_ref()?.completed_at?, row.last_visited_at))));
+        let entry = check.cx.update(|cx| {
+            NotificationInbox::global(cx).read(cx).items().iter().find(|item| item.is_for(&done) && item.kind == Kind::Completed && !item.read).map(|item| item.id.clone())
+        });
+        let on_shown = check.route() == Route::Thread(shown.clone());
+        check.check(
+            "inbox read: an unread completion of a thread not open, not yet visited",
+            entry.is_some() && completed_at.is_some_and(|(c, v)| v.is_none_or(|v| v < c)) && on_shown,
+            format!("{entry:?} {completed_at:?}"),
+        );
+        if let Some(id) = entry {
+            check.cx.update(|cx| NotificationInbox::update(t3code_web::desktop_notifications::DesktopNotificationCommand::Read(vec![id]), cx));
+            let k = done.clone();
+            let visited = check.pump(
+                move |c| {
+                    c.cx.update(|cx| {
+                        StateBridge::shell(cx).read(cx).row(&k).is_some_and(|row| {
+                            row.last_visited_at.zip(row.latest_run.as_ref().and_then(|run| run.completed_at)).is_some_and(|(v, c)| v >= c)
+                        })
+                    })
+                },
+                Duration::from_secs(10),
+                "inbox read: thread.visit recorded",
+            );
+            let still = check.route() == Route::Thread(shown.clone());
+            check.check("inbox read: thread.visit reached the server without opening it", visited.is_ok() && still, format!("{visited:?}, route kept {still}"));
+        }
+    }
+    std::fs::write(check.out.join(format!("notify-{}-record.json", if inbox { "inbox" } else { "linux" })), serde_json::to_vec_pretty(&steps)?)?;
+    check.shot("65-notify-filtered.png")
+}
+
+/// Takes focus from the main window the way another app would: a second window takes it and
+/// closes, leaving none of the app's windows focused.
+fn blur(check: &mut Check) -> anyhow::Result<()> {
+    let helper = check.cx.update(|cx| {
+        let options = WindowOptions { show: false, focus: true, ..Default::default() };
+        cx.open_window(options, |_, cx| cx.new(|_| EmptyView))
+    })?;
+    check.cx.update_window(helper.into(), |_, window, _| window.activate_window())?;
+    check.frame();
+    check.cx.update_window(helper.into(), |_, window, _| window.remove_window())?;
+    let window = check.window;
+    check.pump(move |c| !c.cx.update_window(window, |_, w, _| w.is_window_active()).unwrap_or(true), Duration::from_secs(5), "window unfocused")
+}
+
+/// The `details` phase. See the header.
+fn run_details(check: &mut Check) -> anyhow::Result<()> {
+    use t3code_contracts::{
+        OrchestrationV2ThreadLaunchInput, OrchestrationV2ThreadLaunchInputInitialMessage, OrchestrationV2ThreadLaunchWorkspaceStrategy,
+        OrchestrationV2ThreadLaunchWorkspaceStrategyWorktree,
+    };
+    let state = load_state(&check.out)?;
+    let environment_id = t3code_contracts::EnvironmentId::new(state.environment_id.as_str());
+    check.pump(|c| c.connected(), Duration::from_secs(30), "connected")?;
+    let commands = commands_of(check, &environment_id)?;
+    let project = check
+        .cx
+        .update(|cx| {
+            let shell = StateBridge::environment(&environment_id, cx)?.read(cx).shell.clone();
+            shell.snapshot.as_ref()?.projects.iter().find(|p| p.workspace_root == state.project_root).map(|p| p.id.clone())
+        })
+        .context("seeded project")?;
+    let thread_id = ThreadId::new(uuid::Uuid::new_v4().to_string());
+    let branch = format!("live-setup-{}", now_ms() % 1_000_000);
+    let input = OrchestrationV2ThreadLaunchInput {
+        command_id: CommandId::new(uuid::Uuid::new_v4().to_string()),
+        creation_source: None,
+        thread_id: Some(thread_id.clone()),
+        reuse_existing_thread: None,
+        project_id: project,
+        title: "Worktree setup".into(),
+        generate_title: Some(false),
+        model_selection: ModelSelection { instance_id: "devReplay".into(), model: "multi-turn".into(), options: None },
+        runtime_mode: RuntimeMode::FullAccess,
+        interaction_mode: ProviderInteractionMode::Default,
+        workspace_strategy: OrchestrationV2ThreadLaunchWorkspaceStrategy::Worktree(OrchestrationV2ThreadLaunchWorkspaceStrategyWorktree {
+            base_ref: "main".into(),
+            branch: Some(branch.clone()),
+            start_from_origin: Some(false),
+        }),
+        initial_message: Some(OrchestrationV2ThreadLaunchInputInitialMessage {
+            message_id: None,
+            text: "Start the review.".into(),
+            context: None,
+            attachments: Vec::new(),
+        }),
+    };
+    let c = commands.clone();
+    check.block(async move { c.launch_thread(input).await })?.map_err(|e| anyhow::anyhow!("{e}"))?;
+    let key = thread_key(&environment_id, &thread_id);
+    let k = key.clone();
+    check.pump(move |c| sidebar_row(c, &k).is_some(), Duration::from_secs(20), "launched thread listed")?;
+    check.go(&key);
+    let mut seen: Vec<String> = Vec::new();
+    let deadline = Instant::now() + Duration::from_secs(60);
+    while Instant::now() < deadline {
+        check.wait(Duration::from_millis(100));
+        let setup = check.shown_input().worktree_setup;
+        let line = match &setup {
+            Some(setup) => format!(
+                "running={} branch={} steps={:?}",
+                setup.running,
+                setup.branch,
+                setup.steps.iter().map(|(label, status)| format!("{label}:{status:?}")).collect::<Vec<_>>()
+            ),
+            None => "none".into(),
+        };
+        if seen.last() != Some(&line) {
+            check.note(format!("setup row: {line}"));
+            seen.push(line);
+        }
+        if setup.as_ref().is_some_and(|s| !s.running) || (seen.len() > 1 && setup.is_none()) {
+            break;
+        }
+    }
+    let shown = seen.iter().any(|line| line.contains(&format!("branch={branch}")) && line.contains("steps=["));
+    check.check("worktree setup: the timeline row follows the server's stream", shown, seen.join(" | "));
+    let ran = seen.iter().any(|line| line.contains("Check out files:"));
+    check.check("worktree setup: stages carry their labels", ran, seen.last().cloned().unwrap_or_default());
+    check.shot("70-worktree-setup.png")
+}
+
+/// The `mentions` phase. See the header.
+fn run_mentions(check: &mut Check) -> anyhow::Result<()> {
+    let state = load_state(&check.out)?;
+    check.pump(|c| c.connected(), Duration::from_secs(30), "connected")?;
+    let tag = now_ms() % 100_000;
+    let parent = thread_with_turn(check, &state, &format!("Quokka parent {tag}"))?;
+    let other = thread_with_turn(check, &state, &format!("Quokka other {tag}"))?;
+    let exact = thread_with_turn(check, &state, "Quokka")?;
+    let composer = composer_of(check);
+    check.go(&parent);
+    check.focus_composer();
+    check.type_text("/side Where does the quokka helper live?");
+    check.press("enter");
+    let p = parent.clone();
+    check.pump(move |c| matches!(c.route(), Route::Thread(k) if k != p), Duration::from_secs(30), "the side chat opens")?;
+    let Route::Thread(side) = check.route() else { bail!("no side chat route") };
+    let s = side.clone();
+    check.pump(
+        move |c| c.cx.update(|cx| StateBridge::shell(cx).read(cx).row(&s).is_some_and(|row| row.latest_user_message_at.is_some())),
+        Duration::from_secs(30),
+        "the side chat has its message",
+    )?;
+    let side_title = check.cx.update(|cx| StateBridge::shell(cx).read(cx).row(&side).map(|row| row.title().to_owned())).unwrap_or_default();
+    // The `@` trigger ends at a space, so the query is one word of the title.
+    let query: String = side_title.split_whitespace().max_by_key(|word| word.len()).unwrap_or_default().trim_matches(|c: char| !c.is_alphanumeric()).to_owned();
+    let lineage = check.cx.update(|cx| StateBridge::shell(cx).read(cx).row(&side).map(|row| format!("{:?}", row.source.lineage)));
+    check.note(format!("side chat title {side_title:?}, query {query:?}, lineage {lineage:?}, parent {}", parent.thread_id.0));
+    let menu = |check: &mut Check, on: &ThreadKey, text: &str| -> Vec<(String, String, String)> {
+        check.go(on);
+        check.wait(Duration::from_millis(300));
+        check.focus_composer();
+        let editor = check.cx.update(|cx| composer.read(cx).editor().clone());
+        check.cx.update(|cx| editor.update(cx, |e, cx| e.set_text(String::new(), cx)));
+        check.type_text(&format!("@{text}"));
+        check.wait(Duration::from_millis(500));
+        let items = check.cx.update(|cx| {
+            composer.read(cx).menu().map(|m| {
+                m.items.iter().filter(|i| i.id.starts_with("thread:")).map(|i| (i.id.to_string(), i.label.to_string(), i.description.to_string())).collect()
+            })
+        });
+        check.cx.update(|cx| editor.update(cx, |e, cx| e.set_text(String::new(), cx)));
+        items.unwrap_or_default()
+    };
+    let id_of = |key: &ThreadKey| format!("thread:{}:{}", key.environment_id.0, key.thread_id.0);
+    let from_parent = menu(check, &parent, &query);
+    let offered = from_parent.iter().find(|(id, ..)| *id == id_of(&side));
+    check.check("@ from the parent offers its side chat as \"Side chat\"", offered.is_some_and(|(_, _, d)| d == "Side chat"), format!("{from_parent:?}"));
+    check.shot("80-mention-side-chat.png")?;
+    let from_other = menu(check, &other, &query);
+    check.check("@ from another thread leaves the side chat out", !from_other.iter().any(|(id, ..)| *id == id_of(&side)), format!("{from_other:?}"));
+    let quokka = menu(check, &other, "Quokka");
+    check.check("@ leaves out the composer's own thread", !quokka.iter().any(|(id, ..)| *id == id_of(&other)), format!("{quokka:?}"));
+    check.check("@ ranks the exact title first", quokka.first().is_some_and(|(id, ..)| *id == id_of(&exact)), format!("{quokka:?}"));
+    check.check("@ lists at most five threads", quokka.len() <= 5, quokka.len());
+    Ok(())
+}
+
+/// The `heic` phase. See the header.
+fn run_heic(check: &mut Check) -> anyhow::Result<()> {
+    use t3code_web::composer_draft_store::{ComposerAttachmentKind, UploadState};
+    let state = load_state(&check.out)?;
+    check.pump(|c| c.connected(), Duration::from_secs(30), "connected")?;
+    let key = thread_with_turn(check, &state, "HEIC attach")?;
+    check.go(&key);
+    check.wait(Duration::from_millis(300));
+    // The stand-in decoder passes the bytes through, so the "HEIC" file holds a 4000x3000 JPEG.
+    let photo = check.out.join("IMG_0042.HEIC");
+    let image = image::RgbImage::from_fn(4000, 3000, |x, y| image::Rgb([(x / 16) as u8, (y / 12) as u8, 90]));
+    let mut jpeg = Vec::new();
+    image::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpeg, 80).encode_image(&image)?;
+    std::fs::write(&photo, &jpeg)?;
+    let composer = composer_of(check);
+    check.cx.update(|cx| composer.update(cx, |c, cx| c.attach_paths(vec![photo.clone()], cx)));
+    let attached = check.cx.update(|cx| {
+        composer.read(cx).attachments().first().map(|a| match &a.kind {
+            ComposerAttachmentKind::Image { bytes, mime } => (a.name.to_string(), mime.to_string(), image::load_from_memory(bytes).map(|i| (i.width(), i.height())).ok()),
+            _ => (a.name.to_string(), "not an image".into(), None),
+        })
+    });
+    check.check(
+        "a HEIC photo attaches as IMG_0042.jpg, image/jpeg, 2000x1500",
+        attached.as_ref().is_some_and(|(name, mime, size)| name == "IMG_0042.jpg" && mime == "image/jpeg" && *size == Some((2000, 1500))),
+        format!("{attached:?}"),
+    );
+    let c2 = composer.clone();
+    let uploaded = check.pump(
+        move |c| c.cx.update(|cx| c2.read(cx).attachments().iter().all(|a| a.upload == UploadState::Uploaded)),
+        Duration::from_secs(30),
+        "the converted image uploaded",
+    );
+    check.check("the converted image uploads", uploaded.is_ok(), format!("{uploaded:?}"));
+    check.shot("90-heic-attached.png")?;
+    let broken = check.out.join("broken.heic");
+    std::fs::write(&broken, b"not an image")?;
+    let before = check.cx.update(|cx| composer.read(cx).attachments().len());
+    check.cx.update(|cx| composer.update(cx, |c, cx| c.attach_paths(vec![broken.clone()], cx)));
+    let after = check.cx.update(|cx| composer.read(cx).attachments().len());
+    check.check("an unreadable HEIC is refused", before == after, format!("{before} -> {after}"));
+    check.shot("91-heic-refused.png")
+}
+
+/// Prints what each layer holds for the sidebar over the first seconds (environments, their shells,
+/// the joined snapshot, the drawn list), for diagnosing restores.
+fn run_probe(check: &mut Check) -> anyhow::Result<()> {
+    for step in 0..12 {
+        let line = check.cx.update(|cx| {
+            let envs = StateBridge::environments(cx).read(cx).list.clone();
+            let per_env: Vec<String> = envs
+                .iter()
+                .map(|env| {
+                    let env = env.read(cx);
+                    format!(
+                        "{} status={:?} threads={} projects={} config={}",
+                        &env.environment_id().as_str()[..8],
+                        env.shell.status,
+                        env.shell.snapshot.as_ref().map_or(0, |s| s.threads.len()),
+                        env.shell.snapshot.as_ref().map_or(0, |s| s.projects.len()),
+                        env.config.is_some()
+                    )
+                })
+                .collect();
+            let shell = StateBridge::shell(cx).read(cx);
+            let snapshot = shell.snapshot();
+            let connections = ConnectionRuntime::state(cx).read(cx).environments.len();
+            format!(
+                "catalog={connections} envs=[{}] presented={} snapshot threads={} projects={} rebuilds={}",
+                per_env.join("; "),
+                shell.presented().len(),
+                snapshot.threads.len(),
+                snapshot.projects.len(),
+                shell.rebuild_count()
+            )
+        });
+        let drawn = check.sidebar_threads();
+        check.note(format!("t{step}: {line} drawn={drawn}"));
+        check.wait(Duration::from_millis(400));
+    }
     Ok(())
 }

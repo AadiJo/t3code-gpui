@@ -4996,7 +4996,8 @@ impl Window {
             if shape_bounds.is_empty() {
                 continue;
             }
-            let blur_radius = shadow.blur_radius.scale(scale_factor);
+            // The shader takes a standard deviation. A CSS blur radius is twice that.
+            let blur_radius = shadow.blur_radius.scale(scale_factor) / 2.;
             self.next_frame.scene.insert_primitive(Shadow {
                 order: 0,
                 blur_radius,
@@ -5088,7 +5089,8 @@ impl Window {
             };
             self.next_frame.scene.insert_primitive(Shadow {
                 order: 0,
-                blur_radius: shadow.blur_radius.scale(scale_factor),
+                // A standard deviation, as in `paint_drop_shadows`.
+                blur_radius: shadow.blur_radius.scale(scale_factor) / 2.,
                 bounds: element_bounds,
                 content_mask,
                 corner_radii: element_corner_radii,

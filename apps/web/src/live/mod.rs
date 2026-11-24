@@ -82,6 +82,8 @@ pub struct LiveData {
     details: Entity<thread_details::DetailsFeed>,
     /// The latest sidebar search; older answers are dropped.
     search_generation: Rc<std::cell::Cell<u64>>,
+    /// Feeds the notification coordinator from the shells.
+    _notifications: Entity<crate::state::notifications::LiveNotifications>,
 }
 
 impl LiveData {
@@ -113,6 +115,7 @@ impl LiveData {
             events._subscriptions.extend(followed);
         });
         cx.set_global(crate::state::LiveEvents(events.clone()));
+        let notifications = cx.new(crate::state::notifications::LiveNotifications::new);
         Rc::new(Self {
             events,
             palette,
@@ -128,6 +131,7 @@ impl LiveData {
             shown_environment: RefCell::default(),
             details,
             search_generation: Rc::default(),
+            _notifications: notifications,
         })
     }
 
