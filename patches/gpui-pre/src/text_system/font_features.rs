@@ -3,8 +3,21 @@ use std::sync::Arc;
 
 use schemars::{JsonSchema, json_schema};
 
-/// The private tag [`FontFeatures::with_relative_size`] stores its scale under, in thousandths.
-const RELATIVE_SIZE_TAG: &str = "T3SZ";
+/// The private tags [`FontFeatures::with_run_layout`] stores a [`RunLayout`] under, in
+/// thousandths: scale, padding in ems, padding in pixels.
+const RUN_LAYOUT_TAGS: [&str; 3] = ["T3SZ", "T3PE", "T3PP"];
+
+/// How a run sits inside its line, the way CSS lays out an inline element such as inline
+/// code (`font-size: 0.85em; padding-inline: 0.35em; border: 1px`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct RunLayout {
+    /// The run's font size relative to the line's.
+    pub scale: f32,
+    /// Space before and after the run, in ems of the run's own font size...
+    pub padding_em: f32,
+    /// ...plus this many pixels.
+    pub padding_px: f32,
+}
 
 /// The OpenType features that can be configured for a given font.
 #[derive(Clone, Eq, PartialEq, Hash)]
@@ -31,27 +44,29 @@ impl FontFeatures {
         self.0.as_slice()
     }
 
-    /// These features plus a size for the run of `scale` times its line's font size, the way
-    /// CSS `font-size: 0.85em` sizes inline code inside a sentence. Only the macOS text system
-    /// applies it; elsewhere the run keeps the line's size. It is carried as a private feature
-    /// tag, which shapers ignore.
-    pub fn with_relative_size(&self, scale: f32) -> Self {
-        let mut list: Vec<_> = self.0.iter().filter(|(tag, _)| tag != RELATIVE_SIZE_TAG).cloned().collect();
-        list.push((RELATIVE_SIZE_TAG.into(), (scale * 1000.).round() as u32));
+    /// These features plus how the run is laid out inside its line (see [`RunLayout`]).
+    /// Only the macOS text system applies it; elsewhere the run is laid out as if it were
+    /// absent. It is carried as private feature tags, which shapers ignore.
+    pub fn with_run_layout(&self, layout: RunLayout) -> Self {
+        let mut list: Vec<_> = self.0.iter().filter(|(tag, _)| !RUN_LAYOUT_TAGS.contains(&tag.as_str())).cloned().collect();
+        let values = [layout.scale, layout.padding_em, layout.padding_px];
+        list.extend(RUN_LAYOUT_TAGS.iter().zip(values).map(|(tag, value)| ((*tag).into(), (value * 1000.).round() as u32)));
         Self(Arc::new(list))
     }
 
-    /// The scale [`Self::with_relative_size`] set, if any.
-    pub fn relative_size(&self) -> Option<f32> {
-        self.0
-            .iter()
-            .find(|(tag, _)| tag == RELATIVE_SIZE_TAG)
-            .map(|(_, value)| *value as f32 / 1000.)
+    /// The layout [`Self::with_run_layout`] set, if any.
+    pub fn run_layout(&self) -> Option<RunLayout> {
+        let value = |tag: &str| self.0.iter().find(|(t, _)| t == tag).map(|(_, value)| *value as f32 / 1000.);
+        Some(RunLayout {
+            scale: value(RUN_LAYOUT_TAGS[0])?,
+            padding_em: value(RUN_LAYOUT_TAGS[1])?,
+            padding_px: value(RUN_LAYOUT_TAGS[2])?,
+        })
     }
 
-    /// These features without a relative size.
-    pub fn without_relative_size(&self) -> Self {
-        Self(Arc::new(self.0.iter().filter(|(tag, _)| tag != RELATIVE_SIZE_TAG).cloned().collect()))
+    /// These features without a run layout.
+    pub fn without_run_layout(&self) -> Self {
+        Self(Arc::new(self.0.iter().filter(|(tag, _)| !RUN_LAYOUT_TAGS.contains(&tag.as_str())).cloned().collect()))
     }
 
     /// Returns whether the `calt` feature is enabled.

@@ -35,7 +35,7 @@ use font_kit::{
 use gpui::{
     Bounds, DevicePixels, Font, FontFallbacks, FontFeatures, FontId, FontMetrics, FontRun,
     FontStyle, FontWeight, GlyphId, LineLayout, Pixels, PlatformTextSystem, RenderGlyphParams,
-    Result, SUBPIXEL_VARIANTS_X, ShapedGlyph, ShapedRun, SharedString, Size, TextRenderingMode,
+    Result, RunLayout, SUBPIXEL_VARIANTS_X, ShapedGlyph, ShapedRun, SharedString, Size, TextRenderingMode,
     point, px, size, swap_rgba_pa_to_bgra,
 };
 use parking_lot::{Mutex, RwLock, RwLockUpgradableReadGuard};
@@ -82,9 +82,9 @@ struct AppleTextSystemState {
     postscript_names_by_font_id: HashMap<FontId, String>,
     /// Faces of the `.SystemUIFont` family, which are made per size (see [`SystemUiFace`]).
     system_ui_faces: HashMap<FontId, SystemUiFace>,
-    /// Faces drawn at a size relative to their line's (`FontFeatures::with_relative_size`):
-    /// the face they scale and the scale.
-    scaled_faces: HashMap<FontId, (FontId, f32)>,
+    /// Faces laid out inside their line by a `RunLayout` (`FontFeatures::with_run_layout`):
+    /// the face they scale and the layout.
+    scaled_faces: HashMap<FontId, (FontId, RunLayout)>,
     /// Each system UI face at each size it has been laid out or drawn at.
     sized_system_fonts: Mutex<HashMap<(FontId, u32), CTFont>>,
 }
@@ -177,7 +177,7 @@ impl PlatformTextSystem for AppleTextSystem {
 
     fn typographic_bounds(&self, font_id: FontId, glyph_id: GlyphId) -> Result<Bounds<f32>> {
         let state = self.0.read();
-        let scale = state.scaled_faces.get(&font_id).map_or(1., |(_, scale)| *scale);
+        let scale = state.scaled_faces.get(&font_id).map_or(1., |(_, layout)| layout.scale);
         Ok(bounds_from_rect(
             state.fonts[font_id.0].typographic_bounds(glyph_id.0)? * scale,
         ))
@@ -280,8 +280,8 @@ impl AppleTextSystemState {
         if let Some(font_id) = self.font_selections.get(font) {
             return Ok(*font_id);
         }
-        if let Some(scale) = font.features.relative_size() {
-            return self.load_scaled_face(font, scale);
+        if let Some(layout) = font.features.run_layout() {
+            return self.load_scaled_face(font, layout);
         }
         if font.family.as_ref() == ".SystemUIFont" {
             return self.load_system_ui_face(font);
@@ -318,17 +318,17 @@ impl AppleTextSystemState {
         Ok(font_id)
     }
 
-    /// Registers `font` at `scale` times the line's size as its own font id over the face
-    /// the font has without the relative size.
-    fn load_scaled_face(&mut self, font: &Font, scale: f32) -> Result<FontId> {
-        let base = self.select_font(&Font { features: font.features.without_relative_size(), ..font.clone() })?;
+    /// Registers `font` with its run layout as its own font id over the face the font has
+    /// without one.
+    fn load_scaled_face(&mut self, font: &Font, layout: RunLayout) -> Result<FontId> {
+        let base = self.select_font(&Font { features: font.features.without_run_layout(), ..font.clone() })?;
         let font_id = FontId(self.fonts.len());
         let face = self.fonts[base.0].clone();
         if let Some(postscript_name) = self.postscript_names_by_font_id.get(&base).cloned() {
             self.postscript_names_by_font_id.insert(font_id, postscript_name);
         }
         self.fonts.push(face);
-        self.scaled_faces.insert(font_id, (base, scale));
+        self.scaled_faces.insert(font_id, (base, layout));
         self.font_selections.insert(font.clone(), font_id);
         Ok(font_id)
     }
@@ -360,8 +360,8 @@ impl AppleTextSystemState {
     /// The font to lay out or draw `font_id` with at `size`: a system UI face made at that
     /// size, or any other font scaled to it.
     fn sized_font(&self, font_id: FontId, size: f32) -> CTFont {
-        if let Some(&(base, scale)) = self.scaled_faces.get(&font_id) {
-            return self.sized_font(base, size * scale);
+        if let Some(&(base, layout)) = self.scaled_faces.get(&font_id) {
+            return self.sized_font(base, size * layout.scale);
         }
         let Some(face) = self.system_ui_faces.get(&font_id) else {
             return self.fonts[font_id.0]
@@ -488,7 +488,7 @@ impl AppleTextSystemState {
     }
 
     fn advance(&self, font_id: FontId, glyph_id: GlyphId) -> Result<Size<f32>> {
-        let scale = self.scaled_faces.get(&font_id).map_or(1., |(_, scale)| *scale);
+        let scale = self.scaled_faces.get(&font_id).map_or(1., |(_, layout)| layout.scale);
         Ok(size_from_vector2f(
             self.fonts[font_id.0].advance(glyph_id.0)? * scale,
         ))
@@ -649,6 +649,9 @@ impl AppleTextSystemState {
         // PostScript name, as does a scaled face with its base, so the global by-name lookup
         // can't map them back.
         let mut system_runs = SmallVec::<[(CTFont, FontId); 2]>::new();
+        // Runs with inline padding: their byte range and the padding on each side.
+        let mut padded_runs = SmallVec::<[(std::ops::Range<usize>, f32); 2]>::new();
+        let mut run_start = 0;
 
         {
             let mut text = text;
@@ -680,6 +683,13 @@ impl AppleTextSystemState {
                 if self.is_made_per_size(run.font_id) {
                     system_runs.push((native.clone(), run.font_id));
                 }
+                if let Some((_, layout)) = self.scaled_faces.get(&run.font_id) {
+                    let padding = layout.padding_em * f32::from(font_size) * layout.scale + layout.padding_px;
+                    if padding != 0. {
+                        padded_runs.push((run_start..run_start + run.len, padding));
+                    }
+                }
+                run_start += run.len;
                 unsafe {
                     string.set_attribute(cf_range, kCTFontAttributeName, &native);
                 }
@@ -737,10 +747,24 @@ impl AppleTextSystemState {
             }
         }
         let typographic_bounds = line.get_typographic_bounds();
+        let mut width = px(typographic_bounds.width as f32);
+        // Inline padding moves everything from a padded run's start by its padding, and
+        // everything from its end by the padding again, as CSS lays out an inline box.
+        for (range, padding) in &padded_runs {
+            for glyph in runs.iter_mut().flat_map(|run| run.glyphs.iter_mut()) {
+                if glyph.index >= range.start {
+                    glyph.position.x += px(*padding);
+                }
+                if glyph.index >= range.end {
+                    glyph.position.x += px(*padding);
+                }
+            }
+            width += px(2. * padding);
+        }
         LineLayout {
             runs,
             font_size,
-            width: typographic_bounds.width.into(),
+            width,
             ascent: max_ascent.into(),
             descent: max_descent.into(),
             len: text.len(),
