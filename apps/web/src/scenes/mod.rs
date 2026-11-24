@@ -33,6 +33,7 @@ pub fn scenes() -> &'static [(&'static str, SceneBuilder)] {
         ("sidebar", sidebar::build),
         ("chat", chat::build),
         ("chat-light", chat::build_light),
+        ("chat-projection", chat::build_projection),
         ("composer", composer::build),
         ("terminal", terminal::build),
         ("terminal-light", terminal::build_light),
