@@ -14,7 +14,7 @@ use t3code_contracts::{
 
 use super::LiveData;
 use super::rpc::RpcLink;
-use crate::components::diff_panel::{CommitSummary, DiffPanelContent, DiffPanelInput, TurnSummary};
+use crate::components::diff_panel::{CommitSummary, CommitsStatus, DiffPanelContent, DiffPanelInput, TurnSummary};
 use crate::diff_panel_store::{DiffPanelSelection, DiffPanelStore};
 use crate::diff_patch::renderable_patch;
 use crate::i18n::t;
@@ -64,6 +64,8 @@ pub fn load(data: &LiveData, target: &ThreadTarget, selection: &DiffPanelSelecti
     let ignore_whitespace = Some(DiffPanelStore::global(cx).effective_ignore_whitespace());
     let cwd = view.cwd.to_string();
     let base = DiffPanelInput {
+        commits_status: CommitsStatus::Loaded { truncated: false },
+        base_ref_choices: Vec::new(),
         thread_key: Some(view.key.clone()),
         workspace_root: Some(view.cwd.clone()),
         turns,
@@ -114,6 +116,7 @@ pub fn load(data: &LiveData, target: &ThreadTarget, selection: &DiffPanelSelecti
                             .commits
                             .iter()
                             .map(|c| CommitSummary {
+                            url: None,
                                 sha: c.sha.clone().into(),
                                 subject: c.subject.clone().into(),
                                 relative_label: format_relative_time_label(&c.committed_at, now),

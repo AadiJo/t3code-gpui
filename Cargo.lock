@@ -7698,7 +7698,6 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio",
  "tracing",
- "two-face",
  "unicode-ident",
  "unicode-normalization",
  "unicode-properties",

@@ -2,7 +2,7 @@
 //! `@pierre/diffs` resolves it, with the app's custom extensions
 //! (`lib/syntaxHighlighting.ts`: luau → lua, xsl/xslt → xml).
 
-use super::pierre_tables::{EXTENSIONS, LANGUAGE_NAMES};
+use super::pierre_tables::{EXTENSIONS, LANGUAGE_ALIASES, LANGUAGE_NAMES};
 
 /// A lexer of `@pierre/highlights`, by its id. `Copy` and cheap to hash.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -42,4 +42,12 @@ pub fn language_for_path(path: &str) -> Option<LanguageId> {
         (base != path).then(|| match_name(base)).flatten()
     })?;
     Some(LanguageId(found))
+}
+
+/// The lexer for a language name or alias (`langIdOf`), case-insensitive.
+/// `None` for unknown names and for the plain-text ids, which draw uncoloured.
+pub fn language_for_name(name: &str) -> Option<LanguageId> {
+    let name = name.to_lowercase();
+    let index = LANGUAGE_ALIASES.binary_search_by(|(alias, _)| (*alias).cmp(name.as_str())).ok()?;
+    Some(LanguageId(LANGUAGE_ALIASES[index].1)).filter(|id| id.0 != 0)
 }

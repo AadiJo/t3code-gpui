@@ -6973,6 +6973,356 @@
      "anchor": "first switch"
     }
    ]
+  },
+  "usage-limits-empty": {
+   "elements": [
+    {
+     "name": "dialog left edge",
+     "kind": "hscan",
+     "at": [
+      400,
+      36,
+      50
+     ]
+    },
+    {
+     "name": "dialog top edge",
+     "kind": "vscan",
+     "at": [
+      500,
+      30,
+      50
+     ]
+    },
+    {
+     "name": "dialog fill",
+     "kind": "fill",
+     "at": [
+      500,
+      400
+     ]
+    },
+    {
+     "name": "breadcrumb Usage",
+     "kind": "ink",
+     "at": [
+      61,
+      54,
+      106,
+      76
+     ],
+     "text": true
+    },
+    {
+     "name": "breadcrumb environments",
+     "kind": "ink",
+     "at": [
+      133,
+      53,
+      246,
+      77
+     ],
+     "text": true
+    },
+    {
+     "name": "environments chevron",
+     "kind": "ink",
+     "at": [
+      247,
+      56,
+      262,
+      73
+     ]
+    },
+    {
+     "name": "breadcrumb providers",
+     "kind": "ink",
+     "at": [
+      290,
+      54,
+      377,
+      76
+     ],
+     "text": true
+    },
+    {
+     "name": "metric group edges",
+     "kind": "hscan",
+     "at": [
+      74.5,
+      780,
+      990
+     ]
+    },
+    {
+     "name": "Limits pressed",
+     "kind": "ink",
+     "at": [
+      918,
+      52,
+      981,
+      77
+     ],
+     "text": true
+    },
+    {
+     "name": "refresh",
+     "kind": "ink",
+     "at": [
+      991,
+      50,
+      1019,
+      79
+     ]
+    },
+    {
+     "name": "close",
+     "kind": "ink",
+     "at": [
+      1023,
+      50,
+      1051,
+      79
+     ]
+    },
+    {
+     "name": "header rule",
+     "kind": "vscan",
+     "at": [
+      500,
+      80,
+      96
+     ]
+    },
+    {
+     "name": "empty message",
+     "kind": "ink",
+     "at": [
+      65,
+      113,
+      1035,
+      133
+     ],
+     "text": true
+    }
+   ],
+   "reference": "usage"
+  },
+  "pull-requests-toolbar": {
+   "elements": [
+    {
+     "name": "search box left edge",
+     "kind": "hscan",
+     "at": [
+      93,
+      280,
+      300
+     ],
+     "port_dx": -262,
+     "port_dy": -12,
+     "note": "Linux topbar is 40px, the Mac's 52px (theme_tokens.rs); the scene has no sidebar; 6px scrollbar gutter in the capture"
+    },
+    {
+     "name": "search box top/bottom",
+     "kind": "vscan",
+     "at": [
+      500,
+      70,
+      116
+     ],
+     "port_dx": -262,
+     "port_dy": -12,
+     "note": "Linux topbar is 40px, the Mac's 52px (theme_tokens.rs); the scene has no sidebar; 6px scrollbar gutter in the capture"
+    },
+    {
+     "name": "search icon",
+     "kind": "ink",
+     "at": [
+      294,
+      83,
+      314,
+      103
+     ],
+     "port_dx": -262,
+     "port_dy": -12,
+     "note": "Linux topbar is 40px, the Mac's 52px (theme_tokens.rs); the scene has no sidebar; 6px scrollbar gutter in the capture"
+    },
+    {
+     "name": "search placeholder",
+     "kind": "ink",
+     "at": [
+      318,
+      83,
+      600,
+      103
+     ],
+     "text": true,
+     "port_dx": -262,
+     "port_dy": -12,
+     "note": "Linux topbar is 40px, the Mac's 52px (theme_tokens.rs); the scene has no sidebar; 6px scrollbar gutter in the capture"
+    },
+    {
+     "name": "sort button",
+     "kind": "ink",
+     "at": [
+      685,
+      77,
+      756,
+      109
+     ],
+     "port_dx": 6,
+     "port_dy": -12,
+     "note": "Linux topbar is 40px, the Mac's 52px (theme_tokens.rs); the scene has no sidebar; 6px scrollbar gutter in the capture"
+    },
+    {
+     "name": "views button",
+     "kind": "ink",
+     "at": [
+      858,
+      77,
+      960,
+      109
+     ],
+     "port_dx": 6,
+     "port_dy": -12,
+     "note": "Linux topbar is 40px, the Mac's 52px (theme_tokens.rs); the scene has no sidebar; 6px scrollbar gutter in the capture"
+    },
+    {
+     "name": "provider filter",
+     "kind": "ink",
+     "at": [
+      968,
+      77,
+      1030,
+      109
+     ],
+     "port_dx": 6,
+     "port_dy": -12,
+     "note": "Linux topbar is 40px, the Mac's 52px (theme_tokens.rs); the scene has no sidebar; 6px scrollbar gutter in the capture"
+    },
+    {
+     "name": "refresh button",
+     "kind": "ink",
+     "at": [
+      1038,
+      77,
+      1070,
+      109
+     ],
+     "port_dx": 6,
+     "port_dy": -12,
+     "note": "Linux topbar is 40px, the Mac's 52px (theme_tokens.rs); the scene has no sidebar; 6px scrollbar gutter in the capture"
+    }
+   ],
+   "reference": "pull-requests"
+  },
+  "issues-toolbar": {
+   "elements": [
+    {
+     "name": "search box left edge",
+     "kind": "hscan",
+     "at": [
+      93,
+      280,
+      300
+     ],
+     "port_dx": -262,
+     "port_dy": -12,
+     "note": "Linux topbar is 40px, the Mac's 52px (theme_tokens.rs); the scene has no sidebar; 6px scrollbar gutter in the capture"
+    },
+    {
+     "name": "search box top/bottom",
+     "kind": "vscan",
+     "at": [
+      500,
+      70,
+      116
+     ],
+     "port_dx": -262,
+     "port_dy": -12,
+     "note": "Linux topbar is 40px, the Mac's 52px (theme_tokens.rs); the scene has no sidebar; 6px scrollbar gutter in the capture"
+    },
+    {
+     "name": "search icon",
+     "kind": "ink",
+     "at": [
+      294,
+      83,
+      314,
+      103
+     ],
+     "port_dx": -262,
+     "port_dy": -12,
+     "note": "Linux topbar is 40px, the Mac's 52px (theme_tokens.rs); the scene has no sidebar; 6px scrollbar gutter in the capture"
+    },
+    {
+     "name": "search placeholder",
+     "kind": "ink",
+     "at": [
+      318,
+      83,
+      600,
+      103
+     ],
+     "text": true,
+     "port_dx": -262,
+     "port_dy": -12,
+     "note": "Linux topbar is 40px, the Mac's 52px (theme_tokens.rs); the scene has no sidebar; 6px scrollbar gutter in the capture"
+    },
+    {
+     "name": "sort button",
+     "kind": "ink",
+     "at": [
+      755,
+      77,
+      826,
+      109
+     ],
+     "port_dx": 6,
+     "port_dy": -12,
+     "note": "Linux topbar is 40px, the Mac's 52px (theme_tokens.rs); the scene has no sidebar; 6px scrollbar gutter in the capture"
+    },
+    {
+     "name": "filters button",
+     "kind": "ink",
+     "at": [
+      834,
+      77,
+      920,
+      109
+     ],
+     "port_dx": 6,
+     "port_dy": -12,
+     "note": "Linux topbar is 40px, the Mac's 52px (theme_tokens.rs); the scene has no sidebar; 6px scrollbar gutter in the capture"
+    },
+    {
+     "name": "views button",
+     "kind": "ink",
+     "at": [
+      928,
+      77,
+      1030,
+      109
+     ],
+     "port_dx": 6,
+     "port_dy": -12,
+     "note": "Linux topbar is 40px, the Mac's 52px (theme_tokens.rs); the scene has no sidebar; 6px scrollbar gutter in the capture"
+    },
+    {
+     "name": "refresh button",
+     "kind": "ink",
+     "at": [
+      1038,
+      77,
+      1070,
+      109
+     ],
+     "port_dx": 6,
+     "port_dy": -12,
+     "note": "Linux topbar is 40px, the Mac's 52px (theme_tokens.rs); the scene has no sidebar; 6px scrollbar gutter in the capture"
+    }
+   ],
+   "reference": "issues"
   }
  }
 }

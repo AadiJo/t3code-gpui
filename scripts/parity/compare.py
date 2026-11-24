@@ -171,7 +171,10 @@ def compare(port_dir, out_dir, ref_dir=None):
                 found = m.measure(im, anchor)
                 if not found.get("empty"):
                     dy = found["top"] - expected[scene][anchor["name"]]["top"]
-            port = m.unshift(m.measure(im, m.shifted(element, dy)), dy)
+            # Scene captures lay out without the sidebar or with the Linux topbar; `port_dx`/`port_dy` say how far.
+            dx = element.get("port_dx", 0)
+            dy += element.get("port_dy", 0)
+            port = m.unmoved(m.measure(im, m.moved(element, dx, dy)), dx, dy)
             rows = judge(element, ref, port)
             verdicts = [ok for *_, ok in rows if ok is not None]
             state = "excluded" if element.get("exclude") else ("pass" if all(verdicts) else "FAIL")

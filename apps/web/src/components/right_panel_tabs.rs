@@ -370,6 +370,8 @@ impl RightPanel {
             FilesPanelEvent::AddToChat(mention) => cx.emit(RightPanelEvent::InsertReference(mention.clone())),
             // Opening on the host needs the server (`shell.openInEditor`).
             FilesPanelEvent::OpenInEditor { .. } => {}
+            // Opening in the preview browser needs the server (`assets.createUrl`, `preview.open`).
+            FilesPanelEvent::OpenInPreview { .. } => {}
         });
         self.files.insert(workspace.key.clone(), (panel.clone(), subscription));
         Some(panel)
@@ -490,6 +492,11 @@ impl RightPanel {
                 cx.notify();
             }
             DiffPanelEvent::OpenFile(path) => self.open_file(path.clone(), None, window, cx),
+            DiffPanelEvent::FileMenuAction { action, path } => {
+                if let Some(files) = self.ensure_files(window, cx) {
+                    files.update(cx, |files, cx| files.run_file_action(action.clone(), path.clone(), cx));
+                }
+            }
             // Full contents and review comments need the server.
             DiffPanelEvent::RequestFileContents { .. }
             | DiffPanelEvent::ReviewComment(_)

@@ -1,8 +1,12 @@
 //! The editable text surface of the file viewer: monospace lines with a
 //! line-number gutter, syntax colours, selection, clipboard, undo, IME, find
 //! and line reveal. Stands in for `@pierre/diffs`' `EditProvider`. Only the
-//! visible lines are shaped each frame; GPUI caches shaped lines, so a
+//! visible rows are shaped each frame; GPUI caches shaped lines, so a
 //! keystroke reshapes the one line it changed.
+//!
+//! With word wrap on, a line breaks into visual rows at the width of the text
+//! area (after the last space that fits, else at the column limit, as
+//! `white-space: pre-wrap` does). Without it every line is one row.
 
 use std::{cell::RefCell, ops::Range, rc::Rc};
 
@@ -18,7 +22,7 @@ use gpui_kit::{
     Subscription,
     component::input::{InputEvent, InputState},
 };
-use smallvec::SmallVec;
+use smallvec::{SmallVec, smallvec};
 
 use super::{
     editor_buffer::{Buffer, EditKind, History, Pos, Selection},
@@ -150,19 +154,33 @@ struct FrameGeometry {
     bounds: Bounds<Pixels>,
     text_left: Pixels,
     ch: Pixels,
-    first_line: usize,
+    first_row: usize,
     lines: Vec<Rc<ShapedLineEntry>>,
 }
 
+/// One visual row: a line, or the part of a wrapped line between two breaks.
 struct ShapedLineEntry {
     shaped: ShapedLine,
-    /// Display index for each byte when the line has tabs.
+    /// Display index for each byte of the row when it has tabs.
     map: Option<Vec<u32>>,
+    line: usize,
+    /// The row's byte range in its line.
+    start: usize,
+    end: usize,
+    /// The line's last row, which owns the position at the line's end.
+    last: bool,
 }
 
 impl ShapedLineEntry {
+    /// Display index of a byte column of the line, clamped to this row.
     fn display_index(&self, col: usize) -> usize {
+        let col = col.clamp(self.start, self.end) - self.start;
         self.map.as_ref().map_or(col, |m| m.get(col).copied().unwrap_or(*m.last().unwrap_or(&0)) as usize)
+    }
+
+    /// Whether `col` of this row's line is drawn on this row.
+    fn holds(&self, col: usize) -> bool {
+        col >= self.start && (col < self.end || (col == self.end && self.last))
     }
 
     fn byte_for_display(&self, display: usize) -> usize {
@@ -196,6 +214,16 @@ pub struct FileEditor {
     dragging: bool,
     geometry: Rc<RefCell<FrameGeometry>>,
     font_family: SharedString,
+    wrap: bool,
+    /// Row layout for the current wrap width; `None` when wrap is off or the text changed.
+    wrap_layout: Option<WrapLayout>,
+}
+
+/// Where each line's rows start when wrapped at `cols` columns.
+struct WrapLayout {
+    cols: usize,
+    /// First row of each line, then the total row count.
+    row_starts: Vec<u32>,
 }
 
 impl EventEmitter<FileEditorEvent> for FileEditor {}
@@ -228,6 +256,8 @@ impl FileEditor {
             dragging: false,
             geometry: Rc::default(),
             font_family: mono_family(window),
+            wrap: false,
+            wrap_layout: None,
         }
     }
 
@@ -253,6 +283,89 @@ impl FileEditor {
         cx.notify();
     }
 
+    /// Turns soft wrap on or off (`wordWrap`).
+    pub fn set_wrap(&mut self, wrap: bool, cx: &mut Context<Self>) {
+        if self.wrap != wrap {
+            self.wrap = wrap;
+            self.wrap_layout = None;
+            self.scroll.x = px(0.);
+            self.scroll_to_caret = true;
+            cx.notify();
+        }
+    }
+
+    pub fn wraps(&self) -> bool {
+        self.wrap
+    }
+
+    /// Visual rows of the document at the last drawn width.
+    pub fn row_count(&self) -> usize {
+        self.wrap_layout.as_ref().map_or(self.buffer.len_lines(), |l| *l.row_starts.last().unwrap_or(&0) as usize)
+    }
+
+    /// Lays out rows for `cols` columns when wrapping and the layout is stale.
+    fn ensure_wrap(&mut self, cols: usize) {
+        if !self.wrap {
+            self.wrap_layout = None;
+            return;
+        }
+        if self.wrap_layout.as_ref().is_some_and(|l| l.cols == cols) {
+            return;
+        }
+        let mut row_starts = Vec::with_capacity(self.buffer.len_lines() + 1);
+        let mut total = 0u32;
+        for line in self.buffer.lines() {
+            row_starts.push(total);
+            total += wrap_starts(line, cols).len() as u32;
+        }
+        row_starts.push(total);
+        self.wrap_layout = Some(WrapLayout { cols, row_starts });
+    }
+
+    /// Re-counts one line's rows after an edit inside it.
+    fn rewrap_line(&mut self, line: usize) {
+        let Some(layout) = &mut self.wrap_layout else { return };
+        let rows = wrap_starts(self.buffer.line(line), layout.cols).len() as i64;
+        let delta = rows - (layout.row_starts[line + 1] - layout.row_starts[line]) as i64;
+        if delta != 0 {
+            for start in &mut layout.row_starts[line + 1..] {
+                *start = (*start as i64 + delta) as u32;
+            }
+        }
+    }
+
+    /// The first row of a line.
+    fn line_row(&self, line: usize) -> usize {
+        self.wrap_layout.as_ref().map_or(line, |l| l.row_starts.get(line).copied().unwrap_or(0) as usize)
+    }
+
+    /// The line a row belongs to, and which of its rows it is.
+    fn row_line(&self, row: usize) -> (usize, usize) {
+        match &self.wrap_layout {
+            None => (row.min(self.buffer.len_lines() - 1), 0),
+            Some(layout) => {
+                let line = layout.row_starts.partition_point(|&start| start as usize <= row).saturating_sub(1);
+                let line = line.min(self.buffer.len_lines() - 1);
+                (line, row - layout.row_starts[line] as usize)
+            }
+        }
+    }
+
+    /// Byte offsets where a line's rows start.
+    fn segments(&self, line: usize) -> SmallVec<[usize; 4]> {
+        match &self.wrap_layout {
+            Some(layout) => wrap_starts(self.buffer.line(line), layout.cols),
+            None => smallvec![0],
+        }
+    }
+
+    /// The row a position is drawn on, and the byte where that row starts.
+    fn pos_row(&self, pos: Pos) -> (usize, usize) {
+        let segments = self.segments(pos.line);
+        let sub = segments.partition_point(|&start| start <= pos.col).saturating_sub(1);
+        (self.line_row(pos.line) + sub, segments[sub])
+    }
+
     /// Records `text` as saved; the editor is dirty again only if it now differs.
     pub fn mark_saved(&mut self, text: String, cx: &mut Context<Self>) {
         self.saved_text = text;
@@ -268,8 +381,20 @@ impl FileEditor {
         self.highlighter = language_for_path(&self.path).map(EditorHighlighter::new);
         self.saved_text = contents.to_owned();
         self.dirty = false;
+        self.wrap_layout = None;
         self.selection = Selection::caret(self.buffer.clamp(caret));
         self.recompute_find();
+        cx.notify();
+    }
+
+    /// Shows an unsaved draft over the loaded text: the editor stays dirty
+    /// against the loaded copy until the draft is written.
+    pub fn restore_draft(&mut self, draft: &str, cx: &mut Context<Self>) {
+        self.buffer = Buffer::new(draft);
+        self.history = History::default();
+        self.highlighter = language_for_path(&self.path).map(EditorHighlighter::new);
+        self.wrap_layout = None;
+        self.dirty = self.buffer.text() != self.saved_text;
         cx.notify();
     }
 
@@ -279,7 +404,8 @@ impl FileEditor {
         self.selection = Selection::caret(Pos::new(index, 0));
         self.revealed_line = Some(index);
         let height = self.geometry.borrow().bounds.size.height;
-        self.scroll.y = (px(EDITOR_LINE_HEIGHT) * index as f32 - (height - px(EDITOR_LINE_HEIGHT)) / 2.).max(px(0.));
+        let row = self.line_row(index);
+        self.scroll.y = (px(EDITOR_LINE_HEIGHT) * row as f32 - (height - px(EDITOR_LINE_HEIGHT)) / 2.).max(px(0.));
         cx.notify();
     }
 
@@ -339,6 +465,11 @@ impl FileEditor {
         if let Some(h) = &mut self.highlighter {
             h.edited(range.start.line, removed + 1, inserted + 1);
         }
+        if removed == 0 && inserted == 0 {
+            self.rewrap_line(range.start.line);
+        } else {
+            self.wrap_layout = None;
+        }
         self.selection = Selection::caret(caret);
         self.revealed_line = None;
         self.goal_x = None;
@@ -386,38 +517,51 @@ impl FileEditor {
         self.move_to(pos, select, cx);
     }
 
-    fn vertical(&mut self, lines: isize, select: bool, cx: &mut Context<Self>) {
+    /// Moves by visual rows: lines, or wrapped rows when word wrap is on.
+    fn vertical(&mut self, rows: isize, select: bool, cx: &mut Context<Self>) {
         let head = self.selection.head;
-        let target = (head.line as isize + lines).clamp(0, self.buffer.len_lines() as isize - 1) as usize;
-        if target == head.line {
-            let pos = if lines < 0 { Pos::new(0, 0) } else { self.buffer.end() };
+        let (row, _) = self.pos_row(head);
+        let target = (row as isize + rows).clamp(0, self.row_count() as isize - 1) as usize;
+        if target == row {
+            let pos = if rows < 0 { Pos::new(0, 0) } else { self.buffer.end() };
             return self.move_to(pos, select, cx);
         }
         let goal = self.goal_x.unwrap_or_else(|| self.x_for(head));
-        let col = self.col_for_x(target, goal);
-        self.move_to(Pos::new(target, col), select, cx);
+        let (line, sub) = self.row_line(target);
+        let col = self.col_for_x(line, sub, goal);
+        self.move_to(Pos::new(line, col), select, cx);
         self.goal_x = Some(goal);
     }
 
-    /// Caret x within the text area, from mono cell math (tabs expanded).
+    /// Caret x within its row, from mono cell math (tabs expanded).
     fn x_for(&self, pos: Pos) -> Pixels {
         let ch = self.geometry.borrow().ch;
-        ch * display_columns(&self.buffer.line(pos.line)[..pos.col]) as f32
+        let (_, start) = self.pos_row(pos);
+        ch * display_columns(&self.buffer.line(pos.line)[start..pos.col]) as f32
     }
 
-    fn col_for_x(&self, line: usize, x: Pixels) -> usize {
+    /// The byte column nearest `x` on row `sub` of `line`.
+    fn col_for_x(&self, line: usize, sub: usize, x: Pixels) -> usize {
         let ch = self.geometry.borrow().ch.max(px(1.));
         let target = (x / ch).round() as usize;
         let text = self.buffer.line(line);
+        let segments = self.segments(line);
+        let start = segments.get(sub).copied().unwrap_or(0);
+        let next = segments.get(sub + 1).copied();
+        let end = next.unwrap_or(text.len());
         let mut columns = 0;
-        for (index, c) in text.char_indices() {
+        for (index, c) in text[start..end].char_indices() {
             let width = if c == '\t' { TAB_WIDTH - columns % TAB_WIDTH } else { 1 };
             if columns + width > target {
-                return if target - columns > width / 2 { index + c.len_utf8() } else { index };
+                return start + if target - columns > width / 2 { index + c.len_utf8() } else { index };
             }
             columns += width;
         }
-        text.len()
+        // A wrapped row's end is the next row's start; stop before its last character instead.
+        match next {
+            Some(_) => text[..end].char_indices().next_back().map_or(start, |(index, _)| index.max(start)),
+            None => end,
+        }
     }
 
     fn page_lines(&self) -> isize {
@@ -427,14 +571,20 @@ impl FileEditor {
     fn pos_for_point(&self, position: Point<Pixels>) -> Pos {
         let geometry = self.geometry.borrow();
         let y = position.y - geometry.bounds.origin.y + self.scroll.y;
-        let line = ((y / px(EDITOR_LINE_HEIGHT)).floor().max(0.) as usize).min(self.buffer.len_lines() - 1);
+        let row = ((y / px(EDITOR_LINE_HEIGHT)).floor().max(0.) as usize).min(self.row_count().saturating_sub(1));
         let x = position.x - geometry.bounds.origin.x - geometry.text_left + self.scroll.x;
-        if let Some(entry) = line.checked_sub(geometry.first_line).and_then(|i| geometry.lines.get(i)) {
+        if let Some(entry) = row.checked_sub(geometry.first_row).and_then(|i| geometry.lines.get(i)) {
             let display = entry.shaped.closest_index_for_x(x.max(px(0.)));
-            return self.buffer.clamp(Pos::new(line, entry.byte_for_display(display)));
+            let mut col = entry.start + entry.byte_for_display(display);
+            if !entry.last && col >= entry.end {
+                let text = self.buffer.line(entry.line);
+                col = text[..entry.end].char_indices().next_back().map_or(entry.start, |(index, _)| index.max(entry.start));
+            }
+            return self.buffer.clamp(Pos::new(entry.line, col));
         }
         drop(geometry);
-        Pos::new(line, self.col_for_x(line, x))
+        let (line, sub) = self.row_line(row);
+        Pos::new(line, self.col_for_x(line, sub, x))
     }
 
     fn on_mouse_down(&mut self, event: &MouseDownEvent, window: &mut Window, cx: &mut Context<Self>) {
@@ -711,6 +861,7 @@ impl FileEditor {
             // Line counts may have changed anywhere below; re-parse from the first line touched.
             h.edited(line, 1, 2);
         }
+        self.wrap_layout = None;
         self.scroll_to_caret = true;
         self.recompute_find();
         self.refresh_dirty(cx);
@@ -836,9 +987,10 @@ impl EntityInputHandler for FileEditor {
     fn bounds_for_range(&mut self, range: Range<usize>, _: Bounds<Pixels>, _: &mut Window, _: &mut Context<Self>) -> Option<Bounds<Pixels>> {
         let range = self.utf16_range_to_pos(&range);
         let geometry = self.geometry.borrow();
+        let (row, start) = self.pos_row(range.start);
         let x = geometry.bounds.origin.x + geometry.text_left - self.scroll.x
-            + geometry.ch * display_columns(&self.buffer.line(range.start.line)[..range.start.col]) as f32;
-        let y = geometry.bounds.origin.y + px(EDITOR_LINE_HEIGHT) * range.start.line as f32 - self.scroll.y;
+            + geometry.ch * display_columns(&self.buffer.line(range.start.line)[start..range.start.col]) as f32;
+        let y = geometry.bounds.origin.y + px(EDITOR_LINE_HEIGHT) * row as f32 - self.scroll.y;
         Some(Bounds::new(point(x, y), size(geometry.ch, px(EDITOR_LINE_HEIGHT))))
     }
 
@@ -908,8 +1060,9 @@ struct EditorElement {
 struct EditorPrepaint {
     hitbox: Hitbox,
     lines: Vec<Rc<ShapedLineEntry>>,
-    numbers: Vec<ShapedLine>,
-    first_line: usize,
+    /// Line numbers, on each line's first row only.
+    numbers: Vec<Option<ShapedLine>>,
+    first_row: usize,
     gutter_width: Pixels,
     text_left: Pixels,
     ch: Pixels,
@@ -977,18 +1130,23 @@ impl Element for EditorElement {
             // `2ch` left pad, the digits, `1ch` right pad, then the 2px column border; `1ch` before text.
             let gutter_width = ch * (3 + digits) as f32 + px(2.);
             let text_left = gutter_width + ch;
-            let content_height = line_height * count as f32;
+            // The text area keeps `1ch` free on the right, as Pierre's line padding does.
+            let cols = ((bounds.size.width - text_left - ch) / ch.max(px(1.))).floor().max(1.) as usize;
+            editor.ensure_wrap(cols);
+            let total_rows = editor.row_count();
+            let content_height = line_height * total_rows as f32;
             let max_y = (content_height - bounds.size.height + line_height * 3.).max(px(0.));
             if editor.scroll_to_caret {
                 editor.scroll_to_caret = false;
                 let head = editor.selection.head;
-                let top = line_height * head.line as f32;
+                let (row, start) = editor.pos_row(head);
+                let top = line_height * row as f32;
                 if top < editor.scroll.y {
                     editor.scroll.y = top;
                 } else if top + line_height > editor.scroll.y + bounds.size.height {
                     editor.scroll.y = top + line_height - bounds.size.height;
                 }
-                let x = ch * display_columns(&editor.buffer.line(head.line)[..head.col]) as f32;
+                let x = ch * display_columns(&editor.buffer.line(head.line)[start..head.col]) as f32;
                 let visible = bounds.size.width - text_left - ch * 2.;
                 if x < editor.scroll.x {
                     editor.scroll.x = (x - ch * 4.).max(px(0.));
@@ -996,10 +1154,15 @@ impl Element for EditorElement {
                     editor.scroll.x = x - visible + ch * 4.;
                 }
             }
+            if editor.wrap {
+                editor.scroll.x = px(0.);
+            }
             editor.scroll.y = editor.scroll.y.clamp(px(0.), max_y);
-            let first_line = (editor.scroll.y / line_height).floor() as usize;
-            let visible_lines = (bounds.size.height / line_height).ceil() as usize + 1;
-            let last_line = (first_line + visible_lines).min(count);
+            let first_row = (editor.scroll.y / line_height).floor() as usize;
+            let visible_rows = (bounds.size.height / line_height).ceil() as usize + 1;
+            let last_row = (first_row + visible_rows).min(total_rows);
+            let (first_line, first_sub) = editor.row_line(first_row);
+            let last_line = if last_row > first_row { editor.row_line(last_row - 1).0 + 1 } else { first_line + 1 }.min(count);
             let head_line = editor.selection.head.line;
             let number_color = muted.opacity(0.7);
             let mut pending = false;
@@ -1012,21 +1175,54 @@ impl Element for EditorElement {
                 window.on_next_frame(move |_, cx| cx.notify(view));
             }
             let palette = SyntaxPalette::for_appearance(appearance);
-            let mut lines = Vec::with_capacity(last_line - first_line);
-            let mut numbers = Vec::with_capacity(last_line - first_line);
-            for index in first_line..last_line {
+            let rows = last_row.saturating_sub(first_row);
+            let mut lines = Vec::with_capacity(rows);
+            let mut numbers = Vec::with_capacity(rows);
+            let (mut index, mut sub) = (first_line, first_sub);
+            let mut segments = editor.segments(index);
+            while lines.len() < rows && index < count {
                 let text = editor.buffer.line(index);
+                let start = segments[sub];
+                let last = sub + 1 == segments.len();
+                let end = if last { text.len() } else { segments[sub + 1] };
                 let spans = editor.highlighter.as_ref().and_then(|h| h.line(index));
-                lines.push(Rc::new(shape_code_line(window, &regular, &bold, &italic, font_size, palette, foreground, text, spans)));
-                let number: SharedString = (index + 1).to_string().into();
-                let len = number.len();
-                let color = if index == head_line { foreground } else { number_color };
-                numbers.push(window.text_system().shape_line(number, font_size, &[plain_run(len, &regular, color)], None));
+                let mut entry = if start == 0 && last {
+                    shape_code_line(window, &regular, &bold, &italic, font_size, palette, foreground, text, spans)
+                } else {
+                    let clipped: Vec<TokenSpan> = spans
+                        .unwrap_or_default()
+                        .iter()
+                        .filter(|span| (span.end as usize) > start && (span.start as usize) < end)
+                        .map(|span| TokenSpan {
+                            start: (span.start as usize).max(start) as u32 - start as u32,
+                            end: (span.end as usize).min(end) as u32 - start as u32,
+                            token: span.token,
+                        })
+                        .collect();
+                    shape_code_line(window, &regular, &bold, &italic, font_size, palette, foreground, &text[start..end], Some(&clipped))
+                };
+                (entry.line, entry.start, entry.end, entry.last) = (index, start, end, last);
+                lines.push(Rc::new(entry));
+                numbers.push((start == 0).then(|| {
+                    let number: SharedString = (index + 1).to_string().into();
+                    let len = number.len();
+                    let color = if index == head_line { foreground } else { number_color };
+                    window.text_system().shape_line(number, font_size, &[plain_run(len, &regular, color)], None)
+                }));
+                if last {
+                    index += 1;
+                    sub = 0;
+                    if index < count {
+                        segments = editor.segments(index);
+                    }
+                } else {
+                    sub += 1;
+                }
             }
             *editor.geometry.borrow_mut() =
-                FrameGeometry { bounds, text_left, ch, first_line, lines: lines.clone() };
+                FrameGeometry { bounds, text_left, ch, first_row, lines: lines.clone() };
             let hitbox = window.insert_hitbox(bounds, HitboxBehavior::Normal);
-            EditorPrepaint { hitbox, lines, numbers, first_line, gutter_width, text_left, ch, scroll: editor.scroll, focused }
+            EditorPrepaint { hitbox, lines, numbers, first_row, gutter_width, text_left, ch, scroll: editor.scroll, focused }
         })
     }
 
@@ -1062,21 +1258,19 @@ impl Element for EditorElement {
         let selection = editor.selection.range();
         let head = editor.selection.head;
         let read_only = editor.read_only;
-        let line_lengths: Vec<usize> =
-            (state.first_line..state.first_line + state.lines.len()).map(|line| editor.buffer.line(line).len()).collect();
         let text_origin_x = bounds.origin.x + state.text_left - scroll.x;
-        let row_y = |line: usize| bounds.origin.y + line_height * line as f32 - scroll.y;
+        let row_y = |row: usize| bounds.origin.y + line_height * row as f32 - scroll.y;
         let x_of = |entry: &ShapedLineEntry, col: usize| text_origin_x + entry.shaped.x_for_index(entry.display_index(col));
+        let visible_lines = state.lines.first().map_or(0..0, |first| first.line..state.lines.last().map_or(first.line, |l| l.line) + 1);
         let find_matches: Vec<(usize, Range<usize>, bool)> = editor
             .find
             .as_ref()
             .map(|find| {
-                let visible = state.first_line..state.first_line + state.lines.len();
-                let start = find.matches.partition_point(|(line, _)| *line < visible.start);
+                let start = find.matches.partition_point(|(line, _)| *line < visible_lines.start);
                 find.matches[start..]
                     .iter()
                     .enumerate()
-                    .take_while(|(_, (line, _))| visible.contains(line))
+                    .take_while(|(_, (line, _))| visible_lines.contains(line))
                     .map(|(i, (line, range))| (*line, range.clone(), find.current == Some(start + i)))
                     .collect()
             })
@@ -1086,8 +1280,8 @@ impl Element for EditorElement {
         window.with_content_mask(Some(gpui_kit::ContentMask { bounds }), |window| {
             let text_bounds = Bounds::from_corners(point(bounds.origin.x + state.gutter_width, bounds.origin.y), bounds.bottom_right());
             for (offset, entry) in state.lines.iter().enumerate() {
-                let line = state.first_line + offset;
-                let y = row_y(line);
+                let line = entry.line;
+                let y = row_y(state.first_row + offset);
                 let row = Bounds::new(point(bounds.origin.x, y), size(bounds.size.width, line_height));
                 if revealed == Some(line) {
                     window.paint_quad(fill(row, paint.revealed));
@@ -1096,6 +1290,9 @@ impl Element for EditorElement {
                 }
                 window.with_content_mask(Some(gpui_kit::ContentMask { bounds: text_bounds }), |window| {
                     for (_, range, current) in find_matches.iter().filter(|(l, ..)| *l == line) {
+                        if range.end <= entry.start || range.start > entry.end {
+                            continue;
+                        }
                         let left = x_of(entry, range.start);
                         let right = x_of(entry, range.end);
                         window.paint_quad(fill(
@@ -1104,23 +1301,30 @@ impl Element for EditorElement {
                         ));
                     }
                     if line >= selection.start.line && line <= selection.end.line && selection.start != selection.end {
-                        let start = if line == selection.start.line { x_of(entry, selection.start.col) } else { text_origin_x };
-                        let end = if line == selection.end.line {
-                            x_of(entry, selection.end.col)
-                        } else {
-                            x_of(entry, line_lengths[offset]) + state.ch
-                        };
-                        window.paint_quad(fill(Bounds::from_corners(point(start, y), point(end, y + line_height)), paint.selection));
+                        // The selection on this line, with `usize::MAX` for "through the newline".
+                        let from = if line == selection.start.line { selection.start.col } else { 0 };
+                        let to = if line == selection.end.line { selection.end.col } else { usize::MAX };
+                        let starts_here = from < entry.end || (from == entry.end && entry.last);
+                        if starts_here && to > entry.start {
+                            let start = x_of(entry, from.max(entry.start));
+                            let end = if to > entry.end {
+                                x_of(entry, entry.end) + if entry.last { state.ch } else { px(0.) }
+                            } else {
+                                x_of(entry, to)
+                            };
+                            window.paint_quad(fill(Bounds::from_corners(point(start, y), point(end, y + line_height)), paint.selection));
+                        }
                     }
                     entry.shaped.paint(point(text_origin_x, y), line_height, TextAlign::Left, None, window, cx).ok();
-                    if line == head.line && state.focused && !read_only {
+                    if line == head.line && entry.holds(head.col) && state.focused && !read_only {
                         let x = x_of(entry, head.col);
                         window.paint_quad(fill(Bounds::new(point(x, y + px(2.)), size(px(1.5), line_height - px(4.))), paint.caret));
                     }
                 });
-                let number = &state.numbers[offset];
-                let number_x = bounds.origin.x + state.gutter_width - px(2.) - state.ch - number.width;
-                number.paint(point(number_x, y), line_height, TextAlign::Left, None, window, cx).ok();
+                if let Some(number) = &state.numbers[offset] {
+                    let number_x = bounds.origin.x + state.gutter_width - px(2.) - state.ch - number.width;
+                    number.paint(point(number_x, y), line_height, TextAlign::Left, None, window, cx).ok();
+                }
             }
             window.paint_quad(fill(
                 Bounds::new(point(bounds.origin.x + state.gutter_width - px(2.), bounds.origin.y), size(px(1.), bounds.size.height)),
@@ -1169,6 +1373,29 @@ fn plain_run(len: usize, font: &Font, color: Hsla) -> TextRun {
 /// Columns a string takes with tabs expanded to the next multiple of [`TAB_WIDTH`].
 fn display_columns(text: &str) -> usize {
     text.chars().fold(0, |columns, c| if c == '\t' { columns + TAB_WIDTH - columns % TAB_WIDTH } else { columns + 1 })
+}
+
+/// Byte offsets where a line's rows start when wrapped at `cols` columns: after
+/// the last space or tab that fits, else at the column limit.
+fn wrap_starts(text: &str, cols: usize) -> SmallVec<[usize; 4]> {
+    let mut starts: SmallVec<[usize; 4]> = smallvec![0];
+    let mut columns = 0;
+    // The byte after the row's last space, with the columns up to it.
+    let mut last_break: Option<(usize, usize)> = None;
+    for (index, c) in text.char_indices() {
+        let width = if c == '\t' { TAB_WIDTH - columns % TAB_WIDTH } else { 1 };
+        if columns + width > cols && columns > 0 {
+            let (at, used) = last_break.filter(|(at, _)| *at < index).unwrap_or((index, columns));
+            starts.push(at);
+            columns -= used;
+            last_break = None;
+        }
+        columns += width;
+        if c == ' ' || c == '\t' {
+            last_break = Some((index + c.len_utf8(), columns));
+        }
+    }
+    starts
 }
 
 /// Shapes one code line with its syntax spans, expanding tabs to spaces.
@@ -1232,7 +1459,7 @@ fn shape_code_line(
         runs.push(plain_run(display.len() - cursor, regular, foreground));
     }
     let shaped = window.text_system().shape_line(display, font_size, &runs, None);
-    ShapedLineEntry { shaped, map }
+    ShapedLineEntry { shaped, map, line: 0, start: 0, end: text.len(), last: true }
 }
 
 /// A monospace family that exists on this machine, preferring the web's stack

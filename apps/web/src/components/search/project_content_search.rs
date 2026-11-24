@@ -93,6 +93,12 @@ impl ProjectContentSearch {
             _ => {}
         });
         input.update(cx, |input, cx| input.focus(window, cx));
+        let list = ListState::new(0, ListAlignment::Top, px(200.));
+        // The sticky file header follows the scroll position.
+        let view = cx.entity().downgrade();
+        list.set_scroll_handler(move |_, _, cx| {
+            view.update(cx, |_, cx| cx.notify()).ok();
+        });
         Self {
             files,
             input,
@@ -108,11 +114,17 @@ impl ProjectContentSearch {
             selected: 0,
             rows: Arc::default(),
             file_count: 0,
-            list: ListState::new(0, ListAlignment::Top, px(200.)),
+            list,
             focus_handle: cx.focus_handle(),
             task: None,
             _subscription: subscription,
         }
+    }
+
+    /// Scrolls the results, as the wheel does; for checks.
+    pub fn scroll_results_by(&mut self, distance: gpui_kit::Pixels, cx: &mut Context<Self>) {
+        self.list.scroll_by(distance);
+        cx.notify();
     }
 
     pub fn match_count(&self) -> usize {
@@ -266,43 +278,45 @@ impl ProjectContentSearch {
             .into_any_element()
     }
 
+    /// The file header pinned to the top of the results (`sticky top-0` on
+    /// `bg-popover/95`): the header of the file the top row belongs to, pushed
+    /// up by the next file's header as it arrives.
+    fn render_sticky_header(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let top = self.list.logical_scroll_top();
+        let viewport = self.list.viewport_bounds();
+        let header = self.rows[..=top.item_ix.min(self.rows.len().checked_sub(1)?)]
+            .iter()
+            .rposition(|row| matches!(row, Row::Header { .. }))?;
+        let Row::Header { path, count, first } = &self.rows[header] else { return None };
+        // Where the real header would draw, relative to the results' top; it shows itself until it scrolls past.
+        let gap = if *first { px(0.) } else { px(SECTION_GAP) };
+        if let Some(bounds) = self.list.bounds_for_item(header)
+            && bounds.top() + gap - viewport.top() >= px(0.)
+        {
+            return None;
+        }
+        let next = self.rows.iter().skip(header + 1).position(|row| matches!(row, Row::Header { .. })).map(|i| header + 1 + i);
+        let offset = next
+            .and_then(|next| self.list.bounds_for_item(next))
+            .map_or(px(0.), |bounds| (bounds.top() + px(SECTION_GAP) - viewport.top() - px(HEADER_HEIGHT)).min(px(0.)));
+        let theme = cx.app_theme();
+        Some(
+            div()
+                .absolute()
+                .left_0()
+                .right_0()
+                .top(offset)
+                .bg(theme.colors.popover().opacity(0.95))
+                .child(file_header(path, *count, cx))
+                .into_any_element(),
+        )
+    }
+
     fn render_row(rows: &Arc<Vec<Row>>, matches: &Arc<Vec<ProjectContentMatch>>, selected: usize, entity: &gpui_kit::WeakEntity<Self>, index: usize, window: &mut Window, cx: &mut App) -> AnyElement {
         let theme = cx.app_theme().clone();
         let colors = theme.colors;
         match &rows[index] {
-            Row::Header { path, count, first } => {
-                let (directory, name) = match path.rfind('/') {
-                    Some(i) => (Some(path[..i].to_owned()), path[i + 1..].to_owned()),
-                    None => (None, path.to_string()),
-                };
-                div()
-                    .when(!first, |el| el.pt(px(8.)))
-                    .child(
-                        div()
-                            .h(px(32.))
-                            .flex()
-                            .items_center()
-                            .gap(px(8.))
-                            .px(px(12.))
-                            .text_size(px(12.))
-                            .child(file_icon(path, px(14.), cx))
-                            .child(div().flex_none().font_weight(gpui_kit::FontWeight::MEDIUM).text_color(colors.text).child(name))
-                            .children(directory.map(|d| div().min_w_0().overflow_hidden().whitespace_nowrap().text_ellipsis().text_color(colors.muted_foreground).child(d)))
-                            .child(
-                                div()
-                                    .ml_auto()
-                                    .flex_none()
-                                    .px(px(6.))
-                                    .py(px(2.))
-                                    .rounded_full()
-                                    .bg(colors.muted)
-                                    .text_size(px(10.))
-                                    .text_color(colors.muted_foreground)
-                                    .child(count.to_string()),
-                            ),
-                    )
-                    .into_any_element()
-            }
+            Row::Header { path, count, first } => div().when(!first, |el| el.pt(px(8.))).child(file_header(path, *count, cx)).into_any_element(),
             Row::Match { index: match_index } => {
                 let item = &matches[*match_index];
                 let active = *match_index == selected;
@@ -405,9 +419,20 @@ impl Render for ProjectContentSearch {
             div().flex_1().flex().items_center().justify_center().px(px(24.)).text_size(px(13.)).text_color(colors.muted_foreground).child(message).into_any_element()
         } else {
             let (rows, matches, selected, entity) = (self.rows.clone(), self.matches.clone(), self.selected, cx.entity().downgrade());
-            list(self.list.clone(), move |index, window, cx| Self::render_row(&rows, &matches, selected, &entity, index, window, cx))
+            let sticky = self.render_sticky_header(cx);
+            div()
+                .relative()
                 .flex_1()
-                .py(px(8.))
+                .min_h_0()
+                .flex()
+                .flex_col()
+                .overflow_hidden()
+                .child(
+                    list(self.list.clone(), move |index, window, cx| Self::render_row(&rows, &matches, selected, &entity, index, window, cx))
+                        .flex_1()
+                        .py(px(8.)),
+                )
+                .children(sticky)
                 .into_any_element()
         };
         palette_frame(&theme, px(PALETTE_WIDTH), Some(px(DIALOG_HEIGHT)))
@@ -419,4 +444,42 @@ impl Render for ProjectContentSearch {
             .child(body)
             .child(palette_footer(&theme, t!("Open file"), t!("Back")))
     }
+}
+
+/// Height of a file header row (`h-8`).
+const HEADER_HEIGHT: f32 = 32.;
+/// Space between one file's matches and the next header (`pb-2`).
+const SECTION_GAP: f32 = 8.;
+
+/// A file's header in the results: icon, name, folder and match count.
+fn file_header(path: &SharedString, count: usize, cx: &mut App) -> AnyElement {
+    let theme = cx.app_theme().clone();
+    let colors = theme.colors;
+    let (directory, name) = match path.rfind('/') {
+        Some(i) => (Some(path[..i].to_owned()), path[i + 1..].to_owned()),
+        None => (None, path.to_string()),
+    };
+    div()
+        .h(px(HEADER_HEIGHT))
+        .flex()
+        .items_center()
+        .gap(px(8.))
+        .px(px(12.))
+        .text_size(px(12.))
+        .child(file_icon(path, px(14.), cx))
+        .child(div().flex_none().font_weight(gpui_kit::FontWeight::MEDIUM).text_color(colors.text).child(name))
+        .children(directory.map(|d| div().min_w_0().overflow_hidden().whitespace_nowrap().text_ellipsis().text_color(colors.muted_foreground).child(d)))
+        .child(
+            div()
+                .ml_auto()
+                .flex_none()
+                .px(px(6.))
+                .py(px(2.))
+                .rounded_full()
+                .bg(colors.muted)
+                .text_size(px(10.))
+                .text_color(colors.muted_foreground)
+                .child(count.to_string()),
+        )
+        .into_any_element()
 }

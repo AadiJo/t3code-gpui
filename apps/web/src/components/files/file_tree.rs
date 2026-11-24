@@ -680,7 +680,7 @@ impl FileTree {
         let tree = cx.entity().downgrade();
         let items = file_tree_menu_items(&self.capabilities, true);
         let items: Vec<FileContextMenuItem> = if directory {
-            items.into_iter().filter(|i| !matches!(i.action, Some(FileContextMenuAction::OpenLocally))).collect()
+            items.into_iter().filter(|i| !matches!(i.action, Some(FileContextMenuAction::Open))).collect()
         } else {
             items
         };

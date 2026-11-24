@@ -99,11 +99,13 @@ pub struct TextInput {
     invalid: bool,
     disabled: bool,
     forced: Option<ControlState>,
+    /// An `InputGroupAddon` icon before the text, such as search.
+    leading_icon: Option<crate::components::icons::IconName>,
 }
 
 impl TextInput {
     pub fn new(state: &Entity<InputState>) -> Self {
-        Self { state: state.clone(), size: InputSize::Default, mono: false, invalid: false, disabled: false, forced: None }
+        Self { state: state.clone(), size: InputSize::Default, mono: false, invalid: false, disabled: false, forced: None, leading_icon: None }
     }
 
     pub fn size(mut self, size: InputSize) -> Self {
@@ -125,6 +127,12 @@ impl TextInput {
 
     pub fn disabled(mut self, disabled: bool) -> Self {
         self.disabled = disabled;
+        self
+    }
+
+    /// An icon in an inline-start addon (`InputGroup` + `InputGroupAddon`).
+    pub fn leading_icon(mut self, icon: crate::components::icons::IconName) -> Self {
+        self.leading_icon = Some(icon);
         self
     }
 
@@ -150,7 +158,22 @@ impl RenderOnce for TextInput {
         let paint = frame_paint(theme, is_focused(focused, self.forced), self.invalid, disabled);
         let field = Input::new(&self.state).appearance(false).disabled(disabled);
         // `Input::h` is an inherent method that only sizes multi-line inputs.
-        let field = Styled::h(field, height).px(padding).w_full();
+        let field = match self.leading_icon {
+            // The addon is `ps-2.5`; the control then drops its own start padding to `ps-1.5`.
+            Some(icon) => field
+                .prefix(
+                    crate::components::icons::Icon::new(icon)
+                        .size(crate::components::icons::IconSize::Custom(sp(4.)))
+                        .color(theme.colors.foreground().opacity(0.8)),
+                )
+                // `opacity-80` on the addon's svg; the placeholder starts where the web's control text does.
+                .gap(sp(1.5) + px(1.)),
+            None => field,
+        };
+        let field = match self.leading_icon {
+            Some(_) => Styled::h(field, height).pl(sp(2.5) - px(1.)).pr(padding).w_full(),
+            None => Styled::h(field, height).px(padding).w_full(),
+        };
         let field = if self.mono {
             field.mono_text(px(TextSize::Sm.size(theme.fonts.interface)), weight::NORMAL)
         } else {

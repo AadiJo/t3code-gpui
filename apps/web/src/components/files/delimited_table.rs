@@ -1,7 +1,8 @@
 //! CSV and TSV as a table. Ports `DelimitedTablePreview.tsx`, which shows
 //! the file through `LargeTextViewer`'s `VirtualTablePreview`: a summary bar
-//! (`n rows · n columns · size`), a header row on `muted/60`, a 56px row
-//! number column, cells 128 to 320px wide with `px-3 py-1.5`, virtualized rows.
+//! (`n rows · n columns · size`), a header row on `muted/60` that stays on
+//! top, a 56px row number column that stays at the left edge, cells 128 to
+//! 320px wide with `px-3 py-1.5`, virtualized zebra rows.
 
 use std::{ops::Range, sync::Arc};
 
@@ -10,7 +11,7 @@ use gpui_kit::{
     Styled as _, UniformListScrollHandle, Window, div, prelude::*, px, uniform_list,
 };
 
-use crate::{ActiveAppTheme as _, file_preview::format_file_size, i18n::t};
+use crate::{ActiveAppTheme as _, components::ui::tooltip::tooltip, file_preview::format_file_size, i18n::t};
 
 /// Row height: `text-xs` (16px line) plus `py-1.5` and the 1px bottom border.
 const ROW_HEIGHT: f32 = 29.;
@@ -154,39 +155,40 @@ impl DelimitedTable {
         Self { rows: Arc::new(rows), widths: widths.into(), byte_length, scroll: UniformListScrollHandle::new() }
     }
 
+    /// Scrolls the cells sideways, as a trackpad does; for checks.
+    pub fn scroll_cells_to(&mut self, x: gpui_kit::Pixels, cx: &mut Context<Self>) {
+        let handle = self.scroll.0.borrow().base_handle.clone();
+        handle.set_offset(gpui_kit::point(-x, handle.offset().y));
+        cx.notify();
+    }
+
     pub fn row_count(&self) -> usize {
         self.rows.rows.len().saturating_sub(1)
     }
 
+    /// The list's horizontal scroll, which the header row and the row numbers follow.
+    fn scroll_x(&self) -> gpui_kit::Pixels {
+        self.scroll.0.borrow().base_handle.offset().x
+    }
+
+    /// Body rows: data row `index` is file row `index + 1`, under the header.
+    /// Row numbers stay at the left edge while the cells scroll sideways.
     fn render_rows(&mut self, range: Range<usize>, _: &mut Window, cx: &mut Context<Self>) -> Vec<AnyElement> {
         let theme = cx.app_theme();
         let colors = theme.colors;
+        let scroll_x = self.scroll_x();
         range
-            .filter_map(|index| self.rows.rows.get(index).map(|row| (index, row)))
+            .filter_map(|index| self.rows.rows.get(index + 1).map(|row| (index, row)))
             .map(|(index, row)| {
-                let header = index == 0;
                 div()
+                    .relative()
                     .flex()
                     .h(px(ROW_HEIGHT))
                     .border_b_1()
-                    .border_color(colors.border.opacity(if header { 1. } else { 0.4 }))
-                    .when(header, |el| el.bg(colors.muted.opacity(0.6)).font_weight(gpui_kit::FontWeight::MEDIUM))
+                    .border_color(colors.border.opacity(0.6))
+                    .when(index % 2 == 1, |el| el.bg(colors.muted.opacity(0.3)))
                     .text_size(px(12.))
-                    .child(
-                        div()
-                            .w(px(NUMBER_WIDTH))
-                            .flex_none()
-                            .h_full()
-                            .px(px(8.))
-                            .flex()
-                            .items_center()
-                            .justify_end()
-                            .border_r_1()
-                            .border_color(colors.border)
-                            .bg(colors.canvas)
-                            .text_color(colors.muted_foreground)
-                            .when(!header, |el| el.child(index.to_string())),
-                    )
+                    .child(div().w(px(NUMBER_WIDTH)).flex_none())
                     .children(self.widths.iter().enumerate().map(|(column, width)| {
                         div()
                             .w(px(*width))
@@ -202,10 +204,82 @@ impl DelimitedTable {
                             .text_ellipsis()
                             .children(row.get(column).cloned())
                     }))
+                    .child(
+                        div()
+                            .absolute()
+                            .top_0()
+                            .left(-scroll_x)
+                            .w(px(NUMBER_WIDTH))
+                            .h_full()
+                            .px(px(8.))
+                            .flex()
+                            .items_center()
+                            .justify_end()
+                            .border_r_1()
+                            .border_color(colors.border)
+                            .bg(colors.canvas)
+                            .text_color(colors.muted_foreground)
+                            .child((index + 1).to_string()),
+                    )
                     .into_any_element()
             })
             .collect()
     }
+
+    /// The header row, outside the list so it stays on top while rows scroll.
+    fn render_header(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = cx.app_theme();
+        let colors = theme.colors;
+        let header = self.rows.rows.first();
+        div()
+            .relative()
+            .flex_none()
+            .h(px(ROW_HEIGHT))
+            .overflow_hidden()
+            .border_b_1()
+            .border_color(colors.border)
+            .bg(colors.muted.opacity(0.6))
+            .font_weight(gpui_kit::FontWeight::MEDIUM)
+            .text_size(px(12.))
+            .child(
+                div().absolute().top_0().left(self.scroll_x()).h_full().flex().pl(px(NUMBER_WIDTH)).children(
+                    self.widths.iter().enumerate().map(|(column, width)| {
+                        let label: SharedString = header.and_then(|row| row.get(column).cloned()).unwrap_or_else(|| column_label(column).into());
+                        div()
+                            .id(("table-column", column))
+                            .w(px(*width))
+                            .flex_none()
+                            .h_full()
+                            .px(px(12.))
+                            .flex()
+                            .items_center()
+                            .overflow_hidden()
+                            .border_r_1()
+                            .border_color(colors.border.opacity(0.4))
+                            .whitespace_nowrap()
+                            .text_ellipsis()
+                            .tooltip(tooltip(label.clone()))
+                            .child(label)
+                    }),
+                ),
+            )
+            .child(
+                div().absolute().top_0().left_0().w(px(NUMBER_WIDTH)).h_full().border_r_1().border_color(colors.border).bg(colors.canvas),
+            )
+    }
+}
+
+/// `columnLabel`: A, B, … Z, AA, AB, …
+fn column_label(index: usize) -> String {
+    let mut index = index + 1;
+    let mut label = Vec::new();
+    while index > 0 {
+        let rem = (index - 1) % 26;
+        label.push(b'A' + rem as u8);
+        index = (index - 1) / 26;
+    }
+    label.reverse();
+    String::from_utf8(label).unwrap_or_default()
 }
 
 impl Render for DelimitedTable {
@@ -251,11 +325,22 @@ impl Render for DelimitedTable {
                         .child(t!("Showing the first 1,024 columns. Source and Save retain every column.")),
                 )
             })
+            .child(self.render_header(cx))
             .child(
-                uniform_list("delimited-table", self.rows.rows.len(), cx.processor(Self::render_rows))
-                    .with_horizontal_sizing_behavior(ListHorizontalSizingBehavior::Unconstrained)
-                    .track_scroll(&self.scroll)
-                    .flex_1(),
+                div()
+                    .id("delimited-table-body")
+                    .flex_1()
+                    .min_h_0()
+                    .flex()
+                    .flex_col()
+                    // The header and row numbers read the scroll offset at render.
+                    .on_scroll_wheel(cx.listener(|_, _, _, cx| cx.notify()))
+                    .child(
+                        uniform_list("delimited-table", self.row_count(), cx.processor(Self::render_rows))
+                            .with_horizontal_sizing_behavior(ListHorizontalSizingBehavior::Unconstrained)
+                            .track_scroll(&self.scroll)
+                            .flex_1(),
+                    ),
             )
     }
 }

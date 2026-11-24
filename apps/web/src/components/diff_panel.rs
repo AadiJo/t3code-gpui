@@ -11,6 +11,7 @@ use std::{
 };
 
 use gpui_kit::{base::TestSupportExt as _, prelude::FluentBuilder as _, *};
+use gpui_kit::component::input::{Input, InputEvent, InputState};
 
 use super::{
     diff_panel_shell::{DiffPanelLoadingState, DiffPanelShell},
@@ -26,9 +27,15 @@ use crate::{
     diff_file_kind::is_test_changed_file,
     diff_panel_store::{DiffLayout, DiffPanelSelection, DiffPanelStore, GitScope},
     diff_patch::{FileContents, FileDiff, ParsedPatch, RenderablePatch},
+    file_context_menu::{FileContextMenuAction, FileContextMenuCapabilities, file_context_menu_items},
     i18n::t,
 };
+use super::icons::{Icon, IconName, IconSize};
 use super::ui::menu::{MenuItem, MenuItemKind, MenuPopup};
+use super::ui::popover::glass_surface;
+use super::ui::switch::{Switch, SwitchSize};
+use super::ui::{ControlHighlightExt as _, TextStyleExt as _};
+use crate::appearance_fonts::{TextSize, weight};
 use super::ui::tooltip::tooltip;
 
 /// A completed turn the scope menu lists, newest first.
@@ -47,6 +54,38 @@ pub struct CommitSummary {
     pub subject: SharedString,
     /// `formatRelativeTimeLabel(committedAt)`.
     pub relative_label: SharedString,
+    /// `projectCommitUrl`: the commit on the repository's host, when known.
+    pub url: Option<SharedString>,
+}
+
+/// Where the Commits submenu's list stands.
+#[derive(Clone, Debug)]
+pub enum CommitsStatus {
+    Loading,
+    /// `truncated` when the server cut the list at its limit.
+    Loaded { truncated: bool },
+    Error(SharedString),
+}
+
+/// One entry of the base-ref picker (`BaseRefChoice`): a local branch with its
+/// remote twin, a local branch alone, or a remote-only ref.
+#[derive(Clone, Debug)]
+pub struct BaseRefChoice {
+    pub label: SharedString,
+    pub local: Option<SharedString>,
+    pub remote: Option<SharedString>,
+}
+
+impl BaseRefChoice {
+    /// `filterBaseRefChoices`: label or either ref name contains the query.
+    fn matches(&self, query: &str) -> bool {
+        let query = query.trim().to_lowercase();
+        query.is_empty()
+            || [Some(&self.label), self.local.as_ref(), self.remote.as_ref()]
+                .into_iter()
+                .flatten()
+                .any(|name| name.to_lowercase().contains(&query))
+    }
 }
 
 /// What the body shows.
@@ -76,6 +115,9 @@ pub struct DiffPanelInput {
     pub workspace_root: Option<SharedString>,
     pub turns: Vec<TurnSummary>,
     pub commits: Vec<CommitSummary>,
+    pub commits_status: CommitsStatus,
+    /// `buildBaseRefChoices` over `vcs.listRefs` (local and remote, head excluded).
+    pub base_ref_choices: Vec<BaseRefChoice>,
     /// Branch being compared, and the comparison target label.
     pub head_ref: Option<SharedString>,
     pub base_ref: Option<SharedString>,
@@ -91,6 +133,8 @@ impl Default for DiffPanelInput {
             workspace_root: None,
             turns: Vec::new(),
             commits: Vec::new(),
+            commits_status: CommitsStatus::Loaded { truncated: false },
+            base_ref_choices: Vec::new(),
             head_ref: None,
             base_ref: None,
             can_refresh: false,
@@ -116,6 +160,8 @@ pub enum DiffPanelEvent {
     /// Add a review comment to the composer draft.
     ReviewComment(ReviewComment),
     DeleteReviewComment(SharedString),
+    /// A row of a file header's context menu (`useFileContextMenuHandler`).
+    FileMenuAction { action: FileContextMenuAction, path: SharedString },
 }
 
 /// The scope menu's submenus.
@@ -137,6 +183,12 @@ pub struct DiffPanel {
     /// Where the scope trigger was painted, so the menu opens under it.
     scope_trigger: Option<Bounds<Pixels>>,
     wrap_override: Option<bool>,
+    /// The base-ref picker's search field, while the picker is open.
+    base_ref_picker: Option<(Entity<InputState>, Subscription)>,
+    base_ref_trigger: Option<Bounds<Pixels>>,
+    /// The file header menu: the file and where it was opened.
+    file_menu: Option<(SharedString, Point<Pixels>)>,
+    file_menu_capabilities: FileContextMenuCapabilities,
     /// The panel's width last frame, for the header's narrow layout.
     width: f32,
     _subscriptions: Vec<Subscription>,
@@ -164,6 +216,10 @@ impl DiffPanel {
             scope_submenu: None,
             scope_trigger: None,
             wrap_override: None,
+            base_ref_picker: None,
+            base_ref_trigger: None,
+            file_menu: None,
+            file_menu_capabilities: FileContextMenuCapabilities::default(),
             width: 0.,
             _subscriptions: subscriptions,
         }
@@ -250,6 +306,9 @@ impl DiffPanel {
     /// Recomputes file keys, the shown set and folds, then pushes them to the views.
     fn rebuild_files(&mut self, cx: &mut Context<Self>) {
         let mut occurrences: HashMap<String, usize> = HashMap::new();
+        // Tool-call diffs are not re-fetched, so whitespace is hidden here (`getRenderablePatch`).
+        let hide_whitespace =
+            matches!(self.selection(cx), DiffPanelSelection::ToolCall { .. }) && cx.global::<DiffPanelStore>().effective_ignore_whitespace();
         self.files = self
             .parsed()
             .map(|parsed| {
@@ -257,11 +316,12 @@ impl DiffPanel {
                     .files
                     .iter()
                     .map(|file| {
+                        let file = if hide_whitespace { Arc::new(crate::diff_patch::hide_whitespace_changes(file)) } else { file.clone() };
                         let identity = file.identity_key();
                         let occurrence = occurrences.entry(identity.clone()).or_default();
                         let key = if *occurrence == 0 { identity.clone() } else { format!("{identity}\0{occurrence}") };
                         *occurrence += 1;
-                        (file.clone(), SharedString::from(key))
+                        (file, SharedString::from(key))
                     })
                     .collect()
             })
@@ -347,6 +407,10 @@ impl DiffPanel {
                 }
             }
             CodeViewEvent::OpenFile { path } => cx.emit(DiffPanelEvent::OpenFile(path.clone())),
+            CodeViewEvent::HeaderContextMenu { path, position } => {
+                self.file_menu = Some((path.clone(), *position));
+                cx.notify();
+            }
             CodeViewEvent::RequestContents { key } => {
                 if let Some((file, _)) = self.files.iter().find(|(_, k)| k == key) {
                     cx.emit(DiffPanelEvent::RequestFileContents { key: key.clone(), file: file.clone() });
@@ -543,8 +607,8 @@ impl DiffPanel {
                             el.child(div().min_w_0().max_w(px(192.)).overflow_hidden().whitespace_nowrap().text_ellipsis().child(head))
                                 .child(svg().path("icons/diffs/arrow-right.svg").size(px(14.)).flex_none().text_color(colors.muted_foreground.opacity(0.7)))
                         })
-                        .when(narrow_refs, |el| el.child("vs"))
-                        .child(div().flex_none().max_w(px(192.)).overflow_hidden().whitespace_nowrap().text_ellipsis().child(base)),
+                        .when(narrow_refs, |el| el.child(t!("vs")))
+                        .child(self.render_base_ref_trigger(base, cx)),
                 )
             });
 
@@ -601,9 +665,10 @@ impl DiffPanel {
                 this.wrap_override = Some(!wrap);
                 this.sync_options(cx);
             })))
-            .child(toggle("diff-whitespace", "icons/diffs/pilcrow.svg", ignore_whitespace).tooltip(tooltip(if ignore_whitespace { t!("Show whitespace changes") } else { t!("Hide whitespace changes") })).on_click(cx.listener(move |_, _, _, cx| {
+            .child(toggle("diff-whitespace", "icons/diffs/pilcrow.svg", ignore_whitespace).tooltip(tooltip(if ignore_whitespace { t!("Show whitespace changes") } else { t!("Hide whitespace changes") })).on_click(cx.listener(move |this, _, _, cx| {
                 cx.global_mut::<DiffPanelStore>().ignore_whitespace = Some(!ignore_whitespace);
                 cx.emit(DiffPanelEvent::IgnoreWhitespaceChanged(!ignore_whitespace));
+                this.rebuild_files(cx);
                 cx.notify();
             })))
             .when(self.test_file_count > 0, |el| {
@@ -636,7 +701,7 @@ impl DiffPanel {
             return None;
         }
         let trigger = self.scope_trigger?;
-        let theme = cx.app_theme();
+        let theme = &cx.app_theme().clone();
         let selection = self.selection(cx);
         let this = cx.weak_entity();
         let pick = {
@@ -711,6 +776,7 @@ impl DiffPanel {
 
         let submenu = self.scope_submenu.map(|submenu| {
             let mut popup = MenuPopup::new();
+            let mut commit_status = None;
             match submenu {
                 ScopeSubmenu::Turn => {
                     for turn in &self.input.turns {
@@ -726,23 +792,21 @@ impl DiffPanel {
                     }
                 }
                 ScopeSubmenu::Commits => {
-                    for commit in &self.input.commits {
-                        let checked = matches!(&selection, DiffPanelSelection::Commit { sha, .. } if commit.sha.as_ref() == sha);
-                        let sha = commit.sha.clone();
-                        let short: SharedString = commit.sha.chars().take(7).collect::<String>().into();
-                        popup = popup.item(
-                            MenuItem::new(commit.subject.clone())
-                                .id(format!("scope-commit-{}", commit.sha))
-                                .kind(MenuItemKind::Radio(checked))
-                                .detail(format!("{}  {short}", commit.relative_label))
-                                .on_select(pick(Rc::new(move |store, thread| store.select_commit(thread, &sha)))),
-                        );
-                    }
-                    if self.input.commits.is_empty() {
-                        popup = popup.item(MenuItem::new(t!("No commits on this branch.")).disabled(true));
+                    if let Some(status) = match &self.input.commits_status {
+                        CommitsStatus::Error(error) => Some(error.clone()),
+                        CommitsStatus::Loading => Some(t!("Loading commits...")),
+                        CommitsStatus::Loaded { .. } if self.input.commits.is_empty() => Some(t!("No commits on this branch.")),
+                        CommitsStatus::Loaded { truncated: true } => Some(t!(
+                            "{count, plural, one {Showing latest {count} commits} other {Showing latest {count} commits}}",
+                            count = self.input.commits.len()
+                        )),
+                        CommitsStatus::Loaded { .. } => None,
+                    } {
+                        commit_status = Some(status);
                     }
                 }
             }
+            let commits = (submenu == ScopeSubmenu::Commits).then(|| self.render_commit_rows(&selection, cx));
             let index = match submenu {
                 ScopeSubmenu::Turn => 3.,
                 ScopeSubmenu::Commits => 4.,
@@ -752,7 +816,28 @@ impl DiffPanel {
                 .mt(px(1.) + theme.sp(1.) + theme.sp(7.) * index - px(5.))
                 .max_h(px(320.))
                 .max_w(px(384.))
-                .child(popup)
+                .child(match commits {
+                    // The commit rows sit above the status line, in the same surface.
+                    Some(rows) => glass_surface(theme)
+                        .id("diff-scope-commits")
+                        .test_support()
+                        .p(theme.sp(1.))
+                        .control_highlight(theme)
+                        .child(rows)
+                        .children(commit_status.map(|status| {
+                            div()
+                                .min_h(theme.sp(7.))
+                                .px(theme.sp(2.))
+                                .py(theme.sp(1.))
+                                .flex()
+                                .items_center()
+                                .ui_text(theme, TextSize::Sm, weight::NORMAL)
+                                .opacity(super::ui::DISABLED_OPACITY)
+                                .child(status)
+                        }))
+                        .into_any_element(),
+                    None => popup.into_any_element(),
+                })
         });
         let close = cx.listener(|this, _: &MouseDownEvent, _, cx| {
             this.scope_menu_open = false;
@@ -783,6 +868,365 @@ impl DiffPanel {
                             }
                         }))
                         .children(submenu),
+                ),
+            )
+            .with_priority(5)
+            .into_any_element(),
+        )
+    }
+
+    /// The Commits submenu's rows: the subject and its relative time select the
+    /// commit; the short SHA beside them, in mono, opens the commit on its host
+    /// when there is a URL (underlined), else is plain text.
+    fn render_commit_rows(&self, selection: &DiffPanelSelection, cx: &mut Context<Self>) -> AnyElement {
+        let theme = cx.app_theme().clone();
+        let c = &theme.colors;
+        let mono = self.code_view.read(cx).mono_family();
+        let this = cx.weak_entity();
+        let rows = self.input.commits.iter().enumerate().map(|(index, commit)| {
+            let checked = matches!(selection, DiffPanelSelection::Commit { sha, .. } if commit.sha.as_ref() == sha);
+            let short: SharedString = commit.sha.chars().take(7).collect::<String>().into();
+            let sha = commit.sha.clone();
+            let pick = this.clone();
+            let sha_label = div().font_family(mono.clone()).ui_text(&theme, TextSize::Xs, weight::NORMAL).text_color(c.muted_foreground).child(short.clone());
+            let sha_part = match commit.url.clone() {
+                Some(url) => div()
+                    .id(("scope-commit-link", index))
+                    .flex_none()
+                    .min_h(theme.sp(7.))
+                    .px(theme.sp(2.))
+                    .flex()
+                    .items_center()
+                    .rounded(theme.radii.sm)
+                    .cursor_pointer()
+                    .tooltip(tooltip(t!("Open commit {sha}", sha = short.clone())))
+                    .on_click(move |_, _, cx| cx.open_url(&url))
+                    .child(sha_label.underline())
+                    .into_any_element(),
+                None => div().flex_none().px(theme.sp(2.)).child(sha_label).into_any_element(),
+            };
+            let subject = commit.subject.clone();
+            div()
+                .flex()
+                .items_center()
+                .rounded(theme.radii.sm)
+                .when(checked, |row| row.bg(c.foreground().opacity(0.08)))
+                .hover(|row| row.bg(c.highlight()))
+                .child(
+                    div()
+                        .id(("scope-commit", index))
+                        .test_support()
+                        .flex_1()
+                        .min_w_0()
+                        .min_h(theme.sp(7.))
+                        .px(theme.sp(2.))
+                        .py(theme.sp(1.))
+                        .flex()
+                        .items_center()
+                        .gap(theme.sp(3.))
+                        .cursor_pointer()
+                        .ui_text(&theme, TextSize::Sm, weight::NORMAL)
+                        .text_color(c.foreground())
+                        .tooltip(tooltip(subject.clone()))
+                        .on_click(move |_, _, cx| {
+                            let sha = sha.clone();
+                            pick.update(cx, |panel, cx| panel.select(move |store, thread| store.select_commit(thread, &sha), cx)).ok();
+                        })
+                        .child(div().flex_1().min_w_0().truncate().child(subject))
+                        .child(div().flex_none().ui_text(&theme, TextSize::Xs, weight::NORMAL).text_color(c.muted_foreground).child(commit.relative_label.clone())),
+                )
+                .child(sha_part)
+                .into_any_element()
+        });
+        div().flex().flex_col().children(rows).into_any_element()
+    }
+
+    /// The comparison target button (`ComboboxTrigger`, ghost-muted xs).
+    fn render_base_ref_trigger(&self, base: SharedString, cx: &mut Context<Self>) -> AnyElement {
+        let theme = cx.app_theme().clone();
+        let c = &theme.colors;
+        let open = self.base_ref_picker.is_some();
+        let panel = cx.entity();
+        div()
+            .id("diff-base-ref")
+            .test_support()
+            .relative()
+            .flex_none()
+            .min_w(theme.sp(9.))
+            .max_w(theme.sp(48.))
+            .h(theme.sp(6.))
+            .px(theme.sp(2.))
+            .flex()
+            .items_center()
+            .gap(theme.sp(1.))
+            .rounded(theme.radii.md)
+            .text_color(c.muted_foreground)
+            .when(open, |el| el.bg(c.highlight()))
+            .hover(|el| el.bg(c.highlight()).text_color(c.foreground()))
+            .cursor_pointer()
+            .tooltip(tooltip(t!("Change comparison target. Currently {base}", base = base.clone())))
+            .on_click(cx.listener(|this, _, window, cx| this.toggle_base_ref_picker(window, cx)))
+            .child(
+                canvas(
+                    move |bounds, _, cx| {
+                        panel.update(cx, |panel, _| panel.base_ref_trigger = Some(bounds));
+                    },
+                    |_, _, _, _| {},
+                )
+                .absolute()
+                .size_full(),
+            )
+            .child(div().min_w_0().truncate().child(base))
+            .child(Icon::new(IconName::ChevronDown).size(IconSize::Custom(theme.sp(3.5))).opacity(0.7))
+            .into_any_element()
+    }
+
+    /// Opens the file header menu for `path` at `position`. Used by scenes.
+    pub fn open_file_menu(&mut self, path: SharedString, position: Point<Pixels>, cx: &mut Context<Self>) {
+        self.file_menu = Some((path, position));
+        cx.notify();
+    }
+
+    /// The host's editors and reveal support, for the file header menu.
+    pub fn set_file_menu_capabilities(&mut self, capabilities: FileContextMenuCapabilities, cx: &mut Context<Self>) {
+        self.file_menu_capabilities = capabilities;
+        cx.notify();
+    }
+
+    /// The file header menu: Open, Reveal, Open with › each editor.
+    fn render_file_menu(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let (path, at) = self.file_menu.clone()?;
+        let items = file_context_menu_items(&self.file_menu_capabilities, self.input.workspace_root.is_some());
+        if items.is_empty() {
+            return None;
+        }
+        let this = cx.weak_entity();
+        let row = |item: &crate::file_context_menu::FileContextMenuItem| {
+            let mut row = MenuItem::new(item.label.clone());
+            if let Some(icon) = item.icon {
+                row = row.icon(icon);
+            }
+            if let Some(action) = item.action.clone() {
+                let (this, path) = (this.clone(), path.clone());
+                row = row.on_select(move |_, cx| {
+                    this.update(cx, |panel, cx| {
+                        panel.file_menu = None;
+                        cx.emit(DiffPanelEvent::FileMenuAction { action: action.clone(), path: path.clone() });
+                        cx.notify();
+                    })
+                    .ok();
+                });
+            }
+            row
+        };
+        let mut popup = MenuPopup::new().context();
+        for item in &items {
+            if item.children.is_empty() {
+                popup = popup.item(row(item));
+            } else {
+                popup = popup.label(item.label.clone());
+                for child in &item.children {
+                    popup = popup.item(row(child).inset());
+                }
+            }
+        }
+        let dismiss = this.clone();
+        let popup = popup.on_dismiss(move |_, cx| {
+            dismiss.update(cx, |panel, cx| {
+                panel.file_menu = None;
+                cx.notify();
+            })
+            .ok();
+        });
+        let close = cx.listener(|this, _: &MouseDownEvent, _, cx| {
+            this.file_menu = None;
+            cx.notify();
+        });
+        Some(
+            deferred(anchored().position(at).snap_to_window_with_margin(px(8.)).child(div().id("diff-file-menu").test_support().occlude().on_mouse_down_out(close).child(popup)))
+                .with_priority(5)
+                .into_any_element(),
+        )
+    }
+
+    /// Opens or closes the base-ref picker; opening focuses its search field.
+    pub fn toggle_base_ref_picker(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.base_ref_picker.take().is_some() {
+            cx.notify();
+            return;
+        }
+        let input = cx.new(|cx| InputState::new(window, cx).placeholder(t!("Search refs...")));
+        input.update(cx, |input, cx| input.focus(window, cx));
+        let subscription = cx.subscribe(&input, |_, _, event: &InputEvent, cx| {
+            if matches!(event, InputEvent::Change) {
+                cx.notify();
+            }
+        });
+        self.base_ref_picker = Some((input, subscription));
+        cx.notify();
+    }
+
+    fn select_base_ref(&mut self, base_ref: Option<SharedString>, cx: &mut Context<Self>) {
+        self.base_ref_picker = None;
+        self.select(move |store, thread| store.select_branch_base_ref(thread, base_ref.as_deref()), cx);
+    }
+
+    /// The base-ref picker (`Combobox` in `DiffPanel.tsx`): search, a Branch /
+    /// Remote header, Automatic, then each choice with a switch between its
+    /// local and remote ref when it has both.
+    fn render_base_ref_picker(&mut self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let (input, _) = self.base_ref_picker.as_ref()?;
+        let trigger = self.base_ref_trigger?;
+        let theme = cx.app_theme().clone();
+        let c = &theme.colors;
+        let query = input.read(cx).value().to_string();
+        let selected = match self.selection(cx) {
+            DiffPanelSelection::Branch { base_ref } => base_ref.map(SharedString::from),
+            _ => None,
+        };
+        let item_row = |id: ElementId, checked: bool| {
+            div()
+                .id(id)
+                .test_support()
+                .w_full()
+                .min_w_0()
+                .min_h(theme.sp(7.))
+                .px(theme.sp(2.))
+                .py(theme.sp(1.))
+                .flex()
+                .items_center()
+                .gap(theme.sp(2.))
+                .rounded(theme.radii.sm)
+                .ui_text(&theme, TextSize::Sm, weight::NORMAL)
+                .text_color(c.foreground())
+                .cursor_pointer()
+                .hover(|el| el.bg(c.highlight()))
+                .child(div().w(theme.sp(4.)).flex_none().when(checked, |slot| {
+                    slot.child(svg().path("icons/ui/menu-check.svg").size(theme.sp(4.)).text_color(c.foreground()))
+                }))
+        };
+        let mut rows: Vec<AnyElement> = Vec::new();
+        if query.trim().is_empty() {
+            rows.push(
+                item_row("base-ref-automatic".into(), selected.is_none())
+                    .on_click(cx.listener(|this, _, _, cx| this.select_base_ref(None, cx)))
+                    .child(div().min_w_0().truncate().child(t!("Automatic", context = "compare against the default base ref")))
+                    .into_any_element(),
+            );
+        }
+        for (index, choice) in self.input.base_ref_choices.iter().enumerate().filter(|(_, choice)| choice.matches(&query)) {
+            let use_remote = selected.is_some() && selected == choice.remote;
+            let value = if use_remote { choice.remote.clone() } else { choice.local.clone().or_else(|| choice.remote.clone()) };
+            let checked = value.is_some() && value == selected;
+            let pick = value.clone();
+            let trailing: Option<AnyElement> = match (&choice.local, &choice.remote) {
+                (Some(local), Some(remote)) => {
+                    let (local, remote) = (local.clone(), remote.clone());
+                    let panel = cx.weak_entity();
+                    Some(
+                        div()
+                            .id(("base-ref-switch", index))
+                            .flex()
+                            .justify_end()
+                            .tooltip(tooltip(t!("Use remote version of {ref}", r#ref = choice.label.clone())))
+                            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                            .child(Switch::new(("base-ref-remote", index), use_remote).size(SwitchSize::Sm).on_change(move |checked, _, cx| {
+                                let next = if checked { remote.clone() } else { local.clone() };
+                                panel.update(cx, |panel, cx| panel.select_base_ref(Some(next), cx)).ok();
+                            }))
+                            .into_any_element(),
+                    )
+                }
+                (None, Some(_)) => Some(
+                    div()
+                        .id(("base-ref-remote-only", index))
+                        .flex()
+                        .justify_end()
+                        .tooltip(tooltip(t!("Remote only")))
+                        .child(Icon::new(IconName::Check).size(IconSize::Custom(theme.sp(3.))).color(c.muted_foreground))
+                        .into_any_element(),
+                ),
+                _ => None,
+            };
+            rows.push(
+                item_row(("base-ref", index).into(), checked)
+                    .on_click(cx.listener(move |this, _, _, cx| this.select_base_ref(pick.clone(), cx)))
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .flex()
+                            .items_center()
+                            .child(div().flex_1().min_w_0().pr(theme.sp(2.)).truncate().child(choice.label.clone()))
+                            .child(div().w(theme.sp(8.)).flex_none().children(trailing)),
+                    )
+                    .into_any_element(),
+            );
+        }
+        let empty = rows.is_empty();
+        let close = cx.listener(|this, _: &MouseDownEvent, _, cx| {
+            this.base_ref_picker = None;
+            cx.notify();
+        });
+        let at = point(trigger.left(), trigger.bottom() + px(4.));
+        Some(
+            deferred(
+                anchored().position(at).snap_to_window_with_margin(px(8.)).child(
+                    glass_surface(&theme)
+                        .id("diff-base-ref-picker")
+                        .test_support()
+                        .occlude()
+                        .w(theme.rem(18.))
+                        .flex()
+                        .flex_col()
+                        .overflow_hidden()
+                        .control_highlight(&theme)
+                        .on_mouse_down_out(close)
+                        .child(
+                            div().px(theme.sp(3.)).pt(theme.sp(2.5)).child(
+                                div()
+                                    .relative()
+                                    .border_b_1()
+                                    .border_color(c.border.opacity(0.7))
+                                    .pb(theme.sp(1.5))
+                                    .child(
+                                        div()
+                                            .absolute()
+                                            .top(theme.sp(1.5))
+                                            .left_0()
+                                            .child(Icon::new(IconName::Search).size(IconSize::Custom(theme.sp(4.))).color(c.muted_foreground.opacity(0.55))),
+                                    )
+                                    .child(
+                                        div().pl(theme.sp(5.)).child(
+                                            Input::new(input).appearance(false).bordered(false).focus_bordered(false).p_0().h(theme.sp(6.5)).ui_text(&theme, TextSize::Sm, weight::NORMAL).w_full(),
+                                        ),
+                                    ),
+                            ),
+                        )
+                        .child(
+                            div()
+                                .flex()
+                                .items_center()
+                                .gap(theme.sp(2.))
+                                .pl(theme.sp(3.))
+                                .pr(theme.sp(6.5))
+                                .pt(theme.sp(2.))
+                                .pb(theme.sp(1.5))
+                                .border_b_1()
+                                .border_color(c.border.opacity(0.7))
+                                .text_size(theme.rem(0.625))
+                                .font_weight(FontWeight::MEDIUM)
+                                .text_color(c.muted_foreground)
+                                .child(div().w(theme.sp(4.)).flex_none())
+                                .child(div().flex_1().min_w_0().child(t!("Branch", context = "git branch").to_uppercase()))
+                                .child(div().w(theme.sp(8.)).flex_none().flex().justify_end().child(t!("Remote", context = "git remote").to_uppercase())),
+                        )
+                        .when(empty, |el| {
+                            el.child(
+                                div().py(theme.sp(6.)).flex().justify_center().ui_text(&theme, TextSize::Sm, weight::NORMAL).text_color(c.muted_foreground).child(t!("No matching refs.")),
+                            )
+                        })
+                        .child(div().id("diff-base-ref-list").max_h(theme.sp(64.)).overflow_y_scroll().p(theme.sp(1.)).children(rows)),
                 ),
             )
             .with_priority(5)
@@ -886,12 +1330,16 @@ impl Render for DiffPanel {
         let header = self.render_header(cx);
         let body = self.render_body(cx);
         let menu = self.render_scope_menu(cx);
+        let base_ref_picker = self.render_base_ref_picker(cx);
+        let file_menu = self.render_file_menu(cx);
         let panel = cx.entity();
         div()
             .size_full()
             .relative()
             .child(DiffPanelShell::new(header, body))
             .children(menu)
+            .children(base_ref_picker)
+            .children(file_menu)
             .child(
                 canvas(
                     move |bounds, _, cx| {
