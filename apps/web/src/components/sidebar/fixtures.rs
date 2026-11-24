@@ -31,6 +31,9 @@ fn project(id: &str, title: &str, age_days: i64) -> SidebarProject {
         updated_at: FIXTURE_NOW.minus(DAY),
         pinned: false,
         archived: false,
+        group_label: None,
+        icon: None,
+        favicon: None,
     }
 }
 
@@ -262,6 +265,7 @@ pub fn showcase_snapshot() -> SidebarSnapshot {
         environment_pill: None,
         auto_settle_disabled: Default::default(),
         hover_details: Default::default(),
+        search_content_matches: None,
         now: FIXTURE_NOW,
     }
 }
@@ -359,6 +363,7 @@ pub fn large_snapshot(thread_count: usize, project_count: usize) -> SidebarSnaps
         now: FIXTURE_NOW,
         auto_settle_disabled: Default::default(),
         hover_details: Default::default(),
+        search_content_matches: None,
     }
 }
 
@@ -421,6 +426,7 @@ pub fn reference_snapshot() -> SidebarSnapshot {
         now: FIXTURE_NOW,
         auto_settle_disabled: Default::default(),
         hover_details: reference_hover_details(),
+        search_content_matches: None,
     }
 }
 

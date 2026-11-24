@@ -234,6 +234,7 @@ pub fn fixture_state(key: &str) -> ComposerState {
         }),
         voice_available: true,
         validation: None,
+        file_attachment_limit: Some(crate::state::attachments::MAX_FILE_BYTES),
         placeholder: None,
     }
 }

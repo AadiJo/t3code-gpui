@@ -644,6 +644,8 @@ pub struct SidebarList {
     pub groups: Vec<ProjectGroup>,
     /// Project display name by project ref, for card rows.
     pub project_labels: HashMap<ProjectRef, SharedString>,
+    /// Project icon override and favicon by project ref, from its group.
+    pub project_icons: HashMap<ProjectRef, crate::components::project_favicon::ProjectIconSource>,
     /// Thread keys in visual order, for keyboard and shortcut traversal.
     pub thread_order: Vec<ThreadKey>,
 }
@@ -698,16 +700,22 @@ pub fn build_sidebar_list(snapshot: &SidebarSnapshot, options: &SidebarListOptio
 
     let mut group_of: HashMap<ProjectRef, usize> = HashMap::new();
     let mut project_labels = HashMap::new();
+    let mut project_icons = HashMap::new();
     for (ix, group) in groups.iter().enumerate() {
         for member in &group.member_refs {
             group_of.insert(member.clone(), ix);
             project_labels.insert(member.clone(), group.label.clone());
+            if group.icon.is_some() || group.favicon.is_some() {
+                let source = crate::components::project_favicon::ProjectIconSource { icon: group.icon.clone(), favicon: group.favicon.clone() };
+                project_icons.insert(member.clone(), source);
+            }
         }
     }
 
     let mut list = SidebarList {
         groups: Vec::new(),
         project_labels,
+        project_icons,
         ..Default::default()
     };
     let push_thread = |list: &mut SidebarList, thread: &Arc<SidebarThread>, variant, section| {
@@ -720,7 +728,18 @@ pub fn build_sidebar_list(snapshot: &SidebarSnapshot, options: &SidebarListOptio
     };
 
     if !options.search.trim().is_empty() {
-        let results = search_threads(&snapshot.threads, &options.search);
+        let mut results = search_threads(&snapshot.threads, &options.search);
+        // Then threads listed only for their messages, in the server's order (`searchSidebarThreads`).
+        if let Some(matches) = snapshot.search_content_matches.as_ref().filter(|m| m.query.trim() == options.search.trim()) {
+            for key in matches.threads.iter() {
+                if results.iter().any(|t| &t.key == key) {
+                    continue;
+                }
+                if let Some(thread) = snapshot.threads.iter().find(|t| &t.key == key && !t.archived) {
+                    results.push(thread.clone());
+                }
+            }
+        }
         if results.is_empty() {
             list.entries.push(SidebarListEntry::SearchEmpty);
         }

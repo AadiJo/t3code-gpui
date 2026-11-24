@@ -80,6 +80,8 @@ pub struct LiveData {
     shown_environment: RefCell<Option<t3code_contracts::EnvironmentId>>,
     /// The details card's pull request details, servers and scheduled tasks.
     details: Entity<thread_details::DetailsFeed>,
+    /// The latest sidebar search; older answers are dropped.
+    search_generation: Rc<std::cell::Cell<u64>>,
 }
 
 impl LiveData {
@@ -110,6 +112,7 @@ impl LiveData {
             events._subscriptions.push(subscription);
             events._subscriptions.extend(followed);
         });
+        cx.set_global(crate::state::LiveEvents(events.clone()));
         Rc::new(Self {
             events,
             palette,
@@ -124,6 +127,7 @@ impl LiveData {
             settings: RefCell::default(),
             shown_environment: RefCell::default(),
             details,
+            search_generation: Rc::default(),
         })
     }
 
@@ -174,8 +178,9 @@ impl LiveData {
             .map(|p| (p.title.clone(), p.workspace_root.clone()))
     }
 
-    fn catalog(&self, environment: &LiveEnvironment) -> Arc<crate::model_selection::ModelCatalog> {
-        self.catalogs.borrow_mut().entry(environment.environment_id().clone()).or_default().get(environment.config.as_ref())
+    fn catalog(&self, environment: &LiveEnvironment, cx: &App) -> Arc<crate::model_selection::ModelCatalog> {
+        let legacy = &crate::hooks::use_settings::ClientSettingsStore::get(cx).favorites;
+        self.catalogs.borrow_mut().entry(environment.environment_id().clone()).or_default().get(environment.config.as_ref(), legacy)
     }
 }
 
@@ -232,8 +237,10 @@ impl AppData for LiveData {
                 let row = shell.read(cx).snapshot().threads.iter().find(|t| t.key == *key).cloned();
                 let source = shell.read(cx).row(key).cloned();
                 let project = row.as_ref().and_then(|row| self.project(&row.project_ref(), cx));
+                let supports_rollback = self.supports_rollback(key, cx);
                 let thread = thread.read(cx);
-                let timeline: TimelineInput = thread.input().clone();
+                let mut timeline: TimelineInput = thread.input().clone();
+                timeline.supports_rollback = supports_rollback && !timeline.revert_turn_counts.is_empty();
                 let questions = thread.projection().map(|p| crate::session_logic::pending_questions(p)).unwrap_or_default();
                 let cwd = source
                     .as_ref()
@@ -294,8 +301,11 @@ impl AppData for LiveData {
                     return base.clone();
                 };
                 let row = StateBridge::shell(cx).read(cx).row(&key).cloned();
-                let catalog = self.catalog(environment.read(cx));
-                composer_state(&key, row.as_deref(), thread.read(cx), environment.read(cx), catalog)
+                let catalog = self.catalog(environment.read(cx), cx);
+                let drafts = StateBridge::drafts(cx).current();
+                let draft = drafts.drafts_by_thread_key.get(live_composer::draft_key(&key).0.as_ref());
+                let armed = live_composer::FreshSessionArms::armed(&key, cx);
+                composer_state(&key, row.as_deref(), thread.read(cx), environment.read(cx), catalog, draft, armed)
             }
             None => {
                 let environment = view
@@ -303,8 +313,17 @@ impl AppData for LiveData {
                     .as_ref()
                     .and_then(|_| self.draft_environment(view, cx))
                     .and_then(|id| self.environment(&id, cx));
-                let catalog = environment.as_ref().map(|e| self.catalog(e.read(cx))).unwrap_or_default();
-                let selection = crate::state::composer::default_selection(&catalog);
+                let catalog = environment.as_ref().map(|e| self.catalog(e.read(cx), cx)).unwrap_or_default();
+                // A new thread starts on the last pick (`stickyModelSelectionByProvider`).
+                let drafts = StateBridge::drafts(cx).current();
+                let selection = drafts
+                    .sticky_active_provider
+                    .as_ref()
+                    .and_then(|provider| drafts.sticky_model_selection_by_provider.get(provider))
+                    .map(crate::provider_models_live::from_wire)
+                    .filter(|s| catalog.instances.iter().any(|i| i.instance_id == s.instance_id))
+                    .unwrap_or_else(|| crate::state::composer::default_selection(&catalog));
+                let file_attachment_limit = crate::state::attachments::file_limit(environment.as_ref().and_then(|e| e.read(cx).config.clone()).as_deref());
                 ComposerState {
                     draft_key: ComposerDraftKey(view.key.clone()),
                     is_draft_thread: true,
@@ -314,6 +333,7 @@ impl AppData for LiveData {
                         .as_ref()
                         .filter(|e| e.read(cx).store.session().is_none())
                         .map(|_| t!("Not connected")),
+                    file_attachment_limit,
                     ..base.clone()
                 }
             }
@@ -335,9 +355,10 @@ impl AppData for LiveData {
             .menus
             .borrow_mut()
             .entry(key)
-            .or_insert_with(|| LiveMenuSource::new(&environment, cwd, cx))
+            .or_insert_with(|| LiveMenuSource::new(&environment, cwd, self.palette.clone(), cx))
             .clone();
         source.set_config(environment.read(cx).config.as_deref());
+        source.set_shown(view_target(view));
         source.attach(composer);
         source
     }
@@ -350,11 +371,49 @@ impl AppData for LiveData {
         match target {
             ThreadTarget::Server(key) => {
                 let thread = self.active(key, cx)?;
-                live_composer::handle_event(event, &thread, composer, cx);
+                match live_composer::handle_event(event, &thread, composer, cx) {
+                    live_composer::EventOutcome::OpenThread(key) => crate::state::open_thread(key, cx),
+                    live_composer::EventOutcome::Done => {}
+                }
                 None
             }
             ThreadTarget::Draft(id) => {
-                let ComposerEvent::Submit { prompt, model, .. } = event else { return None };
+                let draft_environment = self.drafts.borrow().get(id)?.project.as_ref().map(|p| t3code_contracts::EnvironmentId::new(p.environment_id.0.as_ref()));
+                match event {
+                    ComposerEvent::AttachmentsAdded(attachments) => {
+                        if let Some(environment_id) = draft_environment {
+                            crate::state::attachments::start_uploads(&environment_id, attachments, composer, cx);
+                        }
+                        return None;
+                    }
+                    ComposerEvent::AttachmentRemoved(context_id) => {
+                        crate::state::attachments::AttachmentUploads::release(context_id, cx);
+                        return None;
+                    }
+                    ComposerEvent::AttachRequested => {
+                        live_composer::pick_files(composer, cx);
+                        return None;
+                    }
+                    ComposerEvent::FavoriteToggled { instance_id, model } => {
+                        if let Some(environment_id) = draft_environment {
+                            crate::state::favorites::toggle(&environment_id, instance_id, model, cx);
+                        }
+                        return None;
+                    }
+                    ComposerEvent::ModelChanged(selection) => {
+                        let config = draft_environment.and_then(|id| self.environment(&id, cx)).and_then(|e| e.read(cx).config.clone());
+                        let catalog = config.as_deref().map(model_catalog).unwrap_or_default();
+                        let wire = to_wire(selection, &catalog, config.as_deref());
+                        let instance = wire.instance_id.clone();
+                        StateBridge::drafts(cx).update(|d| {
+                            d.sticky_model_selection_by_provider.insert(instance.clone(), wire);
+                            d.sticky_active_provider = Some(instance);
+                        });
+                        return None;
+                    }
+                    _ => {}
+                }
+                let ComposerEvent::Submit { prompt, model, attachments, .. } = event else { return None };
                 let project = self.drafts.borrow().get(id)?.project.clone()?;
                 let (environment_id, project_id) = (
                     t3code_contracts::EnvironmentId::new(project.environment_id.0.as_ref()),
@@ -367,9 +426,22 @@ impl AppData for LiveData {
                 };
                 let catalog = config.as_deref().map(model_catalog).unwrap_or_default();
                 let thread_id = WireThreadId::new(uuid::Uuid::new_v4().to_string());
-                let runtime_mode = config.as_ref().and_then(|c| c.settings.default_runtime_mode).unwrap_or(WireRuntimeMode::FullAccess);
-                let title: String = prompt.lines().next().unwrap_or_default().chars().take(48).collect();
-                let message = SendMessage::text(thread_id.clone(), prompt.clone());
+                let runtime_mode = composer
+                    .upgrade()
+                    .map(|c| live_composer::wire_runtime_mode(c.read(cx).state().runtime_mode))
+                    .or_else(|| config.as_ref().and_then(|c| c.settings.default_runtime_mode))
+                    .unwrap_or(WireRuntimeMode::FullAccess);
+                let Some(turn) = crate::state::attachments::turn_attachments(&environment_id, attachments) else {
+                    toast_error(t!("Failed to send message."), t!("Retry or remove failed uploads before sending."), cx);
+                    return None;
+                };
+                let title = live_composer::title_seed(prompt.trim(), attachments);
+                let text = match prompt.trim() {
+                    "" if !attachments.is_empty() => crate::state::attachments::ATTACHMENT_ONLY_PROMPT.to_owned(),
+                    text => text.to_owned(),
+                };
+                let message = SendMessage::text(thread_id.clone(), text.clone());
+                let sent: Vec<SharedString> = attachments.iter().map(|a| a.context_id.clone()).collect();
                 let input = OrchestrationV2ThreadLaunchInput {
                     command_id: CommandId::new(uuid::Uuid::new_v4().to_string()),
                     creation_source: None,
@@ -386,16 +458,16 @@ impl AppData for LiveData {
                     ),
                     initial_message: Some(OrchestrationV2ThreadLaunchInputInitialMessage {
                         message_id: Some(message.message_id.clone()),
-                        text: prompt.clone(),
-                        context: None,
-                        attachments: Vec::new(),
+                        text,
+                        context: live_composer::with_thread_records(turn.context, prompt, &environment_id),
+                        attachments: turn.attachments,
                     }),
                 };
                 let task = StateBridge::spawn(async move { commands.launch_thread(input).await }, cx);
-                cx.spawn(async move |cx| {
-                    if let Some(Err(error)) = task.await {
-                        cx.update(|cx| toast_error(t!("Failed to send message."), error, cx));
-                    }
+                cx.spawn(async move |cx| match task.await {
+                    Some(Err(error)) => cx.update(|cx| toast_error(t!("Failed to send message."), error, cx)),
+                    Some(Ok(_)) => crate::state::attachments::AttachmentUploads::forget_sent(sent),
+                    None => {}
                 })
                 .detach();
                 self.drafts.borrow_mut().remove(id);
@@ -415,12 +487,15 @@ impl AppData for LiveData {
             TimelineAction::RemoveQueued(id) | TimelineAction::SendQueuedNow(id) | TimelineAction::EditQueued(id) => {
                 return self.queued_action(key, action, id, cx);
             }
-            TimelineAction::Fork(_) | TimelineAction::EditFrom(_) => {
-                Toaster::push(ToastData::new(ToastKind::Info, t!("Not available in this build yet.")), cx);
-            }
+            TimelineAction::Fork(message) => self.fork_from(key, message, cx),
+            TimelineAction::EditFrom(message) => return self.confirm_revert(key, message, cx),
             TimelineAction::OpenDiff { .. } | TimelineAction::OpenImage { .. } | TimelineAction::OpenLink(_) | TimelineAction::Reply { .. } => {}
         }
         ActionOutcome::Done
+    }
+
+    fn revert(&self, key: &ThreadKey, message: &crate::components::chat::timeline_entries::MessageId, turn_count: usize, restore_files: bool, cx: &mut App) -> Task<Option<SharedString>> {
+        self.revert_to(key, message, turn_count, restore_files, cx)
     }
 
     fn answer_questions(&self, key: &ThreadKey, answers: &[usize], cx: &mut App) {
@@ -451,6 +526,48 @@ impl AppData for LiveData {
             SidebarOutcome::NewThread(project) => CommandOutcome::NewThread(project),
             _ => CommandOutcome::Done,
         }
+    }
+
+    fn search_threads(&self, query: SharedString, cx: &mut App) {
+        // `useThreadSearch`: a pasted wall of text searches by its start; messages need a word
+        // of three or more letters; answers land 120 ms after the typing stops.
+        let generation = self.search_generation.get() + 1;
+        self.search_generation.set(generation);
+        let trimmed: String = query.trim().chars().take(200).collect::<String>().trim().to_owned();
+        let shell = StateBridge::shell(cx);
+        if !trimmed.split_whitespace().any(|token| token.chars().count() >= 3) {
+            shell.update(cx, |shell, cx| shell.set_search_matches(None, cx));
+            return;
+        }
+        let links: Vec<_> = self.environment_links(cx).into_iter().map(|(_, link)| link).collect();
+        let weak = Rc::downgrade(&self.search_generation);
+        cx.spawn(async move |cx| {
+            cx.background_executor().timer(std::time::Duration::from_millis(120)).await;
+            if weak.upgrade().is_none_or(|token| token.get() != generation) {
+                return;
+            }
+            let mut keys = Vec::new();
+            for link in links {
+                let environment_id = link.environment_id().clone();
+                let input = t3code_contracts::OrchestrationV2SearchThreadsInput {
+                    query: trimmed.clone(),
+                    limit: None,
+                    older_settled_before: None,
+                    project_ids: None,
+                    environment_label: None,
+                    titles_only: None,
+                };
+                if let Ok(result) = link.call::<t3code_contracts::rpc::methods::OrchestrationSearchThreads>(input).await {
+                    keys.extend(result.matches.iter().map(|m| thread_key(&environment_id, &m.thread_id)));
+                }
+            }
+            if weak.upgrade().is_none_or(|token| token.get() != generation) {
+                return;
+            }
+            let matches = crate::components::sidebar::model::SearchContentMatches { query: query.clone(), threads: Arc::new(keys) };
+            cx.update(|cx| shell.update(cx, |shell, cx| shell.set_search_matches(Some(matches), cx)));
+        })
+        .detach();
     }
 
     fn rename_thread(&self, key: &ThreadKey, title: String, cx: &mut App) {
@@ -662,6 +779,125 @@ impl LiveData {
                 ActionOutcome::Done
             }
         }
+    }
+}
+
+impl LiveData {
+    /// Whether the thread's provider can roll its conversation back (`supportsConversationRollback`).
+    fn supports_rollback(&self, key: &ThreadKey, cx: &App) -> bool {
+        let (environment_id, _) = runtime_ids(key);
+        let Some(environment) = self.environment(&environment_id, cx) else { return false };
+        let instance = StateBridge::shell(cx).read(cx).row(key).map(|row| row.source.model_selection.instance_id.clone());
+        let env = environment.read(cx);
+        let Some(config) = env.config.as_ref() else { return false };
+        config
+            .providers
+            .iter()
+            .find(|p| Some(p.instance_id.as_str()) == instance.as_deref())
+            .is_some_and(|p| p.supports_conversation_rollback != Some(false))
+    }
+
+    /// Forks the thread after the run a reply ends (`onForkFromRun`) and opens the fork.
+    fn fork_from(&self, key: &ThreadKey, reply: &crate::components::chat::timeline_entries::MessageId, cx: &mut App) {
+        let (environment_id, source) = runtime_ids(key);
+        let Some(environment) = self.environment(&environment_id, cx) else { return };
+        let Some(thread) = self.active(key, cx) else { return };
+        let run = thread
+            .read(cx)
+            .projection()
+            .and_then(|p| p.messages.iter().find(|m| m.id.as_ref() == reply.0.as_ref()).and_then(|m| m.run_id.clone()));
+        let Some(run_id) = run else {
+            toast_error(t!("Failed to fork this response."), "", cx);
+            return;
+        };
+        let title = StateBridge::shell(cx).read(cx).row(key).map(|row| row.title().to_owned()).unwrap_or_default();
+        let (commands, store) = {
+            let env = environment.read(cx);
+            (env.commands.clone(), env.store.clone())
+        };
+        let target = WireThreadId::new(uuid::Uuid::new_v4().to_string());
+        let task = StateBridge::spawn(
+            {
+                let target = target.clone();
+                async move {
+                    let point = t3code_contracts::OrchestrationV2ThreadForkSourcePoint::Run(t3code_contracts::OrchestrationV2ThreadForkSourcePointRun { run_id });
+                    commands.fork(&source, target.clone(), point, Some(format!("{title} fork")), false).await?;
+                    live_composer::wait_for_thread(&store, &target).await
+                }
+            },
+            cx,
+        );
+        let opened = thread_key(&environment_id, &target);
+        cx.spawn(async move |cx| match task.await {
+            Some(Ok(())) => cx.update(|cx| crate::state::open_thread(opened, cx)),
+            Some(Err(error)) => cx.update(|cx| toast_error(t!("Failed to fork this response."), error, cx)),
+            None => {}
+        })
+        .detach();
+    }
+
+    /// The checkpoint "Edit from here" rewinds to (`findRevertCheckpoint`).
+    fn revert_checkpoint(projection: &t3code_shared::thread_projection::ThreadProjection, turn_count: usize) -> Option<Arc<t3code_contracts::OrchestrationV2Checkpoint>> {
+        use t3code_contracts::OrchestrationV2CheckpointStatus as Status;
+        projection
+            .checkpoints
+            .iter()
+            .rev()
+            .find(|c| {
+                matches!(c.status, Status::Ready | Status::Missing)
+                    && if turn_count == 0 { c.ordinal_within_scope == 0 && c.app_run_ordinal.is_none() } else { c.app_run_ordinal == Some(turn_count as u64) }
+            })
+            .cloned()
+    }
+
+    /// Checks an "Edit from here" can run (`onRevertToTurnCount`) and asks for confirmation.
+    fn confirm_revert(&self, key: &ThreadKey, message: &crate::components::chat::timeline_entries::MessageId, cx: &mut App) -> ActionOutcome {
+        let Some(thread) = self.active(key, cx) else { return ActionOutcome::Done };
+        let thread = thread.read(cx);
+        let input = thread.input();
+        if input.is_working {
+            toast_error(t!("Interrupt the current turn before reverting checkpoints."), "", cx);
+            return ActionOutcome::Done;
+        }
+        let Some(&turn_count) = input.revert_turn_counts.get(&message.0) else { return ActionOutcome::Done };
+        let ready = thread
+            .projection()
+            .and_then(|p| Self::revert_checkpoint(p, turn_count))
+            .is_some_and(|c| c.status == t3code_contracts::OrchestrationV2CheckpointStatus::Ready);
+        // The server refuses file restore outside an isolated worktree.
+        let worktree = StateBridge::shell(cx).read(cx).row(key).is_some_and(|row| row.source.worktree_path.is_some());
+        ActionOutcome::ConfirmRevert { message: message.clone(), turn_count, restore_files: ready && worktree }
+    }
+
+    /// Rolls back to the checkpoint and resolves with the message's text for the composer.
+    fn revert_to(&self, key: &ThreadKey, message: &crate::components::chat::timeline_entries::MessageId, turn_count: usize, restore_files: bool, cx: &mut App) -> Task<Option<SharedString>> {
+        use crate::components::chat::timeline_entries::EntryKind;
+        let (environment_id, thread_id) = runtime_ids(key);
+        let (Some(environment), Some(thread)) = (self.environment(&environment_id, cx), self.active(key, cx)) else { return Task::ready(None) };
+        let thread = thread.read(cx);
+        let text = thread.input().entries.iter().find_map(|e| match &e.kind {
+            EntryKind::Message(m) if m.id == *message => Some(m.text.clone()),
+            _ => None,
+        });
+        let checkpoint = thread.projection().and_then(|p| Self::revert_checkpoint(p, turn_count));
+        let commands = environment.read(cx).commands.clone();
+        let task = StateBridge::spawn(
+            async move {
+                match checkpoint {
+                    Some(c) => commands.rollback_to_checkpoint(&thread_id, c.scope_id.clone(), c.id.clone(), Some(restore_files)).await,
+                    None => commands.rollback_to_run(&thread_id, turn_count as u64, restore_files).await,
+                }
+            },
+            cx,
+        );
+        cx.spawn(async move |cx| match task.await {
+            Some(Ok(_)) => Some(text.unwrap_or_default()),
+            Some(Err(error)) => {
+                cx.update(|cx| toast_error(t!("Failed to revert thread state."), error, cx));
+                None
+            }
+            None => None,
+        })
     }
 }
 

@@ -778,11 +778,17 @@ impl AppRoot {
         let items = attachments
             .iter()
             .filter_map(|attachment| {
-                let bytes = cx.asset_source().load(&attachment.source).ok().flatten()?;
+                // Live attachments are files in the image cache; fixtures are bundled assets.
+                let path = std::path::Path::new(attachment.source.as_ref());
+                let bytes: Vec<u8> = if path.is_absolute() {
+                    std::fs::read(path).ok()?
+                } else {
+                    cx.asset_source().load(&attachment.source).ok().flatten()?.into_owned()
+                };
                 Some(ExpandedImageItem {
                     name: attachment.name.clone(),
                     kind: MediaKind::Image,
-                    bytes: MediaBytes::Ready(bytes.into_owned().into()),
+                    bytes: MediaBytes::Ready(bytes.into()),
                     relative_path: None,
                     absolute_path: None,
                 })
@@ -886,6 +892,7 @@ impl AppRoot {
             }
             SidebarEvent::ThreadCommand(keys, command) => self.thread_command(keys, *command, window, cx),
             SidebarEvent::RenameThread(key, title) => self.data.rename_thread(key, title.clone(), cx),
+            SidebarEvent::SearchChanged(query) => self.data.search_threads(query.clone(), cx),
             SidebarEvent::AddProject | SidebarEvent::OpenProjectFilter | SidebarEvent::ProjectCommand(..) => {}
         }
     }
@@ -997,6 +1004,9 @@ impl AppRoot {
     }
 
     fn on_data_event(&mut self, _: &Entity<DataEvents>, event: &DataEvent, window: &mut Window, cx: &mut Context<Self>) {
+        if let DataEvent::OpenThread(key) = event {
+            return self.navigate(Route::Thread(key.clone()), cx);
+        }
         if let DataEvent::SnapshotChanged = event {
             let route = self.router.read(cx).current().clone();
             if self.shown.is_none()

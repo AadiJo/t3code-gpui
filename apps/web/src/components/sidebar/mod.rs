@@ -83,6 +83,8 @@ pub enum SidebarEvent {
     DiscardDraft(ThreadKey),
     /// The inline rename field committed a new, non-empty title.
     RenameThread(ThreadKey, String),
+    /// The search field's text changed; the data source may add server matches.
+    SearchChanged(SharedString),
 }
 
 /// The row whose title is being edited (`ThreadRenameInput`).
@@ -144,6 +146,7 @@ impl Sidebar {
         let subscription = cx.subscribe_in(&search, window, |this, state, event, _, cx| {
             if matches!(event, InputEvent::Change) {
                 this.options.search = state.read(cx).value();
+                cx.emit(SidebarEvent::SearchChanged(this.options.search.clone()));
                 this.rebuild(cx);
             }
         });
@@ -267,6 +270,14 @@ impl Sidebar {
     /// The flattened list the sidebar draws.
     pub fn list(&self) -> &SidebarList {
         &self.list
+    }
+
+    /// Puts `text` in the search field, as typing it would.
+    pub fn set_search(&mut self, text: &str, window: &mut Window, cx: &mut Context<Self>) {
+        self.search.update(cx, |state, cx| state.set_value(text.to_owned(), window, cx));
+        self.options.search = SharedString::from(text.to_owned());
+        cx.emit(SidebarEvent::SearchChanged(self.options.search.clone()));
+        self.rebuild(cx);
     }
 
     /// Mutable list options (shelves, folders, search), for scenes and restores.

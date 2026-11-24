@@ -143,6 +143,9 @@ pub struct ComposerState {
     /// Replaces the placeholder while the agent waits: a pending approval
     /// ("Send a message to decline…") or question ("Type your own answer…").
     pub placeholder: Option<SharedString>,
+    /// The largest file the server stages (`fileAttachmentStagingLimit`); `None` when it takes
+    /// no files.
+    pub file_attachment_limit: Option<u64>,
 }
 
 /// What the composer asks the chat view to do.
@@ -172,6 +175,8 @@ pub enum ComposerEvent {
     PageScroll { down: bool },
     VoiceRequested,
     ContextStripClicked(ContextStripControl),
+    /// A banner's action button, by banner id.
+    BannerAction(SharedString),
 }
 
 /// A control in the context strip.
@@ -198,7 +203,6 @@ pub struct ChatComposer {
     draft_store: Rc<RefCell<dyn ComposerDraftStore>>,
     save_task: Option<Task<()>>,
     footer_width: Pixels,
-    next_attachment_id: usize,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -238,7 +242,6 @@ impl ChatComposer {
             draft_store,
             save_task: None,
             footer_width: COMPOSER_MAX_WIDTH,
-            next_attachment_id: 0,
             _subscriptions: vec![subscription, settings],
         };
         this.load_draft(cx);
@@ -247,6 +250,16 @@ impl ChatComposer {
     }
 
     /// The prompt editor, for focus and scripted input.
+    /// What the chat view last told the composer.
+    pub fn state(&self) -> &ComposerState {
+        &self.state
+    }
+
+    /// Takes files from the file picker, like a drop.
+    pub fn attach_paths(&mut self, paths: Vec<std::path::PathBuf>, cx: &mut Context<Self>) {
+        self.attach(PastedContent::Files(paths), cx);
+    }
+
     /// The attachments waiting to send.
     pub fn attachments(&self) -> &[ComposerAttachment] {
         &self.attachments
@@ -566,51 +579,49 @@ impl ChatComposer {
 
     // ---- Attachments ----
 
+    /// Takes pasted, dropped or picked content through the web's intake rules
+    /// (`useComposerAttachmentIntake`); a refusal shows as an error toast.
     fn attach(&mut self, content: PastedContent, cx: &mut Context<Self>) {
-        let mut added = Vec::new();
-        let mut next_id = || {
-            self.next_attachment_id += 1;
-            format!("att_{}", self.next_attachment_id)
-        };
-        match content {
-            PastedContent::Images(images) => {
-                for image in images {
-                    let id = next_id();
-                    let mime: SharedString = format!("image/{:?}", image.format).to_lowercase().into();
-                    added.push(ComposerAttachment {
-                        context_id: id.into(),
-                        name: "Pasted image".into(),
-                        size_bytes: image.bytes.len() as u64,
-                        kind: ComposerAttachmentKind::Image { bytes: image.bytes.clone().into(), mime },
-                        upload: UploadState::Uploading,
-                    });
-                }
-            }
-            PastedContent::Files(paths) => {
-                for path in paths {
-                    let id = next_id();
+        use crate::state::attachments::{Candidate, PASTED_TEXT_MIME, intake, mime_from_name};
+        let candidates: Vec<Candidate> = match content {
+            PastedContent::Images(images) => images
+                .into_iter()
+                .map(|image| {
+                    let mime = format!("image/{:?}", image.format).to_lowercase();
+                    let name = format!("image.{}", if mime == "image/jpeg" { "jpg" } else { mime.trim_start_matches("image/") });
+                    Candidate { name, mime, size_bytes: image.bytes.len() as u64, kind: ComposerAttachmentKind::Image { bytes: image.bytes.clone().into(), mime: SharedString::default() } }
+                })
+                .collect(),
+            PastedContent::Files(paths) => paths
+                .into_iter()
+                .filter(|path| path.is_file())
+                .map(|path| {
                     let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-                    added.push(ComposerAttachment {
-                        context_id: id.into(),
-                        name: name.into(),
+                    Candidate {
+                        mime: mime_from_name(&name).unwrap_or_default().to_owned(),
                         size_bytes: std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0),
                         kind: ComposerAttachmentKind::File { path: path.to_string_lossy().into_owned().into() },
-                        upload: UploadState::Uploading,
-                    });
-                }
-            }
+                        name,
+                    }
+                })
+                .collect(),
             PastedContent::LargeText(text) => {
-                let id = next_id();
-                added.push(ComposerAttachment {
-                    context_id: id.into(),
-                    name: format!("Pasted text · {} KB", text.len() / 1024).into(),
-                    size_bytes: text.len() as u64,
-                    kind: ComposerAttachmentKind::PastedText { text },
-                    upload: UploadState::Uploading,
-                });
+                let taken: Vec<String> = self.attachments.iter().map(|a| a.name.to_lowercase()).collect();
+                let name = std::iter::once("pasted-text.txt".to_owned())
+                    .chain((2..).map(|n| format!("pasted-text-{n}.txt")))
+                    .find(|name| !taken.contains(name))
+                    .unwrap_or_default();
+                vec![Candidate { name, mime: PASTED_TEXT_MIME.into(), size_bytes: text.len() as u64, kind: ComposerAttachmentKind::PastedText { text } }]
             }
+        };
+        let result = intake(candidates, self.attachments.len(), self.state.file_attachment_limit);
+        if let Some(error) = result.error {
+            crate::components::ui::toast::Toaster::push(
+                crate::components::ui::toast::ToastData::new(crate::components::ui::toast::ToastKind::Error, error),
+                cx,
+            );
         }
-        self.add_attachments(added, cx);
+        self.add_attachments(result.accepted, cx);
     }
 
     /// Adds attachments and inserts their chips at the caret.
@@ -618,18 +629,22 @@ impl ChatComposer {
         if attachments.is_empty() {
             return;
         }
+        // Images get chips only when the message already has text; files always do.
+        let image_chips = crate::composer_editor_mentions::has_text_besides_context(self.editor.read(cx).text());
         let chips: String = attachments
             .iter()
-            .map(|a| {
+            .filter_map(|a| {
                 let kind = match a.kind {
-                    ComposerAttachmentKind::Image { .. } => "image",
-                    ComposerAttachmentKind::File { .. } => "file",
-                    ComposerAttachmentKind::PastedText { .. } => "text",
+                    ComposerAttachmentKind::Image { .. } if image_chips => "image",
+                    ComposerAttachmentKind::Image { .. } => return None,
+                    ComposerAttachmentKind::File { .. } | ComposerAttachmentKind::PastedText { .. } => "file",
                 };
-                format!("{} ", format_context_reference(kind, &a.context_id, &a.name))
+                Some(format!("{} ", format_context_reference(kind, &a.context_id, &a.name)))
             })
             .collect();
-        self.editor.update(cx, |e, cx| e.insert(&chips, cx));
+        if !chips.is_empty() {
+            self.editor.update(cx, |e, cx| e.insert(&chips, cx));
+        }
         self.attachments.extend(attachments.iter().cloned());
         cx.emit(ComposerEvent::AttachmentsAdded(attachments));
         cx.notify();
@@ -643,7 +658,8 @@ impl ChatComposer {
         }
     }
 
-    fn remove_attachment(&mut self, context_id: SharedString, cx: &mut Context<Self>) {
+    /// Drops an attachment and its chips; the owner releases its upload.
+    pub fn remove_attachment(&mut self, context_id: SharedString, cx: &mut Context<Self>) {
         self.attachments.retain(|a| a.context_id != context_id);
         let text = self.editor.read(cx).text().to_owned();
         let needle = format!("t3-context://v1/");
@@ -936,9 +952,15 @@ impl ChatComposer {
             return None;
         }
         let tiles = self.attachments.iter().filter_map(|a| {
-            let ComposerAttachmentKind::Image { bytes, .. } = &a.kind else { return None };
+            let ComposerAttachmentKind::Image { bytes, mime } = &a.kind else { return None };
             let id = a.context_id.clone();
-            let image = Arc::new(gpui_kit::Image::from_bytes(gpui_kit::ImageFormat::Png, bytes.to_vec()));
+            let format = match mime.as_ref() {
+                "image/jpeg" => gpui_kit::ImageFormat::Jpeg,
+                "image/gif" => gpui_kit::ImageFormat::Gif,
+                "image/webp" => gpui_kit::ImageFormat::Webp,
+                _ => gpui_kit::ImageFormat::Png,
+            };
+            let image = Arc::new(gpui_kit::Image::from_bytes(format, bytes.to_vec()));
             Some(
                 div()
                     .id(SharedString::from(format!("tile-{id}")))
@@ -996,7 +1018,7 @@ impl ChatComposer {
         )
     }
 
-    fn render_banners(&self, c: &ComposerColors) -> Option<AnyElement> {
+    fn render_banners(&self, c: &ComposerColors, cx: &mut Context<Self>) -> Option<AnyElement> {
         if self.state.banners.is_empty() {
             return None;
         }
@@ -1017,10 +1039,11 @@ impl ChatComposer {
                 .child(div().w(px(24.)).flex().justify_center().child(Icon::new(banner.icon).size(IconSize::Custom(px(14.))).color(ink).stroke(composer_icon_stroke(banner.icon))))
                 .child(div().flex_1().min_w_0().text_size(px(12.)).line_height(px(16.)).text_color(c.foreground).child(banner.title.clone()))
                 .when_some(banner.action.clone(), |el, action| {
-                    el.child(div().px(px(8.)).h(px(24.)).flex().items_center().rounded(px(8.)).text_size(px(12.)).text_color(c.foreground).hover({
+                    let id = banner.id.clone();
+                    el.child(div().id(SharedString::from(format!("banner-action-{id}"))).px(px(8.)).h(px(24.)).flex().items_center().rounded(px(8.)).text_size(px(12.)).text_color(c.foreground).cursor_pointer().hover({
                         let h = c.foreground.opacity(0.05);
                         move |s| s.bg(h)
-                    }).child(action))
+                    }).on_click(cx.listener(move |_, _, _, cx| cx.emit(ComposerEvent::BannerAction(id.clone())))).child(action))
                 })
         });
         Some(
@@ -1273,7 +1296,7 @@ impl Render for ChatComposer {
             .capture_action(cx.listener(Self::capture_tab))
             .capture_action(cx.listener(Self::capture_escape))
             .on_modifiers_changed(cx.listener(Self::on_modifiers))
-            .children(self.render_banners(&c))
+            .children(self.render_banners(&c, cx))
             .child(div().relative().w_full().children(menu).child(card))
             .children(self.render_context_strip(&c, cx))
     }

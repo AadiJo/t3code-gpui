@@ -91,3 +91,38 @@ pub fn logical_project_key(environment_id: &EnvironmentId, project: &Orchestrati
         _ => canonical.to_owned(),
     }
 }
+
+/// The name a group of projects shows (`deriveProjectGroupLabel`): one shared custom-looking
+/// title, else the shared repository display name, else the shared repository name, else the
+/// repository's name for a whole-repository group, else the representative's title.
+pub fn group_label(group_key: &str, representative: &OrchestrationProjectShell, members: &[&OrchestrationProjectShell]) -> String {
+    fn unique<'a>(values: impl Iterator<Item = Option<&'a str>>) -> Vec<&'a str> {
+        let mut out: Vec<&str> = Vec::new();
+        for value in values.flatten().map(str::trim).filter(|v| !v.is_empty()) {
+            if !out.contains(&value) {
+                out.push(value);
+            }
+        }
+        out
+    }
+    let titles = unique(members.iter().map(|m| Some(m.title.as_str())));
+    let display_names = unique(members.iter().map(|m| m.repository_identity.as_ref().and_then(|i| i.grouping_display_name())));
+    let repository_names = unique(members.iter().map(|m| m.repository_identity.as_ref().and_then(|i| i.name.as_deref())));
+    if let [title] = titles.as_slice()
+        && (members.iter().any(|m| m.has_custom_title == Some(true)) || (!display_names.contains(title) && !repository_names.contains(title)))
+    {
+        return (*title).to_owned();
+    }
+    if let [name] = display_names.as_slice() {
+        return (*name).to_owned();
+    }
+    if let [name] = repository_names.as_slice() {
+        return (*name).to_owned();
+    }
+    if let Some(identity) = representative.repository_identity.as_ref()
+        && group_key == identity.grouping_key()
+    {
+        return identity.grouping_display_name().or(identity.name.as_deref()).unwrap_or(&representative.title).to_owned();
+    }
+    representative.title.clone()
+}

@@ -191,7 +191,7 @@ impl Sidebar {
             .when(thread.has_unsent_draft, |d| {
                 d.child(Icon::new(IconName::SquarePen).size(IconSize::Custom(px(12.))).color(colors.warning_foreground))
             })
-            .child(project_favicon(project_label.clone()))
+            .child(project_favicon(project_label.clone(), self.list.project_icons.get(&thread.project_ref())))
             .when(thread.pinned_at.is_some(), |d| d.child(self.pin_indicator(ix, thread, colors, cx)))
             .child(
                 div()
@@ -470,7 +470,8 @@ impl Sidebar {
             .when(in_folder, |d| d.pl(px(36.)))
             .when(!in_folder, |d| {
                 let label = self.list.project_labels.get(&thread.project_ref()).cloned().unwrap_or_default();
-                d.child(div().flex_none().opacity(if favicon_full { 1. } else { 0.4 }).child(project_favicon(label)))
+                let source = self.list.project_icons.get(&thread.project_ref());
+                d.child(div().flex_none().opacity(if favicon_full { 1. } else { 0.4 }).child(project_favicon(label, source)))
             })
             .when(thread.has_unsent_draft, |d| {
                 d.child(Icon::new(IconName::SquarePen).size(IconSize::Custom(px(12.))).color(colors.warning_foreground))
@@ -591,8 +592,8 @@ fn row_action(id: impl Into<ElementId>, colors: &ShellColors) -> Stateful<Div> {
 }
 
 /// The 16px project favicon: the monogram derived from the project's name.
-pub(crate) fn project_favicon(name: SharedString) -> ProjectFavicon {
-    ProjectFavicon::new(name)
+pub(crate) fn project_favicon(name: SharedString, source: Option<&crate::components::project_favicon::ProjectIconSource>) -> ProjectFavicon {
+    ProjectFavicon::new(name).source(source)
 }
 
 /// A provider instance's mark at `size`, without opacity or badge.

@@ -20,6 +20,9 @@ pub struct ProjectGroup {
     pub archived: bool,
     pub created_at: TimestampMs,
     pub updated_at: TimestampMs,
+    /// The representative project's icon override and favicon.
+    pub icon: Option<t3code_contracts::OrchestrationProjectShellProjectIcon>,
+    pub favicon: Option<std::sync::Arc<std::path::Path>>,
 }
 
 /// `${environmentId}:${normalized workspaceRoot}`.
@@ -100,13 +103,15 @@ pub fn build_project_groups(
                 group_ix.insert(key.clone(), groups.len());
                 groups.push(ProjectGroup {
                     key: key.into(),
-                    label: winner.title.clone(),
+                    label: winner.group_label.clone().unwrap_or_else(|| winner.title.clone()),
                     workspace_root: winner.workspace_root.clone(),
                     member_refs: Vec::new(),
                     pinned: winner.pinned,
                     archived: winner.archived,
                     created_at: winner.created_at,
                     updated_at: winner.updated_at,
+                    icon: winner.icon.clone(),
+                    favicon: winner.favicon.clone(),
                 });
             }
         }

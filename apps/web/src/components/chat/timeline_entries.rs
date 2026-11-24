@@ -82,6 +82,15 @@ pub struct Attachment {
     pub source: SharedString,
 }
 
+impl Attachment {
+    /// What `img` loads: a file for an absolute path (live attachments in the image cache), the
+    /// bundled asset or URL otherwise.
+    pub fn image_source(&self) -> gpui_kit::ImageSource {
+        let path = std::path::Path::new(self.source.as_ref());
+        if path.is_absolute() { path.to_path_buf().into() } else { self.source.clone().into() }
+    }
+}
+
 /// A user or assistant message.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ChatMessage {
@@ -413,6 +422,9 @@ pub struct TimelineInput {
     pub active_turn_started_at: Option<Timestamp>,
     pub turn_diff_summaries: Arc<[TurnDiffSummary]>,
     pub supports_rollback: bool,
+    /// Live data: the turn count each user message's "Edit from here" rewinds to, by message
+    /// id; empty means every user message gets one (fixtures).
+    pub revert_turn_counts: Arc<std::collections::HashMap<SharedString, usize>>,
     pub worktree_setup: Option<WorktreeSetup>,
     pub queued: Arc<[QueuedMessage]>,
     pub pending_question: Option<PendingQuestion>,

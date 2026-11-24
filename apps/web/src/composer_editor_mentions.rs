@@ -442,7 +442,7 @@ fn valid_context_id(id: &str) -> bool {
 }
 
 /// Collapses whitespace and brackets in a context label, as `sanitizeComposerContextLabel`.
-fn sanitize_context_label(label: &str, kind: &str) -> String {
+pub fn sanitize_context_label(label: &str, kind: &str) -> String {
     let cleaned: String = label
         .split(|c: char| c.is_whitespace() || matches!(c, '[' | ']' | '\\'))
         .filter(|s| !s.is_empty())
@@ -617,4 +617,13 @@ pub fn format_context_reference(kind: &str, context_id: &str, label: &str) -> St
     let label = sanitize_context_label(label, kind);
     let bang = if kind == "image" { "!" } else { "" };
     format!("{bang}[{label}]({CONTEXT_HREF_PREFIX}{kind}/{context_id})")
+}
+
+/// Whether a prompt holds anything besides context chips and whitespace
+/// (`stripInlineContextReferences(prompt).trim().length > 0`).
+pub fn has_text_besides_context(prompt: &str) -> bool {
+    split_prompt_into_segments(prompt).iter().any(|segment| match segment {
+        ComposerPromptSegment::Text(text) => !text.trim().is_empty(),
+        ComposerPromptSegment::Chip(token) => !matches!(token.kind, ChipKind::Context { .. }),
+    })
 }

@@ -55,6 +55,8 @@ pub struct LiveShell {
     revision: u64,
     rebuild_pending: bool,
     rebuilds: u64,
+    /// The server's message matches for the sidebar search.
+    search_matches: Option<model::SearchContentMatches>,
     _environment_subscriptions: Vec<Subscription>,
     _subscriptions: Vec<Subscription>,
 }
@@ -228,7 +230,17 @@ fn parse_opt_ms(iso: Option<&str>) -> Option<EpochMs> {
     iso.and_then(parse_ms)
 }
 
-fn map_project(environment_id: &t3code_contracts::EnvironmentId, project: &OrchestrationProjectShell) -> SidebarProject {
+/// One project as the sidebar groups it. `logical_key` is the group key with the per-project
+/// override applied; it reaches the sidebar as the repository key (grouping runs in repository
+/// mode), and a project that stands alone gets none.
+fn map_project(
+    environment_id: &t3code_contracts::EnvironmentId,
+    project: &OrchestrationProjectShell,
+    logical_key: &str,
+    group_label: Option<String>,
+    favicon: Option<Arc<std::path::Path>>,
+) -> SidebarProject {
+    let physical = t3code_client_runtime::state::project_grouping::physical_project_key(environment_id, &project.workspace_root);
     SidebarProject {
         project_ref: ProjectRef {
             environment_id: environment_key(environment_id),
@@ -236,13 +248,40 @@ fn map_project(environment_id: &t3code_contracts::EnvironmentId, project: &Orche
         },
         title: SharedString::from(project.title.clone()),
         workspace_root: SharedString::from(project.workspace_root.clone()),
-        repository_key: project.repository_identity.as_ref().map(|identity| SharedString::from(identity.canonical_key.clone())),
+        repository_key: (logical_key != physical).then(|| SharedString::from(logical_key.to_owned())),
         repository_relative_path: None,
         created_at: TimestampMs(parse_ms(&project.created_at).unwrap_or_default()),
         updated_at: TimestampMs(parse_ms(&project.updated_at).unwrap_or_default()),
         pinned: project.pinned_at.is_some(),
         archived: project.archived_at.is_some(),
+        group_label: group_label.map(SharedString::from),
+        icon: project.project_icon.clone(),
+        favicon,
     }
+}
+
+/// The sidebar settings the client settings choose, and the grouping settings.
+fn sidebar_settings(cx: &App) -> (SidebarSettings, t3code_client_runtime::state::project_grouping::ProjectGroupingSettings) {
+    use t3code_contracts::SidebarProjectSortOrder as Sort;
+    let settings = crate::hooks::use_settings::ClientSettingsStore::get(cx);
+    let sidebar = SidebarSettings {
+        project_folders: settings.boring_sidebar_enabled,
+        working_shelf: settings.sidebar_working_shelf_enabled,
+        // Per-project overrides are folded into each project's key, so the sidebar groups by it.
+        grouping_mode: model::ProjectGroupingMode::Repository,
+        project_sort_order: match settings.sidebar_project_sort_order {
+            Sort::CreatedAt => model::ProjectSortOrder::CreatedAt,
+            Sort::Manual => model::ProjectSortOrder::Manual,
+            _ => model::ProjectSortOrder::UpdatedAt,
+        },
+        notification_inbox: settings.notification_inbox_enabled,
+        ..SidebarSettings::default()
+    };
+    let grouping = t3code_client_runtime::state::project_grouping::ProjectGroupingSettings {
+        mode: settings.sidebar_project_grouping_mode,
+        overrides: settings.sidebar_project_grouping_overrides.iter().map(|(k, v)| (k.clone(), *v)).collect(),
+    };
+    (sidebar, grouping)
 }
 
 impl LiveShell {
@@ -252,6 +291,7 @@ impl LiveShell {
         ui_state: Rc<ClientStore<UiState>>,
         cx: &mut Context<Self>,
     ) -> Self {
+        let settings = cx.observe_global::<crate::hooks::use_settings::ClientSettingsStore>(|this, cx| this.schedule(cx));
         let subscription = cx.observe(&environments, |this, environments, cx| {
             let list = environments.read(cx).list.clone();
             this._environment_subscriptions = list.iter().map(|env| cx.observe(env, |this, _, cx| this.schedule(cx))).collect();
@@ -269,8 +309,9 @@ impl LiveShell {
             revision: 0,
             rebuild_pending: false,
             rebuilds: 0,
+            search_matches: None,
             _environment_subscriptions: Vec::new(),
-            _subscriptions: vec![subscription],
+            _subscriptions: vec![subscription, settings],
         };
         this.rebuild_now(cx);
         this
@@ -379,17 +420,50 @@ impl LiveShell {
             })
             .collect();
         self.mapped = next;
-        let projects = envs
+        let (settings, grouping) = sidebar_settings(cx);
+        let supported = envs.iter().any(|env| env.config_loaded());
+        let (projects, wanted) = {
+        let all: Vec<(t3code_contracts::EnvironmentId, &OrchestrationProjectShell)> = envs
             .iter()
             .flat_map(|env| {
                 let id = env.environment_id().clone();
-                env.shell.snapshot.iter().flat_map(move |snapshot| {
+                env.shell.snapshot.iter().flat_map(move |snapshot| snapshot.projects.iter().map({
                     let id = id.clone();
-                    snapshot.projects.iter().map(move |project| map_project(&id, project))
-                })
+                    move |project| (id.clone(), &**project)
+                }))
             })
             .collect();
-        let supported = envs.iter().any(|env| env.config_loaded());
+        let keys: Vec<String> = all
+            .iter()
+            .map(|(id, project)| t3code_client_runtime::state::project_grouping::logical_project_key(id, project, &grouping))
+            .collect();
+        let mut members: HashMap<&str, Vec<&OrchestrationProjectShell>> = HashMap::new();
+        for (key, (_, project)) in keys.iter().zip(&all) {
+            members.entry(key.as_str()).or_default().push(*project);
+        }
+        let labels: HashMap<&str, String> = members
+            .iter()
+            .map(|(key, group)| {
+                let representative = group.iter().max_by_key(|p| parse_ms(&p.updated_at).unwrap_or_default()).copied().unwrap_or(group[0]);
+                (*key, t3code_client_runtime::state::project_grouping::group_label(key, representative, group))
+            })
+            .collect();
+        let wanted: Vec<(t3code_contracts::EnvironmentId, String, Option<String>)> =
+            all.iter().map(|(id, p)| (id.clone(), p.workspace_root.clone(), p.favicon_path.clone())).collect();
+        let projects: Vec<SidebarProject> = all
+            .iter()
+            .zip(&keys)
+            .map(|((id, project), key)| map_project(id, project, key, labels.get(key.as_str()).cloned(), None))
+            .collect();
+        (projects, wanted)
+        };
+        drop(envs);
+        // Favicons need the app mutably; the lookups start after the shells are read.
+        let projects = projects
+            .into_iter()
+            .zip(wanted)
+            .map(|(project, (id, root, path))| SidebarProject { favicon: super::favicons::favicon(&id, &root, path.as_deref(), cx), ..project })
+            .collect();
         self.snapshot = SidebarSnapshot {
             projects,
             threads,
@@ -398,16 +472,25 @@ impl LiveShell {
                 settlement_supported: supported,
                 snooze_supported: supported,
                 pinning_supported: supported,
-                ..SidebarSettings::default()
+                ..settings
             },
             active_thread: self.active_thread.clone(),
             environment_pill: None,
             now: TimestampMs(now),
             auto_settle_disabled: Default::default(),
             hover_details: Default::default(),
+            search_content_matches: self.search_matches.clone(),
         };
         self.revision += 1;
         self.rebuilds += 1;
+        cx.notify();
+    }
+
+    /// Takes the server's message matches for a sidebar search.
+    pub fn set_search_matches(&mut self, matches: Option<model::SearchContentMatches>, cx: &mut Context<Self>) {
+        self.search_matches = matches;
+        self.snapshot.search_content_matches = self.search_matches.clone();
+        self.revision += 1;
         cx.notify();
     }
 

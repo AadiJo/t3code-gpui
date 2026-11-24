@@ -62,6 +62,8 @@ pub struct LiveThread {
     mapped: MappedThread,
     optimistic: OptimisticMessages,
     stats: ThreadUpdateStats,
+    /// Attachment images already asked for, so each downloads once.
+    requested_images: std::collections::HashSet<String>,
     _follow: Task<()>,
 }
 
@@ -92,7 +94,84 @@ impl LiveThread {
         let handle = Arc::new(handle);
         let weak = cx.weak_entity();
         let follow = follow_watch(handle.receiver(), cx, move |state, cx| weak.update(cx, |this, cx| this.apply(state, cx)).is_ok());
-        Self { key, handle, state, quiet, mapped, optimistic: OptimisticMessages::default(), stats, _follow: follow }
+        let mut this = Self {
+            key,
+            handle,
+            state,
+            quiet,
+            mapped,
+            optimistic: OptimisticMessages::default(),
+            stats,
+            requested_images: Default::default(),
+            _follow: follow,
+        };
+        this.fetch_images(cx);
+        this
+    }
+
+    /// Downloads the images of sent messages that are not in the image cache yet
+    /// (`assets.createUrl` for the attachment), then maps the rows again so they show.
+    fn fetch_images(&mut self, cx: &mut Context<Self>) {
+        use t3code_contracts::{ChatAttachment, OrchestrationV2TurnItem as Item};
+        let Some(data) = &self.state.data else { return };
+        let missing: Vec<(String, String)> = data
+            .visible_turn_items
+            .iter()
+            .filter_map(|row| match &*row.item {
+                Item::UserMessage(user) => Some(user.attachments.as_slice()),
+                Item::AssistantMessage(reply) => reply.attachments.as_deref(),
+                _ => None,
+            })
+            .flatten()
+            .filter_map(|attachment| match attachment {
+                ChatAttachment::Image(image) => Some((image.id.clone(), image.mime_type.clone())),
+                _ => None,
+            })
+            .filter(|(id, mime)| !self.requested_images.contains(id) && crate::state::attachments::cached_image(id, mime).is_none())
+            .collect();
+        if missing.is_empty() {
+            return;
+        }
+        let (environment_id, _) = crate::state::shell::runtime_ids(&self.key);
+        let Some(link) = crate::live::rpc::RpcLink::new(&environment_id, cx) else { return };
+        self.requested_images.extend(missing.iter().map(|(id, _)| id.clone()));
+        let runner = link.clone();
+        let task = runner.run(async move {
+            use t3code_contracts::rpc::methods::AssetsCreateUrl;
+            use t3code_contracts::{AssetCreateUrlInput, AssetResource, AssetResourceAttachment};
+            let session = link.session().await?;
+            let mut fetched = 0;
+            for (attachment_id, mime) in missing {
+                let resource = AssetResource::Attachment(AssetResourceAttachment {
+                    attachment_id: attachment_id.clone(),
+                    file_name: None,
+                    mime_type: None,
+                    disposition: None,
+                    render_intent: None,
+                });
+                let Ok(url) = session.client.call::<AssetsCreateUrl>(AssetCreateUrlInput { resource }).await else { continue };
+                if let Ok(bytes) = link.link.fetch_relative(reqwest::Method::GET, &url.relative_url, None).await {
+                    crate::state::attachments::cache_image(&attachment_id, &mime, &bytes);
+                    fetched += 1;
+                }
+            }
+            Ok::<_, SharedString>(fetched)
+        });
+        cx.spawn(async move |this, cx| {
+            if let Ok(fetched) = task.await
+                && fetched > 0
+            {
+                _ = this.update(cx, |this, cx| {
+                    // Rows are cached by the mapper; start over so the new sources show.
+                    this.mapped.mapper = TimelineMapper::default();
+                    this.remap();
+                    this.stats.structure += 1;
+                    cx.emit(LiveThreadEvent::Structure);
+                    cx.notify();
+                });
+            }
+        })
+        .detach();
     }
 
     pub fn key(&self) -> &ThreadKey {
@@ -167,6 +246,7 @@ impl LiveThread {
         };
         let before = Arc::clone(&self.mapped.input.entries);
         self.remap();
+        self.fetch_images(cx);
         if structure_changed || reconciled {
             self.stats.structure += 1;
             cx.emit(LiveThreadEvent::Structure);
@@ -179,9 +259,9 @@ impl LiveThread {
     }
 
     /// Shows a sent message at once, until the server's copy arrives.
-    pub fn push_optimistic(&mut self, message_id: RuntimeMessageId, text: String, cx: &mut Context<Self>) {
+    pub fn push_optimistic(&mut self, message_id: RuntimeMessageId, text: String, attachments: Vec<t3code_contracts::ChatAttachment>, cx: &mut Context<Self>) {
         let thread_id = self.handle.thread_id().clone();
-        self.optimistic.push(&thread_id, OptimisticMessage { message_id, text, attachments: Vec::new(), created_at: now_ms() });
+        self.optimistic.push(&thread_id, OptimisticMessage { message_id, text, attachments, created_at: now_ms() });
         self.remap();
         self.stats.structure += 1;
         cx.emit(LiveThreadEvent::Structure);

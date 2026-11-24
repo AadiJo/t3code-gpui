@@ -15,7 +15,10 @@
 //! headless dispatcher the end-to-end checks run on.)
 
 pub mod app_data;
+pub mod attachments;
 pub mod composer;
+pub mod favicons;
+pub mod favorites;
 pub mod palette;
 pub mod shell;
 pub mod sidebar_actions;
@@ -161,6 +164,8 @@ impl StateBridge {
         let connection = ConnectionRuntime::global(cx);
         let tokio = connection.tokio().clone();
         let data_dir = connection.data_dir().to_owned();
+        attachments::init_image_cache(&data_dir);
+        favicons::init(&data_dir);
         let (runtime, drafts, ui_state) = {
             let _guard = tokio.enter();
             let runtime = StateRuntime::start(connection.registry().clone(), Arc::clone(connection.auth()), &data_dir);
@@ -247,3 +252,15 @@ impl StateBridge {
 
 /// A shared, mutable value the bridge's sources read from GPUI callbacks.
 pub type Shared<T> = Rc<RefCell<T>>;
+
+/// The live data's event emitter, so background work can ask the window to show a thread.
+pub struct LiveEvents(pub Entity<app_data::DataEvents>);
+
+impl gpui_kit::Global for LiveEvents {}
+
+/// Asks the window to show `key` (a fork or side chat once it reached the shell).
+pub fn open_thread(key: crate::components::sidebar::model::ThreadKey, cx: &mut App) {
+    if let Some(events) = cx.try_global::<LiveEvents>().map(|e| e.0.clone()) {
+        events.update(cx, |_, cx| cx.emit(app_data::DataEvent::OpenThread(key)));
+    }
+}
