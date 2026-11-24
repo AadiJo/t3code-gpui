@@ -16,6 +16,7 @@ use crate::appearance_fonts::{TextSize, weight};
 use crate::components::icons::IconName;
 use crate::components::ui::TextStyleExt as _;
 use crate::components::ui::button::{Button, ButtonSize, ButtonVariant};
+use crate::components::ui::number_field::NumberField;
 use crate::components::ui::select::{Select, SelectSize};
 use crate::i18n::t;
 
@@ -110,19 +111,65 @@ pub struct Resolved {
     pub wake: Zoned,
 }
 
-fn time_of_day(zoned: &Zoned) -> String {
-    let hour = zoned.hour();
-    let (h12, suffix) = match hour {
+/// "6:00 PM" on a 12-hour clock, "18:00" on a 24-hour one (`formatShortTimestamp`).
+fn time_of_day(zoned: &Zoned, hour12: bool) -> String {
+    let (hour, minute) = (zoned.hour(), zoned.minute());
+    if !hour12 {
+        return format!("{hour:02}:{minute:02}");
+    }
+    let (h12, suffix) = twelve_hour(hour);
+    format!("{h12}:{minute:02} {suffix}")
+}
+
+fn twelve_hour(hour: i8) -> (i8, &'static str) {
+    match hour {
         0 => (12, "AM"),
         1..=11 => (hour, "AM"),
         12 => (12, "PM"),
         _ => (hour - 12, "PM"),
-    };
-    format!("{h12}:{:02} {suffix}", zoned.minute())
+    }
 }
 
-/// `resolveSnoozePreset`: `None` for a "Today" option whose time has passed.
+/// A stored "HH:MM" as a native time input shows it: "06:00 PM" on a
+/// 12-hour clock, "18:00" on a 24-hour one.
+fn time_field_text(time: &str, hour12: bool) -> String {
+    match parse_time(time) {
+        Some((hour, minute)) if hour12 => {
+            let (h12, suffix) = twelve_hour(hour as i8);
+            format!("{h12:02}:{minute:02} {suffix}")
+        }
+        _ => time.to_owned(),
+    }
+}
+
+/// Reads "18:00", "6:00 PM" or "6pm" back to (hour, minute).
+fn parse_time(text: &str) -> Option<(u8, u8)> {
+    let text = text.trim().to_ascii_lowercase();
+    let (clock, meridiem) = match text.strip_suffix("am").or_else(|| text.strip_suffix("a")) {
+        Some(rest) => (rest.trim().to_owned(), Some(false)),
+        None => match text.strip_suffix("pm").or_else(|| text.strip_suffix("p")) {
+            Some(rest) => (rest.trim().to_owned(), Some(true)),
+            None => (text, None),
+        },
+    };
+    let (h, m) = clock.split_once(':').unwrap_or((clock.as_str(), "0"));
+    let (mut hour, minute): (u8, u8) = (h.trim().parse().ok()?, m.trim().parse().ok()?);
+    if let Some(pm) = meridiem {
+        if !(1..=12).contains(&hour) {
+            return None;
+        }
+        hour = hour % 12 + if pm { 12 } else { 0 };
+    }
+    (hour < 24 && minute < 60).then_some((hour, minute))
+}
+
+/// `resolveSnoozePreset` on a 12-hour clock: `None` for a "Today" option whose time has passed.
 pub fn resolve(setting: &SnoozePresetSetting, now: &Zoned) -> Option<Resolved> {
+    resolve_with(setting, now, true)
+}
+
+/// [`resolve`] with times on a 12- or 24-hour clock.
+pub fn resolve_with(setting: &SnoozePresetSetting, now: &Zoned, hour12: bool) -> Option<Resolved> {
     let (wake, days_ahead) = match setting {
         SnoozePresetSetting::After(a) => (now.checked_add((a.minutes as i64).minutes()).ok()?, 0),
         SnoozePresetSetting::At(at) => {
@@ -168,7 +215,7 @@ pub fn resolve(setting: &SnoozePresetSetting, now: &Zoned) -> Option<Resolved> {
         SnoozePresetSetting::Unknown(_) => SharedString::default(),
     };
     let names_day = matches!(setting, SnoozePresetSetting::At(at) if !(days_ahead > 1 && at.day == SnoozePresetDay::Monday));
-    let time = time_of_day(&wake);
+    let time = time_of_day(&wake, hour12);
     let when = if names_day || wake.date() == now.date() { time } else { format!("{} {time}", wake.strftime("%a")) };
     Some(Resolved { label, when, wake })
 }
@@ -189,6 +236,7 @@ pub fn snooze_presets_row<V: 'static>(
     let c = &theme.colors;
     let presets = model.read(cx).snapshot().settings.snooze_presets.clone().unwrap_or_else(default_presets);
     let now = Zoned::now();
+    let hour12 = crate::timestamp_format::resolve_hour12(crate::hooks::settings_bridge::timestamp_format(cx));
     let save = {
         let model = model.clone();
         move |next: Vec<SnoozePresetSetting>, cx: &mut App| {
@@ -232,18 +280,23 @@ pub fn snooze_presets_row<V: 'static>(
                 };
                 let factor = [1u64, 60, 24 * 60];
                 let (list, save_amount) = (presets.clone(), save.clone());
-                let stepper = super::server_settings_controls::interval_seconds_field(
-                    format!("snooze-amount-{ix}"),
-                    amount,
-                    1,
-                    1,
-                    read_only,
-                    move |n, _, cx| {
-                        let mut next = list.clone();
-                        next[ix] = SnoozePresetSetting::After(SnoozePresetSettingAfter { minutes: (n * factor[unit]).min(MAX_MINUTES) });
-                        save_amount(next, cx);
-                    },
-                    cx,
+                let max_amount = MAX_MINUTES / factor[unit];
+                let (list, save_amount) = (presets.clone(), save.clone());
+                let commit = move |n: u64, cx: &mut App| {
+                    let mut next = list.clone();
+                    next[ix] = SnoozePresetSetting::After(SnoozePresetSettingAfter { minutes: (n.clamp(1, max_amount) * factor[unit]).min(MAX_MINUTES) });
+                    save_amount(next, cx);
+                };
+                let typed = commit.clone();
+                let field = fields.draft(format!("snooze-amount-{ix}"), amount.to_string(), "", false, window, cx, move |text, _, cx| {
+                    if let Ok(n) = text.trim().parse::<f64>() {
+                        typed(n.round().max(1.) as u64, cx);
+                    }
+                });
+                let stepper = div().w(theme.sp(32.)).flex_none().child(
+                    NumberField::new(SharedString::from(format!("snooze-amount-{ix}")), &field, amount, 1, max_amount)
+                        .disabled(read_only)
+                        .on_step(move |n, _, cx| commit(n, cx)),
                 );
                 let units = vec![
                     if amount == 1 { t!("minute") } else { t!("minutes") },
@@ -263,12 +316,10 @@ pub fn snooze_presets_row<V: 'static>(
             }
             SnoozePresetSetting::At(at) => {
                 let (list, save_time, day) = (presets.clone(), save.clone(), at.day);
-                let field = fields.draft(format!("snooze-time-{ix}"), at.time.clone(), "09:00", false, window, cx, move |text, _, cx| {
-                    let text = text.trim().to_owned();
-                    let valid = text.len() == 5 && text.as_bytes()[2] == b':' && text[..2].parse::<u8>().is_ok_and(|h| h < 24) && text[3..].parse::<u8>().is_ok_and(|m| m < 60);
-                    if valid {
+                let field = fields.draft(format!("snooze-time-{ix}"), time_field_text(&at.time, hour12), "", false, window, cx, move |text, _, cx| {
+                    if let Some((hour, minute)) = parse_time(&text) {
                         let mut next = list.clone();
-                        next[ix] = SnoozePresetSetting::At(SnoozePresetSettingAt { day, time: text });
+                        next[ix] = SnoozePresetSetting::At(SnoozePresetSettingAt { day, time: format!("{hour:02}:{minute:02}") });
                         save_time(next, cx);
                     }
                 });
@@ -277,17 +328,17 @@ pub fn snooze_presets_row<V: 'static>(
                     .items_center()
                     .gap(theme.sp(2.))
                     .child(div().ui_text(theme, TextSize::Xs, weight::NORMAL).text_color(c.muted_foreground).child(t!("at", context = "before a time of day, as in: Monday at 09:00")))
-                    .child(div().w(theme.sp(32.)).child(field_input(&field, false, false, read_only)))
+                    .child(div().w(theme.sp(32.)).child(field_input(&field, false, false, read_only).trailing_icon(IconName::Clock)))
                     .into_any_element()
             }
             SnoozePresetSetting::Unknown(_) => div().into_any_element(),
         };
-        let resolved = resolve(preset, &now);
+        let resolved = resolve_with(preset, &now, hour12);
         let earlier = &presets[..ix];
         let preview: AnyElement = match &resolved {
             None => div().child(t!("Passed for today")).into_any_element(),
             Some(_) if earlier.iter().any(|p| same(p, preset)) => div().child(t!("Duplicate of an option above")).into_any_element(),
-            Some(r) if earlier.iter().filter_map(|p| resolve(p, &now)).any(|o| o.wake.timestamp().as_second() / 60 == r.wake.timestamp().as_second() / 60) => {
+            Some(r) if earlier.iter().filter_map(|p| resolve_with(p, &now, hour12)).any(|o| o.wake.timestamp().as_second() / 60 == r.wake.timestamp().as_second() / 60) => {
                 div().child(t!("Same time as an option above")).into_any_element()
             }
             Some(r) => div()
@@ -332,7 +383,7 @@ pub fn snooze_presets_row<V: 'static>(
         );
     }
     // The menu as it reads now: soonest first, one entry per wake minute.
-    let mut menu: Vec<Resolved> = presets.iter().filter_map(|p| resolve(p, &now)).collect();
+    let mut menu: Vec<Resolved> = presets.iter().filter_map(|p| resolve_with(p, &now, hour12)).collect();
     menu.sort_by_key(|r| r.wake.timestamp().as_second() / 60);
     menu.dedup_by_key(|r| r.wake.timestamp().as_second() / 60);
     let menu_line: SharedString = if menu.is_empty() {

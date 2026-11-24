@@ -10,6 +10,7 @@ pub mod empty;
 pub mod input;
 pub mod kbd;
 pub mod menu;
+pub mod number_field;
 pub mod motion;
 pub mod popover;
 pub mod scroll_area;

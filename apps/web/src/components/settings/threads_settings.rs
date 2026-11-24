@@ -11,7 +11,7 @@ use t3code_contracts::{
 
 use super::server_settings_controls::{
     advanced_fold,
-    Fields, bool_setting, field_input, hint, interval_seconds_field, lock_reason, reset_button, save_patch, select_row,
+    Fields, bool_setting, field_input, hint, lock_reason, reset_button, save_patch, select_row,
 };
 use super::server_settings_data::ServerPanelsModel;
 use super::settings_layout::{SettingsRow, SettingsSection, page_container};
@@ -80,6 +80,48 @@ pub fn model_select_row(
     })
 }
 
+/// A model row with the picker button (`ProviderModelPicker` in
+/// `ProjectDefaultsSettings.tsx`); `none_label` names an unset value
+/// ("None" for the fallback), else an unset value shows the first model.
+#[allow(clippy::too_many_arguments)]
+pub fn model_picker_row(
+    model: &Entity<ServerPanelsModel>,
+    id: &'static str,
+    title: SharedString,
+    description: SharedString,
+    current: Option<&ModelSelection>,
+    none_label: Option<SharedString>,
+    reset_label: SharedString,
+    lock: Option<SharedString>,
+    patch: fn(Option<ModelSelection>) -> ClientServerSettingsPatch,
+    cx: &App,
+) -> SettingsRow {
+    let snapshot = model.read(cx).snapshot();
+    let catalog = std::sync::Arc::new(crate::provider_models_live::model_catalog_for(snapshot.providers.iter().map(|p| p.as_ref()), &snapshot.settings));
+    let options = model_options(model.read(cx));
+    let shown = current.cloned().or_else(|| none_label.is_none().then(|| options.first().map(|(s, _)| s.clone())).flatten());
+    let row = SettingsRow::new(title).description(description);
+    if shown.is_none() && none_label.is_none() {
+        return row.control(hint(t!("No providers available"), cx));
+    }
+    let save_model = model.clone();
+    let mut picker = super::settings_model_picker::SettingsModelPicker::new(id, catalog, shown, move |next, cx| {
+        save_patch(&save_model, id, patch(Some(next)), cx);
+    })
+    .disabled(lock.is_some());
+    if current.is_none() {
+        if let Some(label) = none_label {
+            picker = picker.label(label);
+        }
+    }
+    let mut row = row.control(picker);
+    if current.is_some() && lock.is_none() {
+        let reset_model = model.clone();
+        row = row.reset(reset_button(format!("{id}-reset"), reset_label, move |_, cx| save_patch(&reset_model, id, patch(None), cx)));
+    }
+    row
+}
+
 /// The Threads page.
 pub struct ThreadsSettingsPanel {
     model: Entity<ServerPanelsModel>,
@@ -136,8 +178,8 @@ impl Render for ThreadsSettingsPanel {
         let runtime_ix = runtime_modes.iter().position(|m| Some(*m) == s.default_runtime_mode).unwrap_or(3);
         let runtime_model = model.clone();
         let defaults = SettingsSection::new(t!("New threads"))
-            .child(model_select_row(model, "defaultModelSelection", t!("Model"), Some(t!("Default model for new threads. Projects can override it.")), s.default_model_selection.as_ref(), None, lock(&["defaultModelSelection"]), |v| ClientServerSettingsPatch { default_model_selection: Some(v), ..Default::default() }, cx))
-            .child(model_select_row(model, "fallbackModelSelection", t!("Fallback model"), Some(t!("Used for new threads when the default model's provider is out of usage.")), s.fallback_model_selection.as_ref(), Some(t!("None", context = "no fallback model")), lock(&["fallbackModelSelection"]), |v| ClientServerSettingsPatch { fallback_model_selection: Some(v), ..Default::default() }, cx))
+            .child(model_picker_row(model, "defaultModelSelection", t!("Model"), t!("Default model for new threads. Projects can override it."), s.default_model_selection.as_ref(), None, t!("Reset default model to default"), lock(&["defaultModelSelection"]), |v| ClientServerSettingsPatch { default_model_selection: Some(v), ..Default::default() }, cx))
+            .child(model_picker_row(model, "fallbackModelSelection", t!("Fallback model"), t!("Used for new threads when the default model's provider is out of usage."), s.fallback_model_selection.as_ref(), Some(t!("None", context = "no fallback model")), t!("Reset fallback model to default"), lock(&["fallbackModelSelection"]), |v| ClientServerSettingsPatch { fallback_model_selection: Some(v), ..Default::default() }, cx))
             .child(select_row("defaultRuntimeMode", t!("Permissions"), Some(t!("Default permissions for new threads. Projects can override them.")), runtime_modes.iter().map(|m| runtime_mode_label(*m)).collect(), runtime_ix, lock(&["defaultRuntimeMode"]), move |ix, _, cx| {
                 let patch = ClientServerSettingsPatch { default_runtime_mode: Some(RuntimeMode::ALL[ix]), ..Default::default() };
                 save_patch(&runtime_model, "defaultRuntimeMode", patch, cx);

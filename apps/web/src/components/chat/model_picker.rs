@@ -35,6 +35,9 @@ const MODEL_OPTION_HEIGHT: Pixels = px(32.);
 const PICKER_CONTEXT: &str = "ModelPicker";
 /// Footer: `py-2` around a 28px control, plus its 1px top border.
 const FOOTER_HEIGHT: Pixels = px(45.);
+/// The plain popup's outer size (`ModelPickerContent` alone, as settings
+/// open it): the list and the 1px border.
+pub const PLAIN_MODEL_PICKER_SIZE: gpui_kit::Size<Pixels> = gpui_kit::Size { width: px(360. + 2.), height: px(320. + 2.) };
 /// The popup's outer size: list, effort column, footer and the 1px border.
 /// Fixed, so the composer can cache the picker's subtree with a known layout.
 pub const MODEL_PICKER_SIZE: gpui_kit::Size<Pixels> = gpui_kit::Size {
@@ -117,6 +120,8 @@ pub struct ModelPicker {
     /// The footer's permissions menu is open, and the mode a hover previews.
     permissions_open: bool,
     permissions_preview: Option<RuntimeMode>,
+    /// Without the effort column and footer, as pickers outside the composer show it.
+    plain: bool,
 }
 
 impl EventEmitter<ModelPickerEvent> for ModelPicker {}
@@ -149,10 +154,17 @@ impl ModelPicker {
             hovered_row: None,
             permissions_open: false,
             permissions_preview: None,
+            plain: false,
         };
         this.rebuild_rows();
         this.highlight_selected();
         this
+    }
+
+    /// Drops the effort column and footer (`ProviderModelPicker` without `effortColumn`).
+    pub fn plain(mut self) -> Self {
+        self.plain = true;
+        self
     }
 
     /// Updates the catalog and selection from the composer.
@@ -910,8 +922,8 @@ impl Render for ModelPicker {
             .glass(c.popup_background)
             .border_1()
             .border_color(c.popup_border)
-            .w(MODEL_PICKER_SIZE.width)
-            .h(MODEL_PICKER_SIZE.height)
+            .w(if self.plain { PLAIN_MODEL_PICKER_SIZE.width } else { MODEL_PICKER_SIZE.width })
+            .h(if self.plain { PLAIN_MODEL_PICKER_SIZE.height } else { MODEL_PICKER_SIZE.height })
             .rounded(POPUP_RADIUS)
             .shadow(popup_shadow(&c))
             .overflow_hidden()
@@ -944,9 +956,9 @@ impl Render for ModelPicker {
                                     }),
                             ),
                     )
-                    .child(self.render_effort_column(&c, cx)),
+                    .when(!self.plain, |el| el.child(self.render_effort_column(&c, cx))),
             )
-            .child(self.render_footer(&c, cx))
+            .when(!self.plain, |el| el.child(self.render_footer(&c, cx)))
     }
 }
 

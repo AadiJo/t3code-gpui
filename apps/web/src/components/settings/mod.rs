@@ -8,6 +8,7 @@ pub mod import_desktop_dialog;
 pub mod keybindings_settings;
 pub mod settings_controls;
 pub mod settings_layout;
+pub mod settings_model_picker;
 pub mod settings_pages;
 pub mod settings_panels;
 pub mod settings_search;
