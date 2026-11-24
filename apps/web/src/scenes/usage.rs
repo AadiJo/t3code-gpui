@@ -37,6 +37,10 @@ enum Variant {
     Loading,
     /// Limits, with no provider reporting any (the reference capture).
     Empty,
+    /// "Custom model prices" from the environment menu.
+    Prices,
+    /// "Custom model prices" from a model's "Set price", with a new row.
+    PricesNew,
 }
 
 fn build_variant(variant: Variant, light: bool, window: &mut Window, cx: &mut App) -> AnyView {
@@ -54,13 +58,18 @@ fn build_variant(variant: Variant, light: bool, window: &mut Window, cx: &mut Ap
     page.update(cx, |page, cx| {
         let (metric, days) = match variant {
             Variant::Limits | Variant::Empty => (UsageMetric::Limits, UsageWindowDays::Month),
-            Variant::Cost | Variant::Model | Variant::Loading => (UsageMetric::Cost, UsageWindowDays::Month),
+            Variant::Cost | Variant::Model | Variant::Loading | Variant::Prices | Variant::PricesNew => (UsageMetric::Cost, UsageWindowDays::Month),
             Variant::Tokens => (UsageMetric::Tokens, UsageWindowDays::Week),
             Variant::Day | Variant::TimeBreakdown => (UsageMetric::Cost, UsageWindowDays::Day),
         };
         page.show(metric, days, cx);
         if matches!(variant, Variant::Model) {
             page.show_model(UsageProviderKind::Claude, "claude-opus-4-5", cx);
+        }
+        match variant {
+            Variant::Prices => page.show_prices(None, cx),
+            Variant::PricesNew => page.show_prices(Some("grok-code-fast-1".into()), cx),
+            _ => {}
         }
         if matches!(variant, Variant::TimeBreakdown) {
             page.show_breakdown_by_time(true, cx);
@@ -92,6 +101,12 @@ pub fn build_time_breakdown(window: &mut Window, cx: &mut App) -> AnyView {
 }
 pub fn build_model(window: &mut Window, cx: &mut App) -> AnyView {
     build_variant(Variant::Model, false, window, cx)
+}
+pub fn build_prices(window: &mut Window, cx: &mut App) -> AnyView {
+    build_variant(Variant::Prices, false, window, cx)
+}
+pub fn build_prices_new(window: &mut Window, cx: &mut App) -> AnyView {
+    build_variant(Variant::PricesNew, false, window, cx)
 }
 pub fn build_loading(window: &mut Window, cx: &mut App) -> AnyView {
     build_variant(Variant::Loading, false, window, cx)

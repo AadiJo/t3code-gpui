@@ -2,7 +2,8 @@
 // trigger opens the model picker and Enter picks its highlighted model, which the server then
 // reports as `fallbackModelSelection`; the reset arrow clears it again. The first snooze option's
 // "+" steps its amount, which the server reports in `snoozePresets`; "−" steps it back. Providers
-// names its one environment ("on <label>"). Every value is read back from the server's config.
+// names its one environment ("on <label>"). Usage's "Model prices" adds a custom price, saves it
+// and resets it again. Every value is read back from the server's config.
 
 use super::*;
 use t3code_contracts::{SnoozePresetSetting, SnoozePresetSettingAfter};
@@ -46,6 +47,33 @@ fn click_id(check: &mut Check, id: &str) -> anyhow::Result<()> {
     })?;
     check.frame();
     Ok(())
+}
+
+/// Clicks the centre of the visible element `id` where it is, without scrolling.
+fn click_visible(check: &mut Check, id: &str) -> anyhow::Result<()> {
+    let element = ElementId::from(SharedString::from(id.to_owned()));
+    let at = check
+        .cx
+        .update_window(check.window, |_, w, _| w.try_find(element.clone()).filter(|e| e.visible()).map(|e| e.bounds().center()))
+        .ok()
+        .flatten()
+        .with_context(|| format!("no visible element {id}"))?;
+    check.cx.update_window(check.window, |_, w, cx| {
+        w.dispatch_event(MouseMoveEvent { position: at, pressed_button: None, modifiers: Modifiers::default() }.to_platform_input(), cx);
+        w.dispatch_event(
+            MouseDownEvent { button: MouseButton::Left, position: at, modifiers: Modifiers::default(), click_count: 1, first_mouse: false }.to_platform_input(),
+            cx,
+        );
+        w.dispatch_event(MouseUpEvent { button: MouseButton::Left, position: at, modifiers: Modifiers::default(), click_count: 1 }.to_platform_input(), cx);
+    })?;
+    check.frame();
+    Ok(())
+}
+
+/// The custom input and output price the server holds for `model`.
+fn custom_price(check: &mut Check, id: &t3code_contracts::EnvironmentId, model: &str) -> Option<(f64, f64)> {
+    let price = server_settings(check, id)?.usage_price_overrides?.get(model)?.clone();
+    Some((price.input_cost_per_million_tokens, price.output_cost_per_million_tokens))
 }
 
 /// The environment's server settings as its config last reported them.
@@ -127,5 +155,41 @@ pub(super) fn run_settings(check: &mut Check) -> anyhow::Result<()> {
     let named = check.cx.update(|cx| cx.try_global::<t3code_web::components::settings::settings_controls::PagesEnvironment>().and_then(|e| e.0.clone()));
     check.check("Providers names the environment its page shows", named.as_ref() == Some(&environment_id), format!("{named:?}"));
     check.shot("s4-providers.png")?;
+
+    // Usage > environments menu > Model prices: a new row with input and output prices saves to
+    // the server's `usagePriceOverrides`; its reset arrow and Save remove it again.
+    const MODEL: &str = "live-check-model";
+    check.cx.update(|cx| router.update(cx, |router, cx| router.navigate(Route::Usage, cx)));
+    check.frame();
+    check.wait(Duration::from_millis(800));
+    click_visible(check, "usage-environments-trigger")?;
+    check.wait(Duration::from_millis(300));
+    check.shot("s5-usage-menu.png")?;
+    click_visible(check, "usage-model-prices")?;
+    check.wait(Duration::from_millis(300));
+    click_visible(check, "usage-price-add")?;
+    check.type_text(MODEL);
+    click_visible(check, "usage-price-new:0-input")?;
+    check.type_text("0.5");
+    click_visible(check, "usage-price-new:0-output")?;
+    check.type_text("2");
+    check.type_text("x");
+    check.frame();
+    check.shot("s6-prices-typed.png")?;
+    click_visible(check, "usage-prices-save")?;
+    let env = environment_id.clone();
+    check.pump(move |c| custom_price(c, &env, MODEL).is_some(), Duration::from_secs(15), "the new model price reaches the server")?;
+    let saved = custom_price(check, &environment_id, MODEL);
+    // "x" is not a price edit, so the output cell keeps "2".
+    check.check("Save writes input 0.5 and output 2", saved == Some((0.5, 2.0)), format!("{saved:?}"));
+    check.wait(Duration::from_millis(300));
+    check.shot("s7-prices-saved.png")?;
+    click_visible(check, &format!("usage-price-reset-model:{MODEL}"))?;
+    check.shot("s8-prices-reset.png")?;
+    click_visible(check, "usage-prices-save")?;
+    let env = environment_id.clone();
+    check.pump(move |c| custom_price(c, &env, MODEL).is_none(), Duration::from_secs(15), "reset removes the model price on the server")?;
+    check.check("reset and Save remove the custom price", true, "");
+    check.shot("s9-prices-removed.png")?;
     Ok(())
 }

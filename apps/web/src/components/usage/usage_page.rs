@@ -8,6 +8,7 @@ use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::Arc;
 
+use gpui_kit::TestSupportExt as _;
 use gpui_kit::{
     AnyElement, App, AppContext as _, Context, Entity, EventEmitter, FocusHandle, Focusable, IntoElement, Render, SharedString,
     Subscription, Window, div, prelude::*, px,
@@ -38,6 +39,8 @@ use crate::components::ui::TextStyleExt as _;
 use crate::components::ui::button::{Button, ButtonSize, ButtonVariant};
 use crate::components::ui::dialog::{DialogSurface, Modal};
 use crate::components::ui::menu::{MenuItem, MenuItemKind, MenuPopup, dropdown_menu};
+use super::usage_price_overrides::{UsagePriceOverrides, UsagePriceOverridesClosed, price_targets, usage_models};
+use super::usage_price_table::UsagePriceTarget;
 use crate::components::ui::scroll_area::scroll_area;
 use crate::components::ui::skeleton::{Skeleton, SkeletonShape};
 use crate::components::ui::toggle::{Toggle, ToggleSize, ToggleVariant};
@@ -156,6 +159,8 @@ pub struct UsagePage {
     limits_refreshed: HashMap<EnvironmentId, i64>,
     breakdown_by_time: bool,
     selected_model: Option<(UsageProviderKind, String)>,
+    /// The open "Custom model prices" dialog.
+    price_dialog: Option<(Entity<UsagePriceOverrides>, Subscription)>,
     chart: Entity<UsageProviderChart>,
     model_chart: Entity<UsageProviderChart>,
     limits: Entity<UsageLimitsView>,
@@ -226,6 +231,7 @@ impl UsagePage {
             limits_refreshed: HashMap::new(),
             breakdown_by_time: false,
             selected_model: None,
+            price_dialog: None,
             chart: cx.new(|_| UsageProviderChart::new()),
             model_chart: cx.new(|_| UsageProviderChart::new()),
             limits,
@@ -420,6 +426,14 @@ impl UsagePage {
 
     /// Rebuilds statuses, merged totals and the chart input after any change.
     fn recompute(&mut self, cx: &mut Context<Self>) {
+        self.recompute_overview(cx);
+        if let Some((dialog, _)) = &self.price_dialog {
+            let (targets, models) = self.price_inputs();
+            dialog.update(cx, |dialog, cx| dialog.set_environments(targets, models, cx));
+        }
+    }
+
+    fn recompute_overview(&mut self, cx: &mut Context<Self>) {
         let window = self.window.clone();
         self.statuses = self
             .environments
@@ -579,6 +593,25 @@ impl UsagePage {
         self.model_chart.update(cx, |chart, cx| chart.set_input(input, cx));
     }
 
+    /// The dialog's environments and the models each one's usage reports.
+    fn price_inputs(&self) -> (Vec<UsagePriceTarget>, Vec<(EnvironmentId, Vec<String>)>) {
+        let models = self.statuses.iter().map(|s| (s.environment.environment_id.clone(), usage_models(s.summary.as_deref()))).collect();
+        (price_targets(&self.environments), models)
+    }
+
+    /// Opens "Custom model prices", with a new row for `model` when it has no custom price.
+    pub fn show_prices(&mut self, model: Option<String>, cx: &mut Context<Self>) {
+        let (targets, models) = self.price_inputs();
+        let (source, selected) = (self.source.clone(), self.selected.clone());
+        let dialog = cx.new(|_| UsagePriceOverrides::new(source, targets, models, selected, model));
+        let closed = cx.subscribe(&dialog, |this, _, _: &UsagePriceOverridesClosed, cx| {
+            this.price_dialog = None;
+            cx.notify();
+        });
+        self.price_dialog = Some((dialog, closed));
+        cx.notify();
+    }
+
     fn open_model(&mut self, provider: UsageProviderKind, model: String, cx: &mut Context<Self>) {
         self.selected_model = Some((provider, model));
         self.update_model_chart(cx);
@@ -643,6 +676,7 @@ impl UsagePage {
             .any(|s| s.error.is_some())
             || self.overview.as_ref().is_some_and(|o| !o.merged.contract_mismatches.is_empty());
         let env_trigger = div()
+            .id("usage-environments-trigger")
             .flex()
             .items_center()
             .gap(theme.sp(1.))
@@ -656,7 +690,7 @@ impl UsagePage {
                 Icon::new(IconName::ChevronDown).size(IconSize::Sm).color(with_alpha(c.muted_foreground, 0.6))
             });
         let page = cx.entity();
-        let env_menu = dropdown_menu("usage-environments", env_trigger, move |_, cx| page.update(cx, |this, cx| this.environment_menu(cx)));
+        let env_menu = dropdown_menu("usage-environments", env_trigger.test_support(), move |_, cx| page.update(cx, |this, cx| this.environment_menu(cx)));
         let visible: Vec<UsageProviderKind> =
             PROVIDER_ORDER.into_iter().filter(|p| !self.prefs.hidden_providers.contains(p)).collect();
         let provider_label_text: SharedString = match visible.len() {
@@ -911,7 +945,13 @@ impl UsagePage {
                 }
             }
         }
-        menu
+        let page = page.clone();
+        menu.separator().item(
+            MenuItem::new(t!("Model prices"))
+                .id("usage-model-prices")
+                .icon(IconName::SlidersHorizontal)
+                .on_select(move |_, cx| page.update(cx, |this, cx| this.show_prices(None, cx))),
+        )
     }
 
     fn provider_menu(&mut self, cx: &mut Context<Self>) -> MenuPopup {
@@ -1481,7 +1521,16 @@ impl UsagePage {
         });
         let mut surface = DialogSurface::new(model.model.clone()).description(description).on_close(move |window, cx| close(&gpui_kit::ClickEvent::default(), window, cx));
         if model.unpriced_tokens > 0.0 {
-            surface = surface.footer(muted_text(&theme, TextSize::Xs, t!("{tokens} tokens have no known price", tokens = format_tokens(model.unpriced_tokens))).mr_auto());
+            let name = model.model.to_string();
+            let set_price = cx.listener(move |this, _, _, cx| {
+                this.selected_model = None;
+                this.show_prices(Some(name.clone()), cx);
+            });
+            surface = surface
+                .bare_footer()
+                .footer_centered()
+                .footer(muted_text(&theme, TextSize::Xs, t!("{tokens} tokens have no known price", tokens = format_tokens(model.unpriced_tokens))).mr_auto())
+                .footer(Button::new("usage-model-set-price").label(t!("Set price")).on_click(set_price));
         }
         let surface = surface.child(
             div()
@@ -1527,6 +1576,7 @@ impl Render for UsagePage {
         let header = self.render_header(window, cx);
         let body = self.render_body(window, cx);
         let dialog = if self.prefs.metric != UsageMetric::Limits { self.render_model_dialog(cx) } else { None };
+        let prices = self.price_dialog.as_ref().map(|(dialog, _)| dialog.clone());
         let theme = cx.app_theme();
         let page = cx.entity();
         let element = div()
@@ -1556,10 +1606,13 @@ impl Render for UsagePage {
                 ),
             )
             .children(dialog);
-        on_commands(
+        let page = on_commands(
             element,
             |command| UsageMetric::ALL.iter().any(|m| m.command() == command) || UsageWindowDays::ALL.iter().any(|d| d.command() == command),
             Rc::new(move |command, _, cx| page.update(cx, |this, cx| this.run_command(command, cx))),
-        )
+        );
+        // The prices dialog sits outside the page, as the fork portals it, so typing in its
+        // fields never reaches the page's one-key shortcuts.
+        div().size_full().child(page).children(prices)
     }
 }

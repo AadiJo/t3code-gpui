@@ -11,15 +11,16 @@ use futures::FutureExt as _;
 use gpui_kit::{App, SharedString};
 use jiff::tz::TimeZone;
 use t3code_client_runtime::preview::environment_link::EnvironmentLink;
-use t3code_contracts::rpc::methods::{ProviderConsumeResetCredit, ServerGetUsageSummary, ServerRefreshProviders, ServerRefreshUsageRates};
+use t3code_contracts::rpc::methods::{ProviderConsumeResetCredit, ServerGetUsageSummary, ServerRefreshProviders, ServerRefreshUsageRates, ServerUpdateSettings};
 use t3code_contracts::{
-    AuthEnvironmentScope, AuthSessionState, EnvironmentId, ProviderConsumeResetCreditInput, ProviderConsumeResetCreditResult,
+    AuthEnvironmentScope, AuthSessionState, ClientServerSettingsPatch, EnvironmentId, ServerUpdateSettingsPayload, ProviderConsumeResetCreditInput, ProviderConsumeResetCreditResult,
     ServerConfig, ServerConfigProvidersItem, ServerConfigStreamEvent, ServerProviderUpdatedPayload,
     ServerRefreshProvidersPayload, UsageModelFilter, UsagePricing, UsageSummary, UsageSummaryInput,
 };
 use t3code_shared::usage_limits::LimitEnvironment;
 use tokio::sync::watch;
 
+use super::usage_price_table::UsagePriceTarget;
 use crate::connection::ConnectionRuntime;
 use crate::i18n::t;
 
@@ -52,6 +53,8 @@ pub struct UsageEnvironment {
     pub limits: LimitEnvironment,
     /// Whether this session may redeem reset credits (`providers:manage`).
     pub can_manage_providers: bool,
+    /// The server's custom prices and model mappings, for the model prices dialog.
+    pub price_target: UsagePriceTarget,
 }
 
 /// The Usage page's data. Each method but [`Self::environments`] is one RPC.
@@ -65,6 +68,8 @@ pub trait UsageSource: 'static {
     fn refresh_usage_rates(&self, environment: &EnvironmentId) -> UsageFuture<UsagePricing>;
     /// `server.refreshProviders`: re-reads subscription limits.
     fn refresh_providers(&self, environment: &EnvironmentId) -> UsageFuture<ServerProviderUpdatedPayload>;
+    /// `server.updateSettings` with `patch`.
+    fn update_settings(&self, environment: &EnvironmentId, patch: ClientServerSettingsPatch) -> UsageFuture<()>;
     /// `provider.consumeResetCredit`.
     fn consume_reset_credit(
         &self,
@@ -223,6 +228,31 @@ impl LiveEnvironment {
             model_filter: self.config.as_ref().and_then(|c| c.settings.usage_model_filter.clone()),
             limits: limit_environment(&self.id, &self.label, self.config.as_deref()),
             can_manage_providers: self.session.as_ref().is_some_and(|s| s.grants_scope(AuthEnvironmentScope::ProvidersManage)),
+            price_target: self.price_target(),
+        }
+    }
+
+    /// `priceTargetsAtom`'s row for this environment.
+    fn price_target(&self) -> UsagePriceTarget {
+        let settings = self.config.as_ref().map(|c| &c.settings);
+        let maps_models = self.config.as_ref().is_some_and(|c| c.environment.capabilities.usage_model_aliases == Some(true));
+        let unavailable = if !self.connected {
+            Some(t!("Offline"))
+        } else if settings.is_none() {
+            Some(t!("Prices not loaded"))
+        } else if self.session.is_none() && !self.session_error {
+            Some(t!("Checking permissions…"))
+        } else if self.session_error || !self.session.as_ref().is_some_and(|s| s.grants_scope(AuthEnvironmentScope::SettingsWrite)) {
+            Some(t!("Read-only access"))
+        } else {
+            None
+        };
+        UsagePriceTarget {
+            environment_id: self.id.clone(),
+            label: self.label.clone(),
+            prices: settings.map(|s| Arc::new(s.usage_price_overrides.clone().unwrap_or_default())),
+            aliases: settings.filter(|_| maps_models).map(|s| Arc::new(s.usage_model_aliases.clone().unwrap_or_default())),
+            unavailable,
         }
     }
 }
@@ -316,6 +346,17 @@ impl UsageSource for LiveUsageSource {
             async move {
                 let session = link.session(std::time::Duration::from_secs(10)).await.map_err(rpc_error)?;
                 session.client.call::<ServerRefreshProviders>(ServerRefreshProvidersPayload::default()).await.map_err(rpc_error)
+            }
+            .boxed()
+        })
+    }
+
+    fn update_settings(&self, environment: &EnvironmentId, patch: ClientServerSettingsPatch) -> UsageFuture<()> {
+        self.call(environment, move |link| {
+            async move {
+                let session = link.session(std::time::Duration::from_secs(10)).await.map_err(rpc_error)?;
+                let input = ServerUpdateSettingsPayload { patch, provider_instance_mutation: None };
+                session.client.call::<ServerUpdateSettings>(input).await.map(|_| ()).map_err(rpc_error)
             }
             .boxed()
         })
@@ -445,6 +486,13 @@ impl FixtureUsageSource {
                 access,
                 model_filter: None,
                 can_manage_providers: true,
+                price_target: UsagePriceTarget {
+                    environment_id: EnvironmentId::new(id),
+                    label: label.to_owned().into(),
+                    prices: Some(Arc::new(fixture_prices(id))),
+                    aliases: Some(Arc::new(fixture_aliases(id))),
+                    unavailable: None,
+                },
             }
         };
         let ok = UsageAccess { can_read_diagnostics: true, is_pending: false, error: None };
@@ -455,6 +503,22 @@ impl FixtureUsageSource {
         let (_, environments) = watch::channel(Arc::from(list));
         Rc::new(Self { environments, now_ms: FIXTURE_NOW_MS, hold_summaries: false })
     }
+}
+
+/// The fixture's custom prices: both environments price Kimi, at different input rates.
+fn fixture_prices(environment: &str) -> std::collections::BTreeMap<String, t3code_contracts::UsageModelPriceOverride> {
+    let kimi = |input: f64| t3code_contracts::UsageModelPriceOverride {
+        input_cost_per_million_tokens: input,
+        output_cost_per_million_tokens: 2.5,
+        cache_read_cost_per_million_tokens: Some(0.15),
+        cache_write_cost_per_million_tokens: None,
+    };
+    [("kimi-k2".to_owned(), kimi(if environment == "env-laptop" { 0.6 } else { 0.55 }))].into()
+}
+
+/// The fixture's model mappings: the laptop counts `auto` as Sonnet.
+fn fixture_aliases(environment: &str) -> std::collections::BTreeMap<String, String> {
+    if environment == "env-laptop" { [("auto".to_owned(), "claude-sonnet-4-5".to_owned())].into() } else { Default::default() }
 }
 
 /// Deterministic usage for `environment` over `input`'s days or hours.
@@ -540,6 +604,10 @@ impl UsageSource for FixtureUsageSource {
 
     fn refresh_providers(&self, _: &EnvironmentId) -> UsageFuture<ServerProviderUpdatedPayload> {
         async { Ok(ServerProviderUpdatedPayload { providers: Vec::new() }) }.boxed()
+    }
+
+    fn update_settings(&self, _: &EnvironmentId, _: ClientServerSettingsPatch) -> UsageFuture<()> {
+        async { Ok(()) }.boxed()
     }
 
     fn consume_reset_credit(&self, _: &EnvironmentId, _: ProviderConsumeResetCreditInput) -> UsageFuture<ProviderConsumeResetCreditResult> {

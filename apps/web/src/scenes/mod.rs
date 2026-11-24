@@ -116,6 +116,8 @@ pub fn scenes() -> &'static [(&'static str, SceneBuilder)] {
         ("usage-day", usage::build_day),
         ("usage-day-breakdown", usage::build_time_breakdown),
         ("usage-model", usage::build_model),
+        ("usage-prices", usage::build_prices),
+        ("usage-prices-new", usage::build_prices_new),
         ("usage-loading", usage::build_loading),
         ("usage-empty", usage::build_empty),
         ("pull-requests", pull_requests::build),
