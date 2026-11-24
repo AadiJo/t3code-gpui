@@ -597,6 +597,14 @@ impl FixtureStore {
         }
     }
 
+    /// Marks the thread titled `title` read or unread (the reference capture's browser opened
+    /// threads as it went).
+    pub fn set_read(&mut self, title: &str, read: bool) {
+        if let Some(key) = self.thread_by_title(title) {
+            self.set_flags(&key, |t| t.last_visited_at = Some(reference_world::visited_at(t, read)));
+        }
+    }
+
     /// Edits one sidebar row.
     fn set_flags(&mut self, key: &ThreadKey, edit: impl FnOnce(&mut SidebarThread)) {
         if let Some(thread) = self.snapshot.threads.iter_mut().find(|t| t.key == *key) {
