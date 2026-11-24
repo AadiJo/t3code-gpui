@@ -48,6 +48,8 @@ use crate::connection::shell::EnvironmentShell;
 use crate::desktop_notifications::{InboxEvent, NotificationInbox};
 use crate::router::SettingsPanel;
 use crate::shortcuts::ShortcutRoot;
+use t3code_shared::keybindings::StaticCommand;
+use crate::shortcuts::commands::{RunProjectScript, on_commands};
 use crate::shortcuts::commands::{
     CloseRightPanelTab, CopyThreadReference, FindInThread, FocusNextWorkspaceArea, FocusPreviousWorkspaceArea,
     OpenFavoriteEditor, ToggleFilePicker, ToggleProjectSearch, ToggleThreadPanel, JumpToThread1, JumpToThread2, JumpToThread3, JumpToThread4, JumpToThread5, JumpToThread6,
@@ -794,6 +796,13 @@ impl AppRoot {
                 let tab = tab.clone();
                 self.right_panel.update(cx, |panel, cx| panel.open_browser_tab(&tab, cx));
             }
+            ThreadRouteEvent::ThreadCommand(keys, command) => {
+                self.thread_command(keys, *command, window, cx);
+            }
+            ThreadRouteEvent::NewThreadInProject => {
+                let project = self.shown_project(cx);
+                self.new_thread(project, window, cx);
+            }
         }
     }
 
@@ -1030,13 +1039,40 @@ impl AppRoot {
 
     /// Runs a sidebar row, chat header or shortcut command on threads.
     pub fn thread_command(&mut self, keys: &[ThreadKey], command: MenuCommand, window: &mut Window, cx: &mut Context<Self>) -> Wiring {
+        // A thread menu's "Project settings" opens its project's page here.
+        if command == MenuCommand::ProjectSettings {
+            if let Some(project) = keys.first().and_then(|key| self.thread_project(key, cx)) {
+                self.open_project_settings(&project, cx);
+            }
+            return Wiring::Ran;
+        }
         match self.data.thread_command(keys, command, cx) {
             CommandOutcome::Done if command == MenuCommand::SnoozeCustom => return Wiring::Dropped,
             CommandOutcome::Done => {}
-            CommandOutcome::Rename(key) => self.sidebar.update(cx, |sidebar, cx| sidebar.start_rename(key, window, cx)),
+            CommandOutcome::Rename(key) => {
+                // The header has no title field of its own; the sidebar row takes the rename.
+                if !self.layout.read(cx).is_sidebar_open() {
+                    self.layout.update(cx, |layout, cx| layout.toggle_sidebar(cx));
+                }
+                self.sidebar.update(cx, |sidebar, cx| sidebar.start_rename(key, window, cx))
+            }
             CommandOutcome::NewThread(project) => self.new_thread(project, window, cx),
         }
         Wiring::Ran
+    }
+
+    /// The project of a listed thread.
+    fn thread_project(&self, key: &ThreadKey, cx: &App) -> Option<ProjectRef> {
+        self.sidebar.read(cx).snapshot().threads.iter().find(|t| &t.key == key).map(|t| t.project_ref())
+    }
+
+    /// The project of the thread or draft on screen.
+    fn shown_project(&self, cx: &App) -> Option<ProjectRef> {
+        match &self.shown {
+            Some(ThreadTarget::Server(key)) => self.thread_project(key, cx),
+            Some(ThreadTarget::Draft(id)) => self.sidebar.read(cx).snapshot().drafts.iter().find(|d| d.id == id.0).map(|d| d.project.clone()),
+            None => None,
+        }
     }
 
     /// Starts a draft in `project` (or the most recent one) and shows it (`chat.new`).
@@ -1259,6 +1295,30 @@ impl AppRoot {
     }
 }
 
+/// The shortcuts the thread view runs on the shown thread ([`ThreadRouteView::run_command`]).
+const THREAD_VIEW_COMMANDS: [StaticCommand; 20] = [
+    StaticCommand::ComposerSendAlternate,
+    StaticCommand::ComposerSendBackground,
+    StaticCommand::ComposerSendAndNewThread,
+    StaticCommand::ComposerHost,
+    StaticCommand::ComposerCycleHost,
+    StaticCommand::ComposerWorkspace,
+    StaticCommand::ComposerBranch,
+    StaticCommand::ComposerPreviousWorktree,
+    StaticCommand::ComposerStash,
+    StaticCommand::ComposerEffort,
+    StaticCommand::ComposerIncreaseEffort,
+    StaticCommand::ComposerDecreaseEffort,
+    StaticCommand::ComposerMode,
+    StaticCommand::ComposerDictation,
+    StaticCommand::ThreadStop,
+    StaticCommand::ThreadSteerQueuedMessage,
+    StaticCommand::ThreadEditQueuedMessage,
+    StaticCommand::ThreadSettle,
+    StaticCommand::ThreadPin,
+    StaticCommand::ThreadRegenerateTitle,
+];
+
 /// Which thread `thread.previous`, `thread.next` and `thread.jump.n` show.
 #[derive(Clone, Copy)]
 enum ThreadStep {
@@ -1270,7 +1330,15 @@ enum ThreadStep {
 
 impl Render for AppRoot {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        div()
+        let this = cx.weak_entity();
+        let thread_commands: Rc<dyn Fn(StaticCommand, &mut Window, &mut App)> = Rc::new(move |command, window, cx| {
+            _ = this.update(cx, |this, cx| {
+                if this.shown.is_some() && this.main.read(cx).page.is_none() {
+                    this.thread_view.update(cx, |view, cx| view.run_command(command, window, cx));
+                }
+            });
+        });
+        let root = div()
             .id("app-root")
             .track_focus(&self.focus)
             .size_full()
@@ -1318,6 +1386,9 @@ impl Render for AppRoot {
             .on_action(cx.listener(|this, _: &JumpToThread8, _, cx| this.step_thread(ThreadStep::Jump(7), cx)))
             .on_action(cx.listener(|this, _: &JumpToThread9, _, cx| this.step_thread(ThreadStep::Jump(8), cx)))
             .on_action(cx.listener(|this, _: &OpenSettings, _, cx| this.open_settings(cx)))
+            .on_action(cx.listener(|this, action: &RunProjectScript, _, cx| {
+                this.thread_view.update(cx, |view, cx| view.run_project_script(&action.id, cx));
+            }))
             .on_action(cx.listener(|this, _: &ToggleThreadPanel, _, cx| this.toggle_details(cx)))
             .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
                 if this.shown.is_some() && this.main.read(cx).page.is_none() {
@@ -1345,7 +1416,8 @@ impl Render for AppRoot {
             .on_action(cx.listener(|this, _: &FocusPreviousWorkspaceArea, window, cx| this.focus_area(false, window, cx)))
             .on_action(|_: &ToggleFullScreen, window, _| window.toggle_fullscreen())
             .on_action(|_: &Minimize, window, _| window.minimize_window())
-            .on_action(|_: &ZoomWindow, window, _| window.zoom_window())
+            .on_action(|_: &ZoomWindow, window, _| window.zoom_window());
+        on_commands(root, |command| THREAD_VIEW_COMMANDS.contains(&command), thread_commands)
             .child(self.layout.clone())
             .children(self.usage.as_ref().map(|(usage, _)| {
                 let router = self.router.downgrade();

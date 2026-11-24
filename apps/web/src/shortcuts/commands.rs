@@ -200,8 +200,16 @@ command_registry! {
 
 /// The package that builds a command whose app-level handler only says it is not available yet,
 /// for the commands that reach such a notice. The wiring check reads it.
-pub fn pending_command_owner(_command: StaticCommand) -> Option<&'static str> {
-    None
+pub fn pending_command_owner(command: StaticCommand) -> Option<&'static str> {
+    match command {
+        StaticCommand::ComposerStash
+        | StaticCommand::ComposerEffort
+        | StaticCommand::ComposerIncreaseEffort
+        | StaticCommand::ComposerDecreaseEffort
+        | StaticCommand::ComposerMode => Some("composer"),
+        StaticCommand::ComposerDictation => Some("voice"),
+        _ => None,
+    }
 }
 
 /// The action a command dispatches.

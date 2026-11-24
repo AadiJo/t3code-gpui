@@ -33,7 +33,10 @@ use crate::components::git_actions_control::{GitActionsControl, GitActionsEvent}
 use crate::components::chat::composer_command_menu::{ComposerCommandItem, ComposerMenuSource};
 use crate::components::git_actions_control_source::SourceControlModel;
 use crate::components::project_scripts_control::{ProjectScriptsControl, ProjectScriptsEvent};
+use crate::components::sidebar::context_menu::MenuCommand;
 use crate::components::sidebar::model::ThreadKey;
+use crate::composer_logic::ComposerSubmissionIntent;
+use t3code_shared::keybindings::{ScriptId, StaticCommand};
 use crate::components::ui::toast::{ToastData, ToastKind, Toaster};
 use crate::composer_editor_mentions::format_context_reference;
 use crate::composer_logic::ComposerTrigger;
@@ -77,6 +80,10 @@ pub enum ThreadRouteEvent {
     OpenBrowser(SharedString),
     /// Open this terminal (the worktree setup script's).
     OpenTerminal(SharedString),
+    /// A thread command from the header menu or a shortcut, run as the sidebar runs it.
+    ThreadCommand(Vec<ThreadKey>, MenuCommand),
+    /// Start a new thread in the shown thread's project (send and start new thread).
+    NewThreadInProject,
 }
 
 /// The menu of the shown thread's workspace; the composer keeps one source.
@@ -596,6 +603,11 @@ impl ThreadRouteView {
             cx.emit(ThreadRouteEvent::Promoted(promoted));
         }
         match event {
+            // `composer.sendAndNewThread` on a started thread: send, then a new thread in its project.
+            ComposerEvent::Submit { intent: ComposerSubmissionIntent::Background, .. } if matches!(target, ThreadTarget::Server(_)) => {
+                self.refresh(true, cx);
+                cx.emit(ThreadRouteEvent::NewThreadInProject);
+            }
             ComposerEvent::Submit { .. } => self.refresh(true, cx),
             // These change what the composer shows from the draft (model, mode, the `/clear` banner).
             ComposerEvent::ModelChanged(_) | ComposerEvent::RuntimeModeChanged(_) | ComposerEvent::ClearSession | ComposerEvent::BannerAction(_) => {
@@ -629,8 +641,119 @@ impl ThreadRouteView {
                 cx.emit(ThreadRouteEvent::DetailsModeChanged(*mode));
             }
             ChatViewEvent::Timeline(action) => self.on_timeline_action(action.clone(), window, cx),
-            // The header menu runs the sidebar's thread commands; they are wired with the live store.
-            ChatViewEvent::ThreadCommand(..) => return Wiring::Dropped,
+            // The header menu runs the sidebar's thread commands (`useThreadActionMenu`).
+            ChatViewEvent::ThreadCommand(key, command) => cx.emit(ThreadRouteEvent::ThreadCommand(vec![key.clone()], *command)),
+        }
+        Wiring::Ran
+    }
+
+    /// The shown server thread's sidebar row.
+    fn shown_row(&self, cx: &App) -> Option<crate::components::sidebar::model::SidebarThread> {
+        let Some(ThreadTarget::Server(key)) = &self.target else { return None };
+        self.data.snapshot(None, cx).threads.iter().find(|row| &row.key == key).map(|row| (**row).clone())
+    }
+
+    /// Runs a thread, queue or composer control shortcut on the shown thread (`useChatShortcuts`
+    /// commands in `ChatView.tsx`, `useThreadLifecycle` shortcuts, `ComposerHandle.openControl`).
+    pub fn run_command(&mut self, command: StaticCommand, window: &mut Window, cx: &mut Context<Self>) -> Wiring {
+        use StaticCommand as C;
+        let Some(target) = self.target.clone() else { return Wiring::Ran };
+        let server = match &target {
+            ThreadTarget::Server(key) => Some(key.clone()),
+            ThreadTarget::Draft(_) => None,
+        };
+        let is_draft = server.is_none();
+        match command {
+            C::ComposerSendAlternate => self.composer.update(cx, |c, cx| c.submit(ComposerSubmissionIntent::Alternate, cx)),
+            // `resolveComposerSubmissionIntent`: background on a draft, send and new on a thread.
+            C::ComposerSendBackground if is_draft => self.composer.update(cx, |c, cx| c.submit(ComposerSubmissionIntent::Background, cx)),
+            C::ComposerSendAndNewThread if !is_draft => self.composer.update(cx, |c, cx| c.submit(ComposerSubmissionIntent::Background, cx)),
+            C::ComposerSendBackground | C::ComposerSendAndNewThread => {}
+            // `composer.host` and `composer.workspace` both open the run-context menu.
+            C::ComposerHost | C::ComposerWorkspace => {
+                if let Some(strip) = self.branch_strip().cloned() {
+                    strip.update(cx, |strip, cx| strip.open_menu("run-context", cx));
+                }
+            }
+            C::ComposerBranch => {
+                if let Some(strip) = self.branch_strip().cloned() {
+                    strip.update(cx, |strip, cx| strip.set_branch_picker_open(true, window, cx));
+                }
+            }
+            C::ComposerCycleHost => self.cycle_host(cx),
+            C::ComposerPreviousWorktree => {
+                let offered = self.branch_strip().is_some_and(|strip| {
+                    let props = strip.read(cx).props();
+                    !props.is_server_thread && !props.force_new_worktree && props.previous_worktree.is_some()
+                });
+                if let (ThreadTarget::Draft(draft), true) = (&target, offered) {
+                    self.data.draft_workspace_event(draft, &BranchToolbarEvent::UsePreviousWorktree, cx);
+                }
+            }
+            C::ComposerStash | C::ComposerEffort | C::ComposerIncreaseEffort | C::ComposerDecreaseEffort | C::ComposerMode | C::ComposerDictation => {
+                return self.open_composer_control(command, cx);
+            }
+            C::ThreadStop => {
+                let running = self.data.thread_view(&target, cx).is_some_and(|view| view.running);
+                if running {
+                    self.data.composer_event(&target, &ComposerEvent::Stop, &self.composer.downgrade(), cx);
+                }
+            }
+            C::ThreadSteerQueuedMessage | C::ThreadEditQueuedMessage => {
+                let Some(view) = self.data.thread_view(&target, cx) else { return Wiring::Ran };
+                let action = if command == C::ThreadSteerQueuedMessage {
+                    view.timeline.queued.first().map(|q| TimelineAction::SendQueuedNow(q.id.clone()))
+                } else {
+                    // Only from the composer's start, so mod+up still moves the caret elsewhere.
+                    let at_start = self.composer.read(cx).editor().read(cx).selection() == (0..0);
+                    view.timeline.queued.last().filter(|_| at_start).map(|q| TimelineAction::EditQueued(q.id.clone()))
+                };
+                if let (Some(action), Some(_)) = (action, server) {
+                    self.on_timeline_action(action, window, cx);
+                }
+            }
+            C::ThreadSettle | C::ThreadPin | C::ThreadRegenerateTitle => {
+                let Some(row) = self.shown_row(cx) else { return Wiring::Ran };
+                let command = match command {
+                    C::ThreadSettle if row.settled_override == Some(crate::components::sidebar::model::SettledOverride::Settled) => MenuCommand::Unsettle,
+                    C::ThreadSettle => MenuCommand::Settle,
+                    C::ThreadPin if row.pinned_at.is_some() => MenuCommand::Unpin,
+                    C::ThreadPin => MenuCommand::Pin,
+                    _ => MenuCommand::RegenerateTitle,
+                };
+                cx.emit(ThreadRouteEvent::ThreadCommand(vec![row.key.clone()], command));
+            }
+            _ => return Wiring::Dropped,
+        }
+        Wiring::Ran
+    }
+
+    /// `composer.cycleHost`: the draft moves to the next environment its project lives on.
+    fn cycle_host(&mut self, cx: &mut Context<Self>) {
+        let Some(ThreadTarget::Draft(draft)) = self.target.clone() else { return };
+        let Some(strip) = self.branch_strip() else { return };
+        let props = strip.read(cx).props();
+        if !props.can_change_environment || props.environments.is_empty() {
+            return;
+        }
+        let index = props.environments.iter().position(|env| Some(&env.environment_id) == props.environment_id.as_ref());
+        let next = props.environments[index.map_or(0, |i| (i + 1) % props.environments.len())].environment_id.clone();
+        self.data.draft_workspace_event(&draft, &BranchToolbarEvent::EnvironmentChanged(next), cx);
+    }
+
+    /// The composer controls the composer itself opens (stash, effort, mode, dictation). Until
+    /// `ChatComposer` handles these actions on its own element, the shortcut says so here.
+    fn open_composer_control(&mut self, command: StaticCommand, cx: &mut Context<Self>) -> Wiring {
+        let title = crate::shortcuts::commands::command_title(&t3code_shared::keybindings::KeybindingCommand::Static(command));
+        Toaster::push(ToastData::new(ToastKind::Info, t!("{command} is not available in this app yet", command = title.as_ref())), cx);
+        Wiring::Unavailable(crate::shortcuts::commands::pending_command_owner(command).unwrap_or("composer"))
+    }
+
+    /// `script.<id>.run`: runs the shown project's script in a terminal tab.
+    pub fn run_project_script(&mut self, id: &ScriptId, cx: &mut Context<Self>) -> Wiring {
+        let script = self.git.front().and_then(|g| g.setup.scripts.iter().find(|s| s.id == id.as_str()).cloned());
+        if let Some(script) = script {
+            cx.emit(ThreadRouteEvent::RunScript(script));
         }
         Wiring::Ran
     }
