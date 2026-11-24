@@ -191,7 +191,7 @@ impl RenderOnce for TextInput {
             None => Styled::h(field, height).px(padding).w_full(),
         };
         let field = if self.mono {
-            field.mono_text(px(TextSize::Sm.size(theme.fonts.interface)), weight::NORMAL)
+            field.mono_text(px(text.size(theme.fonts.interface)), weight::NORMAL)
         } else {
             field.ui_text(theme, text, weight::NORMAL)
         };
