@@ -52,6 +52,7 @@ pub enum HeaderControl {
     PullRequests,
     Issues,
     Usage,
+    CheckForUpdates,
 }
 
 impl Sidebar {

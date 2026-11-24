@@ -116,6 +116,9 @@ pub struct ModelPicker {
     rows: Arc<Vec<Row>>,
     scroll: UniformListScrollHandle,
     hovered_row: Option<usize>,
+    /// The footer's permissions menu is open, and the mode a hover previews.
+    permissions_open: bool,
+    permissions_preview: Option<RuntimeMode>,
 }
 
 impl EventEmitter<ModelPickerEvent> for ModelPicker {}
@@ -146,6 +149,8 @@ impl ModelPicker {
             rows: Arc::default(),
             scroll: UniformListScrollHandle::new(),
             hovered_row: None,
+            permissions_open: false,
+            permissions_preview: None,
         };
         this.rebuild_rows();
         this.highlight_selected();
@@ -687,6 +692,7 @@ impl ModelPicker {
             .child(
                 div()
                     .id("picker-permissions")
+                    .relative()
                     .ml_auto()
                     .h(px(28.))
                     .px(px(8.))
@@ -701,13 +707,117 @@ impl ModelPicker {
                     .child(Icon::new(runtime_mode_icon(mode)).size(IconSize::Custom(px(14.))).color(c.muted_foreground).stroke(composer_icon_stroke(runtime_mode_icon(mode))))
                     .child(mode.label())
                     .child(Icon::new(IconName::ChevronUp).size(IconSize::Custom(px(12.))).color(c.muted_foreground))
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        let next = this.runtime_mode.next();
-                        this.runtime_mode = next;
-                        cx.emit(ModelPickerEvent::RuntimeModeChanged(next));
+                    .when(self.permissions_open, |d| d.bg(c.row_hover).text_color(c.foreground))
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.permissions_open = !this.permissions_open;
+                        this.permissions_preview = None;
                         cx.notify();
-                    })),
+                    }))
+                    .children(self.render_permissions_menu(c, cx)),
             )
+    }
+
+    /// `PermissionsMenu` (`side="top" align="end"`) holding
+    /// `ComposerPermissionsSection`: a `w-72` panel with a segmented row of the
+    /// four modes, then the shown mode's name and its two-line description.
+    fn render_permissions_menu(&self, c: ComposerColors, cx: &mut Context<Self>) -> Option<gpui_kit::AnyElement> {
+        if !self.permissions_open {
+            return None;
+        }
+        let current = self.runtime_mode;
+        let shown = self.permissions_preview.unwrap_or(current);
+        let segments = RuntimeMode::ALL.iter().copied().enumerate().map(|(i, mode)| {
+            let checked = mode == current;
+            let last = i + 1 == RuntimeMode::ALL.len();
+            div()
+                .id(("permission-mode", i))
+                .flex()
+                .flex_1()
+                .h(px(24.))
+                .items_center()
+                .justify_center()
+                .cursor_pointer()
+                .when(i == 0, |d| d.rounded_l(px(6.)))
+                .when(last, |d| d.rounded_r(px(6.)))
+                .when(checked, |d| d.bg(c.input.opacity(0.72)))
+                .when(!checked, |d| d.hover(move |s| s.bg(c.accent)))
+                .child(
+                    Icon::new(runtime_mode_icon(mode))
+                        .size(IconSize::Custom(px(14.)))
+                        .color(if checked { c.foreground } else { c.muted_foreground })
+                        .stroke(composer_icon_stroke(runtime_mode_icon(mode))),
+                )
+                .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
+                    this.permissions_preview = hovered.then_some(mode);
+                    cx.notify();
+                }))
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.permissions_open = false;
+                    this.permissions_preview = None;
+                    if this.runtime_mode != mode {
+                        this.runtime_mode = mode;
+                        cx.emit(ModelPickerEvent::RuntimeModeChanged(mode));
+                    }
+                    cx.notify();
+                }))
+        });
+        let panel = div()
+            .id("permissions-menu")
+            .occlude()
+            .rounded(POPUP_RADIUS)
+            .border_1()
+            .border_color(c.popup_border)
+            .bg(c.popup_background)
+            .shadow(popup_shadow(&c))
+            .p(px(4.))
+            .on_mouse_down_out(cx.listener(|this, _, _, cx| {
+                this.permissions_open = false;
+                cx.notify();
+            }))
+            .child(
+                div()
+                    .w(px(288.))
+                    .flex()
+                    .flex_col()
+                    .gap(px(6.))
+                    .px(px(8.))
+                    .py(px(6.))
+                    .child(
+                        div()
+                            .text_size(px(12.))
+                            .line_height(px(16.))
+                            .font_weight(FontWeight::MEDIUM)
+                            .text_color(c.muted_foreground)
+                            .child(crate::i18n::t!("Permissions")),
+                    )
+                    .child(div().flex().rounded(px(8.)).bg(c.input.opacity(0.4)).p(px(2.)).children(segments))
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap(px(2.))
+                            .child(
+                                div()
+                                    .text_size(px(14.))
+                                    .line_height(px(20.))
+                                    .text_color(if shown == current { c.foreground } else { c.muted_foreground })
+                                    .child(shown.label()),
+                            )
+                            .child(
+                                div()
+                                    .min_h(px(32.))
+                                    .text_size(px(12.))
+                                    .line_height(px(16.))
+                                    .text_color(c.muted_foreground)
+                                    .child(shown.description()),
+                            ),
+                    ),
+            );
+        Some(
+            gpui_kit::deferred(div().absolute().bottom_full().right_0().pb(px(4.)).child(panel))
+                .with_priority(3)
+                .into_any_element(),
+        )
     }
 }
 

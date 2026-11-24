@@ -292,7 +292,7 @@
       245,
       772
      ],
-     "exclude": "Check for updates: the native shell has its own updater, so the port leaves it out"
+     "exclude": "reference build has no desktop updater bridge, so the web draws it disabled at 60%; the owner's app draws it enabled"
     },
     {
      "name": "composer left edge",
@@ -764,7 +764,7 @@
       245,
       772
      ],
-     "exclude": "Check for updates: the native shell has its own updater, so the port leaves it out"
+     "exclude": "reference build has no desktop updater bridge, so the web draws it disabled at 60%; the owner's app draws it enabled"
     },
     {
      "name": "composer left edge",
@@ -1135,7 +1135,7 @@
       245,
       772
      ],
-     "exclude": "Check for updates: the native shell has its own updater, so the port leaves it out"
+     "exclude": "reference build has no desktop updater bridge, so the web draws it disabled at 60%; the owner's app draws it enabled"
     },
     {
      "name": "hovered row fill",
@@ -5885,6 +5885,375 @@
       1100,
       90
      ]
+    }
+   ]
+  },
+  "thread-actions-menu": {
+   "elements": [
+    {
+     "name": "titlebar fill",
+     "kind": "fill",
+     "at": [
+      600,
+      30
+     ]
+    },
+    {
+     "name": "sidebar fill (top)",
+     "kind": "fill",
+     "at": [
+      240,
+      40
+     ]
+    },
+    {
+     "name": "sidebar edge",
+     "kind": "hscan",
+     "at": [
+      400,
+      250,
+      262
+     ]
+    },
+    {
+     "name": "sidebar toggle",
+     "kind": "ink",
+     "at": [
+      84,
+      14,
+      112,
+      40
+     ]
+    },
+    {
+     "name": "right toggles",
+     "kind": "ink",
+     "at": [
+      995,
+      14,
+      1090,
+      40
+     ]
+    },
+    {
+     "name": "breadcrumb monogram",
+     "kind": "ink",
+     "at": [
+      272,
+      16,
+      293,
+      37
+     ]
+    },
+    {
+     "name": "breadcrumb project",
+     "kind": "ink",
+     "at": [
+      294,
+      14,
+      350,
+      40
+     ],
+     "text": true
+    },
+    {
+     "name": "breadcrumb slash",
+     "kind": "ink",
+     "at": [
+      350,
+      14,
+      366,
+      40
+     ],
+     "text": true
+    },
+    {
+     "name": "breadcrumb title",
+     "kind": "ink",
+     "at": [
+      368,
+      14,
+      520,
+      40
+     ],
+     "text": true
+    },
+    {
+     "name": "dev badge",
+     "kind": "ink",
+     "at": [
+      2,
+      15,
+      34,
+      37
+     ],
+     "exclude": "dev builds only; never on the owner's build"
+    },
+    {
+     "name": "menu left edge",
+     "kind": "hscan",
+     "at": [
+      120,
+      360,
+      380
+     ],
+     "blur": true
+    },
+    {
+     "name": "menu top edge",
+     "kind": "vscan",
+     "at": [
+      450,
+      30,
+      60
+     ],
+     "blur": true
+    },
+    {
+     "name": "menu bottom edge",
+     "kind": "vscan",
+     "at": [
+      450,
+      405,
+      440
+     ],
+     "blur": true
+    },
+    {
+     "name": "item 1 icon",
+     "kind": "ink",
+     "at": [
+      380,
+      66,
+      400,
+      86
+     ]
+    },
+    {
+     "name": "item 1 label",
+     "kind": "ink",
+     "at": [
+      405,
+      64,
+      520,
+      88
+     ],
+     "text": true
+    },
+    {
+     "name": "snooze chevron",
+     "kind": "ink",
+     "at": [
+      545,
+      166,
+      570,
+      186
+     ]
+    },
+    {
+     "name": "delete label",
+     "kind": "ink",
+     "at": [
+      405,
+      402,
+      470,
+      426
+     ],
+     "text": true
+    }
+   ]
+  },
+  "composer-markdown": {
+   "elements": [
+    {
+     "name": "titlebar fill",
+     "kind": "fill",
+     "at": [
+      600,
+      30
+     ]
+    },
+    {
+     "name": "sidebar fill (top)",
+     "kind": "fill",
+     "at": [
+      240,
+      40
+     ]
+    },
+    {
+     "name": "sidebar edge",
+     "kind": "hscan",
+     "at": [
+      400,
+      250,
+      262
+     ]
+    },
+    {
+     "name": "sidebar toggle",
+     "kind": "ink",
+     "at": [
+      84,
+      14,
+      112,
+      40
+     ]
+    },
+    {
+     "name": "right toggles",
+     "kind": "ink",
+     "at": [
+      995,
+      14,
+      1090,
+      40
+     ]
+    },
+    {
+     "name": "breadcrumb monogram",
+     "kind": "ink",
+     "at": [
+      272,
+      16,
+      293,
+      37
+     ]
+    },
+    {
+     "name": "breadcrumb project",
+     "kind": "ink",
+     "at": [
+      294,
+      14,
+      350,
+      40
+     ],
+     "text": true
+    },
+    {
+     "name": "breadcrumb slash",
+     "kind": "ink",
+     "at": [
+      350,
+      14,
+      366,
+      40
+     ],
+     "text": true
+    },
+    {
+     "name": "breadcrumb title",
+     "kind": "ink",
+     "at": [
+      368,
+      14,
+      520,
+      40
+     ],
+     "text": true
+    },
+    {
+     "name": "dev badge",
+     "kind": "ink",
+     "at": [
+      2,
+      15,
+      34,
+      37
+     ],
+     "exclude": "dev builds only; never on the owner's build"
+    },
+    {
+     "name": "code block left edge",
+     "kind": "hscan",
+     "at": [
+      640,
+      300,
+      340
+     ],
+     "blur": true
+    },
+    {
+     "name": "code block right edge",
+     "kind": "hscan",
+     "at": [
+      640,
+      1020,
+      1060
+     ],
+     "blur": true
+    },
+    {
+     "name": "code block top",
+     "kind": "vscan",
+     "at": [
+      600,
+      600,
+      640
+     ],
+     "blur": true
+    },
+    {
+     "name": "code block fill",
+     "kind": "fill",
+     "at": [
+      700,
+      660
+     ]
+    },
+    {
+     "name": "language icon",
+     "kind": "ink",
+     "at": [
+      330,
+      630,
+      352,
+      652
+     ]
+    },
+    {
+     "name": "language label",
+     "kind": "ink",
+     "at": [
+      348,
+      628,
+      425,
+      650
+     ],
+     "text": true
+    },
+    {
+     "name": "code line 1",
+     "kind": "ink",
+     "at": [
+      330,
+      652,
+      500,
+      672
+     ],
+     "text": true
+    },
+    {
+     "name": "inline code chip",
+     "kind": "ink",
+     "at": [
+      345,
+      588,
+      440,
+      610
+     ]
+    },
+    {
+     "name": "prose line",
+     "kind": "ink",
+     "at": [
+      318,
+      582,
+      500,
+      612
+     ],
+     "text": true
     }
    ]
   },

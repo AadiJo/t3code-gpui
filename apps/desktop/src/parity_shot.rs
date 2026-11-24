@@ -67,7 +67,7 @@ const SCENES: &[Scene] = &[
     Scene { name: "window-thread", reference: "window-thread", light: false, steps: &[] },
     Scene { name: "window-thread-light", reference: "window-thread-light", light: true, steps: &[] },
     Scene { name: "sidebar-selected", reference: "sidebar-selected", light: false, steps: &[] },
-    Scene { name: "sidebar-hover", reference: "sidebar-hover", light: false, steps: &[Step::Move(127.5, 224.)] },
+    Scene { name: "sidebar-hover", reference: "sidebar-hover", light: false, steps: &[Step::Move(127.5, 224.), Step::Wait(300)] },
     Scene { name: "sidebar-context-menu", reference: "sidebar-context-menu", light: false, steps: &[Step::RightClick(127.5, 224.)] },
     Scene { name: "sidebar-inbox", reference: "sidebar-inbox", light: false, steps: &[Step::ClickId("sidebar-notifications")] },
     Scene { name: "timeline-top", reference: "timeline-top", light: false, steps: &[Step::Wheel(700., 400., 20_000.)] },
@@ -75,9 +75,7 @@ const SCENES: &[Scene] = &[
         name: "timeline-tools-expanded",
         reference: "timeline-tools-expanded",
         light: false,
-        // The port's turn sits 39px lower than the fork's: its first prompt is a
-        // bubble, not the fork's one-line Agent pill.
-        steps: &[Step::Wheel(700., 400., 20_000.), Step::Click(340., 181.)],
+        steps: &[Step::Wheel(700., 400., 20_000.), Step::Click(340., 142.)],
     },
     Scene { name: "timeline-bottom", reference: "timeline-bottom", light: false, steps: &[] },
     Scene { name: "timeline-user-message", reference: "timeline-user-message", light: false, steps: &[Step::Wheel(700., 400., 600.)] },
@@ -98,6 +96,24 @@ const SCENES: &[Scene] = &[
             Step::Type("Fourth line"),
         ],
     },
+    Scene {
+        name: "composer-markdown",
+        reference: "composer-markdown",
+        light: false,
+        steps: &[
+            Step::Click(700., 690.),
+            Step::Type("Use `inline code` and **bold** here"),
+            Step::Press("shift-enter"),
+            Step::Type("```ts"),
+            Step::Press("shift-enter"),
+            Step::Type("const x = sum(1, 2);"),
+            // The capture typed a closing fence, which the web keeps as code; the
+            // port shows its closing fence while the caret is on it.
+            Step::Press("shift-enter"),
+            Step::Type("```"),
+        ],
+    },
+    Scene { name: "thread-actions-menu", reference: "thread-actions-menu", light: false, steps: &[Step::Click(430., 26.)] },
     Scene { name: "composer-model-picker", reference: "composer-model-picker", light: false, steps: &[Step::Click(960., 733.)] },
     Scene { name: "composer-mention", reference: "composer-mention", light: false, steps: &[Step::Click(700., 690.), Step::Type("@"), Step::Wait(300)] },
     Scene { name: "command-palette", reference: "command-palette", light: false, steps: &[Step::Action(|| Box::new(ToggleCommandPalette))] },
@@ -251,6 +267,8 @@ fn render(scene: &Scene, out: &std::path::Path, data: &std::path::Path) -> anyho
                 while Instant::now() < until {
                     frame(&mut cx, window);
                     std::thread::sleep(Duration::from_millis(50));
+                    // Timers on the headless dispatcher run on its simulated clock.
+                    cx.advance_clock(Duration::from_millis(50));
                 }
             }
         }

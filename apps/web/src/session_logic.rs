@@ -30,6 +30,7 @@ use t3code_shared::thread_projection::{ThreadProjection, VisibleTurnItem};
 use t3code_shared::turn_item::TurnItemExt;
 
 use crate::components::chat::timeline_entries::{
+    AgentSender,
     ApprovalKind, AttemptId, Attachment, AttachmentKind, ChatMessage, CompactionStatus, Divider, DividerKind, DynamicToolKind,
     EntryId, EntryKind, FileChange, InputIntent, LatestRun, MessageId, MessageRole, PendingQuestion, ProposedPlan,
     QueuedMessage, RequestId, RunId, RunStatus, SearchMatch, Subagent, SubagentStatus, Timestamp, TimelineEntry,
@@ -477,6 +478,7 @@ fn message(id: MessageId, role: MessageRole, text: &str, created_at: Timestamp, 
         input_intent: InputIntent::Prompt,
         sent_by_app: false,
         guest: None,
+        from_agent: None,
     }
 }
 
@@ -502,10 +504,17 @@ fn map_row(row: &VisibleTurnItem, superseded_attempt: Option<AttemptId>, folded_
                 Intent::PromotedQueuedToSteer => InputIntent::PromotedQueuedToSteer,
                 _ => InputIntent::Prompt,
             },
-            sent_by_app: user.created_by != OrchestrationV2Actor::User
+            // `resolveUserMessagePresentation`: an agent's message folds; one the
+            // server made shows "Sent by T3 Code".
+            from_agent: (user.created_by == OrchestrationV2Actor::Agent
+                && user.creation_source != OrchestrationV2CreationSource::Server
+                && user.scheduled_task_id.is_none())
+            .then(|| AgentSender { title: user.linked_sender.as_ref().map(|s| shared(s.title.trim())).filter(|t| !t.is_empty()) }),
+            sent_by_app: (user.created_by != OrchestrationV2Actor::User
                 || matches!(user.creation_source, OrchestrationV2CreationSource::Server | OrchestrationV2CreationSource::Mcp)
-                || user.scheduled_task_id.is_some(),
-            guest: user.linked_sender.as_ref().map(|_| t!("Guest")),
+                || user.scheduled_task_id.is_some())
+                && !(user.created_by == OrchestrationV2Actor::Agent && user.creation_source != OrchestrationV2CreationSource::Server),
+            guest: (user.created_by != OrchestrationV2Actor::Agent).then_some(()).and(user.linked_sender.as_ref()).map(|_| t!("Guest")),
             ..message(MessageId(id_of(&user.message_id)), MessageRole::User, &user.text, created_at, updated_at)
         }),
         Item::AssistantMessage(reply) => EntryKind::Message(ChatMessage {

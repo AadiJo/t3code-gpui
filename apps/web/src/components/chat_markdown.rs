@@ -59,9 +59,12 @@ const CELL_PAD_Y: Pixels = px(7.2);
 const HEADER_CELL_PAD_Y: Pixels = px(8.8);
 const CELL_PAD_X: Pixels = px(12.);
 const CELL_MAX_WIDTH: Pixels = px(384.);
-/// Inline code: `radius 0.25rem; padding 0.1em 0.35em` at `0.85em`.
+/// Inline code: `radius 0.25rem; padding 0.1em 0.35em` and a 1px transparent
+/// border at `0.85em`. The box is the code font's content area plus padding:
+/// 16.4px tall at a 14px paragraph (11.9px code).
 const INLINE_CODE_RADIUS: Pixels = px(4.);
-const INLINE_CODE_PAD_X: Pixels = px(4.2);
+const INLINE_CODE_PAD_X: Pixels = px(5.165);
+const INLINE_CODE_HEIGHT_EM: f32 = 16.4 / 14.;
 /// Details: `my-2`, trigger `py-2`, content `pb-3 ps-6`, chevron 16px.
 const DETAILS_MARGIN: Pixels = px(8.);
 /// Footnotes: `margin-top 1.25rem; padding-top 0.75rem`.
@@ -691,6 +694,7 @@ fn style_inlines(inlines: &Inlines, base: InlineBase, colors: &ChatColors, user:
                 color: alpha(code_ink, 0.1),
                 pad_x: INLINE_CODE_PAD_X,
                 radius: INLINE_CODE_RADIUS,
+                height_em: Some(INLINE_CODE_HEIGHT_EM),
             }),
             InlineStyle::Link(target) => styled.links.push((span.range.clone(), target.clone())),
             InlineStyle::FileLink(target) => {
@@ -776,7 +780,7 @@ fn code_title(title: Option<&SharedString>, language: Option<&SharedString>, col
 }
 
 /// `syntheticFileNameForLanguageId` (`pierre-icons.ts`).
-fn synthetic_file_name(language: &str) -> String {
+pub(crate) fn synthetic_file_name(language: &str) -> String {
     let language = language.to_lowercase();
     if language == "dockerfile" {
         return "Dockerfile".into();

@@ -24,7 +24,7 @@ use crate::components::chat::open_in_picker::OpenInPicker;
 use crate::components::chat::thread_details_items::ThreadDetailsItemSettings;
 use crate::components::chat::thread_details_panel::{ThreadDetailsInput, ThreadDetailsPanel};
 use crate::components::chat::timeline_entries::{Attachment, MessageId};
-use crate::components::chat_view::{ChatView, ChatViewEvent};
+use crate::components::chat_view::{ChatView, ChatViewEvent, HeaderThreadMenu};
 use crate::components::git_actions_control::{GitActionsControl, GitActionsEvent, GitActionsProps};
 use crate::components::git_actions_control_fixture::{FixtureGitSource, fixture_status};
 use crate::components::git_actions_control_source::{GitActionsSource, SourceControlModel};
@@ -129,8 +129,10 @@ impl ThreadRouteView {
             return true;
         }
         let Some(view) = self.store.update(cx, |store, _| store.thread_view(&target)) else { return false };
+        let thread_menu = self.thread_menu(&target, cx);
         self.target = Some(target);
         self.chat.update(cx, |chat, cx| {
+            chat.set_thread_menu(thread_menu, cx);
             let hero = view.is_draft && view.timeline.entries.is_empty();
             chat.set_thread(view.key.clone(), view.project.clone(), view.title.clone(), view.timeline.clone(), cx);
             chat.set_hero(hero, cx);
@@ -140,6 +142,14 @@ impl ThreadRouteView {
         self.mount_git(&view, cx);
         cx.notify();
         true
+    }
+
+    /// The header "Thread actions" facts for a server thread's sidebar row.
+    fn thread_menu(&self, target: &ThreadTarget, cx: &App) -> Option<HeaderThreadMenu> {
+        let ThreadTarget::Server(key) = target else { return None };
+        let snapshot = self.store.read(cx).snapshot(None);
+        let row = snapshot.threads.iter().find(|row| &row.key == key)?;
+        Some(HeaderThreadMenu::from_row(row, snapshot.now, !snapshot.auto_settle_disabled.contains(key)))
     }
 
     /// Re-reads the shown thread after the store changed it.
@@ -154,9 +164,11 @@ impl ThreadRouteView {
             }
         });
         let hero = view.is_draft && view.timeline.entries.is_empty();
+        let thread_menu = self.thread_menu(&target, cx);
         self.chat.update(cx, |chat, cx| {
             chat.set_hero(hero, cx);
             chat.set_questions(view.questions.clone(), cx);
+            chat.set_thread_menu(thread_menu, cx);
         });
         self.sync_composer(&view, cx);
         self.sync_git_props(&view, cx);
@@ -408,6 +420,8 @@ impl ThreadRouteView {
                 cx.emit(ThreadRouteEvent::DetailsClosed);
             }
             ChatViewEvent::Timeline(action) => self.on_timeline_action(action.clone(), window, cx),
+            // The header menu runs the sidebar's thread commands; they are wired with the live store.
+            ChatViewEvent::ThreadCommand(..) => {}
         }
     }
 

@@ -785,7 +785,7 @@ fn assign_revert_counts(rows: &mut [TimelineRow], supports_rollback: bool) {
 }
 
 fn is_own_user_message(kind: Option<&RowKind>) -> bool {
-    matches!(kind, Some(RowKind::Message(m)) if m.message.role == MessageRole::User && m.message.guest.is_none() && !m.message.sent_by_app)
+    matches!(kind, Some(RowKind::Message(m)) if m.message.role == MessageRole::User && m.message.guest.is_none() && !m.message.sent_by_app && m.message.from_agent.is_none())
 }
 
 /// Marks work-log continuation and groups adjacent user messages.

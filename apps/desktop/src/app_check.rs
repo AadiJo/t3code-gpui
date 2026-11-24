@@ -891,7 +891,12 @@ fn mount(r: &mut Run) -> anyhow::Result<()> {
     let open = r.cx.update(|cx| root.read(cx).thread_view().read(cx).details_open());
     r.check("and mod+shift+b closes it", !open, "");
 
-    // The branch strip under the composer: pick another branch.
+    // The branch strip under the composer: pick another branch. A started
+    // thread shows the strip only with "persist context strip" on, as the fork does.
+    r.cx.update(|cx| {
+        t3code_web::hooks::use_settings::ClientSettingsStore::update(cx, |s| s.persist_composer_context_strip = true)
+    });
+    r.frame();
     r.click_id("strip-branch");
     r.shot("branch-picker")?;
     r.type_text("feat");
@@ -901,6 +906,10 @@ fn mount(r: &mut Run) -> anyhow::Result<()> {
     let branch = r.cx.update(|cx| store.read(cx).snapshot(None).threads.iter().find(|t| t.key == with_diffs).and_then(|t| t.branch.clone()));
     r.check("picking a branch updates the thread", branch.as_deref().is_some_and(|b| b != "main"), format!("{branch:?}"));
     r.shot("branch-changed")?;
+    r.cx.update(|cx| {
+        t3code_web::hooks::use_settings::ClientSettingsStore::update(cx, |s| s.persist_composer_context_strip = false)
+    });
+    r.frame();
 
     // Timeline actions: copy, reply, edit from here, fork.
     let rows = r.rows();

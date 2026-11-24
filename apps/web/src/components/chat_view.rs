@@ -23,12 +23,17 @@ use crate::components::files::file_tree::FileReferenceDrag;
 use crate::components::icons::{Icon, IconName, IconSize};
 use crate::components::ui::button::{Button, ButtonSize, ButtonVariant};
 use crate::composer_editor_mentions::format_context_reference;
+use crate::hooks::use_settings::ActiveClientSettings as _;
 use crate::i18n::t;
+use crate::components::sidebar::context_menu::{self, ContextMenu, MenuCommand, MenuTarget};
+use crate::components::sidebar::model::{SettledOverride, SidebarThread, ThreadKey, TimestampMs};
+use crate::components::sidebar::style::ShellColors;
+use crate::ActiveAppTheme as _;
 use crate::shortcuts::commands::FindInThread;
 use crate::thread_find_store::ThreadFindStore;
 
 use super::chat::{
-    chat_header::chat_header,
+    chat_header::{ThreadActionsTrigger, chat_header},
     chat_style::{ChatColors, TEXT_SM, TEXT_XS, alpha},
     messages_timeline::{FindUpdated, MessagesTimeline, SM_BREAKPOINT, TIMELINE_GUTTER, TIMELINE_GUTTER_NARROW, TIMELINE_TOP_INSET, TimelineAction},
     pending_user_input_panel::pending_user_input_panel,
@@ -62,6 +67,9 @@ const DETAILS_POPOVER_INSET: Pixels = px(12.);
 /// What the chat view asks the app to do.
 #[derive(Clone, Debug)]
 pub enum ChatViewEvent {
+    /// A row of the header's "Thread actions" menu (other than "Find in thread",
+    /// which the view handles): run it as the sidebar runs its context menu.
+    ThreadCommand(ThreadKey, MenuCommand),
     /// Every question of the pending request has an answer: option indices in order.
     AnswerQuestions(Vec<usize>),
     /// A timeline button was pressed.
@@ -70,6 +78,34 @@ pub enum ChatViewEvent {
     InsertReference(String),
     /// A click outside the thread details popover.
     CloseDetails,
+}
+
+/// What the header's "Thread actions" menu needs to know about the shown thread.
+#[derive(Clone, Debug)]
+pub struct HeaderThreadMenu {
+    pub key: ThreadKey,
+    pub branch: Option<SharedString>,
+    pub is_pinned: bool,
+    pub is_settled: bool,
+    pub is_snoozed: bool,
+    pub is_running: bool,
+    pub auto_settle_enabled: bool,
+}
+
+impl HeaderThreadMenu {
+    /// The facts for a sidebar row, as the row's own context menu reads them.
+    pub fn from_row(row: &SidebarThread, now: TimestampMs, auto_settle_enabled: bool) -> Self {
+        use crate::components::sidebar_logic::{ThreadStatus, effectively_snoozed, resolve_thread_status};
+        Self {
+            key: row.key.clone(),
+            branch: row.branch.clone(),
+            is_pinned: row.pinned_at.is_some(),
+            is_settled: row.settled_override == Some(SettledOverride::Settled),
+            is_snoozed: effectively_snoozed(row, now),
+            is_running: matches!(resolve_thread_status(row), ThreadStatus::Working | ThreadStatus::Preparing),
+            auto_settle_enabled,
+        }
+    }
 }
 
 /// Where the user is in a multi-question request.
@@ -95,6 +131,10 @@ pub struct ChatView {
     composer_focus: Option<FocusHandle>,
     /// The branch and worktree strip under the composer.
     toolbar: Option<AnyView>,
+    /// The shown thread's facts for the header menu; `None` for drafts.
+    thread_menu: Option<HeaderThreadMenu>,
+    /// The open "Thread actions" menu.
+    header_menu: Option<ContextMenu>,
     /// The thread details card, while open as a popover.
     details: Option<AnyView>,
     thread_key: SharedString,
@@ -110,6 +150,7 @@ impl ChatView {
     pub fn new(cx: &mut Context<Self>) -> Self {
         let timeline = cx.new(MessagesTimeline::new);
         cx.observe(&timeline, |_, _, cx| cx.notify()).detach();
+        cx.observe_global::<crate::hooks::use_settings::ClientSettingsStore>(|_, cx| cx.notify()).detach();
         let actions = cx.subscribe(&timeline, |_, _, action: &TimelineAction, cx| cx.emit(ChatViewEvent::Timeline(action.clone())));
         let counted = cx.subscribe(&timeline, |this, timeline, _: &FindUpdated, cx| {
             let (count, counting) = (timeline.read(cx).find_count(), timeline.read(cx).find_counting());
@@ -127,6 +168,8 @@ impl ChatView {
             composer: None,
             composer_focus: None,
             toolbar: None,
+            thread_menu: None,
+            header_menu: None,
             details: None,
             thread_key: SharedString::default(),
             find_bar: None,
@@ -264,6 +307,72 @@ impl ChatView {
         cx.notify();
     }
 
+    /// Sets what the header's "Thread actions" menu offers (`None` hides it, as on a draft).
+    pub fn set_thread_menu(&mut self, menu: Option<HeaderThreadMenu>, cx: &mut Context<Self>) {
+        if menu.is_none() {
+            self.header_menu = None;
+        }
+        self.thread_menu = menu;
+        cx.notify();
+    }
+
+    /// Opens or closes the header's "Thread actions" menu (`buildThreadActionMenuItems` with find).
+    fn toggle_header_menu(&mut self, cx: &mut Context<Self>) {
+        if self.header_menu.take().is_some() {
+            cx.notify();
+            return;
+        }
+        let Some(facts) = self.thread_menu.as_ref() else { return };
+        let items = context_menu::thread_menu_items(&context_menu::ThreadMenuState {
+            branch: facts.branch.as_deref(),
+            is_pinned: facts.is_pinned,
+            is_settled: facts.is_settled,
+            is_snoozed: facts.is_snoozed,
+            is_running: facts.is_running,
+            project_label: &self.project,
+            project_filter_active: false,
+            show_project_filter: false,
+            can_find: true,
+            auto_settle_enabled: facts.auto_settle_enabled,
+        });
+        self.header_menu = Some(ContextMenu {
+            target: MenuTarget::Thread(facts.key.clone()),
+            position: gpui_kit::Point::default(),
+            items,
+            highlighted: None,
+            submenu: None,
+        });
+        cx.notify();
+    }
+
+    fn run_header_menu_item(&mut self, ix: usize, child: Option<usize>, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(menu) = self.header_menu.take() else { return };
+        match (context_menu::picked_command(&menu, ix, child), menu.target) {
+            (Some(MenuCommand::FindInThread), _) => self.open_find(window, cx),
+            (Some(command), MenuTarget::Thread(key)) => cx.emit(ChatViewEvent::ThreadCommand(key, command)),
+            _ => {}
+        }
+        cx.notify();
+    }
+
+    /// The open header menu, below the title (`DropdownMenu` align start, 4px offset).
+    fn render_header_menu(&mut self, cx: &mut Context<Self>) -> Option<gpui_kit::AnyElement> {
+        let menu = self.header_menu.clone()?;
+        let colors = ShellColors::from_theme(cx.app_theme());
+        let body = context_menu::menu_body(
+            &menu,
+            &colors,
+            |this: &mut Self| this.header_menu.as_mut(),
+            |this, ix, child, window, cx| this.run_header_menu_item(ix, child, window, cx),
+            cx,
+        )
+        .on_mouse_down_out(cx.listener(|this, _, _, cx| {
+            this.header_menu = None;
+            cx.notify();
+        }));
+        Some(gpui_kit::deferred(div().absolute().top_full().left_0().pt(px(4.)).child(body)).with_priority(2).into_any_element())
+    }
+
     /// Mounts the branch toolbar under the composer.
     pub fn set_toolbar(&mut self, toolbar: Option<AnyView>, cx: &mut Context<Self>) {
         self.toolbar = toolbar;
@@ -281,6 +390,12 @@ impl ChatView {
     /// listens on the whole document.
     pub fn on_key_down(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         let keystroke = &event.keystroke;
+        if self.header_menu.is_some() && keystroke.key == "escape" {
+            self.header_menu = None;
+            cx.stop_propagation();
+            cx.notify();
+            return;
+        }
         if self.questions.is_empty() || keystroke.modifiers.modified() || self.find_bar.is_some() {
             return;
         }
@@ -443,7 +558,11 @@ impl Render for ChatView {
                                 Some(composer) => composer.clone().into_any_element(),
                                 None => Self::composer_placeholder(&colors).into_any_element(),
                             })
-                            .children(self.toolbar.clone()),
+                            // `shouldShowComposerContextStrip`: a new thread always shows the
+                            // strip; a started one only with "persist context strip" on.
+                            .when(self.hero || cx.client_settings().persist_composer_context_strip, |d| {
+                                d.children(self.toolbar.clone())
+                            }),
                     )
                     .child(div().h(COMPOSER_BOTTOM_SPACER)),
             )
@@ -511,6 +630,11 @@ impl Render for ChatView {
                 }))
                 .child(details)
         });
+        let thread_actions = self.thread_menu.is_some().then(|| ThreadActionsTrigger {
+            open: self.header_menu.is_some(),
+            on_click: Box::new(cx.listener(|this, _, _, cx| this.toggle_header_menu(cx))),
+            menu: self.render_header_menu(cx),
+        });
         let find_bar = self.find_bar.as_ref().map(|(bar, _)| div().absolute().top(header_height).left_0().right_0().child(bar.clone()));
         div()
             .id("chat-view")
@@ -532,7 +656,7 @@ impl Render for ChatView {
                     .flex_1()
                     .min_w_0()
                     .min_h_0()
-                    .child(chat_header(&self.project, &self.title, self.header_height, self.header_inset, &colors))
+                    .child(chat_header(&self.project, &self.title, self.header_height, self.header_inset, &colors, thread_actions))
                     .child(
                         div()
                             .relative()

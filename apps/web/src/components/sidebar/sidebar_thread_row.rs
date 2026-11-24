@@ -142,6 +142,22 @@ impl Sidebar {
                     this.open_entry_menu(ix, event.position, cx);
                 }),
             )
+            .when(self.hover_card == Some(ix), |d| {
+                let card = crate::components::thread_hover_card::thread_hover_card(
+                    thread,
+                    self.list.project_labels.get(&thread.project_ref()),
+                    self.snapshot.hover_details.get(&thread.key),
+                    colors,
+                    cx,
+                );
+                let surface = crate::components::thread_hover_card::hover_card_surface(card, colors, cx);
+                // `side="right" align="start" sideOffset={4}`. The fixed-width flex
+                // wrapper gives the card room to size to its content up to `max-w-80`.
+                d.child(
+                    deferred(div().absolute().left_full().top_0().pl(px(4.)).w(px(324.)).flex().items_start().child(surface))
+                        .with_priority(1),
+                )
+            })
     }
 
     fn card_body(
@@ -283,8 +299,8 @@ impl Sidebar {
         if settings.snooze_supported {
             cluster = cluster.child(
                 row_action(("snooze", ix), colors)
-                    .child(Icon::new(IconName::AlarmClock).size(IconSize::Custom(px(14.))).color(colors.muted_foreground))
-                    .tooltip(crate::components::ui::tooltip::tooltip(crate::i18n::t!("Snooze")))
+                    .child(Icon::new(IconName::Clock).size(IconSize::Custom(px(12.))).color(colors.muted_foreground))
+                    .tooltip(crate::components::ui::tooltip::tooltip(crate::i18n::t!("Snooze thread")))
                     .on_click(cx.listener(move |this, event: &ClickEvent, _, cx| {
                         cx.stop_propagation();
                         this.open_snooze_menu(ix, event.position(), cx);
@@ -577,11 +593,9 @@ pub(crate) fn project_favicon(name: SharedString) -> ProjectFavicon {
     ProjectFavicon::new(name)
 }
 
-/// `SidebarProviderStack` for one instance: the compact (14px) provider mark
-/// at 60% opacity, with the instance-initials badge hanging off its corner.
-fn provider_stack(provider: &SidebarProvider, colors: &ShellColors, cx: &App) -> Div {
-    let size = px(14.);
-    let mark = match provider.mark {
+/// A provider instance's mark at `size`, without opacity or badge.
+pub(crate) fn provider_mark(provider: &SidebarProvider, size: Pixels, colors: &ShellColors, cx: &App) -> AnyElement {
+    match provider.mark {
         SidebarProviderMark::Brand(mark) => {
             let composer = crate::components::chat::composer_theme::ComposerColors::new(cx);
             crate::components::chat::composer_icons::provider_icon(mark, size, &provider.initials, &composer, cx)
@@ -590,7 +604,14 @@ fn provider_stack(provider: &SidebarProvider, colors: &ShellColors, cx: &App) ->
             .size(IconSize::Custom(size))
             .color(colors.muted_foreground)
             .into_any_element(),
-    };
+    }
+}
+
+/// `SidebarProviderStack` for one instance: the compact (14px) provider mark
+/// at 60% opacity, with the instance-initials badge hanging off its corner.
+fn provider_stack(provider: &SidebarProvider, colors: &ShellColors, cx: &App) -> Div {
+    let size = px(14.);
+    let mark = provider_mark(provider, size, colors, cx);
     let card = cx.app_theme().colors.card();
     div()
         .relative()

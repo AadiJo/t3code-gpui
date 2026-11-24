@@ -56,9 +56,10 @@ pub fn code_language_label(language: &str) -> String {
 
 use crate::composer_code_theme::CODE_THEME_SCOPES;
 
+/// The grammar set chat code blocks use (two-face's extra set: TypeScript,
+/// TSX and the rest that syntect's defaults lack), shared so it loads once.
 fn syntax_set() -> &'static SyntaxSet {
-    static SET: OnceLock<SyntaxSet> = OnceLock::new();
-    SET.get_or_init(SyntaxSet::load_defaults_newlines)
+    &crate::components::chat::syntax_highlighting::SYNTAXES
 }
 
 fn build_theme(appearance: Appearance) -> Theme {
