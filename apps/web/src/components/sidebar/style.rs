@@ -12,13 +12,13 @@ pub const TOPBAR_HEIGHT_MAC: Pixels = px(52.);
 pub const TOPBAR_HEIGHT_OVERLAY: Pixels = px(40.);
 /// Titlebar toggle buttons are 28x28 (`--workspace-titlebar-control-size`).
 pub const TITLEBAR_CONTROL_SIZE: Pixels = px(28.);
-/// Gap between the right-hand titlebar toggles (`gap-1`).
+/// Gap between the right-hand titlebar toggles (`gap-1`), at a 16px rem.
 pub const TITLEBAR_CONTROL_GAP: Pixels = px(4.);
 /// macOS: 70px traffic lights + 12px + `ml-px`.
 pub const MAC_CONTROLS_LEFT: Pixels = px(83.);
 /// Overlay platforms: 12px + `ml-px`.
 pub const OVERLAY_CONTROLS_LEFT: Pixels = px(13.);
-/// 12px + `mr-px` from the right edge (plus caption width on overlay platforms).
+/// 0.75rem + `mr-px` from the right edge at a 16px rem (plus caption width on overlay platforms).
 pub const CONTROLS_RIGHT: Pixels = px(13.);
 /// One native caption button on Windows.
 pub const CAPTION_BUTTON_WIDTH: Pixels = px(46.);

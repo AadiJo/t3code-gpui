@@ -18,7 +18,8 @@ use super::{
 pub const HEADER_PADDING: gpui_kit::Pixels = px(20.);
 /// Room kept clear of the fixed toggles (`pr-24`).
 const HEADER_TOGGLE_CLEARANCE: gpui_kit::Pixels = px(96.);
-/// Breadcrumb gap (`gap-3`), project crumb gap (`gap-1.5`), favicon 14px.
+/// Breadcrumb gap (`gap-3`), project crumb gap (`gap-1.5`), favicon 14px. Header sizes here
+/// are at a 16px rem and scale with the interface size.
 const CRUMB_GAP: gpui_kit::Pixels = px(12.);
 const PROJECT_CRUMB_GAP: gpui_kit::Pixels = px(6.);
 
@@ -48,8 +49,8 @@ pub fn chat_header(
         .w_full()
         .flex()
         .items_center()
-        .px(HEADER_PADDING)
-        .pl(HEADER_PADDING + leading_inset)
+        .px(colors.r(HEADER_PADDING))
+        .pl(colors.r(HEADER_PADDING) + leading_inset)
         .bg(colors.theme.toolbar)
         .child(
             div()
@@ -57,8 +58,8 @@ pub fn chat_header(
                 .flex_1()
                 .min_w_0()
                 .items_center()
-                .gap(CRUMB_GAP)
-                .pr(HEADER_TOGGLE_CLEARANCE)
+                .gap(colors.r(CRUMB_GAP))
+                .pr(colors.r(HEADER_TOGGLE_CLEARANCE))
                 .text_size(TEXT_SM.size)
                 .line_height(TEXT_SM.line_height)
                 .font_weight(FontWeight::MEDIUM)
@@ -68,7 +69,7 @@ pub fn chat_header(
                         .flex()
                         .flex_none()
                         .items_center()
-                        .gap(PROJECT_CRUMB_GAP)
+                        .gap(colors.r(PROJECT_CRUMB_GAP))
                         .rounded(rems(0.25))
                         .cursor_pointer()
                         .text_color(colors.theme.muted_foreground)

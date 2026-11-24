@@ -815,11 +815,11 @@ impl Render for AppSidebarLayout {
         let right_controls = div()
             .absolute()
             .top_0()
-            .right(CONTROLS_RIGHT + caption_width)
+            .right(colors.s(CONTROLS_RIGHT - px(1.)) + px(1.) + caption_width)
             .h(topbar)
             .flex()
             .items_center()
-            .gap(TITLEBAR_CONTROL_GAP)
+            .gap(colors.s(TITLEBAR_CONTROL_GAP))
             .when(self.right_open, |d| {
                 d.child(
                     self.titlebar_toggle(
