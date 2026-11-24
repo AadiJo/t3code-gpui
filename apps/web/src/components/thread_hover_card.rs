@@ -7,7 +7,7 @@ use gpui_kit::{AnyElement, App, Div, FontWeight, Hsla, IntoElement, ParentElemen
 use t3code_contracts::EnvironmentMachineKind;
 
 use crate::ActiveAppTheme as _;
-use crate::components::icons::{Icon, IconName, IconSize};
+use crate::components::icons::{BrandIcon, Icon, IconName, IconSize};
 use crate::components::project_favicon::ProjectFavicon;
 use crate::components::sidebar::model::{ErrorClass, SidebarThread};
 use crate::components::sidebar::style::ShellColors;
@@ -28,14 +28,46 @@ pub struct ThreadHoverDetails {
     pub branch_mismatch: bool,
 }
 
-/// `ICON_BY_KIND` in `EnvironmentMachineIcon.tsx`. Linux, Mini PC and
-/// Workstation are custom glyphs in the web app; Lucide's nearest stand in.
-fn machine_icon(kind: EnvironmentMachineKind) -> IconName {
+/// `ICON_BY_KIND` in `EnvironmentMachineIcon.tsx` at `size`: Lucide glyphs,
+/// the fork's Linux mark, and its two custom glyphs drawn from their SVG
+/// geometry (24px viewBox, 1.75 stroke).
+fn machine_glyph(kind: EnvironmentMachineKind, color: Hsla, colors: &ShellColors) -> AnyElement {
+    let size = colors.r(12.);
+    let unit = size / 24.;
+    let lucide = |name| Icon::new(name).size(IconSize::Custom(size)).color(color).into_any_element();
+    // A rounded rectangle outline in viewBox units.
+    let frame = |x: f32, y: f32, w: f32, h: f32, r: f32| {
+        div()
+            .absolute()
+            .left(unit * (x - 0.875))
+            .top(unit * (y - 0.875))
+            .w(unit * (w + 1.75))
+            .h(unit * (h + 1.75))
+            .rounded(unit * (r + 0.875))
+            .border(unit * 1.75)
+            .border_color(color)
+    };
+    let dot = |cx: f32, cy: f32, d: f32| {
+        div().absolute().left(unit * (cx - d / 2.)).top(unit * (cy - d / 2.)).size(unit * d).rounded_full().bg(color)
+    };
     match kind {
-        EnvironmentMachineKind::Server => IconName::Server,
-        EnvironmentMachineKind::Cloud => IconName::Cloud,
-        EnvironmentMachineKind::Laptop => IconName::Laptop,
-        _ => IconName::Monitor,
+        EnvironmentMachineKind::Server => lucide(IconName::Server),
+        EnvironmentMachineKind::Cloud => lucide(IconName::Cloud),
+        EnvironmentMachineKind::Laptop => lucide(IconName::Laptop),
+        EnvironmentMachineKind::Linux => Icon::new(BrandIcon::Linux).size(IconSize::Custom(size)).color(color).into_any_element(),
+        // `MacMiniIcon`: rect 18x12 at (3,6) rx 2.5 and a dot of r 1 at (7.5,12).
+        EnvironmentMachineKind::MacMini => {
+            div().relative().flex_none().size(size).child(frame(3., 6., 18., 12., 2.5)).child(dot(7.5, 12., 2.)).into_any_element()
+        }
+        // `MacStudioIcon`: rect 18x14 at (3,5) rx 2 and round-capped dots at y 15.
+        EnvironmentMachineKind::MacStudio => div()
+            .relative()
+            .flex_none()
+            .size(size)
+            .child(frame(3., 5., 18., 14., 2.))
+            .children([7., 11., 15.].map(|x| dot(x, 15., 1.75)))
+            .into_any_element(),
+        _ => lucide(IconName::Monitor),
     }
 }
 
@@ -68,7 +100,7 @@ pub fn thread_hover_card(
     }
     if let Some(label) = details.environment_label.clone() {
         let kind = details.environment_machine.unwrap_or(EnvironmentMachineKind::Desktop);
-        rows = rows.child(line(icon(machine_icon(kind), muted, colors), div().min_w_0().truncate().text_color(soft).child(label), colors));
+        rows = rows.child(line(machine_glyph(kind, muted, colors), div().min_w_0().truncate().text_color(soft).child(label), colors));
     }
     if let Some(branch) = thread.branch.as_ref() {
         rows = rows.child(line(icon(IconName::GitBranch, muted, colors), crate::components::sidebar::sidebar_thread_row::middle_truncate(branch), colors));
