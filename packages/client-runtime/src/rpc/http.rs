@@ -10,15 +10,23 @@ use serde::de::DeserializeOwned;
 /// Default timeout for auth and descriptor requests.
 pub const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// One rustls config with the ring provider and webpki roots, shared by the
-/// HTTP client and the WebSocket connector so neither picks its own provider.
+/// One rustls config with the ring provider, shared by the HTTP client and
+/// the WebSocket connector so neither picks its own provider. It trusts the
+/// webpki roots plus the OS store (the macOS Keychain, `SSL_CERT_FILE` on
+/// Linux), as Chromium does, so a route behind a CA the user trusts works.
 pub fn tls_config() -> Arc<rustls::ClientConfig> {
     static CONFIG: OnceLock<Arc<rustls::ClientConfig>> = OnceLock::new();
     CONFIG
         .get_or_init(|| {
-            let roots = rustls::RootCertStore {
+            let mut roots = rustls::RootCertStore {
                 roots: webpki_roots::TLS_SERVER_ROOTS.to_vec(),
             };
+            let native = rustls_native_certs::load_native_certs();
+            for error in &native.errors {
+                tracing::debug!(%error, "skipped part of the OS certificate store");
+            }
+            let (added, ignored) = roots.add_parsable_certificates(native.certs);
+            tracing::debug!(added, ignored, "trusting OS certificates");
             let config = rustls::ClientConfig::builder_with_provider(Arc::new(
                 rustls::crypto::ring::default_provider(),
             ))

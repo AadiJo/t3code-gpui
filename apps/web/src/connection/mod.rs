@@ -67,12 +67,13 @@ pub struct RuntimeConfig {
 }
 
 impl RuntimeConfig {
-    /// The installed app: its own data dir, the OS keystore, production T3 Connect.
+    /// The installed app: its own data dir, the OS keystore, production T3 Connect
+    /// unless the environment names another (see [`CloudConfig::from_env`]).
     pub fn for_app() -> Self {
         Self {
             data_dir: t3code_client_runtime::platform::default_data_dir(),
             secrets: None,
-            cloud: Some(CloudConfig::production()),
+            cloud: Some(CloudConfig::from_env()),
             presentation: ClientPresentation::default(),
             electron: ElectronPaths::detect().map(|paths| ElectronImportSource { paths, key: None }),
         }
@@ -246,13 +247,8 @@ impl ConnectionRuntime {
         handle.spawn(watch_registry(registry.clone(), events.clone()));
         handle.spawn(detect_wake(registry.clone()));
         if let Some(cloud) = &cloud {
-            handle.spawn(watch_account(cloud.clerk.clone(), events.clone()));
-            let clerk = cloud.clerk.clone();
-            handle.spawn(async move {
-                if let Err(error) = clerk.restore().await {
-                    tracing::warn!(%error, "could not restore the T3 Connect sign-in");
-                }
-            });
+            handle.spawn(watch_account(cloud.clerk.clone(), registry.clone(), auth.clone(), events.clone()));
+            handle.spawn(restore_account(cloud.clerk.clone()));
         }
         apply_events(state.clone(), receiver, cx);
         cx.set_global(Self {
@@ -700,12 +696,60 @@ async fn watch_supervisor(id: EnvironmentId, handle: SupervisorHandle, events: m
     }
 }
 
-async fn watch_account(clerk: Arc<ClerkSession>, events: mpsc::UnboundedSender<BridgeEvent>) {
+/// Loads the stored T3 Connect sign-in. While Clerk cannot be reached the
+/// account stays `Loading` (relay routes wait, nothing is cleaned up) and the
+/// load is retried with backoff, as clerk-js keeps retrying `GET /client`.
+async fn restore_account(clerk: Arc<ClerkSession>) {
+    let mut delay = Duration::from_secs(1);
+    loop {
+        match clerk.restore().await {
+            Ok(()) => return,
+            Err(ClerkError::Store(error)) => {
+                tracing::warn!(%error, "could not read the stored T3 Connect sign-in");
+                return;
+            }
+            Err(error) => tracing::warn!(%error, retry_in = ?delay, "could not reach T3 Connect sign-in"),
+        }
+        tokio::time::sleep(delay).await;
+        delay = (delay * 2).min(Duration::from_secs(300));
+    }
+}
+
+/// Mirrors the account into the UI and, like the web's cloud account
+/// service, cleans up when Clerk confirms a sign-out or the account changes:
+/// T3 Connect routes are removed and relay tokens forgotten, so nothing
+/// keeps connecting as the previous account.
+async fn watch_account(
+    clerk: Arc<ClerkSession>,
+    registry: ConnectionRegistry,
+    auth: Arc<RemoteAuthorization>,
+    events: mpsc::UnboundedSender<BridgeEvent>,
+) {
     let mut account = clerk.account();
+    let mut previous: Option<CloudAccountState> = None;
     loop {
         let current = account.borrow_and_update().clone();
-        if events.unbounded_send(BridgeEvent::Account(current)).is_err() {
+        if events.unbounded_send(BridgeEvent::Account(current.clone())).is_err() {
             return;
+        }
+        let user = |state: &CloudAccountState| match state {
+            CloudAccountState::SignedIn(account) => Some(account.user_id.clone()),
+            _ => None,
+        };
+        let changed_account = match (&previous, &current) {
+            (Some(CloudAccountState::SignedOut), CloudAccountState::SignedOut) => false,
+            (_, CloudAccountState::SignedOut) => true,
+            (Some(before @ CloudAccountState::SignedIn(_)), CloudAccountState::SignedIn(_)) => user(before) != user(&current),
+            _ => false,
+        };
+        if changed_account {
+            auth.reset_relay_tokens().await;
+            if let Err(error) = registry.remove_relay_environments().await {
+                tracing::warn!(%error, "could not remove the previous account's T3 Connect routes");
+            }
+        }
+        if !matches!(current, CloudAccountState::Loading) {
+            previous = Some(current);
         }
         if account.changed().await.is_err() {
             return;
