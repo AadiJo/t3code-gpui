@@ -73,6 +73,8 @@ pub struct LiveData {
     catalogs: RefCell<HashMap<t3code_contracts::EnvironmentId, CatalogCache>>,
     /// The open thread's event subscription.
     thread: RefCell<Option<(ThreadKey, Subscription)>>,
+    /// The right panel's side chat's event subscription.
+    side_thread: RefCell<Option<(ThreadKey, Subscription)>>,
     /// One menu source per environment and workspace.
     menus: RefCell<HashMap<(t3code_contracts::EnvironmentId, Option<String>), Rc<LiveMenuSource>>>,
     workspaces: RefCell<HashMap<SharedString, Workspace>>,
@@ -127,6 +129,7 @@ impl LiveData {
             draft_store: Rc::new(RefCell::new(LiveDraftStore::new(StateBridge::drafts(cx)))),
             catalogs: RefCell::default(),
             thread: RefCell::default(),
+            side_thread: RefCell::default(),
             menus: RefCell::default(),
             workspaces: RefCell::default(),
             usage: RefCell::default(),
@@ -151,28 +154,71 @@ impl LiveData {
     /// The open thread for `key`, opening it (and following its events) when another is open.
     fn open(&self, key: &ThreadKey, cx: &mut App) -> Option<Entity<LiveThread>> {
         let threads = StateBridge::threads(cx);
+        if let Some(side) = threads.read(cx).side()
+            && side.read(cx).key() == key
+        {
+            return Some(side.clone());
+        }
         if let Some(active) = threads.read(cx).active()
             && active.read(cx).key() == key
         {
             return Some(active.clone());
         }
         let thread = threads.update(cx, |threads, cx| threads.open(key.clone(), cx))?;
+        *self.thread.borrow_mut() = Some((key.clone(), self.forward_events(&thread, key, cx)));
+        Some(thread)
+    }
+
+    /// Re-emits a live thread's changes as [`DataEvent`]s.
+    fn forward_events(&self, thread: &Entity<LiveThread>, key: &ThreadKey, cx: &mut App) -> Subscription {
         let events = self.events.clone();
         let target = ThreadTarget::Server(key.clone());
-        let subscription = cx.subscribe(&thread, move |thread, event: &LiveThreadEvent, cx| {
+        cx.subscribe(thread, move |thread, event: &LiveThreadEvent, cx| {
             let event = match event {
                 LiveThreadEvent::Text(changes) => DataEvent::Text { thread: thread.read(cx).key().clone(), changes: changes.clone() },
                 LiveThreadEvent::Structure | LiveThreadEvent::Status => DataEvent::ThreadChanged(target.clone()),
             };
             events.update(cx, |_, cx| cx.emit(event));
-        });
-        *self.thread.borrow_mut() = Some((key.clone(), subscription));
-        Some(thread)
+        })
     }
 
-    /// The live thread when `key` is the open one.
+    /// The live thread when `key` is the open one or the right panel's side chat.
     fn active(&self, key: &ThreadKey, cx: &App) -> Option<Entity<LiveThread>> {
-        StateBridge::threads(cx).read(cx).active().filter(|t| t.read(cx).key() == key).cloned()
+        let threads = StateBridge::threads(cx).read(cx);
+        threads.active().into_iter().chain(threads.side()).find(|t| t.read(cx).key() == key).cloned()
+    }
+
+    /// The chat view's facts for a server thread already open in either slot.
+    fn server_view(&self, key: &ThreadKey, thread: &Entity<LiveThread>, cx: &mut App) -> ThreadView {
+        let shell = StateBridge::shell(cx);
+        let row = shell.read(cx).snapshot().threads.iter().find(|t| t.key == *key).cloned();
+        let source = shell.read(cx).row(key).cloned();
+        let project = row.as_ref().and_then(|row| self.project(&row.project_ref(), cx));
+        let project_icon = row.as_ref().and_then(|row| self.project_icon_of(&row.project_ref(), cx));
+        let supports_rollback = self.supports_rollback(key, cx);
+        let thread = thread.read(cx);
+        let mut timeline: TimelineInput = thread.input().clone();
+        timeline.supports_rollback = supports_rollback && !timeline.revert_turn_counts.is_empty();
+        let questions = thread.projection().map(|p| crate::session_logic::pending_questions(p)).unwrap_or_default();
+        let cwd = source
+            .as_ref()
+            .and_then(|row| row.source.worktree_path.clone())
+            .map(SharedString::from)
+            .or_else(|| project.as_ref().map(|(_, root)| root.clone()))
+            .unwrap_or_default();
+        ThreadView {
+            key: crate::fixtures::scoped_key(key),
+            project: project.map(|(title, _)| title).unwrap_or_default(),
+            title: row.as_ref().map(|r| r.title.clone()).or_else(|| source.as_ref().map(|r| r.source.title.clone().into())).unwrap_or_default(),
+            cwd,
+            running: timeline.is_working,
+            timeline,
+            is_draft: false,
+            questions: questions.into_iter().map(|(question, _)| question).collect(),
+            branch: row.as_ref().and_then(|r| r.branch.clone()),
+            project_id: row.as_ref().map(|r| r.project_id.clone()),
+            project_icon,
+        }
     }
 
     fn environment(&self, environment_id: &t3code_contracts::EnvironmentId, cx: &App) -> Option<Entity<LiveEnvironment>> {
@@ -254,35 +300,7 @@ impl AppData for LiveData {
         match target {
             ThreadTarget::Server(key) => {
                 let thread = self.open(key, cx)?;
-                let shell = StateBridge::shell(cx);
-                let row = shell.read(cx).snapshot().threads.iter().find(|t| t.key == *key).cloned();
-                let source = shell.read(cx).row(key).cloned();
-                let project = row.as_ref().and_then(|row| self.project(&row.project_ref(), cx));
-                let project_icon = row.as_ref().and_then(|row| self.project_icon_of(&row.project_ref(), cx));
-                let supports_rollback = self.supports_rollback(key, cx);
-                let thread = thread.read(cx);
-                let mut timeline: TimelineInput = thread.input().clone();
-                timeline.supports_rollback = supports_rollback && !timeline.revert_turn_counts.is_empty();
-                let questions = thread.projection().map(|p| crate::session_logic::pending_questions(p)).unwrap_or_default();
-                let cwd = source
-                    .as_ref()
-                    .and_then(|row| row.source.worktree_path.clone())
-                    .map(SharedString::from)
-                    .or_else(|| project.as_ref().map(|(_, root)| root.clone()))
-                    .unwrap_or_default();
-                Some(ThreadView {
-                    key: crate::fixtures::scoped_key(key),
-                    project: project.map(|(title, _)| title).unwrap_or_default(),
-                    title: row.as_ref().map(|r| r.title.clone()).unwrap_or_default(),
-                    cwd,
-                    running: timeline.is_working,
-                    timeline,
-                    is_draft: false,
-                    questions: questions.into_iter().map(|(question, _)| question).collect(),
-                    branch: row.as_ref().and_then(|r| r.branch.clone()),
-                    project_id: row.as_ref().map(|r| r.project_id.clone()),
-                    project_icon,
-                })
+                Some(self.server_view(key, &thread, cx))
             }
             ThreadTarget::Draft(id) => {
                 let (project, branch) = {
@@ -739,6 +757,82 @@ impl AppData for LiveData {
 
     fn thread_details_event(&self, key: &ThreadKey, event: &ThreadDetailsEvent, cx: &mut App) -> Task<DetailsOutcome> {
         thread_details::event(&self.details, key, event, cx)
+    }
+
+    fn side_chat(&self, key: &ThreadKey, cx: &App) -> crate::state::app_data::SideChatLookup {
+        use crate::state::app_data::{SideChatFacts, SideChatLookup, SideChatState};
+        let (environment_id, thread_id) = runtime_ids(key);
+        let Some(environment) = StateBridge::environment(&environment_id, cx) else { return SideChatLookup::Unknown };
+        let Some(snapshot) = environment.read(cx).shell.snapshot.clone() else { return SideChatLookup::Unknown };
+        let Some(shell) = snapshot.threads.iter().find(|t| t.id == thread_id) else { return SideChatLookup::Deleted };
+        let row = StateBridge::shell(cx).read(cx).row(key).cloned();
+        let state = row.as_ref().and_then(|row| {
+            use t3code_client_runtime::state::models::{PendingSubagentRequest, is_active_status};
+            if row.has_pending_approvals || row.pending_subagent_request == Some(PendingSubagentRequest::Approval) {
+                Some(SideChatState::NeedsApproval)
+            } else if row.has_pending_user_input || row.pending_subagent_request == Some(PendingSubagentRequest::UserInput) {
+                Some(SideChatState::NeedsInput)
+            } else {
+                row.runtime.as_ref().filter(|r| is_active_status(r.status)).map(|_| SideChatState::Running)
+            }
+        });
+        SideChatLookup::Found(SideChatFacts { title: shell.title.clone().into(), has_user_message: shell.latest_user_message_at.is_some(), state })
+    }
+
+    fn side_chat_view(&self, key: &ThreadKey, cx: &mut App) -> Option<ThreadView> {
+        let threads = StateBridge::threads(cx);
+        let held = self.side_thread.borrow().as_ref().is_some_and(|(k, _)| k == key);
+        let thread = threads.update(cx, |threads, cx| threads.open_side(key.clone(), cx))?;
+        if !held {
+            *self.side_thread.borrow_mut() = Some((key.clone(), self.forward_events(&thread, key, cx)));
+        }
+        let mut view = self.server_view(key, &thread, cx);
+        // The side chat's timeline opens on where its context came from (`parentThreadLink`).
+        let (environment_id, thread_id) = runtime_ids(key);
+        let parent = StateBridge::environment(&environment_id, cx).and_then(|env| {
+            let snapshot = env.read(cx).shell.snapshot.clone()?;
+            let shell = snapshot.threads.iter().find(|t| t.id == thread_id)?.clone();
+            let parent_id = shell.lineage.parent_thread_id.clone()?;
+            Some(snapshot.threads.iter().find(|t| t.id == parent_id).map(|p| p.title.clone()))
+        });
+        if let Some(parent) = parent {
+            use crate::components::chat::timeline_entries::{Divider, DividerKind, EntryKind, TimelineEntry, TimelineEvent};
+            let divider = TimelineEntry {
+                id: crate::components::chat::timeline_entries::EntryId::new("side-chat-parent-link"),
+                created_at: crate::components::chat::timeline_entries::Timestamp(0),
+                kind: EntryKind::Event(TimelineEvent::Divider(Divider {
+                    kind: DividerKind::SideChatParent,
+                    run_id: None,
+                    label: t!("Context from", context = "divider label; the parent thread title follows as a link"),
+                    detail: Some(parent.map(SharedString::from).unwrap_or_else(|| t!("Parent thread"))),
+                    action: false,
+                })),
+            };
+            let mut entries = Vec::with_capacity(view.timeline.entries.len() + 1);
+            entries.push(divider);
+            entries.extend(view.timeline.entries.iter().cloned());
+            view.timeline.entries = Arc::new(entries);
+        }
+        Some(view)
+    }
+
+    fn close_side_chat(&self, key: &ThreadKey, cx: &mut App) {
+        let held = self.side_thread.borrow().as_ref().is_some_and(|(k, _)| k == key);
+        if held {
+            *self.side_thread.borrow_mut() = None;
+        }
+        StateBridge::threads(cx).update(cx, |threads, cx| threads.close_side(key, cx));
+    }
+
+    fn delete_thread(&self, key: &ThreadKey, only_if_unused: bool, cx: &mut App) -> Task<Result<(), SharedString>> {
+        let (environment_id, thread_id) = runtime_ids(key);
+        let Some(environment) = StateBridge::environment(&environment_id, cx) else { return Task::ready(Ok(())) };
+        let commands = environment.read(cx).commands.clone();
+        let task = StateBridge::spawn(async move { commands.delete(&thread_id, only_if_unused).await }, cx);
+        cx.spawn(async move |_| match task.await {
+            Some(Err(error)) => Err(SharedString::from(error.to_string())),
+            _ => Ok(()),
+        })
     }
 
     fn pull_request_sources(&self, cx: &mut App) -> Vec<EnvironmentListSource> {

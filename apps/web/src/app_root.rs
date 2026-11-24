@@ -366,6 +366,9 @@ impl AppRoot {
                 RightPanelEvent::InsertReference(text) => {
                     this.thread_view.update(cx, |view, cx| view.insert_reference(text, window, cx));
                 }
+                RightPanelEvent::AddThreadContext(text) => {
+                    this.thread_view.update(cx, |view, cx| view.append_reference(text, cx));
+                }
             }),
             cx.observe_global_in::<TerminalUiStateStore>(window, |this, window, cx| this.panels_changed(window, cx)),
             // A native notification or an inbox row opened a thread.
@@ -1006,6 +1009,15 @@ impl AppRoot {
     fn on_data_event(&mut self, _: &Entity<DataEvents>, event: &DataEvent, window: &mut Window, cx: &mut Context<Self>) {
         if let DataEvent::OpenThread(key) = event {
             return self.navigate(Route::Thread(key.clone()), cx);
+        }
+        if let DataEvent::OpenSideChat { parent, side_chat } = event {
+            let side_chat_id = side_chat.thread_id.0.to_string();
+            self.right_panels.update(cx, |store, cx| {
+                store.open_side_chat(&scoped_key(parent), &side_chat_id);
+                cx.notify();
+            });
+            self.navigate(Route::Thread(parent.clone()), cx);
+            return self.panels_changed(window, cx);
         }
         if let DataEvent::SnapshotChanged = event {
             // The sidebar takes every snapshot, including the one that lets a restored route show.

@@ -125,6 +125,8 @@ pub struct ChatView {
     /// The window's topbar height and the header's left inset (sidebar collapsed).
     header_height: Pixels,
     header_inset: Pixels,
+    /// Drawn without its header, as a side chat in the right panel.
+    embedded: bool,
     /// A new thread with no messages yet.
     hero: bool,
     /// The composer view, mounted by the composer module. A placeholder of the
@@ -168,6 +170,7 @@ impl ChatView {
             timeline,
             project: SharedString::default(),
             title: SharedString::default(),
+            embedded: false,
             header_height: px(52.),
             header_inset: px(0.),
             hero: false,
@@ -446,6 +449,12 @@ impl ChatView {
         }
     }
 
+    /// A side chat's chat in the right panel: no header (`embedded`).
+    pub fn set_embedded(&mut self, embedded: bool, cx: &mut Context<Self>) {
+        self.embedded = embedded;
+        cx.notify();
+    }
+
     /// The topbar height and the header's left inset.
     pub fn set_header_metrics(&mut self, height: Pixels, inset: Pixels, cx: &mut Context<Self>) {
         if (self.header_height, self.header_inset) != (height, inset) {
@@ -688,7 +697,9 @@ impl Render for ChatView {
                     .flex_1()
                     .min_w_0()
                     .min_h_0()
-                    .child(chat_header(&self.project, self.project_icon.as_ref(), &self.title, self.header_height, self.header_inset, &colors, thread_actions))
+                    .when(!self.embedded, |d| {
+                        d.child(chat_header(&self.project, self.project_icon.as_ref(), &self.title, self.header_height, self.header_inset, &colors, thread_actions))
+                    })
                     .child(
                         div()
                             .relative()

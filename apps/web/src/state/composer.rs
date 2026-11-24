@@ -232,6 +232,33 @@ pub fn slash_facts(row: Option<&ThreadRow>, thread: &LiveThread, environment: &L
     }
 }
 
+/// Why `/side` cannot start a side chat here (`sideChatDisabledReason`), or `None` when it can.
+pub fn side_chat_disabled_reason(key: &ThreadKey, thread: &LiveThread, environment: &LiveEnvironment, cx: &App) -> Option<SharedString> {
+    let row = StateBridge::shell(cx).read(cx).row(key).cloned();
+    let lineage = row.as_ref().map(|r| &r.source.lineage);
+    let config = environment.config.as_deref();
+    if lineage.is_some_and(|l| l.side_chat == Some(true)) {
+        return Some(t!("Side chats cannot start side chats."));
+    }
+    let subagent = lineage.is_some_and(|l| l.relationship_to_parent == Some(t3code_contracts::OrchestrationV2AppThreadLineageRelationshipToParent::Subagent))
+        || row.as_ref().is_some_and(|r| r.source.delegated_from.is_some());
+    if subagent {
+        return Some(t!("Subagent threads cannot start side chats."));
+    }
+    let Some(config) = config else { return Some(t!("Side chats are not ready yet. Try again in a moment.")) };
+    if config.environment.capabilities.side_chats != Some(true) {
+        return Some(t!("Update this environment's T3 Code server to use side chats."));
+    }
+    if row.is_none() {
+        return Some(t!("Side chats start after the first message."));
+    }
+    let worktree_pending = thread.projection().is_some_and(|p| {
+        let worktree = row.as_ref().and_then(|r| r.source.worktree_path.as_deref()).or(p.thread.worktree_path.as_deref());
+        t3code_client_runtime::state::thread_runs::worktree_pending(worktree, p.runs.iter().map(|r| &**r))
+    });
+    worktree_pending.then(|| t!("Available once the thread's worktree is set up."))
+}
+
 /// The id of the banner `/clear` shows; its action disarms.
 pub const FRESH_SESSION_BANNER: &str = "fresh-session";
 
@@ -372,6 +399,11 @@ pub fn handle_event(event: &ComposerEvent, thread: &Entity<LiveThread>, composer
         }
         ComposerEvent::BannerAction(id) if id.as_ref() == FRESH_SESSION_BANNER => FreshSessionArms::set(&key, false, cx),
         ComposerEvent::SideChat { prompt } => {
+            // Where side chats are unavailable, `/side` is refused with the reason.
+            if let Some(reason) = side_chat_disabled_reason(&key, thread.read(cx), environment.read(cx), cx) {
+                Toaster::push(ToastData::new(ToastKind::Warning, t!("Side chat not started")).description(reason), cx);
+                return EventOutcome::Done;
+            }
             let model = composer.upgrade().map(|c| c.read(cx).state().selection.clone());
             let runtime = composer.upgrade().map(|c| wire_runtime_mode(c.read(cx).state().runtime_mode));
             return start_side_chat(&key, prompt.clone(), model, runtime, cx);
@@ -563,7 +595,8 @@ pub fn with_review_records(context: Option<t3code_contracts::OrchestrationMessag
 }
 
 /// Starts a side chat (`useSideChat`): forks the thread's latest stable point, applies the
-/// composer's mode, sends `prompt` there when there is one, and opens it once it arrives.
+/// composer's mode, sends `prompt` there when there is one, and opens it as a tab of its parent's
+/// right panel once it arrives.
 fn start_side_chat(key: &ThreadKey, prompt: String, model: Option<ModelSelection>, runtime: Option<WireRuntimeMode>, cx: &mut App) -> EventOutcome {
     let (environment_id, source) = runtime_ids(key);
     let Some(environment) = StateBridge::environment(&environment_id, cx) else { return EventOutcome::Done };
@@ -598,8 +631,10 @@ fn start_side_chat(key: &ThreadKey, prompt: String, model: Option<ModelSelection
         cx,
     );
     let opened = thread_key(&environment_id, &target);
+    let parent = key.clone();
     cx.spawn(async move |cx| match task.await {
-        Some(Ok(())) => cx.update(|cx| super::open_thread(opened, cx)),
+        // Sent before the tab shows: closing a tab whose side chat has no run deletes it.
+        Some(Ok(())) => cx.update(|cx| super::open_side_chat(parent, opened, cx)),
         Some(Err(error)) => cx.update(|cx| toast_error(t!("Could not start a side chat."), error, cx)),
         None => {}
     })
@@ -1281,8 +1316,14 @@ impl LiveMenuSource {
         };
         let mut candidates = vec![builtin(SlashCommand::Model, "model", t!("Switch response model for this thread"))];
         if let Some(reason) = &facts.side_chat {
-            candidates.push(builtin(SlashCommand::Side, "side", reason.clone().unwrap_or_else(|| t!("Ask a side question in a new side chat"))));
-            candidates.push(builtin(SlashCommand::Btw, "btw", reason.clone().unwrap_or_else(|| t!("Same as /side"))));
+            // While a reason shows, picking the command does nothing (`sideChatDisabledReason`).
+            for (command, word, fallback) in [(SlashCommand::Side, "side", t!("Ask a side question in a new side chat")), (SlashCommand::Btw, "btw", t!("Same as /side"))] {
+                let mut candidate = builtin(command, word, reason.clone().unwrap_or(fallback));
+                if reason.is_some() {
+                    candidate.item.action = ComposerCommandAction::Refused;
+                }
+                candidates.push(candidate);
+            }
         }
         if facts.fresh_session {
             candidates.push(builtin(SlashCommand::Clear, "clear", t!("Start a fresh session; earlier messages stay visible")));

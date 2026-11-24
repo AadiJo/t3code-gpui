@@ -34,6 +34,9 @@ pub enum ComposerCommandAction {
     Slash(SlashCommand),
     /// Replace the trigger with a model mention and select that model.
     Model { instance_id: ProviderInstanceId, model: SharedString, insert: SharedString },
+    /// Listed but refused: picking leaves the menu and the text as they are (`/side` while
+    /// side chats are unavailable).
+    Refused,
 }
 
 /// The leading icon of an item.

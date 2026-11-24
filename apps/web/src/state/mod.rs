@@ -25,6 +25,7 @@ pub mod pull_request_mentions;
 pub mod shell;
 pub mod sidebar_actions;
 pub mod thread_errors;
+pub mod thread_relationships;
 pub mod threads;
 
 use std::cell::RefCell;
@@ -261,7 +262,14 @@ pub struct LiveEvents(pub Entity<app_data::DataEvents>);
 
 impl gpui_kit::Global for LiveEvents {}
 
-/// Asks the window to show `key` (a fork or side chat once it reached the shell).
+/// Asks the window to show `parent` with the side chat's tab open (`openSideChat`).
+pub fn open_side_chat(parent: crate::components::sidebar::model::ThreadKey, side_chat: crate::components::sidebar::model::ThreadKey, cx: &mut App) {
+    if let Some(events) = cx.try_global::<LiveEvents>().map(|e| e.0.clone()) {
+        events.update(cx, |_, cx| cx.emit(app_data::DataEvent::OpenSideChat { parent, side_chat }));
+    }
+}
+
+/// Asks the window to show `key` (a fork once it reached the shell).
 pub fn open_thread(key: crate::components::sidebar::model::ThreadKey, cx: &mut App) {
     if let Some(events) = cx.try_global::<LiveEvents>().map(|e| e.0.clone()) {
         events.update(cx, |_, cx| cx.emit(app_data::DataEvent::OpenThread(key)));

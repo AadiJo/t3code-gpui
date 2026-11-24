@@ -229,6 +229,12 @@ impl RightPanelStore {
         self.update(thread, |state| state.upsert(surface));
     }
 
+    /// `openSideChat`: adds or activates the side chat's tab on its parent's panel.
+    pub fn open_side_chat(&mut self, thread: &str, side_chat_thread_id: &str) {
+        let surface = RightPanelSurface::SideChat { id: format!("side-chat:{side_chat_thread_id}"), thread_id: side_chat_thread_id.to_owned() };
+        self.update(thread, |state| state.upsert(surface));
+    }
+
     /// `toggleVisibility`: the titlebar toggle. An empty panel shows the surface launcher.
     pub fn toggle_visibility(&mut self, thread: &str) {
         self.update(thread, |state| {

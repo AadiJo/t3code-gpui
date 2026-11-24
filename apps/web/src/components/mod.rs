@@ -41,6 +41,7 @@ pub mod diff_panel;
 pub mod diff_panel_shell;
 pub mod diffs;
 pub mod files;
+pub mod side_chat_pane;
 pub mod sidebar;
 pub mod thread_route_view;
 pub mod thread_notification_coordinator;

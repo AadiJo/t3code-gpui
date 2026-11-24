@@ -511,6 +511,22 @@ impl ThreadRouteView {
         window.focus(&self.composer.focus_handle(cx), cx);
     }
 
+    /// Adds a reference chip to the composer without moving focus (`addThreadContexts` with
+    /// `insertAtCaret: false`), unless it is already there.
+    pub fn append_reference(&mut self, text: &str, cx: &mut Context<Self>) {
+        let editor = self.composer.read(cx).editor().clone();
+        editor.update(cx, |editor, cx| {
+            if editor.text().contains(text) {
+                return;
+            }
+            let current = editor.text().trim_end().to_owned();
+            let next = if current.is_empty() { format!("{text} ") } else { format!("{current} {text} ") };
+            let end = next.len();
+            editor.set_text(next, cx);
+            editor.set_cursor(end, cx);
+        });
+    }
+
     /// Puts `text` in the composer (edit from here, edit a queued message).
     /// `appendHandoff`: adds a task below the composer's text unless it is already there.
     fn append_handoff(&mut self, task: &str, cx: &mut Context<Self>) {
@@ -692,7 +708,7 @@ impl ThreadRouteView {
                     self.chat.update(cx, |chat, cx| chat.set_project_icon(icon, cx));
                 }
             }
-            DataEvent::ThreadChanged(_) | DataEvent::OpenThread(_) => {}
+            DataEvent::ThreadChanged(_) | DataEvent::OpenThread(_) | DataEvent::OpenSideChat { .. } => {}
         }
     }
 }

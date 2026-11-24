@@ -62,6 +62,8 @@ pub struct DetailsFeed {
     loading: HashSet<String>,
     server_busy: Option<u16>,
     automation_busy: Option<SharedString>,
+    /// The Lineage merge or disconnect waiting on the server.
+    relationship_busy: Option<crate::components::chat::thread_details_relationships::RelationshipBusy>,
 }
 
 impl EventEmitter<DetailsChanged> for DetailsFeed {}
@@ -250,7 +252,139 @@ pub fn input(feed: &Entity<DetailsFeed>, view: &ThreadView, base: ThreadDetailsI
         automation_busy,
         context_window: context_window(&key, cx),
         usage_limits: usage_limits(row.as_deref(), config.as_deref(), cx),
+        relationships: relationships(&key, config.as_deref(), cx),
+        relationship_busy: feed.read(cx).relationship_busy,
         ..base
+    }
+}
+
+/// The Lineage and Side chats rows: the environment's live and archived shells and the shown
+/// thread's projection (`ThreadRelationshipsPanel`).
+fn relationships(key: &ThreadKey, config: Option<&t3code_contracts::ServerConfig>, cx: &App) -> Option<crate::state::thread_relationships::RelationshipsInput> {
+    let (environment_id, thread_id) = ids(key);
+    let environment = StateBridge::environment(&environment_id, cx)?;
+    let snapshot = environment.read(cx).shell.snapshot.clone()?;
+    let thread = StateBridge::threads(cx).read(cx).active().filter(|t| t.read(cx).key() == key).cloned();
+    let projection = thread.as_ref().and_then(|t| t.read(cx).projection().cloned());
+    let shells = snapshot.threads.iter().chain(snapshot.archived_threads.iter()).collect();
+    let providers: Vec<_> = config.map(|c| c.providers.iter().cloned().map(std::sync::Arc::new).collect()).unwrap_or_default();
+    let entries = crate::provider_instances::derive_provider_instance_entries(&providers);
+    let labels: Vec<(t3code_contracts::EnvironmentId, SharedString)> = StateBridge::environments(cx)
+        .read(cx)
+        .list
+        .iter()
+        .filter_map(|e| {
+            let env = e.read(cx);
+            Some((env.environment_id().clone(), SharedString::from(env.config.as_ref()?.environment.label.clone())))
+        })
+        .collect();
+    crate::state::thread_relationships::derive(crate::state::thread_relationships::RelationshipSources {
+        thread_id: &thread_id,
+        shells,
+        projection: projection.as_deref(),
+        is_hidden: &|_| false,
+        hiding_anywhere: false,
+        show_lineage: true,
+        show_side_chats: true,
+        any_instance_badge: crate::provider_instances::has_instance_badge(&entries),
+        connected_label: &|id| labels.iter().find(|(e, _)| e == id).map(|(_, label)| label.clone()),
+    })
+}
+
+/// Opens a related thread (`openThread` with `resolveThreadOpenRoute`): a side chat opens as a
+/// tab of its parent, anything else in the main pane.
+fn open_related(key: &ThreadKey, related: &ThreadId, cx: &mut App) {
+    let (environment_id, _) = ids(key);
+    let target = crate::state::shell::thread_key(&environment_id, related);
+    let parent = StateBridge::environment(&environment_id, cx).and_then(|env| {
+        let snapshot = env.read(cx).shell.snapshot.clone()?;
+        let shell = snapshot.threads.iter().chain(snapshot.archived_threads.iter()).find(|t| &t.id == related)?.clone();
+        (shell.lineage.side_chat == Some(true)).then(|| shell.lineage.parent_thread_id.clone()).flatten()
+    });
+    match parent {
+        Some(parent) => crate::state::open_side_chat(crate::state::shell::thread_key(&environment_id, &parent), target, cx),
+        None if &target != key => crate::state::open_thread(target, cx),
+        None => {}
+    }
+}
+
+/// Runs a Lineage or Side chats action.
+fn relationship_event(feed: &Entity<DetailsFeed>, key: &ThreadKey, event: &crate::components::chat::thread_details_relationships::RelationshipEvent, cx: &mut App) -> Task<DetailsOutcome> {
+    use crate::components::chat::thread_details_relationships::{RelationshipBusy, RelationshipEvent};
+    let (environment_id, thread_id) = ids(key);
+    match event {
+        RelationshipEvent::Open(related) => {
+            open_related(key, related, cx);
+            Task::ready(DetailsOutcome::Done)
+        }
+        RelationshipEvent::OpenDelegatedFrom => {
+            let from = StateBridge::shell(cx).read(cx).row(key).and_then(|row| row.source.delegated_from.clone());
+            if let Some(from) = from {
+                crate::state::open_thread(crate::state::shell::thread_key(&from.environment_id, &from.thread_id), cx);
+            }
+            Task::ready(DetailsOutcome::Done)
+        }
+        RelationshipEvent::ToggleMenu(_) => Task::ready(DetailsOutcome::Done),
+        RelationshipEvent::MergeBack | RelationshipEvent::Disconnect => {
+            if feed.read(cx).relationship_busy.is_some() {
+                return Task::ready(DetailsOutcome::Done);
+            }
+            let Some(environment) = StateBridge::environment(&environment_id, cx) else { return Task::ready(DetailsOutcome::Done) };
+            let commands = environment.read(cx).commands.clone();
+            let projection = StateBridge::threads(cx).read(cx).active().filter(|t| t.read(cx).key() == key).and_then(|t| t.read(cx).projection().cloned());
+            let merging = matches!(event, RelationshipEvent::MergeBack);
+            let (busy, failure) = if merging {
+                (RelationshipBusy::Merge, t!("Could not merge back"))
+            } else {
+                (RelationshipBusy::Detach, t!("Could not disconnect agent session"))
+            };
+            let merge = projection.as_deref().and_then(|p| {
+                let target = t3code_client_runtime::state::thread_relationships::resolve_merge_back_target_thread_id(Some(p))?;
+                let run = t3code_client_runtime::state::thread_workflows::resolve_latest_merge_back_run(&p.runs)?.id.clone();
+                Some((target, run))
+            });
+            if merging && merge.is_none() {
+                return Task::ready(DetailsOutcome::Done);
+            }
+            let source = thread_id.clone();
+            let request = merge.clone();
+            let task = StateBridge::spawn(
+                async move {
+                    match request {
+                        Some((target, run_id)) => {
+                            let point = t3code_contracts::OrchestrationV2ThreadForkSourcePoint::Run(t3code_contracts::OrchestrationV2ThreadForkSourcePointRun { run_id });
+                            commands.merge_back(&source, target, point).await.map(|_| ())
+                        }
+                        None => commands.stop_sessions(&source).await.map(|_| ()),
+                    }
+                },
+                cx,
+            );
+            feed.update(cx, |feed, cx| {
+                feed.relationship_busy = Some(busy);
+                cx.emit(DetailsChanged(key.clone()));
+            });
+            let (feed, key) = (feed.clone(), key.clone());
+            cx.spawn(async move |cx| {
+                let result = task.await;
+                cx.update(|cx| {
+                    feed.update(cx, |feed, cx| {
+                        feed.relationship_busy = None;
+                        cx.emit(DetailsChanged(key.clone()));
+                    });
+                    match result {
+                        Some(Err(error)) => toast(failure, error.to_string(), cx),
+                        Some(Ok(())) if merging => {
+                            if let Some((target, _)) = merge {
+                                open_related(&key, &target, cx);
+                            }
+                        }
+                        _ => {}
+                    }
+                });
+                DetailsOutcome::Done
+            })
+        }
     }
 }
 
@@ -335,6 +469,7 @@ pub fn event(feed: &Entity<DetailsFeed>, key: &ThreadKey, event: &ThreadDetailsE
     let project_id = row.as_ref().map(|row| row.source.project_id.clone());
     let detail = current.as_ref().and_then(|l| feed.read(cx).details.get(&l.url).cloned());
     match event {
+        ThreadDetailsEvent::Relationship(relationship) => return relationship_event(feed, key, relationship, cx),
         ThreadDetailsEvent::OpenUrl(_) => Task::ready(DetailsOutcome::Done),
         ThreadDetailsEvent::PullRequestAction(PullRequestRowAction::Resolve) => {
             Task::ready(detail.map_or(DetailsOutcome::Done, |d| DetailsOutcome::LoadComposer(resolve_conflicts_prompt(&d).into())))

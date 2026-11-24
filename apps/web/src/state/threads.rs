@@ -39,9 +39,11 @@ pub enum SwitchSource {
 }
 
 /// The open thread and the cache of closed ones. Notifies when the open thread changes.
+/// A side chat shown in the right panel streams beside it in its own slot.
 #[derive(Default)]
 pub struct ThreadViews {
     active: Option<Entity<LiveThread>>,
+    side: Option<Entity<LiveThread>>,
     cache: VecDeque<CachedView>,
     last_switch: Option<(SwitchSource, std::time::Duration)>,
     _subscription: Option<Subscription>,
@@ -118,6 +120,34 @@ impl ThreadViews {
         StateBridge::shell(cx).update(cx, |shell, cx| shell.set_active_thread(Some(key), cx));
         cx.notify();
         Some(thread)
+    }
+
+    /// The side chat the right panel shows, if any.
+    pub fn side(&self) -> Option<&Entity<LiveThread>> {
+        self.side.as_ref()
+    }
+
+    /// Opens a side chat in its own slot, leaving the main pane's thread, its visit mark and
+    /// the shell's active thread alone. A different side chat replaces the previous one.
+    pub fn open_side(&mut self, key: ThreadKey, cx: &mut Context<Self>) -> Option<Entity<LiveThread>> {
+        if let Some(side) = &self.side
+            && side.read(cx).key() == &key
+        {
+            return Some(side.clone());
+        }
+        let (environment_id, thread_id) = runtime_ids(&key);
+        let environment = StateBridge::environment(&environment_id, cx)?;
+        let handle = environment.read(cx).store.open_thread(&thread_id);
+        let thread = cx.new(|cx| LiveThread::new(key, handle, None, cx));
+        self.side = Some(thread.clone());
+        Some(thread)
+    }
+
+    /// Unmounts the side chat's stream when it is `key`'s.
+    pub fn close_side(&mut self, key: &ThreadKey, cx: &mut Context<Self>) {
+        if self.side.as_ref().is_some_and(|side| side.read(cx).key() == key) {
+            self.side = None;
+        }
     }
 
     /// The view model of the open thread, if any.

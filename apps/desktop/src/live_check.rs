@@ -1175,7 +1175,7 @@ mod timeline_dump {
                 DividerKind::RunInterrupted => "run_interrupt_result",
                 DividerKind::Forked => "fork",
                 DividerKind::Handoff => "handoff",
-                DividerKind::ParentLink => "thread_created",
+                DividerKind::ParentLink | DividerKind::SideChatParent => "thread_created",
                 DividerKind::NewSession => "new_session",
             },
         }
