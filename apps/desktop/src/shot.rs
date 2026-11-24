@@ -1,6 +1,7 @@
 // Headless screenshot of one scene, for visual checks without a display.
 // Usage: shot <scene> <out.png> [width height]
-// `T3CODE_GLASS_OPACITY=<40..100>` renders with that Glass opacity setting.
+// `T3CODE_GLASS_OPACITY=<40..100>` renders with that Glass opacity setting;
+// `T3CODE_INTERFACE_SIZE=<px>` with that interface font size (the rem).
 use std::sync::Arc;
 
 use anyhow::{Context as _, anyhow};
@@ -46,6 +47,9 @@ fn main() -> anyhow::Result<()> {
         ThemeSettings::set_mode(mode, cx);
         if let Some(percent) = std::env::var("T3CODE_GLASS_OPACITY").ok().and_then(|v| v.parse().ok()) {
             ThemeSettings::set_glass_opacity(GlassOpacity::new(percent), cx);
+        }
+        if let Some(size) = std::env::var("T3CODE_INTERFACE_SIZE").ok().and_then(|v| v.parse::<f32>().ok()) {
+            ThemeSettings::update(cx, |settings| settings.fonts.interface = size);
         }
     });
     let (handle, _host) = cx.update(|cx| {
