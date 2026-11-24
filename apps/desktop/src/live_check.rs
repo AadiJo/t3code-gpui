@@ -38,11 +38,14 @@
 //   workspace three drafts sent from the composer with each workspace choice: the project root,
 //            a new worktree (its base auto-picked, then chosen) and that worktree again; each
 //            thread's workspace is read back from the server and its checkout from git
+//   banner   the thread error banner: a thread whose provider fails shows the server's last
+//            error, dismiss hides it for the session; a send the server refuses shows its error
+//            and puts the prompt back in the composer (dark, at the T3CODE_* theme overrides)
 //   import   a fresh data directory and a stand-in install (`T3CODE_IMPORT_HOME`, made by
 //            `import-check`, encrypted with the fixture macOS key): the launch import runs,
 //            the window explains the Keychain read, environments and settings arrive
 //
-// Usage: live-check <seed|drive|restart|import|send|sidebar|notify|details|mentions|heic|wheel|workspace|probe> <out-dir>
+// Usage: live-check <seed|drive|restart|import|send|sidebar|notify|details|mentions|heic|wheel|workspace|banner|probe> <out-dir>
 #[allow(dead_code)]
 #[path = "import/mod.rs"]
 mod import;
@@ -482,7 +485,7 @@ fn key_of(state: &Seeded, thread: &str) -> ThreadKey {
 
 fn main() -> anyhow::Result<()> {
     let mut args = std::env::args().skip(1);
-    let usage = "usage: live-check <seed|drive|restart|import|send|sidebar|notify|details|mentions|heic|wheel|workspace|probe> <out-dir> | live-check timeline <projections-dir> <out-dir> | live-check commands <corpus.json> <out.json>";
+    let usage = "usage: live-check <seed|drive|restart|import|send|sidebar|notify|details|mentions|heic|wheel|workspace|banner|probe> <out-dir> | live-check timeline <projections-dir> <out-dir> | live-check commands <corpus.json> <out.json>";
     let phase = args.next().context(usage)?;
     let out = PathBuf::from(args.next().context(usage)?);
     if phase == "timeline" {
@@ -509,6 +512,7 @@ fn main() -> anyhow::Result<()> {
         "probe" => run_probe(&mut check),
         "wheel" => run_wheel(&mut check),
         "workspace" => run_workspace(&mut check),
+        "banner" => run_banner(&mut check),
         other => Err(anyhow::anyhow!("unknown phase {other}")),
     };
     check.finish(&phase, result)
@@ -2710,4 +2714,111 @@ fn run_workspace(check: &mut Check) -> anyhow::Result<()> {
         }))?,
     )?;
     check.shot("w3-existing-worktree.png")
+}
+
+fn banner_input(check: &mut Check) -> Option<t3code_web::components::chat::thread_error_banner::ThreadErrorBannerInput> {
+    check.read(|root, cx| root.thread_view().read(cx).error_banner().read(cx).input().cloned())
+}
+
+/// The banner over the timeline: the server's last error, dismissal, and a refused send.
+fn run_banner(check: &mut Check) -> anyhow::Result<()> {
+    let state = load_state(&check.out)?;
+    check.pump(|c| c.connected(), Duration::from_secs(30), "connected")?;
+    check.cx.update(|cx| {
+        t3code_web::theme_palette::ThemeSettings::apply_env_overrides(cx);
+        t3code_web::hooks::use_theme::ThemeStore::set_appearance_mode(t3code_web::theme_palette::ThemeMode::Dark, cx);
+    });
+    let environment_id = t3code_contracts::EnvironmentId::new(state.environment_id.as_str());
+    let commands = commands_of(check, &environment_id)?;
+    let project = check
+        .cx
+        .update(|cx| {
+            let shell = StateBridge::environment(&environment_id, cx)?.read(cx).shell.clone();
+            shell.snapshot.as_ref()?.projects.iter().find(|p| p.workspace_root == state.project_root).map(|p| p.id.clone())
+        })
+        .context("seeded project")?;
+
+    // The server's last error: a provider that cannot start the scenario.
+    let thread_id = ThreadId::new(uuid::Uuid::new_v4().to_string());
+    let input = CreateThread {
+        thread_id: thread_id.clone(),
+        project_id: project,
+        title: "Banner failure".into(),
+        model_selection: ModelSelection { instance_id: "devReplay".into(), model: "no-such-scenario".into(), options: None },
+        runtime_mode: RuntimeMode::FullAccess,
+        interaction_mode: ProviderInteractionMode::Default,
+        branch: None,
+        worktree_path: None,
+    };
+    let c = commands.clone();
+    check.block(async move { c.create_thread(input).await })?.map_err(|e| anyhow::anyhow!("{e}"))?;
+    let message = SendMessage::text(thread_id.clone(), "Run a scenario that does not exist.");
+    let c = commands.clone();
+    check.block(async move { c.send_message(message).await })?.map_err(|e| anyhow::anyhow!("{e}"))?;
+    let key = thread_key(&environment_id, &thread_id);
+    let k = key.clone();
+    check.pump(
+        move |c| c.cx.update(|cx| StateBridge::shell(cx).read(cx).row(&k).is_some_and(|r| r.source.last_error.is_some())),
+        Duration::from_secs(60),
+        "the server records the thread's last error",
+    )?;
+    let server_error = check.cx.update(|cx| StateBridge::shell(cx).read(cx).row(&key).and_then(|r| r.source.last_error.clone())).unwrap_or_default();
+    check.go(&key);
+    check.pump(|c| banner_input(c).is_some(), Duration::from_secs(10), "banner shows")?;
+    let shown = banner_input(check);
+    check.check(
+        "the banner shows the server's last error",
+        shown.as_ref().is_some_and(|b| b.error.as_ref() == server_error.as_str() && !b.usage_limit),
+        format!("{:?}", shown.map(|b| b.error)),
+    );
+    check.shot("b0-server-error.png")?;
+    let window = check.window;
+    check.cx.update_window(window, |_, w, cx| w.click("thread-error-dismiss", cx))?;
+    check.frame();
+    let hidden = banner_input(check).is_none();
+    check.check("dismiss hides the banner", hidden, "");
+    check.go(&key_of(&state, &state.long_thread));
+    check.go(&key);
+    check.wait(Duration::from_millis(300));
+    let hidden = banner_input(check).is_none();
+    check.check("a dismissed error stays hidden for the session", hidden, "");
+    check.shot("b1-dismissed.png")?;
+
+    // A send the server refuses: the model's provider instance is not enabled there.
+    let long = key_of(&state, &state.long_thread);
+    check.go(&long);
+    check.pump(|c| c.read(|root, cx| root.thread_view().read(cx).branch_strip().is_some()), Duration::from_secs(10), "thread shown")?;
+    let composer = composer_of(check);
+    let prompt = "This send is refused by the server.";
+    // Submit takes the composer's text, as a send does.
+    let editor = check.cx.update(|cx| composer.read(cx).editor().clone());
+    check.cx.update(|cx| editor.update(cx, |editor, cx| editor.set_text(String::new(), cx)));
+    check.cx.update(|cx| {
+        composer.update(cx, |_, cx| {
+            cx.emit(t3code_web::components::chat::composer::ComposerEvent::Submit {
+                prompt: prompt.into(),
+                attachments: Vec::new(),
+                model: t3code_web::model_selection::ModelSelection {
+                    instance_id: t3code_web::model_selection::ProviderInstanceId("no-such-instance".into()),
+                    model: "nothing".into(),
+                    effort: None,
+                    speed: None,
+                    ultracode: false,
+                },
+                intent: t3code_web::composer_logic::ComposerSubmissionIntent::Foreground,
+                dispatch: None,
+            })
+        })
+    });
+    check.pump(|c| banner_input(c).is_some(), Duration::from_secs(20), "send error banner")?;
+    let shown = banner_input(check);
+    let restored = check.cx.update(|cx| composer.read(cx).editor().read(cx).text().to_owned());
+    check.check("a refused send shows the server's message in the banner", shown.as_ref().is_some_and(|b| b.error.contains("is disabled") && !b.error.contains("Error(")), format!("{:?}", shown.map(|b| b.error)));
+    check.check("the refused prompt is back in the composer", restored.trim() == prompt, format!("{restored:?}"));
+    check.shot("b2-send-error.png")?;
+    check.cx.update_window(window, |_, w, cx| w.click("thread-error-dismiss", cx))?;
+    check.frame();
+    let hidden = banner_input(check).is_none();
+    check.check("dismiss clears the send error", hidden, "");
+    Ok(())
 }

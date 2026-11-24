@@ -42,6 +42,7 @@ use crate::i18n::t;
 use crate::provider_models_live::{model_catalog, to_wire};
 use crate::router::{DraftId, ThreadTarget};
 use crate::components::chat::thread_details_panel::{ThreadDetailsEvent, ThreadDetailsInput};
+use crate::state::thread_errors::ThreadErrors;
 use crate::state::app_data::{ActionOutcome, AppData, CommandOutcome, DataEvent, DataEvents, DetailsOutcome, GitControlsSetup, ThreadView};
 use crate::state::composer::{self as live_composer, CatalogCache, LiveDraftStore, LiveMenuSource, composer_state};
 use crate::state::palette::LivePaletteSource;
@@ -457,8 +458,9 @@ impl AppData for LiveData {
                     let draft = drafts.get(id)?;
                     (draft.project.clone()?, draft.workspace.clone())
                 };
+                let draft_key: SharedString = format!("draft:{}", id.0).into();
                 let Ok(workspace_strategy) = workspace.strategy() else {
-                    toast_error(t!("Failed to send message."), t!("Select a base branch before sending in New worktree mode."), cx);
+                    ThreadErrors::set(&draft_key, Some(t!("Select a base branch before sending in New worktree mode.")), cx);
                     return None;
                 };
                 let (environment_id, project_id) = (
@@ -478,9 +480,11 @@ impl AppData for LiveData {
                     .or_else(|| config.as_ref().and_then(|c| c.settings.default_runtime_mode))
                     .unwrap_or(WireRuntimeMode::FullAccess);
                 let Some(turn) = crate::state::attachments::turn_attachments(&environment_id, attachments) else {
-                    toast_error(t!("Failed to send message."), t!("Retry or remove failed uploads before sending."), cx);
+                    ThreadErrors::set(&draft_key, Some(t!("Retry or remove failed uploads before sending.")), cx);
                     return None;
                 };
+                ThreadErrors::set(&draft_key, None, cx);
+                let restore = SharedString::from(prompt.to_owned());
                 let title = live_composer::title_seed(prompt.trim(), attachments);
                 let text = match prompt.trim() {
                     "" if !attachments.is_empty() => crate::state::attachments::ATTACHMENT_ONLY_PROMPT.to_owned(),
@@ -508,8 +512,11 @@ impl AppData for LiveData {
                     }),
                 };
                 let task = StateBridge::spawn(async move { commands.launch_thread(input).await }, cx);
+                let thread_view_key = crate::fixtures::scoped_key(&thread_key(&environment_id, &thread_id));
                 cx.spawn(async move |cx| match task.await {
-                    Some(Err(error)) => cx.update(|cx| toast_error(t!("Failed to send message."), error, cx)),
+                    Some(Err(error)) => cx.update(|cx| {
+                        ThreadErrors::send_failed(&thread_view_key, crate::state::composer::send_error(&error), restore, cx)
+                    }),
                     Some(Ok(_)) => crate::state::attachments::AttachmentUploads::forget_sent(sent),
                     None => {}
                 })

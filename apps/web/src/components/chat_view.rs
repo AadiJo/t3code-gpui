@@ -139,6 +139,8 @@ pub struct ChatView {
     header_menu: Option<ContextMenu>,
     /// The thread details card, while open as a popover.
     details: Option<AnyView>,
+    /// The banner pinned over the top of the timeline (`ChatBannerLane`), while one shows.
+    banner: Option<AnyView>,
     thread_key: SharedString,
     find_bar: Option<(Entity<ThreadFindBar>, Subscription)>,
     /// Every question of the pending request.
@@ -173,6 +175,7 @@ impl ChatView {
             thread_menu: None,
             header_menu: None,
             details: None,
+            banner: None,
             thread_key: SharedString::default(),
             find_bar: None,
             questions: Arc::from([]),
@@ -385,6 +388,15 @@ impl ChatView {
     pub fn set_details(&mut self, details: Option<AnyView>, cx: &mut Context<Self>) {
         self.details = details;
         cx.notify();
+    }
+
+    /// Shows a banner over the top of the timeline, or none. While one shows the timeline's top
+    /// fade is off (`topFadeEnabled={!hasTimelineTopBanner}`).
+    pub fn set_banner(&mut self, banner: Option<AnyView>, cx: &mut Context<Self>) {
+        if self.banner.as_ref().map(|b| b.entity_id()) != banner.as_ref().map(|b| b.entity_id()) {
+            self.banner = banner;
+            cx.notify();
+        }
     }
 
     /// Digit keys pick a question option when focus is not in a text field.
@@ -671,8 +683,9 @@ impl Render for ChatView {
                             .when(!self.hero, |d| {
                                 d.child(div().flex().flex_col().flex_1().min_h_0().child(self.timeline.clone()))
                             })
-                            .when(!self.hero, |d| d.child(top_fade).children(scroll_button))
-                            .child(composer_overlay),
+                            .when(!self.hero, |d| d.when(self.banner.is_none(), |d| d.child(top_fade)).children(scroll_button))
+                            .child(composer_overlay)
+                            .children(self.banner.clone().map(|banner| div().absolute().top_0().left_0().right_0().child(banner))),
                     ),
             )
             .children(find_bar)
