@@ -71,6 +71,8 @@ struct Editor {
     /// The view being renamed; `None` saves a new one.
     id: Option<String>,
     input: Entity<InputState>,
+    /// `autoFocus`: the field takes focus after the modal's first frame, which takes it first.
+    focus_pending: bool,
     _events: Subscription,
 }
 
@@ -101,6 +103,11 @@ impl<K: SavedViewsKind> SavedViewsMenu<K> {
             self.current = current;
             cx.notify();
         }
+    }
+
+    /// The name typed in the open dialog, for scripts.
+    pub fn editor_text(&self, cx: &App) -> Option<String> {
+        self.editor.as_ref().map(|e| e.input.read(cx).value().to_string())
     }
 
     /// The stored views.
@@ -138,13 +145,12 @@ impl<K: SavedViewsKind> SavedViewsMenu<K> {
             None => K::suggested_name(&self.current).to_string(),
         };
         let input = cx.new(|cx| InputState::new(window, cx).placeholder(K::placeholder()).default_value(name));
-        input.update(cx, |input, cx| input.focus(window, cx));
         let events = cx.subscribe_in(&input, window, |this, _, event: &InputEvent, _, cx| match event {
             InputEvent::Change => cx.notify(),
             InputEvent::PressEnter { .. } => this.save(cx),
             _ => {}
         });
-        self.editor = Some(Editor { id, input, _events: events });
+        self.editor = Some(Editor { id, input, focus_pending: true, _events: events });
         cx.notify();
     }
 
@@ -197,7 +203,13 @@ impl<K: SavedViewsKind> SavedViewsMenu<K> {
         self.editor = None;
     }
 
-    fn render_dialog(&self, window: &mut Window, cx: &mut Context<Self>) -> Option<impl IntoElement> {
+    fn render_dialog(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Option<impl IntoElement> {
+        if let Some(editor) = self.editor.as_mut()
+            && std::mem::take(&mut editor.focus_pending)
+        {
+            let input = editor.input.clone();
+            window.defer(cx, move |window, cx| input.update(cx, |input, cx| input.focus(window, cx)));
+        }
         let editor = self.editor.as_ref()?;
         let theme = cx.app_theme().clone();
         let list = K::LIST.select();
@@ -247,7 +259,6 @@ impl<K: SavedViewsKind> SavedViewsMenu<K> {
                 let close = close.clone();
                 move |window, cx| close(&(), window, cx)
             });
-        let _ = window;
         Some(Modal::dialog(
             "saved-view-dialog",
             div().id("dialog-content").occlude().w_full().max_w(theme.rem(32.)).child(surface),

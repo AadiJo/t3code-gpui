@@ -4,6 +4,7 @@
 //!   which fails its first load and shows the retry banner.
 //! - `pull-requests-summary`, `-guide`, `-timeline`, `-code`: the page with a
 //!   pull request open in the right panel on that tab.
+//! - `pull-requests-save-view`: the page with the Save PR view dialog open.
 //! - `pull-requests-empty`: the page with no pull requests listed.
 //! - `issues`: the issues page with the issue panel open.
 //!
@@ -44,6 +45,20 @@ pub fn build_empty(window: &mut Window, cx: &mut App) -> AnyView {
         page
     })
     .into()
+}
+
+/// The pull requests page with the Save PR view dialog open.
+pub fn build_save_view(window: &mut Window, cx: &mut App) -> AnyView {
+    let fixture = FixtureSource::standard();
+    let sources = fixture_sources(&fixture);
+    let page = cx.new(|cx| {
+        let mut page = PullRequestsPage::new(sources, window, cx);
+        page.now_ms = Some(SCENE_NOW_MS);
+        page
+    });
+    let menu = page.read(cx).views_menu().clone();
+    menu.update(cx, |m, cx| m.open_editor(None, window, cx));
+    page.into()
 }
 
 /// The pull requests page.

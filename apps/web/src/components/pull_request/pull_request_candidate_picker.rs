@@ -6,6 +6,7 @@
 use std::rc::Rc;
 use std::time::Duration;
 
+use gpui_kit::TestSupportExt as _;
 use gpui_kit::component::input::{Input, InputEvent, InputState};
 use gpui_kit::{
     AnyElement, App, AppContext as _, Context, Entity, EventEmitter, InteractiveElement as _, IntoElement, ParentElement as _,
@@ -329,6 +330,7 @@ impl CandidatePicker {
         let item = |id: String, selected: bool, content: AnyElement, on_click: Box<dyn Fn(&mut App)>| {
             div()
                 .id(SharedString::from(id))
+                .test_support()
                 .flex()
                 .items_center()
                 .gap(theme.sp(2.))
@@ -525,7 +527,7 @@ impl Render for CandidatePicker {
             .id(SharedString::from(format!("{id}-root")))
             .flex()
             .flex_col()
-            .child(div().id(SharedString::from(format!("{id}-trigger"))).child(trigger).on_click(move |event, _, cx| {
+            .child(div().id(SharedString::from(format!("{id}-trigger"))).test_support().child(trigger).on_click(move |event, _, cx| {
                 PopupOpen::toggle_from(&toggle, crate::components::ui::popover::press_position(event), cx)
             }))
             .when(open, |el| {

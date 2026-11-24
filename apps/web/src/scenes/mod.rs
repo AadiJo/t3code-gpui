@@ -115,6 +115,7 @@ pub fn scenes() -> &'static [(&'static str, SceneBuilder)] {
         ("pull-requests", pull_requests::build),
         ("pull-requests-light", pull_requests::build),
         ("pull-requests-empty", pull_requests::build_empty),
+        ("pull-requests-save-view", pull_requests::build_save_view),
         ("pull-requests-summary", pull_requests::build_summary),
         ("pull-requests-summary-light", pull_requests::build_summary),
         ("pull-requests-guide", pull_requests::build_guide),

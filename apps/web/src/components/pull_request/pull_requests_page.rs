@@ -250,6 +250,7 @@ pub struct PullRequestsPage {
     /// Whether the owner has said which projects exist; until then the page assumes some do.
     projects_known: bool,
     filters_submenu: Option<FilterSubmenu>,
+    keep_filters_open: bool,
     /// Rows asked of each host (`PAGE_SIZE` growing to `MAX_PAGE_SIZE`).
     page_size: u64,
     loading_more: bool,
@@ -328,6 +329,7 @@ impl PullRequestsPage {
             projects: Vec::new(),
             projects_known: false,
             filters_submenu: None,
+            keep_filters_open: false,
             page_size: PAGE_SIZE,
             loading_more: false,
             views_menu,
@@ -1141,7 +1143,13 @@ fn filters_popup(this: &Entity<PullRequestsPage>, handle: PopupHandle, cx: &mut 
                     hover.update(cx, |p, cx| p.set_filters_submenu(Some(submenu), cx));
                 }
             })
-            .on_select(move |_, cx| click.update(cx, |p, cx| p.set_filters_submenu(Some(submenu), cx)));
+            .on_select(move |_, cx| {
+                click.update(cx, |p, cx| {
+                    // A submenu row opens its submenu; the dismiss that follows must not close the menu.
+                    p.keep_filters_open = true;
+                    p.set_filters_submenu(Some(submenu), cx)
+                })
+            });
         if open == Some(submenu) {
             item = item.highlighted();
         }
@@ -1182,8 +1190,11 @@ fn filters_popup(this: &Entity<PullRequestsPage>, handle: PopupHandle, cx: &mut 
     let close = handle.clone();
     let reset = this.clone();
     let menu = menu.on_dismiss(move |_, cx| {
-        reset.update(cx, |p, cx| p.set_filters_submenu(None, cx));
-        close.close(cx);
+        let keep = reset.update(cx, |p, _| std::mem::take(&mut p.keep_filters_open));
+        if !keep {
+            reset.update(cx, |p, cx| p.set_filters_submenu(None, cx));
+            close.close(cx);
+        }
     });
 
     let submenu = open.map(|submenu| {

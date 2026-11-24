@@ -775,6 +775,7 @@ impl PullRequestDetailPanel {
                     let on = mode == value;
                     div()
                         .id(id)
+                        .test_support()
                         .flex()
                         .items_center()
                         .h(theme.sp(6.))
