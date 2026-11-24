@@ -1499,6 +1499,31 @@ fn run_send(check: &mut Check) -> anyhow::Result<()> {
         check.shot("34-edited-from-here.png")?;
     }
 
+    // `@` offers threads by title; the picked chip travels as a thread context record.
+    check.focus_composer();
+    check.type_text("@Streaming");
+    let c3 = composer.clone();
+    check.pump(
+        move |c| c.cx.update(|cx| c3.read(cx).menu().is_some_and(|m| m.items.iter().any(|i| i.id.starts_with("thread:")))),
+        Duration::from_secs(10),
+        "the @ menu lists the Streaming thread",
+    )?;
+    check.shot("37-thread-mention-menu.png")?;
+    check.press("enter");
+    check.type_text("compare with this one");
+    let runs = projection_of(check, &key).map(|p| p.runs.len()).unwrap_or(0);
+    check.press("enter");
+    settled_runs(check, &key, runs + 1, "the mention turn settled")?;
+    let records = projection_of(check, &key)
+        .and_then(|p| {
+            p.messages.iter().filter(|m| m.role == t3code_contracts::OrchestrationV2ConversationMessageRole::User).last().cloned()
+        })
+        .and_then(|m| m.context.clone())
+        .map(|c| c.records)
+        .unwrap_or_default();
+    let thread_record = records.iter().find(|r| r["kind"] == "thread").cloned();
+    check.check("the @ mention sends a thread context record", thread_record.as_ref().is_some_and(|r| r["title"] == "Streaming"), format!("{thread_record:?}"));
+
     // `/side` starts a side chat from the thread and sends the prompt there.
     check.focus_composer();
     check.type_text("/side What does the retry helper return?");

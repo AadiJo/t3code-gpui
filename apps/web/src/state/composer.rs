@@ -409,7 +409,7 @@ fn send_turn(input: SendInput<'_>, commands: EnvironmentCommands, config: Option
     let mut message = SendMessage::text(thread_id.clone(), text);
     message.mode = input.mode;
     message.attachments = turn.attachments;
-    message.context = turn.context;
+    message.context = with_thread_records(turn.context, input.prompt, &environment_id);
     message.title_seed = Some(title_seed(input.prompt.trim(), input.attachments));
     message.fresh_context = input.fresh;
     let catalog = config.as_ref().map(|c| model_catalog(c)).unwrap_or_default();
@@ -449,6 +449,46 @@ fn send_turn(input: SendInput<'_>, commands: EnvironmentCommands, config: Option
         });
     })
     .detach();
+}
+
+/// Adds a `threadContextRecord` for each thread chip in `prompt`, before the attachment records
+/// (`buildMessageContext` order).
+pub fn with_thread_records(
+    context: Option<t3code_contracts::OrchestrationMessageContext>,
+    prompt: &str,
+    environment_id: &t3code_contracts::EnvironmentId,
+) -> Option<t3code_contracts::OrchestrationMessageContext> {
+    use crate::composer_editor_mentions::{ChipKind, ComposerPromptSegment, ContextKind, split_prompt_into_segments};
+    let mut seen = std::collections::HashSet::new();
+    let threads: Vec<serde_json::Value> = split_prompt_into_segments(prompt)
+        .into_iter()
+        .filter_map(|segment| match segment {
+            ComposerPromptSegment::Chip(token) => match token.kind {
+                ChipKind::Context { kind: ContextKind::Thread, context_id } => Some((context_id, token.label)),
+                _ => None,
+            },
+            _ => None,
+        })
+        .filter(|(id, _)| seen.insert(id.clone()))
+        .filter_map(|(context_id, label)| {
+            let thread_id = context_id.strip_prefix("thread_")?.to_owned();
+            Some(serde_json::json!({
+                "version": 1,
+                "kind": "thread",
+                "contextId": context_id.as_ref(),
+                "label": label.as_ref(),
+                "environmentId": environment_id.as_str(),
+                "threadId": thread_id,
+                "title": label.as_ref(),
+            }))
+        })
+        .collect();
+    if threads.is_empty() {
+        return context;
+    }
+    let mut context = context.unwrap_or(t3code_contracts::OrchestrationMessageContext { version: 1.0, guest: None, records: Vec::new() });
+    context.records.splice(0..0, threads);
+    Some(context)
 }
 
 /// Starts a side chat (`useSideChat`): forks the thread's latest stable point, applies the
@@ -614,14 +654,24 @@ pub struct LiveMenuSource {
     pending: RefCell<Option<SearchKey>>,
     landed: futures::channel::mpsc::UnboundedSender<(SearchKey, Vec<ComposerCommandItem>)>,
     composer: RefCell<Option<WeakEntity<ChatComposer>>>,
+    /// The shell's threads for `@` mentions, and the thread the composer is on.
+    threads: Rc<dyn crate::components::command_palette_lookups::CommandPaletteSource>,
+    environment_id: t3code_contracts::EnvironmentId,
+    shown: RefCell<Option<ThreadKey>>,
     _receive: Task<()>,
 }
 
 impl LiveMenuSource {
     /// A source for a thread whose workspace is `cwd`; refreshes `composer` when results land.
-    pub fn new(environment: &Entity<LiveEnvironment>, cwd: Option<String>, cx: &mut App) -> Rc<Self> {
+    pub fn new(
+        environment: &Entity<LiveEnvironment>,
+        cwd: Option<String>,
+        threads: Rc<dyn crate::components::command_palette_lookups::CommandPaletteSource>,
+        cx: &mut App,
+    ) -> Rc<Self> {
         let (landed, mut receiver) = futures::channel::mpsc::unbounded::<(SearchKey, Vec<ComposerCommandItem>)>();
         let env = environment.read(cx);
+        let environment_id = env.environment_id().clone();
         let store = env.store.clone();
         let skills = Arc::new(skills_of(env.config.as_deref()));
         let tokio = StateBridge::global(cx).tokio.clone();
@@ -650,6 +700,9 @@ impl LiveMenuSource {
                 pending: RefCell::default(),
                 landed,
                 composer: RefCell::default(),
+                threads,
+                environment_id,
+                shown: RefCell::default(),
                 _receive: receive,
             }
         })
@@ -658,6 +711,53 @@ impl LiveMenuSource {
     /// The composer to refresh when results land.
     pub fn attach(&self, composer: &Entity<ChatComposer>) {
         *self.composer.borrow_mut() = Some(composer.downgrade());
+    }
+
+    /// The thread the composer is on, left out of `@` mentions.
+    pub fn set_shown(&self, key: Option<ThreadKey>) {
+        *self.shown.borrow_mut() = key;
+    }
+
+    /// Up to five of this environment's threads matching `query`, ranked like the palette
+    /// (`matchComposerThreadItems`); inserting one adds a thread chip.
+    fn thread_items(&self, query: &str) -> Vec<ComposerCommandItem> {
+        use t3code_shared::palette_search::{SearchQuery, fold_search_query, score_thread_search};
+        let folded = fold_search_query(query);
+        if folded.is_empty() {
+            return Vec::new();
+        }
+        let search = SearchQuery::new(&folded);
+        let now = t3code_client_runtime::state::models::now_ms() as i64;
+        let shown = self.shown.borrow().clone();
+        let threads = self.threads.threads();
+        let candidates = threads.iter().filter(|t| {
+            t.key.environment_id.0.as_ref() == self.environment_id.as_str() && Some(&t.key) != shown.as_ref()
+        });
+        let mut ranked: Vec<_> = candidates
+            .clone()
+            .filter_map(|t| score_thread_search(&search, &t.subject, now, false, false).map(|m| (m.score, t)))
+            .collect();
+        if ranked.is_empty() {
+            ranked = candidates.filter_map(|t| score_thread_search(&search, &t.subject, now, true, false).map(|m| (m.score, t))).collect();
+        }
+        ranked.sort_by(|a, b| b.0.total_cmp(&a.0));
+        ranked
+            .into_iter()
+            .take(5)
+            .map(|(_, thread)| ComposerCommandItem {
+                id: SharedString::from(format!("thread:{}:{}", thread.key.environment_id.0, thread.key.thread_id.0)),
+                icon: ComposerCommandIcon::Icon(IconName::MessageSquare),
+                label: thread.title.clone(),
+                label_prefix: None,
+                description: t!("Thread", context = "noun, search result type"),
+                badge: None,
+                action: ComposerCommandAction::Insert(SharedString::from(crate::composer_editor_mentions::format_context_reference(
+                    "thread",
+                    &format!("thread_{}", thread.key.thread_id.0),
+                    &thread.title,
+                ))),
+            })
+            .collect()
     }
 
     /// Takes the skills of a new server config.
@@ -737,8 +837,10 @@ impl ComposerMenuSource for LiveMenuSource {
             ComposerTriggerKind::PullRequest => (Vec::new(), false),
             ComposerTriggerKind::Path => {
                 let key = (trigger.kind, trigger.query.clone());
+                let mut threads = self.thread_items(&trigger.query);
                 if let Some(items) = self.results.borrow().get(&key) {
-                    return ((**items).clone(), false);
+                    threads.extend((**items).iter().cloned());
+                    return (threads, false);
                 }
                 self.search_files(key);
                 let results = self.results.borrow();
@@ -748,7 +850,8 @@ impl ComposerMenuSource for LiveMenuSource {
                     .find_map(|end| results.get(&(trigger.kind, trigger.query[..end].to_owned())))
                     .map(|items| (**items).clone())
                     .unwrap_or_default();
-                (fallback, true)
+                threads.extend(fallback);
+                (threads, true)
             }
         }
     }

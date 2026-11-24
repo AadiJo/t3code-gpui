@@ -339,9 +339,10 @@ impl AppData for LiveData {
             .menus
             .borrow_mut()
             .entry(key)
-            .or_insert_with(|| LiveMenuSource::new(&environment, cwd, cx))
+            .or_insert_with(|| LiveMenuSource::new(&environment, cwd, self.palette.clone(), cx))
             .clone();
         source.set_config(environment.read(cx).config.as_deref());
+        source.set_shown(view_target(view));
         source.attach(composer);
         source
     }
@@ -442,7 +443,7 @@ impl AppData for LiveData {
                     initial_message: Some(OrchestrationV2ThreadLaunchInputInitialMessage {
                         message_id: Some(message.message_id.clone()),
                         text,
-                        context: turn.context,
+                        context: live_composer::with_thread_records(turn.context, prompt, &environment_id),
                         attachments: turn.attachments,
                     }),
                 };
