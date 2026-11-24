@@ -12,7 +12,7 @@ use t3code_shared::palette_search::{SearchMatchHint, char_ranges_to_bytes};
 use super::command_palette_drag::PaletteThreadDrag;
 use super::command_palette_lookups::PaletteThread;
 use super::sidebar::model::SidebarProviderMark;
-use super::command_palette_logic::{PaletteItem, PaletteItemKind, PaletteRow, PaletteTitle, PaletteTrailing, ShownItem};
+use super::command_palette_logic::{PaletteItem, PaletteItemKind, PaletteProjectRow, PaletteRow, PaletteTitle, PaletteTrailing, ShownItem};
 use super::icons::{Icon, IconName, IconSize};
 use super::ui::{DISABLED_OPACITY, TextStyleExt as _};
 use crate::AppTheme;
@@ -42,6 +42,8 @@ fn has_second_line(shown: &ShownItem) -> bool {
 pub struct RowCallbacks {
     pub on_hover: Box<dyn Fn(&mut Window, &mut App)>,
     pub on_click: Box<dyn Fn(&mut Window, &mut App)>,
+    /// The project row's pin button.
+    pub on_pin: Box<dyn Fn(&mut Window, &mut App)>,
     pub on_drag_start: Box<dyn Fn(&mut Window, &mut App)>,
 }
 
@@ -76,7 +78,7 @@ fn title_element(item: &PaletteItem, theme: &AppTheme) -> AnyElement {
                 .overflow_hidden()
                 .whitespace_nowrap()
                 .child(div().flex_none().child(SharedString::from(full[..start].replace(' ', "\u{a0}"))))
-                .child(div().flex_none().font_weight(FontWeight(600.)).child(SharedString::from(full[start..end].to_owned())))
+                .child(div().flex_none().font(crate::appearance_fonts::ui_font(weight::SEMIBOLD)).child(SharedString::from(full[start..end].to_owned())))
                 .child(div().min_w_0().truncate().child(SharedString::from(full[end..].replace(' ', "\u{a0}"))))
                 .into_any_element()
         }
@@ -144,6 +146,13 @@ pub fn render_item(
 ) -> AnyElement {
     let c = &theme.colors;
     let item = &shown.item;
+    let (callbacks, on_pin) = match callbacks {
+        Some(mut callbacks) => {
+            let on_pin = std::mem::replace(&mut callbacks.on_pin, Box::new(|_, _| {}));
+            (Some(callbacks), Some(on_pin))
+        }
+        None => (None, None),
+    };
     let muted_70 = with_alpha(c.muted_foreground, 0.7);
     let title_line = div()
         .flex()
@@ -169,6 +178,7 @@ pub fn render_item(
     let content = if has_second_line(shown) {
         let second = match (&shown.hint, &item.description) {
             (Some(hint), _) => hint_line(hint, theme),
+            (None, _) if item.project.is_some() => project_location(item.project.as_ref().expect("checked"), theme),
             (None, _) if item.thread.is_some() => {
                 thread_subtitle(item.thread.as_ref().expect("checked"), item.secondary, theme, cx)
             }
@@ -207,13 +217,19 @@ pub fn render_item(
                 .items_center()
                 .self_start()
                 .pt(theme.sp(0.5))
-                .child(Icon::new(item.icon).size(IconSize::Md).color(c.icon_muted)),
+                .child(match &item.project {
+                    Some(project) => crate::components::project_favicon::ProjectFavicon::new(project.name.clone())
+                        .size(theme.rem(1.))
+                        .into_any_element(),
+                    None => Icon::new(item.icon).size(IconSize::Md).color(c.icon_muted).into_any_element(),
+                }),
         )
         .child(content)
         .when_some(item.trailing.as_ref(), |d, trailing| d.child(trailing_element(trailing, theme)))
         .when(item.unavailable, |d| {
             d.child(div().flex_none().ui_text(theme, TextSize::Xs, weight::NORMAL).text_color(muted_70).child(t!("Unavailable")))
         })
+        .when_some(item.project.as_ref().zip(on_pin), |d, (project, on_pin)| d.child(pin_button(ix, project, active, theme, on_pin)))
         .when_some(item.timestamp.clone(), |d, timestamp| {
             d.child(
                 div()
@@ -243,7 +259,7 @@ pub fn render_item(
     let Some(callbacks) = callbacks.filter(|_| enabled) else {
         return row.into_any_element();
     };
-    let RowCallbacks { on_hover, on_click, on_drag_start } = callbacks;
+    let RowCallbacks { on_hover, on_click, on_drag_start, .. } = callbacks;
     let row = row
         .cursor_pointer()
         .on_mouse_move(move |_, window, cx| on_hover(window, cx))
@@ -351,4 +367,63 @@ fn thread_subtitle(thread: &PaletteThread, is_current: bool, theme: &AppTheme, c
         row = row.child(part);
     }
     row.into_any_element()
+}
+
+/// `ProjectLocationDescription`: "Current · Local · /path", the path truncating.
+fn project_location(project: &PaletteProjectRow, theme: &AppTheme) -> AnyElement {
+    let muted = with_alpha(theme.colors.muted_foreground, 0.7);
+    let dot = || div().flex_none().child("·");
+    div()
+        .flex()
+        .min_w_0()
+        .items_center()
+        .gap(theme.rem(0.25))
+        .ui_text(theme, TextSize::Xs, weight::NORMAL)
+        .text_color(muted)
+        .when(project.current, |d| d.child(div().flex_none().child(t!("Current", context = "this project is the current one"))).child(dot()))
+        .child(div().flex_none().truncate().child(project.location.clone().unwrap_or_else(|| t!("Remote", context = "machine location"))))
+        .child(dot())
+        .child(div().flex_1().min_w_0().truncate().child(project.workspace_root.clone()))
+        .into_any_element()
+}
+
+/// `ProjectPinButton`: a pinned project always shows its pin (crossed on
+/// hover); an unpinned one shows it on the highlighted row only.
+fn pin_button(ix: usize, project: &PaletteProjectRow, active: bool, theme: &AppTheme, on_pin: Box<dyn Fn(&mut Window, &mut App)>) -> AnyElement {
+    let group: SharedString = format!("palette-pin-{ix}").into();
+    let muted = theme.colors.muted_foreground;
+    let hover = theme.colors.highlight();
+    let size = IconSize::Custom(theme.rem(0.875));
+    let title = if project.pinned {
+        t!("Unpin {name}", name = project.name.as_ref())
+    } else {
+        t!("Pin {name}", name = project.name.as_ref())
+    };
+    div()
+        .id(("palette-pin", ix))
+        .group(group.clone())
+        .flex()
+        .flex_none()
+        .ml_auto()
+        .size(theme.rem(1.5))
+        .items_center()
+        .justify_center()
+        .rounded(theme.radii.md)
+        .when(!project.pinned && !active, |d| d.invisible())
+        .hover(move |s| s.bg(hover))
+        .tooltip(crate::components::ui::tooltip::tooltip(title))
+        .on_mouse_down(gpui_kit::MouseButton::Left, |_, _, cx| cx.stop_propagation())
+        .on_click(move |_, window, cx| {
+            cx.stop_propagation();
+            on_pin(window, cx)
+        })
+        .map(|d| {
+            if project.pinned {
+                d.child(div().group_hover(group.clone(), |d| d.invisible()).child(Icon::new(IconName::Pin).size(size).color(muted)))
+                    .child(div().absolute().invisible().group_hover(group, |d| d.visible()).child(Icon::new(IconName::PinOff).size(size).color(muted)))
+            } else {
+                d.child(Icon::new(IconName::Pin).size(size).color(muted))
+            }
+        })
+        .into_any_element()
 }

@@ -137,6 +137,7 @@ const OWNER_SCENES: &[Scene] = &[
     Scene { name: "palette-root", reference: "palette-root", light: false, steps: &[Step::Action(|| Box::new(ToggleCommandPalette)), Step::Wait(200)] },
     Scene { name: "palette-query-sync", reference: "palette-query-sync", light: false, steps: &[Step::Action(|| Box::new(ToggleCommandPalette)), Step::Type("sync"), Step::Wait(400)] },
     Scene { name: "palette-messages", reference: "palette-messages", light: false, steps: &[Step::Action(|| Box::new(ToggleCommandPalette)), Step::Type("reconnect"), Step::Wait(600)] },
+    Scene { name: "palette-nested-project", reference: "palette-nested-project", light: false, steps: &[Step::Action(|| Box::new(ToggleCommandPalette)), Step::Wait(200), Step::Press("down"), Step::Press("enter"), Step::Wait(300)] },
     Scene { name: "palette-empty", reference: "palette-empty", light: false, steps: &[Step::Action(|| Box::new(ToggleCommandPalette)), Step::Type("zzqpv"), Step::Wait(300)] },
 ];
 

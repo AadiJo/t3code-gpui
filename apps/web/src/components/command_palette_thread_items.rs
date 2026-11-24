@@ -63,6 +63,7 @@ pub fn build_thread_items(
                     keep_open: false,
                 },
                 hide_chevron: false,
+                project: None,
             })
         })
         .collect()

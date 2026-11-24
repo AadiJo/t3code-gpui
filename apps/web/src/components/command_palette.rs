@@ -26,7 +26,7 @@ use super::command_palette_logic::{
 };
 use super::command_palette_lookups::{CommandPaletteSource, PaletteFeature};
 use super::command_palette_port_forward_items::port_forwards_item;
-use super::command_palette_project_items::{new_thread_in_items, project_search_items};
+use super::command_palette_project_items::{new_thread_in_items, project_search_items, ProjectContext};
 use super::command_palette_results::{RowCallbacks, render_empty, render_item, render_label, row_height};
 use super::command_palette_theme_items::{change_appearance_item, change_theme_item, theme_editor_item};
 use super::command_palette_thread_items::{build_thread_items, recent_thread_items};
@@ -271,7 +271,7 @@ impl CommandPalette {
             root_groups,
             nested_items,
             thread_items,
-            project_items: project_search_items(&projects),
+            project_items: project_search_items(&projects, &source.environments()),
             settings_items,
             search,
             shown: Vec::new(),
@@ -329,7 +329,11 @@ impl CommandPalette {
                 groups: vec![PaletteGroup {
                     value: "projects".into(),
                     label: t!("Projects"),
-                    items: new_thread_in_items(&projects, scratch_environment.as_ref()),
+                    items: new_thread_in_items(
+                        &projects,
+                        scratch_environment.as_ref(),
+                        &ProjectContext { environments: &environments, current: current_project.clone() },
+                    ),
                 }],
                 initial_query: None,
             };
@@ -666,7 +670,7 @@ impl CommandPalette {
         );
         // `max-h-105` on the popup; the list takes what the input and footer leave.
         let popup_max = theme.rem(26.25).min(viewport.height - theme.sp(8.));
-        let chrome = theme.sp(3.) + theme.sp(8.5) + footer_height(&theme) + px(2.);
+        let chrome = theme.sp(3.) + theme.sp(8.5) + px(2.) + footer_height(&theme) + px(2.);
         let list_padding = theme.sp(4.);
         let content: gpui_kit::Pixels = rows.rows.iter().map(|row| row_height(row, &theme)).sum::<gpui_kit::Pixels>();
         let list_height = (content + list_padding).min(popup_max - chrome);
@@ -681,7 +685,7 @@ impl CommandPalette {
                     let value = shown.item.value.clone();
                     let active = highlighted.as_ref() == Some(&value);
                     let callbacks = {
-                        let (hover, click, drag) = (weak.clone(), weak.clone(), weak.clone());
+                        let (hover, click, drag, pin) = (weak.clone(), weak.clone(), weak.clone(), weak.clone());
                         let (hover_value, item) = (value.clone(), shown.item.clone());
                         RowCallbacks {
                             on_hover: Box::new(move |_, cx| {
@@ -690,6 +694,15 @@ impl CommandPalette {
                             on_click: Box::new(move |window, cx| {
                                 click.update(cx, |palette, cx| palette.run_item(item.clone(), window, cx)).ok();
                             }),
+                            on_pin: {
+                                let pin = pin.clone();
+                                let project = shown.item.project.as_ref().map(|p| p.project_ref.clone());
+                                Box::new(move |_, cx| {
+                                    if let Some(project) = project.clone() {
+                                        pin.update(cx, |_, cx| cx.emit(PaletteEvent::ToggleProjectPin(project))).ok();
+                                    }
+                                })
+                            },
                             on_drag_start: Box::new(move |window, cx| {
                                 drag.update(cx, |palette, cx| palette.close(window, cx)).ok();
                             }),
@@ -768,11 +781,14 @@ impl CommandPalette {
             .pl(theme.sp(2.) + theme.sp(6.))
             .pr(theme.sp(3.) - px(1.))
             .ui_text(theme, TextSize::Sm, weight::NORMAL);
-        // `CommandInput`: `px-[--command-shell-inset] py-1.5`, a `lg` input without chrome.
+        // `CommandInput`: `px-[--command-shell-inset] py-1.5`, a `lg` input whose
+        // control keeps its 1px transparent border; the addon sits at
+        // `ps-[calc(--spacing(3)-1px)]` inside it.
         div().px(theme.spacing.command_shell_inset).py(theme.sp(1.5)).child(
             div()
                 .relative()
-                .h(theme.sp(8.5))
+                .h(theme.sp(8.5) + px(2.))
+                .p(px(1.))
                 .flex()
                 .items_center()
                 .child(field)
@@ -781,7 +797,7 @@ impl CommandPalette {
                         .absolute()
                         .top_0()
                         .bottom_0()
-                        .left(theme.spacing.command_shell_inset + px(1.) + px(2.))
+                        .left(px(1.) + theme.sp(3.) - px(1.))
                         .flex()
                         .items_center()
                         .opacity(0.8)
