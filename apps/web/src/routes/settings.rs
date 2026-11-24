@@ -42,6 +42,8 @@ pub struct SettingsRoute {
     server_pages: Option<Entity<ServerSettingsPages>>,
     pages: Entity<SettingsPages>,
     scroll: ScrollHandle,
+    /// The pointer is over the page, which shows its scrollbar (`data-hovering`).
+    content_hovered: bool,
     focus: FocusHandle,
     _subscriptions: Vec<Subscription>,
 }
@@ -99,6 +101,7 @@ impl SettingsRoute {
             server_pages: None,
             pages,
             scroll: ScrollHandle::new(),
+            content_hovered: false,
             focus: cx.focus_handle(),
             _subscriptions: vec![subscription],
         }
@@ -405,16 +408,55 @@ impl SettingsRoute {
             .child(header)
             .child(
                 div()
-                    .id("settings-content")
-                    .test_support()
+                    .relative()
+                    .flex()
+                    .flex_col()
                     .flex_1()
                     .min_h_0()
-                    .overflow_y_scroll()
-                    .track_scroll(&self.scroll)
-                    .px(px(SCROLLBAR_GUTTER))
-                    .child(body),
+                    .child(
+                        div()
+                            .id("settings-content")
+                            .test_support()
+                            .flex_1()
+                            .min_h_0()
+                            .overflow_y_scroll()
+                            .track_scroll(&self.scroll)
+                            .px(px(SCROLLBAR_GUTTER))
+                            .on_hover(cx.listener(|this, hovered: &bool, _, cx| {
+                                this.content_hovered = *hovered;
+                                cx.notify();
+                            }))
+                            .on_scroll_wheel(cx.listener(|_, _, _, cx| cx.notify()))
+                            .child(body),
+                    )
+                    .children(self.content_hovered.then(|| scroll_thumb(&self.scroll, cx)).flatten()),
             )
     }
+}
+
+/// `ScrollBar` (vertical) of `scroll-area.tsx`, as drawn while the pointer is over the page:
+/// `my-1 mr-px w-1.5`, a rounded `--app-scrollbar-thumb` thumb at least 16px long.
+fn scroll_thumb(scroll: &ScrollHandle, cx: &App) -> Option<gpui_kit::Div> {
+    let theme = cx.app_theme();
+    let viewport = scroll.bounds().size.height;
+    let max = scroll.max_offset().y;
+    if max <= px(0.) || viewport <= px(0.) {
+        return None;
+    }
+    let track = viewport - theme.sp(2.);
+    let length = (track * (viewport / (viewport + max))).max(px(16.));
+    let progress = (f32::from(-scroll.offset().y) / f32::from(max)).clamp(0., 1.);
+    let color = if theme.is_dark() { gpui_kit::hsla(0., 0., 1., 0.36) } else { gpui_kit::rgb(0xd9d9d9).into() };
+    Some(
+        div()
+            .absolute()
+            .right(px(1.))
+            .top(theme.sp(1.) + (track - length) * progress)
+            .w(theme.sp(1.5))
+            .h(length)
+            .rounded_full()
+            .bg(color),
+    )
 }
 
 impl Render for SettingsRoute {
