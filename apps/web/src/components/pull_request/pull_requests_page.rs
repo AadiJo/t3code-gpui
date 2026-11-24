@@ -42,7 +42,8 @@ use crate::components::saved_views_menu::{ApplySavedView, SavedViewsKind, SavedV
 use crate::components::ui::menu::{MenuItem, MenuItemKind, MenuPopup, dropdown_menu};
 use crate::components::ui::popover::{Popover, PopupHandle};
 use crate::components::ui::spinner::{Spinner, SpinnerSize};
-use crate::i18n::t;
+use crate::components::ui::empty::Empty;
+use crate::i18n::{t, t_rich};
 use crate::{ActiveAppTheme as _, AppTheme};
 
 /// Key context of the page.
@@ -209,6 +210,8 @@ pub enum PullRequestsPageEvent {
 enum ListItem {
     Header(PullRequestGroupKey, usize),
     Row(Row),
+    /// The banner for an environment whose read failed while others answered.
+    Failed(SharedString),
     /// The Load more row under a truncated listing.
     LoadMore,
 }
@@ -244,6 +247,8 @@ pub struct PullRequestsPage {
     environment: Option<EnvironmentId>,
     project: Option<(EnvironmentId, ProjectId)>,
     projects: Vec<PullRequestProjectChoice>,
+    /// Whether the owner has said which projects exist; until then the page assumes some do.
+    projects_known: bool,
     filters_submenu: Option<FilterSubmenu>,
     /// Rows asked of each host (`PAGE_SIZE` growing to `MAX_PAGE_SIZE`).
     page_size: u64,
@@ -321,6 +326,7 @@ impl PullRequestsPage {
             environment: None,
             project: None,
             projects: Vec::new(),
+            projects_known: false,
             filters_submenu: None,
             page_size: PAGE_SIZE,
             loading_more: false,
@@ -338,6 +344,7 @@ impl PullRequestsPage {
     /// The projects the Project filter offers, from the owner's shell.
     pub fn set_projects(&mut self, projects: Vec<PullRequestProjectChoice>, cx: &mut Context<Self>) {
         self.projects = projects;
+        self.projects_known = true;
         cx.notify();
     }
 
@@ -655,6 +662,11 @@ impl PullRequestsPage {
             self.rows += rows.len();
             self.items.extend(rows.into_iter().map(ListItem::Row));
         }
+        if self.rows > 0
+            && let Some(error) = self.list_error()
+        {
+            self.items.push(ListItem::Failed(error));
+        }
         if merged.truncated && self.rows > 0 {
             self.items.push(ListItem::LoadMore);
         }
@@ -757,7 +769,85 @@ impl PullRequestsPage {
         self.refilter(cx);
     }
 
+    /// `listError`: the first failed environment's label and message.
+    fn list_error(&self) -> Option<SharedString> {
+        self.sources.iter().find_map(|s| match self.loads.get(&s.environment_id) {
+            Some(EnvironmentLoad::Failed(message)) => Some(SharedString::from(format!("{}: {message}", s.label))),
+            _ => None,
+        })
+    }
+
     // --- render ----------------------------------------------------------
+
+    /// `PullRequestListEmptyState`: no projects, no match for the query, or nothing listed.
+    fn render_empty(&self, theme: &AppTheme, can_continue: bool, cx: &mut Context<Self>) -> AnyElement {
+        let refreshing = self.loads.values().any(|l| matches!(l, EnvironmentLoad::Loading));
+        let mark = gpui_kit::svg().path("icons/ui/branch-mark-open.svg").w(theme.sp(32.)).h(theme.sp(20.)).text_color(theme.colors.muted_foreground);
+        let check_again = Button::new("pr-check-again")
+            .variant(ButtonVariant::Outline)
+            .size(ButtonSize::Sm)
+            .icon(IconName::RefreshCw)
+            .icon_size(IconSize::Sm)
+            .label(if refreshing { t!("Checking...") } else { t!("Check again") })
+            .disabled(refreshing)
+            .on_click(cx.listener(|this, _, _, cx| this.load(false, cx)));
+        let buttons = div().flex().flex_wrap().justify_center().gap(theme.sp(2.));
+        if self.projects_known && self.projects.is_empty() {
+            return Empty::new(t!("No projects in this workspace"))
+                .media(mark)
+                .description(t!("Add a project, and the pull requests from its repository appear here."))
+                .into_any_element();
+        }
+        let query = self.query.trim();
+        if !query.is_empty() {
+            let shown: String = if query.chars().count() > 48 { query.chars().take(48).chain(['…']).collect() } else { query.to_owned() };
+            return Empty::new(SharedString::from(t_rich!("Nothing matches “{shownQuery}”", shownQuery = shown.as_str()).plain()))
+                .media(mark)
+                .description(t!("The hosts were searched for it. Try fewer words, or search by number, author or branch."))
+                .child(
+                    buttons
+                        .child(
+                            Button::new("pr-clear-search")
+                                .variant(ButtonVariant::Outline)
+                                .size(ButtonSize::Sm)
+                                .icon(IconName::Search)
+                                .icon_size(IconSize::Sm)
+                                .label(t!("Clear search"))
+                                .on_click(cx.listener(|this, _, window, cx| this.set_query("", window, cx))),
+                        )
+                        .child(check_again),
+                )
+                .into_any_element();
+        }
+        let filtered = has_pull_request_filters(&self.menu_filters)
+            || self.state != PullRequestListState::Open
+            || self.involvement != PullRequestInvolvement::All
+            || self.project.is_some()
+            || self.host.is_some();
+        let truncated = self.merged.as_ref().is_some_and(|m| m.truncated);
+        Empty::new(if filtered { t!("Nothing under these filters") } else { t!("No pull requests") })
+            .media(mark)
+            .description(if filtered {
+                t!("Widen the state, involvement or project filter to see more.")
+            } else {
+                t!("Pull requests from every project in this workspace appear here.")
+            })
+            .child(
+                buttons
+                    .when(truncated && can_continue, |b| {
+                        b.child(
+                            Button::new("pr-empty-load-more")
+                                .variant(ButtonVariant::Outline)
+                                .size(ButtonSize::Sm)
+                                .label(if self.loading_more { t!("Loading...") } else { t!("Load more pull requests") })
+                                .disabled(self.loading_more)
+                                .on_click(cx.listener(|this, _, _, cx| this.load_more(cx))),
+                        )
+                    })
+                    .child(check_again),
+            )
+            .into_any_element()
+    }
 
     /// The hosts the list read, as the provider filter offers them (`hostMenuOptions`).
     fn host_options(&self) -> Vec<FilterOption> {
@@ -782,12 +872,24 @@ impl PullRequestsPage {
             .collect()
     }
 
+    /// `projectOptions`: projects whose read failed are marked unavailable and listed last.
     fn project_options(&self) -> Vec<FilterOption> {
-        std::iter::once(FilterOption::new("", t!("All projects"), IconName::Layers))
-            .chain(self.projects.iter().map(|p| {
-                FilterOption::new(&format!("{}\u{0}{}", p.environment_id.as_str(), p.project_id.as_str()), p.title.clone(), IconName::FolderGit2)
-            }))
-            .collect()
+        let errors = self.merged.as_ref().map(|m| m.errors.as_slice()).unwrap_or_default();
+        let mut projects: Vec<FilterOption> = self
+            .projects
+            .iter()
+            .map(|p| {
+                let mut option =
+                    FilterOption::new(&format!("{}\u{0}{}", p.environment_id.as_str(), p.project_id.as_str()), p.title.clone(), IconName::FolderGit2);
+                option.unavailable = errors
+                    .iter()
+                    .find(|(e, error)| e == &p.environment_id && error.project_id == p.project_id)
+                    .map(|(_, error)| SharedString::from(error.message.clone()));
+                option
+            })
+            .collect();
+        projects.sort_by_key(|o| o.unavailable.is_some());
+        std::iter::once(FilterOption::new("", t!("All projects"), IconName::Layers)).chain(projects).collect()
     }
 
     /// `filterCount`: every control away from its default.
@@ -912,129 +1014,6 @@ impl PullRequestsPage {
             )
     }
 
-    fn render_chips(&self, theme: &AppTheme, cx: &mut Context<Self>) -> Option<AnyElement> {
-        let (_, filters) = self.effective_filters();
-        let mut chips: Vec<(SharedString, PullRequestListFilters)> = Vec::new();
-        let m = &self.menu_filters;
-        if let Some(d) = filters.draft {
-            chips.push((if d == PullRequestListFiltersDraft::Only { t!("Drafts only") } else { t!("Hide drafts") }, PullRequestListFilters { draft: None, ..m.clone() }));
-        }
-        if let Some(r) = filters.review {
-            chips.push((review_filter_label(r), PullRequestListFilters { review: None, ..m.clone() }));
-        }
-        if let Some(c) = filters.checks {
-            chips.push((if c == PullRequestListFiltersChecks::Passing { t!("Passing", context = "checks filter") } else { t!("Failing", context = "checks filter") }, PullRequestListFilters { checks: None, ..m.clone() }));
-        }
-        if let Some(a) = &filters.author {
-            chips.push((SharedString::from(format!("{}: {a}", t!("Author"))), PullRequestListFilters { author: None, ..m.clone() }));
-        }
-        for group in filters.labels.iter().flatten() {
-            let rest: Vec<Vec<String>> = m.labels.iter().flatten().filter(|g| *g != group).cloned().collect();
-            chips.push((
-                SharedString::from(format!("{}: {}", t!("Labels"), group.join(", "))),
-                PullRequestListFilters { labels: (!rest.is_empty()).then_some(rest), ..m.clone() },
-            ));
-        }
-        if chips.is_empty() {
-            return None;
-        }
-        Some(
-            div()
-                .flex()
-                .flex_wrap()
-                .gap(px(6.))
-                .children(chips.into_iter().enumerate().map(|(i, (label, without))| {
-                    div()
-                        .id(("pr-chip", i))
-                        .test_support()
-                        .flex()
-                        .items_center()
-                        .gap(px(4.))
-                        .h(px(22.))
-                        .pl(px(8.))
-                        .pr(px(4.))
-                        .rounded_full()
-                        .border_1()
-                        .border_color(theme.colors.border)
-                        .ui_text(theme, TextSize::Xs, weight::MEDIUM)
-                        .text_color(theme.colors.text)
-                        .child(label)
-                        .child(
-                            div()
-                                .id(("pr-chip-clear", i))
-                                .test_support()
-                                .rounded_full()
-                                .hover(|s| s.bg(theme.colors.accent_surface))
-                                .child(Icon::new(IconName::X).size(IconSize::Xs).color(theme.colors.muted_foreground))
-                                .on_click(cx.listener(move |this, _, _, cx| this.set_menu_filters(without.clone(), cx))),
-                        )
-                }))
-                .into_any_element(),
-        )
-    }
-
-    fn render_banners(&self, theme: &AppTheme, cx: &mut Context<Self>) -> Vec<AnyElement> {
-        let mut out = Vec::new();
-        let failed: Vec<(SharedString, SharedString)> = self
-            .sources
-            .iter()
-            .filter_map(|s| match self.loads.get(&s.environment_id) {
-                Some(EnvironmentLoad::Failed(message)) => Some((s.label.clone(), message.clone())),
-                _ => None,
-            })
-            .collect();
-        if !failed.is_empty() {
-            out.push(
-                div()
-                    .id("pr-failed")
-                    .test_support()
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .gap(px(12.))
-                    .rounded(theme.radii.lg)
-                    .border_1()
-                    .border_color(theme.colors.warning.opacity(0.3))
-                    .bg(theme.colors.warning_surface)
-                    .px(px(12.))
-                    .py(px(8.))
-                    .ui_text(theme, TextSize::Xs, weight::NORMAL)
-                    .text_color(theme.colors.text)
-                    .child(
-                        div().flex().flex_col().gap(px(2.)).children(failed.iter().map(|(label, message)| {
-                            div().child(t!("{error} Showing the last pull requests loaded.", error = format!("{label}: {message}").as_str()))
-                        })),
-                    )
-                    .child(
-                        Button::new("pr-retry-failed")
-                            .variant(ButtonVariant::Outline)
-                            .size(ButtonSize::Sm)
-                            .label(t!("Retry"))
-                            .on_click(cx.listener(|this, _, _, cx| this.load(true, cx))),
-                    )
-                    .into_any_element(),
-            );
-        }
-        if let Some(merged) = &self.merged
-            && !merged.errors.is_empty()
-        {
-            out.push(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap(px(2.))
-                    .ui_text(theme, TextSize::Xs, weight::NORMAL)
-                    .text_color(theme.colors.muted_foreground)
-                    .children(merged.errors.iter().map(|(_, e)| {
-                        div().flex().gap(px(6.)).child(Icon::new(IconName::TriangleAlert).size(IconSize::Xs).color(theme.colors.warning)).child(
-                            SharedString::from(format!("{}: {}", e.project_title, e.message)),
-                        )
-                    }))
-                    .into_any_element(),
-            );
-        }
-        out
-    }
 }
 
 fn sort_label(sort: PullRequestListSort) -> SharedString {
@@ -1046,15 +1025,6 @@ fn sort_label(sort: PullRequestListSort) -> SharedString {
         PullRequestListSort::Oldest => t!("Oldest shown"),
         PullRequestListSort::Largest => t!("Largest shown"),
         PullRequestListSort::Smallest => t!("Smallest shown"),
-    }
-}
-
-fn review_filter_label(review: PullRequestListFiltersReview) -> SharedString {
-    match review {
-        PullRequestListFiltersReview::Approved => t!("Approved", context = "review decision"),
-        PullRequestListFiltersReview::ChangesRequested => t!("Changes requested"),
-        PullRequestListFiltersReview::ReviewRequired => t!("Review required"),
-        PullRequestListFiltersReview::NoneType => t!("No reviews"),
     }
 }
 
@@ -1497,19 +1467,30 @@ impl Render for PullRequestsPage {
         let can_continue = self.merged.as_ref().is_some_and(|m| !m.next_cursors.is_empty()) || self.page_size < MAX_PAGE_SIZE;
         let loading = self.merged.is_none() && self.loads.values().any(|l| matches!(l, EnvironmentLoad::Loading));
         let body: AnyElement = if loading {
-            div().p(px(24.)).text_color(theme.colors.muted_foreground).child(t!("Loading pull requests…")).into_any_element()
-        } else if items.is_empty() {
-            div()
-                .flex()
-                .flex_col()
-                .items_center()
-                .gap(px(6.))
-                .py(px(48.))
-                .text_color(theme.colors.muted_foreground)
-                .child(Icon::new(IconName::GitPullRequestArrow).size(IconSize::Xl).color(theme.colors.muted_foreground))
-                .child(div().ui_text(&theme, TextSize::Sm, weight::MEDIUM).text_color(theme.colors.text).child(t!("Nothing under these filters")))
-                .child(div().ui_text(&theme, TextSize::Xs, weight::NORMAL).child(t!("Widen the state, involvement or project filter to see more.")))
+            pull_request_list_ghost(&theme, 7, Some(t!("Loading pull requests…"))).into_any_element()
+        } else if items.is_empty()
+            && self.merged.is_none()
+            && let Some(error) = self.list_error()
+        {
+            let refreshing = self.loads.values().any(|l| matches!(l, EnvironmentLoad::Loading));
+            Empty::new(t!("Could not load pull requests"))
+                .icon(IconName::GitPullRequestArrow)
+                .description(error)
+                .child(
+                    div().flex().flex_wrap().justify_center().gap(theme.sp(2.)).child(
+                        Button::new("pr-unavailable-retry")
+                            .variant(ButtonVariant::Outline)
+                            .size(ButtonSize::Sm)
+                            .icon(IconName::RefreshCw)
+                            .icon_size(IconSize::Sm)
+                            .label(t!("Retry"))
+                            .disabled(refreshing)
+                            .on_click(cx.listener(|this, _, _, cx| this.load(true, cx))),
+                    ),
+                )
                 .into_any_element()
+        } else if items.is_empty() {
+            self.render_empty(&theme, can_continue, cx)
         } else {
             list(self.list.clone(), move |ix, _, _| match &items[ix] {
                 ListItem::Header(key, count) => div()
@@ -1526,6 +1507,7 @@ impl Render for PullRequestsPage {
                     .child(div().text_color(theme_rows.colors.muted_foreground.opacity(0.7)).child(count.to_string()))
                     .into_any_element(),
                 ListItem::LoadMore => render_load_more(&page, &theme_rows, loading_more, can_continue),
+                ListItem::Failed(error) => render_failed_banner(&page, &theme_rows, error.clone()),
                 ListItem::Row(row) => {
                     let host = row.entry.host.to_lowercase();
                     let actions = host_actions.get(&host).cloned().unwrap_or_default();
@@ -1562,21 +1544,55 @@ impl Render for PullRequestsPage {
                     .child(div().ui_text(&theme, TextSize::Sm, weight::MEDIUM).text_color(theme.colors.text).child(t!("Pull requests"))),
             )
             .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .flex_1()
-                    .min_h_0()
-                    // `WorkspacePageContainer`: `px-6 pt-6`, then `gap-3` within the toolbar group.
-                    .gap(theme.sp(3.))
-                    .px(theme.sp(6.))
-                    .pt(theme.sp(6.))
-                    .child(self.render_toolbar(&theme, cx))
-                    .children(self.render_chips(&theme, cx))
-                    .children(self.render_banners(&theme, cx))
-                    .child(div().flex().flex_col().flex_1().min_h_0().child(body)),
+                // `scrollbar-gutter: stable both-edges` around `WorkspacePageContainer width="expanded"`:
+                // `max-w-6xl mx-auto px-6 pt-6 pb-12 gap-4`.
+                div().flex().flex_col().flex_1().min_h_0().px(theme.spacing.app_scrollbar_width).child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .flex_1()
+                        .min_h_0()
+                        .w_full()
+                        .max_w(theme.rem(72.))
+                        .mx_auto()
+                        .gap(theme.sp(4.))
+                        .px(theme.sp(6.))
+                        .pt(theme.sp(6.))
+                        .pb(theme.sp(12.))
+                        .child(self.render_toolbar(&theme, cx))
+                        .child(div().flex().flex_col().flex_1().min_h_0().child(body)),
+                ),
             )
     }
+}
+
+/// `listError && shownCount > 0`: the failure under the rows, with Retry for the failed reads.
+fn render_failed_banner(page: &Entity<PullRequestsPage>, theme: &AppTheme, error: SharedString) -> AnyElement {
+    let page = page.clone();
+    div()
+        .id("pr-failed")
+        .test_support()
+        .flex()
+        .items_center()
+        .justify_between()
+        .gap(theme.sp(3.))
+        .rounded(theme.radii.lg)
+        .border_1()
+        .border_color(theme.colors.warning.opacity(0.3))
+        .bg(theme.colors.warning_surface)
+        .px(theme.sp(3.))
+        .py(theme.sp(2.))
+        .ui_text(theme, TextSize::Xs, weight::NORMAL)
+        .text_color(theme.colors.text)
+        .child(t!("{error} Showing the last pull requests loaded.", error = error.as_ref()))
+        .child(
+            Button::new("pr-retry-failed")
+                .variant(ButtonVariant::Outline)
+                .size(ButtonSize::Xs)
+                .label(t!("Retry"))
+                .on_click(move |_, _, cx| page.update(cx, |p, cx| p.load(true, cx))),
+        )
+        .into_any_element()
 }
 
 /// The row under a truncated listing: Load more, its progress, or why there is no more.
@@ -1613,6 +1629,50 @@ fn render_load_more(page: &Entity<PullRequestsPage>, theme: &AppTheme, loading: 
         }
         None => row.child(t!("Narrow your search to find more pull requests.")).into_any_element(),
     }
+}
+
+/// `PullRequestListGhost`: placeholder rows while the first read travels. The fork pulses
+/// them; this draws them still.
+pub fn pull_request_list_ghost(theme: &AppTheme, rows: usize, caption: Option<SharedString>) -> impl IntoElement {
+    const TITLE: [f32; 7] = [0.6, 0.4, 0.5, 0.667, 0.4, 0.6, 0.5];
+    const META: [f32; 7] = [0.4, 0.333, 0.4, 0.25, 0.333, 0.4, 0.333];
+    let bar = |h: Pixels| div().h(h).rounded(theme.radii.sm).bg(theme.colors.muted_foreground.opacity(0.15));
+    div()
+        .flex()
+        .flex_col()
+        .gap(theme.sp(0.5))
+        .children(caption.map(|c| {
+            div().px(theme.sp(3.)).pb(theme.sp(1.)).ui_text(theme, TextSize::Xs, weight::MEDIUM).text_color(theme.colors.muted_foreground).child(c)
+        }))
+        .children((0..rows).map(|i| {
+            div()
+                .flex()
+                .items_center()
+                .gap(theme.sp(2.))
+                .rounded(theme.radii.md)
+                .px(theme.sp(3.))
+                .py(theme.sp(2.5))
+                .child(bar(theme.sp(4.)).w(theme.sp(4.)).rounded_full())
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .flex()
+                        .flex_col()
+                        .gap(theme.sp(1.5))
+                        .child(bar(theme.sp(4.)).w(gpui_kit::relative(TITLE[i % 7])))
+                        .child(bar(theme.sp(3.5)).w(gpui_kit::relative(META[i % 7]))),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .items_end()
+                        .gap(theme.sp(1.5))
+                        .child(bar(theme.sp(3.)).w(theme.sp(12.)))
+                        .child(bar(theme.sp(3.)).w(theme.sp(16.))),
+                )
+        }))
 }
 
 fn group_label(key: PullRequestGroupKey) -> SharedString {

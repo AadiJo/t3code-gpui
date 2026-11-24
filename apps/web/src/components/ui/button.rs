@@ -370,6 +370,7 @@ pub struct Button {
     icon: Option<IconSource>,
     trailing_icon: Option<IconName>,
     trailing_icon_size: Option<IconSize>,
+    icon_size: Option<IconSize>,
     label_max_width: Option<Pixels>,
     accessory: Option<AnyElement>,
     variant: ButtonVariant,
@@ -389,6 +390,7 @@ impl Button {
             icon: None,
             trailing_icon: None,
             trailing_icon_size: None,
+            icon_size: None,
             label_max_width: None,
             accessory: None,
             variant: ButtonVariant::Default,
@@ -414,6 +416,12 @@ impl Button {
 
     pub fn trailing_icon(mut self, icon: IconName) -> Self {
         self.trailing_icon = Some(icon);
+        self
+    }
+
+    /// The leading icon's size when the fork sizes it (`size-3.5` on a `RefreshIcon size="sm"`).
+    pub fn icon_size(mut self, size: IconSize) -> Self {
+        self.icon_size = Some(size);
         self
     }
 
@@ -529,7 +537,7 @@ impl RenderOnce for Button {
             ButtonText::Px(size) => button.ui_text(theme, TextSize::Xs, text_weight).text_size(px(size)),
         };
         button
-            .children(self.icon.map(|name| icon(name, None)))
+            .children(self.icon.map(|name| icon(name, self.icon_size)))
             .children(self.label.map(|label| match self.label_max_width {
                 Some(width) => div().max_w(width).truncate().child(label).into_any_element(),
                 None => label.into_any_element(),

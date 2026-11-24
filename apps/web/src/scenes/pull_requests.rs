@@ -4,6 +4,7 @@
 //!   which fails its first load and shows the retry banner.
 //! - `pull-requests-summary`, `-guide`, `-timeline`, `-code`: the page with a
 //!   pull request open in the right panel on that tab.
+//! - `pull-requests-empty`: the page with no pull requests listed.
 //! - `issues`: the issues page with the issue panel open.
 //!
 //! `-light` variants render in the light appearance.
@@ -27,6 +28,22 @@ pub fn fixture_sources(fixture: &FixtureSource) -> Vec<EnvironmentListSource> {
         EnvironmentListSource { environment_id: EnvironmentId::new("env-studio"), label: "Studio".into(), source: Rc::new(fixture.clone()) },
         EnvironmentListSource { environment_id: EnvironmentId::new("env-devbox"), label: "devbox".into(), source: Rc::new(fixture.with_list(devbox_list, true)) },
     ]
+}
+
+/// The pull requests page with nothing listed (the fork capture's empty workspace).
+pub fn build_empty(window: &mut Window, cx: &mut App) -> AnyView {
+    let fixture = FixtureSource::standard();
+    let mut empty = fixture.state.lock().unwrap().data.list_studio.clone();
+    empty.entries.clear();
+    empty.errors.clear();
+    empty.truncated = false;
+    let sources = vec![EnvironmentListSource { environment_id: EnvironmentId::new("env-studio"), label: "Studio".into(), source: Rc::new(fixture.with_list(empty, false)) }];
+    cx.new(|cx| {
+        let mut page = PullRequestsPage::new(sources, window, cx);
+        page.now_ms = Some(SCENE_NOW_MS);
+        page
+    })
+    .into()
 }
 
 /// The pull requests page.

@@ -355,7 +355,7 @@ impl Render for IssuesPage {
                             .flex()
                             .flex_col()
                             .gap(theme.sp(3.))
-                            .px(theme.sp(6.))
+                            .px(theme.sp(6.) + theme.spacing.app_scrollbar_width)
                             .pt(theme.sp(6.))
                             .pb(theme.sp(12.))
                             .child(
