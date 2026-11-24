@@ -1572,6 +1572,7 @@ fn render_failed_banner(page: &Entity<PullRequestsPage>, theme: &AppTheme, error
     div()
         .id("pr-failed")
         .test_support()
+        .w_full()
         .flex()
         .items_center()
         .justify_between()

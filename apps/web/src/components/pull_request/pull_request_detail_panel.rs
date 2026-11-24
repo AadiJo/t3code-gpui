@@ -9,7 +9,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::rc::Rc;
 use std::time::Instant;
 
-use gpui_kit::component::input::InputState;
+use gpui_kit::component::input::{InputEvent, InputState, TextareaState};
 use gpui_kit::base::TestSupportExt as _;
 use gpui_kit::{
     AnyElement, App, AppContext as _, Context, Div, Entity, EventEmitter, InteractiveElement as _, IntoElement,
@@ -27,7 +27,12 @@ use t3code_contracts::*;
 
 use super::pull_request_detail_logic::*;
 use super::pull_request_presentation::*;
+use super::pull_request_candidate_picker::{CandidatePicker, CandidatesChanged, PickerKind};
 use super::pull_request_source::PullRequestDetailSource;
+use crate::components::ui::dialog::{DialogSurface, Modal};
+use crate::components::ui::input::TextArea;
+use crate::components::ui::popover::glass_surface;
+use crate::components::ui::toast::{ToastData, ToastKind, Toaster};
 use crate::appearance_fonts::{TextSize, weight};
 use crate::components::chat::chat_style::ChatColors;
 use crate::components::chat::markdown_stream_blocks::parse_message_blocks;
@@ -118,8 +123,28 @@ pub struct PullRequestDetailPanel {
     markdown_state: MarkdownUiState,
     show_bots: bool,
     show_resolved: bool,
+    title_edit: Option<Entity<InputState>>,
+    title_saving: bool,
+    body_edit: Option<Entity<TextareaState>>,
+    body_saving: bool,
+    reviewer_picker: Option<Entity<CandidatePicker>>,
+    label_picker: Option<Entity<CandidatePicker>>,
+    composer_open: bool,
+    composer_mode: ComposerMode,
+    review_summary: Option<Entity<TextareaState>>,
+    review_verdict: PullRequestReviewVerdict,
+    review_pending: bool,
+    confirm_delete_branch: bool,
+    _picker_events: Vec<Subscription>,
     /// Fixed clock for scenes; `None` reads the system clock.
     pub now_ms: Option<i64>,
+}
+
+/// What the floating composer writes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ComposerMode {
+    Comment,
+    Review,
 }
 
 impl EventEmitter<PullRequestDetailEvent> for PullRequestDetailPanel {}
@@ -162,6 +187,19 @@ impl PullRequestDetailPanel {
             markdown_state: MarkdownUiState::default(),
             show_bots: true,
             show_resolved: true,
+            title_edit: None,
+            title_saving: false,
+            body_edit: None,
+            body_saving: false,
+            reviewer_picker: None,
+            label_picker: None,
+            composer_open: false,
+            composer_mode: ComposerMode::Comment,
+            review_summary: None,
+            review_verdict: PullRequestReviewVerdict::Comment,
+            review_pending: false,
+            confirm_delete_branch: false,
+            _picker_events: Vec::new(),
             now_ms: None,
         };
         panel.refresh(cx);
@@ -421,6 +459,479 @@ impl PullRequestDetailPanel {
             .ok();
         })
         .detach();
+    }
+
+    // --- editing, pickers, review and checkout ---------------------------
+
+    fn update_input(&self) -> PullRequestUpdateInput {
+        let r = &self.reference;
+        PullRequestUpdateInput {
+            project_id: r.project_id.clone(),
+            host: r.host.clone(),
+            expected_account_id: r.expected_account_id.clone(),
+            allow_stale: r.allow_stale,
+            repository: r.repository.clone(),
+            number: r.number,
+            title: None,
+            body: None,
+            maintainer_can_modify: None,
+        }
+    }
+
+    /// Opens the title editor (`PullRequestTitleEditor`).
+    pub fn begin_title_edit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(detail) = &self.detail else { return };
+        let input = cx.new(|cx| InputState::new(window, cx).default_value(detail.title.clone()));
+        input.update(cx, |i, cx| i.focus(window, cx));
+        let events = cx.subscribe(&input, |this, _, event: &InputEvent, cx| {
+            if let InputEvent::PressEnter { .. } = event {
+                this.save_title(cx);
+            }
+        });
+        self._picker_events.push(events);
+        self.title_edit = Some(input);
+        cx.notify();
+    }
+
+    /// Saves the edited title; the editor closes at once and reopens if the host refuses it.
+    pub fn save_title(&mut self, cx: &mut Context<Self>) {
+        let (Some(input), Some(detail)) = (&self.title_edit, &self.detail) else { return };
+        if self.title_saving {
+            return;
+        }
+        let title = input.read(cx).value().trim().to_owned();
+        if title.is_empty() || title == detail.title {
+            self.title_edit = None;
+            cx.notify();
+            return;
+        }
+        self.title_saving = true;
+        let previous = detail.title.clone();
+        if let Some(d) = &mut self.detail {
+            d.title = title.clone();
+        }
+        let request = self.source.update(PullRequestUpdateInput { title: Some(title), ..self.update_input() });
+        let kept = self.title_edit.take();
+        cx.spawn(async move |this, cx| {
+            let result = request.await;
+            this.update(cx, |this, cx| {
+                this.title_saving = false;
+                if let Err(error) = result {
+                    if let Some(d) = &mut this.detail {
+                        d.title = previous;
+                    }
+                    this.title_edit = kept;
+                    Toaster::push(ToastData::new(ToastKind::Error, t!("The title could not be saved")).description(error.0), cx);
+                } else {
+                    this.refresh(cx);
+                }
+                cx.notify();
+            })
+            .ok();
+        })
+        .detach();
+        cx.notify();
+    }
+
+    /// Opens the description editor.
+    pub fn begin_body_edit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(detail) = &self.detail else { return };
+        let body = detail.body.clone();
+        let input = cx.new(|cx| TextareaState::new(window, cx).auto_grow(3, 12).default_value(body));
+        input.update(cx, |i, cx| i.focus(window, cx));
+        self.body_edit = Some(input);
+        cx.notify();
+    }
+
+    /// Saves the edited description (an empty one is allowed).
+    pub fn save_body(&mut self, cx: &mut Context<Self>) {
+        let Some(input) = &self.body_edit else { return };
+        if self.body_saving {
+            return;
+        }
+        let body = input.read(cx).value().to_string();
+        self.body_saving = true;
+        let request = self.source.update(PullRequestUpdateInput { body: Some(body.clone()), ..self.update_input() });
+        cx.spawn(async move |this, cx| {
+            let result = request.await;
+            this.update(cx, |this, cx| {
+                this.body_saving = false;
+                match result {
+                    Ok(()) => {
+                        if let Some(d) = &mut this.detail {
+                            d.body = body;
+                        }
+                        this.body_edit = None;
+                        this.refresh(cx);
+                    }
+                    Err(error) => {
+                        Toaster::push(ToastData::new(ToastKind::Error, t!("Could not save the description")).description(error.0), cx);
+                    }
+                }
+                cx.notify();
+            })
+            .ok();
+        })
+        .detach();
+        cx.notify();
+    }
+
+    /// Creates the reviewer and label pickers once the detail says what the host allows.
+    fn ensure_pickers(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(detail) = &self.detail else { return };
+        if self.reviewer_picker.is_none() && detail.capabilities.reviewers.request && detail.capabilities.reviewers.list_candidates {
+            let (source, reference) = (self.source.clone(), self.reference.clone());
+            let allowed = detail.viewer_permissions.request_reviewers;
+            let searchable = detail.capabilities.reviewers.search_candidates == Some(true);
+            let picker = cx.new(|cx| CandidatePicker::new(PickerKind::Reviewers, source, reference, allowed, searchable, window, cx));
+            self._picker_events.push(cx.subscribe(&picker, |this, _, _: &CandidatesChanged, cx| this.refresh(cx)));
+            self.reviewer_picker = Some(picker);
+        }
+        if self.label_picker.is_none() && detail.capabilities.labels == Some(true) {
+            let (source, reference) = (self.source.clone(), self.reference.clone());
+            let allowed = detail.viewer_permissions.labels != Some(false);
+            let picker = cx.new(|cx| CandidatePicker::new(PickerKind::Labels, source, reference, allowed, false, window, cx));
+            self._picker_events.push(cx.subscribe(&picker, |this, _, _: &CandidatesChanged, cx| this.refresh(cx)));
+            self.label_picker = Some(picker);
+        }
+    }
+
+    /// The verdicts the host offers and the viewer may give.
+    fn offered_verdicts(&self) -> Vec<PullRequestReviewVerdict> {
+        let Some(detail) = &self.detail else { return vec![] };
+        [PullRequestReviewVerdict::Comment, PullRequestReviewVerdict::Approve, PullRequestReviewVerdict::RequestChanges]
+            .into_iter()
+            .filter(|v| detail.capabilities.review.verdicts.contains(v) && detail.viewer_permissions.verdicts.contains(v))
+            .collect()
+    }
+
+    /// Forgejo needs a summary to request changes; an approval needs nothing.
+    fn can_submit_review(&self, verdict: PullRequestReviewVerdict, summary: &str) -> bool {
+        let summary_required = self.detail.as_ref().is_some_and(|d| d.provider.as_str() == "forgejo");
+        match verdict {
+            PullRequestReviewVerdict::RequestChanges if summary_required => !summary.trim().is_empty(),
+            PullRequestReviewVerdict::Approve => true,
+            _ => !summary.trim().is_empty(),
+        }
+    }
+
+    /// Opens or closes the floating composer, creating its fields the first time.
+    pub fn toggle_composer(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.composer_open = !self.composer_open;
+        if self.composer.is_none() {
+            let input = cx.new(|cx| InputState::new(window, cx).placeholder(t!("Leave a comment")));
+            self.composer = Some(input);
+        }
+        if self.review_summary.is_none() {
+            let input = cx.new(|cx| TextareaState::new(window, cx).auto_grow(3, 12).placeholder(t!("Summarize your review (optional)")));
+            self.review_summary = Some(input);
+        }
+        if self.composer_open {
+            let started = self.review_summary.as_ref().is_some_and(|s| !s.read(cx).value().trim().is_empty());
+            let can_comment = self.detail.as_ref().is_some_and(|d| d.capabilities.comment && d.viewer_permissions.comment);
+            self.composer_mode = if started || !can_comment { ComposerMode::Review } else { ComposerMode::Comment };
+            match self.composer_mode {
+                ComposerMode::Comment => self.composer.as_ref().map(|c| c.update(cx, |c, cx| c.focus(window, cx))),
+                ComposerMode::Review => self.review_summary.as_ref().map(|c| c.update(cx, |c, cx| c.focus(window, cx))),
+            };
+        }
+        cx.notify();
+    }
+
+    /// Sends the review with the chosen verdict (`pullRequests.submitReview`).
+    pub fn submit_review(&mut self, cx: &mut Context<Self>) {
+        let Some(summary) = &self.review_summary else { return };
+        let offered = self.offered_verdicts();
+        let verdict = if offered.contains(&self.review_verdict) { self.review_verdict } else { match offered.first() { Some(v) => *v, None => return } };
+        let body = summary.read(cx).value().to_string();
+        if self.review_pending || !self.can_submit_review(verdict, &body) {
+            return;
+        }
+        self.review_pending = true;
+        let r = &self.reference;
+        let request = self.source.submit_review(PullRequestSubmitReviewInput {
+            project_id: r.project_id.clone(),
+            host: r.host.clone(),
+            expected_account_id: r.expected_account_id.clone(),
+            allow_stale: r.allow_stale,
+            repository: r.repository.clone(),
+            number: r.number,
+            verdict,
+            body,
+            comments: Vec::new(),
+        });
+        let term = self.detail.as_ref().map(|d| term_select(d.provider.as_str())).unwrap_or("pr");
+        cx.spawn(async move |this, cx| {
+            let result = request.await;
+            this.update(cx, |this, cx| {
+                this.review_pending = false;
+                match result {
+                    Ok(()) => {
+                        this.review_summary = None;
+                        this.composer_open = false;
+                        let title = match verdict {
+                            PullRequestReviewVerdict::Comment => t!("Review submitted"),
+                            PullRequestReviewVerdict::Approve => {
+                                t!("{term, select, mr {Merge request} cr {Change request} other {Pull request}} approved", term = term)
+                            }
+                            PullRequestReviewVerdict::RequestChanges => t!("Changes requested"),
+                        };
+                        Toaster::push(ToastData::new(ToastKind::Success, title), cx);
+                        this.refresh(cx);
+                    }
+                    Err(error) => {
+                        Toaster::push(ToastData::new(ToastKind::Error, t!("The review could not be submitted")).description(error.0), cx);
+                    }
+                }
+                cx.notify();
+            })
+            .ok();
+        })
+        .detach();
+        cx.notify();
+    }
+
+    /// Checks the branch out into a new thread: in a separate worktree or in this repository.
+    pub fn checkout(&mut self, mode: ThreadEnvMode, cx: &mut Context<Self>) {
+        let Some(detail) = &self.detail else { return };
+        let request = self.source.prepare_thread(GitPreparePullRequestThreadInput {
+            cwd: detail.workspace_root.clone(),
+            reference: detail.url.clone(),
+            mode,
+            thread_id: None,
+        });
+        cx.spawn(async move |this, cx| {
+            let result = request.await;
+            this.update(cx, |this, cx| {
+                this.status = result.err().map(|e| e.0);
+                cx.notify();
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    /// `canDeletePullRequestBranch`: a closed or merged pull request the host lets the viewer prune.
+    fn can_delete_branch(&self) -> bool {
+        self.detail.as_ref().is_some_and(|d| {
+            d.state != PullRequestState::Open
+                && d.capabilities.delete_branch == Some(true)
+                && d.capabilities.actions.contains(&PullRequestAction::DeleteBranch)
+                && d.viewer_permissions.actions.contains(&PullRequestAction::DeleteBranch)
+        })
+    }
+
+    fn render_delete_branch_dialog(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        if !self.confirm_delete_branch {
+            return None;
+        }
+        let detail = self.detail.as_ref()?;
+        let repository = detail.head_repository_name_with_owner.clone().unwrap_or_else(|| detail.repository.clone());
+        let close = cx.listener(|this, _: &(), _, cx| {
+            this.confirm_delete_branch = false;
+            cx.notify();
+        });
+        let close = Rc::new(close);
+        let surface = DialogSurface::new(t!("Delete branch {branch}?", branch = detail.head_branch.as_str()))
+            .description(t!(
+                "This deletes {branch} from {repository}. Local branches and worktrees are not changed.",
+                branch = detail.head_branch.as_str(),
+                repository = repository.as_str()
+            ))
+            .footer(Button::new("pr-delete-branch-cancel").variant(ButtonVariant::Outline).label(t!("Cancel")).on_click({
+                let close = close.clone();
+                move |_, window, cx| close(&(), window, cx)
+            }))
+            .footer(Button::new("pr-delete-branch-confirm").variant(ButtonVariant::Destructive).label(t!("Delete branch")).on_click(cx.listener(|this, _, _, cx| {
+                this.confirm_delete_branch = false;
+                this.run_action(PullRequestAction::DeleteBranch, cx);
+            })));
+        let theme = cx.app_theme();
+        Some(
+            Modal::dialog("pr-delete-branch", div().id("dialog-content").occlude().w_full().max_w(theme.rem(32.)).child(surface), move |window, cx| close(&(), window, cx))
+                .into_any_element(),
+        )
+    }
+
+    /// The floating composer: a glass button and, while open, the Comment / Review popover above it.
+    fn render_composer(&self, theme: &AppTheme, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let detail = self.detail.as_ref()?;
+        let can_comment = detail.capabilities.comment && detail.viewer_permissions.comment;
+        let verdicts = self.offered_verdicts();
+        if !can_comment && verdicts.is_empty() {
+            return None;
+        }
+        let term = term_select(detail.provider.as_str());
+        let mode = if !can_comment { ComposerMode::Review } else if verdicts.is_empty() { ComposerMode::Comment } else { self.composer_mode };
+        let c = &theme.colors;
+        let button = Button::new("pr-composer-trigger")
+            .variant(ButtonVariant::Glass)
+            .size(ButtonSize::Icon)
+            .icon(IconName::MessageSquare)
+            .on_click(cx.listener(|this, _, window, cx| this.toggle_composer(window, cx)));
+        let popover = self.composer_open.then(|| {
+            let header = if can_comment && !verdicts.is_empty() {
+                let segment = |id: &'static str, label: SharedString, value: ComposerMode| {
+                    let on = mode == value;
+                    div()
+                        .id(id)
+                        .flex()
+                        .items_center()
+                        .h(theme.sp(6.))
+                        .px(theme.sp(2.5))
+                        .rounded(theme.radii.sm)
+                        .ui_text(theme, TextSize::Xs, weight::MEDIUM)
+                        .text_color(if on { c.foreground() } else { c.muted_foreground })
+                        .when(on, |el| el.bg(c.background()).shadow(theme.shadows.sm5.clone()))
+                        .child(label)
+                        .cursor_pointer()
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            this.composer_mode = value;
+                            cx.notify();
+                        }))
+                };
+                div()
+                    .flex()
+                    .p(px(2.))
+                    .gap(px(2.))
+                    .rounded(theme.radii.md)
+                    .bg(c.muted)
+                    .child(segment("pr-composer-comment", t!("Comment", context = "noun, composer mode"), ComposerMode::Comment))
+                    .child(segment("pr-composer-review", t!("Review", context = "noun, composer mode"), ComposerMode::Review))
+                    .into_any_element()
+            } else {
+                let title = if mode == ComposerMode::Review {
+                    t!("Review {term, select, mr {merge request} cr {change request} other {pull request}}", term = term)
+                } else {
+                    t!("Comment on {term, select, mr {merge request} cr {change request} other {pull request}}", term = term)
+                };
+                div().ui_text(theme, TextSize::Sm, weight::SEMIBOLD).child(title).into_any_element()
+            };
+            let body: AnyElement = match mode {
+                ComposerMode::Comment => match &self.composer {
+                    Some(input) => div()
+                        .flex()
+                        .flex_col()
+                        .gap(theme.sp(2.))
+                        .child(TextInput::new(input))
+                        .child(
+                            div().flex().justify_end().child(
+                                Button::new("pr-comment-send")
+                                    .size(ButtonSize::Xs)
+                                    .label(t!("Comment", context = "verb, submit button"))
+                                    .on_click(cx.listener(|this, _, _, cx| {
+                                        this.send_comment(cx);
+                                        this.composer_open = false;
+                                        cx.notify();
+                                    })),
+                            ),
+                        )
+                        .into_any_element(),
+                    None => div().into_any_element(),
+                },
+                ComposerMode::Review => {
+                    let summary = self.review_summary.as_ref().map(|s| s.read(cx).value().to_string()).unwrap_or_default();
+                    let verdict = if verdicts.contains(&self.review_verdict) { self.review_verdict } else { verdicts.first().copied().unwrap_or(PullRequestReviewVerdict::Comment) };
+                    let can_submit = self.can_submit_review(verdict, &summary);
+                    let this = cx.entity();
+                    let verdict_menu = (verdicts.len() > 1).then(|| {
+                        let options = verdicts.clone();
+                        dropdown_menu(
+                            "pr-review-verdict",
+                            Button::new("pr-review-verdict-trigger")
+                                .variant(ButtonVariant::Outline)
+                                .size(ButtonSize::Xs)
+                                .icon(verdict_icon(verdict))
+                                .icon_size(IconSize::Xs)
+                                .label(verdict_label(verdict))
+                                .trailing_icon(IconName::ChevronsUpDown)
+                                .disabled(self.review_pending),
+                            move |_, _| {
+                                let mut menu = MenuPopup::new();
+                                for v in options.clone() {
+                                    let this = this.clone();
+                                    menu = menu.item(
+                                        MenuItem::new(verdict_label(v))
+                                            .icon(verdict_icon(v))
+                                            .icon_size(IconSize::Xs)
+                                            .kind(MenuItemKind::Radio(v == verdict))
+                                            .on_select(move |_, cx| {
+                                                this.update(cx, |p, cx| {
+                                                    p.review_verdict = v;
+                                                    cx.notify();
+                                                })
+                                            }),
+                                    );
+                                }
+                                menu
+                            },
+                        )
+                    });
+                    div()
+                        .flex()
+                        .flex_col()
+                        .children(self.review_summary.as_ref().map(TextArea::new))
+                        .child(
+                            div()
+                                .mt(theme.sp(2.))
+                                .flex()
+                                .flex_wrap()
+                                .items_center()
+                                .justify_end()
+                                .gap(theme.sp(2.))
+                                .children(verdict_menu)
+                                .child(
+                                    Button::new("pr-review-submit")
+                                        .size(ButtonSize::Xs)
+                                        .label(if self.review_pending { t!("Submitting...") } else { t!("Submit review") })
+                                        .disabled(self.review_pending || !can_submit)
+                                        .on_click(cx.listener(|this, _, _, cx| this.submit_review(cx))),
+                                ),
+                        )
+                        .into_any_element()
+                }
+            };
+            glass_surface(theme)
+                .id("pr-composer")
+                .occlude()
+                .w(theme.rem(24.))
+                .p(theme.sp(4.))
+                .ui_text(theme, TextSize::Sm, weight::NORMAL)
+                .child(
+                    div()
+                        .mb(theme.sp(3.))
+                        .flex()
+                        .items_center()
+                        .justify_between()
+                        .gap(theme.sp(2.))
+                        .child(header)
+                        .child(
+                            Button::new("pr-composer-close")
+                                .variant(ButtonVariant::Ghost)
+                                .size(ButtonSize::IconXs)
+                                .icon(IconName::X)
+                                .icon_size(IconSize::Sm)
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.composer_open = false;
+                                    cx.notify();
+                                })),
+                        ),
+                )
+                .child(body)
+        });
+        Some(
+            div()
+                .absolute()
+                .right(theme.sp(4.))
+                .bottom(theme.sp(3.))
+                .flex()
+                .flex_col()
+                .items_end()
+                .gap(px(8.))
+                .children(popover)
+                .child(button)
+                .into_any_element(),
+        )
     }
 
     /// Toggles the viewer's `content` reaction on `subject`.
@@ -806,6 +1317,41 @@ fn tour_file(file: &FileDiff) -> tour::FileDiff {
     }
 }
 
+/// The `{term, select, ...}` key for a host's change-request word.
+fn term_select(provider: &str) -> &'static str {
+    match crate::source_control_presentation::source_control_definition(Some(provider)).terminology.term_kind() {
+        crate::source_control_presentation::ChangeRequestTermKind::Mr => "mr",
+        crate::source_control_presentation::ChangeRequestTermKind::Cr => "cr",
+        crate::source_control_presentation::ChangeRequestTermKind::Pr => "pr",
+    }
+}
+
+fn verdict_label(verdict: PullRequestReviewVerdict) -> SharedString {
+    match verdict {
+        PullRequestReviewVerdict::Comment => t!("Comment", context = "review verdict"),
+        PullRequestReviewVerdict::Approve => t!("Approve", context = "review verdict"),
+        PullRequestReviewVerdict::RequestChanges => t!("Request changes"),
+    }
+}
+
+fn verdict_icon(verdict: PullRequestReviewVerdict) -> IconName {
+    match verdict {
+        PullRequestReviewVerdict::Comment => IconName::MessageSquare,
+        PullRequestReviewVerdict::Approve => IconName::Check,
+        PullRequestReviewVerdict::RequestChanges => IconName::CircleX,
+    }
+}
+
+/// `PullRequestEditButton`: a ghost pencil that shows while its group is hovered.
+fn edit_button(id: &'static str, on_click: impl Fn(&gpui_kit::ClickEvent, &mut Window, &mut App) + 'static) -> impl IntoElement {
+    div()
+        .flex_none()
+        .invisible()
+        .group_hover("pr-title", |s| s.visible())
+        .group_hover("pr-description", |s| s.visible())
+        .child(Button::new(id).size(ButtonSize::IconXs).variant(ButtonVariant::GhostMuted).icon(IconName::Pencil).icon_size(IconSize::Xs).on_click(on_click))
+}
+
 fn section(theme: &AppTheme, title: SharedString) -> Div {
     div()
         .flex()
@@ -883,13 +1429,103 @@ impl PullRequestDetailPanel {
             };
             actions = actions.child(Button::new("pr-update-branch").size(ButtonSize::Sm).variant(ButtonVariant::Outline).icon(IconName::RefreshCw).label(label).disabled(busy).on_click(cx.listener(|this, _, _, cx| this.run_action(PullRequestAction::UpdateBranch, cx))));
         }
-        if detail.state == PullRequestState::Open && can(PullRequestAction::Close) {
-            actions = actions.child(Button::new("pr-close").size(ButtonSize::Sm).variant(ButtonVariant::Outline).label(t!("Close")).disabled(busy).on_click(cx.listener(|this, _, _, cx| this.run_action(PullRequestAction::Close, cx))));
-        }
-        if detail.state == PullRequestState::Closed && can(PullRequestAction::Reopen) {
-            actions = actions.child(Button::new("pr-reopen").size(ButtonSize::Sm).variant(ButtonVariant::Outline).label(t!("Reopen")).disabled(busy).on_click(cx.listener(|this, _, _, cx| this.run_action(PullRequestAction::Reopen, cx))));
-        }
-        actions = actions.child(Button::new("pr-checkout").size(ButtonSize::Sm).variant(ButtonVariant::Ghost).icon(IconName::GitBranch).label(t!("Check out")).on_click(cx.listener(|this, _, _, cx| this.checkout_into_thread(cx))));
+        // `PullRequestCheckoutMenu`: a separate worktree or this repository.
+        let checkout_menu = {
+            let this = this.clone();
+            dropdown_menu(
+                "pr-checkout",
+                Button::new("pr-checkout-trigger")
+                    .size(ButtonSize::Xs)
+                    .variant(ButtonVariant::Outline)
+                    .icon(IconName::GitBranch)
+                    .icon_size(IconSize::Sm)
+                    .label(t!("Check out"))
+                    .trailing_icon(IconName::ChevronDown)
+                    .trailing_icon_size(IconSize::Sm),
+                move |_, _| {
+                    let worktree = this.clone();
+                    let local = this.clone();
+                    MenuPopup::new()
+                        .item(
+                            MenuItem::new(t!("In a separate worktree"))
+                                .id("pr-checkout-worktree")
+                                .icon(IconName::GitBranch)
+                                .icon_size(IconSize::Sm)
+                                .detail(t!("Its own folder and thread. Nothing you have open moves."))
+                                .on_select(move |_, cx| worktree.update(cx, |p, cx| p.checkout(ThreadEnvMode::Worktree, cx))),
+                        )
+                        .item(
+                            MenuItem::new(t!("In this repository"))
+                                .id("pr-checkout-local")
+                                .icon(IconName::FolderGit2)
+                                .icon_size(IconSize::Sm)
+                                .detail(t!("Switches the branch you are working in."))
+                                .on_select(move |_, cx| local.update(cx, |p, cx| p.checkout(ThreadEnvMode::Local, cx))),
+                        )
+                },
+            )
+        };
+        actions = actions.child(checkout_menu);
+        // `PullRequestActionsMenu`: the draft toggle, copy link, close or reopen, and Delete branch.
+        let more_menu = {
+            let this = this.clone();
+            let detail = detail.clone();
+            let deletable = self.can_delete_branch();
+            let deleting = self.busy == Some(PullRequestAction::DeleteBranch);
+            dropdown_menu(
+                "pr-more",
+                Button::new("pr-more-trigger").size(ButtonSize::IconXs).variant(ButtonVariant::GhostMuted).icon(IconName::Ellipsis),
+                move |_, cx| {
+                    let can = |a| can_perform_pull_request_action(&detail, a);
+                    let mut menu = MenuPopup::new();
+                    if detail.state == PullRequestState::Open && (can(PullRequestAction::Draft) || can(PullRequestAction::Ready)) {
+                        let this = this.clone();
+                        let action = if detail.is_draft { PullRequestAction::Ready } else { PullRequestAction::Draft };
+                        menu = menu.item(
+                            MenuItem::new(if detail.is_draft { t!("Ready for review") } else { t!("Convert to draft") })
+                                .on_select(move |_, cx| this.update(cx, |p, cx| p.run_action(action, cx))),
+                        );
+                    }
+                    let url = detail.url.clone();
+                    menu = menu.item(MenuItem::new(t!("Copy link")).icon(IconName::Link).on_select(move |_, cx| {
+                        cx.write_to_clipboard(gpui_kit::ClipboardItem::new_string(url.clone()));
+                    }));
+                    if detail.state == PullRequestState::Open && can(PullRequestAction::Close) {
+                        let this = this.clone();
+                        menu = menu.separator().item(
+                            MenuItem::new(t!("Close")).destructive().on_select(move |_, cx| this.update(cx, |p, cx| p.run_action(PullRequestAction::Close, cx))),
+                        );
+                    }
+                    if detail.state == PullRequestState::Closed && can(PullRequestAction::Reopen) {
+                        let this = this.clone();
+                        menu = menu.separator().item(
+                            MenuItem::new(t!("Reopen")).on_select(move |_, cx| this.update(cx, |p, cx| p.run_action(PullRequestAction::Reopen, cx))),
+                        );
+                    }
+                    if deletable {
+                        let this = this.clone();
+                        menu = menu.separator().item(
+                            MenuItem::new(if deleting { t!("Deleting branch...") } else { t!("Delete branch") })
+                                .id("pr-delete-branch")
+                                .icon(IconName::Trash2)
+                                .icon_size(IconSize::Sm)
+                                .destructive()
+                                .disabled(deleting)
+                                .detail(SharedString::from(detail.head_branch.clone()))
+                                .on_select(move |_, cx| {
+                                    this.update(cx, |p, cx| {
+                                        p.confirm_delete_branch = true;
+                                        cx.notify();
+                                    })
+                                }),
+                        );
+                    }
+                    let _ = cx;
+                    menu
+                },
+            )
+        };
+        actions = actions.child(more_menu);
         let confirm = self.confirming_merge.then(|| {
             let text = SharedString::from(format!("{} #{} → {}", t!("Confirm merge?"), detail.number, detail.base_branch));
             div()
@@ -924,15 +1560,55 @@ impl PullRequestDetailPanel {
                     .items_start()
                     .gap(px(8.))
                     .child(div().pt(px(3.)).child(Icon::new(icon).size(IconSize::Lg).color(tone)))
-                    .child(
-                        div()
+                    .child(match &self.title_edit {
+                        // `PullRequestTitleEditor` while editing: the field, then Cancel and Save.
+                        Some(input) => div()
                             .flex_1()
                             .min_w_0()
-                            .ui_text(theme, TextSize::Lg, weight::SEMIBOLD)
-                            .text_color(theme.colors.text)
-                            .child(SharedString::from(detail.title.clone()))
-                            .child(div().ui_text(theme, TextSize::Lg, weight::NORMAL).text_color(theme.colors.muted_foreground).child(format!(" #{}", detail.number))),
-                    ),
+                            .flex()
+                            .flex_col()
+                            .gap(theme.sp(2.))
+                            .child(TextInput::new(input).size(crate::components::ui::input::InputSize::Sm).disabled(self.title_saving))
+                            .child(
+                                div()
+                                    .flex()
+                                    .justify_end()
+                                    .gap(theme.sp(2.))
+                                    .child(Button::new("pr-title-cancel").size(ButtonSize::Xs).variant(ButtonVariant::Ghost).label(t!("Cancel")).disabled(self.title_saving).on_click(cx.listener(|this, _, _, cx| {
+                                        this.title_edit = None;
+                                        cx.notify();
+                                    })))
+                                    .child(
+                                        Button::new("pr-title-save")
+                                            .size(ButtonSize::Xs)
+                                            .variant(ButtonVariant::Outline)
+                                            .label(if self.title_saving { t!("Saving...") } else { t!("Save") })
+                                            .disabled(self.title_saving || input.read(cx).value().trim().is_empty())
+                                            .on_click(cx.listener(|this, _, _, cx| this.save_title(cx))),
+                                    ),
+                            )
+                            .into_any_element(),
+                        None => div()
+                            .flex_1()
+                            .min_w_0()
+                            .flex()
+                            .items_start()
+                            .gap(theme.sp(1.))
+                            .group("pr-title")
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .ui_text(theme, TextSize::Lg, weight::SEMIBOLD)
+                                    .text_color(theme.colors.text)
+                                    .child(SharedString::from(detail.title.clone()))
+                                    .child(div().ui_text(theme, TextSize::Lg, weight::NORMAL).text_color(theme.colors.muted_foreground).child(format!(" #{}", detail.number))),
+                            )
+                            .when(t3code_client_runtime::pull_request_editing::can_edit_pull_request_change_request(&detail), |el| {
+                                el.child(edit_button("pr-edit-title", cx.listener(|this, _, window, cx| this.begin_title_edit(window, cx))))
+                            })
+                            .into_any_element(),
+                    }),
             )
             .child(
                 div()
@@ -977,6 +1653,67 @@ impl PullRequestDetailPanel {
             .child(actions)
             .children(confirm)
             .when_some(self.status.clone(), |el, s| el.child(div().ui_text(theme, TextSize::Xs, weight::NORMAL).text_color(theme.colors.destructive()).child(s)))
+            .into_any_element()
+    }
+
+    /// `PullRequestMetaRow`s: Reviewers with their outcomes and the picker, Labels with theirs.
+    fn render_meta_rows(&self, detail: &PullRequestDetail, reviewers: &[(String, Option<PullRequestReviewOutcome>, bool)], theme: &AppTheme) -> AnyElement {
+        let c = &theme.colors;
+        let row = |icon: IconName, label: SharedString, value: AnyElement| {
+            div()
+                .flex()
+                .items_center()
+                .min_h(theme.sp(6.))
+                .min_w_0()
+                .gap(theme.sp(2.))
+                .ui_text(theme, TextSize::Xs, weight::NORMAL)
+                .child(div().w(theme.rem(6.)).flex_none().flex().items_center().gap(theme.sp(1.5)).text_color(c.muted_foreground).child(Icon::new(icon).size(IconSize::Sm).color(c.muted_foreground)).child(label))
+                .child(div().flex_1().min_w_0().text_color(c.foreground()).child(value))
+        };
+        let none = |context: SharedString| div().text_color(c.muted_foreground).child(context).into_any_element();
+        let avatars = if reviewers.is_empty() {
+            none(t!("None", context = "no reviewers"))
+        } else {
+            div()
+                .flex()
+                .items_center()
+                .children(reviewers.iter().enumerate().map(|(i, (login, outcome, stale))| {
+                    let ring = match outcome {
+                        Some(PullRequestReviewOutcome::Approved) => Some(open_tone(theme)),
+                        Some(PullRequestReviewOutcome::ChangesRequested) => Some(closed_tone(theme)),
+                        _ => None,
+                    };
+                    div()
+                        .when(i > 0, |el| el.ml(px(-4.)))
+                        .rounded_full()
+                        .when_some(ring, |el, ring| el.border_1().border_color(if *stale { ring.opacity(0.5) } else { ring }))
+                        .child(avatar(theme, Some(login), 20.))
+                }))
+                .into_any_element()
+        };
+        let reviewers_value = div()
+            .flex()
+            .flex_wrap()
+            .items_center()
+            .gap(theme.sp(1.5))
+            .child(avatars)
+            .children(self.reviewer_picker.clone())
+            .into_any_element();
+        let labels_value = div()
+            .flex()
+            .flex_wrap()
+            .items_center()
+            .gap(theme.sp(1.))
+            .when(detail.labels.is_empty(), |el| el.child(none(t!("None", context = "no labels"))))
+            .children(detail.labels.iter().map(|l| label_chip(theme, &l.name, l.color.as_deref())))
+            .children(self.label_picker.clone())
+            .into_any_element();
+        div()
+            .flex()
+            .flex_col()
+            .gap(theme.sp(2.))
+            .child(row(IconName::Users, t!("Reviewers"), reviewers_value))
+            .when(!detail.labels.is_empty() || detail.capabilities.labels == Some(true), |el| el.child(row(IconName::Tag, t!("Labels"), labels_value)))
             .into_any_element()
     }
 
@@ -1044,7 +1781,43 @@ impl PullRequestDetailPanel {
             .flex_col()
             .gap(px(20.))
             .p(px(20.))
-            .child(div().ui_text(theme, TextSize::Sm, weight::NORMAL).text_color(theme.colors.text).child(body))
+            .child(self.render_meta_rows(&detail, &reviewers, theme))
+            .child(match &self.body_edit {
+                Some(input) => div()
+                    .flex()
+                    .flex_col()
+                    .gap(theme.sp(2.))
+                    .child(TextArea::new(input).disabled(self.body_saving))
+                    .child(
+                        div()
+                            .flex()
+                            .justify_end()
+                            .gap(theme.sp(2.))
+                            .child(Button::new("pr-body-cancel").size(ButtonSize::Xs).variant(ButtonVariant::Ghost).label(t!("Cancel")).disabled(self.body_saving).on_click(cx.listener(|this, _, _, cx| {
+                                this.body_edit = None;
+                                cx.notify();
+                            })))
+                            .child(
+                                Button::new("pr-body-save")
+                                    .size(ButtonSize::Xs)
+                                    .variant(ButtonVariant::Outline)
+                                    .label(if self.body_saving { t!("Saving...") } else { t!("Save") })
+                                    .disabled(self.body_saving)
+                                    .on_click(cx.listener(|this, _, _, cx| this.save_body(cx))),
+                            ),
+                    )
+                    .into_any_element(),
+                None => div()
+                    .flex()
+                    .items_start()
+                    .gap(theme.sp(1.))
+                    .group("pr-description")
+                    .child(div().flex_1().min_w_0().ui_text(theme, TextSize::Sm, weight::NORMAL).text_color(theme.colors.text).child(body))
+                    .when(t3code_client_runtime::pull_request_editing::can_edit_pull_request_change_request(&detail), |el| {
+                        el.child(edit_button("pr-edit-description", cx.listener(|this, _, window, cx| this.begin_body_edit(window, cx))))
+                    })
+                    .into_any_element(),
+            })
             .child(reactions)
             .child(
                 section(theme, t!("Checks", context = "CI checks section"))
@@ -1076,26 +1849,6 @@ impl PullRequestDetailPanel {
                             })
                     })),
             )
-            .child(
-                section(theme, t!("Reviewers")).children(reviewers.into_iter().map(|(login, outcome, stale)| {
-                    let (icon, color, text) = match outcome {
-                        Some(PullRequestReviewOutcome::Approved) => (IconName::Check, open_tone(theme), t!("Approved", context = "review decision")),
-                        Some(PullRequestReviewOutcome::ChangesRequested) => (IconName::MessageSquareWarning, closed_tone(theme), t!("Changes requested")),
-                        _ => (IconName::CircleDashed, pending_tone(theme), t!("Review required")),
-                    };
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap(px(8.))
-                        .ui_text(theme, TextSize::Xs, weight::NORMAL)
-                        .text_color(theme.colors.text)
-                        .child(avatar(theme, Some(&login), 18.))
-                        .child(SharedString::from(login))
-                        .child(div().ml_auto().flex().items_center().gap(px(4.)).text_color(color).child(Icon::new(icon).size(IconSize::Xs)).child(text))
-                        .when(stale, |el| el.opacity(0.6))
-                })),
-            )
-            .child(section(theme, t!("Labels")).child(div().flex().flex_wrap().gap(px(6.)).children(detail.labels.iter().map(|l| label_chip(theme, &l.name, l.color.as_deref())))))
             .when(!closes.is_empty(), |el| {
                 el.child(section(theme, t!("Linked issues")).children(closes.into_iter().map(|r| {
                     div().flex().items_center().gap(px(6.)).ui_text(theme, TextSize::Xs, weight::NORMAL).text_color(theme.colors.text).child(Icon::new(IconName::CircleDot).size(IconSize::Xs).color(open_tone(theme))).child(SharedString::from(r))
@@ -1399,22 +2152,7 @@ impl PullRequestDetailPanel {
                 }
             }
         }
-        let composer = match &self.composer {
-            Some(input) => div()
-                .flex()
-                .gap(px(6.))
-                .child(div().flex_1().child(TextInput::new(input)))
-                .child(Button::new("tl-comment-send").size(ButtonSize::Sm).label(t!("Comment", context = "verb, submit button")).on_click(cx.listener(|this, _, _, cx| this.send_comment(cx))))
-                .into_any_element(),
-            None => Button::new("tl-comment").size(ButtonSize::Sm).variant(ButtonVariant::Outline).icon(IconName::MessageSquarePlus).label(t!("Leave a comment")).on_click(cx.listener(|this, _, window, cx| {
-                let input = cx.new(|cx| InputState::new(window, cx).placeholder(t!("Leave a comment")));
-                input.update(cx, |i, cx| i.focus(window, cx));
-                this.composer = Some(input);
-                cx.notify();
-            }))
-            .into_any_element(),
-        };
-        column.child(composer).into_any_element()
+        column.into_any_element()
     }
 
     fn render_code(&mut self, theme: &AppTheme, cx: &mut Context<Self>) -> AnyElement {
@@ -1597,6 +2335,7 @@ impl Render for PullRequestDetailPanel {
                 this.update(cx, |p, _| p.code_first_paint_ms = Some(elapsed)).ok();
             });
         }
+        self.ensure_pickers(window, cx);
         let header = self.render_header(&theme, cx);
         let tabs = self.render_tabs(&theme, cx);
         let body = match self.tab {
@@ -1606,9 +2345,12 @@ impl Render for PullRequestDetailPanel {
             DetailTab::Code => self.render_code(&theme, cx),
         };
         let scrolls = self.tab != DetailTab::Code;
+        let composer = self.render_composer(&theme, cx);
+        let delete_dialog = self.render_delete_branch_dialog(cx);
         div()
             .id("pr-detail")
             .test_support()
+            .relative()
             .size_full()
             .flex()
             .flex_col()
@@ -1620,6 +2362,8 @@ impl Render for PullRequestDetailPanel {
             } else {
                 div().flex().flex_col().flex_1().min_h_0().child(body).into_any_element()
             })
+            .children(composer)
+            .children(delete_dialog)
     }
 }
 
