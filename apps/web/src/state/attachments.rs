@@ -288,21 +288,30 @@ pub fn init_image_cache(data_dir: &std::path::Path) {
     _ = IMAGE_CACHE.set(dir);
 }
 
-/// The cached file of an attachment's image, when it is on disk.
-pub fn cached_image(attachment_id: &str) -> Option<PathBuf> {
+/// The cache file of an image: its attachment id with the extension of its type, which GPUI's
+/// image loader reads the format from.
+fn cache_path(attachment_id: &str, mime: &str) -> Option<PathBuf> {
     if attachment_id.contains(['/', '\\']) {
         return None;
     }
-    let path = IMAGE_CACHE.get()?.join(attachment_id);
-    path.is_file().then_some(path)
+    let ext = match mime {
+        "image/jpeg" => "jpg",
+        "image/gif" => "gif",
+        "image/webp" => "webp",
+        _ => "png",
+    };
+    Some(IMAGE_CACHE.get()?.join(format!("{attachment_id}.{ext}")))
+}
+
+/// The cached file of an attachment's image, when it is on disk.
+pub fn cached_image(attachment_id: &str, mime: &str) -> Option<PathBuf> {
+    cache_path(attachment_id, mime).filter(|path| path.is_file())
 }
 
 /// Writes an image's bytes to the cache.
-pub fn cache_image(attachment_id: &str, bytes: &[u8]) {
-    if let Some(dir) = IMAGE_CACHE.get()
-        && !attachment_id.contains(['/', '\\'])
-    {
-        _ = std::fs::write(dir.join(attachment_id), bytes);
+pub fn cache_image(attachment_id: &str, mime: &str, bytes: &[u8]) {
+    if let Some(path) = cache_path(attachment_id, mime) {
+        _ = std::fs::write(path, bytes);
     }
 }
 
@@ -389,7 +398,7 @@ async fn upload(commands: EnvironmentCommands, attachment: ComposerAttachment) -
         .await
         .map_err(|error| SharedString::from(error.to_string()))?;
     if let Some(bytes) = cached {
-        cache_image(&attachment_id, &bytes);
+        cache_image(&attachment_id, &mime, &bytes);
     }
     Ok(ReadyUpload { attachment_id, mime, size_bytes })
 }

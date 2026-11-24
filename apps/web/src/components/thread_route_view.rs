@@ -393,8 +393,13 @@ impl ThreadRouteView {
             self.show(promoted.clone(), cx);
             cx.emit(ThreadRouteEvent::Promoted(promoted));
         }
-        if matches!(event, ComposerEvent::Submit { .. }) {
-            self.refresh(true, cx);
+        match event {
+            ComposerEvent::Submit { .. } => self.refresh(true, cx),
+            // These change what the composer shows from the draft (model, mode, the `/clear` banner).
+            ComposerEvent::ModelChanged(_) | ComposerEvent::RuntimeModeChanged(_) | ComposerEvent::ClearSession | ComposerEvent::BannerAction(_) => {
+                self.refresh(false, cx)
+            }
+            _ => {}
         }
     }
 

@@ -170,7 +170,7 @@ impl MessagesTimeline {
         } else if !has_text && files.is_empty() && images.len() == 1 {
             // Media-only messages drop the bubble.
             column = column.child(
-                div().id(("image", key)).cursor_pointer().on_click(open_image(0)).test_support().child(img(images[0].source.clone())
+                div().id(("image", key)).cursor_pointer().on_click(open_image(0)).test_support().child(img(images[0].image_source())
                     .h(LONE_IMAGE_HEIGHT)
                     .min_w(px(96.))
                     .max_w_full()
@@ -197,7 +197,7 @@ impl MessagesTimeline {
                 bubble = bubble.child(
                     div().mb_2().max_w(INLINE_MEDIA_WIDTH).flex().flex_wrap().gap_2().children(images.iter().enumerate().map(|(index, image)| {
                         div().id(("image", key.wrapping_add(index as u64 + 1))).cursor_pointer().on_click(open_image(index)).test_support().child(
-                            img(image.source.clone())
+                            img(image.image_source())
                                 .w(px(101.))
                                 .h(px(75.75))
                                 .rounded(px(8.))

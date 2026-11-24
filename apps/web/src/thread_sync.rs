@@ -114,7 +114,7 @@ impl LiveThread {
     fn fetch_images(&mut self, cx: &mut Context<Self>) {
         use t3code_contracts::{ChatAttachment, OrchestrationV2TurnItem as Item};
         let Some(data) = &self.state.data else { return };
-        let missing: Vec<String> = data
+        let missing: Vec<(String, String)> = data
             .visible_turn_items
             .iter()
             .filter_map(|row| match &*row.item {
@@ -124,24 +124,24 @@ impl LiveThread {
             })
             .flatten()
             .filter_map(|attachment| match attachment {
-                ChatAttachment::Image(image) => Some(image.id.clone()),
+                ChatAttachment::Image(image) => Some((image.id.clone(), image.mime_type.clone())),
                 _ => None,
             })
-            .filter(|id| !self.requested_images.contains(id) && crate::state::attachments::cached_image(id).is_none())
+            .filter(|(id, mime)| !self.requested_images.contains(id) && crate::state::attachments::cached_image(id, mime).is_none())
             .collect();
         if missing.is_empty() {
             return;
         }
         let (environment_id, _) = crate::state::shell::runtime_ids(&self.key);
         let Some(link) = crate::live::rpc::RpcLink::new(&environment_id, cx) else { return };
-        self.requested_images.extend(missing.iter().cloned());
+        self.requested_images.extend(missing.iter().map(|(id, _)| id.clone()));
         let runner = link.clone();
         let task = runner.run(async move {
             use t3code_contracts::rpc::methods::AssetsCreateUrl;
             use t3code_contracts::{AssetCreateUrlInput, AssetResource, AssetResourceAttachment};
             let session = link.session().await?;
             let mut fetched = 0;
-            for attachment_id in missing {
+            for (attachment_id, mime) in missing {
                 let resource = AssetResource::Attachment(AssetResourceAttachment {
                     attachment_id: attachment_id.clone(),
                     file_name: None,
@@ -151,7 +151,7 @@ impl LiveThread {
                 });
                 let Ok(url) = session.client.call::<AssetsCreateUrl>(AssetCreateUrlInput { resource }).await else { continue };
                 if let Ok(bytes) = link.link.fetch_relative(reqwest::Method::GET, &url.relative_url, None).await {
-                    crate::state::attachments::cache_image(&attachment_id, &bytes);
+                    crate::state::attachments::cache_image(&attachment_id, &mime, &bytes);
                     fetched += 1;
                 }
             }

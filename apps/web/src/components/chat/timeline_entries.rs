@@ -82,6 +82,15 @@ pub struct Attachment {
     pub source: SharedString,
 }
 
+impl Attachment {
+    /// What `img` loads: a file for an absolute path (live attachments in the image cache), the
+    /// bundled asset or URL otherwise.
+    pub fn image_source(&self) -> gpui_kit::ImageSource {
+        let path = std::path::Path::new(self.source.as_ref());
+        if path.is_absolute() { path.to_path_buf().into() } else { self.source.clone().into() }
+    }
+}
+
 /// A user or assistant message.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ChatMessage {

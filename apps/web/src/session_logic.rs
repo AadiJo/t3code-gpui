@@ -151,7 +151,7 @@ fn attachments(list: &[ChatAttachment]) -> Arc<[Attachment]> {
             ChatAttachment::Image(image) => Some(Attachment {
                 name: shared(image.name.clone()),
                 kind: AttachmentKind::Image,
-                source: crate::state::attachments::cached_image(&image.id)
+                source: crate::state::attachments::cached_image(&image.id, &image.mime_type)
                     .map(|path| SharedString::from(path.to_string_lossy().into_owned()))
                     .unwrap_or_default(),
             }),

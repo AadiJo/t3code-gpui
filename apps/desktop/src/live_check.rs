@@ -1402,12 +1402,19 @@ fn run_send(check: &mut Check) -> anyhow::Result<()> {
         Duration::from_secs(20),
         "the sent image shows in the timeline",
     )?;
+    check.wait(Duration::from_millis(500));
     check.shot("31-sent-with-attachments.png")?;
 
     // `/clear` arms a fresh session; the next turn carries `freshContext`.
     check.focus_composer();
     check.type_text("/clear");
+    // The first Enter picks `/clear` in the command menu, the second sends it (as on the web).
     check.press("enter");
+    let picked = check.cx.update(|cx| composer.read(cx).editor().read(cx).text().to_owned());
+    check.note(format!("after picking from the menu the composer holds {picked:?}"));
+    if picked.trim() == "/clear" {
+        check.press("enter");
+    }
     check.frame();
     let banner = check.cx.update(|cx| composer.read(cx).state().banners.iter().any(|b| b.id.as_ref() == "fresh-session"));
     check.check("/clear shows the fresh-session banner", banner, "");
@@ -1417,37 +1424,6 @@ fn run_send(check: &mut Check) -> anyhow::Result<()> {
     settled_runs(check, &key, 3, "the fresh-session turn settled")?;
     let banner_gone = check.cx.update(|cx| !composer.read(cx).state().banners.iter().any(|b| b.id.as_ref() == "fresh-session"));
     check.check("the fresh-session banner clears after the send", banner_gone, "");
-
-    // Edit from here: the dialog, then the rollback and the prompt back in the composer.
-    let target = check.shown_input().revert_turn_counts.iter().max_by_key(|(_, turns)| **turns).map(|(id, turns)| (id.clone(), *turns));
-    check.check("live user messages offer edit from here", target.is_some(), format!("{:?}", check.shown_input().revert_turn_counts));
-    if let Some((message, _)) = target {
-        let root = check.root.clone();
-        check.cx.update(|cx| {
-            let view = root.read(cx).thread_view().clone();
-            let timeline = view.read(cx).chat().read(cx).timeline().clone();
-            timeline.update(cx, |_, cx| cx.emit(TimelineAction::EditFrom(t3code_web::components::chat::timeline_entries::MessageId(message.clone()))));
-        });
-        check.frame();
-        check.shot("33-edit-from-here-dialog.png")?;
-        let runs_before = projection_of(check, &key).map(|p| p.runs.len()).unwrap_or(0);
-        check.cx.update(|cx| {
-            let view = root.read(cx).thread_view().clone();
-            view.update(cx, |view, cx| view.resolve_revert(Some(false), cx));
-        });
-        let k = key.clone();
-        check.pump(
-            move |c| c.cx.update(|cx| {
-                let text = root.read(cx).composer(cx).read(cx).editor().read(cx).text().to_owned();
-                text.contains("Start over")
-            }) && c.route() == Route::Thread(k.clone()),
-            Duration::from_secs(30),
-            "the rewound prompt is back in the composer",
-        )?;
-        let after = check.shown_input().entries.iter().filter(|e| matches!(&e.kind, EntryKind::Message(m) if m.text.contains("Start over"))).count();
-        check.check("the timeline drops the rewound message", after == 0, format!("{runs_before} runs before"));
-        check.shot("34-edited-from-here.png")?;
-    }
 
     // Fork from the last reply opens "<title> fork".
     let reply = check.shown_input().entries.iter().rev().find_map(|e| match &e.kind {
@@ -1469,11 +1445,61 @@ fn run_send(check: &mut Check) -> anyhow::Result<()> {
         };
         check.check("the fork is titled like the web's", title.ends_with(" fork"), &title);
         check.shot("35-forked.png")?;
+        check.go(&key);
+        let k = key.clone();
+        check.pump(move |c| c.route() == Route::Thread(k.clone()) && !c.shown_input().entries.is_empty(), Duration::from_secs(10), "back on the thread")?;
+    }
+
+    // Edit from here: the dialog, then the rollback and the prompt back in the composer.
+    let target = check.shown_input().revert_turn_counts.iter().max_by_key(|(_, turns)| **turns).map(|(id, turns)| (id.clone(), *turns));
+    let target_text = target.as_ref().and_then(|(id, _)| {
+        check.shown_input().entries.iter().find_map(|e| match &e.kind {
+            EntryKind::Message(m) if m.id.0 == *id => Some(m.text.to_string()),
+            _ => None,
+        })
+    });
+    let target_text = target_text.unwrap_or_default();
+    let counts = format!("{:?}", check.shown_input().revert_turn_counts);
+    check.check("live user messages offer edit from here", target.is_some(), counts);
+    if let Some((message, _)) = target {
+        let root = check.root.clone();
+        check.cx.update(|cx| {
+            let view = root.read(cx).thread_view().clone();
+            let timeline = view.read(cx).chat().read(cx).timeline().clone();
+            timeline.update(cx, |_, cx| cx.emit(TimelineAction::EditFrom(t3code_web::components::chat::timeline_entries::MessageId(message.clone()))));
+        });
+        // The dialog fades in over 200 ms.
+        check.wait(Duration::from_millis(300));
+        check.shot("33-edit-from-here-dialog.png")?;
+        let runs_before = projection_of(check, &key).map(|p| p.runs.len()).unwrap_or(0);
+        check.cx.update(|cx| {
+            let view = root.read(cx).thread_view().clone();
+            view.update(cx, |view, cx| view.resolve_revert(Some(false), cx));
+        });
+        let (k, wanted) = (key.clone(), target_text.clone());
+        check.pump(
+            move |c| c.cx.update(|cx| {
+                let text = root.read(cx).composer(cx).read(cx).editor().read(cx).text().to_owned();
+                !wanted.is_empty() && text.contains(&wanted)
+            }) && c.route() == Route::Thread(k.clone()),
+            Duration::from_secs(30),
+            "the rewound prompt is back in the composer",
+        )?;
+        let wanted = target_text.clone();
+        let dropped = check
+            .pump(
+                move |c| !c.shown_input().entries.iter().any(|e| matches!(&e.kind, EntryKind::Message(m) if m.text.as_ref() == wanted)),
+                Duration::from_secs(20),
+                "the timeline drops the rewound message",
+            )
+            .is_ok();
+        check.check("the rollback removes the message and the runs after it", dropped, format!("{runs_before} runs before"));
+        let editor = check.cx.update(|cx| composer.read(cx).editor().clone());
+        check.cx.update(|cx| editor.update(cx, |e, cx| e.set_text(String::new(), cx)));
+        check.shot("34-edited-from-here.png")?;
     }
 
     // `/side` starts a side chat from the thread and sends the prompt there.
-    check.go(&key);
-    check.pump(|c| !c.shown_input().entries.is_empty(), Duration::from_secs(10), "back on the thread")?;
     check.focus_composer();
     check.type_text("/side What does the retry helper return?");
     check.press("enter");

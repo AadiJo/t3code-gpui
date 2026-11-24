@@ -772,11 +772,17 @@ impl AppRoot {
         let items = attachments
             .iter()
             .filter_map(|attachment| {
-                let bytes = cx.asset_source().load(&attachment.source).ok().flatten()?;
+                // Live attachments are files in the image cache; fixtures are bundled assets.
+                let path = std::path::Path::new(attachment.source.as_ref());
+                let bytes: Vec<u8> = if path.is_absolute() {
+                    std::fs::read(path).ok()?
+                } else {
+                    cx.asset_source().load(&attachment.source).ok().flatten()?.into_owned()
+                };
                 Some(ExpandedImageItem {
                     name: attachment.name.clone(),
                     kind: MediaKind::Image,
-                    bytes: MediaBytes::Ready(bytes.into_owned().into()),
+                    bytes: MediaBytes::Ready(bytes.into()),
                     relative_path: None,
                     absolute_path: None,
                 })
