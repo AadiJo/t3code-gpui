@@ -527,6 +527,9 @@ fn flow(out: PathBuf, state: PathBuf, tag: &str) -> anyhow::Result<String> {
     });
     let unread: Vec<_> = items.iter().filter(|item| !item.read).cloned().collect();
     ensure!(!unread.is_empty(), "no unread fixture notifications");
+    // The fork shows the bell only with the notification inbox setting on (off by default).
+    r.cx.update(|cx| t3code_web::hooks::use_settings::ClientSettingsStore::update(cx, |s| s.notification_inbox_enabled = true));
+    r.frame();
     r.click_id("sidebar-notifications");
     let root = r.root.clone();
     let open = r.cx.update(|cx| SidebarNotifications::view(root.read(cx).sidebar().downgrade(), cx).read(cx).is_open());
@@ -906,10 +909,6 @@ fn mount(r: &mut Run) -> anyhow::Result<()> {
     let branch = r.cx.update(|cx| store.read(cx).snapshot(None).threads.iter().find(|t| t.key == with_diffs).and_then(|t| t.branch.clone()));
     r.check("picking a branch updates the thread", branch.as_deref().is_some_and(|b| b != "main"), format!("{branch:?}"));
     r.shot("branch-changed")?;
-    r.cx.update(|cx| {
-        t3code_web::hooks::use_settings::ClientSettingsStore::update(cx, |s| s.persist_composer_context_strip = false)
-    });
-    r.frame();
 
     // Timeline actions: copy, reply, edit from here, fork.
     let rows = r.rows();
@@ -1020,14 +1019,19 @@ fn mount(r: &mut Run) -> anyhow::Result<()> {
     // A question: digit keys pick, the drawer pages, the last answer submits.
     let question = snapshot.threads.iter().find(|t| t.has_pending_user_input).map(|t| t.key.clone()).context("no question thread")?;
     r.go(&question);
-    // Digit keys answer when focus is outside a text field.
-    r.cx.update_window(r.window, |_, w, cx| w.focus(&root.read(cx).sidebar().focus_handle(cx), cx)).ok();
     let chat = r.cx.update(|cx| root.read(cx).thread_view().read(cx).chat().clone());
+    // With the context strip persisted, picking a branch hands focus back to the
+    // strip (as the web's popup does), so digit keys still answer the question.
+    r.click_id("strip-branch");
+    r.type_text("feat");
+    r.press("down");
+    r.press("enter");
+    r.wait(200);
     r.shot("question")?;
     r.press("2");
     r.wait(350);
     let index = r.cx.update(|cx| chat.read(cx).question_index());
-    r.check("key 2 picks an option and moves to the next question", index == 1, index);
+    r.check("after a strip branch pick, key 2 picks an option and moves to the next question", index == 1, index);
     r.shot("question-second")?;
     r.click_id("question-previous");
     let index = r.cx.update(|cx| chat.read(cx).question_index());

@@ -7,7 +7,7 @@
 //! (one run-context select row and one branch select row). A running turn
 //! locks the worktree; a started thread locks the machine.
 
-use gpui_kit::{
+use gpui_kit::{FocusHandle, 
     AnyElement, App, AppContext as _, Context, Anchor, Entity, EventEmitter, Focusable as _, Hsla, IntoElement,
     ParentElement as _, Pixels, Render, SharedString, Styled as _, Subscription, Window, anchored, deferred, div,
     point, prelude::*, px, TestSupportExt as _,
@@ -111,6 +111,8 @@ pub struct BranchToolbar {
     /// A checkout or create is in flight.
     pending: bool,
     dismissed: DismissPress,
+    /// Where focus returns when the branch picker closes.
+    focus: FocusHandle,
 }
 
 impl EventEmitter<BranchToolbarEvent> for BranchToolbar {}
@@ -147,7 +149,17 @@ impl BranchToolbar {
         cx: &mut Context<Self>,
     ) -> Self {
         cx.observe(&model, |_, _, cx| cx.notify()).detach();
-        let mut toolbar = Self { layout, props, model, refs: None, open: None, picker: None, pending: false, dismissed: DismissPress::default() };
+        let mut toolbar = Self {
+            layout,
+            props,
+            model,
+            refs: None,
+            open: None,
+            picker: None,
+            pending: false,
+            dismissed: DismissPress::default(),
+            focus: cx.focus_handle(),
+        };
         toolbar.load_refs(cx);
         toolbar
     }
@@ -326,17 +338,22 @@ impl BranchToolbar {
         let options = self.picker_options(cx);
         let refs = self.refs().to_vec();
         let picker = cx.new(|cx| BranchPicker::new(refs, value, options, cx));
-        let subscription = cx.subscribe(&picker, |this, _, event: &BranchPickerEvent, cx| match event {
+        // Closing hands focus back to the toolbar (Base UI's `finalFocus`): the
+        // picker's field goes away with it, and the window would otherwise fall
+        // back to the composer, where digit keys type instead of answering a question.
+        let subscription = cx.subscribe_in(&picker, window, |this, _, event: &BranchPickerEvent, window, cx| match event {
             BranchPickerEvent::Dismiss(at) => {
                 if let Some(at) = at {
                     this.dismissed.record(*at);
                 }
-                this.close(cx)
+                this.close(cx);
+                window.focus(&this.focus, cx);
             }
             BranchPickerEvent::StartFromOriginChanged(on) => cx.emit(BranchToolbarEvent::StartFromOriginChanged(*on)),
             BranchPickerEvent::Select(item) => {
                 let item = item.clone();
                 this.close(cx);
+                window.focus(&this.focus, cx);
                 this.select(item, cx);
             }
         });
@@ -773,7 +790,7 @@ impl BranchToolbar {
             });
             strip = strip.child(div().relative().ml_auto().min_w_0().child(branch.test_support()).children(picker));
         }
-        strip.into_any_element()
+        strip.track_focus(&self.focus).into_any_element()
     }
 
     fn render_panel_workspace(&mut self, theme: &AppTheme, cx: &mut Context<Self>) -> AnyElement {
@@ -855,7 +872,7 @@ impl BranchToolbar {
             }))
         });
         let picker = self.picker.as_ref().filter(|_| open).map(|(picker, _)| below_row(picker.clone()));
-        div().flex().flex_col().w_full().child(trigger.test_support()).children(picker).into_any_element()
+        div().track_focus(&self.focus).flex().flex_col().w_full().child(trigger.test_support()).children(picker).into_any_element()
     }
 }
 
