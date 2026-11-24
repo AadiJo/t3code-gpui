@@ -7,6 +7,7 @@
 //! (one run-context select row and one branch select row). A running turn
 //! locks the worktree; a started thread locks the machine.
 
+use crate::components::ui::GlassExt as _;
 use std::sync::Arc;
 
 use gpui_kit::{
@@ -103,7 +104,7 @@ impl Render for BadgeTooltip {
                 .py(theme.sp(1.))
                 .rounded(theme.radii.md)
                 .border_1()
-                .bg(d.dropdown_glass_opaque)
+                .glass(d.glass_dropdown)
                 .border_color(d.dropdown_glass_border)
                 .shadow(theme.shadows.xl25.clone())
                 .child(

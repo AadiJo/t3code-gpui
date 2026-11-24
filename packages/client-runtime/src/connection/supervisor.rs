@@ -36,6 +36,13 @@ const BETTER_ROUTE_CHECK_INTERVAL: Duration = Duration::from_secs(60);
 const BETTER_ROUTE_COOLDOWN: Duration = Duration::from_secs(300);
 /// A dead route's checks back off up to this.
 const SILENT_ROUTE_BACKOFF_MAX: Duration = Duration::from_secs(1_800);
+/// A wake probe this long unanswered asks the host for its descriptor over a fresh request.
+const WAKE_PROBE_GRACE: Duration = Duration::from_millis(500);
+/// How long a wake probe may stay unanswered: loopback and LAN, elsewhere.
+const WAKE_PROBE_DEADLINE_NEARBY: Duration = Duration::from_secs(3);
+const WAKE_PROBE_DEADLINE: Duration = Duration::from_secs(15);
+/// Elsewhere, a host that answers while its socket is silent gets this long from the check's start.
+const WAKE_SILENT_SOCKET_GRACE: Duration = Duration::from_millis(2_500);
 
 /// Retry delay for the `failure`th failure (0-based): exponential with
 /// jitter in the upper half, capped at 5 minutes.
@@ -117,6 +124,7 @@ impl EnvironmentSupervisor {
             desired,
             network: NetworkStatus::Unknown,
             cooldowns: HashMap::new(),
+            switching_to: None,
             silent_routes: HashMap::new(),
         };
         let task = tokio::spawn(state.run());
@@ -150,6 +158,8 @@ struct Supervisor {
     desired: bool,
     network: NetworkStatus,
     cooldowns: HashMap<String, Instant>,
+    /// The better route the last session ended to move to, until the next connect lands.
+    switching_to: Option<String>,
     /// Earlier routes that were silent: (failures, next check).
     silent_routes: HashMap<String, (u32, Instant)>,
 }
@@ -321,6 +331,10 @@ impl Supervisor {
         *generation += 1;
         let session = lease.session;
         let active_route_id = session.prepared.route_id.clone();
+        // A better route that passed its check but did not take the connect rests a while.
+        if let Some(route) = self.switching_to.take().filter(|route| *route != active_route_id) {
+            self.cooldowns.insert(route, Instant::now() + BETTER_ROUTE_COOLDOWN);
+        }
         let connected_at = Instant::now();
         // Observers that see `Connected` must already see its session.
         self.auth.send_replace(Some(session.prepared.http_authorization.clone()));
@@ -350,16 +364,30 @@ impl Supervisor {
             BETTER_ROUTE_CHECK_INTERVAL,
         );
         let mut switching_to: Option<String> = None;
+        let mut wake_probe: Option<std::pin::Pin<Box<dyn std::future::Future<Output = bool> + Send>>> = None;
         let ended = loop {
             tokio::select! {
                 error = session.ended() => {
                     break Ended::Failed { error, established: true, stable: connected_at.elapsed() >= BACKOFF_RESET_AFTER };
                 }
+                dead = async { wake_probe.as_mut().expect("guarded").await }, if wake_probe.is_some() => {
+                    wake_probe = None;
+                    // A failed probe reconnects at once with a fresh retry ladder, as the web does.
+                    if dead {
+                        break Ended::Interrupted { reset_retry: true };
+                    }
+                }
                 signal = self.signals.recv() => {
                     let Some(signal) = signal else { renewal.abort(); return None };
+                    // Foregrounding, a wake, a network change or a retry probes the session;
+                    // only a failed probe replaces it.
+                    if matches!(signal, SupervisorSignal::Wakeup | SupervisorSignal::Retry) && wake_probe.is_none() {
+                        wake_probe = Some(Box::pin(probe_after_wake(session.clone())));
+                    }
                     let reset_retry = self.apply(signal);
-                    // A wakeup or retry keeps a working session; only intent changes end it.
-                    if !self.desired || (self.network == NetworkStatus::Offline) {
+                    // A wakeup, retry or offline report keeps a working session (offline
+                    // reports are often wrong, e.g. for a loopback host); only intent ends it.
+                    if !self.desired {
                         break Ended::Interrupted { reset_retry: false };
                     }
                     if reset_retry {
@@ -378,10 +406,7 @@ impl Supervisor {
         self.session.send_replace(None);
         self.auth.send_replace(None);
         drop(session);
-        if let Some(route) = switching_to {
-            // If the next connect lands elsewhere, that route rests a while.
-            self.cooldowns.insert(route, Instant::now() + BETTER_ROUTE_COOLDOWN);
-        }
+        self.switching_to = switching_to;
         Some(ended)
     }
 
@@ -424,6 +449,39 @@ impl Supervisor {
             }
         }
         ready
+    }
+}
+
+/// Whether a session is dead after a wake (`connection-runtime.md`). The socket's own 15 s
+/// silence timer runs on the monotonic clock, which macOS stops while asleep, so a socket the
+/// host dropped during sleep would otherwise linger. A `server.probe` unanswered after 500 ms
+/// asks for the host's descriptor over a fresh request: if the host answers while the socket
+/// stays silent, the socket is dead (at once on loopback and LAN, 2.5 s after the check started
+/// elsewhere); without that evidence the probe deadline decides (3 s nearby, 15 s elsewhere).
+async fn probe_after_wake(session: Arc<RpcSession>) -> bool {
+    let started = Instant::now();
+    let http = session.prepared.http_base_url.clone();
+    let nearby = super::routes::is_nearby_address(&http);
+    let call = session.client.call::<t3code_contracts::rpc::methods::ServerProbe>(t3code_contracts::wire::Empty);
+    tokio::pin!(call);
+    if let Ok(answer) = tokio::time::timeout(WAKE_PROBE_GRACE, &mut call).await {
+        return answer.is_err();
+    }
+    let deadline = started + if nearby { WAKE_PROBE_DEADLINE_NEARBY } else { WAKE_PROBE_DEADLINE };
+    // A fresh request: a pooled keep-alive socket may be as dead as the RPC socket.
+    crate::rpc::http::reset_http_pool();
+    let descriptor = crate::environment::fetch_descriptor(&http, deadline.saturating_duration_since(Instant::now()));
+    tokio::select! {
+        answer = &mut call => answer.is_err(),
+        fetched = descriptor => {
+            let silent_deadline = if fetched.is_ok() {
+                if nearby { return true }
+                started + WAKE_SILENT_SOCKET_GRACE
+            } else {
+                deadline
+            };
+            !matches!(tokio::time::timeout_at(silent_deadline, &mut call).await, Ok(Ok(_)))
+        }
     }
 }
 

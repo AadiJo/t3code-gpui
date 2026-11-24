@@ -26,6 +26,7 @@ pub struct DraggedThread {
     pub key: ThreadKey,
     pub section: SidebarSection,
     project_title: SharedString,
+    project_icon: Option<crate::components::project_favicon::ProjectIconSource>,
     project_label: SharedString,
     title: SharedString,
     branch: Option<SharedString>,
@@ -98,7 +99,7 @@ impl Render for DragPreview {
                             .h(colors.r(20.))
                             .items_center()
                             .gap(colors.r(6.))
-                            .child(project_favicon(d.project_title.clone(), &colors))
+                            .child(project_favicon(d.project_title.clone(), d.project_icon.as_ref(), &colors))
                             .child(
                                 div()
                                     .flex_1()
@@ -151,6 +152,7 @@ impl Sidebar {
             key: thread.key.clone(),
             section: *section,
             project_title: self.list.project_titles.get(&project).cloned().unwrap_or_default(),
+            project_icon: self.list.project_icons.get(&project).cloned(),
             project_label: self.list.project_labels.get(&project).cloned().unwrap_or_default(),
             title: thread.title.clone(),
             branch: thread.branch.clone(),

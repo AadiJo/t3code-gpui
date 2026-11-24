@@ -2,6 +2,7 @@
 //! `glass` uses `dropdown-glass`, `code` is mono for paths and commands.
 //! Attach with GPUI's `.tooltip(tooltip("text"))` on an element with an id.
 
+use crate::components::ui::GlassExt as _;
 use gpui_kit::{AnyView, App, AppContext as _, Context, IntoElement, Render, RenderOnce, SharedString, Window, div, prelude::*, px};
 
 use super::motion::Transition;
@@ -22,13 +23,21 @@ pub enum TooltipVariant {
 #[derive(IntoElement, Clone)]
 pub struct TooltipSurface {
     text: SharedString,
+    /// Muted lines under the text (`flex-col gap-0.5`, `text-muted-foreground`).
+    lines: Vec<SharedString>,
     shortcut: Option<SharedString>,
     variant: TooltipVariant,
 }
 
 impl TooltipSurface {
     pub fn new(text: impl Into<SharedString>) -> Self {
-        Self { text: text.into(), shortcut: None, variant: TooltipVariant::Default }
+        Self { text: text.into(), lines: Vec::new(), shortcut: None, variant: TooltipVariant::Default }
+    }
+
+    /// A muted line under the text.
+    pub fn line(mut self, text: impl Into<SharedString>) -> Self {
+        self.lines.push(text.into());
+        self
     }
 
     pub fn variant(mut self, variant: TooltipVariant) -> Self {
@@ -63,7 +72,7 @@ impl RenderOnce for TooltipSurface {
             .line_height(px(TextSize::Xs.size(theme.fonts.interface) * 1.375));
         let card = match self.variant {
             TooltipVariant::Glass => card
-                .bg(d.dropdown_glass_opaque)
+                .glass(d.glass_dropdown)
                 .border_color(d.dropdown_glass_border)
                 .shadow(theme.shadows.xl25.clone()),
             TooltipVariant::Default | TooltipVariant::Code => {
@@ -74,8 +83,19 @@ impl RenderOnce for TooltipSurface {
             TooltipVariant::Code => card.max_w(theme.rem(30.)).mono_text(px(11.), weight::NORMAL).line_height(px(11. * 1.625)),
             _ => card.max_w(theme.rem(20.)),
         };
+        let muted = theme.colors.muted_foreground;
+        let content = if self.lines.is_empty() {
+            div().child(self.text)
+        } else {
+            div()
+                .flex()
+                .flex_col()
+                .gap(theme.sp(0.5))
+                .child(div().text_color(c.foreground()).child(self.text))
+                .children(self.lines.into_iter().map(|line| div().text_color(muted).child(line)))
+        };
         card.control_highlight(theme)
-            .child(div().child(self.text))
+            .child(content)
             .children(self.shortcut.map(Kbd::new))
     }
 }

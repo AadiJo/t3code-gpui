@@ -22,7 +22,9 @@ use t3code_contracts::{
 use super::rpc::RpcLink;
 use crate::components::chat::thread_details_panel::{ThreadDetailsEvent, ThreadDetailsInput};
 use crate::components::chat::thread_details_pr_row::PullRequestRowAction;
+use t3code_client_runtime::state::models::ThreadRow;
 use crate::components::chat::thread_details_sections::{
+    UsageLimitsInput, UsageWindowRow,
     AutomationRunStatus, ContextWindowRow, ThreadAutomationRow, ThreadDetailsSectionEvent, ThreadServerRow,
 };
 use crate::components::command_palette_logic::PortForwardRequest;
@@ -247,8 +249,57 @@ pub fn input(feed: &Entity<DetailsFeed>, view: &ThreadView, base: ThreadDetailsI
         can_operate_automations: true,
         automation_busy,
         context_window: context_window(&key, cx),
+        usage_limits: usage_limits(row.as_deref(), config.as_deref(), cx),
         ..base
     }
+}
+
+/// `ThreadDetailsUsage`'s rows: the thread's provider instance's own limit snapshot.
+fn usage_limits(row: Option<&ThreadRow>, config: Option<&t3code_contracts::ServerConfig>, cx: &App) -> Option<UsageLimitsInput> {
+    use t3code_shared::usage_limits::{LimitPace, limits_notice_reason, pace_of, pace_remaining_percent, remaining_percent};
+    let instance = &row?.source.model_selection.instance_id;
+    let provider = config?.providers.iter().find(|provider| provider.instance_id == *instance)?;
+    let limits = provider.usage_limits.as_ref()?;
+    if let Some(reason) = limits_notice_reason(limits) {
+        return Some(UsageLimitsInput::Notice(crate::components::usage::usage_limits::limits_notice(reason)));
+    }
+    // `useNowMinute`: the rows move once a minute.
+    let now = (jiff::Timestamp::now().as_millisecond() / 60_000 * 60_000) as f64;
+    let format = crate::hooks::settings_bridge::timestamp_format(cx);
+    let windows = limits
+        .windows
+        .iter()
+        .map(|window| {
+            let left = remaining_percent(window);
+            let tick = pace_remaining_percent(window, now);
+            let mut lines = Vec::new();
+            if let (Some(pace), Some(time_left)) = (pace_of(window, now), tick) {
+                let pace = match pace {
+                    LimitPace::Ahead => t!("Ahead of pace"),
+                    LimitPace::On => t!("On pace"),
+                    LimitPace::Under => t!("Under pace"),
+                };
+                lines.push(SharedString::from(format!("{pace} · {}", t!("{timeLeft}% of the window left", timeLeft = time_left as i64))));
+            }
+            if let Some(resets_at) = window.resets_at.as_deref()
+                && let Some(at) = t3code_shared::usage_format::parse_instant_ms(resets_at).filter(|at| *at as f64 > now)
+            {
+                lines.push(t!(
+                    "Resets in {duration} · {time}",
+                    duration = crate::components::usage::usage_limits::format_duration(at as f64 - now).as_ref(),
+                    time = crate::timestamp_format::format_upcoming_timestamp(resets_at, format, now as i64, None).as_ref()
+                ));
+            }
+            UsageWindowRow {
+                id: window.id.clone().into(),
+                label: window.label.clone().into(),
+                left: left.clamp(0., 100.) as u8,
+                tick: tick.map(|t| t as f32),
+                lines,
+            }
+        })
+        .collect();
+    Some(UsageLimitsInput::Windows(windows))
 }
 
 /// `deriveLatestContextWindowSnapshot` without the compaction case: the active provider
@@ -424,7 +475,7 @@ fn section_event(
             PortForwards::handle(request, cx);
             Task::ready(DetailsOutcome::Done)
         }
-        ThreadDetailsSectionEvent::ManageAutomations(_) => Task::ready(DetailsOutcome::Done),
+        ThreadDetailsSectionEvent::ManageAutomations(_) | ThreadDetailsSectionEvent::OpenUsage => Task::ready(DetailsOutcome::Done),
         ThreadDetailsSectionEvent::RunAutomation(id) | ThreadDetailsSectionEvent::SetAutomationEnabled { id, .. } => {
             let task_id = ScheduledTaskId::new(id.as_ref());
             let (request, failure) = match event {

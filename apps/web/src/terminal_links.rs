@@ -40,10 +40,11 @@ static FILE_PATH: LazyLock<Regex> = LazyLock::new(|| {
         r#"(?:(?::\d+){1,2}|\(\d+,\d+\)(?=:\s+(?:error|warning) TS\d+:))?"#,
     ))
 });
+// fancy-regex refuses a numbered backreference next to named groups, so the quote is named.
 static QUOTED_FILE_PATH: LazyLock<Regex> = LazyLock::new(|| {
     regex(concat!(
-        r#"(["'`])(?<path>(?:~[\\/]|\.{1,2}[\\/]|/|[A-Za-z]:[\\/]|\\\\|[\p{L}\p{M}\p{N}._ -]+[\\/])[^\r\n]*?"#,
-        r#"|[\p{L}\p{M}\p{N}._ -]+\.[\p{L}\p{M}\p{N}_-]+(?::\d+){0,2})\1(?<position>(?::\d+){0,2})"#,
+        r#"(?<quote>["'`])(?<path>(?:~[\\/]|\.{1,2}[\\/]|/|[A-Za-z]:[\\/]|\\\\|[\p{L}\p{M}\p{N}._ -]+[\\/])[^\r\n]*?"#,
+        r#"|[\p{L}\p{M}\p{N}._ -]+\.[\p{L}\p{M}\p{N}_-]+(?::\d+){0,2})\k<quote>(?<position>(?::\d+){0,2})"#,
     ))
 });
 // A question mark is legal in filenames; only exclude query-bearing request targets.

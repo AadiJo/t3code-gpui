@@ -257,6 +257,11 @@ impl RelayClient {
         &self.key
     }
 
+    /// Forgets every cached relay token, as on an account change.
+    pub async fn reset_token_cache(&self) {
+        self.tokens.lock().await.clear();
+    }
+
     fn url(&self, path: &str) -> Url {
         Url::parse(&format!("{}{path}", self.origin)).expect("relay origin plus path parses")
     }

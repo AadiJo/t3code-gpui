@@ -99,6 +99,14 @@ fn finish(launch: &mut Launch, preview: Result<t3code_web::connection::ImportPre
             return;
         }
     };
+    // Without T3 Connect configured there is no session to adopt.
+    let has_clerk = preview.has_clerk_session && ConnectionRuntime::state(cx).read(cx).cloud.is_some();
+    // Without a session to adopt, T3 Connect routes could only wait for a sign-in; signing in
+    // later lists those environments again with Add, as the web does after a sign-out.
+    let mut preview = preview;
+    if !has_clerk {
+        without_relay_routes(&mut preview.import);
+    }
     let environments = preview.import.environments.len();
     let repair = preview
         .import
@@ -106,8 +114,6 @@ fn finish(launch: &mut Launch, preview: Result<t3code_web::connection::ImportPre
         .iter()
         .filter(|s| matches!(s.reason, SkipReason::DeviceBoundCredential | SkipReason::MissingCredential))
         .count();
-    // Without T3 Connect configured there is no session to adopt.
-    let has_clerk = preview.has_clerk_session && ConnectionRuntime::state(cx).read(cx).cloud.is_some();
     let runtime = ConnectionRuntime::global(cx);
     let saved = runtime.apply_electron_import(preview.clone(), false, cx);
     let adopt = has_clerk.then(|| runtime.apply_electron_import(preview, true, cx));
@@ -140,4 +146,17 @@ fn finish(launch: &mut Launch, preview: Result<t3code_web::connection::ImportPre
         });
     })
     .detach();
+}
+
+/// Drops T3 Connect routes and the routes learned through them; an environment left with no
+/// route is dropped too.
+fn without_relay_routes(import: &mut t3code_client_runtime::platform::electron_import::ElectronImport) {
+    use t3code_client_runtime::connection::catalog::{ProfileAuthorization, TargetRoute};
+    for environment in &mut import.environments {
+        environment.routes.retain(|route| {
+            route.target.route != TargetRoute::Relay
+                && route.bearer_profile().and_then(|profile| profile.authorization) != Some(ProfileAuthorization::T3Connect)
+        });
+    }
+    import.environments.retain(|environment| !environment.routes.is_empty());
 }

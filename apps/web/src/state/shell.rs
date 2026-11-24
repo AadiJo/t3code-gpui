@@ -15,6 +15,7 @@ use t3code_client_runtime::state::models::{EpochMs, ThreadRow, now_ms, parse_ms}
 use t3code_client_runtime::state::sidebar::last_visited_at;
 use t3code_client_runtime::state::thread_settled::thread_woke_at;
 use t3code_client_runtime::state::thread_shell::{ShellRows, navigation_rows};
+use t3code_client_runtime::state::thread_tag_filter::{hidden_tags, hidden_thread_keys};
 use t3code_client_runtime::state::ui_state::UiState;
 use t3code_contracts::{
     OrchestrationProjectShell, OrchestrationV2ProviderFailureClass as FailureClass, OrchestrationV2ProviderGoalStatus,
@@ -28,7 +29,7 @@ use crate::components::sidebar::model::{
     SidebarSettings, SidebarSnapshot, SidebarThread, SubagentRequest, ThreadKey, ThreadRuntime, TimestampMs,
 };
 
-type RowKey = (t3code_contracts::EnvironmentId, t3code_contracts::ThreadId);
+pub type RowKey = (t3code_contracts::EnvironmentId, t3code_contracts::ThreadId);
 
 /// What a mapped row was built from; equal inputs reuse the mapped `Arc`.
 struct MappedRow {
@@ -37,6 +38,7 @@ struct MappedRow {
     woke_at: Option<EpochMs>,
     has_draft: bool,
     remote: bool,
+    unread_completion: bool,
     thread: Arc<SidebarThread>,
 }
 
@@ -55,6 +57,12 @@ pub struct LiveShell {
     revision: u64,
     rebuild_pending: bool,
     rebuilds: u64,
+    /// The server's message matches for the sidebar search.
+    search_matches: Option<model::SearchContentMatches>,
+    /// Threads the servers' tag filters hide.
+    hidden: Arc<HashSet<RowKey>>,
+    /// Whether some environment's tag filter is on.
+    hiding: bool,
     _environment_subscriptions: Vec<Subscription>,
     _subscriptions: Vec<Subscription>,
 }
@@ -155,15 +163,21 @@ fn row_provider(row: &ThreadRow, marks: &HashMap<String, InstanceMark>) -> Optio
     })
 }
 
+/// What a row shows beyond its shell row.
+#[derive(Clone, Default)]
+pub(super) struct RowExtras {
+    pub local_visit: Option<EpochMs>,
+    pub woke_at: Option<EpochMs>,
+    pub has_draft: bool,
+    pub remote: bool,
+    /// The inbox holds an unread completion for it: the sidebar's Done marker.
+    pub unread_completion: bool,
+    pub provider: Option<model::SidebarProvider>,
+}
+
 /// One presented row as the sidebar draws it (`SidebarThreadSummary`).
-fn map_row(
-    row: &ThreadRow,
-    local_visit: Option<EpochMs>,
-    woke_at: Option<EpochMs>,
-    has_draft: bool,
-    remote: bool,
-    provider: Option<model::SidebarProvider>,
-) -> SidebarThread {
+pub(super) fn map_row(row: &ThreadRow, extras: RowExtras) -> SidebarThread {
+    let RowExtras { local_visit, woke_at, has_draft, remote, unread_completion, provider } = extras;
     let source: &OrchestrationV2ThreadShell = &row.source;
     SidebarThread {
         key: thread_key(&row.environment_id, &source.id),
@@ -202,7 +216,7 @@ fn map_row(
         pending_guest_message_count: source.pending_guest_message_count.unwrap_or(0) as u32,
         goal_active: source.goal.as_ref().is_some_and(|goal| goal.status == OrchestrationV2ProviderGoalStatus::Active),
         last_visited_at: ts(last_visited_at(row, local_visit)),
-        has_unread_completion_notification: false,
+        has_unread_completion_notification: unread_completion,
         settled_override: source.settled_override.map(|value| match value {
             Settled::Settled => SettledOverride::Settled,
             Settled::Active => SettledOverride::Active,
@@ -228,7 +242,17 @@ fn parse_opt_ms(iso: Option<&str>) -> Option<EpochMs> {
     iso.and_then(parse_ms)
 }
 
-fn map_project(environment_id: &t3code_contracts::EnvironmentId, project: &OrchestrationProjectShell) -> SidebarProject {
+/// One project as the sidebar groups it. `logical_key` is the group key with the per-project
+/// override applied; it reaches the sidebar as the repository key (grouping runs in repository
+/// mode), and a project that stands alone gets none.
+fn map_project(
+    environment_id: &t3code_contracts::EnvironmentId,
+    project: &OrchestrationProjectShell,
+    logical_key: &str,
+    group_label: Option<String>,
+    favicon: Option<Arc<std::path::Path>>,
+) -> SidebarProject {
+    let physical = t3code_client_runtime::state::project_grouping::physical_project_key(environment_id, &project.workspace_root);
     SidebarProject {
         project_ref: ProjectRef {
             environment_id: environment_key(environment_id),
@@ -236,10 +260,7 @@ fn map_project(environment_id: &t3code_contracts::EnvironmentId, project: &Orche
         },
         title: SharedString::from(project.title.clone()),
         workspace_root: SharedString::from(project.workspace_root.clone()),
-        repository_key: project
-            .repository_identity
-            .as_ref()
-            .map(|identity| SharedString::from(identity.origin.as_ref().map_or(&identity.canonical_key, |o| &o.canonical_key).clone())),
+        repository_key: (logical_key != physical).then(|| SharedString::from(logical_key.to_owned())),
         repository_relative_path: None,
         repository_display_name: project.repository_identity.as_ref().and_then(|identity| match &identity.origin {
             Some(origin) => Some(origin.display_name.clone().unwrap_or_else(|| origin.canonical_key.clone()).into()),
@@ -251,7 +272,34 @@ fn map_project(environment_id: &t3code_contracts::EnvironmentId, project: &Orche
         updated_at: TimestampMs(parse_ms(&project.updated_at).unwrap_or_default()),
         pinned: project.pinned_at.is_some(),
         archived: project.archived_at.is_some(),
+        group_label: group_label.map(SharedString::from),
+        icon: project.project_icon.clone(),
+        favicon,
     }
+}
+
+/// The sidebar settings the client settings choose, and the grouping settings.
+fn sidebar_settings(cx: &App) -> (SidebarSettings, t3code_client_runtime::state::project_grouping::ProjectGroupingSettings) {
+    use t3code_contracts::SidebarProjectSortOrder as Sort;
+    let settings = crate::hooks::use_settings::ClientSettingsStore::get(cx);
+    let sidebar = SidebarSettings {
+        project_folders: settings.boring_sidebar_enabled,
+        working_shelf: settings.sidebar_working_shelf_enabled,
+        // Per-project overrides are folded into each project's key, so the sidebar groups by it.
+        grouping_mode: model::ProjectGroupingMode::Repository,
+        project_sort_order: match settings.sidebar_project_sort_order {
+            Sort::CreatedAt => model::ProjectSortOrder::CreatedAt,
+            Sort::Manual => model::ProjectSortOrder::Manual,
+            _ => model::ProjectSortOrder::UpdatedAt,
+        },
+        notification_inbox: settings.notification_inbox_enabled,
+        ..SidebarSettings::default()
+    };
+    let grouping = t3code_client_runtime::state::project_grouping::ProjectGroupingSettings {
+        mode: settings.sidebar_project_grouping_mode,
+        overrides: settings.sidebar_project_grouping_overrides.iter().map(|(k, v)| (k.clone(), *v)).collect(),
+    };
+    (sidebar, grouping)
 }
 
 impl LiveShell {
@@ -261,6 +309,8 @@ impl LiveShell {
         ui_state: Rc<ClientStore<UiState>>,
         cx: &mut Context<Self>,
     ) -> Self {
+        let settings = cx.observe_global::<crate::hooks::use_settings::ClientSettingsStore>(|this, cx| this.schedule(cx));
+        let inbox = cx.observe(&crate::desktop_notifications::NotificationInbox::global(cx), |this, _, cx| this.schedule(cx));
         let subscription = cx.observe(&environments, |this, environments, cx| {
             let list = environments.read(cx).list.clone();
             this._environment_subscriptions = list.iter().map(|env| cx.observe(env, |this, _, cx| this.schedule(cx))).collect();
@@ -278,8 +328,11 @@ impl LiveShell {
             revision: 0,
             rebuild_pending: false,
             rebuilds: 0,
+            search_matches: None,
+            hidden: Arc::default(),
+            hiding: false,
             _environment_subscriptions: Vec::new(),
-            _subscriptions: vec![subscription],
+            _subscriptions: vec![subscription, settings, inbox],
         };
         this.rebuild_now(cx);
         this
@@ -302,6 +355,11 @@ impl LiveShell {
     /// How many times the snapshot was rebuilt, for measurements.
     pub fn rebuild_count(&self) -> u64 {
         self.rebuilds
+    }
+
+    /// Threads the servers' tag filters hide, and whether any filter is on.
+    pub fn hidden(&self) -> (&Arc<HashSet<RowKey>>, bool) {
+        (&self.hidden, self.hiding)
     }
 
     /// The presented row of a thread.
@@ -349,7 +407,17 @@ impl LiveShell {
             .collect();
         let borrowed: Vec<_> = shells.iter().map(|(id, threads)| (id.clone(), threads.as_slice())).collect();
         self.presented = self.rows.present(&borrowed);
-        let listed = navigation_rows(&self.presented, &HashSet::new());
+        let filters: HashMap<_, _> = envs
+            .iter()
+            .filter_map(|env| Some((env.environment_id().clone(), hidden_tags(env.config.as_deref().map(|config| &config.settings))?)))
+            .collect();
+        let hidden = hidden_thread_keys(&self.presented, &filters);
+        if *self.hidden != hidden {
+            self.hidden = Arc::new(hidden);
+        }
+        self.hiding = !filters.is_empty();
+        let listed = navigation_rows(&self.presented, &self.hidden);
+        let unread = crate::desktop_notifications::NotificationInbox::global(cx).read(cx).unread_completion_threads();
         let now = now_ms();
         let drafts = self.drafts.current();
         let ui_state = self.ui_state.current();
@@ -366,6 +434,7 @@ impl LiveShell {
                 let woke_at = thread_woke_at(row, now);
                 let key = (row.environment_id.clone(), row.id().clone());
                 let provider = row_provider(row, marks.get(&row.environment_id).unwrap_or(&no_marks));
+                let unread_completion = !unread.is_empty() && unread.contains(&thread_key(&row.environment_id, row.id()));
                 let reused = self.mapped.remove(&key).filter(|mapped| {
                     mapped.thread.provider == provider &&
                     Arc::ptr_eq(&mapped.source, row)
@@ -373,6 +442,7 @@ impl LiveShell {
                         && mapped.woke_at == woke_at
                         && mapped.has_draft == has_draft
                         && mapped.remote == remote
+                        && mapped.unread_completion == unread_completion
                 });
                 let mapped = reused.unwrap_or_else(|| MappedRow {
                     source: Arc::clone(row),
@@ -380,7 +450,8 @@ impl LiveShell {
                     woke_at,
                     has_draft,
                     remote,
-                    thread: Arc::new(map_row(row, local_visit, woke_at, has_draft, remote, provider)),
+                    unread_completion,
+                    thread: Arc::new(map_row(row, RowExtras { local_visit, woke_at, has_draft, remote, unread_completion, provider })),
                 });
                 let thread = Arc::clone(&mapped.thread);
                 next.insert(key, mapped);
@@ -388,17 +459,50 @@ impl LiveShell {
             })
             .collect();
         self.mapped = next;
-        let projects = envs
+        let (settings, grouping) = sidebar_settings(cx);
+        let supported = envs.iter().any(|env| env.config_loaded());
+        let (projects, wanted) = {
+        let all: Vec<(t3code_contracts::EnvironmentId, &OrchestrationProjectShell)> = envs
             .iter()
             .flat_map(|env| {
                 let id = env.environment_id().clone();
-                env.shell.snapshot.iter().flat_map(move |snapshot| {
+                env.shell.snapshot.iter().flat_map(move |snapshot| snapshot.projects.iter().map({
                     let id = id.clone();
-                    snapshot.projects.iter().map(move |project| map_project(&id, project))
-                })
+                    move |project| (id.clone(), &**project)
+                }))
             })
             .collect();
-        let supported = envs.iter().any(|env| env.config_loaded());
+        let keys: Vec<String> = all
+            .iter()
+            .map(|(id, project)| t3code_client_runtime::state::project_grouping::logical_project_key(id, project, &grouping))
+            .collect();
+        let mut members: HashMap<&str, Vec<&OrchestrationProjectShell>> = HashMap::new();
+        for (key, (_, project)) in keys.iter().zip(&all) {
+            members.entry(key.as_str()).or_default().push(*project);
+        }
+        let labels: HashMap<&str, String> = members
+            .iter()
+            .map(|(key, group)| {
+                let representative = group.iter().max_by_key(|p| parse_ms(&p.updated_at).unwrap_or_default()).copied().unwrap_or(group[0]);
+                (*key, t3code_client_runtime::state::project_grouping::group_label(key, representative, group))
+            })
+            .collect();
+        let wanted: Vec<(t3code_contracts::EnvironmentId, String, Option<String>)> =
+            all.iter().map(|(id, p)| (id.clone(), p.workspace_root.clone(), p.favicon_path.clone())).collect();
+        let projects: Vec<SidebarProject> = all
+            .iter()
+            .zip(&keys)
+            .map(|((id, project), key)| map_project(id, project, key, labels.get(key.as_str()).cloned(), None))
+            .collect();
+        (projects, wanted)
+        };
+        drop(envs);
+        // Favicons need the app mutably; the lookups start after the shells are read.
+        let projects = projects
+            .into_iter()
+            .zip(wanted)
+            .map(|(project, (id, root, path))| SidebarProject { favicon: super::favicons::favicon(&id, &root, path.as_deref(), cx), ..project })
+            .collect();
         self.snapshot = SidebarSnapshot {
             projects,
             threads,
@@ -407,18 +511,28 @@ impl LiveShell {
                 settlement_supported: supported,
                 snooze_supported: supported,
                 pinning_supported: supported,
-                ..SidebarSettings::default()
+                ..settings
             },
             active_thread: self.active_thread.clone(),
             environment_pill: None,
             now: TimestampMs(now),
             auto_settle_disabled: Default::default(),
             hover_details: Default::default(),
+            // `AppRoot` gives the sidebar its drafts with `set_drafts`.
             drafts: Vec::new(),
             active_draft: None,
+            search_content_matches: self.search_matches.clone(),
         };
         self.revision += 1;
         self.rebuilds += 1;
+        cx.notify();
+    }
+
+    /// Takes the server's message matches for a sidebar search.
+    pub fn set_search_matches(&mut self, matches: Option<model::SearchContentMatches>, cx: &mut Context<Self>) {
+        self.search_matches = matches;
+        self.snapshot.search_content_matches = self.search_matches.clone();
+        self.revision += 1;
         cx.notify();
     }
 

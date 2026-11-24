@@ -24,6 +24,9 @@ pub struct ProjectGroup {
     pub archived: bool,
     pub created_at: TimestampMs,
     pub updated_at: TimestampMs,
+    /// The representative project's icon override and favicon.
+    pub icon: Option<t3code_contracts::OrchestrationProjectShellProjectIcon>,
+    pub favicon: Option<std::sync::Arc<std::path::Path>>,
 }
 
 /// `${environmentId}:${normalized workspaceRoot}`.
@@ -150,6 +153,8 @@ pub fn build_project_groups(
                     archived: winner.archived,
                     created_at: winner.created_at,
                     updated_at: winner.updated_at,
+                    icon: winner.icon.clone(),
+                    favicon: winner.favicon.clone(),
                 });
             }
         }
@@ -170,7 +175,11 @@ pub fn build_project_groups(
     }
     for (ix, group) in groups.iter_mut().enumerate() {
         if let Some(representative) = representatives[ix] {
-            group.label = group_label(&group.key, representative, &members[ix]);
+            // The live layer names groups itself (`group_label`); fixtures derive it here.
+            group.label = representative
+                .group_label
+                .clone()
+                .unwrap_or_else(|| group_label(&group.key, representative, &members[ix]));
         }
     }
     groups

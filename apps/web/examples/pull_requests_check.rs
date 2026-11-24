@@ -116,13 +116,23 @@ fn main() -> anyhow::Result<()> {
     let p = page.clone();
     check.step(w, "03-query-cleared", |win, cx| p.update(cx, |p, cx| p.set_query("", win, cx)))?;
     check.step(w, "04-filters-menu", |win, cx| win.click("pr-filters-trigger", cx))?;
-    check.step(w, "05-filter-approved", |win, cx| win.click(("menu-item", 16usize), cx))?;
+    check.step(w, "05a-filter-review-submenu", |win, cx| win.click("pr-filter-sub-review", cx))?;
+    check.step(w, "05-filter-approved", |win, cx| win.click("pr-filter-opt-approved", cx))?;
     { let line = format!("after Review: Approved: {:?}", visible(&mut check)); check.note(line); }
-    check.step(w, "06-views-menu", |win, cx| win.click("pr-views-trigger", cx))?;
-    check.step(w, "07-save-view-editor", |win, cx| win.click(("menu-item", 1usize), cx))?;
-    check.step(w, "08-save-view-named", |win, cx| win.input("Approved work", cx))?;
-    check.step(w, "09-view-saved", |win, cx| win.click("pr-view-save", cx))?;
-    let views = check.cx.update(|cx| page.read(cx).saved_views().iter().map(|v| (v.name.clone(), serde_json::to_string(&v.search).unwrap())).collect::<Vec<_>>());
+    check.step(w, "06-views-menu", |win, cx| win.click("saved-views-trigger", cx))?;
+    check.step(w, "07-save-view-dialog", |win, cx| win.click("saved-views-save", cx))?;
+    // The dialog fades in over 200ms of wall time; let it finish before the screenshot.
+    check.step(w, "08-save-view-named", |win, cx| {
+        std::thread::sleep(std::time::Duration::from_millis(250));
+        win.input("Approved work", cx)
+    })?;
+    check.step(w, "08b-save-view-dialog", |_, _| std::thread::sleep(std::time::Duration::from_millis(400)))?;
+    { let line = format!("dialog name: {:?}", check.cx.update(|cx| { let m = page.read(cx).views_menu().clone(); m.read(cx).editor_text(cx) })); check.note(line); }
+    check.step(w, "09-view-saved", |win, cx| win.click("saved-view-save", cx))?;
+    let views = check.cx.update(|cx| {
+        let menu = page.read(cx).views_menu().clone();
+        menu.read(cx).views().iter().map(|v| (v.name.clone(), serde_json::to_string(&v.preferences).unwrap())).collect::<Vec<_>>()
+    });
     { let line = format!("saved views: {views:?}"); check.note(line); }
     let p = page.clone();
     check.step(w, "10-filters-cleared", |_, cx| p.update(cx, |p, cx| p.set_menu_filters(Default::default(), cx)))?;
@@ -141,6 +151,35 @@ fn main() -> anyhow::Result<()> {
     let ws2 = ws.clone();
     check.step(w, "13-summary", |win, cx| ws2.update(cx, |ws, cx| ws.open(pull_request_ref(&entry), DetailTab::Summary, win, cx)))?;
     let detail = check.cx.update(|cx| ws.read(cx).detail.clone()).unwrap();
+    seen = check.calls(&fixture, seen);
+    let d = detail.clone();
+    check.step(w, "13a-title-editor", |win, cx| d.update(cx, |p, cx| p.begin_title_edit(win, cx)))?;
+    check.step(w, "13b-title-typed", |win, cx| {
+        win.press("ctrl-a", cx);
+        win.input("Virtualize the pull request list", cx);
+    })?;
+    check.step(w, "13c-title-saved", |win, cx| win.press("enter", cx))?;
+    { let line = format!("title after save: {:?}", check.cx.update(|cx| detail.read(cx).detail().map(|d| d.title.clone()))); check.note(line); }
+    check.step(w, "13d-reviewer-picker", |win, cx| win.click("pr-reviewer-picker-trigger", cx))?;
+    check.step(w, "13e-label-picker-open", |win, cx| {
+        win.press("escape", cx);
+        win.click("pr-label-picker-trigger", cx);
+    })?;
+    check.step(w, "13f-label-picked", |win, cx| win.click("label-candidate-bug", cx))?;
+    check.step(w, "13g-label-sent", |win, cx| win.press("escape", cx))?;
+    { let line = format!("labels after picker: {:?}", check.cx.update(|cx| detail.read(cx).detail().map(|d| d.labels.iter().map(|l| l.name.clone()).collect::<Vec<_>>()))); check.note(line); }
+    check.step(w, "13h-composer", |win, cx| win.click("pr-composer-trigger", cx))?;
+    check.step(w, "13i-review-mode", |win, cx| win.click("pr-composer-review", cx))?;
+    check.step(w, "13j-verdict-menu", |win, cx| win.click("pr-review-verdict-trigger", cx))?;
+    check.step(w, "13k-approve", |win, cx| win.click(("menu-item", 1usize), cx))?;
+    check.step(w, "13k2-review-form", |_, _| std::thread::sleep(std::time::Duration::from_millis(200)))?;
+    check.step(w, "13l-review-sent", |win, cx| win.click("pr-review-submit", cx))?;
+    check.step(w, "13m-checkout-menu", |win, cx| win.click("pr-checkout-trigger", cx))?;
+    check.step(w, "13n-more-menu", |win, cx| {
+        win.press("escape", cx);
+        win.click("pr-more-trigger", cx);
+    })?;
+    check.step(w, "13o-menus-closed", |win, cx| win.press("escape", cx))?;
     seen = check.calls(&fixture, seen);
     check.step(w, "14-merge-method-menu", |win, cx| win.click("pr-merge-method-trigger", cx))?;
     check.step(w, "15-merge-method-rebase", |win, cx| win.click(("menu-item", 2usize), cx))?;
@@ -174,16 +213,20 @@ fn main() -> anyhow::Result<()> {
     check.step(wi, "30-issues", |_, _| {})?;
     let panel = check.cx.update(|cx| iws.read(cx).panel.clone()).unwrap();
     check.step(wi, "31-issue-react", |win, cx| win.click("issue-react-heart", cx))?;
-    check.step(wi, "32-issue-labels-open", |win, cx| win.click("issue-labels-edit", cx))?;
+    check.step(wi, "32-issue-labels-open", |win, cx| win.click("issue-label-picker-trigger", cx))?;
     check.step(wi, "33-issue-label-picked", |win, cx| win.click("issue-label-bug", cx))?;
-    check.step(wi, "34-issue-labels-saved", |win, cx| win.click("issue-labels-edit", cx))?;
+    check.step(wi, "34-issue-labels-saved", |win, cx| win.press("escape", cx))?;
+    check.step(wi, "34a-issue-assignees-open", |win, cx| win.click("issue-assignee-picker-trigger", cx))?;
+    check.step(wi, "34b-issue-assignees-closed", |win, cx| win.press("escape", cx))?;
+    check.step(wi, "34c-issue-filters-menu", |win, cx| win.click("issues-filters-trigger", cx))?;
+    check.step(wi, "34d-issue-assignee-submenu", |win, cx| win.click("issue-filter-sub-assignee", cx))?;
+    check.step(wi, "34e-issue-filters-closed", |win, cx| win.click("issues-filters-trigger", cx))?;
+    check.step(wi, "34f-issue-sort-menu", |win, cx| win.click("issues-sort-trigger", cx))?;
+    check.step(wi, "34g-issue-sort-closed", |win, cx| win.click("issues-sort-trigger", cx))?;
     { let line = format!("labels: {:?}", check.cx.update(|cx| panel.read(cx).detail().map(|d| d.labels.iter().map(|l| l.name.clone()).collect::<Vec<_>>()))); check.note(line); }
     check.step(wi, "35-issue-state-menu", |win, cx| win.click("issue-state-trigger", cx))?;
     check.step(wi, "36-issue-closed", |win, cx| win.click(("menu-item", 0usize), cx))?;
     { let line = format!("state: {:?}", check.cx.update(|cx| panel.read(cx).detail().map(|d| d.state.name.clone()))); check.note(line); }
-    check.step(wi, "37-issue-new", |win, cx| win.click("issues-new", cx))?;
-    check.step(wi, "38-issue-template", |win, cx| win.click("issue-template-bug", cx))?;
-    check.step(wi, "39-issue-created", |win, cx| win.click("issue-new-submit", cx))?;
     check.calls(&ifixture, 0);
 
     // --- Measurements -----------------------------------------------------------

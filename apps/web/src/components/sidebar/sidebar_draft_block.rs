@@ -40,7 +40,7 @@ impl Sidebar {
             .items_center()
             .gap(colors.r(6.))
             .child(Icon::new(IconName::SquarePen).size(IconSize::Custom(colors.r(12.))).color(colors.warning_foreground))
-            .child(project_favicon(title, colors))
+            .child(project_favicon(title, self.list.project_icons.get(&draft.project), colors))
             .child(
                 div()
                     .flex_1()

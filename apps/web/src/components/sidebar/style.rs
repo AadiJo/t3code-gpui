@@ -109,8 +109,8 @@ pub struct ShellColors {
     pub diff_deletion: Hsla,
     /// Running terminal icon: teal-300 at 90% (dark), teal-600 (light).
     pub terminal_running: Hsla,
-    /// `dropdown-glass` fill at the glass opacity, flattened over the canvas.
-    pub glass: Hsla,
+    /// `dropdown-glass` at the glass opacity.
+    pub glass: crate::theme_tokens::Glass,
     /// `dropdown-glass` border: foreground at 10%.
     pub glass_border: Hsla,
     /// Context menu destructive highlight: destructive at 10%.
@@ -177,7 +177,7 @@ impl ShellColors {
             diff_addition: theme.fixed.diff_addition_foreground,
             diff_deletion: theme.fixed.diff_deletion_foreground,
             terminal_running: if dark { Hsla::from(rgb(0x46ecd5)).opacity(0.9) } else { rgb(0x009689).into() },
-            glass: theme.derived.dropdown_glass_opaque,
+            glass: theme.derived.glass_dropdown,
             glass_border: c.text.opacity(0.10),
             destructive_highlight: c.error.opacity(0.10),
             kbd_background: c.text.opacity(0.07),

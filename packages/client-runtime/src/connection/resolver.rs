@@ -77,12 +77,16 @@ async fn prepare_route(
                     Some(ConnectionCredential::Dpop { .. }) => {
                         auth.authorize_direct_dpop(environment_id, credential_id, http, ws).await?
                     }
+                    // No sign-in for this address: an import whose credential was bound to
+                    // the desktop app's key, or one that was lost. Presented like a host that
+                    // refused this device's sign-in, which the web shows for the same route,
+                    // so the row offers pairing again; nothing is sent to the host.
                     None => {
                         return Err(ConnectionError::blocked(
                             BlockedReason::Authentication,
-                            format!("Connection credential {connection_id} is unavailable."),
+                            format!("This device has no sign-in for {}. Pair this address again.", profile.http_base_url),
                         )
-                        .at(ConnectionHop::Device));
+                        .at(ConnectionHop::Server));
                     }
                 }
             }

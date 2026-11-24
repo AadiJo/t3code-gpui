@@ -36,6 +36,7 @@ pub enum MenuItemKind {
 pub struct MenuItem {
     label: SharedString,
     icon: Option<IconSource>,
+    icon_size: Option<IconSize>,
     shortcut: Option<SharedString>,
     kind: MenuItemKind,
     destructive: bool,
@@ -53,6 +54,7 @@ impl MenuItem {
         Self {
             label: label.into(),
             icon: None,
+            icon_size: None,
             shortcut: None,
             kind: MenuItemKind::Plain,
             destructive: false,
@@ -68,6 +70,12 @@ impl MenuItem {
 
     pub fn icon(mut self, icon: impl Into<IconSource>) -> Self {
         self.icon = Some(icon.into());
+        self
+    }
+
+    /// The leading icon's size when it is not `size-4` (a `size-3.5` filter option icon).
+    pub fn icon_size(mut self, size: IconSize) -> Self {
+        self.icon_size = Some(size);
         self
     }
 
@@ -254,18 +262,17 @@ fn render_item(theme: &AppTheme, index: usize, item: MenuItem, height: Pixels, d
             slot.child(svg().path("icons/ui/menu-check.svg").size(px(16.)).text_color(text))
         }))
     } else {
+        // `MenuRadioItem` leaves its icons in the text colour at full opacity.
+        let radio = matches!(item.kind, MenuItemKind::Radio(_));
+        let size = item.icon_size.unwrap_or(IconSize::Md);
         row.children(item.icon.map(|icon| {
-            div().mx(px(-2.)).child(Icon::new(icon).size(IconSize::Md).color(icon_color).opacity(0.8))
+            let icon = Icon::new(icon).size(size);
+            div().mx(px(-2.)).child(if radio { icon.color(text) } else { icon.color(icon_color).opacity(0.8) })
         }))
     };
     let row = row.child(div().flex_1().min_w_0().truncate().child(item.label));
     let row = match item.kind {
         MenuItemKind::Switch(on) => row.gap(theme.sp(4.)).pr(theme.sp(1.5)).child(menu_switch(theme, on)),
-        MenuItemKind::Submenu => row.child(
-            div().mr(px(-2.)).child(
-                Icon::new(IconName::ChevronRight).size(IconSize::Md).color(c.muted_foreground).opacity(0.8),
-            ),
-        ),
         _ => row,
     };
     let row = row.children(item.detail.map(|detail| {
@@ -277,6 +284,15 @@ fn render_item(theme: &AppTheme, index: usize, item: MenuItem, height: Pixels, d
             .text_color(c.muted_foreground)
             .child(detail)
     }));
+    // A submenu trigger's current value sits before its chevron.
+    let row = match item.kind {
+        MenuItemKind::Submenu => row.child(
+            div().mr(px(-2.)).child(
+                Icon::new(IconName::ChevronRight).size(IconSize::Md).color(c.muted_foreground).opacity(0.8),
+            ),
+        ),
+        _ => row,
+    };
     let row = row.children(item.shortcut.map(|keys| {
         div()
             .ml_auto()

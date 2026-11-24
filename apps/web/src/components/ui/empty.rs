@@ -22,6 +22,7 @@ pub enum EmptySize {
 pub struct Empty {
     size: EmptySize,
     icon: Option<IconName>,
+    media: Option<AnyElement>,
     title: SharedString,
     description: Option<SharedString>,
     actions: Vec<AnyElement>,
@@ -29,7 +30,7 @@ pub struct Empty {
 
 impl Empty {
     pub fn new(title: impl Into<SharedString>) -> Self {
-        Self { size: EmptySize::Default, icon: None, title: title.into(), description: None, actions: Vec::new() }
+        Self { size: EmptySize::Default, icon: None, media: None, title: title.into(), description: None, actions: Vec::new() }
     }
 
     pub fn size(mut self, size: EmptySize) -> Self {
@@ -40,6 +41,12 @@ impl Empty {
     /// Shows the icon in a 36px card tile (`EmptyMedia variant="icon"`).
     pub fn icon(mut self, icon: IconName) -> Self {
         self.icon = Some(icon);
+        self
+    }
+
+    /// An illustration above the header, as its own row of the column (a direct `Empty` child).
+    pub fn media(mut self, media: impl IntoElement) -> Self {
+        self.media = Some(media.into_any_element());
         self
     }
 
@@ -104,6 +111,7 @@ impl RenderOnce for Empty {
             .gap(gap)
             .p(padding)
             .when(self.size == EmptySize::Compact, |e| e.min_h(sp(64.)))
+            .children(self.media)
             .child(
                 div()
                     .flex()

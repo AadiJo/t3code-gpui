@@ -152,7 +152,7 @@ fn outcome_text(outcome: ProviderConsumeResetCreditOutcome) -> SharedString {
 }
 
 /// `limitsNotice` worded for the page.
-fn limits_notice(reason: LimitsNotice) -> SharedString {
+pub fn limits_notice(reason: LimitsNotice) -> SharedString {
     match reason {
         LimitsNotice::Unsupported(Some(message)) | LimitsNotice::ProbeFailed(Some(message)) => message.to_owned().into(),
         LimitsNotice::Unsupported(None) => t!("This account has no subscription limits."),

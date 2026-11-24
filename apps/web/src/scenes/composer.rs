@@ -232,8 +232,9 @@ pub fn fixture_state(key: &str) -> ComposerState {
             workspace: "Worktree".into(),
             branch: "composer".into(),
         }),
-        voice_available: true,
+        voice_available: false,
         validation: None,
+        file_attachment_limit: Some(crate::state::attachments::MAX_FILE_BYTES),
         placeholder: None,
     }
 }
@@ -298,6 +299,7 @@ pub fn build_composer(state: SceneState, store: Rc<RefCell<dyn ComposerDraftStor
                 tone: BannerTone::Error,
                 icon: IconName::CircleAlert,
                 title: "Environment disconnected. Messages send when it reconnects.".into(),
+                description: None,
                 action: Some("Retry".into()),
             }];
         }

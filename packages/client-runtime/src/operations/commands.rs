@@ -151,7 +151,7 @@ impl EnvironmentCommands {
     }
 
     /// The live session, waiting a while for one if the environment is reconnecting.
-    async fn session(&self) -> Result<Arc<RpcSession>, CommandError> {
+    pub(crate) async fn session(&self) -> Result<Arc<RpcSession>, CommandError> {
         let mut sessions = self.store.context().supervisor.session.clone();
         let wait = async {
             loop {
@@ -733,6 +733,12 @@ impl EnvironmentCommands {
             search_query,
         }))
         .await
+    }
+
+    /// Adds or removes one tag on a thread (`thread.tag.set`).
+    pub async fn set_tag(&self, thread_id: &ThreadId, tag: impl Into<String>, tagged: bool) -> Result<Accepted, CommandError> {
+        let command = Command::ThreadTagSet(t3code_contracts::OrchestrationV2CommandThreadTagSet { command_id: new_command_id(), thread_id: thread_id.clone(), tag: tag.into(), tagged });
+        self.on_thread(thread_id, command).await
     }
 
     pub async fn mark_unread(&self, thread_id: &ThreadId) -> Result<Accepted, CommandError> {

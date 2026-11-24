@@ -151,6 +151,27 @@ pub fn transport_label(environment: &EnvironmentState) -> SharedString {
     }
 }
 
+/// `resolveVersionMismatch`: `(server, client)` when the host runs an older
+/// T3 Code than this app (compared on `major.minor.patch`; versions that do
+/// not parse mismatch when they differ).
+pub fn version_mismatch(server: Option<&str>, client: &str) -> Option<(SharedString, SharedString)> {
+    let server = server.map(str::trim).filter(|v| !v.is_empty())?;
+    let client = client.trim();
+    if client.is_empty() {
+        return None;
+    }
+    let core = |version: &str| -> Option<(u64, u64, u64)> {
+        let core = version.split(['-', '+']).next()?;
+        let mut parts = core.split('.').map(|part| part.parse::<u64>().ok());
+        Some((parts.next()??, parts.next()??, parts.next()??))
+    };
+    let behind = match (core(server), core(client)) {
+        (Some(server), Some(client)) => server < client,
+        _ => server != client,
+    };
+    behind.then(|| (SharedString::from(server.to_owned()), SharedString::from(client.to_owned())))
+}
+
 /// Round trip as the row shows it, e.g. `23 ms`.
 pub fn latency_text(environment: &EnvironmentState) -> Option<SharedString> {
     environment.latency.map(|latency| format!("{} ms", latency.as_millis().max(1)).into())
@@ -171,6 +192,8 @@ pub struct Diagnosis {
     pub hops: Vec<(SharedString, HopResult)>,
     pub steps: Vec<SharedString>,
     pub facts: Vec<(SharedString, SharedString)>,
+    /// The T3 Connect troubleshooting section, for relay paths and a pending sign-in.
+    pub more_info_url: Option<SharedString>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -357,6 +380,78 @@ fn steps(host: &str, located: &Located, failure: Option<&ConnectionError>) -> Ve
     }
 }
 
+/// `helpSection`: the troubleshooting guide anchor for this failure.
+fn help_section(located: &Located, failure: Option<&ConnectionError>) -> &'static str {
+    use FailureCause as F;
+    match located.cause {
+        Some(Cause::Offline) => return "this-device-cant-reach-t3-connect",
+        Some(Cause::Outdated) => return "the-host-runs-an-older-t3-code",
+        Some(Cause::SessionPending) => return "sign-in-account-or-link-problems",
+        Some(Cause::Failure(cause)) => {
+            return match cause {
+                F::ClockSkew => "the-clock-is-off",
+                F::ApprovalPending | F::NotLinked | F::TunnelNotEnabled => "sign-in-account-or-link-problems",
+                F::RelayError => "t3-connect-returned-an-error",
+                F::TunnelDown | F::TunnelPending => "the-hosts-tunnel-is-offline",
+                F::OriginUnreachable | F::InvalidResponse => "the-tunnel-works-but-t3-code-does-not-answer",
+                F::Dns | F::Tls | F::Refused | F::Timeout | F::Unknown => {
+                    "the-t3-connect-address-does-not-resolve-or-answer"
+                }
+            };
+        }
+        None => {}
+    }
+    let on_this_device = failure.is_some_and(is_unreachable);
+    match located.hop {
+        ConnectionHop::Device => "this-device-cant-reach-t3-connect",
+        ConnectionHop::Relay if is_auth(failure) => "sign-in-account-or-link-problems",
+        ConnectionHop::Relay => "this-device-cant-reach-t3-connect",
+        ConnectionHop::Tunnel if on_this_device => "this-device-cant-reach-t3-connect",
+        ConnectionHop::Tunnel => "the-hosts-tunnel-is-offline",
+        ConnectionHop::Server
+            if failure.is_some_and(|f| {
+                matches!(f.kind, ConnectionErrorKind::Blocked(BlockedReason::Authentication | BlockedReason::Permission))
+            }) =>
+        {
+            "sign-in-account-or-link-problems"
+        }
+        ConnectionHop::Server => "the-tunnel-works-but-t3-code-does-not-answer",
+    }
+}
+
+/// A Rust variant name as the wire literal: `ApprovalPending` -> `approval_pending`.
+fn wire_literal(name: &str, separator: char) -> String {
+    let mut out = String::with_capacity(name.len() + 4);
+    for (ix, ch) in name.chars().enumerate() {
+        if ch.is_ascii_uppercase() {
+            if ix > 0 {
+                out.push(separator);
+            }
+            out.push(ch.to_ascii_lowercase());
+        } else {
+            out.push(ch);
+        }
+    }
+    out
+}
+
+/// The failure's `reason` as the web names it (`session-pending`, `authentication`).
+fn reason_literal(failure: &ConnectionError) -> String {
+    match failure.kind {
+        ConnectionErrorKind::Transient(reason) => wire_literal(&format!("{reason:?}"), '-'),
+        ConnectionErrorKind::Blocked(reason) => wire_literal(&format!("{reason:?}"), '-'),
+    }
+}
+
+fn cause_literal(cause: Cause) -> String {
+    match cause {
+        Cause::Offline => "offline".into(),
+        Cause::Outdated => "outdated".into(),
+        Cause::SessionPending => "session_pending".into(),
+        Cause::Failure(cause) => wire_literal(&format!("{cause:?}"), '_'),
+    }
+}
+
 fn hop_label(hop: ConnectionHop, host: &str) -> SharedString {
     match hop {
         ConnectionHop::Device => t!("This device"),
@@ -379,28 +474,30 @@ pub fn diagnose(environment: &EnvironmentState) -> Option<Diagnosis> {
     let located = locate(status, relay_only)?;
     let failure = status.last_failure.as_ref();
     let host = environment.entry.label.as_str();
-    let path: &[ConnectionHop] = if relay_only || failure.and_then(|f| f.via) == Some(ConnectionVia::Relay) {
+    let relay_path = matches!(located.hop, ConnectionHop::Relay | ConnectionHop::Tunnel)
+        || failure.and_then(|f| f.via).map_or(relay_only, |via| via == ConnectionVia::Relay);
+    let path: &[ConnectionHop] = if relay_path {
         &[ConnectionHop::Device, ConnectionHop::Relay, ConnectionHop::Tunnel, ConnectionHop::Server]
     } else {
         &[ConnectionHop::Device, ConnectionHop::Server]
     };
-    let failed_at = path.iter().position(|hop| *hop == located.hop).unwrap_or(path.len() - 1);
+    let failed_at = path.iter().position(|hop| *hop == located.hop);
     let hops = path
         .iter()
         .enumerate()
         .map(|(ix, hop)| {
-            let result = match ix.cmp(&failed_at) {
-                std::cmp::Ordering::Less if located.guessed => HopResult::Unchecked,
-                std::cmp::Ordering::Less => HopResult::Ok,
-                std::cmp::Ordering::Equal => HopResult::Failed,
-                std::cmp::Ordering::Greater => HopResult::Unchecked,
+            let result = match failed_at.map(|at| ix.cmp(&at)) {
+                Some(std::cmp::Ordering::Equal) => HopResult::Failed,
+                Some(std::cmp::Ordering::Less) if !located.guessed => HopResult::Ok,
+                _ => HopResult::Unchecked,
             };
             (hop_label(*hop, host), result)
         })
         .collect();
     let mut facts = Vec::new();
-    if let Some(Cause::Failure(cause)) = located.cause {
-        facts.push((t!("Cause", context = "diagnostics field label"), SharedString::from(format!("{cause:?}"))));
+    let cause = located.cause.map(cause_literal).or_else(|| failure.map(reason_literal));
+    if let Some(cause) = cause {
+        facts.push((t!("Cause", context = "diagnostics field label"), cause.into()));
     }
     if let Some(status) = failure.and_then(|f| f.http_status) {
         facts.push((t!("HTTP status"), status.to_string().into()));
@@ -408,9 +505,12 @@ pub fn diagnose(environment: &EnvironmentState) -> Option<Diagnosis> {
     if status.attempt > 0 {
         facts.push((t!("Attempts", context = "diagnostics field label"), status.attempt.to_string().into()));
     }
+    if let Some(at) = status.retry_at.and_then(|at| jiff::Timestamp::try_from(at).ok()) {
+        facts.push((t!("Next retry"), at.strftime("%Y-%m-%dT%H:%M:%S%.3fZ").to_string().into()));
+    }
     facts.push((
         t!("Route", context = "diagnostics field label"),
-        if relay_only { T3_CONNECT_NAME.into() } else { t!("Direct", context = "connection route") },
+        if relay_path { T3_CONNECT_NAME.into() } else { t!("Direct", context = "connection route") },
     ));
     facts.push((t!("App version"), env!("CARGO_PKG_VERSION").into()));
     if let Some(version) = &environment.server_version {
@@ -422,22 +522,38 @@ pub fn diagnose(environment: &EnvironmentState) -> Option<Diagnosis> {
             facts.push((t!("Trace ID"), trace.clone().into()));
         }
     }
-    Some(Diagnosis { headline: headline(host, &located, failure), hops, steps: steps(host, &located, failure), facts })
+    let more_info_url = (relay_path || located.cause == Some(Cause::SessionPending)).then(|| {
+        format!(
+            "https://github.com/pingdotgg/t3code/blob/main/docs/user/t3-connect-troubleshooting.md#{}",
+            help_section(&located, failure)
+        )
+        .into()
+    });
+    Some(Diagnosis {
+        headline: headline(host, &located, failure),
+        hops,
+        steps: steps(host, &located, failure),
+        facts,
+        more_info_url,
+    })
 }
 
 /// `connectionDiagnosisText`: the plain-text report "Copy diagnostics" puts on the clipboard.
 pub fn diagnosis_text(host: &str, diagnosis: &Diagnosis) -> String {
-    let mut text = format!("{host}: {}\n", diagnosis.headline);
-    for (label, result) in &diagnosis.hops {
+    let mut lines = vec![format!("T3 Code connection to {host}: {}", diagnosis.headline), String::new()];
+    lines.extend(diagnosis.hops.iter().map(|(label, result)| {
         let mark = match result {
-            HopResult::Ok => "✓",
-            HopResult::Failed => "✕",
-            HopResult::Unchecked => "–",
+            HopResult::Ok => "ok",
+            HopResult::Failed => "FAILED",
+            HopResult::Unchecked => "not checked",
         };
-        text.push_str(&format!("{mark} {label}\n"));
+        format!("{label}: {mark}")
+    }));
+    lines.push(String::new());
+    lines.extend(diagnosis.facts.iter().map(|(label, value)| format!("{label}: {value}")));
+    if let Some(url) = &diagnosis.more_info_url {
+        lines.push(String::new());
+        lines.push(format!("More info: {url}"));
     }
-    for (label, value) in &diagnosis.facts {
-        text.push_str(&format!("{label}: {value}\n"));
-    }
-    text
+    lines.join("\n")
 }

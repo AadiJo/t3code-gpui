@@ -11,7 +11,7 @@ permissions:
 
 concurrency:
   group: personal-builds-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   mac:
@@ -21,6 +21,11 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: Swatinem/rust-cache@v2
+
+      # The app compiles its Metal shaders at launch; the build checks them
+      # with the Metal compiler, which Xcode 26 installs separately.
+      - name: Install the Metal toolchain
+        run: xcodebuild -downloadComponent MetalToolchain || echo "::warning::Metal toolchain not installed; shaders are checked at launch only"
 
       - name: Build app
         run: cargo build --release --locked -p t3code-desktop --bin t3code

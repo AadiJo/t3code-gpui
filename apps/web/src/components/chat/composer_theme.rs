@@ -5,6 +5,7 @@
 use gpui_kit::{App, Hsla, Pixels, px, rgb};
 
 use crate::ActiveAppTheme as _;
+use crate::theme_tokens::Glass;
 use crate::composer_editor_mentions::{ChipKind, ContextKind};
 use crate::theme_palette::Appearance;
 
@@ -80,7 +81,7 @@ pub struct ComposerColors {
     pub placeholder: Hsla,
     pub secondary_label: Hsla,
     pub surface: Hsla,
-    pub glass_surface: Hsla,
+    pub glass_surface: Glass,
     pub outline: Hsla,
     pub highlight: Hsla,
     pub border: Hsla,
@@ -93,7 +94,7 @@ pub struct ComposerColors {
     pub code_background: Hsla,
     pub code_foreground: Hsla,
     pub selection: Hsla,
-    pub popup_background: Hsla,
+    pub popup_background: Glass,
     pub popup_border: Hsla,
     pub muted: Hsla,
     pub warning: Hsla,
@@ -132,8 +133,8 @@ impl ComposerColors {
             placeholder: c.placeholder,
             secondary_label: c.secondary_label,
             surface: c.surface,
-            // `surfaceRaised` at the glass opacity over the canvas (GPUI has no backdrop blur).
-            glass_surface: theme.derived.composer_glass_opaque,
+            // `surfaceRaised` at the glass opacity over the blurred backdrop.
+            glass_surface: theme.derived.glass_composer,
             // dark: mix(input 30%, background); light: toolbar border.
             outline: if dark { mix(c.input, c.canvas, 0.30) } else { c.toolbar_border },
             highlight: if dark { c.input.opacity(0.12) } else { gpui_kit::transparent_black() },
@@ -147,8 +148,7 @@ impl ComposerColors {
             code_background: c.code_background,
             code_foreground: c.code_foreground,
             selection: c.focus.opacity(if dark { 0.35 } else { 0.25 }),
-            // dropdown-glass at the glass opacity, flattened over the canvas.
-            popup_background: theme.derived.dropdown_glass_opaque,
+            popup_background: theme.derived.glass_dropdown,
             popup_border: if dark { rgb(0x313131).into() } else { rgb(0xe7e7e7).into() },
             muted: c.muted,
             warning: c.warning,

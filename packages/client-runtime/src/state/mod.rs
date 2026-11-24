@@ -30,6 +30,7 @@ pub mod thread_lifecycle;
 pub mod thread_settled;
 pub mod thread_shell;
 pub mod thread_sort;
+pub mod thread_tag_filter;
 pub mod thread_state;
 pub mod thread_visits;
 pub mod threads;

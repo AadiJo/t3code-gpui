@@ -537,8 +537,16 @@ fn with_all_sections(input: ThreadDetailsInput) -> ThreadDetailsInput {
             used_percentage: Some(42.1),
             auto_compact_threshold: Some(160_000),
         }),
+        usage_limits: Some(crate::components::chat::thread_details_sections::UsageLimitsInput::Windows(vec![
+            usage_window("5h", "5-hour", 72, Some(40.)),
+            usage_window("7d", "Weekly", 18, Some(65.)),
+        ])),
         ..input
     }
+}
+
+fn usage_window(id: &str, label: &str, left: u8, tick: Option<f32>) -> crate::components::chat::thread_details_sections::UsageWindowRow {
+    crate::components::chat::thread_details_sections::UsageWindowRow { id: id.to_owned().into(), label: label.to_owned().into(), left, tick, lines: Vec::new() }
 }
 
 /// The thread details card with every item turned on and filled.

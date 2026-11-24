@@ -27,6 +27,7 @@ use t3code_client_runtime::connection::{
     CatalogEntry, ConnectionContext, ConnectionError, ConnectionPhase, ConnectionRegistry, ConnectionStatus,
     SupervisorHandle, SupervisorSignal,
 };
+use t3code_client_runtime::connection::model::NetworkStatus;
 use t3code_client_runtime::environment::EnvironmentId;
 use t3code_client_runtime::platform::electron_import::{
     ElectronImport, ElectronPaths, ImportError, SafeStorageKey, load_platform_key, read_electron_catalog,
@@ -67,12 +68,13 @@ pub struct RuntimeConfig {
 }
 
 impl RuntimeConfig {
-    /// The installed app: its own data dir, the OS keystore, production T3 Connect.
+    /// The installed app: its own data dir, the OS keystore, production T3 Connect
+    /// unless the environment names another (see [`CloudConfig::from_env`]).
     pub fn for_app() -> Self {
         Self {
             data_dir: t3code_client_runtime::platform::default_data_dir(),
             secrets: None,
-            cloud: Some(CloudConfig::production()),
+            cloud: Some(CloudConfig::from_env()),
             presentation: ClientPresentation::default(),
             electron: ElectronPaths::detect().map(|paths| ElectronImportSource { paths, key: None }),
         }
@@ -186,11 +188,20 @@ impl<E: std::fmt::Display> From<E> for CommandError {
     }
 }
 
-/// What the Electron import found, before anything is saved.
-#[derive(Clone, Debug)]
+/// What the Electron import found, before anything is saved. Holds the
+/// decrypted T3 Connect client JWT so saving needs no second Keychain read
+/// (each read can prompt on macOS).
+#[derive(Clone)]
 pub struct ImportPreview {
     pub import: ElectronImport,
     pub has_clerk_session: bool,
+    clerk_client_jwt: Option<String>,
+}
+
+impl std::fmt::Debug for ImportPreview {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ImportPreview").field("import", &self.import).field("has_clerk_session", &self.has_clerk_session).finish()
+    }
 }
 
 impl ConnectionRuntime {
@@ -245,14 +256,12 @@ impl ConnectionRuntime {
         let (events, receiver) = mpsc::unbounded();
         handle.spawn(watch_registry(registry.clone(), events.clone()));
         handle.spawn(detect_wake(registry.clone()));
+        if runtime_metrics_enabled() {
+            handle.spawn(log_runtime_metrics(handle.clone()));
+        }
         if let Some(cloud) = &cloud {
-            handle.spawn(watch_account(cloud.clerk.clone(), events.clone()));
-            let clerk = cloud.clerk.clone();
-            handle.spawn(async move {
-                if let Err(error) = clerk.restore().await {
-                    tracing::warn!(%error, "could not restore the T3 Connect sign-in");
-                }
-            });
+            handle.spawn(watch_account(cloud.clerk.clone(), cloud.relay.clone(), registry.clone(), auth.clone(), events.clone()));
+            handle.spawn(restore_account(cloud.clerk.clone()));
         }
         apply_events(state.clone(), receiver, cx);
         cx.set_global(Self {
@@ -438,46 +447,8 @@ impl ConnectionRuntime {
     /// Lists the account's environments and checks each one's tunnel.
     pub fn refresh_relay(&self, cx: &App) {
         let Some(cloud) = &self.cloud else { return };
-        let (clerk, relay, events) = (cloud.clerk.clone(), cloud.relay.clone(), self.events.clone());
         let previous = self.state.read(cx).cloud.as_ref().map(|c| c.discovery.environments.clone()).unwrap_or_default();
-        self.handle.spawn(async move {
-            let send = |discovery| _ = events.unbounded_send(BridgeEvent::Discovery(discovery));
-            send(RelayDiscovery { refreshing: true, error: None, environments: previous.clone() });
-            let jwt = match clerk.template_token().await {
-                Ok(Some(jwt)) => jwt,
-                Ok(None) => return send(RelayDiscovery::default()),
-                Err(error) => {
-                    return send(RelayDiscovery { refreshing: false, error: Some(error.to_string().into()), environments: previous });
-                }
-            };
-            let records = match relay.list_environments(&jwt).await {
-                Ok(records) => records,
-                Err(error) => {
-                    return send(RelayDiscovery { refreshing: false, error: Some(error.to_string().into()), environments: previous });
-                }
-            };
-            let checking = records
-                .iter()
-                .map(|record| RelayEnvironment { record: record.clone(), availability: RelayAvailability::Checking })
-                .collect();
-            send(RelayDiscovery { refreshing: false, error: None, environments: checking });
-            let statuses =
-                futures::future::join_all(records.iter().map(|record| relay.environment_status(&jwt, &record.environment_id)))
-                    .await;
-            let environments = records
-                .into_iter()
-                .zip(statuses)
-                .map(|(record, status)| RelayEnvironment {
-                    record,
-                    availability: match status {
-                        Ok(status) if status.status == "online" => RelayAvailability::Online,
-                        Ok(_) => RelayAvailability::Offline,
-                        Err(_) => RelayAvailability::Error,
-                    },
-                })
-                .collect();
-            send(RelayDiscovery { refreshing: false, error: None, environments });
-        });
+        self.handle.spawn(discover_relay(cloud.clerk.clone(), cloud.relay.clone(), self.events.clone(), previous));
     }
 
     /// Saves a T3 Connect route for an environment found on the account.
@@ -500,8 +471,8 @@ impl ConnectionRuntime {
                 tokio::task::spawn_blocking(move || {
                     let key = electron_key(&source)?;
                     let import = read_electron_catalog(&source.paths, &key)?;
-                    let has_clerk_session = read_electron_clerk_client_jwt(&source.paths, &key)?.is_some();
-                    Ok::<_, ImportError>(ImportPreview { import, has_clerk_session })
+                    let clerk_client_jwt = read_electron_clerk_client_jwt(&source.paths, &key)?;
+                    Ok::<_, ImportError>(ImportPreview { import, has_clerk_session: clerk_client_jwt.is_some(), clerk_client_jwt })
                 })
                 .await
                 .map_err(CommandError::from)?
@@ -516,20 +487,13 @@ impl ConnectionRuntime {
     pub fn apply_electron_import(&self, preview: ImportPreview, with_clerk_session: bool, cx: &App) -> Task<Result<usize, CommandError>> {
         let registry = self.registry.clone();
         let clerk = self.clerk();
-        let source = self.electron.clone();
         self.spawn(
             async move {
                 let added = registry.import(&preview.import).await.map_err(registry_error)?;
-                if with_clerk_session && let (Some(clerk), Some(source)) = (clerk, source) {
-                    let jwt = tokio::task::spawn_blocking(move || {
-                        let key = electron_key(&source)?;
-                        read_electron_clerk_client_jwt(&source.paths, &key)
-                    })
-                    .await
-                    .map_err(CommandError::from)??;
-                    if let Some(jwt) = jwt {
-                        clerk.adopt_client_jwt(jwt).await.map_err(clerk_error)?;
-                    }
+                if with_clerk_session
+                    && let (Some(clerk), Some(jwt)) = (clerk, preview.clerk_client_jwt)
+                {
+                    clerk.adopt_client_jwt(jwt).await.map_err(clerk_error)?;
                 }
                 Ok(added)
             },
@@ -665,9 +629,15 @@ async fn watch_supervisor(id: EnvironmentId, handle: SupervisorHandle, events: m
     let mut probe = tokio::time::interval(LATENCY_PROBE_INTERVAL);
     probe.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     let mut probed_generation = 0;
+    let mut logged_phase = None;
     loop {
         let current = status.borrow_and_update().clone();
         let connected = current.phase == ConnectionPhase::Connected;
+        if runtime_metrics_enabled() && logged_phase != Some(current.phase) {
+            logged_phase = Some(current.phase);
+            let detail = current.last_failure.as_ref().map(|f| f.detail.as_str()).unwrap_or("");
+            eprintln!("runtime-phase t={} env={id} phase={:?} generation={} {detail}", epoch_ms(), current.phase, current.generation);
+        }
         let session = connected.then(|| handle.session.borrow().clone()).flatten();
         let server_version = session
             .as_ref()
@@ -700,12 +670,138 @@ async fn watch_supervisor(id: EnvironmentId, handle: SupervisorHandle, events: m
     }
 }
 
-async fn watch_account(clerk: Arc<ClerkSession>, events: mpsc::UnboundedSender<BridgeEvent>) {
+/// Lists the account's environments and checks each one's tunnel. A
+/// failure keeps `previous` on screen with the error.
+async fn discover_relay(
+    clerk: Arc<ClerkSession>,
+    relay: Arc<RelayClient>,
+    events: mpsc::UnboundedSender<BridgeEvent>,
+    previous: Vec<RelayEnvironment>,
+) {
+    let send = |discovery| _ = events.unbounded_send(BridgeEvent::Discovery(discovery));
+    send(RelayDiscovery { refreshing: true, error: None, environments: previous.clone() });
+    let jwt = match clerk.template_token().await {
+        Ok(Some(jwt)) => jwt,
+        Ok(None) => return send(RelayDiscovery::default()),
+        Err(error) => {
+            return send(RelayDiscovery { refreshing: false, error: Some(error.to_string().into()), environments: previous });
+        }
+    };
+    let records = match relay.list_environments(&jwt).await {
+        Ok(records) => records,
+        Err(error) => {
+            return send(RelayDiscovery { refreshing: false, error: Some(error.to_string().into()), environments: previous });
+        }
+    };
+    let checking = records
+        .iter()
+        .map(|record| RelayEnvironment { record: record.clone(), availability: RelayAvailability::Checking })
+        .collect();
+    send(RelayDiscovery { refreshing: false, error: None, environments: checking });
+    let statuses =
+        futures::future::join_all(records.iter().map(|record| relay.environment_status(&jwt, &record.environment_id))).await;
+    let environments = records
+        .into_iter()
+        .zip(statuses)
+        .map(|(record, status)| RelayEnvironment {
+            record,
+            availability: match status {
+                Ok(status) if status.status == "online" => RelayAvailability::Online,
+                Ok(_) => RelayAvailability::Offline,
+                Err(_) => RelayAvailability::Error,
+            },
+        })
+        .collect();
+    send(RelayDiscovery { refreshing: false, error: None, environments });
+}
+
+/// `T3CODE_RUNTIME_METRICS=1` prints the tokio runtime's task counts every
+/// 30 s and each environment's phase changes to stderr, for soak runs.
+fn runtime_metrics_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| std::env::var("T3CODE_RUNTIME_METRICS").is_ok_and(|v| v == "1"))
+}
+
+fn epoch_ms() -> u128 {
+    SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0)
+}
+
+async fn log_runtime_metrics(handle: tokio::runtime::Handle) {
+    let mut tick = tokio::time::interval(Duration::from_secs(30));
+    loop {
+        tick.tick().await;
+        let metrics = handle.metrics();
+        eprintln!(
+            "runtime-metrics t={} alive_tasks={} workers={} global_queue={}",
+            epoch_ms(),
+            metrics.num_alive_tasks(),
+            metrics.num_workers(),
+            metrics.global_queue_depth()
+        );
+    }
+}
+
+/// Loads the stored T3 Connect sign-in. While Clerk cannot be reached the
+/// account stays `Loading` (relay routes wait, nothing is cleaned up) and the
+/// load is retried with backoff, as clerk-js keeps retrying `GET /client`.
+async fn restore_account(clerk: Arc<ClerkSession>) {
+    let mut delay = Duration::from_secs(1);
+    loop {
+        match clerk.restore().await {
+            Ok(()) => return,
+            Err(ClerkError::Store(error)) => {
+                tracing::warn!(%error, "could not read the stored T3 Connect sign-in");
+                return;
+            }
+            Err(error) => tracing::warn!(%error, retry_in = ?delay, "could not reach T3 Connect sign-in"),
+        }
+        tokio::time::sleep(delay).await;
+        delay = (delay * 2).min(Duration::from_secs(300));
+    }
+}
+
+/// Mirrors the account into the UI and, like the web's cloud account
+/// service, cleans up when Clerk confirms a sign-out or the account changes:
+/// T3 Connect routes are removed and relay tokens forgotten, so nothing
+/// keeps connecting as the previous account. Each sign-in lists the
+/// account's environments.
+async fn watch_account(
+    clerk: Arc<ClerkSession>,
+    relay: Arc<RelayClient>,
+    registry: ConnectionRegistry,
+    auth: Arc<RemoteAuthorization>,
+    events: mpsc::UnboundedSender<BridgeEvent>,
+) {
     let mut account = clerk.account();
+    let mut previous: Option<CloudAccountState> = None;
     loop {
         let current = account.borrow_and_update().clone();
-        if events.unbounded_send(BridgeEvent::Account(current)).is_err() {
+        if events.unbounded_send(BridgeEvent::Account(current.clone())).is_err() {
             return;
+        }
+        let user = |state: &CloudAccountState| match state {
+            CloudAccountState::SignedIn(account) => Some(account.user_id.clone()),
+            _ => None,
+        };
+        // Every confirmed signed-out notice cleans up (removal is idempotent): routes imported
+        // after an earlier notice must not wait on a sign-in that is not coming.
+        let changed_account = match (&previous, &current) {
+            (_, CloudAccountState::SignedOut) => true,
+            (Some(before @ CloudAccountState::SignedIn(_)), CloudAccountState::SignedIn(_)) => user(before) != user(&current),
+            _ => false,
+        };
+        if changed_account {
+            auth.reset_relay_tokens().await;
+            if let Err(error) = registry.remove_relay_environments().await {
+                tracing::warn!(%error, "could not remove the previous account's T3 Connect routes");
+            }
+        }
+        let signed_in_now = user(&current).is_some() && previous.as_ref().and_then(user) != user(&current);
+        if signed_in_now {
+            tokio::spawn(discover_relay(clerk.clone(), relay.clone(), events.clone(), Vec::new()));
+        }
+        if !matches!(current, CloudAccountState::Loading) {
+            previous = Some(current);
         }
         if account.changed().await.is_err() {
             return;
@@ -713,18 +809,50 @@ async fn watch_account(clerk: Arc<ClerkSession>, events: mpsc::UnboundedSender<B
     }
 }
 
-/// GPUI exposes no sleep/wake event, so a tick that lands far later on the
-/// wall clock than it should is taken as a wake: supervisors retry at once.
+/// GPUI exposes no sleep/wake or network events, so one tick does both. A
+/// tick that lands far later on the wall clock than it should is taken as a
+/// wake: supervisors retry at once. Each tick also asks the OS for a route to
+/// the internet (a UDP `connect`, which sends nothing): losing it reports
+/// offline, like the browser's `offline` event, and getting it back or a new
+/// local address reports a network change that wakes pending retries.
 async fn detect_wake(registry: ConnectionRegistry) {
     let mut tick = tokio::time::interval(WAKE_CHECK_INTERVAL);
     let mut last = SystemTime::now();
+    let mut network: Option<Option<std::net::IpAddr>> = None;
     loop {
         tick.tick().await;
         let now = SystemTime::now();
         if now.duration_since(last).unwrap_or_default() > WAKE_GAP {
             tracing::info!("woke from sleep; waking supervisors");
+            t3code_client_runtime::rpc::http::reset_http_pool();
+            if runtime_metrics_enabled() {
+                eprintln!("runtime-wake t={} gap_ms={}", epoch_ms(), now.duration_since(last).unwrap_or_default().as_millis());
+            }
             registry.broadcast(SupervisorSignal::Wakeup);
         }
         last = now;
+        let route = tokio::task::spawn_blocking(local_route_address).await.unwrap_or(None);
+        if network != Some(route) {
+            let first = network.is_none();
+            network = Some(route);
+            let status = if route.is_some() { NetworkStatus::Online } else { NetworkStatus::Offline };
+            if first && route.is_some() {
+                continue;
+            }
+            tracing::info!(?status, "network changed");
+            t3code_client_runtime::rpc::http::reset_http_pool();
+            registry.broadcast(SupervisorSignal::NetworkChanged(status));
+            if route.is_some() {
+                registry.broadcast(SupervisorSignal::Wakeup);
+            }
+        }
     }
+}
+
+/// The local address the OS would use to reach the internet, or `None` with
+/// no route (Wi-Fi off, cable out).
+fn local_route_address() -> Option<std::net::IpAddr> {
+    let socket = std::net::UdpSocket::bind(("0.0.0.0", 0)).ok()?;
+    socket.connect(("1.1.1.1", 53)).ok()?;
+    Some(socket.local_addr().ok()?.ip())
 }

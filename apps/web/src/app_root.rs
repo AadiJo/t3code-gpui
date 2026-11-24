@@ -808,11 +808,17 @@ impl AppRoot {
         let items = attachments
             .iter()
             .filter_map(|attachment| {
-                let bytes = cx.asset_source().load(&attachment.source).ok().flatten()?;
+                // Live attachments are files in the image cache; fixtures are bundled assets.
+                let path = std::path::Path::new(attachment.source.as_ref());
+                let bytes: Vec<u8> = if path.is_absolute() {
+                    std::fs::read(path).ok()?
+                } else {
+                    cx.asset_source().load(&attachment.source).ok().flatten()?.into_owned()
+                };
                 Some(ExpandedImageItem {
                     name: attachment.name.clone(),
                     kind: MediaKind::Image,
-                    bytes: MediaBytes::Ready(bytes.into_owned().into()),
+                    bytes: MediaBytes::Ready(bytes.into()),
                     relative_path: None,
                     absolute_path: None,
                 })
@@ -920,6 +926,7 @@ impl AppRoot {
             SidebarEvent::ThreadCommand(keys, command) => self.thread_command(keys, *command, window, cx),
             SidebarEvent::RenameThread(key, title) => self.data.rename_thread(key, title.clone(), cx),
             SidebarEvent::ProjectCommand(project, MenuCommand::ProjectSettings) => self.open_project_settings(project, cx),
+            SidebarEvent::SearchChanged(query) => self.data.search_threads(query.clone(), cx),
             SidebarEvent::AddProject | SidebarEvent::OpenProjectFilter | SidebarEvent::ProjectCommand(..) => {}
         }
     }
@@ -962,12 +969,17 @@ impl AppRoot {
 
     /// Gives the sidebar the current unsent drafts and the shown one.
     fn sync_sidebar_drafts(&self, cx: &mut Context<Self>) {
-        let drafts = self.data.drafts(cx);
+        let (drafts, active) = self.sidebar_drafts(cx);
+        self.sidebar.update(cx, |sidebar, cx| sidebar.set_drafts(drafts, active, cx));
+    }
+
+    /// The unsent drafts and the shown one's id, as the sidebar lists them.
+    fn sidebar_drafts(&self, cx: &App) -> (Vec<crate::components::sidebar::model::SidebarDraft>, Option<SharedString>) {
         let active = match &self.shown {
             Some(ThreadTarget::Draft(id)) => Some(id.0.clone()),
             _ => None,
         };
-        self.sidebar.update(cx, |sidebar, cx| sidebar.set_drafts(drafts, active, cx));
+        (self.data.drafts(cx), active)
     }
 
     /// Runs a sidebar row or context-menu command on threads.
@@ -1074,7 +1086,16 @@ impl AppRoot {
     }
 
     fn on_data_event(&mut self, _: &Entity<DataEvents>, event: &DataEvent, window: &mut Window, cx: &mut Context<Self>) {
+        if let DataEvent::OpenThread(key) = event {
+            return self.navigate(Route::Thread(key.clone()), cx);
+        }
         if let DataEvent::SnapshotChanged = event {
+            // The sidebar takes every snapshot, including the one that lets a restored route show.
+            let active = self.shown_key();
+            let mut snapshot = self.data.snapshot(active.as_ref(), cx);
+            // Drafts ride along so one snapshot rebuilds the sidebar once.
+            (snapshot.drafts, snapshot.active_draft) = self.sidebar_drafts(cx);
+            self.sidebar.update(cx, |sidebar, cx| sidebar.set_snapshot(snapshot, cx));
             let route = self.router.read(cx).current().clone();
             if self.shown.is_none()
                 && let Some(target) = route.thread_target()
@@ -1084,12 +1105,8 @@ impl AppRoot {
             }
             // `_chat.index.tsx` starts a draft once a project is known.
             if route == Route::Index && self.data.most_recent_project(cx).is_some() {
-                return self.apply_route(route, window, cx);
+                self.apply_route(route, window, cx);
             }
-            let active = self.shown_key();
-            let snapshot = self.data.snapshot(active.as_ref(), cx);
-            self.sidebar.update(cx, |sidebar, cx| sidebar.set_snapshot(snapshot, cx));
-            self.sync_sidebar_drafts(cx);
         }
     }
 

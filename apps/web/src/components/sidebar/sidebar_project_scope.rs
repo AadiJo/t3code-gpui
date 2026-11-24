@@ -244,7 +244,7 @@ impl Sidebar {
                         .size(colors.r(16.))
                         .rounded_full()
                         .border_2()
-                        .border_color(colors.glass)
+                        .border_color(colors.glass.opaque)
                         .bg(theme.colors.message_action)
                         .flex()
                         .items_center()

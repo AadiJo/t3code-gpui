@@ -208,7 +208,7 @@ impl Sidebar {
             .when(thread.has_unsent_draft, |d| {
                 d.child(Icon::new(IconName::SquarePen).size(IconSize::Custom(colors.r(12.))).color(colors.warning_foreground))
             })
-            .child(project_favicon(project_title, colors))
+            .child(project_favicon(project_title, self.list.project_icons.get(&thread.project_ref()), colors))
             .when(thread.pinned_at.is_some(), |d| d.child(self.pin_indicator(ix, thread, colors, cx)))
             .child(
                 div()
@@ -508,7 +508,8 @@ impl Sidebar {
             .when(in_folder && !multiline, |d| d.pl(colors.r(36.)))
             .when(!in_folder, |d| {
                 let title = self.list.project_titles.get(&thread.project_ref()).cloned().unwrap_or_default();
-                d.child(div().flex_none().opacity(if favicon_full { 1. } else { 0.4 }).child(project_favicon(title, colors)))
+                let source = self.list.project_icons.get(&thread.project_ref());
+                d.child(div().flex_none().opacity(if favicon_full { 1. } else { 0.4 }).child(project_favicon(title, source, colors)))
             })
             .when(thread.has_unsent_draft, |d| {
                 d.child(Icon::new(IconName::SquarePen).size(IconSize::Custom(colors.r(12.))).color(colors.warning_foreground))
@@ -679,9 +680,13 @@ fn row_action(id: impl Into<ElementId>, colors: &ShellColors) -> Stateful<Div> {
         .hover(|s| s.text_color(colors.foreground))
 }
 
-/// The `size-4` project favicon: the monogram derived from the project's name.
-pub(crate) fn project_favicon(name: SharedString, colors: &ShellColors) -> ProjectFavicon {
-    ProjectFavicon::new(name).size(colors.r(16.))
+/// The `size-4` project favicon: the project's icon or favicon, else the monogram of its name.
+pub(crate) fn project_favicon(
+    name: SharedString,
+    source: Option<&crate::components::project_favicon::ProjectIconSource>,
+    colors: &ShellColors,
+) -> ProjectFavicon {
+    ProjectFavicon::new(name).source(source).size(colors.r(16.))
 }
 
 /// A provider instance's mark at `size`, without opacity or badge.

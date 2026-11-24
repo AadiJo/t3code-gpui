@@ -1,8 +1,9 @@
 //! Button. Ports `button.tsx` at desktop width (the `sm:` values).
 
+use crate::components::ui::GlassExt as _;
 use gpui_kit::TestSupportExt as _;
-use gpui_kit::{rems, 
-    App, BoxShadow, ClickEvent, ElementId, FocusHandle, Hsla, IntoElement, Pixels, RenderOnce,
+use gpui_kit::{
+    AnyElement, App, BoxShadow, ClickEvent, ElementId, FocusHandle, Hsla, IntoElement, Pixels, RenderOnce,
     SharedString, StyleRefinement, Window, black, div, prelude::*, px, white,
 };
 
@@ -10,7 +11,7 @@ use super::{ControlState, DISABLED_OPACITY, TextStyleExt as _, control_highlight
 use crate::appearance_fonts::{TextSize, weight};
 use crate::components::icons::{Icon, IconName, IconSize, IconSource};
 use crate::theme_color::with_alpha;
-use crate::theme_tokens::Shadows;
+use crate::theme_tokens::{Glass, Shadows, backdrop_blur};
 use crate::{ActiveAppTheme as _, AppTheme};
 
 const GROUP: &str = "ui-button";
@@ -227,6 +228,8 @@ fn size_spec(size: ButtonSize, theme: &AppTheme) -> SizeSpec {
 #[derive(Clone)]
 struct Paint {
     bg: Hsla,
+    /// The glass variant's backdrop blur, painted with `bg` as its fill.
+    glass: Option<Glass>,
     border: Hsla,
     text: Hsla,
     icon: Hsla,
@@ -255,6 +258,7 @@ fn variant_paint(variant: ButtonVariant, state: ControlState, theme: &AppTheme) 
     let quiet = active || disabled;
     let base = Paint {
         bg: clear,
+        glass: None,
         border: clear,
         text: c.foreground(),
         icon: c.foreground(),
@@ -324,7 +328,8 @@ fn variant_paint(variant: ButtonVariant, state: ControlState, theme: &AppTheme) 
             ..base
         },
         ButtonVariant::Glass => Paint {
-            bg: d.surface_glass_opaque,
+            bg: if backdrop_blur() { d.glass_surface.fill } else { d.glass_surface.opaque },
+            glass: Some(d.glass_surface),
             border: if hover { c.border } else { with_alpha(c.border, 0.6) },
             icon: c.muted_foreground,
             shadows: vec![
@@ -369,6 +374,10 @@ pub struct Button {
     label: Option<SharedString>,
     icon: Option<IconSource>,
     trailing_icon: Option<IconName>,
+    trailing_icon_size: Option<IconSize>,
+    icon_size: Option<IconSize>,
+    label_max_width: Option<Pixels>,
+    accessory: Option<AnyElement>,
     variant: ButtonVariant,
     size: ButtonSize,
     disabled: bool,
@@ -385,6 +394,10 @@ impl Button {
             label: None,
             icon: None,
             trailing_icon: None,
+            trailing_icon_size: None,
+            icon_size: None,
+            label_max_width: None,
+            accessory: None,
             variant: ButtonVariant::Default,
             size: ButtonSize::Default,
             disabled: false,
@@ -408,6 +421,30 @@ impl Button {
 
     pub fn trailing_icon(mut self, icon: IconName) -> Self {
         self.trailing_icon = Some(icon);
+        self
+    }
+
+    /// The leading icon's size when the fork sizes it (`size-3.5` on a `RefreshIcon size="sm"`).
+    pub fn icon_size(mut self, size: IconSize) -> Self {
+        self.icon_size = Some(size);
+        self
+    }
+
+    /// Truncates the label past this width (`max-w-40 truncate`).
+    pub fn label_max_width(mut self, width: Pixels) -> Self {
+        self.label_max_width = Some(width);
+        self
+    }
+
+    /// An element after the label and before the trailing icon, such as a count badge.
+    pub fn accessory(mut self, element: impl IntoElement) -> Self {
+        self.accessory = Some(element.into_any_element());
+        self
+    }
+
+    /// The trailing icon's size when it differs from the leading icon's (a `size-3` chevron).
+    pub fn trailing_icon_size(mut self, size: IconSize) -> Self {
+        self.trailing_icon_size = Some(size);
         self
     }
 
@@ -472,10 +509,10 @@ impl RenderOnce for Button {
         let ring = focus_ring_inset(theme, BORDER);
         let text_weight = weight::MEDIUM;
         let icon_margin = if self.size.is_icon() { px(0.) } else { theme.rem(-0.125) };
-        let icon = |name: IconSource| {
+        let icon = |name: IconSource, size: Option<IconSize>| {
             div().mx(icon_margin).child(
                 Icon::new(name)
-                    .size(IconSize::Custom(spec.icon))
+                    .size(size.unwrap_or(IconSize::Custom(spec.icon)))
                     .color(rest.icon)
                     .group_color(GROUP, hover.icon),
             )
@@ -495,7 +532,10 @@ impl RenderOnce for Button {
             .rounded(spec.radius)
             .border_1()
             .border_color(rest.border)
-            .bg(rest.bg)
+            .map(|b| match rest.glass {
+                Some(glass) => b.glass(glass),
+                None => b.bg(rest.bg),
+            })
             .text_color(rest.text)
             .shadow(shadows)
             .whitespace_nowrap()
@@ -505,9 +545,13 @@ impl RenderOnce for Button {
             ButtonText::Px(size) => button.ui_text(theme, TextSize::Xs, text_weight).text_size(px(size)),
         };
         button
-            .children(self.icon.map(icon))
-            .children(self.label)
-            .children(self.trailing_icon.map(|name| icon(name.into())))
+            .children(self.icon.map(|name| icon(name, self.icon_size)))
+            .children(self.label.map(|label| match self.label_max_width {
+                Some(width) => div().max_w(width).truncate().child(label).into_any_element(),
+                None => label.into_any_element(),
+            }))
+            .children(self.accessory)
+            .children(self.trailing_icon.map(|name| icon(name.into(), self.trailing_icon_size)))
             .when(disabled, |b| b.opacity(DISABLED_OPACITY))
             .when(live, |b| {
                 b.cursor_pointer()
