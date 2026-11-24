@@ -8,13 +8,16 @@ pub mod install;
 
 use std::path::{Path, PathBuf};
 
-use gpui_kit::{AnyWindowHandle, App, SharedString};
+use gpui_kit::{App, SharedString};
 use t3code_client_runtime::platform::electron_import::SkipReason;
 use t3code_web::components::ui::toast::{ToastData, ToastKind, Toaster};
 use t3code_web::connection::ConnectionRuntime;
 use t3code_web::hooks::use_settings::ClientSettingsStore;
 
 use install::{FilesReport, ImportState, Install};
+
+/// How long the Keychain notice shows before the read that prompts.
+const NOTICE_LEAD: std::time::Duration = std::time::Duration::from_millis(250);
 
 /// What the unencrypted half found, carried to the later steps.
 pub struct Launch {
@@ -57,10 +60,10 @@ fn toast(kind: ToastKind, title: &str, description: Option<String>, cx: &mut App
 }
 
 /// Reads the install's saved environments and T3 Connect session, once. Shows why macOS is
-/// about to ask for the "T3 Code Safe Storage" Keychain item, and starts the read after the
-/// frame that draws it. Environments paired with the desktop app's own key come over without
+/// about to ask for the "T3 Code Safe Storage" Keychain item, and starts the read once it has
+/// painted. Environments paired with the desktop app's own key come over without
 /// a credential and show signed out in Settings → Environments until paired again.
-pub fn import_connections(mut launch: Launch, window: AnyWindowHandle, cx: &mut App) {
+pub fn import_connections(mut launch: Launch, cx: &mut App) {
     let Some(install) = launch.install.clone() else { return };
     if launch.state.connections_imported || !install.has_catalog() {
         return;
@@ -75,17 +78,14 @@ pub fn import_connections(mut launch: Launch, window: AnyWindowHandle, cx: &mut 
         ),
         cx,
     );
-    _ = window.update(cx, |_, window, _| {
-        window.on_next_frame(move |_, cx| {
-            let runtime = ConnectionRuntime::global(cx);
-            let preview = runtime.preview_electron_import(cx);
-            cx.spawn(async move |cx| {
-                let preview = preview.await;
-                cx.update(|cx| finish(&mut launch, preview, cx));
-            })
-            .detach();
-        });
-    });
+    // The read starts after the notice has had a frame to paint (one frame is ~16 ms).
+    cx.spawn(async move |cx| {
+        cx.background_executor().timer(NOTICE_LEAD).await;
+        let preview = cx.update(|cx| ConnectionRuntime::global(cx).preview_electron_import(cx));
+        let preview = preview.await;
+        cx.update(|cx| finish(&mut launch, preview, cx));
+    })
+    .detach();
 }
 
 /// Saves what the preview found, then adopts the T3 Connect session.
@@ -106,7 +106,8 @@ fn finish(launch: &mut Launch, preview: Result<t3code_web::connection::ImportPre
         .iter()
         .filter(|s| matches!(s.reason, SkipReason::DeviceBoundCredential | SkipReason::MissingCredential))
         .count();
-    let has_clerk = preview.has_clerk_session;
+    // Without T3 Connect configured there is no session to adopt.
+    let has_clerk = preview.has_clerk_session && ConnectionRuntime::state(cx).read(cx).cloud.is_some();
     let runtime = ConnectionRuntime::global(cx);
     let saved = runtime.apply_electron_import(preview.clone(), false, cx);
     let adopt = has_clerk.then(|| runtime.apply_electron_import(preview, true, cx));

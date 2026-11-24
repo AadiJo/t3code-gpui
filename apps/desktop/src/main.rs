@@ -28,7 +28,7 @@ fn main() {
                     t3code_web::components::thread_notification_coordinator::ThreadNotificationCoordinator::watch_window(window, cx)
                 })
                 .ok();
-            import::import_connections(launch, handle, cx);
+            import::import_connections(launch, cx);
             cx.activate(true);
         });
 }

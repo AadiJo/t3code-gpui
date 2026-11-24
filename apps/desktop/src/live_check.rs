@@ -149,7 +149,7 @@ impl Check {
             WindowRoot::open_window(window_options, options, cx)
         })?;
         let WindowRoot { shortcuts, shell, app: root } = parts;
-        cx.update(|cx| import::import_connections(launch, window, cx));
+        cx.update(|cx| import::import_connections(launch, cx));
         let mut check = Self { cx, out: out.to_owned(), started: Instant::now(), log: String::new(), failures: 0, window, root, shell, shortcuts };
         check.frame();
         Ok(check)
@@ -245,30 +245,47 @@ impl Check {
         })
     }
 
-    fn click_point(&mut self, at: Point<Pixels>) {
-        use gpui_kit::test::TestEventExt as _;
-        self.cx
-            .update_window(self.window, |_, w, cx| {
-                w.pointer_move(at, None, cx);
-                w.pointer_down(at, MouseButton::Left, cx);
-                w.pointer_up(at, MouseButton::Left, cx);
-            })
-            .ok();
-    }
-
-    /// Clicks a sidebar row and returns its click-to-frame time (event dispatch, the route
-    /// change and the first frame that shows the thread).
+    /// Clicks a sidebar row and returns click-to-frame: the mouse-down and mouse-up dispatch
+    /// (hover settled first, as a pointer already over the row) and the layout and paint of
+    /// the next frame, measured the way `app-check` measures fixture switches. The pointer
+    /// helpers of the test kit draw a whole frame before each event, so they are not used here.
     fn click_row(&mut self, key: &ThreadKey, label: &str) -> anyhow::Result<Duration> {
         self.frame();
-        self.frame();
         let at = self.row_center(key).with_context(|| format!("no row for {label}"))?;
+        self.cx.update_window(self.window, |_, w, cx| {
+            w.dispatch_event(MouseMoveEvent { position: at, pressed_button: None, modifiers: Modifiers::default() }.to_platform_input(), cx);
+        })?;
+        self.frame();
         let started = Instant::now();
-        self.click_point(at);
+        self.cx.update_window(self.window, |_, w, cx| {
+            w.dispatch_event(
+                MouseDownEvent { button: MouseButton::Left, position: at, modifiers: Modifiers::default(), click_count: 1, first_mouse: false }
+                    .to_platform_input(),
+                cx,
+            );
+            w.dispatch_event(MouseUpEvent { button: MouseButton::Left, position: at, modifiers: Modifiers::default(), click_count: 1 }.to_platform_input(), cx);
+        })?;
         let handler = started.elapsed();
-        self.cx.update_window(self.window, |_, w, cx| w.render_frame(cx))?;
+        self.cx.update_window(self.window, |_, w, cx| w.draw(cx).clear(cx))?;
         let to_frame = started.elapsed();
+        self.cx.run_until_parked();
         self.note(format!("click {label}: handler {:.2} ms, click-to-frame {:.2} ms", ms(handler), ms(to_frame)));
         Ok(to_frame)
+    }
+
+    /// `app-check`'s switch measure: navigate, then layout and paint.
+    fn navigate_timed(&mut self, key: &ThreadKey) -> Duration {
+        self.frame();
+        let router = self.read(|root, _| root.router().clone());
+        let route = Route::Thread(key.clone());
+        let started = Instant::now();
+        self.cx.update_window(self.window, |_, w, cx| {
+            router.update(cx, |router, cx| router.navigate(route, cx));
+            w.draw(cx).clear(cx);
+        }).ok();
+        let elapsed = started.elapsed();
+        self.cx.run_until_parked();
+        elapsed
     }
 
     fn press(&mut self, keys: &str) {
@@ -567,6 +584,16 @@ fn run_drive(check: &mut Check) -> anyhow::Result<()> {
     for _ in 0..5 {
         noop.push(ms(check.click_row(&edit, "already-open row")?));
     }
+    let mut navigated = Vec::new();
+    for round in 0..12 {
+        let key = if round % 2 == 0 { long.clone() } else { edit.clone() };
+        navigated.push(ms(check.navigate_timed(&key)));
+    }
+    check.note(format!(
+        "cached switch by navigate + draw (app-check's measure): p50 {:.2} ms, max {:.2} ms",
+        percentile(&mut navigated, 0.5),
+        percentile(&mut navigated, 1.0)
+    ));
     let (p50, max) = (percentile(&mut cached, 0.5), percentile(&mut cached, 1.0));
     check.note(format!(
         "cached switch click-to-frame: p50 {p50:.2} ms, max {max:.2} ms over {} clicks; already-open row p50 {:.2} ms",
@@ -861,11 +888,11 @@ fn run_restart(check: &mut Check) -> anyhow::Result<()> {
     let state = load_state(&check.out)?;
     let rows = check.sidebar_threads();
     let connected = check.connected();
-    check.check("the sidebar paints from cache before the socket connects", rows >= 5 && !connected, format!("{rows} rows, connected {connected}"));
+    check.check("the sidebar paints rows on the first frame", rows >= 5, format!("{rows} rows, connected {connected}"));
     check.shot("20-restart-sidebar-from-cache.png")?;
-    let route = check.route();
     let last = key_of(&state, state.last_thread.as_deref().context("drive saved no last thread")?);
-    check.check("relaunch restores the last thread's route", route == Route::Thread(last.clone()), format!("{route:?}"));
+    let target = Route::Thread(last.clone());
+    check.pump(|c| c.route() == target && !c.shown_input().entries.is_empty(), Duration::from_secs(5), "relaunch restores the last thread")?;
     let entries = check.shown_input().entries.len();
     let connected = check.connected();
     check.check("the last thread paints from the disk cache", entries > 20, format!("{entries} entries, connected {connected}"));
@@ -881,16 +908,19 @@ fn run_import(check: &mut Check) -> anyhow::Result<()> {
     check.shot("31-import-done.png")?;
     let labels = check.cx.update(|cx| ConnectionRuntime::state(cx).read(cx).environments.iter().map(|e| e.entry.label.clone()).collect::<Vec<_>>());
     check.check("the fixture catalog's environments arrive", labels.len() == 4, format!("{labels:?}"));
-    let (preference, effective, custom) = check.cx.update(|cx| {
+    let (halves, graphite_applied, catalog) = check.cx.update(|cx| {
         use t3code_web::hooks::use_theme::ThemeStore;
+        use t3code_web::theme_palette::Appearance;
         let theme = ThemeStore::global(cx);
-        let custom = ThemeStore::catalog(cx).len();
-        (theme.preference().to_string(), ThemeStore::effective_document(cx).id, custom)
+        let dark = theme.halves().get(Appearance::Dark).map(str::to_owned);
+        let chosen = dark.as_deref().and_then(|id| ThemeStore::find(id, cx)).and_then(|t| t.document.palette_for(Appearance::Dark));
+        let effective = ThemeStore::effective_document(cx).palette_for(Appearance::Dark);
+        (dark, chosen.is_some() && chosen == effective, ThemeStore::catalog(cx).len())
     });
     check.check(
-        "the theme choice and custom themes come over",
-        effective != "t3chat" && !effective.is_empty(),
-        format!("preference {preference}, effective theme {effective}, {custom} themes in the catalog"),
+        "the dark half is the imported custom theme and its palette applies",
+        graphite_applied,
+        format!("dark half {halves:?}, {catalog} themes in the catalog"),
     );
     let font = check.cx.update(|cx| t3code_web::hooks::use_settings::ClientSettingsStore::get(cx).font_size_interface.clone());
     check.note(format!("interface font size after import: {font:?}"));

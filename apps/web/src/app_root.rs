@@ -317,8 +317,10 @@ impl AppRoot {
         };
         // A modal route (settings) is not restored: the app opens on the page under it.
         let initial = Route::parse(&layout_state.last_route);
+        // Live stores open on tokio, so a saved thread may not be listed yet; the route stays and
+        // the thread shows once the shell lists it.
         let initial = match initial.thread_target() {
-            Some(target) if !data.thread_exists(&target, cx) => Route::Index,
+            Some(target) if fixture.is_some() && !data.thread_exists(&target, cx) => Route::Index,
             _ if initial.is_modal() => Route::Index,
             _ => initial,
         };
@@ -357,7 +359,7 @@ impl AppRoot {
             cx.subscribe_in(&layout, window, Self::on_layout_event),
             // Drags end wherever the pointer is released, so widths are saved as they change.
             cx.observe(&layout, |_, layout, cx| Self::persist_layout(&layout, cx)),
-            cx.subscribe(&data.events(), Self::on_data_event),
+            cx.subscribe_in(&data.events(), window, Self::on_data_event),
             cx.subscribe_in(&thread_view, window, Self::on_thread_event),
             cx.subscribe_in(&right_panel, window, |this, _, event: &RightPanelEvent, window, cx| match event {
                 RightPanelEvent::Changed => this.panels_changed(window, cx),
@@ -988,8 +990,19 @@ impl AppRoot {
         });
     }
 
-    fn on_data_event(&mut self, _: Entity<DataEvents>, event: &DataEvent, cx: &mut Context<Self>) {
+    fn on_data_event(&mut self, _: &Entity<DataEvents>, event: &DataEvent, window: &mut Window, cx: &mut Context<Self>) {
         if let DataEvent::SnapshotChanged = event {
+            let route = self.router.read(cx).current().clone();
+            if self.shown.is_none()
+                && let Some(target) = route.thread_target()
+                && self.data.thread_exists(&target, cx)
+            {
+                return self.apply_route(route, window, cx);
+            }
+            // `_chat.index.tsx` starts a draft once a project is known.
+            if route == Route::Index && self.data.most_recent_project(cx).is_some() {
+                return self.apply_route(route, window, cx);
+            }
             let active = self.shown_key();
             let snapshot = self.data.snapshot(active.as_ref(), cx);
             self.sidebar.update(cx, |sidebar, cx| sidebar.set_snapshot(snapshot, cx));
