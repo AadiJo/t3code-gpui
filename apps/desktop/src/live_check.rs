@@ -2340,8 +2340,9 @@ fn run_mentions(check: &mut Check) -> anyhow::Result<()> {
     check.type_text("/side Where does the quokka helper live?");
     check.press("enter");
     let p = parent.clone();
-    check.pump(move |c| matches!(c.route(), Route::Thread(k) if k != p), Duration::from_secs(30), "the side chat opens")?;
-    let Route::Thread(side) = check.route() else { bail!("no side chat route") };
+    check.pump(move |c| side_chat_tab(c, &p).is_some(), Duration::from_secs(30), "the side chat opens in the right panel")?;
+    let side_id = side_chat_tab(check, &parent).context("no side chat tab")?;
+    let side = thread_key(&tid_environment(&parent), &ThreadId::new(side_id.as_str()));
     let s = side.clone();
     check.pump(
         move |c| c.cx.update(|cx| StateBridge::shell(cx).read(cx).row(&s).is_some_and(|row| row.latest_user_message_at.is_some())),
@@ -3218,6 +3219,11 @@ fn run_composer_restart(check: &mut Check) -> anyhow::Result<()> {
     );
     check.check("the restored draft sends with its image", sent.is_ok(), format!("{sent:?}"));
     check.shot("c7-restored-sent.png")
+}
+
+/// The server environment id of a scoped key.
+fn tid_environment(key: &ThreadKey) -> t3code_contracts::EnvironmentId {
+    t3code_web::state::shell::runtime_ids(key).0
 }
 
 /// The server thread id of a scoped key.
