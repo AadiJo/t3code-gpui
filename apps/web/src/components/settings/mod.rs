@@ -35,6 +35,7 @@ pub mod scheduled_tasks_settings;
 pub mod secrets_settings;
 pub mod server_settings_pages;
 pub mod source_control_settings;
+pub mod source_control_token_settings;
 pub mod threads_settings;
 pub mod threads_settings_snooze;
 pub mod worktrees_settings;

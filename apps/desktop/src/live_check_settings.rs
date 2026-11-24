@@ -191,5 +191,37 @@ pub(super) fn run_settings(check: &mut Check) -> anyhow::Result<()> {
     check.pump(move |c| custom_price(c, &env, MODEL).is_none(), Duration::from_secs(15), "reset removes the model price on the server")?;
     check.check("reset and Save remove the custom price", true, "");
     check.shot("s9-prices-removed.png")?;
+
+    // Source control: GitHub's details hold the token form. A token saved for github.com reaches
+    // `sourceControlHosts.github.tokens` (redacted on the way back); Remove clears it.
+    let github_token = |c: &mut Check, env: &t3code_contracts::EnvironmentId| {
+        server_settings(c, env)
+            .and_then(|s| s.source_control_hosts)
+            .and_then(|hosts| hosts.get("github").cloned())
+            .and_then(|github| github.get("tokens").and_then(|t| t.get("github.com")).cloned())
+            .filter(|token| token.as_str().is_none_or(|t| !t.is_empty()))
+    };
+    check.press("escape");
+    let route = Route::Settings { panel: SettingsPanel::SourceControl, query: SharedString::default() };
+    check.cx.update(|cx| router.update(cx, |router, cx| router.navigate(route, cx)));
+    check.frame();
+    check.pump(|c| c.cx.update_window(c.window, |_, w, _| w.try_find(ElementId::from(SharedString::from("sc-details-github"))).is_some()).unwrap_or(false), Duration::from_secs(20), "GitHub appears in discovery")?;
+    click_id(check, "sc-details-github")?;
+    check.wait(Duration::from_millis(300));
+    click_id(check, "sc-token-value")?;
+    check.type_text("ghp_livecheck0000");
+    check.shot("s10-token-typed.png")?;
+    click_id(check, "sc-token-save")?;
+    let env = environment_id.clone();
+    check.pump(move |c| github_token(c, &env).is_some(), Duration::from_secs(15), "the GitHub token reaches the server")?;
+    let saved = github_token(check, &environment_id);
+    check.check("Save stores a GitHub token for github.com", saved.is_some(), format!("{saved:?}"));
+    check.wait(Duration::from_millis(300));
+    check.shot("s11-token-saved.png")?;
+    click_id(check, "sc-token-remove")?;
+    let env = environment_id.clone();
+    check.pump(move |c| github_token(c, &env).is_none(), Duration::from_secs(15), "Remove clears the GitHub token")?;
+    check.check("Remove clears the GitHub token", true, "");
+    check.shot("s12-token-removed.png")?;
     Ok(())
 }

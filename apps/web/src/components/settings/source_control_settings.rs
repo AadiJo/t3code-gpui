@@ -6,11 +6,12 @@
 //! `SourceControlWritingSettings.tsx` with its Advanced fold.
 
 use std::collections::BTreeSet;
+use std::sync::Arc;
 
 use gpui_kit::{AnyElement, App, ClipboardItem, Context, Entity, IntoElement, Render, SharedString, Subscription, Window, div, prelude::*, px};
 use t3code_contracts::{
     ClientServerSettingsPatch, ClientServerSettingsPatchSourceControlWritingStyle, IssueTrackerBindProjectInput,
-    IssueTrackerConnectInput, IssueTrackerConnection, IssueTrackerProjectBinding, PullRequestMergeMethod,
+    IssueTrackerConnectInput, IssueTrackerConnection, IssueTrackerConnectionList, SourceControlDiscoveryResult, IssueTrackerProjectBinding, PullRequestMergeMethod,
     SourceControlDiscoveryStatus, SourceControlProviderAuthStatus, SourceControlProviderDiscoveryItem,
     SourceControlSignInInput, SourceControlSignInPrompt, SourceControlWritingStyleMode, VcsDiscoveryItem,
 };
@@ -19,6 +20,7 @@ use super::server_settings_controls::{
     Fields, advanced_fold, bool_setting, field_input, hint, lock_reason, save_patch, select_row, status_mark, tinted,
 };
 use super::server_settings_data::ServerPanelsModel;
+use super::source_control_token_settings::{GITHUB_CREDENTIALS, SourceControlTokenSettings};
 use super::settings_layout::{SettingsRow, SettingsSection, page_container};
 use super::threads_settings::model_select_row;
 use crate::ActiveAppTheme as _;
@@ -43,6 +45,12 @@ struct SignIn {
 
 /// The Source control & issues page.
 pub struct SourceControlSettingsPanel {
+    /// The last `discoverSourceControl` and `issueTrackers.list` replies. A live source does not
+    /// keep them in its snapshot, so the panel holds what it asked for.
+    discovery: Option<Arc<SourceControlDiscoveryResult>>,
+    trackers: Option<Arc<IssueTrackerConnectionList>>,
+    /// GitHub's token form, kept so a draft survives re-renders.
+    github_token: Entity<SourceControlTokenSettings>,
     model: Entity<ServerPanelsModel>,
     fields: Fields,
     sign_in: Option<SignIn>,
@@ -79,9 +87,13 @@ fn host_icon(kind: &str) -> Option<IconSource> {
 }
 
 impl SourceControlSettingsPanel {
-    pub fn new(model: Entity<ServerPanelsModel>, _window: &mut Window, cx: &mut Context<Self>) -> Self {
+    pub fn new(model: Entity<ServerPanelsModel>, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let observe = cx.observe(&model, |_, _, cx| cx.notify());
+        let github_token = cx.new(|cx| SourceControlTokenSettings::new(model.clone(), &GITHUB_CREDENTIALS, window, cx));
         let mut this = Self {
+            discovery: None,
+            trackers: None,
+            github_token,
             model,
             fields: Fields::default(),
             sign_in: None,
@@ -91,13 +103,38 @@ impl SourceControlSettingsPanel {
             _observe: observe,
         };
         this.scan(cx);
-        this.model.update(cx, |m, cx| m.run("issue-trackers", |s| s.list_issue_trackers(), |_, _| {}, cx));
+        this.list_trackers(cx);
         this
     }
 
     /// `sourceControl.discovery`, again: the Rescan button and after a sign-in.
     fn scan(&mut self, cx: &mut Context<Self>) {
-        self.model.update(cx, |m, cx| m.run("discover-source-control", |s| s.discover_source_control(), |_, _| {}, cx));
+        let panel = cx.entity().downgrade();
+        self.model.update(cx, |m, cx| {
+            m.run("discover-source-control", |s| s.discover_source_control(), move |result, cx| {
+                if let Ok(result) = result {
+                    _ = panel.update(cx, |this, cx| {
+                        this.discovery = Some(Arc::new(result));
+                        cx.notify();
+                    });
+                }
+            }, cx)
+        });
+    }
+
+    /// `issueTrackers.list`, kept for the Issue trackers section.
+    fn list_trackers(&mut self, cx: &mut Context<Self>) {
+        let panel = cx.entity().downgrade();
+        self.model.update(cx, |m, cx| {
+            m.run("issue-trackers", |s| s.list_issue_trackers(), move |result, cx| {
+                if let Ok(result) = result {
+                    _ = panel.update(cx, |this, cx| {
+                        this.trackers = Some(Arc::new(result));
+                        cx.notify();
+                    });
+                }
+            }, cx)
+        });
     }
 
     fn toggle(&mut self, key: String, cx: &mut Context<Self>) {
@@ -405,7 +442,7 @@ impl SourceControlSettingsPanel {
                     save_patch(&offer_model, "offeredSourceControlProviders", patch, cx);
                 }))
                 .into_any_element();
-            let details = (item.app_sign_in == Some(true)).then(|| self.render_app_sign_in(item, cx));
+            let details = self.host_details(item, cx);
             let row = self.discovery_row(
                 kind.clone(),
                 host_icon(&kind),
@@ -422,6 +459,39 @@ impl SourceControlSettingsPanel {
             section.extend([row]);
         }
         section
+    }
+
+    /// `hostSettingsPanel`: a host with credentials shows its app sign-in (when offered), then
+    /// the token form. Other hosts have no details here.
+    fn host_details(&mut self, item: &SourceControlProviderDiscoveryItem, cx: &mut Context<Self>) -> Option<AnyElement> {
+        if item.kind.as_str() != GITHUB_CREDENTIALS.kind {
+            return (item.app_sign_in == Some(true)).then(|| self.render_app_sign_in(item, cx));
+        }
+        let theme = cx.app_theme().clone();
+        let c = &theme.colors;
+        let app = item.app_sign_in == Some(true);
+        let rule = || div().h(px(1.)).flex_1().bg(c.border);
+        Some(
+            div()
+                .flex()
+                .flex_col()
+                .gap(theme.sp(6.))
+                .when(app, |d| {
+                    d.child(self.render_app_sign_in(item, cx)).child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(theme.sp(3.))
+                            .ui_text(&theme, TextSize::Xs2, weight::NORMAL)
+                            .text_color(c.muted_foreground)
+                            .child(rule())
+                            .child(t!("Or use your own credentials"))
+                            .child(rule()),
+                    )
+                })
+                .child(self.github_token.clone())
+                .into_any_element(),
+        )
     }
 
     /// `SourceControlAppSignInSettings`: the GitHub app card.
@@ -621,7 +691,7 @@ impl SourceControlSettingsPanel {
             m.run(format!("tracker-connect:{key}"), move |s| s.connect_issue_tracker(input), move |result, cx| {
                 this.update(cx, |this, cx| {
                     match result {
-                        Ok(_) => this.model.update(cx, |m, cx| m.run("issue-trackers", |s| s.list_issue_trackers(), |_, _| {}, cx)),
+                        Ok(_) => this.list_trackers(cx),
                         Err(e) => this.tracker_error = Some((key.clone(), e.message)),
                     }
                     cx.notify();
@@ -636,7 +706,7 @@ impl SourceControlSettingsPanel {
         let c = &theme.colors;
         let snapshot = self.model.read(cx).snapshot().clone();
         let mut section = SettingsSection::new(t!("Issue trackers"));
-        let Some(list) = snapshot.issue_trackers.clone() else {
+        let Some(list) = self.trackers.clone().or_else(|| snapshot.issue_trackers.clone()) else {
             section.extend([SettingsRow::new(t!("Loading…")).into_any_element()]);
             return section;
         };
@@ -854,7 +924,7 @@ impl Render for SourceControlSettingsPanel {
         writing = writing.child(advanced);
 
         let mut page = page_container(cx).child(repositories);
-        match snapshot.source_control.clone() {
+        match self.discovery.clone().or_else(|| snapshot.source_control.clone()) {
             Some(discovery) if !discovery.version_control_systems.is_empty() || !discovery.source_control_providers.is_empty() => {
                 if !discovery.version_control_systems.is_empty() {
                     page = page.child(self.render_version_control(&discovery.version_control_systems, cx));
