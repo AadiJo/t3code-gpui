@@ -225,6 +225,10 @@ pub(super) fn map_row(row: &ThreadRow, extras: RowExtras) -> SidebarThread {
             t3code_client_runtime::state::models::PendingSubagentRequest::UserInput => SubagentRequest::UserInput,
         }),
         pending_guest_message_count: source.pending_guest_message_count.unwrap_or(0) as u32,
+        pending_request_blocks_snooze: source
+            .pending_runtime_request
+            .as_ref()
+            .is_some_and(|request| request.kind != t3code_contracts::OrchestrationV2PendingRuntimeRequestSummaryKind::UserInput),
         goal_active: source.goal.as_ref().is_some_and(|goal| goal.status == OrchestrationV2ProviderGoalStatus::Active),
         last_visited_at: ts(last_visited_at(row, local_visit)),
         has_unread_completion_notification: unread_completion,

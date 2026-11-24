@@ -665,7 +665,7 @@ impl Sidebar {
             return;
         }
         self.report_settled_shelf(true, cx);
-        self.options.settled_visible += self.snapshot.settings.settled_page_size;
+        self.options.settled_visible += model::SETTLED_TAIL_PAGE_COUNT;
         self.rebuild(cx);
     }
 
@@ -673,7 +673,7 @@ impl Sidebar {
     fn report_settled_shelf(&mut self, retry: bool, cx: &mut Context<Self>) {
         let request = model::SettledShelfRequest {
             expanded: self.options.settled_expanded,
-            visible_count: self.snapshot.settings.settled_page_size + self.options.settled_visible,
+            visible_count: self.snapshot.settings.settled_initial_count + self.options.settled_visible,
             projects: None,
             retry,
         };
@@ -853,11 +853,8 @@ impl Sidebar {
                     is_pinned: thread.pinned_at.is_some(),
                     is_settled: *section == super::sidebar_logic::SidebarSection::Settled,
                     is_snoozed: *section == super::sidebar_logic::SidebarSection::Snoozed,
-                    is_running: matches!(
-                        super::sidebar_logic::resolve_thread_status(thread),
-                        super::sidebar_logic::ThreadStatus::Working
-                            | super::sidebar_logic::ThreadStatus::Preparing
-                    ),
+                    is_running: !thread.runtime_can_archive(),
+                    can_snooze_now: thread.can_snooze(self.snapshot.now),
                     project_label: label,
                     project_filter_active: !self.options.project_scope.is_empty(),
                     show_project_filter: true,

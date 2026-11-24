@@ -678,6 +678,7 @@ fn blank_thread(key: &ThreadKey) -> SidebarThread {
         has_pending_user_input: false,
         pending_subagent_request: None,
         pending_guest_message_count: 0,
+        pending_request_blocks_snooze: false,
         goal_active: false,
         last_visited_at: None,
         has_unread_completion_notification: false,

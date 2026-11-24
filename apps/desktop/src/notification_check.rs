@@ -192,6 +192,7 @@ fn thread_input(env: &str, thread: &FixtureThread, start: i64) -> Arc<Notificati
             if request == "approval" { SubagentRequest::Approval } else { SubagentRequest::UserInput }
         }),
         pending_guest_message_count: thread.guest_messages,
+        pending_request_blocks_snooze: false,
         goal_active: false,
         last_visited_at: at(thread.last_visited_at),
         has_unread_completion_notification: false,
