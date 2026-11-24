@@ -3,6 +3,7 @@
 //! right of the row with the title, then one 12px line each for the project,
 //! environment, branch, model, hand-offs, terminals and the last error.
 
+use crate::components::ui::GlassExt as _;
 use gpui_kit::{AnyElement, App, Div, FontWeight, Hsla, IntoElement, ParentElement as _, SharedString, Styled as _, div, px};
 use t3code_contracts::EnvironmentMachineKind;
 
@@ -146,7 +147,7 @@ pub fn hover_card_surface(card: AnyElement, colors: &ShellColors, cx: &App) -> D
         .rounded(theme.radii.md)
         .border_1()
         .border_color(colors.glass_border)
-        .bg(colors.glass)
+        .glass(colors.glass)
         .shadow(theme.shadows.xl25.clone())
         .child(div().min_w_0().px(px(8.)).py(px(4.)).child(card))
 }

@@ -4,6 +4,7 @@
 //! with the fork's changes: a fixed 320px body, Claude before OpenAI, no "New"
 //! badge, and model icon overrides.
 
+use crate::components::ui::GlassExt as _;
 use crate::components::icons::{Icon, IconName, IconSize};
 use std::collections::HashSet;
 use std::ops::Range;
@@ -767,7 +768,7 @@ impl ModelPicker {
             .rounded(POPUP_RADIUS)
             .border_1()
             .border_color(c.popup_border)
-            .bg(c.popup_background)
+            .glass(c.popup_background)
             .shadow(popup_shadow(&c))
             .p(px(4.))
             .on_mouse_down_out(cx.listener(|this, _, _, cx| {
@@ -908,7 +909,7 @@ impl Render for ModelPicker {
             .font_family(UI_FONT_FAMILY)
             .flex()
             .flex_col()
-            .bg(c.popup_background)
+            .glass(c.popup_background)
             .border_1()
             .border_color(c.popup_border)
             .w(MODEL_PICKER_SIZE.width)

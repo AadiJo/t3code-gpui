@@ -2,6 +2,7 @@
 //! `glass` uses `dropdown-glass`, `code` is mono for paths and commands.
 //! Attach with GPUI's `.tooltip(tooltip("text"))` on an element with an id.
 
+use crate::components::ui::GlassExt as _;
 use gpui_kit::{AnyView, App, AppContext as _, Context, IntoElement, Render, RenderOnce, SharedString, Window, div, prelude::*, px};
 
 use super::motion::Transition;
@@ -63,7 +64,7 @@ impl RenderOnce for TooltipSurface {
             .line_height(px(TextSize::Xs.size(theme.fonts.interface) * 1.375));
         let card = match self.variant {
             TooltipVariant::Glass => card
-                .bg(d.dropdown_glass_opaque)
+                .glass(d.glass_dropdown)
                 .border_color(d.dropdown_glass_border)
                 .shadow(theme.shadows.xl25.clone()),
             TooltipVariant::Default | TooltipVariant::Code => {

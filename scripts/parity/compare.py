@@ -13,8 +13,9 @@
 glass 40) instead of the shared one (`default`).
 
 The spec (gen_spec.py, one module per area under specs/) lists, per scene, the elements to measure (see measure.py) with a name,
-optionally `blur: true` on a scan across backdrop-blurred glass (edge
-positions judged, colours shown only), `anchor: "<element>"` (measure relative to where that element landed, also
+optionally `blur: true` on a scan across backdrop-blurred glass (judged like any
+other scan now that the renderer blurs; the flag marks where colours depend on
+what is behind the glass), `anchor: "<element>"` (measure relative to where that element landed, also
 horizontally with `anchor_x: true`,
 for content below a documented difference that moves it),
 and optionally `text: true` (glyph shapes differ by rasteriser, so a text run's
@@ -109,10 +110,7 @@ def judge(element, ref, port):
         d = channels(ref["bg"], port["bg"])
         rows.append(("background", ref["bg"], port["bg"], d, d <= CHANNEL))
     else:
-        # Over a backdrop-blurred surface the fork's colours carry the blurred
-        # content behind the glass, which GPUI cannot sample: positions only.
-        blur = element.get("blur", False)
-        colour_ok = lambda d: None if blur else d <= CHANNEL
+        colour_ok = lambda d: d <= CHANNEL
         d = channels(ref["start"], port["start"])
         rows.append(("start colour", ref["start"], port["start"], d, colour_ok(d)))
         re, pe = ref["edges"], port["edges"]

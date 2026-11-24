@@ -29,6 +29,21 @@ use gpui_kit::{
 
 use crate::AppTheme;
 use crate::appearance_fonts::{TextSize, mono_font, ui_font};
+use crate::theme_tokens::{Glass, backdrop_blur};
+
+/// Paints a glass surface's background: its fill over the blurred backdrop,
+/// as CSS `backdrop-filter` does, or its opaque colour where the renderer
+/// cannot blur. Every glass surface paints its background with this.
+pub trait GlassExt: Styled + Sized {
+    fn glass(self, glass: Glass) -> Self {
+        match glass.blur.filter(|_| backdrop_blur()) {
+            Some(blur) => self.bg(glass.fill).backdrop_blur(blur.radius, blur.saturation),
+            None => self.bg(glass.opaque),
+        }
+    }
+}
+
+impl<T: Styled> GlassExt for T {}
 
 /// An interaction state. Primitives take one to draw that state statically,
 /// which is how the gallery shows hover, pressed and focus without a pointer.

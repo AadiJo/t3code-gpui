@@ -7,6 +7,7 @@
 //! [`PaletteEvent`] for the app; a few rows (theme, appearance) act directly.
 //! Command rows whose action has no handler there show as unavailable.
 
+use crate::components::ui::GlassExt as _;
 use std::rc::Rc;
 
 use gpui_kit::component::input::{InputEvent, InputState};
@@ -751,7 +752,7 @@ impl CommandPalette {
             .rounded(theme.radii.xxl)
             .border_1()
             .border_color(theme.derived.dialog_glass_border)
-            .bg(theme.derived.surface_glass_opaque)
+            .glass(theme.derived.glass_surface)
             .shadow(theme.shadows.dialog.clone())
             .text_color(c.foreground())
             .occlude()
@@ -933,7 +934,7 @@ impl Render for CommandPalette {
                             .id("command-palette-backdrop")
                             .absolute()
                             .size_full()
-                            .bg(theme.derived.dialog_backdrop)
+                            .glass(theme.derived.glass_dialog_backdrop)
                             .on_mouse_down(MouseButton::Left, cx.listener(|this, _, window, cx| this.close(window, cx))),
                     )
                     .child(div().absolute().size_full().flex().flex_col().items_center().px(theme.sp(4.)).pt(top).child(popup)),

@@ -2,6 +2,7 @@
 //! (radius 16px, max 512px) centred over a `dialog-backdrop`, with header,
 //! panel and a tinted footer.
 
+use crate::components::ui::GlassExt as _;
 use std::rc::Rc;
 
 use gpui_kit::{
@@ -90,7 +91,7 @@ impl ParentElement for DialogSurface {
     }
 }
 
-/// `dialog-glass`: background at 80% (opaque fallback), 1px glass border, dialog shadow.
+/// `dialog-glass`: background at the glass opacity over the blurred backdrop, 1px glass border, dialog shadow.
 pub fn dialog_glass(theme: &AppTheme) -> Div {
     div()
         .relative()
@@ -99,7 +100,7 @@ pub fn dialog_glass(theme: &AppTheme) -> Div {
         .rounded(theme.radii.xxl)
         .border_1()
         .border_color(theme.derived.dialog_glass_border)
-        .bg(theme.derived.surface_glass_opaque)
+        .glass(theme.derived.glass_surface)
         .shadow(theme.shadows.dialog.clone())
         .text_color(theme.foregrounds.popover)
 }
@@ -210,11 +211,11 @@ impl RenderOnce for Modal {
             }
         }
         let theme = cx.app_theme();
-        // Sheets use `background/60`; dialogs use `dialog-backdrop`.
+        // Sheets use `background/60 backdrop-blur-xs`; dialogs use `dialog-backdrop`.
         let backdrop = if self.sheet.is_some() {
-            crate::theme_color::with_alpha(theme.colors.background(), 0.6)
+            crate::theme_tokens::Glass::overlay(crate::theme_color::with_alpha(theme.colors.background(), 0.6))
         } else {
-            theme.derived.dialog_backdrop
+            theme.derived.glass_dialog_backdrop
         };
         let viewport = window.viewport_size();
         let (on_backdrop, on_escape) = (self.on_close.clone(), self.on_close);
@@ -237,7 +238,7 @@ impl RenderOnce for Modal {
                         div()
                             .absolute()
                             .size_full()
-                            .bg(backdrop)
+                            .glass(backdrop)
                             .on_mouse_down(gpui_kit::MouseButton::Left, move |_, window, cx| on_backdrop(window, cx)),
                     )
                     .child(match self.sheet {

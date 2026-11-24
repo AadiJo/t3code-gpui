@@ -88,10 +88,67 @@ impl Default for GlassOpacity {
     }
 }
 
+/// Whether glass blurs its backdrop. The DirectX renderer cannot yet, so
+/// glass there draws its opaque colour; `T3CODE_BACKDROP_BLUR=0` does the same
+/// elsewhere, to measure what the blur costs.
+pub fn backdrop_blur() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| {
+        !cfg!(target_os = "windows") && std::env::var("T3CODE_BACKDROP_BLUR").as_deref() != Ok("0")
+    })
+}
+
+/// `--glass-blur` and `--glass-saturation` (`index.css`): the
+/// `backdrop-filter: blur() saturate()` behind a glass surface.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct GlassBlur {
+    /// The CSS blur radius, a standard deviation.
+    pub radius: Pixels,
+    pub saturation: f32,
+}
+
+impl GlassBlur {
+    /// 16px and 1.08 dark, 12px and 1.14 light. At glass opacity 100
+    /// `appInit.tsx` sets the blur to 0px and the fill hides the backdrop, so
+    /// there is none.
+    pub fn new(appearance: Appearance, glass: GlassOpacity) -> Option<Self> {
+        if glass.percent() == GlassOpacity::MAX {
+            return None;
+        }
+        Some(if appearance.is_dark() {
+            Self { radius: px(16.), saturation: 1.08 }
+        } else {
+            Self { radius: px(12.), saturation: 1.14 }
+        })
+    }
+
+    /// `dialog-backdrop` and the sheet backdrop (`backdrop-blur-xs`): `blur(4px)`.
+    pub const OVERLAY: Self = Self { radius: px(4.), saturation: 1. };
+}
+
+/// A glass surface's background: `fill` over the backdrop blurred by `blur`,
+/// or `opaque`, the fill flattened over the canvas, where the renderer cannot
+/// blur. Paint it with `GlassExt::glass` in `components::ui`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Glass {
+    pub fill: Hsla,
+    pub opaque: Hsla,
+    pub blur: Option<GlassBlur>,
+}
+
+impl Glass {
+    /// A translucent overlay behind a modal: `fill` over a 4px blur, or
+    /// `fill` alone where the renderer cannot blur.
+    pub fn overlay(fill: Hsla) -> Self {
+        Self { fill, opaque: fill, blur: Some(GlassBlur::OVERLAY) }
+    }
+}
+
 /// The derived colours of spec tables 1.5 and 1.6. Colours with alpha keep
 /// it; `*_opaque` fields are the same colour flattened over the surface it
-/// sits on, for glass that GPUI draws without backdrop blur. Glass fills use
-/// the theme's [`GlassOpacity`], so a lower setting gives darker surfaces.
+/// sits on, for glass where the renderer cannot blur. Glass fills use the
+/// theme's [`GlassOpacity`], so a lower setting gives darker surfaces; the
+/// `glass_*` fields pair each with its backdrop blur.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct DerivedColors {
     pub sidebar_icon: Hsla,
@@ -104,6 +161,14 @@ pub struct DerivedColors {
     /// The composer card's glass (`--chat-composer-glass-surface` at the
     /// glass opacity: `surfaceRaised` for an imported theme), over the canvas.
     pub composer_glass_opaque: Hsla,
+    /// `dropdown-glass`: menus, popovers, selects, tooltips and toasts.
+    pub glass_dropdown: Glass,
+    /// `surface-glass` and `dialog-glass`.
+    pub glass_surface: Glass,
+    /// The composer card (`ComposerSurface.tsx`).
+    pub glass_composer: Glass,
+    /// `dialog-backdrop` behind dialogs and the command palette.
+    pub glass_dialog_backdrop: Glass,
     pub dialog_glass_border: Hsla,
     pub dialog_backdrop: Hsla,
     pub titlebar_toggle_icon: Hsla,
@@ -163,6 +228,10 @@ impl DerivedColors {
             mix_srgb(c.popover(), glass_alpha, transparent),
         );
         let surface_glass = mix_srgb(c.canvas, glass_alpha, transparent);
+        let composer_glass = mix_srgb(c.surface_raised, glass_alpha, transparent);
+        let blur = GlassBlur::new(appearance, glass);
+        let glass_over_canvas = |fill: Hsla| Glass { fill, opaque: flatten(fill, c.canvas), blur };
+        let dialog_backdrop = with_alpha(c.canvas, pick(0.64, 0.60));
         let input_alpha = with_alpha(c.input, 0.32);
         Self {
             sidebar_icon: mix_srgb(c.sidebar_muted_foreground, 0.85, c.sidebar),
@@ -171,13 +240,17 @@ impl DerivedColors {
             dropdown_glass_border: with_alpha(c.text, 0.10),
             surface_glass,
             surface_glass_opaque: flatten(surface_glass, c.canvas),
-            composer_glass_opaque: flatten(mix_srgb(c.surface_raised, glass_alpha, transparent), c.canvas),
+            composer_glass_opaque: flatten(composer_glass, c.canvas),
+            glass_dropdown: glass_over_canvas(dropdown_glass),
+            glass_surface: glass_over_canvas(surface_glass),
+            glass_composer: glass_over_canvas(composer_glass),
+            glass_dialog_backdrop: Glass::overlay(dialog_backdrop),
             dialog_glass_border: if dark {
                 with_alpha(white(), 0.08)
             } else {
                 with_alpha(c.text, 0.10)
             },
-            dialog_backdrop: with_alpha(c.canvas, pick(0.64, 0.60)),
+            dialog_backdrop,
             titlebar_toggle_icon: c.muted_foreground,
             titlebar_toggle_icon_disabled: mix_oklab(c.muted_foreground, 0.55, c.toolbar),
             sidebar_edge: with_alpha(c.sidebar_foreground, pick(0.08, 0.10)),

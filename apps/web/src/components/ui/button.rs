@@ -1,5 +1,6 @@
 //! Button. Ports `button.tsx` at desktop width (the `sm:` values).
 
+use crate::components::ui::GlassExt as _;
 use gpui_kit::TestSupportExt as _;
 use gpui_kit::{
     AnyElement, App, BoxShadow, ClickEvent, ElementId, FocusHandle, Hsla, IntoElement, Pixels, RenderOnce,
@@ -10,7 +11,7 @@ use super::{ControlState, DISABLED_OPACITY, TextStyleExt as _, control_highlight
 use crate::appearance_fonts::{TextSize, weight};
 use crate::components::icons::{Icon, IconName, IconSize, IconSource};
 use crate::theme_color::with_alpha;
-use crate::theme_tokens::Shadows;
+use crate::theme_tokens::{Glass, Shadows, backdrop_blur};
 use crate::{ActiveAppTheme as _, AppTheme};
 
 const GROUP: &str = "ui-button";
@@ -227,6 +228,8 @@ fn size_spec(size: ButtonSize, theme: &AppTheme) -> SizeSpec {
 #[derive(Clone)]
 struct Paint {
     bg: Hsla,
+    /// The glass variant's backdrop blur, painted with `bg` as its fill.
+    glass: Option<Glass>,
     border: Hsla,
     text: Hsla,
     icon: Hsla,
@@ -255,6 +258,7 @@ fn variant_paint(variant: ButtonVariant, state: ControlState, theme: &AppTheme) 
     let quiet = active || disabled;
     let base = Paint {
         bg: clear,
+        glass: None,
         border: clear,
         text: c.foreground(),
         icon: c.foreground(),
@@ -324,7 +328,8 @@ fn variant_paint(variant: ButtonVariant, state: ControlState, theme: &AppTheme) 
             ..base
         },
         ButtonVariant::Glass => Paint {
-            bg: d.surface_glass_opaque,
+            bg: if backdrop_blur() { d.glass_surface.fill } else { d.glass_surface.opaque },
+            glass: Some(d.glass_surface),
             border: if hover { c.border } else { with_alpha(c.border, 0.6) },
             icon: c.muted_foreground,
             shadows: vec![
@@ -527,7 +532,10 @@ impl RenderOnce for Button {
             .rounded(spec.radius)
             .border_1()
             .border_color(rest.border)
-            .bg(rest.bg)
+            .map(|b| match rest.glass {
+                Some(glass) => b.glass(glass),
+                None => b.bg(rest.bg),
+            })
             .text_color(rest.text)
             .shadow(shadows)
             .whitespace_nowrap()

@@ -3,6 +3,7 @@
 //! the project-folder menu in `Sidebar.tsx`, and the look of
 //! `contextMenuFallback.ts:391-534`.
 
+use crate::components::ui::GlassExt as _;
 use crate::components::icons::{Icon, IconName, IconSize};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
@@ -328,7 +329,7 @@ pub fn menu_surface(colors: &ShellColors) -> Div {
         .rounded(px(8.))
         .border_1()
         .border_color(colors.glass_border)
-        .bg(colors.glass)
+        .glass(colors.glass)
         .shadow(vec![BoxShadow {
             color: hsla(0., 0., 0., if colors.dark { 0.8 } else { 0.55 }),
             offset: point(px(0.), px(if colors.dark { 18. } else { 16. })),
