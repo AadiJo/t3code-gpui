@@ -63,6 +63,8 @@ pub enum RightPanelEvent {
     AddReviewComment(String),
     /// A review comment was deleted (`removeReviewComment`): its chip leaves the composer.
     RemoveReviewComment(String),
+    /// A side chat's image or link, for the window to open.
+    SideChatAction(crate::components::chat::messages_timeline::TimelineAction),
 }
 
 /// Starts a project script in a new terminal session: the launch and the command.
@@ -735,6 +737,12 @@ impl RightPanel {
         let subscription = cx.subscribe_in(&pane, window, move |this, _, event: &SideChatPaneEvent, _, cx| match event {
             SideChatPaneEvent::Close => this.close_surface(&surface_id, cx),
             SideChatPaneEvent::AddToChat(reference) => cx.emit(RightPanelEvent::AddThreadContext(reference.clone())),
+            // Scripts and terminals open in this panel, the side chat's host (`rightPanelHostRef`).
+            SideChatPaneEvent::Window(crate::components::chat::messages_timeline::TimelineAction::RunShellCommand(command)) => {
+                this.run_script(chat_code_block(command), cx)
+            }
+            SideChatPaneEvent::Window(crate::components::chat::messages_timeline::TimelineAction::OpenTerminal(id)) => this.add_terminal_tab(id.to_string(), cx),
+            SideChatPaneEvent::Window(action) => cx.emit(RightPanelEvent::SideChatAction(action.clone())),
         });
         self.side_chat = Some((key, pane.clone(), subscription));
         Some(pane)
@@ -1152,4 +1160,20 @@ pub fn review_comment_label(file_path: &str, range_label: &str, section_id: &str
     let prefix = section_id.strip_prefix("pull-request:").filter(|n| n.chars().all(|c| c.is_ascii_digit())).map(|n| format!("#{n} ")).unwrap_or_default();
     let base = file_path.rsplit(['/', '\\']).next().unwrap_or(file_path);
     format!("{prefix}{base} {range}")
+}
+
+/// `runShellCommand`: an ad-hoc "Chat code block" script.
+fn chat_code_block(command: &SharedString) -> ProjectScript {
+    ProjectScript {
+        id: "chat-code-block".into(),
+        name: t!("Chat code block").to_string(),
+        command: command.to_string(),
+        icon: t3code_contracts::ProjectScriptIcon::Play,
+        run_on_worktree_create: false,
+        run_on_settle: None,
+        stop_on_settle: None,
+        r#async: None,
+        preview_url: None,
+        auto_open_preview: None,
+    }
 }

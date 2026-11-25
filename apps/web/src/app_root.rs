@@ -412,6 +412,13 @@ impl AppRoot {
                 RightPanelEvent::AddThreadContext(text) => {
                     this.thread_view.update(cx, |view, cx| view.append_reference(text, cx));
                 }
+                RightPanelEvent::SideChatAction(action) => match action {
+                    crate::components::chat::messages_timeline::TimelineAction::OpenImage { attachments, index } => {
+                        this.open_attachments(attachments, *index, window, cx)
+                    }
+                    crate::components::chat::messages_timeline::TimelineAction::OpenLink(target) => this.open_link(target, window, cx),
+                    _ => {}
+                },
                 RightPanelEvent::AddReviewComment(chip) => this.thread_view.update(cx, |view, cx| view.add_review_comment(chip, cx)),
                 RightPanelEvent::RemoveReviewComment(id) => this.thread_view.update(cx, |view, cx| view.remove_review_comment(id, cx)),
             }),
@@ -542,6 +549,16 @@ impl AppRoot {
     /// Handles what the window's command palette asks for.
     pub fn attach_palette(&mut self, palette: &Entity<CommandPalette>, window: &mut Window, cx: &mut Context<Self>) {
         self.palette = Some(palette.downgrade());
+        // `composerPromptLink` is null for an empty or over-long prompt, so the rows hide.
+        let weak = cx.weak_entity();
+        palette.update(cx, |palette, _| {
+            palette.set_prompt_link_probe(std::rc::Rc::new(move |cx: &App| {
+                weak.upgrade().is_some_and(|this| {
+                    let text = this.read(cx).composer(cx).read(cx).editor().read(cx).text().trim().to_owned();
+                    !text.is_empty() && text.encode_utf16().count() <= 8_000
+                })
+            }));
+        });
         let subscription = cx.subscribe_in(palette, window, |this, _, event: &PaletteEvent, window, cx| {
             this.run_palette_event(event, window, cx);
         });

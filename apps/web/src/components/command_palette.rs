@@ -125,6 +125,9 @@ struct Session {
 /// app; it draws nothing while closed.
 pub struct CommandPalette {
     source: Rc<dyn CommandPaletteSource>,
+    /// Whether the composer holds a prompt a link can carry; without one the prompt link rows
+    /// hide. `None` offers them.
+    prompt_link_probe: Option<Rc<dyn Fn(&App) -> bool>>,
     ui: CommandPaletteUiState,
     session: Option<Session>,
     focus_handle: FocusHandle,
@@ -141,7 +144,19 @@ impl Focusable for CommandPalette {
 
 impl CommandPalette {
     pub fn new(source: Rc<dyn CommandPaletteSource>, cx: &mut Context<Self>) -> Self {
-        Self { source, ui: CommandPaletteUiState::default(), session: None, focus_handle: cx.focus_handle(), this: cx.weak_entity() }
+        Self {
+            source,
+            prompt_link_probe: None,
+            ui: CommandPaletteUiState::default(),
+            session: None,
+            focus_handle: cx.focus_handle(),
+            this: cx.weak_entity(),
+        }
+    }
+
+    /// Sets what decides whether "Copy prompt link" shows (`composerPromptLink` being non-null).
+    pub fn set_prompt_link_probe(&mut self, probe: Rc<dyn Fn(&App) -> bool>) {
+        self.prompt_link_probe = Some(probe);
     }
 
     /// Replaces the data source; an open palette keeps its rows until reopened.
@@ -429,7 +444,7 @@ impl CommandPalette {
             items.push(port_forwards_item(&source.ports()));
         }
         if active.is_some() {
-            if source.supports(PaletteFeature::PromptLinks) {
+            if source.supports(PaletteFeature::PromptLinks) && self.prompt_link_probe.as_ref().is_none_or(|probe| probe(cx)) {
                 items.push(event("action:copy-prompt-link", t!("Copy prompt link"), IconName::Link, PaletteEvent::CopyPromptLink { with_context: false }, &[
                     "copy", "share", "prompt", "link",
                 ]));

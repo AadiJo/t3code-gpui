@@ -33,6 +33,9 @@ pub enum SideChatPaneEvent {
     Close,
     /// Add this reference to the main thread's composer ("Add to chat").
     AddToChat(String),
+    /// A timeline action the window runs, as for the main thread: an image, a link, a shell
+    /// command block or a terminal (the embedded `ChatView`'s handlers).
+    Window(TimelineAction),
 }
 
 /// The composer's `@`, `$` and `/` source, set once the view arrives.
@@ -191,6 +194,17 @@ impl SideChatPane {
             }
             // Side chat runs keep no checkpoints to diff, and a fork would promote the side chat.
             ChatViewEvent::Timeline(TimelineAction::OpenDiff { .. } | TimelineAction::Fork(_)) => {}
+            ChatViewEvent::Timeline(
+                action @ (TimelineAction::OpenImage { .. } | TimelineAction::OpenLink(_) | TimelineAction::RunShellCommand(_) | TimelineAction::OpenTerminal(_)),
+            ) => cx.emit(SideChatPaneEvent::Window(action.clone())),
+            // `responseContextRecord`: the reply chip goes in this side chat's own composer.
+            ChatViewEvent::Timeline(TimelineAction::Reply { message, text }) => {
+                let opening: String = text.lines().find(|l| !l.trim().is_empty()).unwrap_or_default().chars().take(48).collect();
+                let reference = crate::composer_editor_mentions::format_context_reference("response", message.as_str(), opening.trim());
+                let editor = self.composer.read(cx).editor().clone();
+                editor.update(cx, |editor, cx| editor.insert(&format!("{reference} "), cx));
+                window.focus(&self.composer.focus_handle(cx), cx);
+            }
             ChatViewEvent::Timeline(action) => match self.data.timeline_action(&self.key, action, cx) {
                 ActionOutcome::LoadComposer(text) => {
                     let editor = self.composer.read(cx).editor().clone();
