@@ -223,8 +223,14 @@ impl ScheduledTaskEditor {
 
     fn labeled(&self, label: SharedString, control: impl IntoElement, cx: &Context<Self>) -> AnyElement {
         let theme = cx.app_theme();
-        // `Field`: `space-y-1.5`.
-        div().flex().flex_col().gap(theme.sp(1.5)).child(div().ui_text(theme, TextSize::Sm, weight::MEDIUM).child(label)).child(control).into_any_element()
+        // `Field`: `space-y-1.5`, its `Label` `sm:text-sm/4`.
+        div()
+            .flex()
+            .flex_col()
+            .gap(theme.sp(1.5))
+            .child(div().ui_text(theme, TextSize::Sm, weight::MEDIUM).line_height(theme.rem(1.)).child(label))
+            .child(control)
+            .into_any_element()
     }
 
     fn input(&mut self, key: &str, value: String, placeholder: impl Into<SharedString>, window: &mut Window, cx: &mut Context<Self>) -> Entity<InputState> {
