@@ -246,6 +246,18 @@ fn settings_models(check: &mut Check, thread: &ThreadKey) -> anyhow::Result<()> 
     )?;
     check.check("and turning it off goes back to the text generation model", true, "cleared");
     check.cx.update(|cx| t3code_web::speech::voice_consent::choose_transcript_cleanup(false, cx));
+
+    // Language names follow the UI language, from the CLDR table.
+    check.cx.update(|cx| t3code_web::i18n::runtime::apply_language_setting("de", cx));
+    check.frame();
+    let names = check.cx.update(|_| {
+        ["en", "de", "ja"].map(|code| t3code_web::speech::language_names::language_label(code).to_string())
+    });
+    super::live_check_settings::click_id(check, "speech-models-list")?;
+    super::hover_at(check, point(px(5.), px(700.)))?;
+    check.shot("s10-models-german.png")?;
+    check.cx.update(|cx| t3code_web::i18n::runtime::apply_language_setting("en", cx));
+    check.check("language names follow the UI language (German)", names == ["Englisch", "Deutsch", "Japanisch"], format!("{names:?}"));
     Ok(())
 }
 
