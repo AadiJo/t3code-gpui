@@ -31,6 +31,7 @@ pub mod diagnostics_settings;
 pub mod integrations_settings;
 pub mod maintenance_settings;
 pub mod projects_settings;
+pub mod pull_request_routing_settings;
 pub mod scheduled_tasks_settings;
 pub mod secrets_settings;
 pub mod server_settings_pages;

@@ -103,6 +103,7 @@ impl LiveData {
         if !StateBridge::is_running(cx) {
             StateBridge::init(cx);
         }
+        crate::components::settings::pull_request_routing_settings::init(cx);
         let shell = StateBridge::shell(cx);
         let palette = LivePaletteSource::new();
         palette.refresh(shell.read(cx), cx);

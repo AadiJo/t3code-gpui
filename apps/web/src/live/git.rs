@@ -70,7 +70,7 @@ impl GitActionsSource for LiveGitSource {
         unary(self.link.call::<GitPreparePullRequestThread>(input))
     }
     fn pull_request_detail(&self, input: PullRequestRef) -> RpcFuture<PullRequestDetail> {
-        unary(self.link.call::<PullRequestsDetail>(input))
+        unary(self.link.call_routed::<PullRequestsDetail>(input))
     }
     fn open_in_editor(&self, input: LaunchEditorInput) -> RpcFuture<()> {
         unary(self.link.call::<ShellOpenInEditor>(input).map(|r| r.map(|_| ())).boxed())

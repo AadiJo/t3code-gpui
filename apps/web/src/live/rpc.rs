@@ -85,6 +85,23 @@ impl RpcLink {
         })
     }
 
+    /// One pull request RPC, answered by another trusted machine when pull request sharing
+    /// allows it (`PullRequestRouting`).
+    pub fn call_routed<M: t3code_client_runtime::connection::pull_request_routing::RoutedMethod + 'static>(
+        &self,
+        payload: M::Payload,
+    ) -> BoxFuture<'static, Result<M::Success, SharedString>> {
+        let this = self.clone();
+        self.run(async move {
+            let session = this.session().await?;
+            let result = match t3code_client_runtime::connection::pull_request_routing::PullRequestRouting::global() {
+                Some(routing) => routing.request::<M>(&this.link.environment_id, session, payload).await,
+                None => session.client.call::<M>(payload).await,
+            };
+            result.map_err(|error| error_message(&error))
+        })
+    }
+
     /// One streaming RPC, flattened to its values. The forwarder reads (and so acks) at most
     /// [`STREAM_BUFFER`] values ahead of the consumer.
     pub fn stream<M: RpcStream + 'static>(&self, payload: M::Payload) -> BoxStream<'static, Result<M::Success, SharedString>>
