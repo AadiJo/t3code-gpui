@@ -1442,7 +1442,7 @@ impl ChatComposer {
                 .items_center()
                 .gap(c.r(px(4.)))
                 .rounded(c.r(px(12.)))
-                .child(div().w(c.r(px(24.))).flex().justify_center().child(Icon::new(banner.icon).size(IconSize::Custom(c.r(px(14.)))).color(ink).stroke(composer_icon_stroke(banner.icon))))
+                .child(div().w(c.r(px(24.))).flex().justify_center().child(Icon::new(banner.icon).size(IconSize::Custom(c.r(px(12.)))).color(crate::components::server_update_banners::banner_icon_color(banner, c.error).unwrap_or(ink)).stroke(composer_icon_stroke(banner.icon))))
                 .child(
                     div()
                         .flex_1()
@@ -1458,33 +1458,26 @@ impl ChatComposer {
                             div().w(px(0.)).min_w_0().flex_grow(1.).truncate().text_color(c.muted_foreground).child(description)
                         })),
                 )
-                .when_some(banner.action.clone(), |el, action| {
-                    let id = banner.id.clone();
-                    el.child(div().id(SharedString::from(format!("banner-action-{id}"))).px(c.r(px(8.))).h(c.r(px(24.))).flex().items_center().rounded(c.r(px(8.))).text_size(c.r(px(12.))).font_weight(FontWeight::MEDIUM).text_color(c.foreground).cursor_pointer().hover({
-                        let h = c.foreground.opacity(0.05);
-                        move |s| s.bg(h)
-                    }).on_click(cx.listener(move |_, _, _, cx| cx.emit(ComposerEvent::BannerAction(id.clone())))).child(action))
-                })
-                .when_some(banner.secondary_action.clone(), |el, action| {
-                    let id = SharedString::from(format!("{}#secondary", banner.id));
-                    el.child(div().id(SharedString::from(format!("banner-action-{id}"))).px(c.r(px(8.))).h(c.r(px(24.))).flex().items_center().rounded(c.r(px(8.))).text_size(c.r(px(12.))).font_weight(FontWeight::MEDIUM).text_color(c.foreground).cursor_pointer().hover({
-                        let h = c.foreground.opacity(0.05);
-                        move |s| s.bg(h)
-                    }).on_click(cx.listener(move |_, _, _, cx| cx.emit(ComposerEvent::BannerAction(id.clone())))).child(action))
-                })
-                .when(banner.dismiss.is_some(), |el| {
-                    let id = banner.id.clone();
-                    // `ComposerBanner.Actions min-w-12 justify-end` holding `ComposerBanner.Dismiss`.
-                    el.child(
-                        div().min_w(c.r(px(48.))).flex().justify_end().child(
-                            Button::new(SharedString::from(format!("banner-dismiss-{id}")))
-                                .icon(IconName::X)
-                                .icon_size(IconSize::Custom(c.r(px(14.))))
-                                .size(ButtonSize::IconXs)
-                                .variant(ButtonVariant::Ghost)
-                                .on_click(cx.listener(move |_, _, _, cx| cx.emit(ComposerEvent::BannerDismissed(id.clone())))),
-                        ),
-                    )
+                .when(banner.action.is_some() || banner.secondary_action.is_some() || banner.dismiss.is_some(), |el| {
+                    // `ComposerBanner.Actions min-w-12 justify-end gap-1`: the actions, then Dismiss.
+                    let action_button = |id: SharedString, label: SharedString, cx: &mut Context<Self>| {
+                        div().id(SharedString::from(format!("banner-action-{id}"))).px(c.r(px(8.))).h(c.r(px(24.))).flex().items_center().rounded(c.r(px(8.))).text_size(c.r(px(12.))).font_weight(FontWeight::MEDIUM).text_color(c.foreground).cursor_pointer().hover({
+                            let h = c.foreground.opacity(0.05);
+                            move |s| s.bg(h)
+                        }).on_click(cx.listener(move |_, _, _, cx| cx.emit(ComposerEvent::BannerAction(id.clone())))).child(label)
+                    };
+                    let primary = banner.action.clone().map(|label| action_button(banner.id.clone(), label, cx));
+                    let secondary = banner.secondary_action.clone().map(|label| action_button(SharedString::from(format!("{}#secondary", banner.id)), label, cx));
+                    let dismiss = banner.dismiss.is_some().then(|| {
+                        let id = banner.id.clone();
+                        Button::new(SharedString::from(format!("banner-dismiss-{id}")))
+                            .icon(IconName::X)
+                            .icon_size(IconSize::Custom(c.r(px(14.))))
+                            .size(ButtonSize::IconXs)
+                            .variant(ButtonVariant::Ghost)
+                            .on_click(cx.listener(move |_, _, _, cx| cx.emit(ComposerEvent::BannerDismissed(id.clone()))))
+                    });
+                    el.child(div().min_w(c.r(px(48.))).flex().items_center().justify_end().gap(c.r(px(4.))).children(primary).children(secondary).children(dismiss))
                 });
             // `ComposerBanner.Children`: the body under the row.
             let body = banner.body.as_ref().map(|body| self.render_usage_limits_body(&banner.id, body, c, max_body, cx));
