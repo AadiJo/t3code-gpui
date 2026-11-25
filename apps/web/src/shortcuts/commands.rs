@@ -202,8 +202,6 @@ command_registry! {
 /// for the commands that reach such a notice. The wiring check reads it.
 pub fn pending_command_owner(command: StaticCommand) -> Option<&'static str> {
     match command {
-        // The key does what the fork does with no transcription destination; dictation itself is not built.
-        StaticCommand::ComposerDictation => Some("voice"),
         _ => None,
     }
 }
