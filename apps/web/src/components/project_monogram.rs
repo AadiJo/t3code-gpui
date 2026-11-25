@@ -1,9 +1,11 @@
 //! `ProjectMonogram.tsx`: a project's one- or two-letter badge, a rounded
 //! tile tinted 14% with the project colour and the letters in bold mono.
 
+use std::fmt::Write as _;
+
 use gpui_kit::{
     App, FontWeight, IntoElement, ParentElement as _, Pixels, RenderOnce, SharedString, Styled as _,
-    Window, div, px,
+    Window, div, px, svg,
 };
 use t3code_contracts::ProjectIconColor;
 use unicode_segmentation::UnicodeSegmentation as _;
@@ -12,13 +14,6 @@ use crate::ActiveAppTheme as _;
 use crate::appearance_fonts::mono_font;
 use crate::project_icon_colors::project_icon_ink;
 use crate::theme_color::with_alpha;
-
-/// The SVG's own coordinate space: a 16-unit square, text baseline at 10.8,
-/// 8.25-unit bold glyphs stretched to 12 units (6 for one glyph).
-const VIEWBOX: f32 = 16.;
-const BASELINE: f32 = 10.8;
-const FONT_SIZE: f32 = 8.25;
-const CELL: f32 = 6.;
 
 /// A monogram badge, 16px by default (`size-4`); the breadcrumb uses 14px.
 #[derive(IntoElement)]
@@ -39,40 +34,37 @@ impl ProjectMonogram {
     }
 }
 
+/// The fork's SVG letters: a 16-unit view box, the baseline at 10.8, 8.25-unit
+/// bold mono glyphs stretched (`spacingAndGlyphs`) to 12 units, or 6 for one glyph.
+/// GPUI cannot stretch a text run, so the letters go through its SVG renderer,
+/// which lays `<text textLength>` out the way the browser does.
+fn letters_svg(text: &str, family: &str) -> String {
+    let length = if text.graphemes(true).count() == 1 { 6 } else { 12 };
+    let mut out = String::with_capacity(320);
+    let _ = write!(
+        out,
+        r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><text x="8" y="10.8" text-anchor="middle" font-family="'{}', monospace" font-size="8.25" font-weight="700" textLength="{length}" lengthAdjust="spacingAndGlyphs" text-rendering="geometricPrecision">"#,
+        xml_escape(family),
+    );
+    out.push_str(&xml_escape(text));
+    out.push_str("</text></svg>");
+    out
+}
+
+fn xml_escape(text: &str) -> String {
+    text.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('\'', "&apos;")
+}
+
 impl RenderOnce for ProjectMonogram {
     fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
         let ink = project_icon_ink(self.color, cx.app_theme().appearance);
-        let scale = f32::from(self.size) / VIEWBOX;
-        let glyphs: Vec<&str> = self.text.graphemes(true).take(2).collect();
-        // `textLength` spreads the glyphs evenly over 6 or 12 units centred on x=8:
-        // GPUI cannot stretch a glyph, so each one is centred in its share instead.
-        // Glyph centres sit 7.5 units apart: unstretched glyphs need the extra
-        // unit and a half to match the stretched pair's ink width on the Mac.
-        let pitch = CELL + 1.5;
-        let first_centre = VIEWBOX / 2. - pitch / 2. * (glyphs.len() as f32 - 1.);
-        let font_size = FONT_SIZE * scale;
-        // A line box as tall as the font puts the baseline about 0.68em down.
-        let line_top = (BASELINE - FONT_SIZE * 0.68) * scale;
+        let text: String = self.text.graphemes(true).take(2).collect();
+        let letters = letters_svg(&text, &mono_font(FontWeight::BOLD).family);
         div()
-            .relative()
             .flex_none()
             .size(self.size)
             .rounded(self.size * 0.25)
             .bg(with_alpha(ink, 0.14))
-            .font(mono_font(FontWeight::BOLD))
-            .text_size(px(font_size))
-            .line_height(px(font_size))
-            .text_color(ink)
-            .children(glyphs.into_iter().enumerate().map(|(ix, glyph)| {
-                let centre = first_centre + pitch * ix as f32;
-                div()
-                    .absolute()
-                    .top(px(line_top))
-                    .left(px((centre - CELL / 2.) * scale))
-                    .w(px(CELL * scale))
-                    .flex()
-                    .justify_center()
-                    .child(SharedString::from(glyph.to_owned()))
-            }))
+            .child(svg().data(letters.as_bytes()).size_full().text_color(ink))
     }
 }
