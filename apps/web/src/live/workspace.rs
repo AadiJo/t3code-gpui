@@ -115,6 +115,8 @@ pub fn open_file_in_preview(target: &crate::router::ThreadTarget, absolute_path:
         return gpui_kit::Task::ready(Err(crate::i18n::t!("This environment is not connected.")));
     };
     let run = link.clone();
+    // `openFileInPreview`: a client with no desktop browser opens the tab on the server, with the browser defaults.
+    let settings = crate::hooks::use_settings::ClientSettingsStore::get(cx).clone();
     let future = link.run(async move {
         let session = run.session().await?;
         let resource = AssetResource::WorkspaceFile(AssetResourceWorkspaceFile { thread_id: thread_id.clone(), path: absolute_path });
@@ -127,11 +129,11 @@ pub fn open_file_in_preview(target: &crate::router::ThreadTarget, absolute_path:
         let input = t3code_contracts::PreviewOpenInput {
             thread_id,
             url: Some(url.to_string()),
-            viewport: None,
-            profile_id: None,
-            runtime: None,
-            color_scheme: None,
-            zoom_factor: None,
+            viewport: Some(settings.browser_default_viewport.clone()),
+            profile_id: Some(settings.browser_default_profile_id.clone()).filter(|id| !id.is_empty() && id != "incognito"),
+            runtime: Some(t3code_contracts::PreviewRuntime::Server),
+            color_scheme: Some(settings.browser_default_appearance),
+            zoom_factor: Some(settings.browser_default_zoom_factor),
             reveal: None,
         };
         let snapshot = session.client.call::<PreviewOpen>(input).await.map_err(|error| super::rpc::error_message(&error))?;
