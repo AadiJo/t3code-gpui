@@ -131,6 +131,8 @@ pub struct ModelPicker {
     plain: bool,
     /// The effort level the keyboard is on (`composer.effort` moves focus to the column).
     effort_focus: Option<usize>,
+    /// Where an input method's uncommitted text starts in `query`, while it composes.
+    marked_from: Option<usize>,
 }
 
 impl EventEmitter<ModelPickerEvent> for ModelPicker {}
@@ -165,6 +167,7 @@ impl ModelPicker {
             permissions_preview: None,
             plain: false,
             effort_focus: None,
+            marked_from: None,
         };
         this.rebuild_rows();
         this.highlight_selected();
@@ -412,6 +415,9 @@ impl ModelPicker {
 
     fn on_backspace(&mut self, _: &PickerBackspace, _: &mut Window, cx: &mut Context<Self>) {
         if self.query.pop().is_some() {
+            if self.marked_from.is_some_and(|from| from >= self.query.len()) {
+                self.marked_from = None;
+            }
             self.highlighted = 0;
             self.rebuild_rows();
             cx.notify();
@@ -424,6 +430,11 @@ impl ModelPicker {
 
     fn on_next_provider(&mut self, _: &NextProvider, _: &mut Window, cx: &mut Context<Self>) {
         self.adjacent_provider(1, cx);
+    }
+
+    /// The search field's text.
+    pub fn query(&self) -> &str {
+        &self.query
     }
 
     /// Types into the search field (also used by scripted tests).
@@ -1086,17 +1097,29 @@ impl EntityInputHandler for ModelPicker {
     }
 
     fn marked_text_range(&self, _: &mut Window, _: &mut Context<Self>) -> Option<Range<usize>> {
-        None
+        let from = self.marked_from?;
+        let start = self.query[..from].encode_utf16().count();
+        Some(start..self.query.encode_utf16().count())
     }
 
-    fn unmark_text(&mut self, _: &mut Window, _: &mut Context<Self>) {}
+    fn unmark_text(&mut self, _: &mut Window, _: &mut Context<Self>) {
+        self.marked_from = None;
+    }
 
+    /// Commits text, replacing what an input method was composing.
     fn replace_text_in_range(&mut self, _: Option<Range<usize>>, text: &str, _: &mut Window, cx: &mut Context<Self>) {
+        if let Some(from) = self.marked_from.take() {
+            self.query.truncate(from);
+        }
         self.type_query(text, cx);
     }
 
+    /// Shows an input method's uncommitted text in the search, replacing its previous version.
     fn replace_and_mark_text_in_range(&mut self, _: Option<Range<usize>>, text: &str, _: Option<Range<usize>>, _: &mut Window, cx: &mut Context<Self>) {
+        let from = self.marked_from.unwrap_or(self.query.len());
+        self.query.truncate(from);
         self.type_query(text, cx);
+        self.marked_from = (!text.is_empty()).then_some(from);
     }
 
     fn bounds_for_range(&mut self, _: Range<usize>, bounds: gpui_kit::Bounds<Pixels>, _: &mut Window, _: &mut Context<Self>) -> Option<gpui_kit::Bounds<Pixels>> {

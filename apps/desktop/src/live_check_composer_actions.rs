@@ -70,6 +70,7 @@ pub(super) fn run_composer_actions(check: &mut Check) -> anyhow::Result<()> {
     );
     check.press("escape");
     set_prompt(check, "");
+    ime(check);
     // The Claude instance's models have effort levels; Replay's have none.
     let picked = super::pick_instance(check, "claudeAgent");
     check.check("the composer can pick the Claude instance", picked, picked);
@@ -423,4 +424,58 @@ pub(super) fn run_env_banner(check: &mut Check) -> anyhow::Result<()> {
 fn slash_ids(check: &mut Check) -> Vec<String> {
     let composer = composer_of(check);
     check.cx.update(|cx| composer.read(cx).menu().map(|m| m.items.iter().map(|i| i.id.to_string()).collect()).unwrap_or_default())
+}
+
+/// A scripted input method (the calls a CJK input source makes through the platform's input
+/// handler): marked text, the candidate window's anchor, commit, and cancel, in the composer and
+/// in the model picker's search.
+fn ime(check: &mut Check) {
+    use gpui_kit::EntityInputHandler as _;
+    set_prompt(check, "");
+    check.focus_composer();
+    let composer = composer_of(check);
+    let editor = check.cx.update(|cx| composer.read(cx).editor().clone());
+    let window = check.window;
+    let step = |check: &mut Check, f: &dyn Fn(&mut t3code_web::components::composer_prompt_editor::ComposerPromptEditor, &mut gpui_kit::Window, &mut gpui_kit::Context<t3code_web::components::composer_prompt_editor::ComposerPromptEditor>)| {
+        check.cx.update_window(window, |_, w, cx| editor.update(cx, |e, cx| f(e, w, cx))).ok();
+        check.frame();
+    };
+    step(check, &|e, w, cx| e.replace_and_mark_text_in_range(None, "に", None, w, cx));
+    step(check, &|e, w, cx| e.replace_and_mark_text_in_range(None, "にほ", None, w, cx));
+    let (text, marked, composing) = check.cx.update_window(window, |_, w, cx| editor.update(cx, |e, cx| (e.text().to_owned(), e.marked_text_range(w, cx), e.is_composing()))).unwrap();
+    check.check("the composer shows marked text in place, replacing each update", text == "にほ" && marked == Some(0..2) && composing, format!("{text:?} {marked:?}"));
+    let anchor = check.cx.update_window(window, |_, w, cx| editor.update(cx, |e, cx| e.bounds_for_range(0..2, gpui_kit::Bounds::default(), w, cx))).unwrap();
+    let card = check.read(|root, cx| root.composer(cx).read(cx).editor().read(cx).text().len());
+    check.check("the candidate window anchors inside the window at the marked text", anchor.is_some_and(|b| b.origin.x > gpui_kit::px(0.) && b.origin.y > gpui_kit::px(300.)), format!("{anchor:?} ({card} bytes)"));
+    check.press("enter");
+    let kept = check.cx.update(|cx| editor.read(cx).text().to_owned());
+    check.check("Enter while composing does not send", kept == "にほ", kept.clone());
+    step(check, &|e, w, cx| e.replace_text_in_range(None, "日本", w, cx));
+    let committed = check.cx.update_window(window, |_, w, cx| editor.update(cx, |e, cx| (e.text().to_owned(), e.marked_text_range(w, cx)))).unwrap();
+    check.check("commit replaces the marked text and ends composing", committed == ("日本".to_owned(), None), format!("{committed:?}"));
+    step(check, &|e, w, cx| e.replace_and_mark_text_in_range(None, "ご", None, w, cx));
+    step(check, &|e, w, cx| e.replace_and_mark_text_in_range(None, "", None, w, cx));
+    step(check, &|e, w, cx| e.unmark_text(w, cx));
+    let cancelled = check.cx.update(|cx| (editor.read(cx).text().to_owned(), editor.read(cx).is_composing()));
+    check.check("cancel (empty marked text, unmark) leaves the committed text", cancelled == ("日本".to_owned(), false), format!("{cancelled:?}"));
+    set_prompt(check, "");
+    // The picker's search.
+    check.press("mod-shift-m");
+    let picker = check.cx.update(|cx| composer.read(cx).picker().cloned());
+    if let Some(picker) = picker {
+        let pstep = |check: &mut Check, text: &str, commit: bool| {
+            let text = text.to_owned();
+            check.cx.update_window(window, |_, w, cx| picker.update(cx, |p, cx| if commit { p.replace_text_in_range(None, &text, w, cx) } else { p.replace_and_mark_text_in_range(None, &text, None, w, cx) })).ok();
+            check.frame();
+        };
+        pstep(check, "く", false);
+        pstep(check, "くろ", false);
+        let marked = check.cx.update(|cx| picker.read(cx).query().to_owned());
+        pstep(check, "クロード", true);
+        let committed = check.cx.update(|cx| picker.read(cx).query().to_owned());
+        check.check("the picker search replaces marked text and commits once", marked == "くろ" && committed == "クロード", format!("{marked:?} -> {committed:?}"));
+        check.press("escape");
+    } else {
+        check.check("the picker opened for the IME check", false, "");
+    }
 }
