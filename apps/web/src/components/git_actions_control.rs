@@ -598,7 +598,9 @@ impl GitActionsControl {
         });
         let f = &theme.fixed;
         let muted = theme.colors.muted_foreground;
-        row_base("git-changes-row", theme, false, false)
+        // `onOpenChanges` is passed only for a server thread: a draft's row is disabled.
+        let can_open = self.props.thread_id.is_some();
+        row_base("git-changes-row", theme, !can_open, false)
             .w_full()
             .child(row_icon(theme, IconName::FileDiff))
             .child(
@@ -627,7 +629,7 @@ impl GitActionsControl {
                             .child(div().text_color(if deletions > 0 { f.diff_deletion_foreground } else { muted }).child(format!("-{}", format_diff_count(deletions)))),
                     ),
             )
-            .on_click(cx.listener(|_, _, _, cx| cx.emit(GitActionsEvent::OpenChanges)))
+            .when(can_open, |row| row.on_click(cx.listener(|_, _, _, cx| cx.emit(GitActionsEvent::OpenChanges))))
             .test_support()
             .into_any_element()
     }
