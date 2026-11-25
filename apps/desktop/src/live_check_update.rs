@@ -152,6 +152,8 @@ pub(super) fn run_server_update(check: &mut Check) -> anyhow::Result<()> {
     check.pump(move |c| server_version(c, &env).as_deref() == Some(behind) && c.connected(), Duration::from_secs(60), "behind again")?;
     let env_ready = key.clone();
     check.pump(move |c| element_visible(c, &format!("env-update-{env_ready}")), Duration::from_secs(15), "Update is back")?;
+    // The icon returns with the descriptor; its session's maintain scope can trail it by a moment.
+    check.wait(Duration::from_millis(800));
     click(check, &icon)?;
     let env = id.clone();
     check.pump(move |c| matches!(update_state(c, &env), ServerUpdateState::Failed { .. }), Duration::from_secs(20), "the update fails")?;
