@@ -139,7 +139,12 @@ impl AppData for FixtureData {
     }
 
     fn composer_state(&self, view: &ThreadView, base: &ComposerState, cx: &mut App) -> ComposerState {
-        if let Some((model, supervised)) = self.store.read(cx).reference_thread(&view.key).cloned() {
+        // A reference-world draft starts on the reference server's default model.
+        let draft_model = (view.is_draft && self.store.read(cx).is_reference())
+            .then(super::reference_server::default_model_selection)
+            .flatten()
+            .map(|(_, model)| (SharedString::from(model), false));
+        if let Some((model, supervised)) = self.store.read(cx).reference_thread(&view.key).cloned().or(draft_model) {
             use crate::components::chat::composer_permissions::RuntimeMode;
             let mode = if supervised { RuntimeMode::ApprovalRequired } else { RuntimeMode::FullAccess };
             return ComposerState {

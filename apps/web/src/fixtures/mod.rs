@@ -141,6 +141,11 @@ impl FixtureStore {
     }
 
     /// The Mac reference world's model slug and supervised flag for the thread a view shows.
+    /// The store holds the reference world (the fork capture's server), not the showcase.
+    pub fn is_reference(&self) -> bool {
+        !self.reference_threads.is_empty()
+    }
+
     pub fn reference_thread(&self, view_key: &str) -> Option<&(SharedString, bool)> {
         self.reference_threads.iter().find(|(key, _)| scoped_key(key).as_ref() == view_key).map(|(_, info)| info)
     }
