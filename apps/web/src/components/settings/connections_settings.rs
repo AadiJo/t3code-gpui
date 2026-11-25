@@ -1348,6 +1348,7 @@ impl Render for ConnectionsSettings {
         page_container(cx)
             .text_color(c.foreground())
             .child(section)
+            .children(super::linked_environments_settings::sections(cx))
             .children(load_balancing)
             .children(pull_request_routing)
             .children(dialog)
