@@ -410,6 +410,9 @@ pub(super) fn run_env_banner(check: &mut Check) -> anyhow::Result<()> {
     };
     check.pump(|c| enabled(c) == Some(false), Duration::from_secs(10), "machine switched off")?;
     check.check("Disconnect server switches the machine off", true, "");
+    check.pump(|c| matches!(c.route(), Route::Index), Duration::from_secs(10), "home after Disconnect")?;
+    let home = check.route();
+    check.check("Disconnect server goes home (`navigate({ to: \"/\", replace: true })`)", true, format!("{home:?}"));
     std::fs::write(check.out.join("env-banner.start"), "")?;
     check.wait(Duration::from_secs(8));
     // The fork leaves the thread after Disconnect; switch the machine back on as Settings does.
