@@ -1661,6 +1661,10 @@ pub trait PlatformTextSystem: Send + Sync {
     fn run_padding(&self, _font_id: FontId, _font_size: Pixels) -> Pixels {
         Pixels::ZERO
     }
+    /// Whether `font_id` is drawn with synthetic bold: a bold weight its family has no face for.
+    fn is_synthetic_bold(&self, _font_id: FontId) -> bool {
+        false
+    }
     /// Returns the recommended text rendering mode for the given font and size.
     fn recommended_rendering_mode(&self, _font_id: FontId, _font_size: Pixels)
     -> TextRenderingMode;

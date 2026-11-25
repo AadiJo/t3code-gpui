@@ -77,6 +77,13 @@ fn dump() -> Dump {
     serde_json::from_str(SERVER).expect("reference_server.json decodes")
 }
 
+/// The reference server's `defaultModelSelection`, as (instance id, model): what a new draft
+/// starts on (`seedDraftModelSelection`).
+pub fn default_model_selection() -> Option<(String, String)> {
+    let selection = dump().config.config.settings.default_model_selection?;
+    Some((selection.instance_id.to_string(), selection.model.to_string()))
+}
+
 /// The reference server's config, as environment `env` of the reference world.
 pub fn config(env: &crate::components::sidebar::model::EnvironmentId) -> ServerConfig {
     let mut config = dump().config.config;

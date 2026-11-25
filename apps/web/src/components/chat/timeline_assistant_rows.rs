@@ -87,6 +87,7 @@ impl MessagesTimeline {
             .gap_2()
             .mt(if standalone { rems(0.125) } else { rems(0.375) })
             .text_size(TEXT_XS.size)
+            .font_features(super::chat_style::TABULAR_NUMS.clone())
             .child(
                 xs_button(
                     ("copy-reply", key),
@@ -109,7 +110,7 @@ impl MessagesTimeline {
                 cx.listener(move |_, _, _, cx| cx.emit(TimelineAction::Reply { message: id.clone(), text: text.clone() }))
             }).test_support())
             .children((!message.streaming).then(|| {
-                div().text_color(colors.theme.muted_foreground).child(format_clock(message.updated_at.0))
+                div().text_color(colors.theme.muted_foreground).child(format_clock(message.updated_at.0, cx))
             }))
             .into_any_element()
     }

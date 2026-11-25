@@ -207,7 +207,8 @@ pub fn select_row(id: impl Into<ElementId>, theme: &AppTheme, content: impl Into
         )
 }
 
-/// A plain-text row for a locked control (`THREAD_DETAILS_PANEL_LOCKED_ROW_CLASS`).
+/// A plain-text row for a locked control (`THREAD_DETAILS_PANEL_LOCKED_ROW_CLASS`). Its one
+/// user, `BranchToolbar`, keeps `dark:text-muted-foreground` through the class merge.
 pub fn locked_row(theme: &AppTheme, content: impl IntoElement) -> Div {
     row_font(div())
         .flex()
@@ -219,7 +220,7 @@ pub fn locked_row(theme: &AppTheme, content: impl IntoElement) -> Div {
         .px(row_inset(theme))
         .border_1()
         .border_color(gpui_kit::transparent_black())
-        .text_color(row_text(theme))
+        .text_color(if theme.appearance.is_dark() { theme.colors.muted_foreground } else { row_text(theme) })
         .child(content)
 }
 

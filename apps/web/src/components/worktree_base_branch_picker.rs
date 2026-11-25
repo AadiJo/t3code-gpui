@@ -119,23 +119,23 @@ impl Render for WorktreeBaseBranchPicker {
             self.start_from_origin,
         );
         let disabled = self.disabled || self.cwd.is_none();
-        // `Button variant="outline" size="sm"`, full width.
+        // `Button variant="outline" size="sm"` (`sm:h-7`), full width; its icons carry `-mx-0.5`.
         let trigger = div()
             .id("worktree-base-trigger")
             .flex()
             .w_full()
             .items_center()
-            .gap(theme.rem(0.375))
-            .h(theme.sp(8.))
-            .px(theme.sp(3.))
+            .gap(theme.sp(1.5))
+            .h(theme.sp(7.))
+            .px(theme.sp(2.5) - px(1.))
             .rounded(theme.radii.lg)
             .border_1()
             .border_color(c.input)
             .bg(theme.derived.outline_fill)
             .ui_text(&theme, TextSize::Sm, weight::MEDIUM)
-            .child(Icon::new(IconName::GitBranch).size(IconSize::Custom(theme.rem(0.875))).color(c.muted_foreground))
+            .child(div().flex_none().mx(-theme.sp(0.5)).child(Icon::new(IconName::GitBranch).size(IconSize::Custom(theme.rem(0.875))).color(c.muted_foreground)))
             .child(div().flex_1().min_w_0().truncate().child(label))
-            .child(Icon::new(IconName::ChevronDown).size(IconSize::Custom(theme.rem(0.875))).color(c.muted_foreground))
+            .child(div().flex_none().mx(-theme.sp(0.5)).child(Icon::new(IconName::ChevronDown).size(IconSize::Custom(theme.rem(0.875))).color(c.muted_foreground)))
             .when(disabled, |t| t.opacity(DISABLED_OPACITY))
             .when(!disabled, |t| {
                 let hover = theme.derived.outline_hover;

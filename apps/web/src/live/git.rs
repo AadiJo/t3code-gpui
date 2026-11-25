@@ -24,7 +24,7 @@ use crate::state::app_data::{GitControlsSetup, ThreadView};
 
 /// [`GitActionsSource`] on one environment. Each method is the RPC its trait doc names.
 pub struct LiveGitSource {
-    link: RpcLink,
+    pub(crate) link: RpcLink,
 }
 
 fn unary<T: Send + 'static>(future: futures::future::BoxFuture<'static, Result<T, SharedString>>) -> RpcFuture<T> {

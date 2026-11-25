@@ -143,8 +143,9 @@ impl Render for MaintenanceSettingsPanel {
             }
         };
         let run_model = model.clone();
-        let mut cleanup = div().flex().flex_col().gap(theme.sp(2.5)).child(
-            SettingsSection::new(t!("Cleanup")).child(
+        // `SettingsSection variant="plain"`: the Delete now group, then the Last run fold, 4px apart.
+        let mut cleanup = SettingsSection::new(t!("Cleanup")).plain().child(
+            SettingsSection::new(t!("Cleanup")).hide_title().child(
                 SettingsRow::new(t!("Delete now")).description(description).control(
                     Button::new("storage-delete-now")
                         .variant(ButtonVariant::Outline)

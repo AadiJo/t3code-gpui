@@ -23,6 +23,7 @@ use super::server_settings_controls::{Fields, field_input, hint, tinted};
 use super::server_settings_data::ServerPanelsModel;
 use super::settings_layout::{SettingsRow, SettingsSection, page_container};
 use super::threads_settings::model_options;
+use crate::components::worktree_base_branch_picker::{WorktreeBaseBranchEvent, WorktreeBaseBranchPicker};
 use crate::ActiveAppTheme as _;
 use crate::appearance_fonts::{TextSize, weight};
 use crate::components::icons::IconName;
@@ -55,13 +56,49 @@ pub struct ScheduledTaskEditor {
     schedule_row: usize,
     errors: Vec<SharedString>,
     saving: bool,
+    /// The Base branch picker for the project it was made for.
+    base_branch: Option<(String, Entity<WorktreeBaseBranchPicker>, Subscription)>,
 }
 
 impl EventEmitter<ScheduledTaskEditorEvent> for ScheduledTaskEditor {}
 
 impl ScheduledTaskEditor {
     pub fn new(model: Entity<ServerPanelsModel>, draft: DraftState) -> Self {
-        Self { model, draft, fields: Fields::default(), prompt: None, scroll: gpui_kit::ScrollHandle::new(), schedule_row: 0, errors: Vec::new(), saving: false }
+        Self {
+            model,
+            draft,
+            fields: Fields::default(),
+            prompt: None,
+            scroll: gpui_kit::ScrollHandle::new(),
+            schedule_row: 0,
+            errors: Vec::new(),
+            saving: false,
+            base_branch: None,
+        }
+    }
+
+    /// `WorktreeBaseBranchPicker` over the picked project's checkout, made again when the
+    /// project changes. A blank base ref shows the default branch (`scheduledTaskWorktreeBaseRef`).
+    fn base_branch_picker(&mut self, cwd: Option<String>, cx: &mut Context<Self>) -> Entity<WorktreeBaseBranchPicker> {
+        let key = self.draft.project_id.clone();
+        if let Some((made_for, picker, _)) = &self.base_branch
+            && *made_for == key
+        {
+            return picker.clone();
+        }
+        let source = self.model.read(cx).source().git_source();
+        let value = super::scheduled_tasks_settings_logic::scheduled_task_worktree_base_ref(&self.draft.base_ref, &[]);
+        let start_from_origin = self.draft.start_from_origin;
+        let picker = cx.new(|cx| WorktreeBaseBranchPicker::new(source, cwd, value, start_from_origin, cx));
+        let subscription = cx.subscribe(&picker, |this, _, event: &WorktreeBaseBranchEvent, cx| {
+            match event {
+                WorktreeBaseBranchEvent::Changed(branch) => this.draft.base_ref = branch.clone(),
+                WorktreeBaseBranchEvent::StartFromOriginChanged(on) => this.draft.start_from_origin = *on,
+            }
+            cx.notify();
+        });
+        self.base_branch = Some((key, picker.clone(), subscription));
+        picker
     }
 
     /// Scrolls the form so the Schedule row is in view.
@@ -102,7 +139,6 @@ impl ScheduledTaskEditor {
         if let Some(v) = text("replayKey", cx, f) { d.replay_key = v; }
         if let Some(v) = text("coalesceKey", cx, f) { d.coalesce_key = v; }
         if let Some(v) = text("coalesceWindow", cx, f) { d.coalesce_window_seconds = v; }
-        if let Some(v) = text("baseRef", cx, f) { d.base_ref = v; }
         for filter in &mut d.filters {
             if let Some(v) = f.value(&format!("filter:{}:path", filter.id), cx) { filter.path = v.to_string(); }
             if let Some(v) = f.value(&format!("filter:{}:value", filter.id), cx) { filter.value = v.to_string(); }
@@ -448,8 +484,9 @@ impl Render for ScheduledTaskEditor {
             );
             match d.workspace_mode {
                 WorkspaceMode::Worktree => {
-                    let base = self.input("baseRef", d.base_ref.clone(), "main", window, cx);
-                    body.push(self.labeled(t!("Base branch"), field_input(&base, false, false, false), cx));
+                    let cwd = projects.get(project_ix).map(|p| p.workspace_root.clone());
+                    let base = self.base_branch_picker(cwd, cx);
+                    body.push(self.labeled(t!("Base branch"), base, cx));
                 }
                 WorkspaceMode::ExistingWorktree => {
                     let path = self.input("checkoutPath", d.existing_worktree_path.clone(), "", window, cx);

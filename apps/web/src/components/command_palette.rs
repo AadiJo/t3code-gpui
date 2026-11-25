@@ -815,6 +815,8 @@ impl CommandPalette {
         let flow = self.flow_chrome(&theme);
         let chrome = chrome + flow.header_height;
         let list_height = (content + list_padding).min(popup_max - chrome);
+        // An overflowing list shows the app's 6px scrollbar (`--app-scrollbar-width`) beside its rows.
+        let scrollbar = if content + list_padding > list_height { px(6.) } else { px(0.) };
         let actions_only = session.search.query.starts_with('>');
         let weak = self.this.clone();
         let theme_for_rows = theme.clone();
@@ -857,7 +859,8 @@ impl CommandPalette {
             };
             div().h(slot).flex_none().child(row).into_any_element()
         })
-        .px(theme.sp(2.))
+        .pl(theme.sp(2.))
+        .pr(theme.sp(2.) + scrollbar)
         .py(theme.sp(2.))
         .h(list_height)
         .w_full();

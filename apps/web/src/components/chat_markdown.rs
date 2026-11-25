@@ -638,6 +638,29 @@ impl Renderer<'_> {
         div().w_full().min_w_0().child(text).into_any_element()
     }
 
+    /// Blink's symbol list marker (`ListMarker::RelativeSymbolMarkerRect`) for the prose font: a
+    /// disc, then a circle, then a square, `(ascent * 2 / 3 + 1) / 2` across in whole pixels,
+    /// `3 * (ascent - size) / 4` below the ascent line, its right edge `kCMarkerPaddingPx` (7px)
+    /// before the text.
+    fn symbol_marker(&self, depth: usize) -> AnyElement {
+        let colors = self.view.colors;
+        let (size, line) = (colors.r(px(14.)), colors.r(px(22.75)));
+        let text_system = self.app.text_system();
+        let font_id = text_system.resolve_font(&crate::appearance_fonts::ui_font(FontWeight::NORMAL));
+        let ascent = f32::from(text_system.ascent(font_id, size)).round() as i32;
+        let descent = f32::from(text_system.descent(font_id, size)).abs().round() as i32;
+        let bullet = (ascent * 2 / 3 + 1) / 2;
+        let top = (line - px((ascent + descent) as f32)) / 2. + px((3 * (ascent - bullet) / 4) as f32);
+        let ink = if self.view.user { colors.theme.message_foreground } else { colors.prose() };
+        let mark = div().size(px(bullet as f32)).mt(top);
+        let mark = match depth {
+            0 => mark.rounded_full().bg(ink),
+            1 => mark.rounded_full().border_1().border_color(ink),
+            _ => mark.bg(ink),
+        };
+        div().h(line).pr(px(7.) - colors.r(LIST_MARKER_GAP)).child(mark).into_any_element()
+    }
+
     fn list(&mut self, list: &List, depth: usize) -> Rendered {
         let colors = self.view.colors;
         let gutter = match list.start {
@@ -661,23 +684,15 @@ impl Renderer<'_> {
             .map(|(index, item)| {
                 let marker: AnyElement = match item.checked {
                     Some(checked) => checkbox(checked, colors).into_any_element(),
-                    None => {
-                        let label = match list.start {
-                            Some(start) => ordered_marker(
-                                item.number.unwrap_or(start + index as u32) as usize,
-                                depth,
-                                self.view.user,
-                            ),
-                            None => bullet_marker(depth).to_string(),
-                        };
-                        // Chromium's outside markers: a disc sits 12px before the text, a
-                        // number 6px (`1. ` with tabular figures).
-                        div()
-                            .when(list.start.is_none(), |d| d.pr(self.view.colors.r(px(5.5))))
-                            .when(list.start.is_some(), |d| d.font_features(TABULAR_FIGURES.clone()))
-                            .child(label)
-                            .into_any_element()
-                    }
+                    None => match list.start {
+                        // Chromium's outside number marker sits 6px before the text (`1. ` with
+                        // tabular figures).
+                        Some(start) => div()
+                            .font_features(TABULAR_FIGURES.clone())
+                            .child(ordered_marker(item.number.unwrap_or(start + index as u32) as usize, depth, self.view.user))
+                            .into_any_element(),
+                        None => self.symbol_marker(depth),
+                    },
                 };
                 let (children, top, bottom) =
                     stack(item.blocks.iter().map(|b| self.block(b, depth + 1, list.spread)).collect());
@@ -1221,13 +1236,6 @@ pub(crate) fn synthetic_file_name(language: &str) -> String {
 static TABULAR_FIGURES: std::sync::LazyLock<gpui_kit::FontFeatures> =
     std::sync::LazyLock::new(|| gpui_kit::FontFeatures(std::sync::Arc::new(vec![("tnum".into(), 1)])));
 
-fn bullet_marker(depth: usize) -> &'static str {
-    match depth {
-        0 => "•",
-        1 => "◦",
-        _ => "▪",
-    }
-}
 
 /// `1.`, then `a.` and `i.` for nested assistant lists; user messages stay decimal.
 fn ordered_marker(number: usize, depth: usize, user: bool) -> String {

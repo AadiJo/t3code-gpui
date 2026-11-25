@@ -187,6 +187,8 @@ pub trait ServerSettingsSource: Send + Sync + 'static {
     fn host_resources(&self) -> Reply<HostResourcesSnapshot>;
     /// `server.checkOtlpEndpoint`.
     fn check_otlp_endpoint(&self, input: OtlpEndpointCheckInput) -> Reply<OtlpEndpointCheckResult>;
+    /// The environment's source control, for the refs a form lists (the task editor's base branch).
+    fn git_source(&self) -> std::sync::Arc<dyn crate::components::git_actions_control_source::GitActionsSource>;
 }
 
 /// The entity the panels hold: the source and its latest snapshot.
@@ -347,6 +349,11 @@ fn not_in_fixture<T: Send + 'static>(what: &str) -> Reply<T> {
 impl ServerSettingsSource for FixtureServerSettings {
     fn snapshot(&self) -> ServerPanelsSnapshot {
         self.with(|s| s.clone())
+    }
+
+    fn git_source(&self) -> std::sync::Arc<dyn crate::components::git_actions_control_source::GitActionsSource> {
+        use crate::components::git_actions_control_fixture::{FixtureGitSource, fixture_status};
+        std::sync::Arc::new(FixtureGitSource::new(fixture_status(Some("main"), false, false, 0, 0)))
     }
 
     fn update_settings(&self, input: ServerUpdateSettingsPayload) -> Reply<ServerSettings> {

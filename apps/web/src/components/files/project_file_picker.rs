@@ -281,7 +281,7 @@ impl ProjectFilePicker {
                             .min_w_0()
                             .flex()
                             .flex_col()
-                            .child(div().text_size(rems(0.875)).line_height(rems(1.25)).text_color(colors.text).whitespace_nowrap().overflow_hidden().text_ellipsis().child(highlighted_text(&found.name, &name_indices, colors.text)))
+                            .child(div().text_size(rems(0.875)).line_height(rems(1.25)).text_color(if highlight { colors.muted_foreground } else { colors.text }).whitespace_nowrap().overflow_hidden().text_ellipsis().child(highlighted_text(&found.name, &name_indices, colors.text)))
                             .child(
                                 div()
                                     .text_size(rems(0.75))

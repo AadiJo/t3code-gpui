@@ -172,7 +172,7 @@ pub fn driver_brand(driver: &str, dark: bool) -> Option<BrandIcon> {
 
 /// `ProviderInstanceIcon`: the driver mark (or initials) with an accent badge.
 pub fn provider_instance_icon(driver: &str, name: &str, accent: Option<&str>, cx: &App) -> AnyElement {
-    provider_instance_icon_sized(driver, name, accent, px(20.), cx)
+    provider_instance_icon_sized(driver, name, accent, cx.app_theme().sp(5.), cx)
 }
 
 /// [`provider_instance_icon`] with the mark at `size` (`iconClassName="size-4"`).
@@ -180,7 +180,8 @@ pub fn provider_instance_icon_sized(driver: &str, name: &str, accent: Option<&st
     let theme = &cx.app_theme().clone();
     let c = &theme.colors;
     let dark = theme.appearance == crate::theme_palette::Appearance::Dark;
-    let mark_size = if size >= px(20.) { IconSize::Md } else { IconSize::Custom(size) };
+    // The `size-5` tile carries a `size-4` mark; smaller tiles draw the mark at their own size.
+    let mark_size = IconSize::Custom(if size >= theme.sp(5.) { theme.sp(4.) } else { size });
     let mark = match driver_brand(driver, dark) {
         Some(brand) => Icon::new(brand).size(mark_size).color(with_alpha(c.foreground(), 0.8)).into_any_element(),
         None => div()
@@ -503,7 +504,8 @@ impl ProviderSettingsPanel {
             .into_any_element()
     }
 
-    /// One provider row; `divided` draws the `divide-y` line inside its top edge, so `min-h-18` includes it.
+    /// One provider row; `divided` draws the `divide-y` line inside its bottom edge (every row but
+    /// the list's last child), so `min-h-18` includes it.
     fn render_list_row(&self, row: &InstanceRow, divided: bool, cx: &mut Context<Self>) -> AnyElement {
         let theme = &cx.app_theme().clone();
         let c = &theme.colors;
@@ -583,7 +585,7 @@ impl ProviderSettingsPanel {
             .cursor_pointer()
             .when(selected, |d| d.bg(with_alpha(c.foreground(), 0.06)))
             .when(!selected, |d| d.hover(|d| d.bg(with_alpha(c.muted, 0.25))))
-            .when(divided, |d| d.border_t_1().border_color(with_alpha(c.border, 0.5)))
+            .when(divided, |d| d.border_b_1().border_color(with_alpha(c.border, 0.5)))
             .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.select(&id, cx)))
             .test_support()
             .child(
@@ -1794,7 +1796,7 @@ impl ProviderSettingsPanel {
 
 /// A `SettingsSection` inside the provider detail pane. The web flattens
 /// these (`[data-provider-detail] [data-slot=settings-group]` in `index.css`):
-/// no border, fill or shadow, only the heading and the row dividers.
+/// a transparent border, no fill or shadow, only the heading and the row dividers.
 #[derive(IntoElement)]
 pub struct FlatSection {
     title: SharedString,
@@ -1857,7 +1859,8 @@ impl gpui_kit::RenderOnce for FlatSection {
                         div().flex().items_center().justify_end().min_h(theme.sp(7.)).min_w(theme.sp(7.)).child(action)
                     })),
             )
-            .child(div().flex().flex_col().text_color(c.foreground()).children(self.children.into_iter().enumerate().map(|(ix, child)| {
+            // The group's border turns transparent but still takes its 1px.
+            .child(div().flex().flex_col().border_1().border_color(gpui_kit::transparent_black()).text_color(c.foreground()).children(self.children.into_iter().enumerate().map(|(ix, child)| {
                 div().when(ix > 0, |d| d.border_t_1().border_color(divider)).child(child).into_any_element()
             })))
     }
@@ -1959,7 +1962,7 @@ impl Render for ProviderSettingsPanel {
             .flex()
             .flex_col()
             .children(rows.iter().enumerate().map(|(ix, row)| {
-                self.render_list_row(row, ix > 0, cx)
+                self.render_list_row(row, can_add || ix + 1 < rows.len(), cx)
             }))
             .when(can_add, |d| {
                 d.child(
@@ -1970,8 +1973,6 @@ impl Render for ProviderSettingsPanel {
                         .gap(theme.sp(3.))
                         .px(theme.sp(4.))
                         .py(theme.sp(3.))
-                        .border_t_1()
-                        .border_color(with_alpha(c.border, 0.5))
                         .cursor_pointer()
                         .ui_text(theme, TextSize::Sm, weight::NORMAL)
                         .text_color(c.muted_foreground)

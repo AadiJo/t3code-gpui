@@ -1656,6 +1656,11 @@ fn icon(path: &'static str, size: f32, color: Hsla) -> Svg {
 
 impl CodeView {
     fn render_header(&self, index: usize, y: f32, colors: &DiffColors, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+        let zero_advance = {
+            let text_system = window.text_system();
+            let font_id = text_system.resolve_font(&crate::appearance_fonts::ui_font(gpui_kit::FontWeight::NORMAL));
+            text_system.advance(font_id, px(12.), '0').map_or(px(7.2), |size| size.width)
+        };
         let file = &self.files[index];
         let accessory = self.decorations.clone().and_then(|d| d.render_header_accessory(&file.key, window, cx));
         let diff = &file.diff;
@@ -1804,11 +1809,15 @@ impl CodeView {
                     .flex()
                     .flex_none()
                     .items_center()
-                    .gap(px(self.metrics.map_or(7., |m| m.ch)))
+                    // `DiffStatLabel`: two right-aligned `4ch` columns, `gap-2`, in the header's 12px. The
+                    // grid is in the header's sans font, so `ch` is its "0"; the counts are mono.
+                    .gap(cx.app_theme().sp(2.))
                     .font_family(mono)
-                    .text_size(px(11.))
-                    .when(additions > 0, |el| el.child(div().text_color(colors.addition_base).child(format!("+{}", format_diff_count(additions as u64)))))
-                    .when(deletions > 0, |el| el.child(div().text_color(colors.deletion_base).child(format!("-{}", format_diff_count(deletions as u64))))),
+                    .text_size(px(12.))
+                    .children([(additions, cx.app_theme().fixed.diff_addition_foreground, '+'), (deletions, cx.app_theme().fixed.diff_deletion_foreground, '-')].map(|(count, ink, sign)| {
+                        let column = 4. * zero_advance;
+                        div().w(column).text_right().text_color(ink).child(format!("{sign}{}", crate::diff_count::format_compact_diff_count(count as u64)))
+                    })),
             )
             .into_any_element()
     }

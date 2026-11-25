@@ -139,7 +139,12 @@ impl AppData for FixtureData {
     }
 
     fn composer_state(&self, view: &ThreadView, base: &ComposerState, cx: &mut App) -> ComposerState {
-        if let Some((model, supervised)) = self.store.read(cx).reference_thread(&view.key).cloned() {
+        // A reference-world draft starts on the reference server's default model.
+        let draft_model = (view.is_draft && self.store.read(cx).is_reference())
+            .then(super::reference_server::default_model_selection)
+            .flatten()
+            .map(|(_, model)| (SharedString::from(model), false));
+        if let Some((model, supervised)) = self.store.read(cx).reference_thread(&view.key).cloned().or(draft_model) {
             use crate::components::chat::composer_permissions::RuntimeMode;
             let mode = if supervised { RuntimeMode::ApprovalRequired } else { RuntimeMode::FullAccess };
             return ComposerState {
@@ -274,7 +279,7 @@ impl AppData for FixtureData {
             let project_id = ProjectId::new(view.project_id.as_ref().map(|p| p.0.to_string()).unwrap_or_default());
             return GitControlsSetup {
                 source: Arc::new(source),
-                git: GitActionsProps { project_id: Some(project_id), ..fixture_git_props() },
+                git: GitActionsProps { project_id: Some(project_id), thread_id: server_thread_id(view), ..fixture_git_props() },
                 scripts: Vec::new(),
                 editors: vec![EditorId::Cursor],
                 open_state: RemoteOpenState::LocalExec,
@@ -286,7 +291,7 @@ impl AppData for FixtureData {
         let project_id = ProjectId::new(view.project_id.as_ref().map(|p| p.0.to_string()).unwrap_or_default());
         GitControlsSetup {
             source: Arc::new(source),
-            git: GitActionsProps { project_id: Some(project_id), ..fixture_git_props() },
+            git: GitActionsProps { project_id: Some(project_id), thread_id: server_thread_id(view), ..fixture_git_props() },
             scripts: fixture_scripts(),
             editors: vec![EditorId::Vscode, EditorId::Cursor, EditorId::Zed],
             open_state: RemoteOpenState::LocalExec,
@@ -367,4 +372,12 @@ impl AppData for FixtureData {
     fn preview_source(&self, _: &t3code_contracts::EnvironmentId, _: &mut App) -> Option<Rc<dyn PreviewSource>> {
         None
     }
+}
+
+/// The thread id a server thread's git controls carry; a draft has none (`isServerThread`).
+fn server_thread_id(view: &ThreadView) -> Option<t3code_contracts::ThreadId> {
+    if view.is_draft {
+        return None;
+    }
+    view.key.split_once(':').map(|(_, thread)| t3code_contracts::ThreadId::new(thread))
 }

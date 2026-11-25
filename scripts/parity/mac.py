@@ -473,6 +473,24 @@ def measure_box(im, el, ref=None):
     return result
 
 
+def is_switch(el):
+    """A switch track (`span[data-slot=switch]`, 28x17 at the owner's 15px root)."""
+    _, _, w, h = el["box"]
+    return el["kind"] == "box" and el["name"].startswith("box span ") and abs(w - 28) < 1 and abs(h - 17) < 1
+
+
+def switch_fill(im, el):
+    """A switch's fill: its track beside the thumb, mid-height. The thumb covers the track's
+    centre whether on or off, so the track is the end of the middle row that differs from the
+    centre. The interior's mode colour is half track, half thumb and flips on a sub-pixel thumb
+    shift, and the track's top edge carries the fork's inner shadow."""
+    x, y, w, h = el["box"]
+    X0, X1, my, mx = int(x * SCALE), int((x + w) * SCALE), int((y + h / 2) * SCALE), int((x + w / 2) * SCALE)
+    centre = mode_colour(im[my - 1 : my + 1, mx - 1 : mx + 1])
+    ends = [mode_colour(im[my - 1 : my + 1, c - 1 : c + 1]) for c in (X0 + 7, X1 - 7)]
+    return hexc(max(ends, key=lambda colour: channels(hexc(colour), hexc(centre))))
+
+
 REF_IMAGE = {}
 
 # ---------------------------------------------------------------- scroll pages
@@ -691,6 +709,9 @@ def compare(port_dir, out_dir, ref_dir=None):
                 rows, cause = judge_text(ref, port)
             else:
                 port = measure_box(im, el, ref)
+                if is_switch(el) and REF_IMAGE["im"] is not None:
+                    ref = dict(ref, fill=switch_fill(REF_IMAGE["im"], el))
+                    port["fill"] = switch_fill(im, el)
                 rows, cause = judge_box(ref, port)
             ok = cause is None
             passed += ok

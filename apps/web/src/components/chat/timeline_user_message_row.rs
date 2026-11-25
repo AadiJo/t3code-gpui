@@ -299,7 +299,7 @@ impl MessagesTimeline {
             .text_size(TEXT_XS.size)
             .opacity(0.)
             .group_hover(group, |s| s.opacity(1.))
-            .child(div().mr_1().text_color(colors.theme.muted_foreground).child(format_clock(message.created_at.0)))
+            .child(div().mr_1().text_color(colors.theme.muted_foreground).child(format_clock(message.created_at.0, cx)))
             .children(message_row.revert_turn_count.map(|_| {
                 let id = message.id.clone();
                 xs_button(("revert", key), Some(IconName::Pencil), None, colors.theme.text, &colors)

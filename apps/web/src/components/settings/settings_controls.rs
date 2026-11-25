@@ -292,7 +292,12 @@ pub fn scope_sentence(cx: &App) -> AnyElement {
         None => t!("All environments"),
     };
     let menu_button = |id: &'static str, label: SharedString| {
-        Button::new(id).variant(ButtonVariant::Outline).size(ButtonSize::Sm).label(label).trailing_icon(IconName::ChevronDown)
+        Button::new(id)
+            .variant(ButtonVariant::Outline)
+            .size(ButtonSize::Sm)
+            .label(label)
+            .trailing_icon(IconName::ChevronDown)
+            .trailing_icon_size(crate::components::icons::IconSize::Custom(theme.sp(3.5)))
     };
     let project = dropdown_menu("scope-project", menu_button("scope-project-trigger", t!("All projects")), |_, _| {
         MenuPopup::new().item(MenuItem::new(t!("All projects")).kind(MenuItemKind::Radio(true)).on_select(|_, _| {}))
