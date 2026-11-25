@@ -385,3 +385,95 @@ pub(super) fn run_file_comments(check: &mut Check) -> anyhow::Result<()> {
     check.shot("files-02-sent.png")?;
     Ok(())
 }
+
+/// `live-check background-setup` (after `launcher`): the project gets an async setup script
+/// (`sleep 45`) and a thread starts in a new worktree with the long Replay scenario, so the agent
+/// works while setup still runs. The working row then shows "Background setup", which opens the
+/// setup card without Cancel; the setup state is the server's own (`subscribeWorktreeSetup`).
+pub(super) fn run_background_setup(check: &mut Check) -> anyhow::Result<()> {
+    use t3code_contracts::{
+        CommandId, OrchestrationV2ThreadLaunchInput, OrchestrationV2ThreadLaunchInputInitialMessage, OrchestrationV2ThreadLaunchWorkspaceStrategy,
+        OrchestrationV2ThreadLaunchWorkspaceStrategyWorktree, ProjectScript, ProjectScriptIcon,
+    };
+    use t3code_web::components::chat::timeline_entries::SetupPhase;
+    use super::live_check_update::element_visible;
+    check.cx.update(|cx| {
+        t3code_web::theme_palette::ThemeSettings::apply_env_overrides(cx);
+        t3code_web::hooks::use_theme::ThemeStore::set_appearance_mode(t3code_web::theme_palette::ThemeMode::Dark, cx);
+    });
+    check.pump(|c| all_connected(c, 1), Duration::from_secs(60), "server connected")?;
+    let environment_id = check
+        .cx
+        .update(|cx| t3code_web::connection::ConnectionRuntime::state(cx).read(cx).environments.first().map(|e| t3code_contracts::EnvironmentId::new(e.entry.environment_id.as_str())))
+        .ok_or_else(|| anyhow::anyhow!("no environment"))?;
+    let project = project_at(check, &environment_id, &std::env::var("T3_PROJECT_ROOT")?)?;
+    let commands = commands_of(check, &environment_id)?;
+    // Servers with folded project settings take setup scripts from their settings
+    // (`resolveProjectScripts`).
+    let script = ProjectScript {
+        id: "setup".into(),
+        name: "Install deps".into(),
+        command: "sleep 45".into(),
+        icon: ProjectScriptIcon::Configure,
+        run_on_worktree_create: true,
+        run_on_settle: None,
+        stop_on_settle: None,
+        r#async: Some(true),
+        preview_url: None,
+        auto_open_preview: None,
+    };
+    let patch: t3code_contracts::ServerUpdateSettingsPayload = serde_json::from_value(serde_json::json!({ "patch": { "defaultProjectScripts": [script] } }))?;
+    let link = check.cx.update(|cx| t3code_web::live::rpc::RpcLink::new(&environment_id, cx)).ok_or_else(|| anyhow::anyhow!("no link"))?;
+    check.block(link.call::<t3code_contracts::rpc::methods::ServerUpdateSettings>(patch))?.map_err(|e| anyhow::anyhow!("{e}"))?;
+    let thread_id = ThreadId::new(uuid::Uuid::new_v4().to_string());
+    let input = OrchestrationV2ThreadLaunchInput {
+        command_id: CommandId::new(uuid::Uuid::new_v4().to_string()),
+        creation_source: None,
+        thread_id: Some(thread_id.clone()),
+        reuse_existing_thread: None,
+        project_id: project,
+        title: "Background setup".into(),
+        generate_title: None,
+        model_selection: ModelSelection { instance_id: "devReplay".into(), model: "showcase".into(), options: None },
+        runtime_mode: RuntimeMode::FullAccess,
+        interaction_mode: ProviderInteractionMode::Default,
+        workspace_strategy: OrchestrationV2ThreadLaunchWorkspaceStrategy::Worktree(OrchestrationV2ThreadLaunchWorkspaceStrategyWorktree {
+            base_ref: "main".into(),
+            branch: Some(format!("t3/bg-{}", &thread_id.as_str()[..8])),
+            start_from_origin: None,
+        }),
+        initial_message: Some(OrchestrationV2ThreadLaunchInputInitialMessage { message_id: None, text: "Walk me through it.".into(), context: None, attachments: Vec::new() }),
+    };
+    let c = commands.clone();
+    check.block(async move { c.launch_thread(input).await })?.map_err(|e| anyhow::anyhow!("{e}"))?;
+    let key = thread_key(&environment_id, &thread_id);
+    let k = key.clone();
+    check.pump(move |c| shell_thread(c, &k).is_some(), Duration::from_secs(20), "the thread reaches the shell")?;
+    check.go(&key);
+    for _ in 0..20 {
+        let state = check.read(|root, cx| {
+            let input = root.thread_view().read(cx).chat().read(cx).timeline().read(cx).input().clone();
+            let setup = input.worktree_setup.as_ref().map(|s| (s.phase, s.agent_started(), s.stages.iter().map(|st| (st.id, st.status)).collect::<Vec<_>>()));
+            format!("setup {setup:?} run {:?}", input.latest_run.as_ref().map(|r| (r.status, r.started_at.is_some())))
+        });
+        check.note(state);
+        if element_visible(check, "background-setup-trigger") {
+            break;
+        }
+        check.wait(Duration::from_millis(500));
+    }
+    check.pump(|c| element_visible(c, "background-setup-trigger"), Duration::from_secs(40), "the working row shows Background setup")?;
+    let setup = check.read(|root, cx| root.thread_view().read(cx).chat().read(cx).timeline().read(cx).input().worktree_setup.clone());
+    check.check(
+        "the server's setup is still running after the agent started",
+        setup.as_ref().is_some_and(|s| s.phase == SetupPhase::Running && s.agent_started()),
+        format!("{:?}", setup.as_ref().map(|s| (s.phase, s.agent_started()))),
+    );
+    check.shot("bg-00-chip.png")?;
+    click(check, "background-setup-trigger")?;
+    check.wait(Duration::from_millis(500));
+    let (details, cancel) = (element_visible(check, "worktree-setup-details"), element_visible(check, "worktree-setup-cancel"));
+    check.check("the chip opens the setup card, without Cancel", details && !cancel, format!("details {details}, cancel {cancel}"));
+    check.shot("bg-01-card.png")?;
+    Ok(())
+}

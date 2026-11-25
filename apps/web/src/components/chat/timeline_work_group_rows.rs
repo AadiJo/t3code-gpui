@@ -3,7 +3,9 @@
 //! as a nested virtual list, the live tool row, "Thinking", "Working for …",
 //! turn and attempt folds, compaction markers and viewed images.
 
+use crate::ActiveAppTheme as _;
 use crate::components::icons::{Icon, IconName, IconSize};
+use crate::i18n::t;
 use crate::components::chat::chat_style::chat_icon_stroke;
 use gpui_kit::{rems, 
     AnyElement, Context, FontWeight, InteractiveElement as _, IntoElement, ParentElement as _, SharedString,
@@ -105,7 +107,7 @@ impl MessagesTimeline {
     }
 
     /// "Working for 1m 23s" under the running turn's prompt.
-    pub(super) fn render_working(&mut self, started_at: Option<Timestamp>, compacting: bool) -> AnyElement {
+    pub(super) fn render_working(&mut self, started_at: Option<Timestamp>, compacting: bool, cx: &mut Context<Self>) -> AnyElement {
         let colors = self.colors;
         let elapsed = started_at.map(|t| format_duration((self.now_millis() - t.0).max(0)));
         let label: SharedString = match (compacting, elapsed) {
@@ -130,9 +132,42 @@ impl MessagesTimeline {
                     .line_height(TEXT_SM_RELAXED.line_height)
                     .text_color(colors.theme.muted_foreground)
                     .children(compacting.then(|| Icon::new(IconName::Minimize2).size(IconSize::Xs).color(colors.theme.muted_foreground)))
-                    .child(label),
+                    .child(label)
+                    .children(self.background_setup_chip(cx)),
             )
             .into_any_element()
+    }
+
+    /// `BackgroundWorktreeSetupChip`: while setup still runs after the agent took over, a chip at
+    /// the row's end opens the setup card (embedded: no Cancel, no Work locally).
+    fn background_setup_chip(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        use super::timeline_entries::SetupPhase;
+        use crate::components::ui::button::{Button, ButtonSize, ButtonVariant};
+        use crate::components::ui::popover::{Popover, PopoverPadding, PopoverSurface, PopoverWidth};
+        use crate::components::ui::spinner::{Spinner, SpinnerSize};
+        let setup = self.input.worktree_setup.as_ref().filter(|setup| {
+            setup.phase == SetupPhase::Running && setup.agent_started() && self.input.latest_run.as_ref().is_some_and(|run| run.started_at.is_some())
+        })?;
+        let setup = super::timeline_entries::WorktreeSetup { embedded: true, ..setup.clone() };
+        let theme = cx.app_theme();
+        let trigger = Button::new("background-setup-trigger")
+            .variant(ButtonVariant::GhostMuted)
+            .size(ButtonSize::Micro)
+            .accessory(
+                div()
+                    .flex()
+                    .min_w_0()
+                    .items_center()
+                    .gap(theme.sp(1.))
+                    .child(Spinner::new(SpinnerSize::Xs))
+                    .child(div().min_w_0().truncate().child(t!("Background setup"))),
+            );
+        let timeline = cx.weak_entity();
+        let popover = Popover::new("background-setup", trigger, move |_, window, cx| {
+            let card = timeline.update(cx, |timeline, cx| timeline.render_worktree_setup(&setup, window, cx)).ok();
+            PopoverSurface::new().width(PopoverWidth::Lg).padding(PopoverPadding::Compact).children(card).into_any_element()
+        });
+        Some(div().ml_auto().min_w_0().flex_none().child(popover).into_any_element())
     }
 
     /// "Worked for 2m 10s", folding a finished turn's work.
