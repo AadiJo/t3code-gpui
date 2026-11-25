@@ -473,6 +473,21 @@ def measure_box(im, el, ref=None):
     return result
 
 
+def is_switch(el):
+    """A switch track (`span[data-slot=switch]`, 28x17 at the owner's 15px root)."""
+    _, _, w, h = el["box"]
+    return el["kind"] == "box" and el["name"].startswith("box span ") and abs(w - 28) < 1 and abs(h - 17) < 1
+
+
+def switch_fill(im, el):
+    """A switch's fill: the track strip between its top edge and the thumb (inset 2px), mid-track.
+    The interior's mode colour is half track, half thumb and flips on a sub-pixel thumb shift."""
+    x, y, w, h = el["box"]
+    mx, Y0 = int((x + w / 2) * SCALE), int(y * SCALE)
+    strip = im[Y0 + 2 : Y0 + 4, mx - 6 : mx + 6]
+    return hexc(mode_colour(strip)) if strip.size else None
+
+
 REF_IMAGE = {}
 
 # ---------------------------------------------------------------- scroll pages
@@ -691,6 +706,9 @@ def compare(port_dir, out_dir, ref_dir=None):
                 rows, cause = judge_text(ref, port)
             else:
                 port = measure_box(im, el, ref)
+                if is_switch(el) and REF_IMAGE["im"] is not None:
+                    ref = dict(ref, fill=switch_fill(REF_IMAGE["im"], el))
+                    port["fill"] = switch_fill(im, el)
                 rows, cause = judge_box(ref, port)
             ok = cause is None
             passed += ok
