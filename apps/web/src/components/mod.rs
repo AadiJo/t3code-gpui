@@ -11,6 +11,7 @@ pub mod command_palette_drag;
 pub mod command_palette_logic;
 pub mod command_palette_lookups;
 pub mod command_palette_port_forward_items;
+pub mod command_palette_project_flow;
 pub mod command_palette_project_items;
 pub mod command_palette_results;
 pub mod command_palette_theme_items;

@@ -67,6 +67,8 @@ pub enum AddProjectStep {
     ConnectEnvironment,
     BrowseFolders(EnvironmentId),
     CloneRepository(EnvironmentId),
+    /// "New project" on an environment's Sources page.
+    NewProject(EnvironmentId),
 }
 
 /// A port forwarding request from the Forwarded ports page.
@@ -94,6 +96,12 @@ pub enum PaletteRun {
 pub enum PaletteTrailing {
     /// "Current", for the theme or mode in use.
     Current,
+    /// A check mark: the environment a new project goes to.
+    Check,
+    /// A checkbox, checked or not ("Create private repository").
+    Checkbox(bool),
+    /// A chevron on an action that opens another page in place ("Add existing project").
+    Chevron,
     /// Theme preview circles, optionally after "Current".
     Swatches { current: bool, colors: Vec<(crate::theme_palette::Appearance, super::settings::theme_sphere::SphereColors)> },
 }

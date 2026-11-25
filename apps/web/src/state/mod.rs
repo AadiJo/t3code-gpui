@@ -14,6 +14,7 @@
 //! (A timer between updates would cap them further, but GPUI timers do not fire under the
 //! headless dispatcher the end-to-end checks run on.)
 
+pub mod add_project;
 pub mod app_data;
 pub mod attachments;
 pub mod composer;

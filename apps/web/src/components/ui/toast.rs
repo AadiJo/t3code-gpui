@@ -268,6 +268,16 @@ impl Toaster {
         Self::view(cx).read(cx).toasts.iter().map(|(_, toast)| toast.title.clone()).collect()
     }
 
+    /// Replaces a shown toast's content in place (`toastManager.update`); `false` when it is gone.
+    pub fn update(id: u64, data: ToastData, cx: &mut App) -> bool {
+        Self::view(cx).update(cx, |toaster, cx| {
+            let Some((_, toast)) = toaster.toasts.iter_mut().find(|(toast, _)| *toast == id) else { return false };
+            *toast = data;
+            cx.notify();
+            true
+        })
+    }
+
     pub fn dismiss(id: u64, cx: &mut App) {
         Self::view(cx).update(cx, |toaster, cx| toaster.remove(id, cx));
     }

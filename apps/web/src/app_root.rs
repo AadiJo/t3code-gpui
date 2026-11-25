@@ -450,6 +450,13 @@ impl AppRoot {
         };
         let route = this.router.read(cx).current().clone();
         this.apply_route(route, window, cx);
+        let weak = cx.weak_entity();
+        crate::state::add_project::set_project_opener(
+            std::rc::Rc::new(move |project, window, cx| {
+                weak.update(cx, |this, cx| this.new_thread(Some(project), window, cx)).ok();
+            }),
+            cx,
+        );
         this
     }
 
@@ -1242,9 +1249,14 @@ impl AppRoot {
                 }
             }
             PaletteEvent::ShareWithGuest | PaletteEvent::UseInAnotherApp => return self.not_built_yet(t!("Sharing"), "sharing", cx),
-            PaletteEvent::NewProject => return self.not_built_yet(t!("New project"), "palette views", cx),
-            PaletteEvent::AddProject(AddProjectStep::BrowseFolders(_)) => return self.not_built_yet(t!("Local folder"), "palette views", cx),
-            PaletteEvent::AddProject(AddProjectStep::CloneRepository(_)) => return self.not_built_yet(t!("Git URL"), "palette views", cx),
+            // Raised outside an open palette: open it on that flow's page.
+            PaletteEvent::NewProject | PaletteEvent::AddProject(_) => {
+                let Some(palette) = self.palette.as_ref().and_then(WeakEntity::upgrade) else { return Wiring::Ran };
+                let opened = palette.update(cx, |palette, cx| palette.open_project_flow(event, window, cx));
+                if !opened {
+                    return self.not_built_yet(t!("Add project"), "palette views", cx);
+                }
+            }
         }
         Wiring::Ran
     }

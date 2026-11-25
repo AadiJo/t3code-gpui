@@ -266,6 +266,7 @@ fn main() -> anyhow::Result<()> {
         PaletteEvent::AddProject(AddProjectStep::ConnectEnvironment),
         PaletteEvent::AddProject(AddProjectStep::BrowseFolders(environment.clone())),
         PaletteEvent::AddProject(AddProjectStep::CloneRepository(environment.clone())),
+        PaletteEvent::AddProject(AddProjectStep::NewProject(environment.clone())),
         PaletteEvent::OpenPullRequests,
         PaletteEvent::OpenIssues,
         PaletteEvent::UseInAnotherApp,

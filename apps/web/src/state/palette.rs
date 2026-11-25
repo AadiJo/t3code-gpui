@@ -287,6 +287,10 @@ impl CommandPaletteSource for LivePaletteSource {
         self.data.borrow().active_has_links
     }
 
+    fn project_flows(&self) -> Option<Rc<dyn crate::components::command_palette_project_flow::ProjectFlowBackend>> {
+        Some(Rc::new(super::add_project::LiveProjectFlows))
+    }
+
     fn now_ms(&self) -> i64 {
         self.data.borrow().now_ms
     }

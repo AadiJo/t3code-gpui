@@ -95,6 +95,7 @@ mod live_check_heap;
 mod live_check_linked;
 mod live_check_memory;
 mod live_check_palette;
+mod live_check_projects;
 mod live_check_setup;
 mod live_check_settings;
 mod live_check_usage;
@@ -585,6 +586,7 @@ fn main() -> anyhow::Result<()> {
         "usage-limits" => live_check_usage::run_usage_limits(&mut check),
         "linked-items" => live_check_linked::run_linked_items(&mut check),
         "palette" => live_check_palette::run_palette(&mut check),
+        "add-project" => live_check_projects::run_add_project(&mut check),
         "wiring" => live_check_commands::run_commands(&mut check),
         "setup" => live_check_setup::run_setup(&mut check),
         "draft-banner" => live_check_setup::run_draft_banner(&mut check),
