@@ -742,6 +742,35 @@ impl AppData for LiveData {
                     thread.update(cx, |thread, cx| thread.load_earlier(cx)).detach();
                 }
             }
+            TimelineAction::FindEarlier { query, loaded } => {
+                // The server's search lists every entry with a match in timeline order; the
+                // nearest one above the loaded window is paged through (`throughEntryId`).
+                let (environment_id, thread_id) = runtime_ids(key);
+                let (Some(link), Some(thread)) = (rpc::RpcLink::new(&environment_id, cx), self.active(key, cx)) else { return ActionOutcome::Done };
+                let call = link.call::<t3code_contracts::rpc::methods::OrchestrationSearchThread>(t3code_contracts::OrchestrationV2SearchThreadInput {
+                    thread_id,
+                    theme: None,
+                    skills: None,
+                    query: query.to_string(),
+                    index: None,
+                    offset: None,
+                    start: None,
+                });
+                let thread = thread.downgrade();
+                let loaded = loaded.clone();
+                cx.spawn(async move |cx| {
+                    let navigation = match call.await {
+                        Ok(result) => result.navigation.unwrap_or_default(),
+                        Err(error) => return tracing::warn!(%error, "searching the thread failed"),
+                    };
+                    let Some(entry) = navigation.into_iter().rev().find(|e| !loaded.iter().any(|id| id.as_ref() == e.entry_id)) else { return };
+                    let task = thread.update(cx, |thread, cx| thread.load_through(entry.entry_id, cx)).ok();
+                    if let Some(task) = task {
+                        task.await;
+                    }
+                })
+                .detach();
+            }
             // The route view handles these itself.
             TimelineAction::OpenDiff { .. }
             | TimelineAction::OpenImage { .. }
