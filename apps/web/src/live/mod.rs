@@ -872,6 +872,19 @@ impl AppData for LiveData {
         diff::load(self, target, selection, cx)
     }
 
+    fn diff_file_contents(
+        &self,
+        target: &ThreadTarget,
+        input: t3code_contracts::ReviewDiffFileContentsInput,
+        cx: &mut App,
+    ) -> Task<Result<t3code_contracts::ReviewDiffFileContentsResult, SharedString>> {
+        diff::file_contents(target, input, cx)
+    }
+
+    fn open_file_in_preview(&self, target: &ThreadTarget, absolute_path: String, cx: &mut App) -> Task<Result<SharedString, SharedString>> {
+        workspace::open_file_in_preview(target, absolute_path, cx)
+    }
+
     fn workspace(&self, target: &ThreadTarget, cx: &mut App) -> Option<Workspace> {
         let view = self.thread_view(target, cx)?;
         let project = view.project_id.as_ref()?;

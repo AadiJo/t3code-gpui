@@ -552,6 +552,34 @@ impl ThreadRouteView {
         window.focus(&self.composer.focus_handle(cx), cx);
     }
 
+    /// Places a review comment's chip at the composer's caret, once (`addReviewComment`). The
+    /// draft keeps the comment through the chip (`pull_request_mentions::comments_in`).
+    pub fn add_review_comment(&mut self, chip: &str, cx: &mut Context<Self>) {
+        let editor = self.composer.read(cx).editor().clone();
+        editor.update(cx, |editor, cx| {
+            let target = chip.rsplit_once("](").map_or(chip, |(_, link)| link);
+            if !editor.text().contains(target) {
+                editor.insert(&format!("{chip} "), cx);
+            }
+        });
+    }
+
+    /// Takes a deleted review comment's chip out of the composer (`removeReviewComment`).
+    pub fn remove_review_comment(&mut self, context_id: &str, cx: &mut Context<Self>) {
+        let editor = self.composer.read(cx).editor().clone();
+        editor.update(cx, |editor, cx| {
+            let text = editor.text().to_owned();
+            let link = format!("(t3-context://v1/review-comment/{context_id})");
+            let Some(link_at) = text.find(&link) else { return };
+            let Some(start) = text[..link_at].rfind('[') else { return };
+            let mut end = link_at + link.len();
+            if text[end..].starts_with(' ') {
+                end += 1;
+            }
+            editor.replace_range(start..end, "", cx);
+        });
+    }
+
     /// Adds a reference chip to the composer without moving focus (`addThreadContexts` with
     /// `insertAtCaret: false`), unless it is already there.
     pub fn append_reference(&mut self, text: &str, cx: &mut Context<Self>) {

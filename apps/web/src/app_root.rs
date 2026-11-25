@@ -410,6 +410,8 @@ impl AppRoot {
                 RightPanelEvent::AddThreadContext(text) => {
                     this.thread_view.update(cx, |view, cx| view.append_reference(text, cx));
                 }
+                RightPanelEvent::AddReviewComment(chip) => this.thread_view.update(cx, |view, cx| view.add_review_comment(chip, cx)),
+                RightPanelEvent::RemoveReviewComment(id) => this.thread_view.update(cx, |view, cx| view.remove_review_comment(id, cx)),
             }),
             cx.observe_global_in::<TerminalUiStateStore>(window, |this, window, cx| this.panels_changed(window, cx)),
             cx.observe_window_activation(window, |this, window, cx| {
