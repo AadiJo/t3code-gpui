@@ -24,6 +24,7 @@ pub mod composer_code_block;
 pub mod composer_code_languages;
 pub mod composer_code_theme;
 pub mod composer_draft_store;
+pub mod prompt_stash_store;
 pub mod composer_editor_mentions;
 pub mod composer_list_continuation;
 pub mod composer_logic;

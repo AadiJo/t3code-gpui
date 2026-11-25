@@ -93,6 +93,7 @@
 #[path = "import/mod.rs"]
 mod import;
 mod live_check_commands;
+mod live_check_composer_actions;
 mod live_check_families;
 mod live_check_heap;
 mod live_check_linked;
@@ -600,6 +601,9 @@ fn main() -> anyhow::Result<()> {
         "breadcrumb" => run_breadcrumb(&mut check),
         "settings" => live_check_settings::run_settings(&mut check),
         "server-update" => live_check_update::run_server_update(&mut check),
+        "composer-actions" => live_check_composer_actions::run_composer_actions(&mut check),
+        "stash" => live_check_composer_actions::run_stash(&mut check),
+        "env-banner" => live_check_composer_actions::run_env_banner(&mut check),
         other => Err(anyhow::anyhow!("unknown phase {other}")),
     };
     check.finish(&phase, result)

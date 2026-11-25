@@ -36,7 +36,7 @@ use crate::components::sidebar::model::ThreadKey;
 use crate::components::ui::toast::{ToastData, ToastKind, Toaster};
 use crate::composer_draft_store::{ComposerAttachment, ComposerAttachmentKind, ComposerDraft, ComposerDraftKey, ComposerDraftStore};
 use crate::composer_editor_mentions::serialize_file_link;
-use crate::composer_logic::{ComposerTrigger, ComposerTriggerKind, SendShortcut};
+use crate::composer_logic::{ComposerSubmissionIntent, ComposerTrigger, ComposerTriggerKind, SendShortcut};
 use crate::i18n::t;
 use crate::model_selection::{ModelCatalog, ModelSelection};
 use crate::provider_models_live::{from_wire, model_catalog, to_wire};
@@ -155,6 +155,7 @@ pub fn composer_state(key: &ThreadKey, row: Option<&ThreadRow>, thread: &LiveThr
             title: t!("Your next message starts a fresh session"),
             description: Some(t!("The agent won't see earlier messages in this thread.")),
             action: Some(t!("Keep the current session")),
+            secondary_action: None,
             dismiss: None,
             body: None,
         }]
@@ -370,7 +371,7 @@ pub fn handle_event(event: &ComposerEvent, thread: &Entity<LiveThread>, composer
     let drafts = StateBridge::drafts(cx);
     let draft_key_text = draft_key(&key).0.to_string();
     match event {
-        ComposerEvent::Submit { prompt, attachments, model, dispatch, .. } => {
+        ComposerEvent::Submit { prompt, attachments, model, dispatch, intent } => {
             // Sending resumes quota-spending work (`clearUsageLimitsFor`).
             UsagePanels::clear(&key, cx);
             let mode = match dispatch {
@@ -383,6 +384,14 @@ pub fn handle_event(event: &ComposerEvent, thread: &Entity<LiveThread>, composer
             let thread_mode = StateBridge::shell(cx).read(cx).row(&key).map(|row| row.source.runtime_mode);
             let set_mode = draft_mode.filter(|mode| Some(*mode) != thread_mode);
             send_turn(SendInput { key: key.clone(), thread: thread.clone(), prompt, attachments, model, mode, fresh, set_mode }, commands, config, cx);
+            // `composer.sendAndNewThread`: the message goes, then a new draft opens in this project.
+            if *intent == ComposerSubmissionIntent::Background {
+                let project = StateBridge::shell(cx).read(cx).row(&key).map(|row| crate::components::sidebar::model::ProjectRef {
+                    environment_id: key.environment_id.clone(),
+                    project_id: crate::components::sidebar::model::ProjectId(row.source.project_id.to_string().into()),
+                });
+                super::open_new_thread(project, cx);
+            }
             drafts.update(|d| {
                 if let Some(draft) = d.drafts_by_thread_key.get_mut(&draft_key_text) {
                     draft.runtime_mode = None;
@@ -404,6 +413,7 @@ pub fn handle_event(event: &ComposerEvent, thread: &Entity<LiveThread>, composer
             }
         }
         ComposerEvent::BannerAction(id) if id.as_ref() == FRESH_SESSION_BANNER => FreshSessionArms::set(&key, false, cx),
+        ComposerEvent::BannerAction(id) if id.starts_with(ENVIRONMENT_UNAVAILABLE_BANNER) => environment_banner_action(id, cx),
         ComposerEvent::UsageLimits => {
             let Some(composer) = composer.upgrade() else { return EventOutcome::Done };
             let instance = composer.read(cx).state().selection.instance_id.0.to_string();
@@ -474,6 +484,7 @@ pub fn handle_event(event: &ComposerEvent, thread: &Entity<LiveThread>, composer
         ComposerEvent::AttachmentRemoved(context_id) => super::attachments::AttachmentUploads::release(context_id, cx),
         ComposerEvent::FavoriteToggled { instance_id, model } => super::favorites::toggle(&environment_id, instance_id, model, cx),
         ComposerEvent::AttachRequested => pick_files(composer, cx),
+        ComposerEvent::ReleaseStashedFiles(files) => release_stashed_files(files, cx),
         _ => {}
     }
     EventOutcome::Done
@@ -1630,6 +1641,7 @@ pub fn usage_limits_banner(panel: &UsagePanel, report: &t3code_shared::usage_lim
         title: t!("Usage limits"),
         description,
         action: None,
+        secondary_action: None,
         dismiss: Some(t!("Dismiss usage limits")),
         body: Some(Arc::new(UsageLimitsBody { accounts, notices: report.notices.iter().cloned().map(SharedString::from).collect() })),
     }
@@ -1715,4 +1727,157 @@ fn redeem_reset_credit(key: &ThreadKey, account: &SharedString, choice: &crate::
         })
     })
     .detach();
+}
+
+/// Deletes the uploads of stashed files that left the stash unrestored, on each file's own server
+/// (`releasePersistedAttachmentUpload`).
+pub fn release_stashed_files(files: &[crate::prompt_stash_store::StashedFile], cx: &mut App) {
+    for file in files {
+        let environment_id = t3code_contracts::EnvironmentId::new(file.environment_id.as_str());
+        let Some(environment) = StateBridge::environment(&environment_id, cx) else { continue };
+        let commands = environment.read(cx).commands.clone();
+        let attachment_id = file.attachment_id.clone();
+        StateBridge::spawn(async move { commands.delete_attachment(attachment_id).await }, cx).detach();
+    }
+}
+
+/// The machine banner's id prefix (`environment-unavailable:<id>`).
+const ENVIRONMENT_UNAVAILABLE_BANNER: &str = "environment-unavailable:";
+/// A reconnect shows its banner only after this long (`ENVIRONMENT_RECONNECT_WARNING_GRACE_MS`).
+const RECONNECT_WARNING_GRACE: std::time::Duration = std::time::Duration::from_millis(2_000);
+/// "Disconnect server" appears once the machine stayed unavailable this long (`DISCONNECT_DELAY_MS`).
+const DISCONNECT_DELAY: std::time::Duration = std::time::Duration::from_secs(20);
+
+/// When each machine entered its current unavailable state (and the reconnect it is in), so the
+/// grace and disconnect delays restart with each change (`useEnvironmentStateHeldFor`).
+#[derive(Default)]
+struct HeldStates {
+    unavailable: HashMap<String, std::time::Instant>,
+    reconnecting: HashMap<String, std::time::Instant>,
+    /// The thread the composer last asked about, refreshed when a connection changes.
+    shown: Option<ThreadKey>,
+    observing: bool,
+}
+
+impl gpui_kit::Global for HeldStates {}
+
+/// The composer banners about the thread's machine (`useSystemComposerBanners`): offline,
+/// reconnecting (after a 2 s grace) or waiting for this device's approval, with Reconnect or
+/// Retry now and, after 20 s, Disconnect server. The server update and auto-balance banners
+/// come from the server update work and are not built here.
+pub fn system_banners(key: &ThreadKey, cx: &mut App) -> Vec<ComposerBanner> {
+    use crate::connection::presentation::{PresentedPhase, diagnose, present_phase};
+    let state = crate::connection::ConnectionRuntime::state(cx);
+    watch_connections(key, &state, cx);
+    let environment_id = key.environment_id.0.to_string();
+    let Some(environment) = state.read(cx).environments.iter().find(|e| e.id().as_str() == environment_id).cloned() else {
+        return Vec::new();
+    };
+    let phase = present_phase(&environment);
+    let now = std::time::Instant::now();
+    let held = cx.default_global::<HeldStates>();
+    if phase == PresentedPhase::Connected {
+        held.unavailable.remove(&environment_id);
+        held.reconnecting.remove(&environment_id);
+        return Vec::new();
+    }
+    let unavailable_since = *held.unavailable.entry(environment_id.clone()).or_insert(now);
+    let reconnecting = matches!(phase, PresentedPhase::Connecting | PresentedPhase::Reconnecting);
+    let reconnect_since = if reconnecting {
+        Some(*held.reconnecting.entry(environment_id.clone()).or_insert(now))
+    } else {
+        held.reconnecting.remove(&environment_id);
+        None
+    };
+    let awaiting = phase == PresentedPhase::AwaitingApproval;
+    let grace_left = reconnect_since.map(|since| RECONNECT_WARNING_GRACE.saturating_sub(now - since)).filter(|left| !left.is_zero());
+    let disconnect_left = DISCONNECT_DELAY.saturating_sub(now - unavailable_since);
+    for left in grace_left.into_iter().chain((!disconnect_left.is_zero()).then_some(disconnect_left)) {
+        refresh_after(key.clone(), left, cx);
+    }
+    if reconnecting && grace_left.is_some() {
+        return Vec::new();
+    }
+    let label = environment.entry.label.clone();
+    let title = if awaiting {
+        t!("{environment} is waiting to approve this device", environment = label)
+    } else if reconnecting {
+        t!("{environment} is reconnecting", environment = label)
+    } else {
+        t!("{environment} is offline", environment = label)
+    };
+    let error = environment.status.as_ref().and_then(|s| s.last_failure.as_ref()).map(|f| SharedString::from(f.detail.clone()));
+    let description = if awaiting { error } else { diagnose(&environment).map(|d| d.headline) };
+    // `connecting` has no button; a retry while reconnecting reads "Retry now".
+    let action = (phase != PresentedPhase::Connecting).then(|| if reconnecting { t!("Retry now") } else { t!("Reconnect") });
+    vec![ComposerBanner {
+        id: format!("{ENVIRONMENT_UNAVAILABLE_BANNER}{environment_id}").into(),
+        tone: if phase == PresentedPhase::Error { BannerTone::Error } else { BannerTone::Warning },
+        icon: IconName::WifiOff,
+        title,
+        description,
+        action,
+        secondary_action: disconnect_left.is_zero().then(|| t!("Disconnect server")),
+        dismiss: None,
+        body: None,
+    }]
+}
+
+/// Re-reads the shown thread's composer once a delay ends.
+fn refresh_after(key: ThreadKey, delay: std::time::Duration, cx: &mut App) {
+    cx.spawn(async move |cx| {
+        cx.background_executor().timer(delay).await;
+        cx.update(|cx| refresh_thread(&key, cx));
+    })
+    .detach();
+}
+
+/// A connection change re-reads the shown thread's composer, so its banner follows the machine.
+fn watch_connections(key: &ThreadKey, state: &gpui_kit::Entity<crate::connection::ConnectionsState>, cx: &mut App) {
+    let held = cx.default_global::<HeldStates>();
+    held.shown = Some(key.clone());
+    if held.observing {
+        return;
+    }
+    held.observing = true;
+    cx.observe(state, |_, cx| {
+        if let Some(key) = cx.try_global::<HeldStates>().and_then(|h| h.shown.clone()) {
+            refresh_thread(&key, cx);
+        }
+    })
+    .detach();
+}
+
+/// The machine banner's buttons: Reconnect / Retry now (a switched-off machine is switched on),
+/// and Disconnect server, which switches it off (`setEnabled(false)`).
+fn environment_banner_action(id: &str, cx: &mut App) {
+    let rest = &id[ENVIRONMENT_UNAVAILABLE_BANNER.len()..];
+    let (environment, disconnect) = match rest.strip_suffix("#secondary") {
+        Some(environment) => (environment, true),
+        None => (rest, false),
+    };
+    let runtime = crate::connection::ConnectionRuntime::global(cx);
+    let environment_id = t3code_client_runtime::environment::EnvironmentId::new(environment);
+    let enabled = crate::connection::ConnectionRuntime::state(cx)
+        .read(cx)
+        .environments
+        .iter()
+        .find(|e| e.id() == &environment_id)
+        .is_some_and(|e| e.entry.enabled);
+    let (title, task) = if disconnect {
+        (t!("Could not disconnect server"), Some(runtime.set_enabled(environment_id, false, cx)))
+    } else if !enabled {
+        (t!("Could not reconnect environment"), Some(runtime.set_enabled(environment_id, true, cx)))
+    } else {
+        runtime.retry(&environment_id);
+        (SharedString::default(), None)
+    };
+    if let Some(task) = task {
+        cx.spawn(async move |cx| {
+            if let Err(error) = task.await {
+                cx.update(|cx| Toaster::push(ToastData::new(ToastKind::Error, title).description(error.0), cx));
+            }
+        })
+        .detach();
+    }
 }

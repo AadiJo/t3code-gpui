@@ -38,6 +38,9 @@ pub const FOOTER_COMPACT_BREAKPOINT: Pixels = px(620.);
 pub const DRAWER_INSET: Pixels = px(22.);
 /// How far an attached surface overlaps the card's top: `1rem + 1px`.
 pub const ATTACHMENT_OVERLAP: Pixels = px(17.);
+/// An attached card's outline. The web draws it inside the box (a `before` layer) and GPUI
+/// outside the padding, so card paddings subtract it to keep content where the web has it.
+pub const BORDER: Pixels = px(1.);
 /// Model picker body height `h-80`.
 pub const MODEL_PICKER_HEIGHT: Pixels = px(320.);
 /// Model list column including the rail `max-w-90`.

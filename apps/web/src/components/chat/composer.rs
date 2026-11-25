@@ -31,7 +31,7 @@ use crate::components::chat::composer_icons::{composer_icon_stroke, provider_ico
 use crate::components::chat::composer_permissions::{RuntimeMode, runtime_mode_icon};
 use crate::components::chat::composer_prompt_history::{PromptHistoryEntry, PromptHistoryPosition, step_prompt_history};
 use crate::components::chat::composer_theme::{
-    ATTACHMENT_OVERLAP, BODY_PADDING_BOTTOM, BODY_PADDING_TOP, BODY_PADDING_X, COMPOSER_MAX_WIDTH, CONTROL_HEIGHT,
+    ATTACHMENT_OVERLAP, BODY_PADDING_BOTTOM, BORDER, BODY_PADDING_TOP, BODY_PADDING_X, COMPOSER_MAX_WIDTH, CONTROL_HEIGHT,
     CONTROL_RADIUS, ComposerColors, DRAWER_INSET, FOOTER_COMPACT_BREAKPOINT, FOOTER_PADDING_BOTTOM, FOOTER_PADDING_X,
     ICON_ACTION_RADIUS, SURFACE_RADIUS, ui_font_family,
 };
@@ -109,6 +109,8 @@ pub struct ComposerBanner {
     /// Muted text after the title, truncated first (`ComposerBannerStackItem.description`).
     pub description: Option<SharedString>,
     pub action: Option<SharedString>,
+    /// A second action after `action`; its click raises `BannerAction("<id>#secondary")`.
+    pub secondary_action: Option<SharedString>,
     /// Shows the dismiss button (`ComposerBanner.Dismiss`) with this accessible label.
     pub dismiss: Option<SharedString>,
     /// Drawn under the row (`ComposerBannerStackItem.children`).
@@ -199,6 +201,8 @@ pub enum ComposerEvent {
     /// The limits banner's confirmed reset credit, for an account of its report.
     RedeemResetCredit { account: SharedString, choice: crate::components::usage::usage_limits::ResetCreditChoice },
     OpenUrl(SharedString),
+    /// Stashed files leaving the stash unrestored (deleted or evicted): delete their uploads.
+    ReleaseStashedFiles(Vec<crate::prompt_stash_store::StashedFile>),
 }
 
 /// A control in the context strip.
@@ -213,9 +217,9 @@ pub enum ContextStripControl {
 pub struct ChatComposer {
     editor: Entity<ComposerPromptEditor>,
     state: ComposerState,
-    attachments: Vec<ComposerAttachment>,
+    pub(super) attachments: Vec<ComposerAttachment>,
     /// HEIC photos converting off the UI thread, by draft; each holds an attachment slot.
-    converting: Vec<ComposerDraftKey>,
+    pub(super) converting: Vec<ComposerDraftKey>,
     picker: Option<(Entity<ModelPicker>, Subscription)>,
     menu: Option<ComposerMenuState>,
     dismissed_trigger: Option<Range<usize>>,
@@ -231,6 +235,18 @@ pub struct ChatComposer {
     pub(super) usage_revealed: std::collections::HashSet<SharedString>,
     /// The reset credit awaiting confirmation, by account.
     pub(super) usage_confirming: Option<(SharedString, crate::components::usage::usage_limits::ResetCreditChoice)>,
+    /// The branch strip under the card: the host, workspace and branch shortcuts open its menus.
+    context_controls: Option<gpui_kit::WeakEntity<crate::components::branch_toolbar::BranchToolbar>>,
+    /// The permissions chip's menu is open, with the mode a hover previews.
+    permissions_menu: Option<Option<RuntimeMode>>,
+    /// The command whose chord is down: a held key repeats it, and the fork ignores repeats.
+    held_command: Option<std::any::TypeId>,
+    /// The last frame moved the permissions chip into the overflow button.
+    chip_hidden: bool,
+    /// Pages the timeline when Page Up/Down reach the prompt's edge.
+    page_scroller: Option<super::composer_page_scroll::PageScroller>,
+    /// The stash drawer is open on this row (`isStashMenuOpen`).
+    pub(super) stash_menu: Option<usize>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -273,6 +289,12 @@ impl ChatComposer {
             footer_width: COMPOSER_MAX_WIDTH,
             usage_revealed: Default::default(),
             usage_confirming: None,
+            context_controls: None,
+            permissions_menu: None,
+            held_command: None,
+            chip_hidden: false,
+            page_scroller: None,
+            stash_menu: None,
             _subscriptions: vec![subscription, settings],
         };
         this.load_draft(cx);
@@ -333,6 +355,11 @@ impl ChatComposer {
             picker.update(cx, |p, cx| p.update_state(catalog, selection, mode, cx));
         }
         self.sync_editor(cx);
+        // An open menu re-reads its source: provider commands or a model change may have
+        // arrived after it opened.
+        if self.menu.is_some() && !switched {
+            self.refresh_menu(cx);
+        }
         cx.notify();
     }
 
@@ -376,6 +403,11 @@ impl ChatComposer {
         ComposerDraft { prompt: self.editor.read(cx).text().to_owned(), attachments: self.attachments.clone(), model: None }
     }
 
+    /// Writes the draft now (a stash or restore changed it wholesale).
+    pub(super) fn save_stashed_draft(&mut self, cx: &mut Context<Self>) {
+        self.save_draft_now(cx);
+    }
+
     fn save_draft_now(&mut self, cx: &mut Context<Self>) {
         self.save_task = None;
         let draft = self.current_draft(cx);
@@ -399,19 +431,28 @@ impl ChatComposer {
                 if self.history_position.as_ref().is_some_and(|p| p.recalled != text) {
                     self.history_position = None;
                 }
+                // The stash closes when the prompt changes (`stashMenuClosesOn`).
+                self.stash_menu = None;
                 self.refresh_menu(cx);
                 self.schedule_save(cx);
                 cx.notify();
             }
             ComposerEditorEvent::SelectionChanged => self.refresh_menu(cx),
             ComposerEditorEvent::Submit(intent) => self.submit(*intent, cx),
-            ComposerEditorEvent::Tab | ComposerEditorEvent::FocusChanged(_) => {}
+            ComposerEditorEvent::Tab => {}
+            // A press whose key-up landed elsewhere (the branch picker took focus) is over.
+            ComposerEditorEvent::FocusChanged(_) => self.held_command = None,
             ComposerEditorEvent::Escape => {
                 if self.menu.is_some() {
                     self.dismiss_menu(cx);
                 }
             }
-            ComposerEditorEvent::PageScroll { down } => cx.emit(ComposerEvent::PageScroll { down: *down }),
+            ComposerEditorEvent::PageScroll { down } => {
+                let paged = self.page_scroller.as_mut().is_some_and(|s| s.press(*down, cx));
+                if !paged {
+                    cx.emit(ComposerEvent::PageScroll { down: *down });
+                }
+            }
             ComposerEditorEvent::Attach(content) => self.attach(content.clone(), cx),
         }
     }
@@ -453,6 +494,7 @@ impl ChatComposer {
         let active = self.menu.as_ref().filter(|m| m.trigger.range.start == trigger.range.start).map_or(0, |m| m.active);
         let empty = self.menu_source.empty_text(&trigger);
         self.menu = Some(ComposerMenuState { active: active.min(items.len().saturating_sub(1)), trigger, items: Arc::new(items), loading, empty });
+        self.stash_menu = None;
         cx.notify();
     }
 
@@ -780,9 +822,184 @@ impl ChatComposer {
         cx.notify();
     }
 
+    // ---- Shortcut commands (`composer.*`) ----
+
+    /// Hands the composer the branch strip drawn under it, whose menus the host, workspace and
+    /// branch shortcuts open.
+    pub fn set_context_controls(&mut self, strip: Option<gpui_kit::WeakEntity<crate::components::branch_toolbar::BranchToolbar>>) {
+        self.context_controls = strip;
+    }
+
+    /// The timeline Page Up/Down scroll once the prompt cannot (`onPageScrollKeyDown`).
+    pub fn set_page_target(&mut self, timeline: gpui_kit::WeakEntity<super::messages_timeline::MessagesTimeline>) {
+        self.page_scroller = Some(super::composer_page_scroll::PageScroller::new(timeline));
+    }
+
+    fn with_strip<R>(&self, cx: &mut Context<Self>, f: impl FnOnce(&mut crate::components::branch_toolbar::BranchToolbar, &mut Context<crate::components::branch_toolbar::BranchToolbar>) -> R) -> Option<R> {
+        self.context_controls.as_ref()?.upgrade().map(|strip| strip.update(cx, f))
+    }
+
+    /// `composer.host`: opens the machine menu. False when the strip shows no machine picker.
+    pub fn open_host(&mut self, cx: &mut Context<Self>) -> bool {
+        self.with_strip(cx, |strip, cx| strip.open_host_menu(cx)).unwrap_or(false)
+    }
+
+    /// `composer.cycleHost`: moves a draft to its project's next machine.
+    pub fn cycle_host(&mut self, cx: &mut Context<Self>) -> bool {
+        self.with_strip(cx, |strip, cx| strip.cycle_environment(cx)).unwrap_or(false)
+    }
+
+    /// `composer.workspace`: opens the workspace menu.
+    pub fn open_workspace(&mut self, cx: &mut Context<Self>) -> bool {
+        self.with_strip(cx, |strip, cx| strip.open_workspace_menu(cx)).unwrap_or(false)
+    }
+
+    /// `composer.branch`: opens the branch picker.
+    pub fn open_branch(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        let Some(strip) = self.context_controls.as_ref().and_then(|s| s.upgrade()) else { return false };
+        strip.update(cx, |strip, cx| strip.open_branch_menu(window, cx))
+    }
+
+    /// `composer.previousWorktree`: a draft takes the project's previous worktree, then the
+    /// composer keeps focus (`onComposerFocusRequest`).
+    pub fn use_previous_worktree(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        let used = self.with_strip(cx, |strip, cx| strip.use_previous_worktree(cx)).unwrap_or(false);
+        if used {
+            window.focus(&self.editor.focus_handle(cx), cx);
+        }
+        used
+    }
+
+    /// `composer.effort`: opens the model picker with the keyboard on the selected effort level;
+    /// an open picker moves there instead of closing.
+    pub fn open_effort(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.picker.is_none() {
+            self.open_picker(window, cx);
+        }
+        if let Some((picker, _)) = &self.picker {
+            picker.update(cx, |p, cx| p.focus_effort(cx));
+        }
+    }
+
+    /// `composer.mode`: opens the permissions chip's menu, or, while the chip is hidden, the
+    /// model picker's permissions menu (`pickerOwnsModeShortcut`).
+    pub fn open_mode(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let chip_shown = self.state.runtime_mode != self.state.default_runtime_mode && !self.chip_hidden;
+        if chip_shown {
+            self.close_picker(window, cx);
+            self.permissions_menu = Some(None);
+            return cx.notify();
+        }
+        if self.picker.is_none() {
+            self.open_picker(window, cx);
+        }
+        if let Some((picker, _)) = &self.picker {
+            picker.update(cx, |p, cx| p.open_permissions(cx));
+        }
+    }
+
+    /// `composer.increaseEffort` / `composer.decreaseEffort`: the next effort level in catalog
+    /// order, wrapping (`getReasoningTraitStep`). False when the model has under two levels.
+    pub fn step_effort(&mut self, direction: EffortStep, cx: &mut Context<Self>) -> bool {
+        let selection = &self.state.selection;
+        let Some(descriptor) = self.state.catalog.model(&selection.instance_id, &selection.model).and_then(|m| m.effort.as_ref()) else {
+            return false;
+        };
+        let Some(next) = next_effort(&descriptor.options, selection.effort.as_deref(), direction) else { return false };
+        self.state.selection.effort = Some(next);
+        cx.emit(ComposerEvent::ModelChanged(self.state.selection.clone()));
+        if let Some((picker, _)) = &self.picker {
+            let (c, s, m) = (self.state.catalog.clone(), self.state.selection.clone(), self.state.runtime_mode);
+            picker.update(cx, |p, cx| p.update_state(c, s, m, cx));
+        }
+        cx.notify();
+        true
+    }
+
+    /// `composer.dictation`: starts dictation. With no transcription destination ready the fork
+    /// leaves the key alone, so this returns false and the key falls through.
+    pub fn toggle_dictation(&mut self, cx: &mut Context<Self>) -> bool {
+        if !self.state.voice_available || self.state.project_required {
+            return false;
+        }
+        cx.emit(ComposerEvent::VoiceRequested);
+        true
+    }
+
+    /// Runs a command once per press: a held chord repeats the action, which the fork ignores.
+    fn once<A: gpui_kit::Action>(&mut self, cx: &mut Context<Self>, run: impl FnOnce(&mut Self, &mut Context<Self>) -> bool) {
+        let id = std::any::TypeId::of::<A>();
+        if self.held_command == Some(id) {
+            return;
+        }
+        if run(self, cx) {
+            self.held_command = Some(id);
+        } else {
+            cx.propagate();
+        }
+    }
+
+    /// Registers the `composer.*` commands on the composer's key context.
+    fn command_handlers(&self, root: gpui_kit::Stateful<gpui_kit::Div>, cx: &mut Context<Self>) -> gpui_kit::Stateful<gpui_kit::Div> {
+        use crate::shortcuts::commands as k;
+        root.on_action(cx.listener(|this, _: &k::OpenComposerHost, _, cx| this.once::<k::OpenComposerHost>(cx, |t, cx| t.open_host(cx))))
+            .on_action(cx.listener(|this, _: &k::CycleComposerHost, _, cx| this.once::<k::CycleComposerHost>(cx, |t, cx| t.cycle_host(cx))))
+            .on_action(cx.listener(|this, _: &k::OpenComposerWorkspace, _, cx| this.once::<k::OpenComposerWorkspace>(cx, |t, cx| t.open_workspace(cx))))
+            .on_action(cx.listener(|this, _: &k::OpenComposerBranch, window, cx| {
+                this.once::<k::OpenComposerBranch>(cx, |t, cx| t.open_branch(window, cx))
+            }))
+            .on_action(cx.listener(|this, _: &k::UsePreviousWorktree, window, cx| {
+                this.once::<k::UsePreviousWorktree>(cx, |t, cx| t.use_previous_worktree(window, cx))
+            }))
+            .on_action(cx.listener(|this, _: &k::OpenComposerEffort, window, cx| {
+                this.once::<k::OpenComposerEffort>(cx, |t, cx| {
+                    t.open_effort(window, cx);
+                    true
+                })
+            }))
+            .on_action(cx.listener(|this, _: &k::OpenComposerMode, window, cx| {
+                this.once::<k::OpenComposerMode>(cx, |t, cx| {
+                    t.open_mode(window, cx);
+                    true
+                })
+            }))
+            .on_action(cx.listener(|this, _: &k::IncreaseEffort, _, cx| {
+                this.once::<k::IncreaseEffort>(cx, |t, cx| {
+                    t.step_effort(EffortStep::Up, cx);
+                    true
+                })
+            }))
+            .on_action(cx.listener(|this, _: &k::DecreaseEffort, _, cx| {
+                this.once::<k::DecreaseEffort>(cx, |t, cx| {
+                    t.step_effort(EffortStep::Down, cx);
+                    true
+                })
+            }))
+            .on_action(cx.listener(|this, _: &k::ToggleDictation, _, cx| this.once::<k::ToggleDictation>(cx, |t, cx| t.toggle_dictation(cx))))
+            .capture_action(cx.listener(|this, _: &k::StashComposer, window, cx| {
+                // Taken in the capture phase, so the model picker's search cannot swallow it.
+                cx.stop_propagation();
+                this.once::<k::StashComposer>(cx, |t, cx| {
+                    t.stash(window, cx);
+                    true
+                })
+            }))
+            // Any key release or modifier change ends the press that `once` remembered.
+            .on_key_up(cx.listener(|this, _: &gpui_kit::KeyUpEvent, _, _| {
+                this.held_command = None;
+                if let Some(scroller) = this.page_scroller.as_mut() {
+                    scroller.release();
+                }
+            }))
+    }
+
     // ---- Captured keys ----
 
     fn capture_up(&mut self, _: &editor_mod::MoveUp, window: &mut Window, cx: &mut Context<Self>) {
+        if self.stash_menu.is_some() {
+            cx.stop_propagation();
+            return self.step_stash_menu(false, cx);
+        }
         if let Some(menu) = self.menu.as_mut() {
             menu.step(false);
             cx.stop_propagation();
@@ -793,6 +1010,10 @@ impl ChatComposer {
     }
 
     fn capture_down(&mut self, _: &editor_mod::MoveDown, window: &mut Window, cx: &mut Context<Self>) {
+        if self.stash_menu.is_some() {
+            cx.stop_propagation();
+            return self.step_stash_menu(true, cx);
+        }
         if let Some(menu) = self.menu.as_mut() {
             menu.step(true);
             cx.stop_propagation();
@@ -820,6 +1041,10 @@ impl ChatComposer {
         if self.editor.read(cx).is_composing() {
             return;
         }
+        if self.stash_menu.is_some() {
+            cx.stop_propagation();
+            return self.act_on_highlighted(true, window, cx);
+        }
         if let Some(menu) = &self.menu
             && !menu.items.is_empty()
         {
@@ -838,6 +1063,11 @@ impl ChatComposer {
     }
 
     fn capture_escape(&mut self, _: &editor_mod::Escape, window: &mut Window, cx: &mut Context<Self>) {
+        if self.stash_menu.is_some() {
+            cx.stop_propagation();
+            self.stash_menu = None;
+            return cx.notify();
+        }
         if self.picker.is_some() {
             cx.stop_propagation();
             self.close_picker(window, cx);
@@ -847,7 +1077,23 @@ impl ChatComposer {
         }
     }
 
+    /// Mod+Backspace deletes the highlighted stash entry while the drawer is open.
+    fn capture_delete_line(&mut self, _: &editor_mod::DeleteToLineStart, window: &mut Window, cx: &mut Context<Self>) {
+        if self.stash_menu.is_some() {
+            cx.stop_propagation();
+            self.act_on_highlighted(false, window, cx);
+        }
+    }
+
+    fn capture_delete_word(&mut self, _: &editor_mod::DeleteWordLeft, window: &mut Window, cx: &mut Context<Self>) {
+        if self.stash_menu.is_some() && !cfg!(target_os = "macos") {
+            cx.stop_propagation();
+            self.act_on_highlighted(false, window, cx);
+        }
+    }
+
     fn on_modifiers(&mut self, event: &ModifiersChangedEvent, _: &mut Window, cx: &mut Context<Self>) {
+        self.held_command = None;
         let held = secondary(&event.modifiers);
         if held != self.modifier_held {
             self.modifier_held = held;
@@ -860,6 +1106,33 @@ impl ChatComposer {
         self.modifier_held = held;
         cx.notify();
     }
+}
+
+/// Which way `composer.increaseEffort` / `composer.decreaseEffort` steps.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EffortStep {
+    Up,
+    Down,
+}
+
+/// The level after `current` (or the default) in catalog order, wrapping; `None` with fewer
+/// than two levels.
+fn next_effort(options: &[crate::model_selection::OptionChoice], current: Option<&str>, step: EffortStep) -> Option<SharedString> {
+    if options.len() < 2 {
+        return None;
+    }
+    let ordered: Vec<_> = match step {
+        EffortStep::Up => options.iter().collect(),
+        EffortStep::Down => options.iter().rev().collect(),
+    };
+    let position = current
+        .and_then(|c| ordered.iter().position(|o| o.id.as_ref() == c))
+        .or_else(|| ordered.iter().position(|o| o.is_default));
+    let next = match position {
+        Some(at) => ordered[(at + 1) % ordered.len()],
+        None => ordered[0],
+    };
+    Some(next.id.clone())
 }
 
 fn secondary(modifiers: &Modifiers) -> bool {
@@ -990,16 +1263,38 @@ impl ChatComposer {
     fn render_permissions_chip(&self, icon_only: bool, c: &ComposerColors, cx: &mut Context<Self>) -> AnyElement {
         let mode = self.state.runtime_mode;
         control("composer-permissions-chip", false, c)
+            .relative()
             .pl(c.r(px(6.)))
             .child(Icon::new(runtime_mode_icon(mode)).size(IconSize::Custom(c.r(px(16.)))).color(c.foreground.opacity(0.8)).stroke(composer_icon_stroke(runtime_mode_icon(mode))))
             .when(!icon_only, |el| el.child(mode.label()))
+            .when(self.permissions_menu.is_some(), |el| el.bg(c.row_hover))
             .on_click(cx.listener(|this, _, _, cx| {
-                let next = this.state.runtime_mode.next();
-                this.state.runtime_mode = next;
-                cx.emit(ComposerEvent::RuntimeModeChanged(next));
+                this.permissions_menu = if this.permissions_menu.is_some() { None } else { Some(None) };
                 cx.notify();
             }))
+            .children(self.render_permissions_menu(c, cx))
             .into_any_element()
+    }
+
+    /// The chip's menu (`MenuPopup align="start"` above the chip) holding the permission modes.
+    fn render_permissions_menu(&self, c: &ComposerColors, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let preview = self.permissions_menu?;
+        let panel = crate::components::chat::model_picker::permissions_panel(
+            self.state.runtime_mode,
+            preview,
+            *c,
+            cx,
+            |this: &mut Self, mode| this.permissions_menu = Some(mode),
+            |this, mode, cx| {
+                this.permissions_menu = None;
+                if this.state.runtime_mode != mode {
+                    this.state.runtime_mode = mode;
+                    cx.emit(ComposerEvent::RuntimeModeChanged(mode));
+                }
+            },
+            |this| this.permissions_menu = None,
+        );
+        Some(deferred(div().absolute().bottom_full().left_0().pb(c.r(px(4.))).child(panel)).with_priority(3).into_any_element())
     }
 
     fn render_primary_actions(&self, c: &ComposerColors, cx: &mut Context<Self>) -> AnyElement {
@@ -1124,16 +1419,20 @@ impl ChatComposer {
     }
 
     fn render_banners(&self, c: &ComposerColors, window: &Window, cx: &mut Context<Self>) -> Option<AnyElement> {
-        if self.state.banners.is_empty() {
+        let badge = self.render_stash_badge(c, cx);
+        if self.state.banners.is_empty() && badge.is_none() {
             return None;
         }
         // `ComposerBanner.Scroll`: `max-h-[min(24rem,40dvh)]`.
         let max_body = c.r(px(384.)).min(window.viewport_size().height * 0.4);
-        let rows = self.state.banners.iter().map(|banner| {
-            let (tint, ink) = match banner.tone {
-                BannerTone::Neutral => (None, c.muted_foreground),
-                BannerTone::Warning => (Some(c.warning), c.warning),
-                BannerTone::Error => (Some(c.error), c.error_foreground),
+                let cards = self.state.banners.iter().enumerate().map(|(index, banner)| {
+            // `variantColors`: warning and error cards take a tinted outline and an 8% wash.
+            // `ComposerBanner.Icon` is muted whatever the tone.
+            let ink = c.muted_foreground;
+            let (tint, outline) = match banner.tone {
+                BannerTone::Neutral => (None, c.outline),
+                BannerTone::Warning => (Some(c.warning), c.warning.opacity(0.28)),
+                BannerTone::Error => (Some(c.error), c.error.opacity(0.32)),
             };
             // `min-h-(--composer-banner-icon-column)`: spacing(6) from `sm` up.
             let row = div()
@@ -1143,7 +1442,6 @@ impl ChatComposer {
                 .items_center()
                 .gap(c.r(px(4.)))
                 .rounded(c.r(px(12.)))
-                .when_some(tint, |el, t| el.bg(t.opacity(0.08)))
                 .child(div().w(c.r(px(24.))).flex().justify_center().child(Icon::new(banner.icon).size(IconSize::Custom(c.r(px(14.)))).color(ink).stroke(composer_icon_stroke(banner.icon))))
                 .child(
                     div()
@@ -1162,7 +1460,14 @@ impl ChatComposer {
                 )
                 .when_some(banner.action.clone(), |el, action| {
                     let id = banner.id.clone();
-                    el.child(div().id(SharedString::from(format!("banner-action-{id}"))).px(c.r(px(8.))).h(c.r(px(24.))).flex().items_center().rounded(c.r(px(8.))).text_size(c.r(px(12.))).text_color(c.foreground).cursor_pointer().hover({
+                    el.child(div().id(SharedString::from(format!("banner-action-{id}"))).px(c.r(px(8.))).h(c.r(px(24.))).flex().items_center().rounded(c.r(px(8.))).text_size(c.r(px(12.))).font_weight(FontWeight::MEDIUM).text_color(c.foreground).cursor_pointer().hover({
+                        let h = c.foreground.opacity(0.05);
+                        move |s| s.bg(h)
+                    }).on_click(cx.listener(move |_, _, _, cx| cx.emit(ComposerEvent::BannerAction(id.clone())))).child(action))
+                })
+                .when_some(banner.secondary_action.clone(), |el, action| {
+                    let id = SharedString::from(format!("{}#secondary", banner.id));
+                    el.child(div().id(SharedString::from(format!("banner-action-{id}"))).px(c.r(px(8.))).h(c.r(px(24.))).flex().items_center().rounded(c.r(px(8.))).text_size(c.r(px(12.))).font_weight(FontWeight::MEDIUM).text_color(c.foreground).cursor_pointer().hover({
                         let h = c.foreground.opacity(0.05);
                         move |s| s.bg(h)
                     }).on_click(cx.listener(move |_, _, _, cx| cx.emit(ComposerEvent::BannerAction(id.clone())))).child(action))
@@ -1183,23 +1488,47 @@ impl ChatComposer {
                 });
             // `ComposerBanner.Children`: the body under the row.
             let body = banner.body.as_ref().map(|body| self.render_usage_limits_body(&banner.id, body, c, max_body, cx));
-            div().flex().flex_col().child(row).children(body)
+            // Each notice is its own attached card (`NoticeCard`); a card below another joins it
+            // edge to edge, square-topped with no top border. The web tucks each card 1rem under the
+            // next one and masks that part away; here a card simply ends where the next begins.
+            let joined = index > 0;
+            div()
+                .relative()
+                .w_full()
+                .pb(c.r(px(5.)))
+                .px(c.r(px(4.)) - BORDER)
+                .pt(c.r(px(5.)) - if joined { px(0.) } else { BORDER })
+                .when(!joined, |el| el.rounded_t(c.r(SURFACE_RADIUS)))
+                .glass(c.glass_surface)
+                .border_1()
+                .border_b_0()
+                .when(joined, |el| el.border_t_0())
+                .border_color(outline)
+                .when_some(tint, |el, t| {
+                    // The web's wash spans the border box, so the outline blends over it too.
+                    el.child(
+                        div()
+                            .absolute()
+                            .top(if joined { px(0.) } else { -BORDER })
+                            .left(-BORDER)
+                            .right(-BORDER)
+                            .bottom(px(0.))
+                            .when(!joined, |d| d.rounded_t(c.r(SURFACE_RADIUS)))
+                            .bg(t.opacity(0.08)),
+                    )
+                })
+                .child(div().relative().flex().flex_col().child(row).children(body))
         });
+        let cards: Vec<_> = cards.collect();
+        // `ComposerBanner.Dock`: the notices' column and the stash badge, bottoms aligned.
         Some(
             div()
                 .mx(c.r(DRAWER_INSET))
-                .mb(-c.r(ATTACHMENT_OVERLAP))
-                // `density="comfortable"`: 5px above and below, then the overlap.
-                .pb(c.r(ATTACHMENT_OVERLAP) + c.r(px(5.)))
-                .px(c.r(px(4.)))
-                .pt(c.r(px(5.)))
-                .rounded_t(c.r(SURFACE_RADIUS))
-                .glass(c.glass_surface)
-                .border_1()
-                .border_color(c.outline)
                 .flex()
-                .flex_col()
-                .children(rows)
+                .items_end()
+                .gap(c.r(px(4.)))
+                .when(!cards.is_empty(), |el| el.child(div().flex().flex_1().min_w_0().flex_col().children(cards)))
+                .when_some(badge, |el, badge| el.child(div().ml_auto().child(badge)))
                 .into_any_element(),
         )
     }
@@ -1223,7 +1552,17 @@ impl ChatComposer {
                 .hover(move |s| s.bg(hover).text_color(fg))
                 .child(Icon::new(glyph).size(IconSize::Custom(c.r(px(14.)))).color(c.muted_foreground).stroke(composer_icon_stroke(glyph)))
                 .child(label)
-                .on_click(cx.listener(move |_, _, _, cx| cx.emit(ComposerEvent::ContextStripClicked(control))))
+                .on_click(cx.listener(move |this, _, window, cx| {
+                    // The strip's controls open what the branch strip's would.
+                    let opened = match control {
+                        ContextStripControl::Environment => this.open_host(cx),
+                        ContextStripControl::Workspace => this.open_workspace(cx),
+                        ContextStripControl::Branch => this.open_branch(window, cx),
+                    };
+                    if !opened {
+                        cx.emit(ComposerEvent::ContextStripClicked(control));
+                    }
+                }))
         };
         Some(
             div()
@@ -1265,6 +1604,7 @@ impl Render for ChatComposer {
         let actions_width = c.r((CONTROL_HEIGHT)) * if self.state.voice_available { 2. } else { 1. } + c.r(px(4.));
         let host = self.footer_width - c.r((FOOTER_PADDING_X)) * 2. - (c.r((CONTROL_HEIGHT)) + c.r(px(8.))) - actions_width + c.r(px(7.));
         let (chip_icon_only, chip_hidden) = resolve_footer_layout(host, trigger_width, chip_widths, c.r((CONTROL_HEIGHT)), c.r(px(2.)));
+        self.chip_hidden = chip_hidden;
         let mut controls = div()
             .relative()
             .mr(c.r(px(-7.)))
@@ -1388,6 +1728,7 @@ impl Render for ChatComposer {
             .child(body)
             .child(footer);
 
+        let stash_menu = if self.menu.is_none() { self.render_stash_menu(&c, window, cx) } else { None };
         let menu = self.menu.clone().map(|menu| {
             let pick = cx.entity();
             let hover = cx.entity();
@@ -1421,10 +1762,11 @@ impl Render for ChatComposer {
                 ))
         });
 
-        div()
+        let root = div()
             .id("chat-composer")
             .key_context("ChatComposer")
-            .on_action(cx.listener(|this, _: &crate::shortcuts::commands::ToggleModelPicker, window, cx| this.toggle_picker(window, cx)))
+            .on_action(cx.listener(|this, _: &crate::shortcuts::commands::ToggleModelPicker, window, cx| this.toggle_picker(window, cx)));
+        self.command_handlers(root, cx)
             .font_family(ui_font_family())
             .relative()
             .w_full()
@@ -1437,10 +1779,12 @@ impl Render for ChatComposer {
             .capture_action(cx.listener(Self::capture_enter))
             .capture_action(cx.listener(Self::capture_tab))
             .capture_action(cx.listener(Self::capture_escape))
+            .capture_action(cx.listener(Self::capture_delete_line))
+            .capture_action(cx.listener(Self::capture_delete_word))
             .on_modifiers_changed(cx.listener(Self::on_modifiers))
             .children(self.render_banners(&c, window, cx))
             .children(self.render_reset_credit_dialog(&c, cx))
-            .child(div().relative().w_full().children(menu).child(card))
+            .child(div().relative().w_full().children(menu).children(stash_menu).child(card))
             .children(self.render_context_strip(&c, cx))
     }
 }

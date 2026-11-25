@@ -181,8 +181,73 @@ fn measure(h: &mut Harness, count: usize) -> Vec<f64> {
     samples
 }
 
+/// Times keystrokes that keep a menu open: `key` then Backspace, alternately; returns the
+/// `key` presses and the menu state they left.
+fn measure_menu(h: &mut Harness, prefix: &str, key: &str, count: usize) -> (Vec<f64>, bool) {
+    h.set_text("", Some(0));
+    h.type_text(prefix);
+    let mut samples = Vec::with_capacity(count);
+    let mut open = true;
+    for _ in 0..count {
+        let start = Instant::now();
+        h.key(key);
+        samples.push(start.elapsed().as_secs_f64() * 1000.);
+        h.cx.run_until_parked();
+        let composer = h.composer.clone();
+        open &= h.cx.update(|cx| composer.read(cx).menu().is_some());
+        h.press("backspace");
+    }
+    (samples, open)
+}
+
+/// Times a paste of `chars` characters from the clipboard, through the drawn frame.
+fn measure_paste(h: &mut Harness, chars: usize) -> (f64, usize, usize) {
+    h.set_text("", Some(0));
+    let text: String = "lorem ipsum dolor sit amet, consectetur adipiscing elit.\n".chars().cycle().take(chars).collect();
+    h.cx.update(|cx| cx.write_to_clipboard(gpui_kit::ClipboardItem::new_string(text)));
+    let paste = if cfg!(target_os = "macos") { "cmd-v" } else { "ctrl-v" };
+    let start = Instant::now();
+    h.key(paste);
+    let ms = start.elapsed().as_secs_f64() * 1000.;
+    h.cx.run_until_parked();
+    let composer = h.composer.clone();
+    let (len, attachments) = h.cx.update(|cx| (composer.read(cx).editor().read(cx).text().len(), composer.read(cx).attachments().len()));
+    (ms, len, attachments)
+}
+
+/// Times a burst of one repeated letter into the long draft, as auto-repeat delivers it. The
+/// headless window types only through `dispatch_keystroke`, which cannot set `is_held`; the
+/// composer's text path never reads that flag, so a repeat costs what this measures.
+fn measure_held(h: &mut Harness, count: usize) -> Vec<f64> {
+    let mut samples = Vec::with_capacity(count);
+    for _ in 0..count {
+        let start = Instant::now();
+        h.key("k");
+        samples.push(start.elapsed().as_secs_f64() * 1000.);
+        h.cx.run_until_parked();
+    }
+    samples
+}
+
 fn typing_report(out: &std::path::Path) -> anyhow::Result<String> {
     let mut h = Harness::new(Appearance::Dark, out)?;
+    let mut extra = String::new();
+    h.set_text("", Some(0));
+    measure(&mut h, 30);
+    h.set_text("", Some(0));
+    let mut empty = measure(&mut h, 500);
+    let (m, p95, max) = stats(&mut empty);
+    writeln!(extra, "empty composer:          median {m:.3}  p95 {p95:.3}  max {max:.3}  (500 keys)")?;
+    let (mut slash, open) = measure_menu(&mut h, "/", "m", 200);
+    let (m, p95, max) = stats(&mut slash);
+    writeln!(extra, "/ menu open:             median {m:.3}  p95 {p95:.3}  max {max:.3}  (200 keys, menu stayed open: {open})")?;
+    let (mut mention, open) = measure_menu(&mut h, "@comp", "o", 200);
+    let (m, p95, max) = stats(&mut mention);
+    writeln!(extra, "@ menu open:             median {m:.3}  p95 {p95:.3}  max {max:.3}  (200 keys, menu stayed open: {open})")?;
+    let (ms, len, attachments) = measure_paste(&mut h, 50_000);
+    writeln!(extra, "paste 50,000 chars:      {ms:.3} ms (prompt {len} bytes, {attachments} attachment: a paste over 32 KiB becomes pasted-text.txt)")?;
+    let (ms, len, attachments) = measure_paste(&mut h, 30_000);
+    writeln!(extra, "paste 30,000 chars:      {ms:.3} ms (prompt {len} bytes, {attachments} attachments: inline)")?;
     let draft = long_draft();
     let caret = draft.find("Closing paragraph").unwrap_or(draft.len() / 2) + 8;
     h.set_text(&draft, Some(caret));
@@ -196,6 +261,12 @@ fn typing_report(out: &std::path::Path) -> anyhow::Result<String> {
     let (m, p95, max) = stats(&mut plain);
     writeln!(report, "composer focused:        median {m:.3}  p95 {p95:.3}  max {max:.3}  (500 keys)")?;
     h.shot("bench-typing-dark")?;
+    let before = h.text().chars().count();
+    let mut held = measure_held(&mut h, 300);
+    let typed = h.text().chars().count() - before;
+    let (m, p95, max) = stats(&mut held);
+    writeln!(report, "held-key repeat (draft): median {m:.3}  p95 {p95:.3}  max {max:.3}  (300 repeats, {typed} chars typed)")?;
+    report.push_str(&extra);
 
     // Picker open, focus back in the editor: every keystroke also lays out the open popover.
     h.with(|composer, window, cx| composer.update(cx, |c, cx| c.open_picker(window, cx)));

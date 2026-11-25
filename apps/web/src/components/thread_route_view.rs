@@ -166,6 +166,8 @@ impl ThreadRouteView {
         let chat = cx.new(ChatView::new);
         let focus = composer.focus_handle(cx);
         chat.update(cx, |chat, cx| chat.set_composer(composer.clone().into(), focus, cx));
+        let timeline = chat.read(cx).timeline().downgrade();
+        composer.update(cx, |composer, _| composer.set_page_target(timeline));
         let banner = cx.new(|_| ThreadErrorBanner::new());
         let errors = ThreadErrors::entity(cx);
         let subscriptions = vec![
@@ -337,6 +339,7 @@ impl ThreadRouteView {
             None => self.build_git(view, cx),
         };
         let strip: AnyView = controls.strip.clone().into();
+        self.composer.update(cx, |composer, _| composer.set_context_controls(Some(controls.strip.downgrade())));
         self.git.push_front(controls);
         self.git.truncate(GIT_CONTROLS_KEPT);
         let panel = self.details_open.then(|| self.ensure_panel(cx)).flatten();
@@ -915,6 +918,7 @@ impl ThreadRouteView {
                 }
             }
             DataEvent::ThreadChanged(_) | DataEvent::OpenThread(_) | DataEvent::OpenSideChat { .. } => {}
+            DataEvent::ThreadChanged(_) | DataEvent::OpenThread(_) | DataEvent::OpenSideChat { .. } | DataEvent::NewThread(_) => {}
         }
     }
 }

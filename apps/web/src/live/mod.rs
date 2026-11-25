@@ -467,6 +467,7 @@ impl AppData for LiveData {
                 if let Some(banner) = live_composer::usage_banner(&key, panel_key.as_deref(), config.as_deref(), &instance, cx) {
                     state.banners.insert(0, banner);
                 }
+                state.banners.splice(0..0, live_composer::system_banners(&key, cx));
                 let cwd = (!view.cwd.is_empty()).then(|| view.cwd.to_string());
                 self.menu_facts.borrow_mut().insert((environment_id.clone(), cwd.clone()), facts.clone());
                 for ((environment, workspace, _), source) in self.menus.borrow().iter() {
@@ -575,6 +576,10 @@ impl AppData for LiveData {
                     }
                     ComposerEvent::AttachRequested => {
                         live_composer::pick_files(composer, cx);
+                        return None;
+                    }
+                    ComposerEvent::ReleaseStashedFiles(files) => {
+                        live_composer::release_stashed_files(files, cx);
                         return None;
                     }
                     ComposerEvent::FavoriteToggled { instance_id, model } => {

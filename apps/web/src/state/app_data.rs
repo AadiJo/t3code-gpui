@@ -79,6 +79,8 @@ pub enum DataEvent {
     OpenThread(ThreadKey),
     /// Show `parent` with the side chat's tab open in its right panel (`openSideChat`).
     OpenSideChat { parent: ThreadKey, side_chat: ThreadKey },
+    /// Open a new draft in this project (`composer.sendAndNewThread` after a send).
+    NewThread(Option<ProjectRef>),
 }
 
 /// A side chat's facts for its tab and pane header.
