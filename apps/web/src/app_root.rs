@@ -317,6 +317,53 @@ impl MainPane {
     }
 }
 
+/// What a prompt link reads, without the app root itself: the palette asks while the root may be
+/// updating (it opens the palette).
+struct PromptLinkSources {
+    router: Entity<Router>,
+    sidebar: Entity<Sidebar>,
+    thread_view: Entity<ThreadRouteView>,
+}
+
+impl PromptLinkSources {
+    /// The project of the thread or draft the route shows; none on a page.
+    fn project(&self, cx: &App) -> Option<ProjectRef> {
+        let snapshot = self.sidebar.read(cx).snapshot();
+        match self.router.read(cx).current() {
+            Route::Thread(key) => snapshot.threads.iter().find(|t| &t.key == key).map(|t| t.project_ref()),
+            Route::Draft(id) => snapshot.drafts.iter().find(|d| d.id == id.0).map(|d| d.project.clone()),
+            _ => None,
+        }
+    }
+
+    /// The GitHub repository of that project (`promptLinkRepositoryOf`).
+    fn repository(&self, cx: &App) -> Option<t3code_shared::prompt_links::PromptLinkRepository> {
+        StateBridge::is_running(cx).then(|| self.project(cx)).flatten().and_then(|project| crate::state::prompt_links::project_repository(&project, cx))
+    }
+
+    /// A link that opens a new thread with the composer's prompt on the hosted app
+    /// (`composerPromptLink`, `promptLinkFor`); `with_context` adds the GitHub repository and the
+    /// selected provider and model. `None` off a thread or for an empty or over-long prompt.
+    fn link(&self, with_context: bool, cx: &App) -> Option<String> {
+        use t3code_shared::prompt_links::{DEFAULT_HOSTED_APP_URL, PROMPT_LINK_MAX_PROMPT_LENGTH, build_new_thread_link};
+        if self.router.read(cx).current().thread_target().is_none() {
+            return None;
+        }
+        let composer = self.thread_view.read(cx).composer().clone();
+        let prompt = composer.read(cx).editor().read(cx).text().trim().to_owned();
+        if prompt.is_empty() || prompt.encode_utf16().count() > PROMPT_LINK_MAX_PROMPT_LENGTH {
+            return None;
+        }
+        if !with_context {
+            return Some(build_new_thread_link(&prompt, None, None, None, DEFAULT_HOSTED_APP_URL));
+        }
+        let state = composer.read(cx).state();
+        let driver = state.catalog.instances.iter().find(|i| i.instance_id == state.selection.instance_id).map(|i| i.driver_kind.as_str().to_owned());
+        let repository = self.repository(cx);
+        Some(build_new_thread_link(&prompt, repository.as_ref(), driver.as_deref(), Some(&state.selection.model), DEFAULT_HOSTED_APP_URL))
+    }
+}
+
 /// Root view of the main window.
 pub struct AppRoot {
     layout: Entity<AppSidebarLayout>,
@@ -593,16 +640,11 @@ impl AppRoot {
     pub fn attach_palette(&mut self, palette: &Entity<CommandPalette>, window: &mut Window, cx: &mut Context<Self>) {
         self.palette = Some(palette.downgrade());
         // `composerPromptLink` is null for an empty or over-long prompt, so the rows hide.
-        let weak = cx.weak_entity();
         palette.update(cx, |palette, _| {
+            let sources = PromptLinkSources { router: self.router.clone(), sidebar: self.sidebar.clone(), thread_view: self.thread_view.clone() };
             palette.set_prompt_link_probe(std::rc::Rc::new(move |cx: &App| {
                 use crate::components::command_palette::PromptLinkRows;
-                let Some(this) = weak.upgrade() else { return PromptLinkRows::None };
-                let this = this.read(cx);
-                if this.shown.is_none() || this.main.read(cx).page.is_some() {
-                    return PromptLinkRows::None;
-                }
-                match (this.prompt_link(false, cx), this.prompt_link_repository(cx)) {
+                match (sources.link(false, cx), sources.repository(cx)) {
                     (None, _) => PromptLinkRows::None,
                     (Some(_), None) => PromptLinkRows::Plain,
                     (Some(_), Some(_)) => PromptLinkRows::WithContext,
@@ -1486,33 +1528,10 @@ impl AppRoot {
         }
     }
 
-    /// The GitHub repository of the thread or draft on screen (`promptLinkRepositoryOf`).
-    fn prompt_link_repository(&self, cx: &App) -> Option<t3code_shared::prompt_links::PromptLinkRepository> {
-        StateBridge::is_running(cx).then(|| self.shown_project(cx)).flatten().and_then(|project| crate::state::prompt_links::project_repository(&project, cx))
-    }
-
-    /// A link that opens a new thread with the composer's prompt on the hosted app
-    /// (`composerPromptLink`, `promptLinkFor`); `with_context` adds the GitHub repository and
-    /// the selected provider and model. `None` for an empty or over-long prompt.
-    fn prompt_link(&self, with_context: bool, cx: &App) -> Option<String> {
-        use t3code_shared::prompt_links::{DEFAULT_HOSTED_APP_URL, PROMPT_LINK_MAX_PROMPT_LENGTH, build_new_thread_link};
-        let composer = self.composer(cx);
-        let prompt = composer.read(cx).editor().read(cx).text().trim().to_owned();
-        if prompt.is_empty() || prompt.encode_utf16().count() > PROMPT_LINK_MAX_PROMPT_LENGTH {
-            return None;
-        }
-        if !with_context {
-            return Some(build_new_thread_link(&prompt, None, None, None, DEFAULT_HOSTED_APP_URL));
-        }
-        let state = composer.read(cx).state();
-        let driver = state.catalog.instances.iter().find(|i| i.instance_id == state.selection.instance_id).map(|i| i.driver_kind.as_str().to_owned());
-        let repository = self.prompt_link_repository(cx);
-        Some(build_new_thread_link(&prompt, repository.as_ref(), driver.as_deref(), Some(&state.selection.model), DEFAULT_HOSTED_APP_URL))
-    }
-
-    /// Copies [`Self::prompt_link`] (`copyPromptLink`).
+    /// Copies the composer's prompt link (`copyPromptLink`).
     fn copy_prompt_link(&self, with_context: bool, cx: &mut Context<Self>) {
-        if let Some(link) = self.prompt_link(with_context, cx) {
+        let sources = PromptLinkSources { router: self.router.clone(), sidebar: self.sidebar.clone(), thread_view: self.thread_view.clone() };
+        if let Some(link) = sources.link(with_context, cx) {
             cx.write_to_clipboard(ClipboardItem::new_string(link));
         }
     }
