@@ -632,6 +632,14 @@ impl ThreadRouteView {
         window.focus(&self.composer.focus_handle(cx), cx);
     }
 
+    /// The right panel's "Side chat" (`sideChat.open()`): `/side` with no prompt, through the
+    /// composer's own path so the side chat takes the composer's model and mode.
+    pub fn start_side_chat(&mut self, cx: &mut Context<Self>) {
+        if let Some(target @ ThreadTarget::Server(_)) = self.target.clone() {
+            self.data.composer_event(&target, &ComposerEvent::SideChat { prompt: String::new() }, &self.composer.downgrade(), cx);
+        }
+    }
+
     fn on_composer_event(&mut self, composer: Entity<ChatComposer>, event: &ComposerEvent, cx: &mut Context<Self>) {
         let Some(target) = self.target.clone() else { return };
         let promoted = self.data.composer_event(&target, event, &composer.downgrade(), cx);

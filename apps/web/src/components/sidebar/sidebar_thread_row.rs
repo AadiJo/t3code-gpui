@@ -11,7 +11,8 @@ use gpui_kit::component::Sizable as _;
 use gpui_kit::*;
 
 use super::context_menu::MenuCommand;
-use super::model::{PullRequestState, SidebarProvider, SidebarProviderMark, SidebarThread};
+use super::model::{PullRequestState, SearchExcerpt, SidebarProvider, SidebarProviderMark, SidebarThread};
+use t3code_shared::palette_search::{char_ranges_to_bytes, find_search_token_ranges};
 use super::style::*;
 use super::{Sidebar, SidebarEvent};
 use crate::components::sidebar_logic::*;
@@ -108,16 +109,13 @@ impl Sidebar {
         let lit = highlighted || state.active;
         let project_title = self.list.project_titles.get(&thread.project_ref()).cloned().unwrap_or_default();
         let favicon = project_favicon(project_title, self.list.project_icons.get(&thread.project_ref()), colors);
-        surface
-            .when(lit, |d| d.bg(colors.sidebar_row_active))
-            .min_h(colors.s(SLIM_ROW_HEIGHT))
+        // `text-sm` and `text-xs` carry their line heights (1.25rem, 1rem) once the lines stack.
+        let title_line = div()
             .flex()
+            .min_w_0()
             .items_center()
+            .line_height(colors.r(20.))
             .gap(colors.r(10.))
-            .px(colors.r(10.))
-            .py(colors.r(4.))
-            .text_sm()
-            .child(div().flex_none().when(settled && !lit && !state.hovered, |d| d.opacity(0.4)).child(favicon))
             .child(
                 div()
                     .flex_1()
@@ -137,7 +135,19 @@ impl Sidebar {
                     .font_features(super::style::tabular_figures())
                     .text_color(colors.muted_foreground.opacity(0.55))
                     .child(compact_relative_time(thread_activity_timestamp(thread), self.now)),
-            )
+            );
+        let excerpt = self.list.search_excerpts.get(&thread.key).map(|excerpt| search_excerpt_line(excerpt, &self.list.search_excerpt_query, colors));
+        surface
+            .when(lit, |d| d.bg(colors.sidebar_row_active))
+            .min_h(colors.s(SLIM_ROW_HEIGHT))
+            .flex()
+            .items_center()
+            .gap(colors.r(10.))
+            .px(colors.r(10.))
+            .py(colors.r(4.))
+            .text_sm()
+            .child(div().flex_none().when(settled && !lit && !state.hovered, |d| d.opacity(0.4)).child(favicon))
+            .child(div().flex().flex_col().flex_1().min_w_0().child(title_line).children(excerpt))
             .into_any_element()
     }
 
@@ -814,3 +824,21 @@ pub(crate) fn middle_truncate(value: &SharedString) -> Div {
     }
 }
 
+/// A search result's message excerpt (`ThreadSearchMatchExcerpt`): "You:" or "Agent:" in the
+/// info or success colour, then the snippet with the query's words in semibold foreground.
+fn search_excerpt_line(excerpt: &SearchExcerpt, query: &str, colors: &ShellColors) -> Div {
+    let (label, label_color) = if excerpt.from_user { (crate::i18n::t!("You:"), colors.info_foreground) } else { (crate::i18n::t!("Agent:"), colors.success_foreground) };
+    let offset = label.len() + 1;
+    let text: SharedString = format!("{label} {}", excerpt.snippet).into();
+    let ranges = find_search_token_ranges(&excerpt.snippet, query);
+    let mark = HighlightStyle { color: Some(colors.foreground), font_weight: Some(FontWeight::SEMIBOLD), ..Default::default() };
+    let highlights = std::iter::once((0..label.len(), HighlightStyle { color: Some(label_color), ..Default::default() }))
+        .chain(char_ranges_to_bytes(&excerpt.snippet, &ranges).into_iter().map(|range| (range.start + offset..range.end + offset, mark)));
+    div()
+        .min_w_0()
+        .truncate()
+        .text_xs()
+        .line_height(colors.r(16.))
+        .text_color(colors.muted_foreground.opacity(0.85))
+        .child(StyledText::new(text).with_highlights(highlights))
+}

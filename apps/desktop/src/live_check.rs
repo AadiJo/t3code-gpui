@@ -100,6 +100,7 @@ mod live_check_commands;
 mod live_check_composer_actions;
 mod live_check_families;
 mod live_check_heap;
+mod live_check_launcher;
 mod live_check_history;
 mod live_check_linked;
 mod live_check_memory;
@@ -654,6 +655,10 @@ fn main() -> anyhow::Result<()> {
         "options" => live_check_options::run_options(&mut check),
         "chips" => live_check_chips::run_chips(&mut check),
         "cloud-voice" => live_check_cloud_voice::run_cloud_voice(&mut check),
+        "launcher" => live_check_launcher::run_launcher(&mut check),
+        "search-excerpts" => live_check_launcher::run_search_excerpts(&mut check),
+        "file-comments" => live_check_launcher::run_file_comments(&mut check),
+        "background-setup" => live_check_launcher::run_background_setup(&mut check),
         other => Err(anyhow::anyhow!("unknown phase {other}")),
     };
     check.finish(&phase, result)

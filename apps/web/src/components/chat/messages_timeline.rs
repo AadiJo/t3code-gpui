@@ -931,7 +931,7 @@ impl MessagesTimeline {
             RowKind::WorkToggle { .. } => self.render_work_toggle(row, cx),
             RowKind::WorkGroupDetails { group_id, entries } => self.render_group_details(group_id, entries, window, cx),
             RowKind::WorkLive { .. } => self.render_work_live(row, cx),
-            RowKind::Working { started_at, compacting } => self.render_working(*started_at, *compacting),
+            RowKind::Working { started_at, compacting } => self.render_working(*started_at, *compacting, cx),
             RowKind::Thinking { label } => self.render_thinking(label.clone()),
             RowKind::TurnFold { run_id, label, expanded } => self.render_turn_fold(row, run_id, label, *expanded, cx),
             RowKind::AttemptFold { attempt_id, label, expanded } => self.render_attempt_fold(attempt_id, label, *expanded, cx),

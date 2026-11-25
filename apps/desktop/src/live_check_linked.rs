@@ -39,7 +39,7 @@ fn iso(offset_minutes: i64) -> String {
 }
 
 /// The commands that link the fixture's pull requests and issue and set their host state.
-fn link_commands(thread: &str) -> anyhow::Result<Vec<OrchestrationV2Command>> {
+pub(super) fn link_commands(thread: &str) -> anyhow::Result<Vec<OrchestrationV2Command>> {
     let id = || uuid::Uuid::new_v4().to_string();
     let mut out = Vec::new();
     let prs = [

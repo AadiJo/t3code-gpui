@@ -402,6 +402,70 @@ fn merge_ranges(mut ranges: Vec<SearchRange>) -> Vec<SearchRange> {
     merged
 }
 
+/// `MESSAGE_TOKEN_MIN_LENGTH`: shorter words do not search messages.
+const MESSAGE_TOKEN_MIN_LENGTH: usize = 3;
+/// `MESSAGE_WORD_START_LENGTH`: shorter tokens match only at a word start.
+const MESSAGE_WORD_START_LENGTH: usize = 4;
+
+/// Hangul syllables count as words for message search, as kana and ideographs do.
+fn has_cjk_word(token: &str) -> bool {
+    token.chars().any(|c| is_cjk(c) || (0xac00..=0xd7af).contains(&(c as u32)))
+}
+
+/// `messageSearchTokens(query).long`: the lowercased words the server searches messages for,
+/// accents kept, apostrophes straight; two CJK characters count as a word.
+fn message_search_long_tokens(query: &str) -> Vec<String> {
+    let trimmed = query.trim_start().trim_start_matches(is_wrapping_quote);
+    let trimmed = trimmed.trim_end().trim_end_matches(is_wrapping_quote);
+    let normalized = icu_normalizer::ComposingNormalizerBorrowed::new_nfc().normalize(trimmed).replace(['\u{2018}', '\u{2019}'], "'");
+    normalized
+        .to_lowercase()
+        .split_whitespace()
+        .filter(|token| {
+            let length = token.chars().count();
+            length >= MESSAGE_TOKEN_MIN_LENGTH || (length == 2 && has_cjk_word(token))
+        })
+        .map(str::to_owned)
+        .collect()
+}
+
+/// `findSearchTokenRanges`: where the query's message-search words appear in `text` (a match
+/// excerpt), merged. A word shorter than four chars matches only at a word start unless it opens
+/// with punctuation.
+pub fn find_search_token_ranges(text: &str, query: &str) -> Vec<SearchRange> {
+    let mut tokens: Vec<(Vec<char>, bool)> = Vec::new();
+    for token in message_search_long_tokens(query) {
+        let folded: Vec<char> = fold_search_query(&token).chars().collect();
+        // Some tokens fold to nothing ("´´´"), which would match everywhere.
+        if folded.is_empty() {
+            continue;
+        }
+        let needs_word_start = token.chars().count() < MESSAGE_WORD_START_LENGTH;
+        match tokens.iter_mut().find(|(existing, _)| *existing == folded) {
+            Some(entry) => entry.1 = needs_word_start,
+            None => tokens.push((folded, needs_word_start)),
+        }
+    }
+    if tokens.is_empty() {
+        return Vec::new();
+    }
+    let field = fold_search_field(text);
+    let mut ranges = Vec::new();
+    for (token, needs_word_start) in &tokens {
+        let own_boundary = !is_alphanumeric(token[0]) && !is_symbol(token[0]);
+        let mut found = find_from(&field.text, token, 0);
+        while let Some(index) = found {
+            if *needs_word_start && !own_boundary && !field.word_starts[index] {
+                found = find_from(&field.text, token, index + 1);
+                continue;
+            }
+            ranges.push(SearchRange { start: index, end: index + token.len() });
+            found = find_from(&field.text, token, index + token.len());
+        }
+    }
+    merge_ranges(ranges)
+}
+
 /// A folded query split into tokens once per keystroke.
 #[derive(Clone, Debug, Default)]
 pub struct SearchQuery {

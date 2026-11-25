@@ -90,7 +90,7 @@ const EXPLORER_MAX_WIDTH: f32 = 560.;
 const FILE_CONTENT_MIN_WIDTH: f32 = 256.;
 
 /// What the panel asks the rest of the app to do.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum FilesPanelEvent {
     /// Insert this mention at the end of the composer ("Add to chat").
     AddToChat(String),
@@ -102,6 +102,10 @@ pub enum FilesPanelEvent {
     /// "Open file in preview browser" (`openFileInPreview`): an HTML or PDF file
     /// of the workspace, by absolute path, in the thread's preview browser.
     OpenInPreview { absolute_path: String },
+    /// A comment on the file's lines, for the composer (`addReviewComment`).
+    AddReviewComment(t3code_client_runtime::state::drafts::ReviewCommentContext),
+    /// A file comment was deleted (`removeReviewComment`), by its id.
+    RemoveReviewComment(SharedString),
 }
 
 /// Where a text file's saving stands. A failed write stays `Pending`: its
@@ -562,6 +566,8 @@ impl FilesPanel {
                 cx.notify();
             }
             FileEditorEvent::SaveRequested => self.save_now(cx),
+            FileEditorEvent::Comment(comment) => cx.emit(FilesPanelEvent::AddReviewComment(comment.clone())),
+            FileEditorEvent::DeleteComment(id) => cx.emit(FilesPanelEvent::RemoveReviewComment(id.clone())),
         }
     }
 

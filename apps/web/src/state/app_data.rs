@@ -109,6 +109,17 @@ pub enum SideChatLookup {
     Unknown,
 }
 
+/// The right panel's "Side chat" surface (`onAddSideChat`, `sideChatAvailable`,
+/// `sideChatDisabledReason`).
+#[derive(Clone, Debug, PartialEq)]
+pub enum SideChatLaunch {
+    /// Side chats are not offered here (a side chat, a subagent, an older server).
+    Hidden,
+    Available,
+    /// Offered but cannot start now, with the reason when there is one.
+    Disabled(Option<SharedString>),
+}
+
 /// The emitter every [`AppData`] publishes on. It also owns the source's subscriptions.
 #[derive(Default)]
 pub struct DataEvents {
@@ -337,6 +348,16 @@ pub trait AppData: 'static {
     /// A side chat for its panel tab, on top of the main pane's thread.
     fn side_chat(&self, _key: &ThreadKey, _cx: &App) -> SideChatLookup {
         SideChatLookup::Unknown
+    }
+
+    /// What the right panel's "Pull request" surface opens for `key` (`threadPullRequestPanelTarget`).
+    fn pull_request_panel_target(&self, _key: &ThreadKey, _cx: &App) -> Option<t3code_client_runtime::state::thread_pull_requests::PullRequestPanelTarget> {
+        None
+    }
+
+    /// The right panel's "Side chat" surface for `key`.
+    fn side_chat_launch(&self, _key: &ThreadKey, _cx: &App) -> SideChatLaunch {
+        SideChatLaunch::Hidden
     }
 
     /// Opens a side chat's own stream beside the main pane's and maps it; the timeline starts

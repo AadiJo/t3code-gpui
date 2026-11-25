@@ -19,9 +19,10 @@ use gpui_kit::{
     relative, size,
 };
 use gpui_kit::{
-    Subscription,
-    component::input::{InputEvent, InputState},
+    AnyElement, Subscription, TestSupportExt as _,
+    component::input::{InputEvent, InputState, TextareaState},
 };
+use t3code_client_runtime::state::drafts::ReviewCommentContext;
 use smallvec::{SmallVec, smallvec};
 
 use super::{
@@ -131,12 +132,54 @@ pub fn init(cx: &mut App) {
 }
 
 /// What the editor tells its owner.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum FileEditorEvent {
     /// The text changed; `dirty` compares it with the last saved text.
     Changed { dirty: bool },
     /// mod+s.
     SaveRequested,
+    /// A comment on lines for the composer (`addReviewComment`), sent again when an edit moves
+    /// its lines or changes their text.
+    Comment(ReviewCommentContext),
+    /// A comment was deleted (`removeReviewComment`), by its id.
+    DeleteComment(SharedString),
+}
+
+/// A comment on lines `start..=end` (0-based), shown under its last line
+/// (`FileCommentAnnotationEntry` of kind `comment`).
+struct FileComment {
+    id: SharedString,
+    start: usize,
+    end: usize,
+    text: SharedString,
+}
+
+/// The open comment form on lines `start..=end` (a `draft` entry).
+struct CommentDraft {
+    start: usize,
+    end: usize,
+    editor: Entity<TextareaState>,
+    _subscription: Subscription,
+}
+
+/// `buildFileReviewComment`: a comment on lines `start_line..=end_line` (1-based) of a file,
+/// carrying those lines as its excerpt.
+pub fn build_file_review_comment(id: &str, file_path: &str, start_line: usize, end_line: usize, text: &str, contents: &str) -> ReviewCommentContext {
+    let start = start_line.min(end_line).max(1);
+    let end = start.max(start_line.max(end_line));
+    let excerpt: Vec<&str> = contents.split('\n').skip(start - 1).take(end + 1 - start).collect();
+    ReviewCommentContext {
+        id: id.to_owned(),
+        section_id: format!("file:{file_path}"),
+        section_title: "File comment".to_owned(),
+        file_path: file_path.to_owned(),
+        start_index: (start - 1) as _,
+        end_index: (end - 1) as _,
+        range_label: if start == end { format!("L{start}") } else { format!("L{start} to L{end}") },
+        text: text.trim().to_owned(),
+        diff: excerpt.join("\n"),
+        pull_request: None,
+    }
 }
 
 /// Find state: the query field and every match, in document order.
@@ -156,6 +199,8 @@ struct FrameGeometry {
     ch: Pixels,
     first_row: usize,
     lines: Vec<Rc<ShapedLineEntry>>,
+    /// Comment blocks: the row each follows and its height, in row order.
+    gaps: Vec<(usize, Pixels)>,
 }
 
 /// One visual row: a line, or the part of a wrapped line between two breaks.
@@ -216,6 +261,13 @@ pub struct FileEditor {
     wrap: bool,
     /// Row layout for the current wrap width; `None` when wrap is off or the text changed.
     wrap_layout: Option<WrapLayout>,
+    /// Comments sent to the composer and the open form (`lineAnnotations`).
+    comments: Vec<FileComment>,
+    draft: Option<CommentDraft>,
+    /// Lines picked in the gutter (`selectedLines`), first and last, and the line a gutter drag
+    /// started on.
+    picked_lines: Option<(usize, usize)>,
+    line_drag: Option<usize>,
 }
 
 /// Where each line's rows start when wrapped at `cols` columns.
@@ -256,6 +308,10 @@ impl FileEditor {
             geometry: Rc::default(),
             wrap: false,
             wrap_layout: None,
+            comments: Vec::new(),
+            draft: None,
+            picked_lines: None,
+            line_drag: None,
         }
     }
 
@@ -364,6 +420,156 @@ impl FileEditor {
         (self.line_row(pos.line) + sub, segments[sub])
     }
 
+    /// The last row of a line.
+    fn line_last_row(&self, line: usize) -> usize {
+        if line + 1 < self.buffer.len_lines() { self.line_row(line + 1).saturating_sub(1) } else { self.row_count().saturating_sub(1) }
+    }
+
+    /// Comment blocks as rows of space: under each commented line, its comments and the open
+    /// form, inside `py-1`, at a text area `width` wide.
+    fn comment_gaps(&self, width: f32, pad: Pixels, rem: f32) -> Vec<(usize, Pixels)> {
+        use crate::components::diffs::comment_annotation::{draft_height, saved_comment_height};
+        let mut gaps: Vec<(usize, Pixels)> = Vec::new();
+        let blocks = self.comments.iter().map(|c| (c.end, saved_comment_height(&c.text, width))).chain(self.draft.iter().map(|d| (d.end, draft_height(width, rem))));
+        for (line, height) in blocks {
+            let row = self.line_last_row(line);
+            match gaps.iter_mut().find(|(r, _)| *r == row) {
+                Some((_, total)) => *total += px(height),
+                None => gaps.push((row, px(height) + pad * 2.)),
+            }
+        }
+        gaps.sort_by_key(|(row, _)| *row);
+        gaps
+    }
+
+    /// `beginComment`: opens the form under the picked lines' last line, replacing an open one.
+    fn begin_comment(&mut self, start: usize, end: usize, window: &mut Window, cx: &mut Context<Self>) {
+        let editor = cx.new(|cx| TextareaState::new(window, cx).placeholder("Add a comment…"));
+        let subscription = cx.subscribe_in(&editor, window, |this, _, event: &InputEvent, _, cx| match event {
+            InputEvent::PressEnter { secondary: true, .. } => this.submit_comment(cx),
+            InputEvent::Change => cx.notify(),
+            _ => {}
+        });
+        editor.update(cx, |editor, cx| editor.focus(window, cx));
+        self.draft = Some(CommentDraft { start, end, editor, _subscription: subscription });
+        cx.notify();
+    }
+
+    /// Cancel on the form (`removeAnnotationEntry` of the draft).
+    fn cancel_comment(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.draft = None;
+        self.picked_lines = None;
+        window.focus(&self.focus_handle, cx);
+        cx.notify();
+    }
+
+    /// Comment on the form (`submitAnnotationEntry`): the comment goes to the composer and stays
+    /// under its lines.
+    fn submit_comment(&mut self, cx: &mut Context<Self>) {
+        let Some(draft) = self.draft.as_ref() else { return };
+        let text = draft.editor.read(cx).value().trim().to_owned();
+        if text.is_empty() {
+            return;
+        }
+        static NEXT_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+        let millis = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis());
+        let id: SharedString = format!("file-comment-{millis}-{}", NEXT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)).into();
+        let (start, end) = (draft.start, draft.end);
+        cx.emit(FileEditorEvent::Comment(build_file_review_comment(&id, &self.path, start + 1, end + 1, &text, &self.buffer.text())));
+        self.comments.push(FileComment { id, start, end, text: text.into() });
+        self.draft = None;
+        self.picked_lines = None;
+        cx.notify();
+    }
+
+    /// The ids of the comments under lines, in the order they were made.
+    pub fn comment_ids(&self) -> impl Iterator<Item = &SharedString> {
+        self.comments.iter().map(|c| &c.id)
+    }
+
+    /// The comment's delete button (`removeAnnotationEntry`).
+    fn delete_comment(&mut self, id: &SharedString, cx: &mut Context<Self>) {
+        self.comments.retain(|c| &c.id != id);
+        cx.emit(FileEditorEvent::DeleteComment(id.clone()));
+        cx.notify();
+    }
+
+    /// Moves comments with an edit that replaced lines `from..=to` with `inserted` newlines,
+    /// keeping each comment's span below its last line (`remapFileCommentAnnotations`), and sends
+    /// them again with their lines' new text.
+    fn remap_comments(&mut self, from: usize, to: usize, inserted: usize, cx: &mut Context<Self>) {
+        if self.comments.is_empty() && self.draft.is_none() {
+            return;
+        }
+        let remap = |start: &mut usize, end: &mut usize| {
+            let span = *end - *start;
+            if *end > to {
+                *end = (*end + inserted).saturating_sub(to - from);
+            } else if *end >= from {
+                *end = (*end).min(from + inserted);
+            }
+            *start = end.saturating_sub(span);
+        };
+        for comment in &mut self.comments {
+            remap(&mut comment.start, &mut comment.end);
+        }
+        if let Some(draft) = &mut self.draft {
+            remap(&mut draft.start, &mut draft.end);
+        }
+        let contents = self.buffer.text();
+        for comment in &self.comments {
+            cx.emit(FileEditorEvent::Comment(build_file_review_comment(&comment.id, &self.path, comment.start + 1, comment.end + 1, &comment.text, &contents)));
+        }
+    }
+
+    /// The comment blocks over the text, each in the gap left under its line.
+    fn render_comments(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
+        use crate::components::diffs::comment_annotation::{draft_form, saved_comment};
+        let geometry = self.geometry.borrow();
+        let line_height = px(EDITOR_LINE_HEIGHT);
+        let theme = cx.app_theme();
+        // Pierre draws annotations in the content column; the gutter runs on beside them.
+        let gutter = geometry.text_left - geometry.ch;
+        let draft_row = self.draft.as_ref().map(|d| self.line_last_row(d.end));
+        let mut out = Vec::new();
+        for &(row, height) in &geometry.gaps {
+            let top = line_height * (row + 1) as f32 + gap_offset(&geometry.gaps, row) - self.scroll.y;
+            let mut column = div().flex().flex_col().py(theme.sp(1.));
+            for comment in self.comments.iter().filter(|c| self.line_last_row(c.end) == row) {
+                let (id, view) = (comment.id.clone(), cx.weak_entity());
+                column = column.child(saved_comment(&comment.id, comment.text.clone(), theme, move |_, cx| {
+                    view.update(cx, |this, cx| this.delete_comment(&id, cx)).ok();
+                }));
+            }
+            if let Some(draft) = self.draft.as_ref().filter(|d| self.line_last_row(d.end) == row) {
+                let (cancel, submit) = (cx.weak_entity(), cx.weak_entity());
+                column = column.child(draft_form(
+                    &draft.editor,
+                    theme,
+                    cx,
+                    move |window, cx| _ = cancel.update(cx, |this, cx| this.cancel_comment(window, cx)),
+                    move |_, cx| _ = submit.update(cx, |this, cx| this.submit_comment(cx)),
+                ));
+            }
+            out.push(
+                div()
+                    .id(("file-comment-block", row))
+                    .absolute()
+                    .top(top)
+                    .left(gutter)
+                    .right_0()
+                    .h(height)
+                    .overflow_hidden()
+                    .occlude()
+                    // The open form keeps the picked lines' tint, which the text element paints.
+                    .when(draft_row != Some(row), |d| d.bg(theme.colors.code_background))
+                    .child(column)
+                    .into_any_element(),
+            );
+        }
+        out
+    }
+
     /// Records `text` as saved; the editor is dirty again only if it now differs.
     pub fn mark_saved(&mut self, text: String, cx: &mut Context<Self>) {
         self.saved_text = text;
@@ -463,6 +669,7 @@ impl FileEditor {
         if let Some(h) = &mut self.highlighter {
             h.edited(range.start.line, removed + 1, inserted + 1);
         }
+        self.remap_comments(range.start.line, range.end.line, inserted, cx);
         if removed == 0 && inserted == 0 {
             self.rewrap_line(range.start.line);
         } else {
@@ -569,7 +776,7 @@ impl FileEditor {
     fn pos_for_point(&self, position: Point<Pixels>) -> Pos {
         let geometry = self.geometry.borrow();
         let y = position.y - geometry.bounds.origin.y + self.scroll.y;
-        let row = ((y / px(EDITOR_LINE_HEIGHT)).floor().max(0.) as usize).min(self.row_count().saturating_sub(1));
+        let row = row_at_y(&geometry.gaps, y).min(self.row_count().saturating_sub(1));
         let x = position.x - geometry.bounds.origin.x - geometry.text_left + self.scroll.x;
         if let Some(entry) = row.checked_sub(geometry.first_row).and_then(|i| geometry.lines.get(i)) {
             let display = entry.shaped.closest_index_for_x(x.max(px(0.)));
@@ -586,8 +793,21 @@ impl FileEditor {
     }
 
     fn on_mouse_down(&mut self, event: &MouseDownEvent, window: &mut Window, cx: &mut Context<Self>) {
-        window.focus(&self.focus_handle, cx);
         let pos = self.pos_for_point(event.position);
+        let in_gutter = {
+            let geometry = self.geometry.borrow();
+            event.position.x - geometry.bounds.origin.x < geometry.text_left - geometry.ch
+        };
+        // Line numbers pick lines for a comment (`enableLineSelection`), not while a form is open.
+        if in_gutter {
+            if self.draft.is_none() {
+                self.line_drag = Some(pos.line);
+                self.picked_lines = Some((pos.line, pos.line));
+                cx.notify();
+            }
+            return;
+        }
+        window.focus(&self.focus_handle, cx);
         self.goal_x = None;
         match event.click_count {
             2 => {
@@ -608,10 +828,26 @@ impl FileEditor {
     }
 
     fn on_mouse_drag(&mut self, position: Point<Pixels>, cx: &mut Context<Self>) {
+        if let Some(anchor) = self.line_drag {
+            let line = self.pos_for_point(position).line;
+            self.picked_lines = Some((anchor.min(line), anchor.max(line)));
+            cx.notify();
+            return;
+        }
         if self.dragging {
             self.selection.head = self.pos_for_point(position);
             self.scroll_to_caret = true;
             cx.notify();
+        }
+    }
+
+    /// The end of a gutter pick opens the comment form (`onLineSelectionEnd`).
+    fn on_mouse_up(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.dragging = false;
+        if self.line_drag.take().is_some()
+            && let Some((start, end)) = self.picked_lines
+        {
+            self.begin_comment(start, end, window, cx);
         }
     }
 
@@ -1044,9 +1280,12 @@ impl Render for FileEditor {
             .on_action(cx.listener(Self::find_previous))
             .relative()
             .size_full()
+            .overflow_hidden()
             .bg(background)
             .child(EditorElement { editor: cx.entity() })
+            .children(self.render_comments(cx))
             .children(self.render_find_bar(cx))
+            .test_support()
     }
 }
 
@@ -1111,6 +1350,16 @@ impl Element for EditorElement {
         let foreground = theme.colors.code_foreground;
         let muted = theme.colors.muted_foreground;
         let code_size = theme.fonts.code;
+        // Picked line numbers (`--diffs-selection-number-fg`): the base 75% with white, or 65% with
+        // black on light.
+        let picked_number = {
+            let base: Hsla = gpui_kit::rgb(0x009fff).into();
+            let (mixer, weight) = if theme.is_dark() { (gpui_kit::white(), 0.75) } else { (gpui_kit::black(), 0.65) };
+            crate::components::diffs::colors::mix_lab(base, mixer, weight)
+        };
+        // The file view's comment blocks sit inside `py-1`.
+        let comment_pad = theme.sp(1.);
+        let ui_rem = theme.fonts.interface;
         let focused = self.editor.read(cx).focus_handle.is_focused(window);
         let entity = self.editor.clone();
         entity.update(cx, |editor, _| {
@@ -1132,13 +1381,14 @@ impl Element for EditorElement {
             let cols = ((bounds.size.width - text_left - ch) / ch.max(px(1.))).floor().max(1.) as usize;
             editor.ensure_wrap(cols);
             let total_rows = editor.row_count();
-            let content_height = line_height * total_rows as f32;
+            let gaps = editor.comment_gaps(f32::from(bounds.size.width), comment_pad, ui_rem);
+            let content_height = line_height * total_rows as f32 + gap_offset(&gaps, usize::MAX);
             let max_y = (content_height - bounds.size.height + line_height * 3.).max(px(0.));
             if editor.scroll_to_caret {
                 editor.scroll_to_caret = false;
                 let head = editor.selection.head;
                 let (row, start) = editor.pos_row(head);
-                let top = line_height * row as f32;
+                let top = line_height * row as f32 + gap_offset(&gaps, row);
                 if top < editor.scroll.y {
                     editor.scroll.y = top;
                 } else if top + line_height > editor.scroll.y + bounds.size.height {
@@ -1156,13 +1406,13 @@ impl Element for EditorElement {
                 editor.scroll.x = px(0.);
             }
             editor.scroll.y = editor.scroll.y.clamp(px(0.), max_y);
-            let first_row = (editor.scroll.y / line_height).floor() as usize;
-            let visible_rows = (bounds.size.height / line_height).ceil() as usize + 1;
-            let last_row = (first_row + visible_rows).min(total_rows);
+            let first_row = row_at_y(&gaps, editor.scroll.y).min(total_rows.saturating_sub(1));
+            let last_row = (row_at_y(&gaps, editor.scroll.y + bounds.size.height) + 2).min(total_rows);
             let (first_line, first_sub) = editor.row_line(first_row);
             let last_line = if last_row > first_row { editor.row_line(last_row - 1).0 + 1 } else { first_line + 1 }.min(count);
             let head_line = editor.selection.head.line;
             let number_color = muted.opacity(0.7);
+            let picked = editor.picked_lines.or(editor.draft.as_ref().map(|d| (d.start, d.end)));
             let mut pending = false;
             if let Some(highlighter) = &mut editor.highlighter {
                 pending = !highlighter.ensure(editor.buffer.lines(), last_line.saturating_sub(1), HIGHLIGHT_BUDGET_MS);
@@ -1204,7 +1454,13 @@ impl Element for EditorElement {
                 numbers.push((start == 0).then(|| {
                     let number: SharedString = (index + 1).to_string().into();
                     let len = number.len();
-                    let color = if index == head_line { foreground } else { number_color };
+                    let color = if picked.is_some_and(|(start, end)| (start..=end).contains(&index)) {
+                        picked_number
+                    } else if index == head_line {
+                        foreground
+                    } else {
+                        number_color
+                    };
                     window.text_system().shape_line(number, font_size, &[plain_run(len, &regular, color)], None)
                 }));
                 if last {
@@ -1218,7 +1474,7 @@ impl Element for EditorElement {
                 }
             }
             *editor.geometry.borrow_mut() =
-                FrameGeometry { bounds, text_left, ch, first_row, lines: lines.clone() };
+                FrameGeometry { bounds, text_left, ch, first_row, lines: lines.clone(), gaps };
             let hitbox = window.insert_hitbox(bounds, HitboxBehavior::Normal);
             EditorPrepaint { hitbox, lines, numbers, first_row, gutter_width, text_left, ch, scroll: editor.scroll, focused }
         })
@@ -1257,7 +1513,21 @@ impl Element for EditorElement {
         let head = editor.selection.head;
         let read_only = editor.read_only;
         let text_origin_x = bounds.origin.x + state.text_left - scroll.x;
-        let row_y = |row: usize| bounds.origin.y + line_height * row as f32 - scroll.y;
+        let gaps = editor.geometry.borrow().gaps.clone();
+        let row_y = |row: usize| bounds.origin.y + line_height * row as f32 + gap_offset(&gaps, row) - scroll.y;
+        let picked = editor.picked_lines.or(editor.draft.as_ref().map(|d| (d.start, d.end)));
+        let draft_row = editor.draft.as_ref().map(|d| editor.line_last_row(d.end));
+        // Pierre's own selection in a file (`--diffs-computed-selected-line-bg`, dark): the line
+        // 75% and the number column 60% in lab with its modified base, #009fff; an annotation row
+        // mixes over Pierre's buffer colour.
+        let (selected_line, selected_number, selected_annotation) = {
+            use crate::components::diffs::colors::{mix_lab, mix_srgb};
+            let base: Hsla = gpui_kit::rgb(0x009fff).into();
+            let bg = theme.colors.code_background;
+            let buffer = mix_srgb(bg, theme.colors.code_foreground, 0.90);
+            let (line, number) = if theme.is_dark() { (0.75, 0.60) } else { (0.82, 0.75) };
+            (mix_lab(bg, base, line), mix_lab(bg, base, number), mix_lab(buffer, base, line))
+        };
         let x_of = |entry: &ShapedLineEntry, col: usize| text_origin_x + entry.shaped.x_for_index(entry.display_index(col));
         let visible_lines = state.lines.first().map_or(0..0, |first| first.line..state.lines.last().map_or(first.line, |l| l.line) + 1);
         let find_matches: Vec<(usize, Range<usize>, bool)> = editor
@@ -1281,7 +1551,10 @@ impl Element for EditorElement {
                 let line = entry.line;
                 let y = row_y(state.first_row + offset);
                 let row = Bounds::new(point(bounds.origin.x, y), size(bounds.size.width, line_height));
-                if revealed == Some(line) {
+                if picked.is_some_and(|(start, end)| (start..=end).contains(&line)) {
+                    window.paint_quad(fill(row, selected_line));
+                    window.paint_quad(fill(Bounds::new(row.origin, size(state.gutter_width - px(2.), line_height)), selected_number));
+                } else if revealed == Some(line) {
                     window.paint_quad(fill(row, paint.revealed));
                 } else if line == head.line && selection.start == selection.end && state.focused {
                     window.paint_quad(fill(row, paint.current_line));
@@ -1324,6 +1597,14 @@ impl Element for EditorElement {
                     number.paint(point(number_x, y), line_height, TextAlign::Left, None, window, cx).ok();
                 }
             }
+            // The open form's block shares the picked lines' tint, gutter included.
+            if let Some(draft_row) = draft_row
+                && let Some(&(_, height)) = gaps.iter().find(|(row, _)| *row == draft_row)
+            {
+                let y = bounds.origin.y + line_height * (draft_row + 1) as f32 + gap_offset(&gaps, draft_row) - scroll.y;
+                window.paint_quad(fill(Bounds::new(point(bounds.origin.x, y), size(bounds.size.width, height)), selected_annotation));
+                window.paint_quad(fill(Bounds::new(point(bounds.origin.x, y), size(state.gutter_width - px(2.), height)), selected_number));
+            }
             window.paint_quad(fill(
                 Bounds::new(point(bounds.origin.x + state.gutter_width - px(2.), bounds.origin.y), size(px(1.), bounds.size.height)),
                 paint.gutter_border,
@@ -1348,9 +1629,9 @@ impl EditorElement {
             }
         });
         let editor = self.editor.clone();
-        window.on_mouse_event(move |_: &MouseUpEvent, phase, _, cx| {
+        window.on_mouse_event(move |_: &MouseUpEvent, phase, window, cx| {
             if phase == DispatchPhase::Bubble {
-                editor.update(cx, |editor, _| editor.dragging = false);
+                editor.update(cx, |editor, cx| editor.on_mouse_up(window, cx));
             }
         });
         let editor = self.editor.clone();
@@ -1463,4 +1744,26 @@ fn shape_code_line(
 /// The code font family, as the code font setting resolves it (Pierre's `--diffs-font-family`).
 pub fn mono_family() -> SharedString {
     crate::appearance_fonts::mono_font(FontWeight::NORMAL).family
+}
+
+/// Height of the comment blocks above `row`.
+fn gap_offset(gaps: &[(usize, Pixels)], row: usize) -> Pixels {
+    gaps.iter().take_while(|(after, _)| *after < row).fold(px(0.), |sum, (_, height)| sum + *height)
+}
+
+/// The row at content offset `y`; a point inside a comment block counts as the row above it.
+fn row_at_y(gaps: &[(usize, Pixels)], y: Pixels) -> usize {
+    let line_height = px(EDITOR_LINE_HEIGHT);
+    let mut offset = px(0.);
+    for &(after, height) in gaps {
+        let block_top = line_height * (after + 1) as f32 + offset;
+        if y < block_top {
+            break;
+        }
+        if y < block_top + height {
+            return after;
+        }
+        offset += height;
+    }
+    ((y - offset) / line_height).floor().max(0.) as usize
 }

@@ -63,6 +63,8 @@ pub enum RightPanelEvent {
     AddReviewComment(String),
     /// A review comment was deleted (`removeReviewComment`): its chip leaves the composer.
     RemoveReviewComment(String),
+    /// The launcher's "Side chat": start one from the thread as `/side` would, with no prompt.
+    StartSideChat,
     /// A side chat's image or link, for the window to open.
     SideChatAction(crate::components::chat::messages_timeline::TimelineAction),
 }
@@ -206,17 +208,25 @@ fn surface_icon(kind: RightPanelKind) -> IconName {
 enum Launch {
     Surface(SingletonKind),
     Terminal,
+    PullRequest,
+    SideChat,
 }
 
 impl Launch {
-    const ALL: [Launch; 6] = [
-        Launch::Surface(SingletonKind::Preview),
-        Launch::Terminal,
-        Launch::Surface(SingletonKind::Files),
-        Launch::Surface(SingletonKind::Diff),
-        Launch::Surface(SingletonKind::PullRequests),
-        Launch::Surface(SingletonKind::Device),
-    ];
+    /// The fork's entries in its order; Side chat only where side chats are offered.
+    fn all(side_chat: bool) -> impl Iterator<Item = Launch> {
+        [
+            Launch::Surface(SingletonKind::Preview),
+            Launch::Terminal,
+            Launch::Surface(SingletonKind::Files),
+            Launch::Surface(SingletonKind::Diff),
+            Launch::PullRequest,
+            Launch::Surface(SingletonKind::PullRequests),
+            Launch::Surface(SingletonKind::Device),
+        ]
+        .into_iter()
+        .chain(side_chat.then_some(Launch::SideChat))
+    }
 
     fn label(self) -> SharedString {
         match self {
@@ -224,8 +234,10 @@ impl Launch {
             Launch::Terminal => t!("Terminal"),
             Launch::Surface(SingletonKind::Files) => t!("Files"),
             Launch::Surface(SingletonKind::Diff) => t!("Diff"),
+            Launch::PullRequest => t!("Pull request"),
             Launch::Surface(SingletonKind::PullRequests) => t!("Linked items"),
             Launch::Surface(SingletonKind::Device) => t!("Device"),
+            Launch::SideChat => t!("Side chat"),
         }
     }
 
@@ -233,6 +245,22 @@ impl Launch {
         match self {
             Launch::Surface(kind) => surface_icon(kind.kind()),
             Launch::Terminal => IconName::SquareTerminal,
+            Launch::PullRequest => surface_icon(RightPanelKind::PullRequest),
+            Launch::SideChat => surface_icon(RightPanelKind::SideChat),
+        }
+    }
+
+    /// The empty panel's row id.
+    fn element_id(self) -> &'static str {
+        match self {
+            Launch::Surface(SingletonKind::Preview) => "launch-browser",
+            Launch::Terminal => "launch-terminal",
+            Launch::Surface(SingletonKind::Files) => "launch-files",
+            Launch::Surface(SingletonKind::Diff) => "launch-diff",
+            Launch::PullRequest => "launch-pull-request",
+            Launch::Surface(SingletonKind::PullRequests) => "launch-linked-items",
+            Launch::Surface(SingletonKind::Device) => "launch-device",
+            Launch::SideChat => "launch-side-chat",
         }
     }
 
@@ -242,8 +270,50 @@ impl Launch {
             Launch::Terminal => "T",
             Launch::Surface(SingletonKind::Files) => "F",
             Launch::Surface(SingletonKind::Diff) => "D",
+            Launch::PullRequest => "P",
             Launch::Surface(SingletonKind::PullRequests) => "L",
             Launch::Surface(SingletonKind::Device) => "M",
+            Launch::SideChat => "S",
+        }
+    }
+
+    /// The empty panel's tooltip on an unavailable entry (`SURFACE_UNAVAILABLE_HINTS`).
+    fn unavailable_hint(self) -> SharedString {
+        match self {
+            Launch::Surface(SingletonKind::Preview) => t!("Only available in the desktop app."),
+            Launch::Terminal | Launch::Surface(SingletonKind::Files) => t!("Available when a project is open."),
+            Launch::Surface(SingletonKind::Diff) => t!("Available for Git repositories."),
+            Launch::PullRequest => t!("No pull request on this branch yet."),
+            Launch::Surface(SingletonKind::PullRequests) => t!("No linked items available."),
+            Launch::Surface(SingletonKind::Device) => t!("Available from a thread."),
+            Launch::SideChat => t!("Available after the first message."),
+        }
+    }
+}
+
+/// What the launcher can open for the thread on screen, read once per render.
+struct LaunchFacts {
+    linked_items: bool,
+    pull_request: Option<t3code_client_runtime::state::thread_pull_requests::PullRequestPanelTarget>,
+    side_chat: crate::state::app_data::SideChatLaunch,
+}
+
+impl LaunchFacts {
+    fn available(&self, launch: Launch) -> bool {
+        use crate::state::app_data::SideChatLaunch;
+        match launch {
+            Launch::Surface(SingletonKind::PullRequests) => self.linked_items,
+            Launch::PullRequest => self.pull_request.is_some(),
+            Launch::SideChat => self.side_chat == SideChatLaunch::Available,
+            _ => true,
+        }
+    }
+
+    /// The tooltip on an unavailable entry: the side chat's own reason, else the hint.
+    fn disabled_reason(&self, launch: Launch) -> SharedString {
+        match (&self.side_chat, launch) {
+            (crate::state::app_data::SideChatLaunch::Disabled(Some(reason)), Launch::SideChat) => reason.clone(),
+            _ => launch.unavailable_hint(),
         }
     }
 }
@@ -417,6 +487,13 @@ impl RightPanel {
             FilesPanelEvent::OpenInEditor { absolute_path, editor, reveal } => this.open_in_editor(absolute_path.clone(), *editor, *reveal, cx),
             FilesPanelEvent::OpenInPreview { absolute_path } => this.open_in_preview(absolute_path.clone(), cx),
             FilesPanelEvent::RunOnServer { .. } => crate::live::host_menus::on_files_event(this, this.target.clone(), event, cx),
+            FilesPanelEvent::AddReviewComment(comment) => {
+                let label = review_comment_label(&comment.file_path, &comment.range_label, &comment.section_id);
+                cx.emit(RightPanelEvent::AddReviewComment(crate::state::pull_request_mentions::register_comment(comment.clone(), &label)))
+            }
+            FilesPanelEvent::RemoveReviewComment(id) => {
+                cx.emit(RightPanelEvent::RemoveReviewComment(crate::state::pull_request_mentions::review_comment_context_id(id)))
+            }
         });
         self.files.insert(workspace.key.clone(), (panel.clone(), subscription));
         // `canWriteFiles`: the session's filesystem-write grant, asked of the server once.
@@ -921,17 +998,37 @@ impl RightPanel {
         self.edit(cx, |store, thread| store.open_surface(thread, surface));
     }
 
+    /// The launcher's facts for the thread on screen.
+    fn launch_facts(&self, cx: &App) -> LaunchFacts {
+        let key = match &self.target {
+            Some(ThreadTarget::Server(key)) => Some(key),
+            _ => None,
+        };
+        LaunchFacts {
+            linked_items: self.data.palette_source().active_thread_has_linked_items(),
+            pull_request: key.and_then(|key| self.data.pull_request_panel_target(key, cx)),
+            side_chat: key.map_or(crate::state::app_data::SideChatLaunch::Hidden, |key| self.data.side_chat_launch(key, cx)),
+        }
+    }
+
     fn launch(&mut self, launch: Launch, cx: &mut Context<Self>) {
         match launch {
             Launch::Surface(kind) => self.edit(cx, |store, thread| store.open(thread, kind)),
             Launch::Terminal => self.new_terminal_tab(cx),
+            // `addPullRequestSurface`: the target as it is now.
+            Launch::PullRequest => {
+                let Some(target) = self.launch_facts(cx).pull_request else { return };
+                self.edit(cx, |store, thread| store.open_pull_request(thread, &target.project_id, &target.repository, target.number));
+            }
+            Launch::SideChat => cx.emit(RightPanelEvent::StartSideChat),
         }
     }
 
-    fn launch_menu(weak: WeakEntity<Self>) -> MenuPopup {
-        Launch::ALL.into_iter().fold(MenuPopup::new(), |menu, launch| {
+    fn launch_menu(weak: WeakEntity<Self>, facts: LaunchFacts) -> MenuPopup {
+        let side_chat = facts.side_chat != crate::state::app_data::SideChatLaunch::Hidden;
+        Launch::all(side_chat).fold(MenuPopup::new(), |menu, launch| {
             let weak = weak.clone();
-            menu.item(MenuItem::new(launch.label()).icon(launch.icon()).on_select(move |_, cx| {
+            menu.item(MenuItem::new(launch.label()).icon(launch.icon()).disabled(!facts.available(launch)).on_select(move |_, cx| {
                 weak.update(cx, |this, cx| this.launch(launch, cx)).ok();
             }))
         })
@@ -1065,31 +1162,33 @@ impl RightPanel {
     }
 
     fn render_launcher(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        // Linked items need a linked pull request or issue (`SURFACE_UNAVAILABLE_HINTS`).
-        let linked_items = self.data.palette_source().active_thread_has_linked_items();
+        let facts = self.launch_facts(cx);
         let theme = cx.app_theme();
         let c = &theme.colors;
         let hover = c.accent_surface.opacity(0.6);
-        let rows = Launch::ALL.into_iter().enumerate().map(|(index, launch)| {
-            let available = launch != Launch::Surface(SingletonKind::PullRequests) || linked_items;
+        let side_chat = facts.side_chat != crate::state::app_data::SideChatLaunch::Hidden;
+        let rows = Launch::all(side_chat).map(|launch| {
+            let available = facts.available(launch);
+            let reason = (!available).then(|| facts.disabled_reason(launch));
             div()
-                .id(("launch", index))
-                .h(rems(2.))
+                .id(launch.element_id())
+                .h(theme.rem(2.))
                 .w_full()
                 .flex()
                 .items_center()
-                .gap(rems(0.625))
-                .px(rems(0.625))
+                .gap(theme.rem(0.625))
+                .px(theme.rem(0.625))
                 .rounded(theme.radii.control)
                 .ui_text(theme, TextSize::Sm, weight::NORMAL)
                 .text_color(c.text)
                 .child(Icon::new(launch.icon()).size(IconSize::Md).color(c.text))
                 .child(div().flex_1().min_w_0().truncate().child(launch.label()))
                 .child(crate::components::ui::kbd::Kbd::new(launch.shortcut()))
-                .when(!available, |d| d.opacity(0.5))
+                .when_some(reason, |d, reason| d.opacity(0.5).tooltip(tooltip(reason)))
                 .when(available, |d| {
                     d.cursor_pointer().hover(move |s| s.bg(hover)).on_click(cx.listener(move |this, _, _, cx| this.launch(launch, cx)))
                 })
+                .test_support()
         });
         div()
             .flex_1()
@@ -1097,22 +1196,22 @@ impl RightPanel {
             .flex()
             .items_center()
             .justify_center()
-            .px(rems(1.5))
+            .px(theme.rem(1.5))
             .pb(self.topbar_height)
             .child(
                 div()
                     .w_full()
-                    .max_w(rems(20.))
-                    .py(rems(1.5))
+                    .max_w(theme.rem(20.))
+                    .py(theme.rem(1.5))
                     .child(
                         div()
-                            .mb(rems(0.75))
+                            .mb(theme.rem(0.75))
                             .text_center()
                             .ui_text(theme, TextSize::Sm, weight::MEDIUM)
                             .text_color(c.text)
                             .child(t!("Open a surface")),
                     )
-                    .child(div().flex().flex_col().gap(rems(0.125)).children(rows)),
+                    .child(div().flex().flex_col().gap(theme.rem(0.125)).children(rows)),
             )
     }
 }
@@ -1141,7 +1240,10 @@ impl Render for RightPanel {
                 .icon(IconName::Plus)
                 .size(ButtonSize::IconXs)
                 .variant(ButtonVariant::GhostMuted),
-            move |_, _| Self::launch_menu(weak.clone()),
+            move |_, cx| {
+                let facts = weak.upgrade().map(|this| this.read(cx).launch_facts(cx));
+                facts.map_or_else(MenuPopup::new, |facts| Self::launch_menu(weak.clone(), facts))
+            },
         );
         let tab_row = div()
             .id("right-panel-tabbar")

@@ -26,33 +26,9 @@ fn state_of(link: &ThreadPullRequestLink) -> PullRequestState {
     link.snapshot.as_ref().map_or(PullRequestState::Open, |s| s.state)
 }
 
-/// `threadPullRequestUpdatedAtMs`: the snapshot's update time, else when it was linked.
-/// ISO-8601 UTC strings order as their instants.
-fn updated_at(link: &ThreadPullRequestLink) -> &str {
-    link.snapshot.as_ref().and_then(|s| s.updated_at.as_deref()).unwrap_or(&link.linked_at)
-}
-
-/// The visible links all belong to one native stack.
-fn one_stack<'a>(links: impl IntoIterator<Item = &'a ThreadPullRequestLink>) -> bool {
-    let mut ids = links.into_iter().map(|link| link.stack.as_ref().map(|s| s.id.as_str()));
-    let Some(Some(first)) = ids.next() else { return false };
-    ids.all(|id| id == Some(first))
-}
-
-/// `resolveThreadCurrentPullRequestLink`: the one open link; of several open ones the
-/// top of their stack, else the most recently linked; with none open, the latest updated.
+/// `resolveThreadCurrentPullRequestLink`.
 pub fn current_link(links: &[ThreadPullRequestLink]) -> Option<&ThreadPullRequestLink> {
-    let open: Vec<_> = visible(links).filter(|link| state_of(link) == PullRequestState::Open).collect();
-    match open.as_slice() {
-        [single] => Some(single),
-        [] => visible(links).max_by(|a, b| updated_at(a).cmp(updated_at(b))),
-        several if one_stack(several.iter().copied()) => {
-            // The stack's layers run base first; the top is the last open member listed.
-            let layers = &several[0].stack.as_ref()?.layers;
-            layers.iter().rev().find_map(|layer| several.iter().copied().find(|link| link.number == layer.number))
-        }
-        several => several.iter().copied().max_by(|a, b| a.linked_at.cmp(&b.linked_at)),
-    }
+    t3code_client_runtime::state::thread_pull_requests::resolve_thread_current_pull_request_link(links)
 }
 
 /// The host's words for a change request from its URL (`findByChangeRequestUrl`); a URL no
