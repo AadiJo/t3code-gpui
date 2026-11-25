@@ -985,6 +985,16 @@ fn run(len: usize, font: gpui_kit::Font, color: Hsla) -> TextRun {
     TextRun { len, font, color, background_color: None, underline: None, strikethrough: None }
 }
 
+/// A file chip's icon slot: `ContextChip`'s 1em icon and `gap-[0.2em]`, as an em space padded
+/// by 0.1em on each side.
+const FILE_CHIP_SLOT_LAYOUT: gpui_kit::RunLayout = gpui_kit::RunLayout { scale: 1., padding_em: 0.1, padding_px: 0. };
+
+/// The byte range of `span`'s icon slot when it is a file chip that opens with one.
+fn file_chip_slot(text: &str, span: &InlineSpan) -> Option<Range<usize>> {
+    (matches!(span.style, InlineStyle::FileLink(_)) && text[span.range.clone()].starts_with(FILE_CHIP_PLACEHOLDER))
+        .then(|| span.range.start..span.range.start + FILE_CHIP_PLACEHOLDER.len())
+}
+
 /// Splits a paragraph into runs at every span boundary and applies each
 /// covering span's style, so nested styles (bold inside a link) combine.
 fn style_inlines(inlines: &Inlines, base: InlineBase, colors: &ChatColors, user: bool) -> StyledInlines {
@@ -993,6 +1003,9 @@ fn style_inlines(inlines: &Inlines, base: InlineBase, colors: &ChatColors, user:
     for span in &inlines.spans {
         boundaries.push(span.range.start);
         boundaries.push(span.range.end);
+        if file_chip_slot(text, span).is_some() {
+            boundaries.push(span.range.start + FILE_CHIP_PLACEHOLDER.len());
+        }
     }
     boundaries.sort_unstable();
     boundaries.dedup();
@@ -1029,6 +1042,9 @@ fn style_inlines(inlines: &Inlines, base: InlineBase, colors: &ChatColors, user:
                 InlineStyle::FileLink(_) => {
                     font.weight = FontWeight::MEDIUM;
                     color = file_ink;
+                    if file_chip_slot(text, span).is_some_and(|slot| slot.start == start) {
+                        font.features = font.features.with_run_layout(FILE_CHIP_SLOT_LAYOUT);
+                    }
                 }
                 InlineStyle::FootnoteRef => {
                     font.weight = FontWeight::SEMIBOLD;
@@ -1056,7 +1072,7 @@ fn style_inlines(inlines: &Inlines, base: InlineBase, colors: &ChatColors, user:
             }),
             InlineStyle::Link(target) => styled.links.push((span.range.clone(), target.clone())),
             InlineStyle::FileLink(target) => {
-                if text[span.range.clone()].starts_with(FILE_CHIP_PLACEHOLDER) {
+                if file_chip_slot(text, span).is_some() {
                     // The file's Pierre icon when it is one tinted layer, else the generic file.
                     let (path, color) = match resolve_file_icon(target).layers() {
                         [layer] => (layer.asset.into(), layer.tint.color(colors.appearance, colors.theme.muted_foreground)),
@@ -1065,7 +1081,8 @@ fn style_inlines(inlines: &Inlines, base: InlineBase, colors: &ChatColors, user:
                     styled.icons.push(TextIcon {
                         index: span.range.start,
                         size: colors.r(px(14.)),
-                        inset: px(0.),
+                        // The slot's glyph starts after its leading padding.
+                        inset: -colors.r(px(14.)) * FILE_CHIP_SLOT_LAYOUT.padding_em,
                         below_baseline: None,
                         paint: IconPaint::Svg { path, color },
                     });

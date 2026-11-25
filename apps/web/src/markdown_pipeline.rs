@@ -508,8 +508,9 @@ impl InlineBuilder {
     }
 }
 
-/// Space the file icon is painted over: an em for the 1em icon, then a thin gap.
-pub const FILE_CHIP_PLACEHOLDER: &str = "\u{2003}\u{2009}";
+/// Space the file icon is painted over: an em space for the 1em icon. The renderer pads it by
+/// 0.1em on each side, which makes the chip's `gap-[0.2em]` exact in any font.
+pub const FILE_CHIP_PLACEHOLDER: &str = "\u{2003}";
 
 /// `src/app/main.rs:12` → `main.rs:12`.
 fn file_display_name(target: &str) -> &str {
