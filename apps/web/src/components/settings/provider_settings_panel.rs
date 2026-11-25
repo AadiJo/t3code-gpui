@@ -480,7 +480,7 @@ impl ProviderSettingsPanel {
                 None => SharedString::default(),
             }
         };
-        let updates = ProviderUpdatesAction::new(self.model.clone());
+        let updates = ProviderUpdatesAction::view(cx);
         // `-me-2`: the ghost button's padding would inset its label from the card edge.
         div()
             .flex()

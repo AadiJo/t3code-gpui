@@ -108,6 +108,7 @@ mod live_check_setup;
 mod live_check_settings;
 mod live_check_update;
 mod live_check_update_ref;
+mod live_check_update_pill;
 mod live_check_usage;
 #[allow(dead_code)]
 #[path = "notifications/mod.rs"]
@@ -612,6 +613,7 @@ fn main() -> anyhow::Result<()> {
         "env-banner" => live_check_composer_actions::run_env_banner(&mut check),
         "earlier-turns" => live_check_history::run_earlier_turns(&mut check),
         "update-ref" => live_check_update_ref::run_update_ref(&mut check),
+        "update-pill" => live_check_update_pill::run_update_pill(&mut check),
         other => Err(anyhow::anyhow!("unknown phase {other}")),
     };
     check.finish(&phase, result)

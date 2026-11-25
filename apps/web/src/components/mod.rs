@@ -25,6 +25,7 @@ pub mod hosted_empty_state;
 pub mod issue;
 pub mod persistent_thread_terminals;
 pub mod right_panel_tabs;
+pub mod provider_update_launch_notification;
 pub mod provider_updates_action;
 pub mod relative_time;
 pub mod saved_views_menu;

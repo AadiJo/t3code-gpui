@@ -92,12 +92,13 @@ impl ServerUpdateTarget {
     }
 }
 
-/// Every environment's update state as views read it, plus each session's maintain permission.
+/// Every environment's update state as views read it, plus each session's permissions.
 #[derive(Default)]
 pub struct ServerUpdateStates {
     states: HashMap<EnvironmentId, ServerUpdateState>,
-    /// The connection generation each answer belongs to; `None` while the check runs.
-    can_maintain: HashMap<EnvironmentId, (u64, Option<bool>)>,
+    /// The connection generation each session state belongs to; `None` while the check runs
+    /// or when it failed.
+    sessions: HashMap<EnvironmentId, (u64, Option<Arc<t3code_contracts::AuthSessionState>>)>,
 }
 
 /// The GPUI side of server updates. See the module docs.
@@ -134,31 +135,36 @@ impl ServerUpdateStore {
         Self::state(environment_id, cx).for_server_version(server_version)
     }
 
-    /// Whether this session may maintain the environment (`canUpdateServer`). Starts the check
-    /// for a new connection and answers `false` until it returns.
+    /// Whether this session may maintain the environment (`canUpdateServer`).
     pub fn can_maintain(environment_id: &EnvironmentId, cx: &mut App) -> bool {
+        Self::grants(environment_id, AuthEnvironmentScope::EnvironmentMaintain, cx)
+    }
+
+    /// Whether the environment's connected session grants `scope` (`useEnvironmentsWithScope`).
+    /// Starts the session check for a new connection and answers `false` until it returns.
+    pub fn grants(environment_id: &EnvironmentId, scope: AuthEnvironmentScope, cx: &mut App) -> bool {
         let connection = ConnectionRuntime::is_running(cx)
             .then(|| ConnectionRuntime::state(cx).read(cx).environment(environment_id).and_then(|env| env.status.clone()))
             .flatten();
         let Some(status) = connection.filter(|status| status.phase == ConnectionPhase::Connected) else { return false };
         let states = Self::entity(cx);
-        if let Some((generation, answer)) = states.read(cx).can_maintain.get(environment_id)
+        if let Some((generation, session)) = states.read(cx).sessions.get(environment_id)
             && *generation == status.generation
         {
-            return answer.unwrap_or(false);
+            return session.as_ref().is_some_and(|session| session.grants_scope(scope));
         }
         let Some(link) = ConnectionRuntime::global(cx).environment_link(environment_id) else { return false };
-        states.update(cx, |states, _| states.can_maintain.insert(environment_id.clone(), (status.generation, None)));
+        states.update(cx, |states, _| states.sessions.insert(environment_id.clone(), (status.generation, None)));
         let check = ConnectionRuntime::global(cx).spawn(
             async move { link.session_state().await.map_err(|e| crate::connection::CommandError(e.to_string().into())) },
             cx,
         );
         let id = environment_id.clone();
         cx.spawn(async move |cx| {
-            let can = check.await.is_ok_and(|state| state.grants_scope(AuthEnvironmentScope::EnvironmentMaintain));
+            let session = check.await.ok().map(Arc::new);
             cx.update(|cx| {
                 states.update(cx, |states, cx| {
-                    states.can_maintain.insert(id, (status.generation, Some(can)));
+                    states.sessions.insert(id, (status.generation, session));
                     cx.notify();
                 })
             });
