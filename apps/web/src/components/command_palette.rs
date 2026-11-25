@@ -22,11 +22,13 @@ use t3code_shared::keybindings::{KeybindingCommand, StaticCommand, THREAD_JUMP_C
 use super::command_palette_add_project::{add_project_item, sources_view};
 use super::command_palette_logic::{AddProjectStep, PaletteTrailing};
 use super::command_palette_project_flow::{
-    BrowseEntry, BrowseListing, FlowEnvironment, FlowOpened, ProjectFlow, append_segment, can_browse_up, clone_destination,
-    clone_destination_browse, clone_directory_path, directory_path, filter_entries, has_trailing_separator, initial_query,
+    BrowseEntry, BrowseListing, CloneSource, FlowEnvironment, FlowOpened, ProjectFlow, RemoteSource, RepositoryInfo, append_segment,
+    can_browse_up, clone_destination, clone_destination_browse, clone_directory_name, clone_directory_path, directory_path,
+    incomplete_owner_message, new_project_repository, filter_entries, has_trailing_separator, initial_query,
     is_browse_query, leaf_segment, new_project_folder_name, normalize_clone_url, parent_path, tab_completion,
 };
 use super::sidebar::model::EnvironmentId;
+use super::ui::toast::{ToastData, ToastKind, Toaster};
 use super::command_palette_logic::{
     FilterInput, PaletteEvent, PaletteGroup, PaletteItem, PaletteItemKind, PaletteMode, PaletteRow, PaletteRows,
     PaletteRun, PaletteSearchState, PaletteTitle, PaletteView, ShownGroup, build_nested_search_items, build_root_groups,
@@ -114,6 +116,8 @@ struct Session {
     listing_request: Option<(SharedString, Task<()>)>,
     /// A create, add or clone is running.
     busy: bool,
+    /// New project's "Create private repository" is checked (`newProjectPublishes`).
+    publishes: bool,
     /// What the Add project pages know about each connected environment, read at open.
     flow_envs: Vec<FlowEnvironment>,
     /// Where a path typed on the root page browses.
@@ -340,6 +344,7 @@ impl CommandPalette {
             listing: None,
             listing_request: None,
             busy: false,
+            publishes: false,
             flow_envs,
             default_flow_env,
             _input_events: events,
@@ -350,6 +355,32 @@ impl CommandPalette {
             && !session.highlight_cleared
         {
             session.highlighted = session.rows.item_values.first().cloned();
+        }
+        self.discover_sources(window, cx);
+    }
+
+    /// Reads each connected environment's source-control discovery, so its Sources page and new
+    /// projects offer its hosts; an open session takes the result when it lands.
+    fn discover_sources(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(backend) = self.source.project_flows() else { return };
+        let ids: Vec<EnvironmentId> = self.source.environments().into_iter().filter(|e| e.connected).map(|e| e.id).collect();
+        for id in ids {
+            let task = backend.discover(&id, cx);
+            let backend = backend.clone();
+            cx.spawn_in(window, async move |this, cx| {
+                task.await;
+                this.update(cx, |this, cx| {
+                    let Some(info) = backend.environment(&id, cx) else { return };
+                    let Some(session) = &mut this.session else { return };
+                    if let Some(slot) = session.flow_envs.iter_mut().find(|e| e.id == id) {
+                        *slot = info;
+                    }
+                    this.refilter();
+                    cx.notify();
+                })
+                .ok();
+            })
+            .detach();
         }
     }
 
@@ -527,7 +558,11 @@ impl CommandPalette {
                 .keep_open(),
             );
         }
-        items.push(add_project_item(&environments, &can_create_new).without_chevron());
+        let sources = |id: &super::sidebar::model::EnvironmentId| match flows.as_ref().and_then(|f| f.environment(id, cx)) {
+            Some(e) => (e.new_projects_root.is_some(), e.remote_sources),
+            None => (false, Vec::new()),
+        };
+        items.push(add_project_item(&environments, &sources).without_chevron());
         items.push(change_theme_item(cx));
         items.push(change_appearance_item(cx));
         items.push(theme_editor_item());
@@ -1035,8 +1070,13 @@ impl CommandPalette {
     /// A row action that calls back into the palette.
     fn local_run(&self, run: impl Fn(&mut CommandPalette, &mut Window, &mut Context<CommandPalette>) + 'static) -> PaletteRun {
         let weak = self.this.clone();
+        let run = Rc::new(run);
         PaletteRun::Local(Rc::new(move |window, cx| {
-            weak.update(cx, |palette, cx| run(palette, window, cx)).ok();
+            // Enter runs rows while the palette is updating, so this waits for that to end.
+            let (weak, run) = (weak.clone(), run.clone());
+            window.defer(cx, move |window, cx| {
+                weak.update(cx, |palette, cx| run(palette, window, cx)).ok();
+            });
         }))
     }
 
@@ -1058,6 +1098,7 @@ impl CommandPalette {
                 .keep_open();
                 item.trailing = Some(PaletteTrailing::Chevron);
                 let mut groups: Vec<PaletteGroup> = self.new_project_machine_group(env, session.busy).into_iter().collect();
+                groups.extend(self.new_project_option_group(env));
                 groups.push(PaletteGroup { value: "new-project-existing".into(), label: SharedString::default(), items: vec![Rc::new(item)] });
                 Some(groups)
             }
@@ -1119,6 +1160,45 @@ impl CommandPalette {
         }
     }
 
+    /// New project's Options group: "Create private repository on <host>", when a host can take
+    /// one (`newProjectOptionGroups`).
+    fn new_project_option_group(&self, env: &EnvironmentId) -> Option<PaletteGroup> {
+        let session = self.session.as_ref()?;
+        let info = session.flow_envs.iter().find(|e| &e.id == env)?;
+        let root = info.new_projects_root.clone()?;
+        let target = info.publish_targets.first()?.clone();
+        let name = session.search.query.trim();
+        let title = if info.publish_targets.len() > 1 {
+            t!("Create private repository")
+        } else {
+            t!("Create private repository on {host}", host = target.label.clone())
+        };
+        let description: SharedString = if name.is_empty() {
+            target.owner.clone().unwrap_or_else(|| t!("Your {host} account", host = target.label.clone()))
+        } else {
+            new_project_repository(&target, &clone_destination(&root, &new_project_folder_name(name))).into()
+        };
+        let mut item = PaletteItem::action(
+            "new-project:publish",
+            PaletteTitle::Text(title),
+            IconName::Link,
+            self.local_run(|palette, _, cx| {
+                if let Some(session) = &mut palette.session {
+                    session.publishes = !session.publishes;
+                }
+                palette.refilter();
+                cx.notify();
+            }),
+            &[],
+        )
+        .description(description)
+        .keep_open();
+        item.brand = Some(crate::source_control_presentation::source_control_icon(crate::source_control_presentation::source_control_definition(Some(&target.kind))));
+        item.trailing = Some(PaletteTrailing::Checkbox(session.publishes));
+        item.disabled = session.busy;
+        Some(PaletteGroup { value: "new-project-options".into(), label: t!("Options"), items: vec![Rc::new(item)] })
+    }
+
     /// Connected environments whose server can make a new project (`newProjectEnvironmentOptions`).
     fn new_project_environments(&self) -> Vec<FlowEnvironment> {
         let Some(session) = &self.session else { return Vec::new() };
@@ -1162,7 +1242,10 @@ impl CommandPalette {
         }
         let flow = match event {
             PaletteEvent::AddProject(AddProjectStep::BrowseFolders(env)) => ProjectFlow::Browse { env: env.clone() },
-            PaletteEvent::AddProject(AddProjectStep::CloneRepository(env)) => ProjectFlow::CloneRepository { env: env.clone() },
+            PaletteEvent::AddProject(AddProjectStep::CloneRepository(env)) => ProjectFlow::CloneRepository { env: env.clone(), source: CloneSource::Url },
+            PaletteEvent::AddProject(AddProjectStep::CloneFromHost(env, host)) => {
+                ProjectFlow::CloneRepository { env: env.clone(), source: CloneSource::Host(host.clone()) }
+            }
             PaletteEvent::AddProject(AddProjectStep::NewProject(env)) => ProjectFlow::NewProject { env: env.clone(), sources: Some(env.clone()) },
             PaletteEvent::NewProject => match self.new_project_environments().first() {
                 Some(env) => ProjectFlow::NewProject { env: env.id.clone(), sources: None },
@@ -1200,6 +1283,7 @@ impl CommandPalette {
         session.search.push(Rc::new(PaletteView { addon_icon: flow.addon_icon(), groups: Vec::new(), initial_query }));
         session.flow = Some(flow);
         session.busy = false;
+        session.publishes = false;
         session.highlighted = None;
         session.highlight_cleared = true;
         self.sync_input(window, cx);
@@ -1409,20 +1493,69 @@ impl CommandPalette {
         .detach();
     }
 
-    /// `submitAddProjectCloneFlow`'s repository step: the URL leads to the destination page.
+    /// `submitAddProjectCloneFlow`'s repository step: a URL leads to the destination page; a
+    /// host's `owner/name` is looked up first (`sourceControl.lookupRepository`).
     fn submit_clone_repository(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(session) = &mut self.session else { return };
-        let Some(ProjectFlow::CloneRepository { env }) = &session.flow else { return };
+        let Some(ProjectFlow::CloneRepository { env, source }) = &session.flow else { return };
         let input = session.search.query.trim().to_string();
-        if input.is_empty() {
+        if input.is_empty() || session.busy {
             return;
         }
-        let Some(info) = session.flow_envs.iter().find(|e| &e.id == env).cloned() else { return };
-        let remote_url = normalize_clone_url(&input);
-        let folder = clone_directory_path(&remote_url, info.ghq_clone_layout);
+        let (env, source) = (env.clone(), source.clone());
+        let Some(info) = session.flow_envs.iter().find(|e| e.id == env).cloned() else { return };
+        let host = match source {
+            CloneSource::Url => {
+                let remote_url = normalize_clone_url(&input);
+                self.show_clone_destination(&info, remote_url, input, None, window, cx);
+                return;
+            }
+            CloneSource::Host(host) => host,
+        };
+        if let Some(message) = incomplete_owner_message(&host.kind, &input) {
+            Toaster::push(ToastData::new(ToastKind::Error, t!("Repository name incomplete")).description(message).stacked(), cx);
+            return;
+        }
+        let Some(backend) = self.source.project_flows() else { return };
+        session.busy = true;
+        cx.notify();
+        let lookup = backend.lookup_repository(&env, &host, input.clone(), cx);
+        cx.spawn_in(window, async move |this, cx| {
+            let result = lookup.await;
+            this.update_in(cx, |this, window, cx| {
+                let Some(session) = &mut this.session else { return };
+                // A page left while the lookup ran keeps what it shows now.
+                if !matches!(&session.flow, Some(ProjectFlow::CloneRepository { env: e, .. }) if *e == env) {
+                    return;
+                }
+                session.busy = false;
+                match result {
+                    Ok(repository) => {
+                        let remote_url = repository.clone_url.to_string();
+                        this.show_clone_destination(&info, remote_url, input, Some((host, repository)), window, cx);
+                    }
+                    Err(error) => {
+                        let error = if error.is_empty() { t!("An error occurred.") } else { error };
+                        Toaster::push(ToastData::new(ToastKind::Error, t!("Repository lookup failed")).description(error).stacked(), cx);
+                        cx.notify();
+                    }
+                }
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    /// The destination step, its query the default clone destination (`getDefaultCloneDestination`).
+    fn show_clone_destination(&mut self, info: &FlowEnvironment, remote_url: String, input: String, repository: Option<(RemoteSource, RepositoryInfo)>, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(session) = &mut self.session else { return };
+        let folder = match &repository {
+            Some((_, repo)) if !info.ghq_clone_layout => clone_directory_name(&repo.name_with_owner),
+            _ => clone_directory_path(&remote_url, info.ghq_clone_layout),
+        };
         let pinned = folder.rsplit('/').next().unwrap_or_default().to_string();
         let destination = clone_destination(&initial_query(&info.base_directory), &folder);
-        session.flow = Some(ProjectFlow::CloneDestination { env: env.clone(), remote_url: remote_url.into(), input: input.into(), pinned: pinned.into() });
+        session.flow = Some(ProjectFlow::CloneDestination { env: info.id.clone(), remote_url: remote_url.into(), input: input.into(), pinned: pinned.into(), repository });
         self.replace_query(destination, window, cx);
     }
 
@@ -1435,10 +1568,11 @@ impl CommandPalette {
             return;
         }
         let env = env.clone();
+        let publish = session.publishes.then(|| session.flow_envs.iter().find(|e| e.id == env).and_then(|e| e.publish_targets.first().cloned())).flatten();
         session.busy = true;
         self.refilter();
         cx.notify();
-        let task = backend.create_new_project(&env, name, cx);
+        let task = backend.create_new_project(&env, name, publish, cx);
         self.finish(async move { task.await.map(PaletteEvent::NewThreadIn) }, window, cx);
     }
 
@@ -1466,9 +1600,14 @@ impl CommandPalette {
         if came_from.is_some() {
             self.pop_view(window, cx);
         }
-        let can_create_new = self.session.as_ref().is_some_and(|s| s.flow_envs.iter().any(|e| e.id == env && e.new_projects_root.is_some()));
+        let info = self
+            .session
+            .as_ref()
+            .and_then(|s| s.flow_envs.iter().find(|e| e.id == env))
+            .map(|e| (e.new_projects_root.is_some(), e.remote_sources.clone()))
+            .unwrap_or_default();
         let Some(session) = &mut self.session else { return };
-        session.search.push(Rc::new(sources_view(&env, can_create_new)));
+        session.search.push(Rc::new(sources_view(&env, info)));
         session.highlighted = None;
         session.highlight_cleared = true;
         self.sync_input(window, cx);
@@ -1504,6 +1643,7 @@ impl CommandPalette {
             Some(ProjectFlow::NewProject { env, .. }) => {
                 chrome.footer_action = Some(match session.highlighted.as_deref() {
                     None => t!("Create"),
+                    Some("new-project:publish") => t!("Toggle"),
                     Some(_) => t!("Select"),
                 });
                 let info = session.flow_envs.iter().find(|e| &e.id == env);
@@ -1529,19 +1669,33 @@ impl CommandPalette {
                 }
                 return chrome;
             }
-            Some(ProjectFlow::CloneRepository { .. }) => {
+            Some(ProjectFlow::CloneRepository { source: CloneSource::Url, .. }) => {
                 chrome.footer_action = Some(t!("Continue"));
                 chrome.empty = Some(t!("Enter a Git clone URL and press Enter to continue."));
                 return chrome;
             }
-            Some(ProjectFlow::CloneDestination { remote_url, input, .. }) => {
+            Some(ProjectFlow::CloneRepository { source: CloneSource::Host(_), .. }) => {
+                chrome.footer_action = Some(t!("Lookup"));
+                chrome.empty = Some(t!("Enter a repository path and press Enter to look it up."));
+                return chrome;
+            }
+            Some(ProjectFlow::CloneDestination { remote_url, input, repository, .. }) => {
+                let summary = match repository {
+                    Some((host, repo)) => render_summary_row(
+                        crate::source_control_presentation::source_control_icon(crate::source_control_presentation::source_control_definition(Some(&host.kind))),
+                        repo.name_with_owner.clone(),
+                        repo.url.clone(),
+                        theme,
+                    ),
+                    None => render_summary_row(IconName::Link, input.clone(), remote_url.clone(), theme),
+                };
                 chrome.header = Some(
                     div()
                         .flex_none()
                         .p(theme.sp(2.))
                         .pb_0()
                         .child(render_label(t!("Repository"), true, theme))
-                        .child(render_summary_row(IconName::Link, input.clone(), remote_url.clone(), theme))
+                        .child(summary)
                         .into_any_element(),
                 );
                 let label = row_height(&PaletteRow::Label { label: SharedString::default(), first: true }, theme);
@@ -1578,8 +1732,12 @@ impl CommandPalette {
                 let enabled = !session.busy && !session.search.query.trim().is_empty();
                 Some((label, if highlighted { mod_enter } else { "Enter".into() }, enabled))
             }
-            Some(ProjectFlow::CloneRepository { .. }) => {
-                let label = if session.busy { t!("Working") } else { t!("Continue") };
+            Some(ProjectFlow::CloneRepository { source, .. }) => {
+                let label = match (source, session.busy) {
+                    (_, true) => t!("Working"),
+                    (CloneSource::Url, false) => t!("Continue"),
+                    (CloneSource::Host(_), false) => t!("Lookup"),
+                };
                 Some((label, "Enter".into(), !session.busy && !session.search.query.trim().is_empty()))
             }
             _ => {

@@ -299,6 +299,8 @@ impl CommandPaletteSource for FixtureSource {
                 base_directory: SharedString::default(),
                 new_projects_root: Some("/home/dev/.t3/projects".into()),
                 ghq_clone_layout: false,
+                remote_sources: Vec::new(),
+                publish_targets: Vec::new(),
             })
             .collect();
         Some(std::rc::Rc::new(super::command_palette_project_flow::FixtureFlows::sample(environments)))

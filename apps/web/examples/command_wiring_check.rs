@@ -266,6 +266,9 @@ fn main() -> anyhow::Result<()> {
         PaletteEvent::AddProject(AddProjectStep::ConnectEnvironment),
         PaletteEvent::AddProject(AddProjectStep::BrowseFolders(environment.clone())),
         PaletteEvent::AddProject(AddProjectStep::CloneRepository(environment.clone())),
+        PaletteEvent::AddProject(AddProjectStep::CloneFromHost(environment.clone(), t3code_web::components::command_palette_project_flow::RemoteSource {
+            kind: "github".into(), label: "GitHub".into(), path_hint: "owner/repo".into(), ready: true, hint: None,
+        })),
         PaletteEvent::AddProject(AddProjectStep::NewProject(environment.clone())),
         PaletteEvent::OpenPullRequests,
         PaletteEvent::OpenIssues,

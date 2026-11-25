@@ -67,6 +67,8 @@ pub enum AddProjectStep {
     ConnectEnvironment,
     BrowseFolders(EnvironmentId),
     CloneRepository(EnvironmentId),
+    /// "<Host> repository": `owner/name` on a source-control host.
+    CloneFromHost(EnvironmentId, super::command_palette_project_flow::RemoteSource),
     /// "New project" on an environment's Sources page.
     NewProject(EnvironmentId),
 }
@@ -100,6 +102,8 @@ pub enum PaletteTrailing {
     Check,
     /// A checkbox, checked or not ("Create private repository").
     Checkbox(bool),
+    /// "Setup Required": a host that is not ready, with why (`readiness.hint`).
+    SetupRequired(Option<SharedString>),
     /// A chevron on an action that opens another page in place ("Add existing project").
     Chevron,
     /// Theme preview circles, optionally after "Current".
@@ -124,6 +128,8 @@ pub struct PaletteItem {
     pub title_is_first_term: bool,
     pub description: Option<SharedString>,
     pub icon: IconName,
+    /// A brand mark drawn in place of `icon` (`sourceControlHostIcon`).
+    pub brand: Option<crate::components::icons::IconSource>,
     pub disabled: bool,
     /// The command has no handler where the palette opened.
     pub unavailable: bool,
@@ -166,6 +172,7 @@ impl PaletteItem {
             title_is_first_term: false,
             description: None,
             icon,
+            brand: None,
             disabled: false,
             unavailable: false,
             shortcut: None,

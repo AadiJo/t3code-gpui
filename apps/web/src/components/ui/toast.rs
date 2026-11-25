@@ -47,6 +47,12 @@ pub struct ToastData {
     pub title: SharedString,
     pub description: Option<SharedString>,
     pub action: Option<(SharedString, Action)>,
+    /// An outline button before the action (`data.secondaryActionProps`).
+    pub secondary_action: Option<(SharedString, Action)>,
+    /// The actions go on their own row at the end (`stackedThreadToast`'s `stacked-end`).
+    pub stacked: bool,
+    /// No copy button on an error toast (`data.hideCopyButton`).
+    pub hide_copy: bool,
     /// A leading icon in place of the kind's (`data.leadingIcon`).
     pub icon: Option<(IconName, Hsla)>,
     /// How long it stays; `None` keeps it until dismissed (`timeout: 0`).
@@ -56,7 +62,7 @@ pub struct ToastData {
 impl ToastData {
     pub fn new(kind: ToastKind, title: impl Into<SharedString>) -> Self {
         let timeout = (kind != ToastKind::Loading).then_some(TIMEOUT);
-        Self { kind, title: title.into(), description: None, action: None, icon: None, timeout }
+        Self { kind, title: title.into(), description: None, action: None, secondary_action: None, stacked: false, hide_copy: false, icon: None, timeout }
     }
 
     /// Keeps the toast until it is dismissed (`timeout: 0`).
@@ -79,6 +85,24 @@ impl ToastData {
 
     pub fn description(mut self, description: impl Into<SharedString>) -> Self {
         self.description = Some(description.into());
+        self
+    }
+
+    /// An outline `xs` button before the action.
+    pub fn secondary_action(mut self, label: impl Into<SharedString>, action: impl Fn(&mut Window, &mut App) + 'static) -> Self {
+        self.secondary_action = Some((label.into(), Rc::new(action)));
+        self
+    }
+
+    /// Puts the actions on their own row below the text (`stackedThreadToast`).
+    pub fn stacked(mut self) -> Self {
+        self.stacked = true;
+        self
+    }
+
+    /// Leaves out the copy button an error toast has (`hideCopyButton`).
+    pub fn hide_copy(mut self) -> Self {
+        self.hide_copy = true;
         self
     }
 
@@ -139,49 +163,73 @@ impl RenderOnce for ToastSurface {
             ToastKind::Loading => Some(Spinner::new(SpinnerSize::Md).color(with_alpha(c.foreground(), 0.8)).into_any_element()),
             kind => self.data.icon.or_else(|| kind_icon(theme, kind)).map(|(name, color)| Icon::new(name).size(IconSize::Md).color(color).into_any_element()),
         };
-        let has_action = self.data.action.is_some();
+        // `deriveToastBodyDescriptor`: an error toast with a description offers to copy it.
+        let copy_text = (self.data.kind == ToastKind::Error && !self.data.hide_copy).then(|| self.data.description.clone()).flatten();
+        let stacked = self.data.stacked && self.data.action.is_some();
+        let trailing = copy_text.is_some() || self.data.action.is_some() || self.data.secondary_action.is_some();
         let close = self.on_close.clone();
+        let controls = trailing.then(|| {
+            div()
+                .flex()
+                .items_center()
+                .gap(sp(1.5))
+                .map(|d| if stacked { d.w_full().justify_end() } else { d.flex_none() })
+                .children(copy_text.map(|text| {
+                    Button::new("toast-copy")
+                        .icon(IconName::Copy)
+                        .icon_size(IconSize::Xs)
+                        .size(ButtonSize::IconMicro)
+                        .variant(ButtonVariant::GhostMuted)
+                        .on_click(move |_, _, cx| cx.write_to_clipboard(gpui_kit::ClipboardItem::new_string(text.to_string())))
+                }))
+                .children(self.data.secondary_action.map(|(label, action)| {
+                    Button::new("toast-secondary-action")
+                        .label(label)
+                        .size(ButtonSize::Xs)
+                        .variant(ButtonVariant::Outline)
+                        .on_click(move |_, window, cx| action(window, cx))
+                }))
+                .children(self.data.action.map(|(label, action)| {
+                    Button::new("toast-action")
+                        .label(label)
+                        .size(ButtonSize::Xs)
+                        .variant(ButtonVariant::Default)
+                        .on_click(move |_, window, cx| action(window, cx))
+                }))
+        });
+        let text = div()
+            .flex()
+            .flex_col()
+            .min_w_0()
+            .gap(sp(0.5))
+            .map(|d| if stacked { d.pr(sp(5.)) } else { d.flex_1() })
+            .child(
+                div()
+                    .flex()
+                    .gap(sp(2.))
+                    .min_w_0()
+                    .when(!stacked && !trailing, |r| r.pr(sp(6.)))
+                    .children(icon.map(|icon| div().flex().items_center().justify_center().w(px(16.)).h(line).flex_none().child(icon)))
+                    .child(div().min_w_0().font_weight(weight::MEDIUM).child(self.data.title)),
+            )
+            .children(self.data.description.map(|d| div().min_w_0().text_color(c.muted_foreground).child(d)));
         toast_card(theme)
             .relative()
             .w_full()
             .text_color(theme.foregrounds.popover)
             .child(
                 div()
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .gap(sp(1.5))
                     .pl(sp(3.5))
-                    .py(sp(3.))
-                    .pr(if has_action { sp(6.) } else { sp(3.5) })
                     .ui_text(theme, TextSize::Sm, weight::NORMAL)
-                    .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .flex_1()
-                            .min_w_0()
-                            .gap(sp(0.5))
-                            .child(
-                                div()
-                                    .flex()
-                                    .gap(sp(2.))
-                                    .min_w_0()
-                                    .when(!has_action, |r| r.pr(sp(6.)))
-                                    .children(icon.map(|icon| div().flex().items_center().justify_center().w(px(16.)).h(line).flex_none().child(icon)))
-                                    .child(div().min_w_0().font_weight(weight::MEDIUM).child(self.data.title)),
-                            )
-                            .children(self.data.description.map(|d| div().min_w_0().text_color(c.muted_foreground).child(d))),
-                    )
-                    .children(self.data.action.map(|(label, action)| {
-                        div().flex().items_center().gap(sp(1.5)).flex_none().child(
-                            Button::new("toast-action")
-                                .label(label)
-                                .size(ButtonSize::Xs)
-                                .variant(ButtonVariant::Default)
-                                .on_click(move |_, window, cx| action(window, cx)),
-                        )
-                    })),
+                    .map(|d| {
+                        if stacked {
+                            d.flex().flex_col().gap(sp(2.)).py(sp(2.5)).pr(sp(3.5))
+                        } else {
+                            d.flex().items_center().justify_between().gap(sp(1.5)).py(sp(3.)).pr(if trailing { sp(6.) } else { sp(3.5) })
+                        }
+                    })
+                    .child(text)
+                    .children(controls),
             )
             .child(
                 div()
@@ -269,6 +317,11 @@ impl Toaster {
     }
 
     /// Replaces a shown toast's content in place (`toastManager.update`); `false` when it is gone.
+    /// The shown toast titled `title`, for checks.
+    pub fn find(title: &str, cx: &App) -> Option<ToastData> {
+        Self::view(cx).read(cx).toasts.iter().find(|(_, t)| t.title.as_ref() == title).map(|(_, t)| t.clone())
+    }
+
     pub fn update(id: u64, data: ToastData, cx: &mut App) -> bool {
         Self::view(cx).update(cx, |toaster, cx| {
             let Some((_, toast)) = toaster.toasts.iter_mut().find(|(toast, _)| *toast == id) else { return false };

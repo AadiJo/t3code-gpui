@@ -502,6 +502,16 @@ impl AppRoot {
             }),
             cx,
         );
+        let weak = cx.weak_entity();
+        crate::state::add_project::install_clone_toasts(
+            std::rc::Rc::new(move |cx: &App| {
+                weak.upgrade().and_then(|this| {
+                    let this = this.read(cx);
+                    matches!(this.shown, Some(ThreadTarget::Draft(_))).then(|| this.shown_project(cx)).flatten()
+                })
+            }),
+            cx,
+        );
         this
     }
 
@@ -690,6 +700,8 @@ impl AppRoot {
         self.data.set_active_thread(active.as_ref(), cx);
         ThreadNotificationCoordinator::apply(NotificationInput::Route(active.clone()), cx);
         self.mark_shown_visited(cx);
+        // Reads the shown draft back from this root, so it runs after this update.
+        cx.defer(crate::state::add_project::refresh_clone_toasts);
         self.persist_route(&route, cx);
         let panel_focused = self.right_panel.focus_handle(cx).contains_focused(window, cx);
         self.sync_panels(cx);
