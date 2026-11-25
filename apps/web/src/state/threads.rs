@@ -83,7 +83,10 @@ impl ThreadViews {
             let key = active.read(cx).key().clone();
             let mapped = active.update(cx, |thread, _| thread.take_mapped());
             self.cache.retain(|view| view.key != key);
-            self.cache.push_back(CachedView { key, mapped, closed_at: Instant::now() });
+            // A thread whose older history was loaded gives it back when it is left.
+            if !mapped.input.history.expanded {
+                self.cache.push_back(CachedView { key, mapped, closed_at: Instant::now() });
+            }
             self.sweep();
         }
         self._subscription = None;

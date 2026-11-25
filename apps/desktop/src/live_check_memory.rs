@@ -109,7 +109,7 @@ pub(super) fn run_memory(check: &mut Check) -> anyhow::Result<()> {
     check.go(&long);
     check.pump(|c| !c.shown_input().entries.is_empty(), Duration::from_secs(30), "the long thread's timeline")?;
     check.wait(Duration::from_millis(1500));
-    // The timeline has no "Load earlier turns" control yet, so the check pages history itself.
+    // Pages through the thread command the "Load earlier turns" control sends (`earlier-turns` clicks it).
     let mut pages = 0;
     loop {
         let task = check.cx.update(|cx| StateBridge::threads(cx).read(cx).active().cloned().map(|thread| thread.update(cx, |thread, cx| thread.load_earlier(cx))));

@@ -57,6 +57,8 @@
 //            transfer on the parent), a fork with the lineage on both ends, and `/side` refused
 //            inside a side chat; each read back from the server
 //   sidechats-ref  shots of the fork capture's states on its server (`T3_REF_IDS`: ids.json)
+//   earlier-turns  "Load earlier turns" pages the long thread on a fresh profile with the row on
+//            screen held, and leaving gives the history back (`live_check_history.rs`)
 //   setup    the worktree setup row against the server's setup stream: running, cancelled,
 //            finished (`live_check_setup.rs`)
 //   draft-banner  a draft launch the server refuses returns to the draft with the banner and
@@ -95,6 +97,7 @@ mod import;
 mod live_check_commands;
 mod live_check_families;
 mod live_check_heap;
+mod live_check_history;
 mod live_check_linked;
 mod live_check_memory;
 mod live_check_palette;
@@ -600,6 +603,7 @@ fn main() -> anyhow::Result<()> {
         "breadcrumb" => run_breadcrumb(&mut check),
         "settings" => live_check_settings::run_settings(&mut check),
         "server-update" => live_check_update::run_server_update(&mut check),
+        "earlier-turns" => live_check_history::run_earlier_turns(&mut check),
         other => Err(anyhow::anyhow!("unknown phase {other}")),
     };
     check.finish(&phase, result)

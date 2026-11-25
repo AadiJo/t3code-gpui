@@ -503,4 +503,6 @@ pub struct TimelineInput {
     pub item_sources: Arc<std::collections::HashMap<SharedString, Arc<t3code_contracts::OrchestrationV2TurnItem>>>,
     /// The superseded attempt of each live entry that belongs to one, by entry id.
     pub superseded_attempts: Arc<std::collections::HashMap<SharedString, AttemptId>>,
+    /// The thread's paged history: the "Load earlier turns" control's state.
+    pub history: super::messages_timeline::TimelineHistory,
 }
