@@ -1,7 +1,8 @@
 //! One streamed browser tab. Ports `browser/ServerBrowserSurface.tsx`: the
 //! server's JPEG frames decoded off the UI thread and painted scaled to the
 //! pane, mouse, wheel and keys sent back in page CSS pixels, the control bar,
-//! page dialogs, the file chooser, and the refused, host-setup and stalled states.
+//! page dialogs, the file chooser, the agent's cursor, and the refused, host-setup and
+//! stalled states.
 //!
 //! Memory: at most three frames exist per tab: one encoded frame waiting in
 //! [`LatestFrame`], one being decoded, and the one on screen. Older frames
@@ -28,7 +29,7 @@ use crate::components::preview::preview_source::{PreviewSource, PreviewStream};
 use crate::components::ui::TextStyleExt as _;
 use crate::components::ui::button::{Button, ButtonSize, ButtonVariant};
 use crate::components::ui::toast::{ToastData, ToastKind, Toaster};
-use crate::i18n::{t, t_rich};
+use crate::i18n::t;
 
 /// Wait this long after the last size change before sending it.
 const RESIZE_THROTTLE: Duration = Duration::from_millis(150);
@@ -37,6 +38,8 @@ const NO_FRAME_TIMEOUT: Duration = Duration::from_secs(10);
 const MULTI_CLICK: Duration = Duration::from_millis(500);
 const MULTI_CLICK_SLOP: f32 = 4.;
 const WHEEL_LINE_PX: f32 = 16.;
+/// `CURSOR_ACTIVE_MS`: how long the agent's cursor stays fully opaque after it moves.
+const CURSOR_ACTIVE: Duration = Duration::from_millis(700);
 
 /// Timings measured while streaming, for checks and the verification report.
 #[derive(Clone, Debug, Default)]
@@ -59,6 +62,18 @@ pub enum SurfaceEvent {
     Gone,
     /// Control changed, for the chrome row.
     Control(Option<PreviewStreamControl>),
+    /// The first frame arrived, or none came in time (`onFirstFrame`, `onNoFrames`).
+    Settled,
+}
+
+/// The agent's last pointer message, in page CSS pixels.
+#[derive(Clone, Copy, Debug)]
+struct AgentPointer {
+    click: bool,
+    x: f64,
+    y: f64,
+    sequence: u64,
+    active: bool,
 }
 
 struct ClickRecord {
@@ -98,6 +113,12 @@ pub struct ServerBrowserSurface {
     focus: FocusHandle,
     resize_task: Option<Task<()>>,
     stream_tasks: Vec<Task<()>>,
+    agent_cursor: Option<AgentPointer>,
+    cursor_task: Option<Task<()>>,
+    /// False for the mini player, which shows the page at its own size (`followSize`).
+    follow_size: bool,
+    /// The mini player puts the control bar under the page (`controlPosition="bottom"`).
+    control_at_bottom: bool,
 }
 
 impl EventEmitter<SurfaceEvent> for ServerBrowserSurface {}
@@ -201,7 +222,28 @@ impl ServerBrowserSurface {
             focus: cx.focus_handle(),
             resize_task: None,
             stream_tasks: Vec::new(),
+            agent_cursor: None,
+            cursor_task: None,
+            follow_size: true,
+            control_at_bottom: false,
         }
+    }
+
+    /// The mini player's surface: the control bar below and the page at its own size.
+    pub fn floating(mut self) -> Self {
+        self.follow_size = false;
+        self.control_at_bottom = true;
+        self
+    }
+
+    /// Whether the page has drawn, or given up drawing; until then the tab counts as loading.
+    pub fn settled(&self) -> bool {
+        self.frame.is_some() || self.stalled
+    }
+
+    /// The page's size in CSS pixels, once the stream has said.
+    pub fn viewport(&self) -> Option<PreviewStreamViewport> {
+        self.viewport
     }
 
     pub fn tab_id(&self) -> &str {
@@ -278,6 +320,7 @@ impl ServerBrowserSurface {
             this.update(cx, |this, cx| {
                 if this.frame.is_none() {
                     this.stalled = true;
+                    cx.emit(SurfaceEvent::Settled);
                     cx.notify();
                 }
             })
@@ -287,11 +330,15 @@ impl ServerBrowserSurface {
     }
 
     fn show_frame(&mut self, image: Arc<RenderImage>, size: (u32, u32), cx: &mut Context<Self>) {
+        let first = !self.settled();
         if let Some(old) = self.frame.replace(image) {
             // Frees the old frame's texture; GPUI keeps uploaded images until told.
             cx.drop_image(old, None);
         }
         self.frame_size = size;
+        if first {
+            cx.emit(SurfaceEvent::Settled);
+        }
         self.stalled = false;
         let mut metrics = self.metrics.lock().unwrap();
         metrics.frames_painted += 1;
@@ -320,7 +367,7 @@ impl ServerBrowserSurface {
                     self.prompt_text = next.as_ref().and_then(|c| c.dialog.as_ref()).map(|d| d.default_value.clone().into()).unwrap_or_default();
                 }
                 self.control = next.clone();
-                if gained && let Some((width, height)) = self.sent_size {
+                if gained && self.follow_size && let Some((width, height)) = self.sent_size {
                     self.send(PreviewStreamInput::Resize { width, height });
                 }
                 cx.emit(SurfaceEvent::Control(next));
@@ -340,7 +387,20 @@ impl ServerBrowserSurface {
             PreviewStreamEvent::Unauthorized => self.access_denied = true,
             PreviewStreamEvent::Gone => cx.emit(SurfaceEvent::Gone),
             PreviewStreamEvent::HostSetup(setup) => self.host_setup = Some(setup),
-            PreviewStreamEvent::Probe { .. } | PreviewStreamEvent::Pointer { .. } => return,
+            PreviewStreamEvent::Pointer { click, x, y, sequence } => {
+                self.agent_cursor = Some(AgentPointer { click, x, y, sequence, active: true });
+                self.cursor_task = Some(cx.spawn(async move |this, cx| {
+                    cx.background_executor().timer(CURSOR_ACTIVE).await;
+                    this.update(cx, |this, cx| {
+                        if let Some(cursor) = this.agent_cursor.as_mut().filter(|c| c.sequence == sequence) {
+                            cursor.active = false;
+                            cx.notify();
+                        }
+                    })
+                    .ok();
+                }));
+            }
+            PreviewStreamEvent::Probe { .. } => return,
         }
         cx.notify();
     }
@@ -361,7 +421,9 @@ impl ServerBrowserSurface {
             }
             this.update(cx, |this, cx| {
                 let Some((width, height)) = this.sent_size else { return };
-                this.send(PreviewStreamInput::Resize { width, height });
+                if this.follow_size {
+                    this.send(PreviewStreamInput::Resize { width, height });
+                }
                 let grow = this.cap.is_none_or(|current| cap.0 > current.0 || cap.1 > current.1);
                 if grow {
                     let merged = this.cap.map_or(cap, |c| (c.0.max(cap.0), c.1.max(cap.1)));
@@ -402,12 +464,21 @@ impl ServerBrowserSurface {
         let viewport = self.viewport?;
         let bounds = self.bounds.get();
         let (fw, fh) = (self.frame_size.0 as f32, self.frame_size.1 as f32);
+        if fw < 1. || fh < 1. {
+            return None;
+        }
         let (bw, bh) = (f32::from(bounds.size.width), f32::from(bounds.size.height));
         let fit = (bw / fw).min(bh / fh);
         let (width, height) = (fw * fit, fh * fit);
         let px_x = (bw - width) / 2. + (x / viewport.width) as f32 * width;
         let px_y = (bh - height) / 2. + (y / viewport.height) as f32 * height;
         Some(bounds.origin + gpui_kit::point(px(px_x), px(px_y)))
+    }
+
+    /// Where page point `(x, y)` sits inside the pane (`placeAgentCursor`).
+    fn pane_point(&self, x: f64, y: f64) -> Option<Point<Pixels>> {
+        let origin = self.bounds.get().origin;
+        self.window_point(x, y).map(|p| p - origin)
     }
 
     fn count_click(&mut self, button: MouseButton, position: Point<Pixels>) -> u32 {
@@ -624,7 +695,8 @@ impl Render for ServerBrowserSurface {
             .gap(theme.sp(2.))
             .px(theme.sp(2.))
             .py(theme.sp(1.))
-            .border_b_1()
+            .when(self.control_at_bottom, |el| el.border_t_1())
+            .when(!self.control_at_bottom, |el| el.border_b_1())
             .border_color(c.border)
             .bg(c.background())
             .child(div().ui_text(&theme, TextSize::Xs, weight::NORMAL).text_color(c.muted_foreground).child(self.control_label()))
@@ -641,6 +713,19 @@ impl Render for ServerBrowserSurface {
                     }))
             }));
         let frame = self.frame.clone();
+        // The agent's pointer, while someone other than this viewer drives the page.
+        let cursor = self
+            .agent_cursor
+            .filter(|_| !self.has_control())
+            .and_then(|pointer| self.pane_point(pointer.x, pointer.y).map(|at| (pointer, at)))
+            .map(|(pointer, at)| crate::components::preview::agent_browser_cursor::AgentCursorMark {
+                click: pointer.click,
+                sequence: pointer.sequence,
+                left: at.x,
+                top: at.y,
+                active: pointer.active,
+                human_controls: false,
+            });
         let pane = div()
             .id("preview-pane")
             .relative()
@@ -663,6 +748,7 @@ impl Render for ServerBrowserSurface {
                 .size_full(),
             )
             .children(frame.map(|frame| img(ImageSource::Render(frame)).object_fit(ObjectFit::Contain).size_full()))
+            .children(cursor)
             .on_mouse_down(GpuiButton::Left, cx.listener(Self::on_mouse_down))
             .on_mouse_down(GpuiButton::Right, cx.listener(Self::on_mouse_down))
             .on_mouse_down(GpuiButton::Middle, cx.listener(Self::on_mouse_down))
@@ -820,19 +906,24 @@ impl Render for ServerBrowserSurface {
         } else {
             None
         };
-        let stalled = (self.stalled && self.frame.is_none() && blocking.is_none()).then(|| {
-            div().absolute().inset_0().flex().items_center().justify_center().ui_text(&theme, TextSize::Xs, weight::NORMAL).text_color(c.muted_foreground).child(
-                if self.connected { SharedString::from(t_rich!("This site can’t be reached").plain()) } else { t!("Connecting...") },
+        // `framesStalled`: connected, but no frame came within the timeout.
+        let stalled = (self.stalled && self.connected && self.frame.is_none() && blocking.is_none()).then(|| {
+            div().absolute().inset_0().flex().items_center().justify_center().bg(c.background()).p(theme.sp(4.)).child(
+                div().max_w(theme.rem(24.)).text_center().ui_text(&theme, TextSize::Sm, weight::NORMAL).text_color(c.muted_foreground).child(t!(
+                    "The server's browser loaded this page but is not drawing it. Try reloading, or open the page in a browser on this computer."
+                )),
             )
         });
+        let (top_bar, bottom_bar) = if self.control_at_bottom { (None, Some(control_bar)) } else { (Some(control_bar), None) };
         div()
             .relative()
             .flex()
             .flex_col()
             .size_full()
             .min_h_0()
-            .child(control_bar)
+            .children(top_bar)
             .child(div().relative().flex_1().min_h_0().flex().flex_col().child(pane).children(dialog).children(chooser).children(stalled))
+            .children(bottom_bar)
             .children(blocking.map(|content| {
                 div().absolute().inset_0().flex().items_center().justify_center().p(theme.sp(4.)).bg(c.background()).child(content)
             }))

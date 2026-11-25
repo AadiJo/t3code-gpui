@@ -86,6 +86,12 @@ pub fn link_favicon(host: &str, wanted: &mut Vec<String>, cx: &App) -> LinkFavic
     if let Some(brand) = source_control_brand(host) {
         return LinkFavicon::Mark(brand.path());
     }
+    page_favicon(host, wanted, cx)
+}
+
+/// [`link_favicon`] without the brand marks: the fetched icon or the globe, as a browser
+/// tab shows it (`PreviewFavicon`).
+pub fn page_favicon(host: &str, wanted: &mut Vec<String>, cx: &App) -> LinkFavicon {
     if !is_public_favicon_host(host) {
         return LinkFavicon::Mark(IconName::Globe.path());
     }

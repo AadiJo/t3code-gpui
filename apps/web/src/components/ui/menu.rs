@@ -151,6 +151,8 @@ pub enum MenuEntry {
     /// `MenuGroupLabel`.
     Label(SharedString),
     Separator,
+    /// A row the caller draws, such as a stepper (`MenuItem` with `closeOnClick={false}`).
+    Row(Rc<dyn Fn(&AppTheme) -> AnyElement>),
 }
 
 impl From<MenuItem> for MenuEntry {
@@ -357,6 +359,7 @@ impl RenderOnce for MenuPopup {
                     .text_color(c.muted_foreground)
                     .child(label)
                     .into_any_element(),
+                MenuEntry::Row(build) => build(theme),
                 MenuEntry::Separator => {
                     let above = theme.sp(1.);
                     let below = theme.sp(1.);

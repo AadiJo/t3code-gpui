@@ -295,7 +295,8 @@ impl Render for MainPane {
         }
         let chat = self.thread_view.read(cx).chat().clone();
         chat.update(cx, |chat, cx| chat.set_header_metrics(topbar, inset, cx));
-        self.thread_view.clone().into_any_element()
+        let floating = crate::components::preview::thread_preview_mini_player::mount(&self.app, cx);
+        div().relative().size_full().child(self.thread_view.clone()).children(floating).into_any_element()
     }
 }
 

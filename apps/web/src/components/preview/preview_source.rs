@@ -67,6 +67,8 @@ pub trait PreviewSource: 'static {
     fn stop_local_server(&self, input: PreviewStopLocalServerInput) -> PreviewFuture<()>;
     /// WS `/api/preview-stream/ws` for one tab.
     fn stream(&self, target: PreviewStreamTarget) -> PreviewStream;
+    /// `previewStreamDownloadUrl`: where a file the tab downloaded instead of showing is saved from.
+    fn download_url(&self, thread: &ThreadId, tab: &str, id: &str) -> PreviewFuture<String>;
 }
 
 /// Live preview for one environment.
@@ -172,6 +174,19 @@ impl PreviewSource for LivePreviewSource {
         let client = PreviewStreamClient::start(self.link.clone(), target, frames.clone(), events_tx);
         PreviewStream { frames, events, send: Box::new(move |input| client.send(input)) }
     }
+
+    fn download_url(&self, thread: &ThreadId, tab: &str, id: &str) -> PreviewFuture<String> {
+        let (link, thread, tab, id) = (self.link.clone(), thread.to_string(), tab.to_owned(), id.to_owned());
+        let (sender, receiver) = futures::channel::oneshot::channel();
+        self.handle.spawn(async move {
+            let result = link.media_access().await.map_err(|e| PreviewError(e.to_string().into())).map(|access| {
+                let path = format!("{}/download", t3code_client_runtime::preview::server_browser_stream::PREVIEW_STREAM_BASE_PATH);
+                access.http_url(&path, &[("threadId", &thread), ("tabId", &tab), ("id", &id)]).to_string()
+            });
+            _ = sender.send(result);
+        });
+        async move { receiver.await.unwrap_or_else(|_| Err(PreviewError("The app is shutting down.".into()))) }.boxed()
+    }
 }
 
 /// Generated pages for scenes and checks: each tab paints a frame showing
@@ -251,6 +266,11 @@ impl PreviewSource for FixturePreviewSource {
 
     fn stop_local_server(&self, _: PreviewStopLocalServerInput) -> PreviewFuture<()> {
         async { Ok(()) }.boxed()
+    }
+
+    fn download_url(&self, _: &ThreadId, tab: &str, id: &str) -> PreviewFuture<String> {
+        let url = format!("http://fixture.invalid/download?tabId={tab}&id={id}");
+        async move { Ok(url) }.boxed()
     }
 
     fn stream(&self, target: PreviewStreamTarget) -> PreviewStream {

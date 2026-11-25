@@ -37,10 +37,7 @@ use t3code_web::theme_palette::{ThemeMode, ThemeSettings};
 use t3code_web::ui_state_store::StateDir;
 
 /// Commands another package builds, with that package. They may reach no handler yet.
-const OWNED_ELSEWHERE: [(StaticCommand, &str); 2] = [
-    (StaticCommand::ThemeEditorToggle, "settings (theme editor)"),
-    (StaticCommand::PreviewFind, "browser preview (find bar)"),
-];
+const OWNED_ELSEWHERE: [(StaticCommand, &str); 1] = [(StaticCommand::ThemeEditorToggle, "settings (theme editor)")];
 
 /// Where a command is used, so where its handler must be.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

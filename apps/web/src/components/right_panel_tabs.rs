@@ -833,9 +833,17 @@ impl RightPanel {
             }
             RightPanelSurface::PullRequests { .. } => crate::components::pull_request::thread_pull_requests_panel::thread_pull_requests_panel(crate::state::shell::thread_key(&environment, &t3code_contracts::ThreadId::new(thread_id)), self.store.clone(), cx),
             RightPanelSurface::Preview { resource_id, .. } => {
+                use crate::components::preview::preview_view::{PreviewView, PreviewViewEvent};
                 let source = self.data.preview_source(&environment, cx)?;
-                let (thread_id, tab) = (thread_id.to_owned(), resource_id.clone().unwrap_or_default());
-                cx.new(|cx| crate::browser::server_browser_surface::ServerBrowserSurface::new(source, thread_id, tab, cx)).into()
+                let (thread, tab, project) = (t3code_contracts::ThreadId::new(thread_id), resource_id.clone(), thread.to_string());
+                let view = cx.new(|cx| PreviewView::new(source, thread, project, None, window, cx).for_tab(tab).with_environment(environment.clone(), cx));
+                // The tab strip follows the page's title and favicon; floating it closes the panel.
+                cx.subscribe(&view, |this, _, event: &PreviewViewEvent, cx| match event {
+                    PreviewViewEvent::TabChanged => cx.notify(),
+                    PreviewViewEvent::Floated => this.edit(cx, |store, thread| store.close(thread)),
+                })
+                .detach();
+                view.into()
             }
             _ => return None,
         };
@@ -871,6 +879,20 @@ impl RightPanel {
         self.launch(Launch::Surface(SingletonKind::PullRequests), cx);
     }
 
+    /// The browser tab's view, once built, for its title and favicon.
+    fn preview_view(&self, surface: &RightPanelSurface, _: &App) -> Option<Entity<crate::components::preview::preview_view::PreviewView>> {
+        if !matches!(surface, RightPanelSurface::Preview { .. }) {
+            return None;
+        }
+        let key = (self.thread.clone()?, surface.id().to_string());
+        self.surface_views.get(&key)?.clone().downcast().ok()
+    }
+
+    /// The shown thread's panel key and target, for the floating preview.
+    pub fn shown_thread(&self) -> Option<(&SharedString, &ThreadTarget)> {
+        Some((self.thread.as_ref()?, self.target.as_ref()?))
+    }
+
     /// Opens a server browser tab (`openBrowser(threadRef, tabId)`).
     pub fn open_browser_tab(&mut self, tab: &str, cx: &mut Context<Self>) {
         let surface = RightPanelSurface::Preview { id: format!("browser:{tab}"), resource_id: Some(tab.to_owned()) };
@@ -894,6 +916,12 @@ impl RightPanel {
     }
 
     fn render_tab(&self, index: usize, surface: &RightPanelSurface, active: bool, cx: &mut Context<Self>) -> AnyElement {
+        // A browser tab names its page and shows its favicon (`surfaceTitle`, `PreviewFavicon`).
+        let preview = self.preview_view(surface, cx);
+        let preview_title = preview.as_ref().map(|view| view.read(cx).tab_title());
+        let preview_url = preview.as_ref().and_then(|view| view.read(cx).tab_url().map(str::to_owned));
+        let preview_icon = matches!(surface, RightPanelSurface::Preview { .. })
+            .then(|| crate::components::preview::preview_favicon::preview_tab_icon(preview_url.as_deref(), cx));
         let theme = cx.app_theme();
         let c = &theme.colors;
         let id: SharedString = surface.id().to_string().into();
@@ -906,7 +934,7 @@ impl RightPanel {
             Some(crate::state::app_data::SideChatLookup::Found(facts)) => Some(facts.clone()),
             _ => None,
         };
-        let title = side_facts.as_ref().map(|f| f.title.clone()).unwrap_or_else(|| surface_title(surface));
+        let title = side_facts.as_ref().map(|f| f.title.clone()).or(preview_title).unwrap_or_else(|| surface_title(surface));
         let side_dot = side_facts.as_ref().and_then(|f| f.state).map(|state| match state {
             crate::state::app_data::SideChatState::Running => c.muted_foreground,
             _ => theme.fixed.info,
@@ -932,7 +960,7 @@ impl RightPanel {
                 div()
                     .relative()
                     .group_hover(group.clone(), |s| s.invisible())
-                    .child(Icon::new(surface_icon(surface.kind())).size(IconSize::Xs))
+                    .child(preview_icon.unwrap_or_else(|| Icon::new(surface_icon(surface.kind())).size(IconSize::Xs).into_any_element()))
                     .children(side_dot.map(|dot| {
                         div().absolute().top(theme.rem(-0.125)).right(theme.rem(-0.125)).size(theme.rem(0.375)).rounded_full().bg(dot)
                     })),
