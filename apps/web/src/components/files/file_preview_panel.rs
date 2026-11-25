@@ -44,7 +44,7 @@ use crate::{
         diffs::{CodeView, ViewMode},
         icons::{Icon, IconName, IconSize},
         media::{
-            media_actions::MediaKind,
+            media_actions::{MediaActionSource, MediaKind, media_actions_menu},
             media_source::{MediaBytes, load_image},
             video_preview::ExternalFileCard,
         },
@@ -159,6 +159,8 @@ pub struct FilesPanel {
     /// The word-wrap toggle, over the `wordWrap` setting.
     wrap_override: Option<bool>,
     expanded: Option<(Entity<ExpandedImageDialog>, Subscription)>,
+    /// The open image's or video's right-click menu (`MediaActions`), where it opened.
+    media_menu: Option<gpui_kit::Point<gpui_kit::Pixels>>,
     pending_gallery: Option<(Vec<ExpandedImageItem>, usize)>,
     palette: Option<Palette>,
     markdown_state: MarkdownUiState,
@@ -196,6 +198,7 @@ impl FilesPanel {
             writing: Vec::new(),
             wrap_override: None,
             expanded: None,
+            media_menu: None,
             pending_gallery: None,
             palette: None,
             markdown_state: MarkdownUiState::default(),
@@ -739,6 +742,55 @@ impl FilesPanel {
         self.expanded = Some((dialog, subscription));
     }
 
+    /// The open image or video with its `MediaActions` menu on right click: copy its full and
+    /// relative path, save it, and copy an image.
+    fn with_media_menu(&self, content: impl IntoElement, cx: &mut Context<Self>) -> AnyElement {
+        let menu = self.media_menu.zip(self.open.as_ref()).map(|(at, open)| {
+            let (kind, bytes, decoded) = match &open.view {
+                FileView::Image { view, .. } => {
+                    let decoded = view.read(cx).image().clone();
+                    (MediaKind::Image, MediaBytes::Ready(decoded.bytes.clone()), Some(decoded))
+                }
+                _ => (MediaKind::Video, MediaBytes::Workspace { files: self.files.clone(), path: open.path.clone() }, None),
+            };
+            let source = MediaActionSource {
+                kind,
+                name: open.path.rsplit('/').next().unwrap_or(&open.path).to_owned().into(),
+                relative_path: Some(open.path.clone()),
+                absolute_path: Some(absolute_path(self.files.root(), &open.path).into()),
+                bytes,
+                decoded,
+            };
+            let this = cx.weak_entity();
+            let close = move |_: &mut Window, cx: &mut App| {
+                this.update(cx, |this, cx| {
+                    this.media_menu = None;
+                    cx.notify();
+                })
+                .ok();
+            };
+            crate::components::ui::pointer_menu::pointer_menu("files-media-menu", at, media_actions_menu(&source, None), close, cx)
+        });
+        div()
+            .id("files-media")
+            .size_full()
+            .on_mouse_down(
+                MouseButton::Right,
+                cx.listener(|this, event: &gpui_kit::MouseDownEvent, _, cx| {
+                    this.media_menu = Some(event.position);
+                    cx.notify();
+                }),
+            )
+            .child(content)
+            .children(menu)
+            .into_any_element()
+    }
+
+    /// What right clicks in its Markdown offer on the host (`live::host_menus::right_panel_menus`).
+    pub fn set_markdown_menus(&mut self, menus: crate::components::chat_markdown::MarkdownMenus) {
+        self.markdown_state.menus = menus;
+    }
+
     /// Runs a file menu row for `path`; the diff panel's header menu uses it too.
     pub fn run_file_action(&mut self, action: FileContextMenuAction, path: SharedString, cx: &mut Context<Self>) {
         let absolute = absolute_path(self.files.root(), &path);
@@ -900,8 +952,12 @@ impl FilesPanel {
                 .child(div().text_color(colors.destructive()).child(message.clone()))
                 .child(div().text_color(colors.muted_foreground).child(format!("{}: {}", t!("Attempted path"), open.path)))
                 .into_any_element(),
+            FileView::External { size } if open.kind == FilePreviewKind::Video => {
+                let card = ExternalFileCard::new(self.files.clone(), open.path.clone(), open.kind, *size);
+                self.with_media_menu(card, cx)
+            }
             FileView::External { size } => ExternalFileCard::new(self.files.clone(), open.path.clone(), open.kind, *size).into_any_element(),
-            FileView::Image { view: image, .. } => image.clone().into_any_element(),
+            FileView::Image { view: image, .. } => self.with_media_menu(image.clone(), cx),
             FileView::Large(view) => view.clone().into_any_element(),
             FileView::Text(text) => {
                 let body: AnyElement = match (&text.table, &text.markdown) {

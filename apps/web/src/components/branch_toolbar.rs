@@ -187,6 +187,17 @@ pub struct BranchToolbar {
     dismissed: DismissPress,
     /// Where focus returns when the branch picker closes.
     focus: FocusHandle,
+    /// The right-click menu on the branch or workspace trigger, where it opened.
+    copy_menu: Option<(gpui_kit::Point<Pixels>, CopyTarget)>,
+}
+
+/// What a trigger's right-click menu copies: "Copy branch name"
+/// (`handleBranchContextMenu`) or the panel workspace's "Copy full path"
+/// (`showWorkspaceContextMenu`).
+#[derive(Clone, Debug, PartialEq)]
+enum CopyTarget {
+    BranchName(String),
+    WorkspacePath(String),
 }
 
 impl EventEmitter<BranchToolbarEvent> for BranchToolbar {}
@@ -253,6 +264,7 @@ impl BranchToolbar {
             row_width: None,
             compact: false,
             focus: cx.focus_handle(),
+            copy_menu: None,
         };
         if toolbar.refs.is_none() {
             toolbar.load_refs(cx);
@@ -398,11 +410,46 @@ impl BranchToolbar {
             status,
             disabled_refs,
             project_cwd: Some(self.props.project_cwd.clone()),
+            copy_branch_names: true,
             width: Some(match self.layout {
                 BranchToolbarLayout::Composer => cx.app_theme().rem(20.),
                 _ => self.row_width.unwrap_or_else(|| row_width(cx.app_theme())),
             }),
         }
+    }
+
+    /// A right press on a trigger: opens its copy menu at the pointer.
+    fn copy_menu_listener(target: Option<CopyTarget>, cx: &mut Context<Self>) -> impl Fn(&gpui_kit::MouseDownEvent, &mut Window, &mut App) + 'static {
+        cx.listener(move |this, event: &gpui_kit::MouseDownEvent, _, cx| {
+            let Some(target) = target.clone() else { return };
+            cx.stop_propagation();
+            this.copy_menu = Some((event.position, target));
+            cx.notify();
+        })
+    }
+
+    /// The open copy menu: one row that writes the name or path to the clipboard.
+    fn render_copy_menu(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let (at, target) = self.copy_menu.clone()?;
+        let (label, text) = match target {
+            CopyTarget::BranchName(name) => (t!("Copy branch name"), name),
+            CopyTarget::WorkspacePath(path) => {
+                (t!("Copy full path"), crate::components::diff_file_path_copy_button::format_file_path_for_clipboard(&path, None))
+            }
+        };
+        let this = cx.weak_entity();
+        let close = move |_: &mut Window, cx: &mut App| {
+            this.update(cx, |this, cx| {
+                this.copy_menu = None;
+                cx.notify();
+            })
+            .ok();
+        };
+        let item = crate::components::ui::menu::MenuItem::new(label)
+            .icon(IconName::Copy)
+            .on_select(move |_, cx| cx.write_to_clipboard(gpui_kit::ClipboardItem::new_string(text.clone())));
+        let popup = crate::components::ui::menu::MenuPopup::new().item(item);
+        Some(crate::components::ui::pointer_menu::pointer_menu("branch-toolbar-copy-menu", at, popup, close, cx))
     }
 
     /// Opens or closes the branch picker, focusing its search field.
@@ -926,6 +973,7 @@ impl BranchToolbar {
                 .tooltip(tooltip(t!("Branch: {branch}", branch = self.trigger_label(cx))))
                 .child(Icon::new(IconName::GitBranch).size(IconSize::Custom(theme.rem(0.75))))
                 .child(self.strip_label(self.trigger_label(cx)))
+                .on_mouse_down(gpui_kit::MouseButton::Right, Self::copy_menu_listener(self.resolved_branch(cx).map(CopyTarget::BranchName), cx))
                 .when(!disabled, |c| {
                     c.on_click(cx.listener(|this, e, window, cx| {
                         if this.dismissed.consumes(e) {
@@ -953,6 +1001,7 @@ impl BranchToolbar {
         let labels = self.strip_labels(cx);
         let this = cx.entity();
         strip
+            .children(self.render_copy_menu(cx))
             .child(
                 // Measures the strip after layout: its width picks the narrow layout, and
                 // the labels' natural widths decide whether they collapse to icons.
@@ -1070,11 +1119,19 @@ impl BranchToolbar {
                         .child(row_icon(theme, self.workspace_icon())),
                 )
             });
+        let copy_path = Self::copy_menu_listener(workspace_path.clone().map(CopyTarget::WorkspacePath), cx);
         if locked {
-            return locked_row(theme, content).into_any_element();
+            return div()
+                .id("run-context-locked")
+                .w_full()
+                .on_mouse_down(gpui_kit::MouseButton::Right, copy_path)
+                .child(locked_row(theme, content))
+                .children(self.render_copy_menu(cx))
+                .into_any_element();
         }
         let open = self.open == Some(Popup::RunContext);
         let trigger = select_row("run-context", theme, content, false, open)
+            .on_mouse_down(gpui_kit::MouseButton::Right, copy_path)
             .on_click(cx.listener(|this, e, _, cx| this.toggle_from(Popup::RunContext, e, cx)));
         let menu = open.then(|| {
             let mut rows = Vec::new();
@@ -1085,7 +1142,16 @@ impl BranchToolbar {
             rows.extend(self.workspace_rows(theme, cx));
             below_row(Self::popup_surface(theme, Some(self.row_width.unwrap_or_else(|| row_width(theme))), rows, cx))
         });
-        div().relative().flex().flex_col().w_full().child(self.row_measure(cx)).child(trigger.test_support()).children(menu).into_any_element()
+        div()
+            .relative()
+            .flex()
+            .flex_col()
+            .w_full()
+            .child(self.row_measure(cx))
+            .child(trigger.test_support())
+            .children(menu)
+            .children(self.render_copy_menu(cx))
+            .into_any_element()
     }
 
     fn render_panel_branch(&mut self, theme: &AppTheme, cx: &mut Context<Self>) -> AnyElement {
@@ -1100,7 +1166,9 @@ impl BranchToolbar {
             .gap(theme.rem(0.625))
             .child(row_icon(theme, IconName::GitBranch))
             .child(div().flex_1().min_w_0().truncate().child(label));
-        let trigger = select_row("branch-select", theme, content, disabled, open).when(!disabled, |t| {
+        let trigger = select_row("branch-select", theme, content, disabled, open)
+            .on_mouse_down(gpui_kit::MouseButton::Right, Self::copy_menu_listener(self.resolved_branch(cx).map(CopyTarget::BranchName), cx))
+            .when(!disabled, |t| {
             t.on_click(cx.listener(|this, e, window, cx| {
                 if this.dismissed.consumes(e) {
                             return;
@@ -1119,6 +1187,7 @@ impl BranchToolbar {
             .child(self.row_measure(cx))
             .child(trigger.test_support())
             .children(picker)
+            .children(self.render_copy_menu(cx))
             .into_any_element()
     }
 }

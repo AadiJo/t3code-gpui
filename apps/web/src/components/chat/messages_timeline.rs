@@ -243,6 +243,7 @@ impl MessagesTimeline {
                     editor_label: Some(crate::i18n::t!("Open in editor")),
                     reveal_label: None,
                     cwd: None,
+                    files: Default::default(),
                 },
                 ..Default::default()
             },
@@ -520,6 +521,17 @@ impl MessagesTimeline {
     pub fn set_markdown_menus(&mut self, preview: bool, editor_label: Option<SharedString>, reveal_label: Option<SharedString>, cwd: Option<SharedString>, cx: &mut Context<Self>) {
         let menus = &mut self.markdown_state.menus;
         (menus.preview, menus.editor_label, menus.reveal_label, menus.cwd) = (preview, editor_label, reveal_label, cwd);
+        cx.notify();
+    }
+
+    /// The working directory message menus resolve relative file links against.
+    pub fn markdown_cwd(&self) -> Option<SharedString> {
+        self.markdown_state.menus.cwd.clone()
+    }
+
+    /// What the changed-files card's file menu offers on the thread's host (`useFileContextMenu`).
+    pub fn set_file_menu(&mut self, files: crate::file_context_menu::FileContextMenuCapabilities, cx: &mut Context<Self>) {
+        self.markdown_state.menus.files = files;
         cx.notify();
     }
 

@@ -19,7 +19,7 @@ use super::{
     work_log_presentation::format_clock,
 };
 use crate::{
-    components::chat_markdown::{MarkdownView, render_markdown},
+    components::chat_markdown::{MarkdownMenuAction, MarkdownView, render_markdown},
     markdown_pipeline::MarkdownFlavor,
 };
 
@@ -261,8 +261,9 @@ impl MessagesTimeline {
                     }
                 }
                 DiffNode::File { name, file } => {
-                    rows.push(
-                        row()
+                    let menu = (self.markdown_state.menus.actions.clone(), self.markdown_state.menus.files.clone(), self.markdown_state.menus.cwd.is_some());
+                    let menu_path = file.path.clone();
+                    let file_row = row()
                             .id(gpui_kit::SharedString::from(format!("changed-{}", file.path)))
                             .pl(left)
                             .cursor_pointer()
@@ -283,8 +284,28 @@ impl MessagesTimeline {
                                 let (turn, path) = (turn.clone(), file.path.clone());
                                 cx.listener(move |_, _, _, cx| cx.emit(TimelineAction::OpenDiff { turn: Some(turn.clone()), file: Some(path.clone()) }))
                             })
-                            .test_support()
-                            .into_any_element(),
+                            .test_support();
+                    // `onFileContextMenu`: the shared file menu (`useFileContextMenuHandler`), empty
+                    // without a working directory or anything the host can open with.
+                    rows.push(
+                        crate::components::ui::menu::ContextMenu::new(
+                            gpui_kit::SharedString::from(format!("changed-menu-{key}-{}", file.path)),
+                            file_row,
+                            move |_, _| {
+                                let (actions, files, has_cwd) = &menu;
+                                let items = crate::file_context_menu::file_context_menu_items(files, *has_cwd);
+                                let (actions, path) = (actions.clone(), menu_path.clone());
+                                crate::file_context_menu::file_menu_popup(
+                                    &items,
+                                    std::rc::Rc::new(move |action, window, cx| {
+                                        if let Some(actions) = &actions {
+                                            actions(MarkdownMenuAction::File(action, path.clone()), window, cx);
+                                        }
+                                    }),
+                                )
+                            },
+                        )
+                        .into_any_element(),
                     );
                 }
             }

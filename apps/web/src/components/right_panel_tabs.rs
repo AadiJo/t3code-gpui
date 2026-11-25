@@ -373,12 +373,15 @@ impl RightPanel {
             return Some(panel.clone());
         }
         let panel = cx.new(|cx| FilesPanel::new(workspace.files.clone(), workspace.name.clone(), window, cx));
-        let subscription = cx.subscribe(&panel, |_, _, event: &FilesPanelEvent, cx| match event {
+        let capabilities = crate::live::host_menus::target_file_menu(self.target.as_ref(), cx);
+        let menus = crate::live::host_menus::right_panel_menus(self, self.target.clone().as_ref(), cx);
+        panel.update(cx, |panel, cx| {
+            panel.set_capabilities(capabilities, cx);
+            panel.set_markdown_menus(menus);
+        });
+        let subscription = cx.subscribe(&panel, |this, _, event: &FilesPanelEvent, cx| match event {
             FilesPanelEvent::AddToChat(mention) => cx.emit(RightPanelEvent::InsertReference(mention.clone())),
-            // Opening on the host needs the server (`shell.openInEditor`).
-            FilesPanelEvent::OpenInEditor { .. } => {}
-            // Opening in the preview browser needs the server (`assets.createUrl`, `preview.open`).
-            FilesPanelEvent::OpenInPreview { .. } => {}
+            _ => crate::live::host_menus::on_files_event(this, this.target.clone(), event, cx),
         });
         self.files.insert(workspace.key.clone(), (panel.clone(), subscription));
         Some(panel)
@@ -480,7 +483,11 @@ impl RightPanel {
                     return;
                 }
                 let Some(diff) = diff.upgrade() else { return };
-                diff.update(cx, |diff, cx| diff.set_input(input, cx));
+                let capabilities = crate::live::host_menus::target_file_menu(this.target.as_ref(), cx);
+                diff.update(cx, |diff, cx| {
+                    diff.set_file_menu_capabilities(capabilities, cx);
+                    diff.set_input(input, cx);
+                });
                 this.diff_shown = Some((thread, selection));
                 if let Some(path) = this.pending_reveal.take() {
                     diff.update(cx, |diff, cx| diff.reveal_path(&path, cx));
@@ -660,7 +667,8 @@ impl RightPanel {
                     repository: repository.clone(),
                     number: u64::from(*number),
                 };
-                cx.new(|cx| crate::components::pull_request::pull_request_detail_panel::PullRequestDetailPanel::new(source, reference, cx)).into()
+                let menus = crate::live::host_menus::right_panel_menus(self, self.target.clone().as_ref(), cx);
+                cx.new(|cx| crate::components::pull_request::pull_request_detail_panel::PullRequestDetailPanel::new(source, reference, cx).with_markdown_menus(menus)).into()
             }
             RightPanelSurface::Issue { project_id, tracker, scope, key: issue, .. } => {
                 let source = self.data.issue_sources(cx).into_iter().find(|s| s.environment_id == environment)?.source;
@@ -671,7 +679,8 @@ impl RightPanel {
                     scope: scope.clone(),
                     key: issue.clone(),
                 };
-                cx.new(|cx| crate::components::issue::issue_detail_panel::IssueDetailPanel::new(source, reference, window, cx)).into()
+                let menus = crate::live::host_menus::right_panel_menus(self, self.target.clone().as_ref(), cx);
+                cx.new(|cx| crate::components::issue::issue_detail_panel::IssueDetailPanel::new(source, reference, window, cx).with_markdown_menus(menus)).into()
             }
             RightPanelSurface::PullRequests { .. } => crate::components::pull_request::thread_pull_requests_panel::thread_pull_requests_panel(crate::state::shell::thread_key(&environment, &t3code_contracts::ThreadId::new(thread_id)), self.store.clone(), cx),
             RightPanelSurface::Preview { resource_id, .. } => {

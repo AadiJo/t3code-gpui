@@ -1189,6 +1189,12 @@ impl PullRequestDetailPanel {
         (k, pieces)
     }
 
+    /// What right clicks in its Markdown offer on the host (`live::host_menus::right_panel_menus`).
+    pub fn with_markdown_menus(mut self, menus: crate::components::chat_markdown::MarkdownMenus) -> Self {
+        self.markdown_state.menus = menus;
+        self
+    }
+
     fn markdown_actions(&self, cx: &mut Context<Self>) -> MarkdownActions {
         let this = cx.entity().downgrade();
         Rc::new(move |action, _, cx| {

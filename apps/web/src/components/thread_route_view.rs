@@ -173,6 +173,7 @@ impl ThreadRouteView {
         let subscriptions = vec![
             cx.subscribe(&composer, Self::on_composer_event),
             cx.subscribe_in(&chat, window, Self::on_chat_event),
+            cx.subscribe_in(&chat.read(cx).timeline().clone(), window, crate::live::host_menus::on_timeline_menu),
             cx.subscribe(&data.events(), Self::on_data_event),
             cx.subscribe(&banner, |this, _, _: &ThreadErrorBannerEvent, cx| {
                 if let Some((key, thread)) = this.error_key() {
@@ -228,6 +229,7 @@ impl ThreadRouteView {
             chat.set_hero(hero, cx);
             chat.set_questions(view.questions.clone(), cx);
         });
+        crate::live::host_menus::sync_timeline(&self.chat, self.target.as_ref(), &view.cwd, cx);
         self.sync_composer(&view, cx);
         self.mount_git(&view, cx);
         cx.notify();
@@ -281,6 +283,7 @@ impl ThreadRouteView {
             chat.set_questions(view.questions.clone(), cx);
             chat.set_thread_menu(thread_menu, cx);
         });
+        crate::live::host_menus::sync_timeline(&self.chat, Some(&target), &view.cwd, cx);
         self.sync_composer(&view, cx);
         self.sync_git_props(&view, cx);
         self.sync_details(&view, cx);

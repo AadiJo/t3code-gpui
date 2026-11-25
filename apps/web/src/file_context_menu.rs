@@ -1,9 +1,7 @@
-//! The file context menu shared by the file tree, file chips and diff headers.
-//! Ports `fileContextMenu.ts`: "Open", "Reveal in …" and "Open with" act on
-//! the server's machine through `shell.openInEditor`, so they only appear
-//! when the server lists the editor. "Open" differs: the web asks the server's
-//! file manager, which for a remote server opens on the wrong machine, so here
-//! it downloads the file and opens it with this machine's default app.
+//! The file context menu shared by the file tree, file chips, diff headers and the
+//! changed-files card. Ports `fileContextMenu.ts`: "Open", "Reveal in …" and "Open with"
+//! act on the server's machine through `shell.openInEditor` (`live::host_menus`), so they
+//! only appear when the server lists the editor.
 
 use gpui_kit::SharedString;
 use t3code_contracts::EditorId;
@@ -124,6 +122,32 @@ pub fn file_tree_menu_items(capabilities: &FileContextMenuCapabilities, has_abso
 
 fn item(action: FileContextMenuAction, label: SharedString, icon: Option<IconName>) -> FileContextMenuItem {
     FileContextMenuItem { action: Some(action), label, icon, children: Vec::new() }
+}
+
+/// The menu for `items`. A submenu ("Open with") shows as its label with its rows inset under it.
+pub fn file_menu_popup(
+    items: &[FileContextMenuItem],
+    on_action: std::rc::Rc<dyn Fn(FileContextMenuAction, &mut gpui_kit::Window, &mut gpui_kit::App)>,
+) -> crate::components::ui::menu::MenuPopup {
+    use crate::components::ui::menu::{MenuItem, MenuPopup};
+    let row = |item: &FileContextMenuItem| {
+        let mut row = MenuItem::new(item.label.clone());
+        if let Some(icon) = item.icon {
+            row = row.icon(icon);
+        }
+        if let Some(action) = item.action.clone() {
+            let on_action = on_action.clone();
+            row = row.on_select(move |window, cx| on_action(action.clone(), window, cx));
+        }
+        row
+    };
+    items.iter().fold(MenuPopup::new().context(), |popup, item| {
+        if item.children.is_empty() {
+            popup.item(row(item))
+        } else {
+            item.children.iter().fold(popup.label(item.label.clone()), |popup, child| popup.item(row(child).inset()))
+        }
+    })
 }
 
 /// `serializeComposerFileLink`: the markdown link a file chip round-trips as.

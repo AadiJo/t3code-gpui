@@ -106,6 +106,9 @@ pub struct BranchPickerOptions {
     pub disabled_refs: Vec<String>,
     /// The checkout the project lives in, so other worktrees get a badge.
     pub project_cwd: Option<String>,
+    /// A right click on a ref offers "Copy branch name" (the thread's branch picker, not the
+    /// worktree base picker).
+    pub copy_branch_names: bool,
     pub width: Option<Pixels>,
 }
 
@@ -128,6 +131,8 @@ pub struct BranchPicker {
     items: Vec<BranchPickerItem>,
     highlighted: usize,
     scroll: UniformListScrollHandle,
+    /// A ref's open "Copy branch name" menu, where it opened.
+    row_menu: Option<(gpui_kit::Point<Pixels>, String)>,
 }
 
 impl EventEmitter<BranchPickerEvent> for BranchPicker {}
@@ -149,6 +154,7 @@ impl BranchPicker {
             items: Vec::new(),
             highlighted: 0,
             scroll: UniformListScrollHandle::new(),
+            row_menu: None,
         };
         picker.rebuild();
         picker
@@ -335,6 +341,10 @@ impl BranchPicker {
             }
         };
         let highlight = c.highlight();
+        let copy_name = match item {
+            BranchPickerItem::Ref(r) if self.options.copy_branch_names => Some(r.name.clone()),
+            _ => None,
+        };
         div()
             .id(("branch-picker-row", index))
             .w_full()
@@ -348,6 +358,16 @@ impl BranchPicker {
             .when(selected, |r| r.bg(theme.derived.item_selected))
             .when(highlighted && !disabled, |r| r.bg(highlight).text_color(c.highlight_foreground()))
             .when(disabled, |r| r.opacity(DISABLED_OPACITY))
+            .when_some(copy_name, |r, name| {
+                r.on_mouse_down(
+                    gpui_kit::MouseButton::Right,
+                    cx.listener(move |this, event: &gpui_kit::MouseDownEvent, _, cx| {
+                        cx.stop_propagation();
+                        this.row_menu = Some((event.position, name.clone()));
+                        cx.notify();
+                    }),
+                )
+            })
             .when(!disabled, |r| {
                 r.cursor_pointer()
                     .on_mouse_move(cx.listener(move |this, _, _, cx| {
@@ -360,6 +380,26 @@ impl BranchPicker {
             })
             .child(content)
             .into_any_element()
+    }
+}
+
+impl BranchPicker {
+    /// `handleBranchContextMenu`: "Copy branch name" for the ref under the pointer.
+    fn render_row_menu(&self, cx: &mut Context<Self>) -> Option<gpui_kit::AnyElement> {
+        let (at, name) = self.row_menu.clone()?;
+        let this = cx.weak_entity();
+        let close = move |_: &mut Window, cx: &mut App| {
+            this.update(cx, |this, cx| {
+                this.row_menu = None;
+                cx.notify();
+            })
+            .ok();
+        };
+        let item = crate::components::ui::menu::MenuItem::new(t!("Copy branch name"))
+            .icon(IconName::Copy)
+            .on_select(move |_, cx| cx.write_to_clipboard(gpui_kit::ClipboardItem::new_string(name.clone())));
+        let popup = crate::components::ui::menu::MenuPopup::new().item(item);
+        Some(crate::components::ui::pointer_menu::pointer_menu("branch-picker-row-menu", at, popup, close, cx))
     }
 }
 
@@ -480,8 +520,11 @@ impl Render for BranchPicker {
             .on_action(cx.listener(Self::on_close))
             .on_action(cx.listener(Self::on_backspace))
             .occlude()
-            .on_mouse_down_out(cx.listener(|_, event: &gpui_kit::MouseDownEvent, _, cx| {
-                cx.emit(BranchPickerEvent::Dismiss(Some(event.position)))
+            .on_mouse_down_out(cx.listener(|this, event: &gpui_kit::MouseDownEvent, _, cx| {
+                // A press on or around an open ref menu answers the menu, not the picker.
+                if this.row_menu.is_none() {
+                    cx.emit(BranchPickerEvent::Dismiss(Some(event.position)))
+                }
             }))
             .w(self.options.width.unwrap_or(theme.rem(20.)))
             .overflow_hidden()
@@ -491,6 +534,7 @@ impl Render for BranchPicker {
             .children(origin)
             .children(self.options.notice.clone().map(status_line))
             .children(self.options.status.clone().map(status_line))
+            .children(self.render_row_menu(cx))
             .test_support()
             .track_focus(&self.focus_handle)
     }

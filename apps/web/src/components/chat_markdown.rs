@@ -120,6 +120,9 @@ pub enum MarkdownMenuAction {
     RevealFile(SharedString),
     /// "Preview media" on an image or video file link.
     PreviewMedia(SharedString),
+    /// A row of the file menu on a changed file (`ChangedFilesTree.tsx`), for its
+    /// workspace-relative path.
+    File(crate::file_context_menu::FileContextMenuAction, SharedString),
 }
 
 /// What the markdown context menus offer (`externalLinkContextMenu.ts`, `MarkdownFileLink.tsx`,
@@ -136,6 +139,8 @@ pub struct MarkdownMenus {
     pub reveal_label: Option<SharedString>,
     /// The thread's working directory, for "Copy full path" of a relative file link.
     pub cwd: Option<SharedString>,
+    /// The host's editors and reveal support, for the changed-files card's file menu.
+    pub files: crate::file_context_menu::FileContextMenuCapabilities,
 }
 
 /// What a right click in markdown landed on.

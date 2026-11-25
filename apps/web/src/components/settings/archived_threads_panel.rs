@@ -20,11 +20,12 @@ use super::settings_search::setting_title;
 use crate::components::icons::IconName;
 use crate::components::ui::button::{Button, ButtonSize, ButtonVariant};
 use crate::components::ui::dialog::{DialogSurface, Modal};
-use crate::components::ui::menu::{MenuItem, MenuPopup, dropdown_menu};
+use crate::components::ui::menu::{ContextMenu, MenuItem, MenuPopup};
 use crate::components::ui::toast::{ToastData, ToastKind, Toaster};
 use crate::connection::ConnectionRuntime;
 use crate::hooks::use_settings::{ClientSettingsStore, ServerSettingsStore};
 use crate::i18n::t;
+use crate::ActiveAppTheme as _;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum ArchiveAction {
@@ -39,6 +40,7 @@ struct ArchivedThread {
     id: ThreadId,
     title: String,
     archived_at: String,
+    created_at: String,
 }
 
 /// The Archive page and its last load.
@@ -140,6 +142,7 @@ impl Render for ArchivedThreadsPanel {
                         id: thread.id.clone(),
                         title: thread.title.clone(),
                         archived_at: thread.archived_at.clone().unwrap_or_else(|| thread.created_at.clone()),
+                        created_at: thread.created_at.clone(),
                     })
                     .collect();
                 if threads.is_empty() {
@@ -167,37 +170,50 @@ impl Render for ArchivedThreadsPanel {
             groups
                 .into_iter()
                 .map(|(title, threads)| {
+                    let gap = cx.app_theme().sp(2.);
                     SettingsSection::new(title)
                         .children(threads.into_iter().map(|thread| {
-                            let when = crate::timestamp_format::format_short_timestamp(&thread.archived_at, crate::hooks::settings_bridge::timestamp_format(cx));
+                            let now = crate::timestamp_format::now_ms();
+                            let relative = |iso: &str| crate::timestamp_format::format_relative_time(iso, now).map(|p| p.label).unwrap_or_default();
+                            let when = format!("Archived {} · Created {}", relative(&thread.archived_at), relative(&thread.created_at));
                             let description = if multiple {
                                 format!("{} · {}", environment_label(&thread.environment, cx), when)
                             } else {
-                                when.to_string()
+                                when
                             };
-                            let menu_thread = thread.clone();
-                            let handle = this.clone();
                             let busy = self.pending.contains(&thread.id);
-                            let menu = dropdown_menu(
-                                SharedString::from(format!("archived-{}", thread.id.as_str())),
-                                Button::new(SharedString::from(format!("archived-trigger-{}", thread.id.as_str())))
-                                    .variant(ButtonVariant::GhostMuted)
+                            let id = thread.id.as_str().to_owned();
+                            // `ARCHIVE_ACTIONS`: an outline icon button per action, with its label as tooltip.
+                            let button = |action: ArchiveAction| {
+                                let (handle, thread) = (this.clone(), thread.clone());
+                                let (key, icon, variant, label) = match action {
+                                    ArchiveAction::Unarchive => ("unarchive", IconName::ArchiveX, ButtonVariant::Outline, t!("Unarchive")),
+                                    ArchiveAction::Delete => ("delete", IconName::Trash2, ButtonVariant::DestructiveOutline, t!("Delete", context = "verb, deletes a thread")),
+                                };
+                                let button = Button::new(SharedString::from(format!("archived-{key}-{id}")))
+                                    .variant(variant)
                                     .size(ButtonSize::IconSm)
-                                    .icon(IconName::Ellipsis)
-                                    .disabled(busy),
-                                move |_, _| {
-                                    let (a, b) = (menu_thread.clone(), menu_thread.clone());
-                                    let (h1, h2) = (handle.clone(), handle.clone());
-                                    MenuPopup::new()
-                                        .item(MenuItem::new(t!("Unarchive")).icon(IconName::ArchiveX).on_select(move |_, cx| {
-                                            h1.update(cx, |this, cx| this.run(ArchiveAction::Unarchive, a.clone(), cx))
-                                        }))
-                                        .item(MenuItem::new(t!("Delete", context = "verb, deletes a thread")).icon(IconName::Trash2).destructive().on_select(move |_, cx| {
-                                            h2.update(cx, |this, cx| this.run(ArchiveAction::Delete, b.clone(), cx))
-                                        }))
-                                },
-                            );
-                            SettingsRow::new(thread.title.clone()).description(description).control(menu)
+                                    .icon(icon)
+                                    .disabled(busy)
+                                    .on_click(move |_, _, cx| handle.update(cx, |this, cx| this.run(action, thread.clone(), cx)));
+                                div().id(SharedString::from(format!("archived-tip-{key}-{id}"))).tooltip(crate::components::ui::tooltip::tooltip(label)).child(button)
+                            };
+                            let controls = div().flex().flex_none().items_center().gap(gap).child(button(ArchiveAction::Unarchive)).child(button(ArchiveAction::Delete));
+                            let row = SettingsRow::new(thread.title.clone()).description(description).control(controls);
+                            let (handle, menu_thread) = (this.clone(), thread.clone());
+                            ContextMenu::new(SharedString::from(format!("archived-menu-{id}")), row, move |_, cx| {
+                                if handle.read(cx).pending.contains(&menu_thread.id) {
+                                    return MenuPopup::new().context();
+                                }
+                                let item = |action: ArchiveAction, label: SharedString| {
+                                    let (handle, thread) = (handle.clone(), menu_thread.clone());
+                                    MenuItem::new(label).on_select(move |_, cx| handle.update(cx, |this, cx| this.run(action, thread.clone(), cx)))
+                                };
+                                MenuPopup::new()
+                                    .context()
+                                    .item(item(ArchiveAction::Unarchive, t!("Unarchive")))
+                                    .item(item(ArchiveAction::Delete, t!("Delete", context = "verb, deletes a thread")).destructive())
+                            })
                         }))
                         .into_any_element()
                 })
