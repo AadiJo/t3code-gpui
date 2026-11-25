@@ -47,8 +47,8 @@ pub struct ToastData {
     pub title: SharedString,
     pub description: Option<SharedString>,
     pub action: Option<(SharedString, Action)>,
-    /// An outline button before the action (`data.secondaryActionProps`).
-    pub secondary_action: Option<(SharedString, Action)>,
+    /// Outline buttons before the action (`additionalActions`, then `secondaryActionProps`).
+    pub secondary_actions: Vec<(SharedString, Action)>,
     /// The actions go on their own row at the end (`stackedThreadToast`'s `stacked-end`).
     pub stacked: bool,
     /// No copy button on an error toast (`data.hideCopyButton`).
@@ -62,7 +62,7 @@ pub struct ToastData {
 impl ToastData {
     pub fn new(kind: ToastKind, title: impl Into<SharedString>) -> Self {
         let timeout = (kind != ToastKind::Loading).then_some(TIMEOUT);
-        Self { kind, title: title.into(), description: None, action: None, secondary_action: None, stacked: false, hide_copy: false, icon: None, timeout }
+        Self { kind, title: title.into(), description: None, action: None, secondary_actions: Vec::new(), stacked: false, hide_copy: false, icon: None, timeout }
     }
 
     /// Keeps the toast until it is dismissed (`timeout: 0`).
@@ -88,9 +88,9 @@ impl ToastData {
         self
     }
 
-    /// An outline `xs` button before the action.
+    /// Adds an outline `xs` button before the action; buttons keep the order they were added in.
     pub fn secondary_action(mut self, label: impl Into<SharedString>, action: impl Fn(&mut Window, &mut App) + 'static) -> Self {
-        self.secondary_action = Some((label.into(), Rc::new(action)));
+        self.secondary_actions.push((label.into(), Rc::new(action)));
         self
     }
 
@@ -166,7 +166,7 @@ impl RenderOnce for ToastSurface {
         // `deriveToastBodyDescriptor`: an error toast with a description offers to copy it.
         let copy_text = (self.data.kind == ToastKind::Error && !self.data.hide_copy).then(|| self.data.description.clone()).flatten();
         let stacked = self.data.stacked && self.data.action.is_some();
-        let trailing = copy_text.is_some() || self.data.action.is_some() || self.data.secondary_action.is_some();
+        let trailing = copy_text.is_some() || self.data.action.is_some() || !self.data.secondary_actions.is_empty();
         let close = self.on_close.clone();
         let controls = trailing.then(|| {
             div()
@@ -182,8 +182,8 @@ impl RenderOnce for ToastSurface {
                         .variant(ButtonVariant::GhostMuted)
                         .on_click(move |_, _, cx| cx.write_to_clipboard(gpui_kit::ClipboardItem::new_string(text.to_string())))
                 }))
-                .children(self.data.secondary_action.map(|(label, action)| {
-                    Button::new("toast-secondary-action")
+                .children(self.data.secondary_actions.into_iter().enumerate().map(|(ix, (label, action))| {
+                    Button::new(("toast-secondary-action", ix))
                         .label(label)
                         .size(ButtonSize::Xs)
                         .variant(ButtonVariant::Outline)

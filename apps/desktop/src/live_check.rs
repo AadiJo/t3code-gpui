@@ -117,6 +117,10 @@ mod live_check_sharing;
 mod live_check_update;
 mod live_check_update_ref;
 mod live_check_update_pill;
+mod live_check_access;
+mod live_check_find;
+mod live_check_linked_environments;
+mod live_check_mcp;
 mod live_check_pr_routing;
 mod live_check_usage;
 mod live_check_voice;
@@ -257,7 +261,8 @@ impl Check {
         let config = RuntimeConfig {
             secrets: Some(Arc::new(FileSecretStore::new(data.join("secrets.json")))),
             data_dir: data.clone(),
-            cloud: None,
+            // A stand-in T3 Connect when one is named (`T3CODE_RELAY_URL`), else none.
+            cloud: std::env::var("T3CODE_RELAY_URL").ok().map(|_| t3code_client_runtime::relay::CloudConfig::from_env()),
             presentation: ClientPresentation { label: "t3code-gpui live check".into(), ..Default::default() },
             electron: launch.install.as_ref().map(|install| ElectronImportSource { paths: install.paths.clone(), key: import_key }),
         };
@@ -635,6 +640,12 @@ fn main() -> anyhow::Result<()> {
         "update-banner" => live_check_update_pill::run_update_banner(&mut check),
         "pr-routing" => live_check_pr_routing::run_pr_routing(&mut check),
         "voice" => live_check_voice::run_voice(&mut check),
+        "use-in-another-app" => live_check_mcp::run_use_in_another_app(&mut check),
+        "linked-environments" => live_check_linked_environments::run_linked_environments(&mut check),
+        "access-controls" => live_check_access::run_access_controls(&mut check),
+        "device-approval" => live_check_access::run_device_approval(&mut check),
+        "find-history-seed" => live_check_find::run_find_history_seed(&mut check),
+        "find-history" => live_check_find::run_find_history(&mut check),
         other => Err(anyhow::anyhow!("unknown phase {other}")),
     };
     check.finish(&phase, result)

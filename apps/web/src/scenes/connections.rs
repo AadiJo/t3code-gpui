@@ -154,6 +154,7 @@ fn discovered() -> RelayDiscovery {
     };
     RelayDiscovery {
         refreshing: false,
+        listed: true,
         error: None,
         environments: vec![RelayEnvironment {
             record: RelayEnvironmentRecord {

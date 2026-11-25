@@ -122,6 +122,8 @@ pub struct RelayEnvironment {
 #[derive(Clone, Debug, Default)]
 pub struct RelayDiscovery {
     pub refreshing: bool,
+    /// A listing has answered since the last refresh began (`listed`).
+    pub listed: bool,
     pub error: Option<SharedString>,
     pub environments: Vec<RelayEnvironment>,
 }
@@ -679,25 +681,25 @@ async fn discover_relay(
     previous: Vec<RelayEnvironment>,
 ) {
     let send = |discovery| _ = events.unbounded_send(BridgeEvent::Discovery(discovery));
-    send(RelayDiscovery { refreshing: true, error: None, environments: previous.clone() });
+    send(RelayDiscovery { refreshing: true, listed: false, error: None, environments: previous.clone() });
     let jwt = match clerk.template_token().await {
         Ok(Some(jwt)) => jwt,
         Ok(None) => return send(RelayDiscovery::default()),
         Err(error) => {
-            return send(RelayDiscovery { refreshing: false, error: Some(error.to_string().into()), environments: previous });
+            return send(RelayDiscovery { refreshing: false, listed: false, error: Some(error.to_string().into()), environments: previous });
         }
     };
     let records = match relay.list_environments(&jwt).await {
         Ok(records) => records,
         Err(error) => {
-            return send(RelayDiscovery { refreshing: false, error: Some(error.to_string().into()), environments: previous });
+            return send(RelayDiscovery { refreshing: false, listed: false, error: Some(error.to_string().into()), environments: previous });
         }
     };
     let checking = records
         .iter()
         .map(|record| RelayEnvironment { record: record.clone(), availability: RelayAvailability::Checking })
         .collect();
-    send(RelayDiscovery { refreshing: false, error: None, environments: checking });
+    send(RelayDiscovery { refreshing: false, listed: true, error: None, environments: checking });
     let statuses =
         futures::future::join_all(records.iter().map(|record| relay.environment_status(&jwt, &record.environment_id))).await;
     let environments = records
@@ -712,7 +714,7 @@ async fn discover_relay(
             },
         })
         .collect();
-    send(RelayDiscovery { refreshing: false, error: None, environments });
+    send(RelayDiscovery { refreshing: false, listed: true, error: None, environments });
 }
 
 /// `T3CODE_RUNTIME_METRICS=1` prints the tokio runtime's task counts every

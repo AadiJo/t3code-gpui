@@ -87,6 +87,10 @@ pub enum TimelineAction {
     OpenTerminal(SharedString),
     /// "Load earlier turns": page older history (`threadEnvironment.loadEarlierHistory`).
     LoadEarlier,
+    /// Find ran out of loaded matches while older history remains: page through the nearest
+    /// earlier entry the server's search finds for `query` that is not among `loaded`
+    /// (`onLoadEarlier(throughEntryId)` in `useThreadFindNavigation`).
+    FindEarlier { query: SharedString, loaded: Arc<[SharedString]> },
 }
 
 /// A thread's paged history as the timeline shows it (`MessagesTimelineHistoryControls`).
@@ -194,6 +198,8 @@ pub struct MessagesTimeline {
     find_preparing: Option<Task<()>>,
     find_ready: bool,
     find: Option<TimelineFind>,
+    /// Matches before a find page was asked for; the next rows select the one just above them.
+    find_paging_from: Option<usize>,
     /// The row being rendered, so its markdown can highlight its matches.
     pub(super) rendering_row: usize,
     pub(super) now: Instant,
@@ -265,6 +271,7 @@ impl MessagesTimeline {
             find_preparing: None,
             find_ready: false,
             find: None,
+            find_paging_from: None,
             rendering_row: 0,
             now: Instant::now(),
             clock_offset: 0,
@@ -312,7 +319,11 @@ impl MessagesTimeline {
     pub fn update_input(&mut self, input: TimelineInput, cx: &mut Context<Self>) {
         self.input = input;
         self.rebuild_rows();
+        let paging = self.find_paging_from.is_some();
         self.refresh_find();
+        if paging && self.find_paging_from.is_none() {
+            cx.emit(FindUpdated);
+        }
         cx.notify();
     }
 
@@ -368,12 +379,31 @@ impl MessagesTimeline {
             active,
         });
         self.reveal_active_match();
+        if self.find.as_ref().is_some_and(|f| f.matches.is_empty()) {
+            self.page_find(cx);
+        }
         cx.notify();
         self.find_count()
     }
 
+    /// Asks for the history above the loaded rows when older turns remain, so find reaches a
+    /// match there; the next rows select it. Returns whether a page was asked for.
+    fn page_find(&mut self, cx: &mut Context<Self>) -> bool {
+        let Some(find) = self.find.as_ref() else { return false };
+        if !self.input.history.has_more || self.input.history.loading || self.find_paging_from.is_some() {
+            return false;
+        }
+        self.find_paging_from = Some(find.matches.len());
+        let loaded: Arc<[SharedString]> = self.rows.iter().map(|row| row.id.clone()).collect();
+        cx.emit(TimelineAction::FindEarlier { query: find.query.clone(), loaded });
+        true
+    }
+
     /// Moves to the next (`delta` 1) or previous (-1) match, wrapping.
     pub fn step_find(&mut self, delta: isize, cx: &mut Context<Self>) -> (usize, usize) {
+        if delta < 0 && self.find.as_ref().is_some_and(|f| f.active == 0) && self.page_find(cx) {
+            return self.find_count();
+        }
         if let Some(find) = self.find.as_mut().filter(|f| !f.matches.is_empty()) {
             let total = find.matches.len() as isize;
             find.active = ((find.active as isize + delta).rem_euclid(total)) as usize;
@@ -408,6 +438,16 @@ impl MessagesTimeline {
         let Some(find) = self.find.as_mut() else { return };
         find.matches = self.find_index.search(&self.rows, &find.query).into();
         find.active = find.active.min(find.matches.len().saturating_sub(1));
+        // A page asked for by find: select the match just above the ones shown before it.
+        if let Some(before) = self.find_paging_from {
+            if find.matches.len() > before {
+                find.active = find.matches.len() - before - 1;
+                self.find_paging_from = None;
+                self.reveal_active_match();
+            } else if !self.input.history.loading && !self.input.history.has_more {
+                self.find_paging_from = None;
+            }
+        }
     }
 
     /// Scrolls the active match's row into view and unfolds a clipped user message.

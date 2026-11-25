@@ -82,6 +82,12 @@ pub fn server_update_banner(key: &ThreadKey, cx: &mut App) -> Option<ComposerBan
     })
 }
 
+/// The icon colour of a banner: a failed server update's icon is `text-error`
+/// (`ComposerServerUpdateIcon`); every other banner icon keeps the muted ink.
+pub fn banner_icon_color(banner: &ComposerBanner, error: gpui_kit::Hsla) -> Option<gpui_kit::Hsla> {
+    (banner.id.starts_with(SERVER_UPDATE_BANNER) && matches!(banner.tone, BannerTone::Error)).then_some(error)
+}
+
 /// What Retry updates: the server, to this client's version, unless the host is current or a
 /// desktop app runs it.
 fn retry_target(environment_id: &EnvironmentId, name: Option<&SharedString>, cx: &mut App) -> Option<ServerUpdateTarget> {

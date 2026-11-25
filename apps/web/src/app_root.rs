@@ -1507,7 +1507,10 @@ impl AppRoot {
                     crate::components::sharing_dialogs::SharingDialogs::open_guest_share(key, window, cx);
                 }
             }
-            PaletteEvent::UseInAnotherApp => return self.not_built_yet(t!("Sharing"), "sharing", cx),
+            PaletteEvent::UseInAnotherApp => {
+                let router = self.router.clone();
+                crate::components::sharing_dialogs::SharingDialogs::open_use_in_another_app(None, std::rc::Rc::new(move |route, cx| router.update(cx, |r, cx| r.navigate(route, cx))), window, cx);
+            }
             // Raised outside an open palette: open it on that flow's page.
             PaletteEvent::NewProject | PaletteEvent::AddProject(_) => {
                 let Some(palette) = self.palette.as_ref().and_then(WeakEntity::upgrade) else { return Wiring::Ran };

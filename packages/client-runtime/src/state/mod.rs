@@ -9,13 +9,17 @@
 pub mod cache_persistence;
 pub mod cache_store;
 pub mod client_store;
+pub mod connect_device_approval;
+pub mod cloud_link;
 pub mod drafts;
 pub mod environment;
+pub mod environment_endpoint;
 pub mod environment_http;
 pub mod models;
 pub mod notifications;
 pub mod older_settled_threads;
 pub mod optimistic_messages;
+pub mod peer_pairing_code;
 pub mod orchestration;
 pub mod orchestration_v2_projection;
 pub mod project_grouping;

@@ -183,9 +183,9 @@ pub(super) fn run_github_source(check: &mut Check) -> anyhow::Result<()> {
     let t = title.clone();
     check.pump(move |c| toast_shows(c, &t), Duration::from_secs(30), "the failed clone toasts")?;
     let toast = check.cx.update(|cx| Toaster::find(&title, cx)).context("toast")?;
-    check.check("the failed clone offers Remove project and Retry", toast.secondary_action.as_ref().map(|a| a.0.as_ref()) == Some("Remove project") && toast.action.as_ref().map(|a| a.0.as_ref()) == Some("Retry"), "");
+    check.check("the failed clone offers Remove project and Retry", toast.secondary_actions.first().map(|a| a.0.as_ref()) == Some("Remove project") && toast.action.as_ref().map(|a| a.0.as_ref()) == Some("Retry"), "");
     check.shot("github-04-clone-failed-toast.png")?;
-    if let Some((_, remove)) = toast.secondary_action {
+    if let Some((_, remove)) = toast.secondary_actions.into_iter().next() {
         check.cx.update_window(check.window, |_, w, cx| remove(w, cx)).ok();
     }
     let gone = started.project_id.clone();

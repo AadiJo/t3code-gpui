@@ -337,6 +337,12 @@ impl LiveThread {
         cx.background_executor().spawn(async move { handle.load_earlier().await })
     }
 
+    /// Pages older history until `entry_id` is loaded (a find hit above the loaded window).
+    pub fn load_through(&self, entry_id: String, cx: &mut Context<Self>) -> Task<LoadEarlierResult> {
+        let handle = Arc::clone(&self.handle);
+        cx.background_executor().spawn(async move { handle.load_through(entry_id).await })
+    }
+
     /// Loads the hidden rows of a collapsed work group.
     pub fn expand_work_group(&self, anchor: TurnItemId, cx: &mut Context<Self>) -> Task<LoadEarlierResult> {
         let handle = Arc::clone(&self.handle);
