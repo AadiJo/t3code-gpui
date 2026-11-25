@@ -303,9 +303,9 @@ impl Render for AddEnvironmentDialog {
                             .flex_col()
                             .gap(sp(3.))
                             .child(fields)
+                            // The hint's `mt-1` collapses into its wrapper's `space-y-3` margin.
                             .child(
                                 div()
-                                    .mt(sp(1.))
                                     .ui_text(theme, TextSize::Xs2, weight::NORMAL)
                                     .text_color(c.muted_foreground)
                                     .child(t!("Paste a full pairing URL here to fill both fields automatically.")),
