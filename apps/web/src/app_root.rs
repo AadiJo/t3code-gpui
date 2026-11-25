@@ -1086,6 +1086,12 @@ impl AppRoot {
             }
             return Wiring::Ran;
         }
+        if command == MenuCommand::ShareWithGuest {
+            if let Some(key) = keys.first() {
+                crate::components::sharing_dialogs::SharingDialogs::open_guest_share(key.clone(), window, cx);
+            }
+            return Wiring::Ran;
+        }
         // `requestCustomSnooze` opens a dialog this app does not have yet.
         if command == MenuCommand::SnoozeCustom {
             return self.not_built_yet(t!("Custom snooze"), "custom snooze dialog", cx);
@@ -1241,7 +1247,12 @@ impl AppRoot {
                     crate::port_discovery_state::PortForwards::handle(request.clone(), cx);
                 }
             }
-            PaletteEvent::ShareWithGuest | PaletteEvent::UseInAnotherApp => return self.not_built_yet(t!("Sharing"), "sharing", cx),
+            PaletteEvent::ShareWithGuest => {
+                if let Some(key) = self.shown_key() {
+                    crate::components::sharing_dialogs::SharingDialogs::open_guest_share(key, window, cx);
+                }
+            }
+            PaletteEvent::UseInAnotherApp => return self.not_built_yet(t!("Sharing"), "sharing", cx),
             PaletteEvent::NewProject => return self.not_built_yet(t!("New project"), "palette views", cx),
             PaletteEvent::AddProject(AddProjectStep::BrowseFolders(_)) => return self.not_built_yet(t!("Local folder"), "palette views", cx),
             PaletteEvent::AddProject(AddProjectStep::CloneRepository(_)) => return self.not_built_yet(t!("Git URL"), "palette views", cx),
@@ -1631,6 +1642,7 @@ impl Render for AppRoot {
             .children(self.expanded.as_ref().map(|(dialog, _)| dialog.clone()))
             .children(self.link_dialog.as_ref().map(|(dialog, _)| dialog.clone()))
             .children(crate::components::settings::theme_editor_panel::ThemeEditorStore::layer(cx))
+            .children(crate::components::sharing_dialogs::SharingDialogs::layer(cx))
     }
 }
 

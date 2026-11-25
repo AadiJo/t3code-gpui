@@ -107,6 +107,7 @@ mod live_check_menus;
 mod live_check_palette;
 mod live_check_setup;
 mod live_check_settings;
+mod live_check_sharing;
 mod live_check_update;
 mod live_check_update_ref;
 mod live_check_usage;
@@ -614,6 +615,7 @@ fn main() -> anyhow::Result<()> {
         "earlier-turns" => live_check_history::run_earlier_turns(&mut check),
         "update-ref" => live_check_update_ref::run_update_ref(&mut check),
         "context-menus" => live_check_menus::run_context_menus(&mut check),
+        "guest-share" => live_check_sharing::run_guest_share(&mut check),
         other => Err(anyhow::anyhow!("unknown phase {other}")),
     };
     check.finish(&phase, result)

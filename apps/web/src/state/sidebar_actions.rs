@@ -219,8 +219,9 @@ fn thread_command(keys: Vec<ThreadKey>, command: MenuCommand, cx: &mut App) -> S
         MenuCommand::RegenerateTitle => run_each(&keys, cx, |c, id| async move { c.regenerate_title(&id).await.map(|(_, accepted)| accepted) }),
         MenuCommand::MarkUnread => run_each(&keys, cx, |c, id| async move { c.mark_unread(&id).await }),
         MenuCommand::AutoSettle(enabled) => run_each(&keys, cx, move |c, id| async move { c.set_auto_settle(&id, enabled).await }),
-        // The chat header opens find itself; the sidebar never offers it.
-        MenuCommand::FindInThread => {}
+        // The chat header opens find itself; the sidebar never offers it. The window opens the
+        // guest share dialog.
+        MenuCommand::FindInThread | MenuCommand::ShareWithGuest => {}
         MenuCommand::Archive => run_each(&keys, cx, |c, id| async move { c.archive(&id).await }),
         MenuCommand::Delete => run_each(&keys, cx, |c, id| async move { c.delete(&id, false).await }),
         MenuCommand::CopyThreadId => {

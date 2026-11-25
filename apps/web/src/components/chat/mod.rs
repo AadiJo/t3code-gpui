@@ -18,6 +18,7 @@ pub mod composer_stash;
 pub mod composer_theme;
 pub mod composer_usage_limits;
 pub mod expanded_image_dialog;
+pub mod guest_share_controls;
 pub mod markdown_stream_blocks;
 pub mod messages_timeline;
 pub mod messages_timeline_logic;
