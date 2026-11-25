@@ -67,6 +67,8 @@ pub trait PreviewSource: 'static {
     fn stop_local_server(&self, input: PreviewStopLocalServerInput) -> PreviewFuture<()>;
     /// WS `/api/preview-stream/ws` for one tab.
     fn stream(&self, target: PreviewStreamTarget) -> PreviewStream;
+    /// `previewStreamDownloadUrl`: where a file the tab downloaded instead of showing is saved from.
+    fn download_url(&self, thread: &ThreadId, tab: &str, id: &str) -> PreviewFuture<String>;
 }
 
 /// Live preview for one environment.
@@ -172,6 +174,19 @@ impl PreviewSource for LivePreviewSource {
         let client = PreviewStreamClient::start(self.link.clone(), target, frames.clone(), events_tx);
         PreviewStream { frames, events, send: Box::new(move |input| client.send(input)) }
     }
+
+    fn download_url(&self, thread: &ThreadId, tab: &str, id: &str) -> PreviewFuture<String> {
+        let (link, thread, tab, id) = (self.link.clone(), thread.to_string(), tab.to_owned(), id.to_owned());
+        let (sender, receiver) = futures::channel::oneshot::channel();
+        self.handle.spawn(async move {
+            let result = link.media_access().await.map_err(|e| PreviewError(e.to_string().into())).map(|access| {
+                let path = format!("{}/download", t3code_client_runtime::preview::server_browser_stream::PREVIEW_STREAM_BASE_PATH);
+                access.http_url(&path, &[("threadId", &thread), ("tabId", &tab), ("id", &id)]).to_string()
+            });
+            _ = sender.send(result);
+        });
+        async move { receiver.await.unwrap_or_else(|_| Err(PreviewError("The app is shutting down.".into()))) }.boxed()
+    }
 }
 
 /// Generated pages for scenes and checks: each tab paints a frame showing
@@ -181,6 +196,7 @@ pub struct FixturePreviewSource {
     /// Every input the stream accepted, in order.
     pub sent: Arc<Mutex<Vec<PreviewStreamInput>>>,
     viewport: (u32, u32),
+    streams: Mutex<Vec<mpsc::UnboundedSender<PreviewStreamEvent>>>,
 }
 
 /// Encodes a page-like JPEG of `width`×`height` tinted by `seed`.
@@ -209,7 +225,12 @@ pub fn fixture_frame(width: u32, height: u32, seed: u32) -> Vec<u8> {
 
 impl FixturePreviewSource {
     pub fn new(sessions: Vec<PreviewSessionSnapshot>) -> Rc<Self> {
-        Rc::new(Self { sessions: Mutex::new(sessions), sent: Arc::default(), viewport: (1280, 800) })
+        Rc::new(Self { sessions: Mutex::new(sessions), sent: Arc::default(), viewport: (1280, 800), streams: Mutex::default() })
+    }
+
+    /// Delivers `event` to every open stream, as the server would (an agent's pointer, a dialog).
+    pub fn emit(&self, event: PreviewStreamEvent) {
+        self.streams.lock().unwrap().retain(|stream| stream.send(event.clone()).is_ok());
     }
 }
 
@@ -253,6 +274,11 @@ impl PreviewSource for FixturePreviewSource {
         async { Ok(()) }.boxed()
     }
 
+    fn download_url(&self, _: &ThreadId, tab: &str, id: &str) -> PreviewFuture<String> {
+        let url = format!("http://fixture.invalid/download?tabId={tab}&id={id}");
+        async move { Ok(url) }.boxed()
+    }
+
     fn stream(&self, target: PreviewStreamTarget) -> PreviewStream {
         let frames = Arc::new(LatestFrame::default());
         let (events_tx, events) = mpsc::unbounded_channel();
@@ -263,6 +289,7 @@ impl PreviewSource for FixturePreviewSource {
         _ = events_tx.send(PreviewStreamEvent::Viewport(PreviewStreamViewport { width: width as f64, height: height as f64 }));
         let control = PreviewStreamControl { can_operate: true, controller: Controller::You, generation: 1, dialog: None };
         _ = events_tx.send(PreviewStreamEvent::Control(Some(control)));
+        self.streams.lock().unwrap().push(events_tx);
         let sent = self.sent.clone();
         PreviewStream {
             frames,
