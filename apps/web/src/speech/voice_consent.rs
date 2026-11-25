@@ -35,6 +35,14 @@ pub fn choose_audio_destination(destination: Option<VoiceTranscriptionDestinatio
     if let AudioChoice::Pending { pending, .. } = previous {
         LocalStorage::set::<bool>(cx, &saved_key(&pending.id), None);
     }
+    changed(cx);
+}
+
+/// A recording bound to a grant that is no longer in force ends at once.
+fn changed(cx: &mut App) {
+    if let Some(voice) = super::voice_input_session::VoiceInput::try_global(cx) {
+        voice.update(cx, |voice, cx| voice.destination_changed(cx));
+    }
 }
 
 /// `pendingCloudAudioChoice`: a cloud grant that applies once its key saves. Returns the
@@ -53,6 +61,7 @@ pub fn pending_cloud_choice(destination: VoiceTranscriptionDestination, cx: &mut
     if let AudioChoice::Pending { pending, .. } = previous {
         LocalStorage::set::<bool>(cx, &saved_key(&pending.id), None);
     }
+    changed(cx);
     id
 }
 
@@ -60,6 +69,7 @@ pub fn pending_cloud_choice(destination: VoiceTranscriptionDestination, cx: &mut
 pub fn confirm_pending(id: &str, cx: &mut App) {
     if matches!(read_choice(cx), AudioChoice::Pending { pending, .. } if pending.id == id) {
         LocalStorage::set(cx, &saved_key(id), Some(&true));
+        changed(cx);
     }
 }
 
@@ -77,4 +87,5 @@ pub fn cleanup_grant(cx: &App) -> Option<String> {
 pub fn choose_transcript_cleanup(enabled: bool, cx: &mut App) {
     let grant = enabled.then(|| uuid::Uuid::new_v4().to_string());
     LocalStorage::set(cx, CLEANUP_KEY, grant.as_ref());
+    changed(cx);
 }

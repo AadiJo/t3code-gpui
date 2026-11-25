@@ -232,7 +232,9 @@ pub fn fixture_state(key: &str) -> ComposerState {
             workspace: "Worktree".into(),
             branch: "composer".into(),
         }),
-        voice_available: false,
+        // Dictation is allowed; the mic shows only once a destination is chosen and ready.
+        voice_available: true,
+        pending: Default::default(),
         validation: None,
         file_attachment_limit: Some(crate::state::attachments::MAX_FILE_BYTES),
         usage_limits: false,

@@ -64,7 +64,8 @@ pub struct ResolvedDestination {
 /// What a recording needs from its draft, read when it starts.
 #[derive(Clone)]
 pub struct VoiceRecordingContext {
-    pub environment_id: EnvironmentId,
+    /// The draft's own environment, where cleanup runs; `None` for a draft not bound to one yet.
+    pub environment_id: Option<EnvironmentId>,
     pub project_name: Option<String>,
     pub project_words: SpeechCustomWords,
     /// False keeps the transcript off the cleanup provider (the transcription test).
@@ -88,8 +89,13 @@ pub struct VoiceTarget {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct VoiceActivity {
     pub level: f32,
+    /// The waveform's history, newest last: each level shifts the bars left (`VoiceWaveform`).
+    pub levels: [f32; WAVEFORM_BARS],
     pub preview: Option<SpeechStreamText>,
 }
+
+/// `WAVEFORM_BAR_COUNT`.
+pub const WAVEFORM_BARS: usize = 24;
 
 /// A send waiting for the transcript (`submitAfterDictation`).
 struct PendingSubmission {
@@ -124,6 +130,8 @@ pub struct VoiceInput {
     _clock: Option<Task<()>>,
     /// Bumped on every start request; stale status replies are dropped.
     start_request: u64,
+    /// A hold released before recording began; it finishes once recording starts.
+    stop_on_record: Option<SharedString>,
 }
 
 struct VoiceInputGlobal(Entity<VoiceInput>);
@@ -153,8 +161,14 @@ impl VoiceInput {
             grant_valid: Arc::new(AtomicBool::new(true)),
             _clock: None,
             start_request: 0,
+            stop_on_record: None,
         });
         cx.set_global(VoiceInputGlobal(entity.clone()));
+        // Losing the destination's connection, or its capability, discards the recording.
+        if ConnectionRuntime::is_running(cx) {
+            let connections = ConnectionRuntime::state(cx);
+            entity.update(cx, |_, cx| cx.observe(&connections, |this, _, cx| this.destination_changed(cx)).detach());
+        }
         entity
     }
 
@@ -320,8 +334,8 @@ impl VoiceInput {
         let current = Self::destination(cx).filter(|destination| destination.ready).map(|destination| destination.key);
         if self.session.as_ref().is_some_and(|session| Some(&session.key) != current.as_ref()) {
             self.dispose_session(cx);
+            self.queued_start = None;
         }
-        self.queued_start = None;
         cx.notify();
     }
 
@@ -392,9 +406,22 @@ impl VoiceInput {
         }
     }
 
+    /// A held shortcut came up: finish now, or as soon as the recording starts.
+    pub fn stop_when_recording(&mut self, owner: &str, cx: &mut Context<Self>) {
+        if !self.owns(owner) && self.queued_start.as_deref() != Some(owner) {
+            return;
+        }
+        if self.state.phase == VoiceInputPhase::Recording && self.owns(owner) {
+            self.stop(owner, cx);
+        } else {
+            self.stop_on_record = Some(SharedString::from(owner.to_owned()));
+        }
+    }
+
     /// `cancel`: abandons `owner`'s dictation and any send waiting on it.
     pub fn cancel(&mut self, owner: &str, cx: &mut Context<Self>) {
         self.pending_submission = None;
+        self.stop_on_record = None;
         self.start_request += 1;
         if self.queued_start.as_deref() == Some(owner) {
             self.queued_start = None;
@@ -481,8 +508,17 @@ impl VoiceInput {
             self.pending_submission = None;
         }
         let idle = state.phase == VoiceInputPhase::Idle;
+        let recording = state.phase == VoiceInputPhase::Recording;
+        if !recording && state.phase != VoiceInputPhase::Preparing {
+            self.stop_on_record = None;
+        }
         self.state = state;
         cx.notify();
+        if recording
+            && let Some(owner) = self.stop_on_record.take()
+        {
+            self.stop(&owner, cx);
+        }
         if idle
             && let Some(pending) = self.pending_submission.take()
         {
@@ -520,7 +556,7 @@ impl VoiceInput {
         let context = &self.target.as_ref()?.context;
         let settings = ClientSettingsStore::get(cx);
         let cleanup_grant = context.cleanup.then(|| voice_consent::cleanup_grant(cx)).flatten();
-        let cleanup_environment = cleanup_grant.is_some().then(|| context.environment_id.clone());
+        let cleanup_environment = cleanup_grant.as_ref().and(context.environment_id.clone());
         let cue = if cleanup_grant.is_some() { settings.speech_correction_word.as_str().to_owned() } else { String::new() };
         let words = resolve_speech_vocabulary(
             &settings.speech_custom_words,
@@ -542,6 +578,33 @@ impl VoiceInput {
             speech_silence_filtering: settings.speech_silence_filtering,
         };
         Some((options, cleanup, cleanup_environment))
+    }
+}
+
+/// The Settings → Voice page (the error capsule's Settings button).
+pub fn open_voice_settings(window: &mut Window, cx: &mut App) {
+    navigate(crate::router::Route::settings(crate::components::settings::settings_search::SettingsPath::Voice), window, cx);
+}
+
+/// Navigates through the window root's router.
+pub fn navigate(route: crate::router::Route, window: &mut Window, cx: &mut App) {
+    if let Some(navigate) = cx.try_global::<VoiceNavigator>().map(|navigator| navigator.0.clone()) {
+        navigate(route, window, cx);
+    }
+}
+
+/// How voice UI outside a route navigates (the indicator's draft button, Settings → Voice).
+/// The window root sets it.
+#[derive(Clone)]
+pub struct VoiceNavigator(pub Rc<dyn Fn(crate::router::Route, &mut Window, &mut App)>);
+impl Global for VoiceNavigator {}
+
+impl VoiceNavigator {
+    /// Routes voice navigation through `router`.
+    pub fn set(router: WeakEntity<crate::router::Router>, cx: &mut App) {
+        cx.set_global(Self(Rc::new(move |route, _, cx| {
+            _ = router.update(cx, |router, cx| router.navigate(route, cx));
+        })));
     }
 }
 
@@ -801,7 +864,16 @@ impl Platform {
 
     fn on_capture_event(self: &Rc<Self>, event: CaptureEvent) {
         match event {
-            CaptureEvent::Level(level) => self.with_owner(|this, cx| this.publish_activity(|activity| activity.level = level, cx)),
+            CaptureEvent::Level(level) => self.with_owner(|this, cx| {
+                this.publish_activity(
+                    |activity| {
+                        activity.level = level;
+                        activity.levels.copy_within(1.., 0);
+                        activity.levels[WAVEFORM_BARS - 1] = level;
+                    },
+                    cx,
+                )
+            }),
             CaptureEvent::Pcm(pcm) => {
                 let mut state = self.capture.borrow_mut();
                 match &state.stream {

@@ -1,6 +1,7 @@
 //! Voice input (`apps/web/src/speech`): microphone capture with cpal, the microphone order,
 //! consent, and the app's one dictation session that every composer shares.
 
+pub mod language_names;
 pub mod mac_permission;
 pub mod microphones;
 pub mod pcm_capture;
