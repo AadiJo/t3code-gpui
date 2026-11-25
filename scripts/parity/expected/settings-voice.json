@@ -12,17 +12,17 @@
    "bg": "#141415"
   },
   "breadcrumb": {
-   "top": 59.0,
+   "top": 58.5,
    "left": 301.5,
-   "bottom": 73.0,
-   "right": 423.0,
+   "bottom": 72.5,
+   "right": 422.0,
    "color": "#f5f5f5",
    "bg": "#141415"
   },
   "close button": {
-   "top": 60.5,
+   "top": 60.0,
    "left": 1032.5,
-   "bottom": 69.5,
+   "bottom": 69.0,
    "right": 1041.5,
    "color": "#8f8f8f",
    "bg": "#141415"
@@ -36,10 +36,10 @@
    "bg": "#141415"
   },
   "h2 Input": {
-   "top": 181.0,
+   "top": 180.5,
    "left": 328.0,
-   "bottom": 196.5,
-   "right": 366.5,
+   "bottom": 196.0,
+   "right": 367.0,
    "color": "#f5f5f5",
    "bg": "#141415"
   },
@@ -172,9 +172,9 @@
    "vertical": true
   },
   "h2 Transcription": {
-   "top": 502.5,
+   "top": 502.0,
    "left": 327.5,
-   "bottom": 518.5,
+   "bottom": 518.0,
    "right": 429.0,
    "color": "#f5f5f5",
    "bg": "#141415"

@@ -274,17 +274,37 @@ const SCENES: &[Scene] = &[
     },
 ];
 
-/// The saved environment the Mac reference paired: a second server labelled "Build server" on
-/// this machine, reached over one direct route.
+/// The second environment the Mac reference paired: a server labelled "Build server" on the
+/// capture machine, reached over one direct route.
 const SAVED_ENVIRONMENT: &str = "env-build";
 const SAVED_ROUTES: &str = "env-routes-toggle-env-build";
 const SAVED_MENU: &str = "env-more-env-build";
+/// Where the capture reached the reference server, which it paired as a saved environment (the
+/// owner runs with the local environment off).
+const REFERENCE_URL: &str = "http://127.0.0.1:20184/";
+const SERVER_VERSION: &str = "0.1.11";
 
-/// Adds the saved environment to the connection catalog the settings page lists.
-fn saved_environment(cx: &mut App) {
-    let saved = t3code_web::scenes::connections::saved_environment(SAVED_ENVIRONMENT, "Build server", "http://127.0.0.1:20284/", "0.1.11");
+/// The connection catalog every view starts with: the reference server, saved and connected.
+fn reference_environment(cx: &mut App) {
+    let env = t3code_web::fixtures::fixture_environment();
+    let label = t3code_web::fixtures::reference_server::config(&env).environment.label;
+    let saved = t3code_web::scenes::connections::saved_environment(env.0.as_ref(), &label, REFERENCE_URL, SERVER_VERSION);
     ConnectionRuntime::state(cx).update(cx, |state, cx| {
         state.environments = vec![saved];
+        cx.notify();
+    });
+}
+
+/// Adds the second saved environment after the reference server, with the server config the
+/// capture's connection reported (the same Linux machine and version, its own id and label).
+fn saved_environment(cx: &mut App) {
+    let saved = t3code_web::scenes::connections::saved_environment(SAVED_ENVIRONMENT, "Build server", "http://127.0.0.1:20284/", SERVER_VERSION);
+    let mut config = t3code_web::fixtures::reference_server::config(&t3code_web::fixtures::fixture_environment());
+    config.environment.environment_id = t3code_contracts::EnvironmentId::new(SAVED_ENVIRONMENT);
+    config.environment.label = "Build server".into();
+    ServerSettingsStore::insert_fixture(EnvironmentId::from(SAVED_ENVIRONMENT), config, cx);
+    ConnectionRuntime::state(cx).update(cx, |state, cx| {
+        state.environments.push(saved);
         cx.notify();
     });
 }
@@ -308,33 +328,36 @@ const SCROLLED: &[(&str, usize)] = &[
 
 /// When each reference view was captured (epoch seconds), so relative times read the same.
 const CAPTURED_AT: &[(&str, i64)] = &[
-    ("app-home", 1795502946), ("app-window", 1795502940), ("branch-picker", 1795503406), ("commit-dialog", 1795503417),
-    ("composer-empty", 1795503051), ("composer-markdown", 1795503059), ("composer-mention", 1795503083),
-    ("composer-model-picker", 1795503067), ("composer-slash", 1795503074), ("details", 1795503383),
-    ("details-items-menu", 1795503489), ("diff-collapsed", 1795503366), ("diff-scope-menu", 1795503373),
-    ("diff-split", 1795503371), ("diff-stacked", 1795503368), ("files-goto", 1795503281), ("files-image", 1795503277),
-    ("files-markdown", 1795503243), ("files-search", 1795503285), ("files-text", 1795503209), ("files-tree", 1795503175),
-    ("git-menu", 1795503395), ("issues", 1795503324), ("open-in-editor-menu", 1795503386), ("palette-empty", 1795503026),
-    ("palette-messages", 1795503481), ("palette-nested-project", 1795503034), ("palette-nested-theme", 1795503044),
-    ("palette-query", 1795503018), ("palette-query-sync", 1795503470), ("palette-root", 1795503009),
-    ("pull-requests", 1795503315), ("right-panel-launcher", 1795503163), ("settings-about", 1795502790),
-    ("settings-access", 1795502884), ("settings-appearance", 1795502708), ("settings-archived", 1795502781),
-    ("settings-beta", 1795502934), ("settings-browser", 1795502857), ("settings-chat", 1795502720),
-    ("settings-connections", 1795502876), ("settings-connections-add", 1795503462), ("settings-connections-menu", 1795503571),
-    ("settings-connections-routes", 1795503569), ("settings-connections-saved", 1795503567), ("settings-devices", 1795502867),
-    ("settings-diffs", 1795502728), ("settings-general", 1795502697), ("settings-integrations", 1795502914),
-    ("settings-keybindings", 1795502738), ("settings-keybindings-recording", 1795503447), ("settings-labs", 1795502773),
-    ("settings-maintenance", 1795502893), ("settings-projects", 1795502839), ("settings-providers", 1795502799),
-    ("settings-providers-add", 1795503439), ("settings-providers-codex", 1795503424), ("settings-providers-replay", 1795503432),
-    ("settings-scheduled-tasks", 1795502848), ("settings-secrets", 1795502904), ("settings-snap-shot", 1795502764),
-    ("settings-source-control", 1795502820), ("settings-storage", 1795502924), ("settings-task-editor", 1795503454),
-    ("settings-threads", 1795502809), ("settings-voice", 1795502754), ("settings-worktrees", 1795502830),
-    ("sidebar-collapsed", 1795503496), ("sidebar-hover", 1795502966), ("sidebar-inbox-inbox-on", 1795503537),
-    ("sidebar-search", 1795502953), ("sidebar-thread-menu", 1795502960), ("terminal-close-confirm", 1795503153),
-    ("terminal-menu", 1795503151), ("terminal-two", 1795503149), ("thread-actions-menu", 1795503296),
-    ("timeline-approval", 1795503108), ("timeline-bottom", 1795503098), ("timeline-code", 1795503135),
-    ("timeline-failed", 1795503516), ("timeline-question", 1795503118), ("timeline-todo", 1795503128),
-    ("timeline-top", 1795503091), ("timeline-working", 1795503505), ("usage", 1795503305),
+    ("app-home", 1795525428), ("app-window", 1795525422), ("branch-picker", 1795525947),
+    ("commit-dialog", 1795525958), ("composer-empty", 1795525534), ("composer-markdown", 1795525543),
+    ("composer-mention", 1795525567), ("composer-model-picker", 1795525550), ("composer-slash", 1795525559),
+    ("details-items-menu", 1795526033), ("details", 1795525919), ("diff-collapsed", 1795526232),
+    ("diff-scope-menu", 1795526239), ("diff-split", 1795526237), ("diff-stacked", 1795526234),
+    ("files-goto", 1795596676), ("files-image", 1795596673), ("files-markdown", 1795525744),
+    ("files-search", 1795596681), ("files-text", 1795525704), ("files-tree", 1795525667), ("git-menu", 1795525933),
+    ("issues", 1795525856), ("open-in-editor-menu", 1795525922), ("palette-empty", 1795525509),
+    ("palette-messages", 1795526025), ("palette-nested-project", 1795525517), ("palette-nested-theme", 1795525528),
+    ("palette-query-sync", 1795526016), ("palette-query", 1795525501), ("palette-root", 1795525493),
+    ("pull-requests", 1795525844), ("right-panel-launcher", 1795525651), ("settings-about", 1795525268),
+    ("settings-access", 1795525365), ("settings-appearance", 1795525184), ("settings-archived", 1795525260),
+    ("settings-beta", 1795525415), ("settings-browser", 1795525336), ("settings-chat", 1795525196),
+    ("settings-connections-add", 1795526008), ("settings-connections-menu", 1795526171),
+    ("settings-connections-routes", 1795526170), ("settings-connections-saved", 1795526168),
+    ("settings-connections", 1795525356), ("settings-devices", 1795525346), ("settings-diffs", 1795525205),
+    ("settings-general", 1795525174), ("settings-integrations", 1795525395),
+    ("settings-keybindings-recording", 1795525990), ("settings-keybindings", 1795525214),
+    ("settings-labs", 1795525250), ("settings-maintenance", 1795525373), ("settings-projects", 1795525318),
+    ("settings-providers-add", 1795525982), ("settings-providers-codex", 1795525966),
+    ("settings-providers-replay", 1795525974), ("settings-providers", 1795525277),
+    ("settings-scheduled-tasks", 1795525328), ("settings-secrets", 1795525383), ("settings-snap-shot", 1795525242),
+    ("settings-source-control", 1795525300), ("settings-storage", 1795525405), ("settings-task-editor", 1795525999),
+    ("settings-threads", 1795525288), ("settings-voice", 1795525232), ("settings-worktrees", 1795525310),
+    ("sidebar-collapsed", 1795526042), ("sidebar-hover", 1795525449), ("sidebar-inbox-inbox-on", 1795526110),
+    ("sidebar-search", 1795525435), ("sidebar-thread-menu", 1795525442), ("terminal-close-confirm", 1795525641),
+    ("terminal-menu", 1795525639), ("terminal-two", 1795525637), ("thread-actions-menu", 1795525822),
+    ("timeline-approval", 1795525593), ("timeline-bottom", 1795525582), ("timeline-code", 1795525623),
+    ("timeline-failed", 1795526061), ("timeline-question", 1795525603), ("timeline-todo", 1795525614),
+    ("timeline-top", 1795525575), ("timeline-working", 1795526051), ("usage", 1795525833),
 ];
 
 /// Threads the capture browser had read, and from when (epoch seconds; 0 from the start): a
@@ -343,8 +366,8 @@ const READ_SINCE: &[(&str, i64)] = &[
     ("Sync engine audit", 0),
     ("Rotate relay TLS certificates", 0),
     ("Profile the event sink", 0),
-    ("Port sidebar virtualization to GPUI", 1795503149),
-    ("Migrate CI runners to arm64", 1795503537),
+    ("Port sidebar virtualization to GPUI", 1795525637),
+    ("Migrate CI runners to arm64", 1795526110),
 ];
 
 /// The shown thread's scoped key (`environmentId:threadId`), as the right panel keys it.
@@ -566,11 +589,17 @@ fn render(name: &str, steps: &[Step], profile: &Profile, out: &Path, data: &Path
         presentation: ClientPresentation { label: "t3code-gpui parity".into(), ..Default::default() },
         electron: None,
     };
-    cx.update(|cx| ConnectionRuntime::init(config, cx))?;
+    cx.update(|cx| {
+        ConnectionRuntime::init(config, cx)?;
+        t3code_web::fixtures::reference_world::preload_link_favicons(cx);
+        anyhow::Ok(())
+    })?;
 
     let mut store = FixtureStore::reference();
     let now = captured_at(name).unwrap_or_else(|| store.snapshot(None).now.0);
     store.set_now(now);
+    // Every clock the app reads (settings pages, snooze previews, "Checked … ago") reads the capture's moment.
+    t3code_web::timestamp_format::set_clock(now);
     for (title, since) in READ_SINCE {
         store.set_read(title, since * 1000 <= now);
     }
@@ -630,6 +659,9 @@ fn render(name: &str, steps: &[Step], profile: &Profile, out: &Path, data: &Path
         let env = t3code_web::fixtures::fixture_environment();
         ServerSettingsStore::insert_fixture(EnvironmentId::from(env.0.as_ref()), t3code_web::fixtures::reference_server::config(&env), cx);
     });
+    frame(&mut cx, window);
+    // Once the runtime has loaded its (empty) catalog, which replaces the environment list.
+    cx.update(reference_environment);
     frame(&mut cx, window);
     // The capture rests the mouse at 64% across and halfway down before each view (`fresh()`).
     let rest = point(px(width * 0.64), px(height * 0.5));

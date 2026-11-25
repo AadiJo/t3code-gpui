@@ -12,17 +12,17 @@
    "bg": "#141415"
   },
   "breadcrumb": {
-   "top": 59.0,
+   "top": 58.5,
    "left": 301.5,
-   "bottom": 73.0,
-   "right": 437.0,
+   "bottom": 72.5,
+   "right": 435.5,
    "color": "#f5f5f5",
    "bg": "#141415"
   },
   "close button": {
-   "top": 60.5,
+   "top": 60.0,
    "left": 1032.5,
-   "bottom": 69.5,
+   "bottom": 69.0,
    "right": 1041.5,
    "color": "#8f8f8f",
    "bg": "#141415"
@@ -36,10 +36,10 @@
    "bg": "#141415"
   },
   "h2 Archived threads": {
-   "top": 180.5,
+   "top": 180.0,
    "left": 327.5,
-   "bottom": 193.5,
-   "right": 458.5,
+   "bottom": 193.0,
+   "right": 459.0,
    "color": "#f5f5f5",
    "bg": "#141415"
   },
@@ -47,7 +47,7 @@
    "top": 228.0,
    "left": 328.5,
    "bottom": 240.0,
-   "right": 485.0,
+   "right": 483.0,
    "color": "#f5f5f5",
    "bg": "#191919"
   },
@@ -55,7 +55,7 @@
    "top": 254.0,
    "left": 328.0,
    "bottom": 265.5,
-   "right": 521.5,
+   "right": 522.5,
    "color": "#8f8f8f",
    "bg": "#191919"
   },

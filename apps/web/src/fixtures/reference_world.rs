@@ -279,6 +279,8 @@ pub fn build(env: &EnvironmentId) -> ReferenceWorld {
                 has_pending_user_input: input,
                 last_visited_at: None,
                 provider: Some(replay.clone()),
+                // The owner runs with the local environment off: the reference server is a saved remote.
+                remote_machine: true,
                 ..super::blank_thread(&key)
             };
             row.last_visited_at = Some(visited_at(&row, read));
@@ -392,4 +394,10 @@ pub fn model_catalog() -> crate::model_selection::ModelCatalog {
         favorites: Default::default(),
         hidden: Default::default(),
     }
+}
+
+/// The link favicons the capture's browser loaded for the world's links (Google's favicon
+/// service answers example.com with its fallback globe), set without any network.
+pub fn preload_link_favicons(cx: &mut gpui_kit::App) {
+    crate::components::chat::timeline_link_favicons::preload("example.com", include_bytes!("link_favicon_example_com.png"), cx);
 }

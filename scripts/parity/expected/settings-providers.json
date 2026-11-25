@@ -2,25 +2,25 @@
  "default": {
   "refresh icon": {
    "top": 181.0,
-   "left": 907.0,
+   "left": 906.5,
    "bottom": 193.0,
-   "right": 919.0,
+   "right": 918.5,
    "color": "#8f8f8f",
    "bg": "#141415"
   },
   "heading": {
-   "top": 180.5,
+   "top": 180.0,
    "left": 328.0,
-   "bottom": 193.5,
-   "right": 399.5,
+   "bottom": 193.0,
+   "right": 400.5,
    "color": "#f5f5f5",
    "bg": "#141415"
   },
   "add button": {
    "top": 182.5,
-   "left": 411.5,
+   "left": 412.5,
    "bottom": 191.5,
-   "right": 420.5,
+   "right": 421.5,
    "color": "#8f8f8f",
    "bg": "#141415"
   },
@@ -51,25 +51,25 @@
    ]
   },
   "row 1 mark": {
-   "top": 230.0,
+   "top": 229.5,
    "left": 330.0,
-   "bottom": 246.0,
+   "bottom": 245.5,
    "right": 346.0,
    "color": "#cacaca",
    "bg": "#252525"
   },
   "row 1 title": {
-   "top": 232.5,
+   "top": 232.0,
    "left": 360.5,
-   "bottom": 243.5,
+   "bottom": 243.0,
    "right": 402.5,
    "color": "#f5f5f5",
    "bg": "#252525"
   },
   "row 1 switch": {
-   "top": 241.0,
+   "top": 240.5,
    "left": 984.0,
-   "bottom": 255.0,
+   "bottom": 254.5,
    "right": 998.0,
    "color": "#8f8f8f",
    "bg": "#252525"

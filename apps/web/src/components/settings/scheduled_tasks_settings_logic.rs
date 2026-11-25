@@ -56,7 +56,7 @@ pub fn schedule_time_zone_label(time_zone: Option<&str>, run_at: Option<&str>) -
     let tz = TimeZone::get(zone).ok()?;
     let at = match run_at {
         Some(run_at) => run_at.parse::<Timestamp>().ok()?,
-        None => Timestamp::now(),
+        None => crate::timestamp_format::now_timestamp(),
     };
     if run_at.is_none()
         && let Ok(ix) = GENERIC.binary_search_by(|(z, _)| z.cmp(&zone))

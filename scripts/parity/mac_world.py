@@ -17,7 +17,8 @@ and the "Server shut down" notices are dropped.
 
 `server` writes `apps/web/src/fixtures/reference_server.json` from a dump of what the settings
 pages read from the reference server (`subscribeServerConfig`'s snapshot, source control, issue
-trackers, scheduled tasks, storage and diagnostics replies, as the capture's `dump-server.mjs`
+trackers, scheduled tasks, storage and diagnostics replies, and the t3code checkout's
+`projects.searchEntries` replies for the go-to-file queries, as the capture's `dump-server.mjs`
 saves them). Each `path=replacement` rewrites a machine path (longest first); the server's host
 name and remote-open targets become invented ones; it refuses to write a file that still names
 a home directory, the user, the host, a tailnet or a private address.
@@ -161,7 +162,14 @@ def server(dump_path, *replacements):
         fail = next((c for c in value.get("error") or [] if c.get("_tag") == "Fail"), None)
         return {"err": fail["error"] if fail else {"message": str(value.get("error"))}}
 
-    text = json.dumps({key: reply(value) if key in replies else value.get("value") for key, value in dump.items()}, ensure_ascii=False)
+    def entry(key, value):
+        if key in replies:
+            return reply(value)
+        if key == "searchEntries":  # one reply per query
+            return {query: answer.get("value") for query, answer in value.items() if "value" in answer}
+        return value.get("value")
+
+    text = json.dumps({key: entry(key, value) for key, value in dump.items()}, ensure_ascii=False)
     pairs = sorted((r.split("=", 1) for r in replacements), key=lambda p: -len(p[0]))
     for path, replacement in pairs:
         text = text.replace(path.rstrip("/"), replacement.rstrip("/"))
@@ -174,9 +182,7 @@ def server(dump_path, *replacements):
     out = json.loads(text)
     config = out["config"]["config"]
     config["hostname"] = "scenario-host"
-    # The server's own zone is the machine owner's; a fixed one stands in.
-    if out.get("scheduledTasks", {}).get("timeZone"):
-        out["scheduledTasks"]["timeZone"] = "UTC"
+    # The server's zone stays: the fork names it in the task editor ("CT"), and the port must too.
     config["remoteOpenTargets"] = [
         {**t, "host": {"tailscale": "scenario.example-tailnet.ts.net", "mdns": "scenario-host.local"}.get(t.get("kind"), "scenario-host"), "username": "scenario"}
         for t in config.get("remoteOpenTargets", [])

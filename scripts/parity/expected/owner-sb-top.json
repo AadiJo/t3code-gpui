@@ -7,13 +7,13 @@
    "top": 69.5,
    "left": 38.0,
    "bottom": 79.5,
-   "right": 80.5,
+   "right": 80.0,
    "color": "#838383",
    "bg": "#181819"
   },
   "header actions": {
    "top": 67.5,
-   "left": 174.5,
+   "left": 175.0,
    "bottom": 80.5,
    "right": 241.5,
    "color": "#737373",
@@ -70,10 +70,10 @@
    "bg": "#211d1c"
   },
   "draft 1 project": {
-   "top": 110.5,
+   "top": 111.5,
    "left": 55.0,
-   "bottom": 121.5,
-   "right": 80.5,
+   "bottom": 122.5,
+   "right": 81.0,
    "color": "#a0a0a0",
    "bg": "#211d1c"
   },
@@ -81,7 +81,7 @@
    "top": 131.0,
    "left": 17.0,
    "bottom": 144.0,
-   "right": 220.5,
+   "right": 218.5,
    "color": "#d4d3d3",
    "bg": "#211d1c"
   },
@@ -100,58 +100,58 @@
    "vertical": true
   },
   "card 1 project": {
-   "top": 279.0,
-   "left": 38.5,
-   "bottom": 290.5,
-   "right": 125.0,
+   "top": 280.0,
+   "left": 38.0,
+   "bottom": 291.5,
+   "right": 122.5,
    "color": "#a0a0a0",
    "bg": "#28282b"
   },
   "card 1 time": {
-   "top": 279.5,
-   "left": 222.5,
-   "bottom": 288.0,
-   "right": 237.5,
+   "top": 280.5,
+   "left": 214.0,
+   "bottom": 289.5,
+   "right": 237.0,
    "color": "#a0a0a0",
    "bg": "#28282b"
   },
   "card 1 title": {
    "top": 302.0,
-   "left": 18.5,
+   "left": 18.0,
    "bottom": 312.5,
-   "right": 225.0,
+   "right": 228.5,
    "color": "#e8e8e8",
    "bg": "#28282b"
   },
   "card 1 branch": {
    "top": 321.5,
-   "left": 18.0,
+   "left": 17.5,
    "bottom": 330.5,
-   "right": 42.5,
+   "right": 42.0,
    "color": "#a0a0a0",
    "bg": "#28282b"
   },
   "card 1 provider": {
-   "top": 323.0,
-   "left": 226.0,
-   "bottom": 331.0,
-   "right": 238.5,
-   "color": "#a9a9aa",
+   "top": 323.5,
+   "left": 225.0,
+   "bottom": 332.0,
+   "right": 237.5,
+   "color": "#a8a8a9",
    "bg": "#28282b"
   },
   "row 2 status": {
-   "top": 355.5,
+   "top": 356.0,
    "left": 191.5,
-   "bottom": 369.5,
+   "bottom": 370.0,
    "right": 238.0,
    "color": "#00d492",
    "bg": "#181819"
   },
   "row 3 status": {
-   "top": 433.5,
-   "left": 192.5,
-   "bottom": 447.5,
-   "right": 238.5,
+   "top": 434.0,
+   "left": 192.0,
+   "bottom": 448.0,
+   "right": 238.0,
    "color": "#a3b3ff",
    "bg": "#181819"
   }
@@ -164,13 +164,13 @@
    "top": 69.5,
    "left": 38.0,
    "bottom": 79.5,
-   "right": 80.5,
+   "right": 80.0,
    "color": "#838383",
    "bg": "#181819"
   },
   "header actions": {
    "top": 67.5,
-   "left": 174.5,
+   "left": 175.0,
    "bottom": 80.5,
    "right": 241.5,
    "color": "#737373",
@@ -227,10 +227,10 @@
    "bg": "#211d1c"
   },
   "draft 1 project": {
-   "top": 110.5,
+   "top": 111.5,
    "left": 55.0,
-   "bottom": 121.5,
-   "right": 80.5,
+   "bottom": 122.5,
+   "right": 81.0,
    "color": "#a0a0a0",
    "bg": "#211d1c"
   },
@@ -238,7 +238,7 @@
    "top": 131.0,
    "left": 17.0,
    "bottom": 144.0,
-   "right": 220.5,
+   "right": 218.5,
    "color": "#d4d3d3",
    "bg": "#211d1c"
   },
@@ -257,58 +257,58 @@
    "vertical": true
   },
   "card 1 project": {
-   "top": 279.0,
-   "left": 38.5,
-   "bottom": 290.5,
-   "right": 125.0,
+   "top": 280.0,
+   "left": 38.0,
+   "bottom": 291.5,
+   "right": 122.5,
    "color": "#a0a0a0",
    "bg": "#28282b"
   },
   "card 1 time": {
-   "top": 279.5,
-   "left": 222.5,
-   "bottom": 288.0,
-   "right": 237.5,
+   "top": 280.5,
+   "left": 214.0,
+   "bottom": 289.5,
+   "right": 237.0,
    "color": "#a0a0a0",
    "bg": "#28282b"
   },
   "card 1 title": {
    "top": 302.0,
-   "left": 18.5,
+   "left": 18.0,
    "bottom": 312.5,
-   "right": 225.0,
+   "right": 228.5,
    "color": "#e8e8e8",
    "bg": "#28282b"
   },
   "card 1 branch": {
    "top": 321.5,
-   "left": 18.0,
+   "left": 17.5,
    "bottom": 330.5,
-   "right": 42.5,
+   "right": 42.0,
    "color": "#a0a0a0",
    "bg": "#28282b"
   },
   "card 1 provider": {
-   "top": 323.0,
-   "left": 226.0,
-   "bottom": 331.0,
-   "right": 238.5,
-   "color": "#a9a9aa",
+   "top": 323.5,
+   "left": 225.0,
+   "bottom": 332.0,
+   "right": 237.5,
+   "color": "#a8a8a9",
    "bg": "#28282b"
   },
   "row 2 status": {
-   "top": 355.5,
+   "top": 356.0,
    "left": 191.5,
-   "bottom": 369.5,
+   "bottom": 370.0,
    "right": 238.0,
    "color": "#00d492",
    "bg": "#181819"
   },
   "row 3 status": {
-   "top": 433.5,
-   "left": 192.5,
-   "bottom": 447.5,
-   "right": 238.5,
+   "top": 434.0,
+   "left": 192.0,
+   "bottom": 448.0,
+   "right": 238.0,
    "color": "#a3b3ff",
    "bg": "#181819"
   }

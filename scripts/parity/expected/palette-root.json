@@ -1,14 +1,14 @@
 {
  "default": {
   "palette left edge": {
-   "start": "#111111",
+   "start": "#0e0e0e",
    "edges": [
     {
-     "at": 280.0,
+     "at": 262.0,
      "color": "#141414"
     },
     {
-     "at": 281.0,
+     "at": 263.0,
      "color": "#141414"
     }
    ]
@@ -17,11 +17,11 @@
    "start": "#151515",
    "edges": [
     {
-     "at": 819.0,
+     "at": 837.0,
      "color": "#101010"
     },
     {
-     "at": 820.0,
+     "at": 838.0,
      "color": "#101010"
     }
    ]
@@ -45,71 +45,71 @@
    "vertical": true
   },
   "search icon": {
-   "top": 95.5,
-   "left": 299.0,
-   "bottom": 107.5,
-   "right": 311.5,
-   "color": "#6c6c6c",
+   "top": 97.5,
+   "left": 292.0,
+   "bottom": 109.5,
+   "right": 316.0,
+   "color": "#727272",
    "bg": "#141414"
   },
   "search placeholder": {
-   "top": 97.0,
-   "left": 320.0,
-   "bottom": 109.5,
-   "right": 584.5,
-   "color": "#676767",
+   "top": 97.5,
+   "left": 318.0,
+   "bottom": 111.0,
+   "right": 589.5,
+   "color": "#6c6c6c",
    "bg": "#141414"
   },
   "section label": {
-   "top": 140.5,
-   "left": 296.5,
-   "bottom": 149.5,
-   "right": 338.0,
-   "color": "#888888",
-   "bg": "#141414"
+   "top": 144.0,
+   "left": 286.0,
+   "bottom": 153.5,
+   "right": 322.0,
+   "color": "#8f8f8f",
+   "bg": "#161616"
   },
   "highlighted item": {
    "color": "#28282b"
   },
   "item 1 icon": {
-   "top": 166.5,
-   "left": 298.0,
-   "bottom": 179.5,
-   "right": 311.5,
-   "color": "#838383",
+   "top": 172.5,
+   "left": 292.0,
+   "bottom": 186.0,
+   "right": 316.0,
+   "color": "#f5f5f5",
    "bg": "#28282b"
   },
   "item 1 title": {
-   "top": 168.0,
-   "left": 320.0,
-   "bottom": 178.5,
-   "right": 455.5,
-   "color": "#e8e8e8",
+   "top": 173.5,
+   "left": 318.0,
+   "bottom": 184.5,
+   "right": 446.5,
+   "color": "#f5f5f5",
    "bg": "#28282b"
   },
   "item 1 shortcut": {
-   "top": 168.5,
-   "left": 773.5,
-   "bottom": 177.0,
-   "right": 802.5,
-   "color": "#a0a0a0",
+   "top": 173.5,
+   "left": 788.5,
+   "bottom": 183.0,
+   "right": 808.5,
+   "color": "#a8a8a8",
    "bg": "#28282b"
   },
   "item 2 title": {
-   "top": 198.0,
-   "left": 320.0,
-   "bottom": 208.5,
-   "right": 418.0,
-   "color": "#e8e8e8",
-   "bg": "#141414"
+   "top": 205.5,
+   "left": 318.0,
+   "bottom": 216.0,
+   "right": 406.5,
+   "color": "#f5f5f5",
+   "bg": "#28282b"
   },
   "item 3 title": {
-   "top": 228.0,
-   "left": 320.0,
-   "bottom": 241.0,
-   "right": 500.0,
-   "color": "#e8e8e8",
-   "bg": "#151515"
+   "top": 237.5,
+   "left": 318.0,
+   "bottom": 246.0,
+   "right": 495.5,
+   "color": "#f5f5f5",
+   "bg": "#161516"
   }
  },
  "owner": {
@@ -131,11 +131,11 @@
    "edges": [
     {
      "at": 819.0,
-     "color": "#101010"
+     "color": "#0e0e0e"
     },
     {
      "at": 820.0,
-     "color": "#101010"
+     "color": "#0e0e0e"
     }
    ]
   },
@@ -153,6 +153,10 @@
     {
      "at": 80.0,
      "color": "#141414"
+    },
+    {
+     "at": 99.0,
+     "color": "#676767"
     }
    ],
    "vertical": true
@@ -166,18 +170,18 @@
    "bg": "#141414"
   },
   "search placeholder": {
-   "top": 97.0,
+   "top": 96.5,
    "left": 320.0,
-   "bottom": 109.5,
-   "right": 584.5,
+   "bottom": 109.0,
+   "right": 587.0,
    "color": "#676767",
    "bg": "#141414"
   },
   "section label": {
    "top": 140.5,
-   "left": 296.5,
+   "left": 296.0,
    "bottom": 149.5,
-   "right": 338.0,
+   "right": 337.0,
    "color": "#888888",
    "bg": "#141414"
   },
@@ -185,18 +189,18 @@
    "color": "#28282b"
   },
   "item 1 icon": {
-   "top": 166.5,
-   "left": 298.0,
-   "bottom": 179.5,
-   "right": 311.5,
+   "top": 167.0,
+   "left": 297.0,
+   "bottom": 180.0,
+   "right": 310.5,
    "color": "#838383",
    "bg": "#28282b"
   },
   "item 1 title": {
-   "top": 168.0,
-   "left": 320.0,
-   "bottom": 178.5,
-   "right": 455.5,
+   "top": 167.5,
+   "left": 319.5,
+   "bottom": 178.0,
+   "right": 452.5,
    "color": "#e8e8e8",
    "bg": "#28282b"
   },
@@ -209,18 +213,18 @@
    "bg": "#28282b"
   },
   "item 2 title": {
-   "top": 198.0,
-   "left": 320.0,
-   "bottom": 208.5,
-   "right": 418.0,
+   "top": 197.5,
+   "left": 319.5,
+   "bottom": 208.0,
+   "right": 416.0,
    "color": "#e8e8e8",
-   "bg": "#141414"
+   "bg": "#151515"
   },
   "item 3 title": {
-   "top": 228.0,
-   "left": 320.0,
-   "bottom": 241.0,
-   "right": 500.0,
+   "top": 227.5,
+   "left": 319.5,
+   "bottom": 240.5,
+   "right": 498.0,
    "color": "#e8e8e8",
    "bg": "#151515"
   }

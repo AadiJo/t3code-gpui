@@ -505,7 +505,15 @@ fn render(scene: &Scene, profile: Profile, file_name: &str, out: &std::path::Pat
     Ok(())
 }
 
+/// The time zone every reference was captured in (the fork's browser and its server), so the port's
+/// clock times, weekdays and zone labels read as the captures do on any machine.
+/// `PARITY_TIME_ZONE` overrides it for a capture taken elsewhere.
+const CAPTURE_TIME_ZONE: &str = "America/Chicago";
+
 fn main() -> anyhow::Result<()> {
+    let zone = std::env::var("PARITY_TIME_ZONE").unwrap_or_else(|_| CAPTURE_TIME_ZONE.to_owned());
+    // SAFETY: first thing in main, before any thread starts or the zone is read.
+    unsafe { std::env::set_var("TZ", zone) };
     let mut args = std::env::args().skip(1).peekable();
     match args.peek().map(String::as_str) {
         Some("--mac") => {

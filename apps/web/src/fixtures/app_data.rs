@@ -242,11 +242,16 @@ impl AppData for FixtureData {
 
     fn workspace(&self, target: &ThreadTarget, cx: &mut App) -> Option<Workspace> {
         let fixture = self.store.read(cx).workspace(target)?;
+        let reference = self.store.read(cx).reference_checkout().is_some();
         let mut workspaces = self.workspaces.borrow_mut();
         let workspace = workspaces.entry(fixture.project_key.clone()).or_insert_with(|| Workspace {
             key: fixture.project_key.clone(),
             name: fixture.name.clone(),
-            files: DirectoryFiles::new(PathBuf::from(&fixture.root)) as SharedWorkspaceFiles,
+            files: if reference {
+                super::reference_server::ReferenceWorkspaceFiles::new(PathBuf::from(&fixture.root)) as SharedWorkspaceFiles
+            } else {
+                DirectoryFiles::new(PathBuf::from(&fixture.root)) as SharedWorkspaceFiles
+            },
         });
         Some(workspace.clone())
     }
