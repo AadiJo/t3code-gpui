@@ -14,7 +14,7 @@ use crate::{
     AppTheme,
     components::{
         icons::{Icon, IconName, IconSize},
-        ui::{dialog::dialog_glass, kbd::Kbd},
+        ui::dialog::dialog_glass,
     },
     i18n::t,
 };
@@ -52,8 +52,26 @@ pub fn palette_input(theme: &AppTheme, input: &Entity<InputState>, accessory: Op
 /// `CommandFooter` with Navigate, the action and the escape hint.
 pub fn palette_footer(theme: &AppTheme, action: SharedString, escape: SharedString) -> Div {
     let c = &theme.colors;
+    // `CommandFooter` restyles its keys: `bg-foreground/[0.08] text-foreground ring-0`.
+    let key = |label: &'static str| {
+        div()
+            .flex()
+            .flex_none()
+            .items_center()
+            .justify_center()
+            .h(theme.sp(5.))
+            .min_w(theme.sp(5.))
+            .px(theme.sp(1.))
+            .rounded(rems(0.25))
+            .bg(c.foreground().opacity(0.08))
+            .text_size(theme.rem(0.75))
+            .text_color(c.foreground())
+            .child(label)
+            .into_any_element()
+    };
+    // `KbdGroup`: `gap-1`.
     let group = |keys: Vec<AnyElement>, label: SharedString| {
-        div().flex().items_center().gap(rems(0.375)).children(keys).child(label)
+        div().flex().items_center().gap(rems(0.25)).children(keys).child(label)
     };
     div()
         .flex_none()
@@ -70,9 +88,9 @@ pub fn palette_footer(theme: &AppTheme, action: SharedString, escape: SharedStri
         .text_size(theme.rem(0.875))
         .font_weight(gpui_kit::FontWeight::MEDIUM)
         .text_color(c.muted_foreground)
-        .child(group(vec![Kbd::new("↑").into_any_element(), Kbd::new("↓").into_any_element()], t!("Navigate")))
-        .child(group(vec![Kbd::new("Enter").into_any_element()], action))
-        .child(group(vec![Kbd::new("Esc").into_any_element()], escape))
+        .child(group(vec![key("↑"), key("↓")], t!("Navigate")))
+        .child(group(vec![key("Enter")], action))
+        .child(group(vec![key("Esc")], escape))
 }
 
 /// Draws `value` with the characters at `indices` in the foreground and bold,
