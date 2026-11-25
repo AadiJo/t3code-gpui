@@ -302,6 +302,8 @@ pub struct AppRoot {
     expanded: Option<(Entity<ExpandedImageDialog>, Subscription)>,
     /// "Link pull request", hosted here so it outlives the palette.
     link_dialog: Option<(Entity<LinkPullRequestDialog>, Subscription)>,
+    /// "Snooze → Custom…" (`CustomSnoozeDialogHost`).
+    snooze_dialog: Option<(Entity<crate::components::custom_snooze_dialog::CustomSnoozeDialog>, Subscription)>,
     /// The Usage page in the large route modal, while its route shows.
     usage: Option<(Entity<UsageRoute>, Subscription)>,
     /// The thread details card: docked or popover by the canvas width, each with its own
@@ -442,6 +444,7 @@ impl AppRoot {
             terminals,
             expanded: None,
             link_dialog: None,
+            snooze_dialog: None,
             usage: None,
             details: DetailsVisibility { mode: ThreadDetailsMode::Popover, inline_open: true, popover_open: false },
             shown: None,
@@ -1095,9 +1098,10 @@ impl AppRoot {
             }
             return Wiring::Ran;
         }
-        // `requestCustomSnooze` opens a dialog this app does not have yet.
+        // `requestCustomSnooze`: the dialog picks the time, then the threads snooze until it.
         if command == MenuCommand::SnoozeCustom {
-            return self.not_built_yet(t!("Custom snooze"), "custom snooze dialog", cx);
+            self.open_custom_snooze(keys.to_vec(), window, cx);
+            return Wiring::Ran;
         }
         match self.data.thread_command(keys, command, cx) {
             CommandOutcome::Done => {}
@@ -1111,6 +1115,34 @@ impl AppRoot {
             CommandOutcome::NewThread(project) => self.new_thread(project, window, cx),
         }
         Wiring::Ran
+    }
+
+    /// Opens the custom snooze dialog for `keys`.
+    fn open_custom_snooze(&mut self, keys: Vec<ThreadKey>, window: &mut Window, cx: &mut Context<Self>) {
+        use crate::components::custom_snooze_dialog::{CustomSnoozeDialog, CustomSnoozeEvent};
+        let dialog = cx.new(|cx| CustomSnoozeDialog::new(keys, window, cx));
+        let subscription = cx.subscribe_in(&dialog, window, |this, _, event: &CustomSnoozeEvent, window, cx| {
+            this.snooze_dialog = None;
+            match event {
+                CustomSnoozeEvent::Snooze { threads, until } => {
+                    let until = crate::components::sidebar::model::TimestampMs(until.timestamp().as_millisecond());
+                    this.thread_command(threads, MenuCommand::Snooze(until), window, cx);
+                }
+                CustomSnoozeEvent::EditOptions => {
+                    this.navigate(Route::Settings { panel: SettingsPanel::Threads, query: SharedString::default() }, cx);
+                }
+                CustomSnoozeEvent::Closed => {}
+            }
+            this.restore_focus(window, cx);
+            cx.notify();
+        });
+        self.snooze_dialog = Some((dialog, subscription));
+        cx.notify();
+    }
+
+    /// Whether the custom snooze dialog is open, for checks.
+    pub fn custom_snooze_dialog(&self) -> Option<Entity<crate::components::custom_snooze_dialog::CustomSnoozeDialog>> {
+        self.snooze_dialog.as_ref().map(|(dialog, _)| dialog.clone())
     }
 
     /// The project of a listed thread.
@@ -1644,6 +1676,7 @@ impl Render for AppRoot {
             }))
             .children(self.expanded.as_ref().map(|(dialog, _)| dialog.clone()))
             .children(self.link_dialog.as_ref().map(|(dialog, _)| dialog.clone()))
+            .children(self.snooze_dialog.as_ref().map(|(dialog, _)| dialog.clone()))
             .children(crate::components::settings::theme_editor_panel::ThemeEditorStore::layer(cx))
     }
 }

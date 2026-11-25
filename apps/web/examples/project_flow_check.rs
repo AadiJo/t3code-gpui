@@ -197,6 +197,32 @@ fn main() -> anyhow::Result<()> {
     let (route, open) = (c.route(), c.palette().read_with(&c.cx, |p, _| p.is_open()));
     c.expect("Create opens a draft", matches!(route, Route::Draft(_)) && !open, format!("{route:?}, palette open {open}"));
 
+    // Snooze → Custom… on the first listed thread.
+    let app = c.parts.app.clone();
+    let thread = c.cx.update(|cx| app.read(cx).data().snapshot(None, cx)).threads.iter().find(|t| !t.archived).map(|t| t.key.clone()).context("a thread")?;
+    let menu = t3code_web::components::sidebar::context_menu::MenuCommand::SnoozeCustom;
+    c.cx.update_window(c.window, |_, w, cx| app.update(cx, |app, cx| app.thread_command(&[thread.clone()], menu, w, cx))).ok();
+    c.frame();
+    let open = c.cx.update(|cx| app.read(cx).custom_snooze_dialog().is_some());
+    c.expect("Custom… opens the snooze dialog", open, String::new());
+    c.shot("snooze-dialog-date")?;
+    let dialog = c.cx.update(|cx| app.read(cx).custom_snooze_dialog()).context("the dialog")?;
+    c.cx.update_window(c.window, |_, w, cx| dialog.update(cx, |d, cx| d.toggle_calendar(w, cx))).ok();
+    c.shot("snooze-dialog-calendar")?;
+    c.cx.update_window(c.window, |_, w, cx| dialog.update(cx, |d, cx| d.toggle_calendar(w, cx))).ok();
+    c.cx.update_window(c.window, |_, w, cx| dialog.update(cx, |d, cx| d.show_duration(w, cx))).ok();
+    c.shot("snooze-dialog-duration")?;
+    c.cx.update_window(c.window, |_, w, cx| dialog.update(cx, |d, cx| d.set_amount("0", w, cx))).ok();
+    c.cx.update_window(c.window, |_, w, cx| dialog.update(cx, |d, cx| d.submit_for_check(w, cx))).ok();
+    c.shot("snooze-dialog-error")?;
+    let error = c.cx.update(|cx| dialog.read(cx).error().map(|e| e.to_string()));
+    c.expect("a zero duration is refused", error.as_deref() == Some("Enter a positive duration."), format!("{error:?}"));
+    c.cx.update_window(c.window, |_, w, cx| dialog.update(cx, |d, cx| d.set_amount("3", w, cx))).ok();
+    c.cx.update_window(c.window, |_, w, cx| dialog.update(cx, |d, cx| d.submit_for_check(w, cx))).ok();
+    c.frame();
+    let open = c.cx.update(|cx| app.read(cx).custom_snooze_dialog().is_some());
+    c.expect("Snooze closes the dialog", !open, String::new());
+
     std::fs::write(out.join("flow.txt"), &c.log)?;
     if !c.failures.is_empty() {
         bail!("{} failed: {:?}", c.failures.len(), c.failures);

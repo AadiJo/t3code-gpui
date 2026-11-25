@@ -6,6 +6,7 @@ pub mod background_thread_announcer;
 pub mod chat;
 pub mod no_active_thread_state;
 pub mod command_palette;
+pub mod custom_snooze_dialog;
 pub mod command_palette_add_project;
 pub mod command_palette_drag;
 pub mod command_palette_logic;
