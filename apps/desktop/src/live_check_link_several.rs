@@ -4,7 +4,7 @@
 //! the batch from its section, checks both machines are offered once the host's links load,
 //! links both in one go (each code minted on its machine with this client's session there),
 //! reads both links back from the host (`peerLinks.list`), then opens the batch again and
-//! checks both now read "Already linked".
+//! checks both now read "Already linked". It forgets both links at the end.
 
 use std::time::Duration;
 
@@ -108,5 +108,11 @@ pub(super) fn run_link_several(check: &mut Check) -> anyhow::Result<()> {
     check.wait(Duration::from_millis(300));
     check.shot("several-06-already-linked.png")?;
     click_id(check, "link-several-close")?;
+    // Leave the host as it was found: other phases expect it unlinked.
+    for other in &ids[1..] {
+        let id = host.clone();
+        let link = check.cx.update(move |cx| RpcLink::new(&id, cx)).context("no link")?;
+        let _ = check.block(link.call::<PeerLinksUnlink>(PeerLinkRemoveInput { environment_id: other.clone() }));
+    }
     Ok(())
 }
