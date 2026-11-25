@@ -43,7 +43,7 @@ impl MessagesTimeline {
         let _ = row;
         let colors = self.colors;
         if let WorkItem::Error { message, usage_limit_retry, retryable } = &entry.item {
-            return self.render_error_entry(entry, message, usage_limit_retry.as_ref(), *retryable);
+            return self.render_error_entry(entry, message, usage_limit_retry.as_ref(), *retryable, cx);
         }
         let failed = indicates_failure(entry);
         let severe = matches!(entry.item, WorkItem::SystemNotice { info: false, .. });
@@ -69,7 +69,7 @@ impl MessagesTimeline {
         let id = entry.id.clone();
         let mut container = work_log_row(("work-entry", MessagesTimeline::key_of(entry.id.as_str())), grouped)
             .child(line)
-            .children(hover_timestamp(Some(entry.created_at.0), &colors));
+            .children(hover_timestamp(Some(entry.created_at.0), &colors, cx));
         if expandable {
             container = container
                 .cursor_pointer()
@@ -92,6 +92,7 @@ impl MessagesTimeline {
         message: &SharedString,
         usage_limit_retry: Option<&SharedString>,
         retryable: bool,
+        cx: &gpui_kit::App,
     ) -> AnyElement {
         let colors = self.colors;
         let tone = if usage_limit_retry.is_some() { colors.theme.warning } else { colors.destructive() };
@@ -109,7 +110,7 @@ impl MessagesTimeline {
                         .text_size(TEXT_XS.size)
                         .text_color(colors.theme.muted_foreground)
                         .pr_1()
-                        .child(super::work_log_presentation::format_clock(entry.created_at.0))
+                        .child(super::work_log_presentation::format_clock(entry.created_at.0, cx))
                         .into_any_element(),
                 ],
                 &colors,

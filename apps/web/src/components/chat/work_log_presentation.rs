@@ -411,14 +411,9 @@ pub fn format_duration(ms: i64) -> String {
     }
 }
 
-/// `3:41 PM` from a UTC timestamp (the client formats in local time).
-pub fn format_clock(millis: i64) -> String {
-    let minutes_of_day = (millis / 60_000).rem_euclid(24 * 60);
-    let (hour, minute) = (minutes_of_day / 60, minutes_of_day % 60);
-    let suffix = if hour < 12 { "AM" } else { "PM" };
-    let hour12 = match hour % 12 {
-        0 => 12,
-        h => h,
-    };
-    format!("{hour12}:{minute:02} {suffix}")
+/// A timeline row's time (`formatDayAwareTimestamp`): "3:41 PM" today, "yesterday at …" or a
+/// date before that, in local time on the clock the timestamp format setting picks.
+pub fn format_clock(millis: i64, cx: &gpui_kit::App) -> gpui_kit::SharedString {
+    use crate::timestamp_format::{format_day_aware_millis, now_ms};
+    format_day_aware_millis(millis, crate::hooks::settings_bridge::timestamp_format(cx), now_ms())
 }

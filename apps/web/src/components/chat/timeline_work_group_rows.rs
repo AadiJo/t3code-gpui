@@ -46,7 +46,7 @@ impl MessagesTimeline {
                 Vec::new(),
                 &colors,
             ))
-            .children(hover_timestamp(row.created_at.map(|t| t.0), &colors))
+            .children(hover_timestamp(row.created_at.map(|t| t.0), &colors, cx))
             .on_click(cx.listener(move |this, _, _, cx| this.toggle_work_group(group.clone(), cx)))
             .into_any_element()
     }
@@ -174,7 +174,7 @@ impl MessagesTimeline {
                             .text_color(colors.theme.muted_foreground)
                             .opacity(0.)
                             .group_hover(ROW_GROUP, |s| s.opacity(1.))
-                            .children(row.created_at.map(|t| format_clock(t.0))),
+                            .children(row.created_at.map(|t| format_clock(t.0, cx))),
                     )
                     .on_click(cx.listener(move |this, _, _, cx| this.toggle_run(run.clone(), cx))),
             )

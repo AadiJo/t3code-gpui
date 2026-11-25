@@ -337,7 +337,7 @@ impl MessagesTimeline {
                             .pr_1()
                             .text_size(TEXT_XS.size)
                             .text_color(colors.theme.muted_foreground)
-                            .child(div().opacity(0.).group_hover(group, |s| s.opacity(1.)).mr_1().child(format_clock(queued.created_at.0)))
+                            .child(div().opacity(0.).group_hover(group, |s| s.opacity(1.)).mr_1().child(format_clock(queued.created_at.0, cx)))
                             .children(if queued.editing {
                                 vec![
                                     div().child("Editing in the composer").into_any_element(),

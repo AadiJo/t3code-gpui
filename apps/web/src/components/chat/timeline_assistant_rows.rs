@@ -109,7 +109,7 @@ impl MessagesTimeline {
                 cx.listener(move |_, _, _, cx| cx.emit(TimelineAction::Reply { message: id.clone(), text: text.clone() }))
             }).test_support())
             .children((!message.streaming).then(|| {
-                div().text_color(colors.theme.muted_foreground).child(format_clock(message.updated_at.0))
+                div().text_color(colors.theme.muted_foreground).child(format_clock(message.updated_at.0, cx))
             }))
             .into_any_element()
     }

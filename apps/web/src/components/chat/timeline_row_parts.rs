@@ -98,7 +98,7 @@ pub fn disclosure(open: bool, size: IconSize, color: Hsla) -> AnyElement {
 }
 
 /// The row timestamp, shown only while the row is hovered.
-pub fn hover_timestamp(millis: Option<i64>, colors: &ChatColors) -> Option<AnyElement> {
+pub fn hover_timestamp(millis: Option<i64>, colors: &ChatColors, cx: &gpui_kit::App) -> Option<AnyElement> {
     let millis = millis?;
     Some(
         div()
@@ -116,7 +116,7 @@ pub fn hover_timestamp(millis: Option<i64>, colors: &ChatColors) -> Option<AnyEl
             .text_color(colors.theme.muted_foreground)
             .opacity(0.)
             .group_hover(ROW_GROUP, |s| s.opacity(1.))
-            .child(format_clock(millis))
+            .child(format_clock(millis, cx))
             .into_any_element(),
     )
 }

@@ -219,6 +219,15 @@ pub fn format_day_aware_timestamp(
     let Some(ts) = parse_timestamp_date(iso) else {
         return SharedString::default();
     };
+    day_aware(ts, format, now_ms, zone)
+}
+
+/// [`format_day_aware_timestamp`] for epoch milliseconds, in the system's zone.
+pub fn format_day_aware_millis(millis: i64, format: TimestampFormat, now_ms: i64) -> SharedString {
+    Timestamp::from_millisecond(millis).map_or_else(|_| SharedString::default(), |ts| day_aware(ts, format, now_ms, None))
+}
+
+fn day_aware(ts: Timestamp, format: TimestampFormat, now_ms: i64, zone: Option<&TimeZone>) -> SharedString {
     let time = format_time(ts, format, zone);
     let today = calendar_day(Timestamp::from_millisecond(now_ms).unwrap_or(ts), zone);
     let day = calendar_day(ts, zone);
