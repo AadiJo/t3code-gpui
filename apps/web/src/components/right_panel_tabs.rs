@@ -58,6 +58,13 @@ pub enum RightPanelEvent {
     InsertReference(String),
     /// "Add to chat" on a side chat: a thread chip for the main thread's next message.
     AddThreadContext(String),
+    /// A review comment from the Diff tab (`addReviewComment`): its chip goes in the composer at
+    /// the caret unless it is there already.
+    AddReviewComment(String),
+    /// A review comment was deleted (`removeReviewComment`): its chip leaves the composer.
+    RemoveReviewComment(String),
+    /// A side chat's image or link, for the window to open.
+    SideChatAction(crate::components::chat::messages_timeline::TimelineAction),
 }
 
 /// Starts a project script in a new terminal session: the launch and the command.
@@ -122,6 +129,10 @@ pub struct RightPanel {
     diff_fallback: Option<Task<()>>,
     /// The scope being loaded and its request; a newer request replaces it.
     diff_requested: Option<(SharedString, DiffPanelSelection)>,
+    /// The shown git diff's checkout and refs, for `review.getDiffFileContents`.
+    diff_source: Option<DiffSource>,
+    /// Diff files whose full contents arrived, for checks.
+    contents_loaded: Vec<SharedString>,
     diff_loading: Option<Task<()>>,
     /// A file to reveal once the diff loads.
     pending_reveal: Option<SharedString>,
@@ -257,6 +268,8 @@ impl RightPanel {
             diff_load_scheduled: false,
             diff_fallback: None,
             diff_requested: None,
+            diff_source: None,
+            contents_loaded: Vec::new(),
             diff_loading: None,
             pending_reveal: None,
             files: HashMap::new(),
@@ -282,6 +295,11 @@ impl RightPanel {
             self.files_requests.clear();
             cx.notify();
         }
+    }
+
+    /// Diff files whose full contents arrived from the server.
+    pub fn contents_loaded(&self) -> &[SharedString] {
+        &self.contents_loaded
     }
 
     pub fn diff_panel(&self) -> Option<&Entity<DiffPanel>> {
@@ -373,15 +391,79 @@ impl RightPanel {
             return Some(panel.clone());
         }
         let panel = cx.new(|cx| FilesPanel::new(workspace.files.clone(), workspace.name.clone(), window, cx));
-        let subscription = cx.subscribe(&panel, |_, _, event: &FilesPanelEvent, cx| match event {
+        let subscription = cx.subscribe(&panel, |this, _, event: &FilesPanelEvent, cx| match event {
             FilesPanelEvent::AddToChat(mention) => cx.emit(RightPanelEvent::InsertReference(mention.clone())),
-            // Opening on the host needs the server (`shell.openInEditor`).
-            FilesPanelEvent::OpenInEditor { .. } => {}
-            // Opening in the preview browser needs the server (`assets.createUrl`, `preview.open`).
-            FilesPanelEvent::OpenInPreview { .. } => {}
+            FilesPanelEvent::OpenInEditor { absolute_path, editor, reveal } => this.open_in_editor(absolute_path.clone(), *editor, *reveal, cx),
+            FilesPanelEvent::OpenInPreview { absolute_path } => this.open_in_preview(absolute_path.clone(), cx),
         });
         self.files.insert(workspace.key.clone(), (panel.clone(), subscription));
+        // `canWriteFiles`: the session's filesystem-write grant, asked of the server once.
+        if let Some(ThreadTarget::Server(key)) = &self.target {
+            let id = crate::state::shell::runtime_ids(key).0;
+            if let Some(check) = crate::components::settings::connections_settings_access::check_session(&id, cx) {
+                let weak = panel.downgrade();
+                cx.spawn(async move |_, cx| {
+                    let Ok(session) = check.await else { return };
+                    let writable = crate::components::settings::connections_settings_access::grants(&session, t3code_contracts::AuthEnvironmentScope::FilesystemWrite);
+                    weak.update(cx, |panel, cx| panel.set_read_only_connection(!writable, cx)).ok();
+                })
+                .detach();
+            }
+        }
         Some(panel)
+    }
+
+    /// The Files tab's "Open in" (`OpenInPicker` on a file): on a server reached over SSH, the
+    /// editor's remote URL on this machine; otherwise `shell.openInEditor` on the host.
+    fn open_in_editor(&mut self, absolute_path: String, editor: t3code_contracts::EditorId, reveal: bool, cx: &mut Context<Self>) {
+        use crate::components::ui::toast::{ToastData, ToastKind, Toaster};
+        use crate::remote_open::{RemoteOpenState, build_remote_open_url};
+        let Some(target) = self.target.clone() else { return };
+        let Some(view) = self.data.thread_view(&target, cx) else { return };
+        let setup = self.data.git_controls(&view, cx);
+        match setup.open_state {
+            RemoteOpenState::RemoteLinks(host) => {
+                if let Some(url) = build_remote_open_url(editor, &host.host, host.username.as_deref(), &absolute_path, true) {
+                    cx.open_url(&url);
+                }
+            }
+            RemoteOpenState::RemoteUnavailable => {
+                Toaster::push(ToastData::new(ToastKind::Error, t!("Unable to open file")).description(t!("No SSH route to this machine")), cx);
+            }
+            RemoteOpenState::LocalExec => {
+                let request = setup.source.open_in_editor(t3code_contracts::LaunchEditorInput {
+                    cwd: absolute_path,
+                    editor,
+                    position: None,
+                    project_root: None,
+                    reveal: reveal.then_some(true),
+                });
+                cx.spawn(async move |_, cx| {
+                    if let Err(error) = request.await {
+                        cx.update(|cx| Toaster::push(ToastData::new(ToastKind::Error, t!("Unable to open file")).description(error.0), cx));
+                    }
+                })
+                .detach();
+            }
+        }
+    }
+
+    /// "Open file in preview browser" (`handleOpenInBrowser`): the file in a browser tab.
+    fn open_in_preview(&mut self, absolute_path: String, cx: &mut Context<Self>) {
+        use crate::components::ui::toast::{ToastData, ToastKind, Toaster};
+        let Some(target) = self.target.clone() else { return };
+        let request = self.data.open_file_in_preview(&target, absolute_path, cx);
+        cx.spawn(async move |this, cx| {
+            let result = request.await;
+            this.update(cx, |this, cx| match result {
+                Ok(tab) => this.open_browser_tab(&tab, cx),
+                Err(error) => {
+                    Toaster::push(ToastData::new(ToastKind::Error, t!("Unable to open file in browser")).description(error), cx);
+                }
+            })
+            .ok();
+        })
+        .detach();
     }
 
     /// Opens a terminal tab running a project script.
@@ -480,6 +562,11 @@ impl RightPanel {
                     return;
                 }
                 let Some(diff) = diff.upgrade() else { return };
+                this.diff_source = input.workspace_root.clone().map(|cwd| DiffSource {
+                    cwd,
+                    base_ref: input.base_ref.clone(),
+                    head_ref: input.head_ref.clone(),
+                });
                 diff.update(cx, |diff, cx| diff.set_input(input, cx));
                 this.diff_shown = Some((thread, selection));
                 if let Some(path) = this.pending_reveal.take() {
@@ -489,6 +576,57 @@ impl RightPanel {
             })
             .ok();
         }));
+    }
+
+    /// Reads both sides of one file of a git diff so its context expands
+    /// (`createGitDiffFileContentsLoader`). Turn diffs have no checkout to read from.
+    fn load_file_contents(&mut self, key: SharedString, file: std::sync::Arc<crate::diff_patch::FileDiff>, cx: &mut Context<Self>) {
+        use t3code_contracts::{ReviewDiffChangeType, ReviewDiffFileContentsInput, ReviewDiffPreviewSourceKind as Kind};
+        let (Some((_, selection)), Some(target), Some(source)) = (self.diff_selection(cx), self.target.clone(), self.diff_source.clone()) else { return };
+        let source_kind = match selection {
+            DiffPanelSelection::Unstaged => Kind::WorkingTree,
+            DiffPanelSelection::Branch { .. } => Kind::BranchRange,
+            DiffPanelSelection::Commit { .. } => Kind::Commit,
+            _ => {
+                crate::components::ui::toast::Toaster::push(
+                    crate::components::ui::toast::ToastData::new(crate::components::ui::toast::ToastKind::Error, t!("Diff file contents are unavailable for this selection.")),
+                    cx,
+                );
+                return;
+            }
+        };
+        let (base_ref, head_ref) = match &selection {
+            DiffPanelSelection::Commit { sha, .. } => (None, Some(sha.to_string())),
+            _ => (source.base_ref.map(|r| r.to_string()), source.head_ref.map(|r| r.to_string())),
+        };
+        let input = ReviewDiffFileContentsInput {
+            cwd: source.cwd.to_string(),
+            source_kind,
+            change_type: ReviewDiffChangeType::from_wire(file.change.as_str()).unwrap_or(ReviewDiffChangeType::Change),
+            base_ref,
+            head_ref,
+            old_path: file.prev_path.clone().unwrap_or_else(|| file.path.clone()).to_string(),
+            new_path: file.path.to_string(),
+        };
+        let request = self.data.diff_file_contents(&target, input, cx);
+        cx.spawn(async move |this, cx| {
+            let result = request.await;
+            this.update(cx, |this, cx| match result {
+                Ok(contents) => {
+                    this.contents_loaded.push(key.clone());
+                    if let Some((diff, _)) = &this.diff {
+                        let contents = crate::diff_patch::FileContents::new(&contents.old_contents, &contents.new_contents);
+                        diff.update(cx, |diff, cx| diff.set_file_contents(&key, contents, cx));
+                    }
+                }
+                Err(error) => {
+                    let toast = crate::components::ui::toast::ToastData::new(crate::components::ui::toast::ToastKind::Error, t!("Could not load the file contents")).description(error);
+                    crate::components::ui::toast::Toaster::push(toast, cx);
+                }
+            })
+            .ok();
+        })
+        .detach();
     }
 
     fn on_diff_event(&mut self, event: &DiffPanelEvent, window: &mut Window, cx: &mut Context<Self>) {
@@ -504,10 +642,11 @@ impl RightPanel {
                     files.update(cx, |files, cx| files.run_file_action(action.clone(), path.clone(), cx));
                 }
             }
-            // Full contents and review comments need the server.
-            DiffPanelEvent::RequestFileContents { .. }
-            | DiffPanelEvent::ReviewComment(_)
-            | DiffPanelEvent::DeleteReviewComment(_) => {}
+            DiffPanelEvent::RequestFileContents { key, file } => self.load_file_contents(key.clone(), file.clone(), cx),
+            DiffPanelEvent::ReviewComment(comment) => cx.emit(RightPanelEvent::AddReviewComment(review_comment_chip(comment))),
+            DiffPanelEvent::DeleteReviewComment(id) => {
+                cx.emit(RightPanelEvent::RemoveReviewComment(crate::state::pull_request_mentions::review_comment_context_id(id)))
+            }
         }
     }
 
@@ -598,6 +737,12 @@ impl RightPanel {
         let subscription = cx.subscribe_in(&pane, window, move |this, _, event: &SideChatPaneEvent, _, cx| match event {
             SideChatPaneEvent::Close => this.close_surface(&surface_id, cx),
             SideChatPaneEvent::AddToChat(reference) => cx.emit(RightPanelEvent::AddThreadContext(reference.clone())),
+            // Scripts and terminals open in this panel, the side chat's host (`rightPanelHostRef`).
+            SideChatPaneEvent::Window(crate::components::chat::messages_timeline::TimelineAction::RunShellCommand(command)) => {
+                this.run_script(chat_code_block(command), cx)
+            }
+            SideChatPaneEvent::Window(crate::components::chat::messages_timeline::TimelineAction::OpenTerminal(id)) => this.add_terminal_tab(id.to_string(), cx),
+            SideChatPaneEvent::Window(action) => cx.emit(RightPanelEvent::SideChatAction(action.clone())),
         });
         self.side_chat = Some((key, pane.clone(), subscription));
         Some(pane)
@@ -962,5 +1107,73 @@ impl Render for RightPanel {
             None => self.render_launcher(cx).into_any_element(),
         };
         div().size_full().flex().flex_col().track_focus(&self.focus).child(tab_row).child(body)
+    }
+}
+
+/// Where the shown git diff was read from.
+#[derive(Clone, Debug)]
+struct DiffSource {
+    cwd: SharedString,
+    base_ref: Option<SharedString>,
+    head_ref: Option<SharedString>,
+}
+
+/// Registers a Diff tab comment for the draft and returns its chip (`addReviewComment`, with
+/// `reviewCommentContextLabel` for the chip's label).
+fn review_comment_chip(comment: &crate::components::diffs::review_comment::ReviewComment) -> String {
+    let context = t3code_client_runtime::state::drafts::ReviewCommentContext {
+        id: comment.id.to_string(),
+        section_id: comment.section_id.to_string(),
+        section_title: comment.section_title.to_string(),
+        file_path: comment.file_path.to_string(),
+        start_index: comment.start_index.into(),
+        end_index: comment.end_index.into(),
+        range_label: comment.range_label.to_string(),
+        text: comment.text.to_string(),
+        diff: comment.diff.to_string(),
+        pull_request: None,
+    };
+    crate::state::pull_request_mentions::register_comment(context, &review_comment_label(&comment.file_path, &comment.range_label, &comment.section_id))
+}
+
+/// `reviewCommentContextLabel`: `<basename> L12`, `L12 to L15`, `(before)` for removed lines.
+pub fn review_comment_label(file_path: &str, range_label: &str, section_id: &str) -> String {
+    let parse = |part: &str| -> Option<(char, String)> {
+        let sign = part.chars().next().filter(|c| *c == '+' || *c == '-')?;
+        let digits = &part[1..];
+        (!digits.is_empty() && digits.chars().all(|c| c.is_ascii_digit())).then(|| (sign, digits.to_string()))
+    };
+    let range = match range_label.split_once(" to ") {
+        Some((a, b)) => match (parse(a), parse(b)) {
+            (Some((s1, start)), Some((s2, end))) if s1 == s2 => Some((s1, start, Some(end))),
+            _ => None,
+        },
+        None => parse(range_label).map(|(s, start)| (s, start, None)),
+    };
+    let range: String = match range {
+        Some(('-', start, None)) => t!("L{start} (before)", start = start, context = "line in the old version of a diff").to_string(),
+        Some((_, start, None)) => format!("L{start}"),
+        Some(('-', start, Some(end))) => t!("L{start} to L{end} (before)", start = start, end = end, context = "line range in the old version of a diff").to_string(),
+        Some((_, start, Some(end))) => t!("L{start} to L{end}", start = start, end = end, context = "line range in a diff").to_string(),
+        None => range_label.to_string(),
+    };
+    let prefix = section_id.strip_prefix("pull-request:").filter(|n| n.chars().all(|c| c.is_ascii_digit())).map(|n| format!("#{n} ")).unwrap_or_default();
+    let base = file_path.rsplit(['/', '\\']).next().unwrap_or(file_path);
+    format!("{prefix}{base} {range}")
+}
+
+/// `runShellCommand`: an ad-hoc "Chat code block" script.
+fn chat_code_block(command: &SharedString) -> ProjectScript {
+    ProjectScript {
+        id: "chat-code-block".into(),
+        name: t!("Chat code block").to_string(),
+        command: command.to_string(),
+        icon: t3code_contracts::ProjectScriptIcon::Play,
+        run_on_worktree_create: false,
+        run_on_settle: None,
+        stop_on_settle: None,
+        r#async: None,
+        preview_url: None,
+        auto_open_preview: None,
     }
 }

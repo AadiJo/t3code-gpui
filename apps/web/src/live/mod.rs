@@ -388,6 +388,17 @@ impl AppData for LiveData {
         id
     }
 
+    fn create_draft_on_branch(&self, project: ProjectRef, branch: Option<String>, worktree_path: Option<String>, cx: &mut App) -> DraftId {
+        let next = self.next_draft.get() + 1;
+        self.next_draft.set(next);
+        let id = DraftId(format!("draft-{}-{next}", uuid::Uuid::new_v4().simple()).into());
+        let created_at = TimestampMs(crate::timestamp_format::now_ms());
+        let env_mode = if worktree_path.is_some() { crate::components::branch_toolbar_logic::EnvMode::Worktree } else { crate::components::branch_toolbar_logic::EnvMode::Local };
+        let workspace = draft_workspace::DraftWorkspace { env_mode, branch, worktree_path, start_from_origin: false };
+        self.drafts.borrow_mut().insert(id.clone(), Draft { project: Some(project), created_at, workspace });
+        id
+    }
+
     fn project_icon(&self, target: &ThreadTarget, cx: &mut App) -> Option<crate::components::project_favicon::ProjectIconSource> {
         let project = match target {
             ThreadTarget::Server(key) => StateBridge::shell(cx).read(cx).snapshot().threads.iter().find(|t| t.key == *key).map(|row| row.project_ref())?,
@@ -772,6 +783,7 @@ impl AppData for LiveData {
         match sidebar_actions::handle(&SidebarEvent::ThreadCommand(keys.to_vec(), command), cx) {
             SidebarOutcome::Rename(key) => CommandOutcome::Rename(key),
             SidebarOutcome::NewThread(project) => CommandOutcome::NewThread(project),
+            SidebarOutcome::NewThreadOnBranch { project, branch, worktree_path } => CommandOutcome::NewThreadOnBranch { project, branch, worktree_path },
             _ => CommandOutcome::Done,
         }
     }
@@ -882,6 +894,19 @@ impl AppData for LiveData {
 
     fn diff_input(&self, target: &ThreadTarget, selection: &DiffPanelSelection, cx: &mut App) -> Task<Option<DiffPanelInput>> {
         diff::load(self, target, selection, cx)
+    }
+
+    fn diff_file_contents(
+        &self,
+        target: &ThreadTarget,
+        input: t3code_contracts::ReviewDiffFileContentsInput,
+        cx: &mut App,
+    ) -> Task<Result<t3code_contracts::ReviewDiffFileContentsResult, SharedString>> {
+        diff::file_contents(target, input, cx)
+    }
+
+    fn open_file_in_preview(&self, target: &ThreadTarget, absolute_path: String, cx: &mut App) -> Task<Result<SharedString, SharedString>> {
+        workspace::open_file_in_preview(target, absolute_path, cx)
     }
 
     fn workspace(&self, target: &ThreadTarget, cx: &mut App) -> Option<Workspace> {

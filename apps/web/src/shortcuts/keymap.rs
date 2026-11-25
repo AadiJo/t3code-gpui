@@ -40,8 +40,9 @@ use crate::keybindings::{
 pub const TERMINAL_CONTEXT: &str = "Terminal";
 /// Key context of gpui-component text inputs and editors.
 pub const INPUT_CONTEXT: &str = "Input";
-/// Key context the composer sets on its editor's container.
-pub const COMPOSER_CONTEXT: &str = "Composer";
+/// Key context of the composer's prompt editor (`composer_prompt_editor::EDITOR_CONTEXT`), so
+/// `composerFocus` and `editableFocus` hold while it has focus.
+pub const COMPOSER_CONTEXT: &str = crate::components::composer_prompt_editor::EDITOR_CONTEXT;
 /// Key context the browser preview sets on its surface.
 pub const PREVIEW_CONTEXT: &str = "Preview";
 /// Key context of the shortcut root, which also carries the state keys.

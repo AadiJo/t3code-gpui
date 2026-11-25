@@ -124,6 +124,16 @@ fn trailing_element(trailing: &PaletteTrailing, theme: &AppTheme) -> AnyElement 
     let current = || div().ui_text(theme, TextSize::Xs, weight::NORMAL).text_color(muted).child(t!("Current", context = "the theme or mode in use now"));
     match trailing {
         PaletteTrailing::Current => current().into_any_element(),
+        // `CheckIcon ms-auto size-4 text-muted-foreground/70`.
+        PaletteTrailing::Check => div().flex_none().ml_auto().child(Icon::new(IconName::Check).size(IconSize::Md).color(muted)).into_any_element(),
+        PaletteTrailing::Chevron => {
+            div().flex_none().ml_auto().mr(px(-2.)).child(Icon::new(IconName::ChevronRight).size(IconSize::Md).color(muted)).into_any_element()
+        }
+        PaletteTrailing::Checkbox(checked) => div()
+            .flex_none()
+            .ml_auto()
+            .child(crate::components::ui::checkbox::Checkbox::new("command-palette-checkbox", if *checked { crate::components::ui::checkbox::CheckState::Checked } else { crate::components::ui::checkbox::CheckState::Unchecked }))
+            .into_any_element(),
         PaletteTrailing::Swatches { current: is_current, colors } => div()
             .flex()
             .flex_none()
@@ -294,6 +304,32 @@ fn spaced(label: &str) -> SharedString {
         out.push(c);
     }
     out.into()
+}
+
+/// A summary above the list (`NewProjectSummary`, `RemoteRepositorySummary`): an icon, a title
+/// and a `text-muted-foreground/85` second line in a `min-h-8 px-2 py-1.5` row.
+pub fn render_summary_row(icon: IconName, title: SharedString, description: SharedString, theme: &AppTheme) -> AnyElement {
+    let c = &theme.colors;
+    let rem = theme.fonts.interface;
+    div()
+        .flex()
+        .items_center()
+        .gap(theme.sp(2.))
+        .h(theme.sp(3.) + px(TextSize::Sm.line_height(rem)) + px(TextSize::Xs.line_height(rem)))
+        .px(theme.sp(2.))
+        .py(theme.sp(1.5))
+        .rounded(theme.radii.sm)
+        .child(div().flex().flex_none().h(theme.sp(5.)).items_center().self_start().pt(theme.sp(0.5)).child(Icon::new(icon).size(IconSize::Md).color(c.icon_muted)))
+        .child(
+            div()
+                .flex()
+                .flex_col()
+                .flex_1()
+                .min_w_0()
+                .child(div().truncate().ui_text(theme, TextSize::Sm, weight::NORMAL).text_color(c.foreground()).child(title))
+                .child(div().truncate().ui_text(theme, TextSize::Xs, weight::NORMAL).text_color(with_alpha(c.muted_foreground, 0.85)).child(description)),
+        )
+        .into_any_element()
 }
 
 /// The empty state: `py-10 text-center text-sm text-muted-foreground`.

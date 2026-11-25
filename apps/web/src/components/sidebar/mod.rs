@@ -188,7 +188,9 @@ impl Sidebar {
             heights: Vec::new(),
             tops: Vec::new(),
             spacer_ix: None,
-            list_state: ListState::new(0, ListAlignment::Top, px(200.)),
+            // Every row is measured after a reset: rows above a scrolled viewport left
+            // unmeasured count as zero height, and the wheel then stopped short of the top.
+            list_state: ListState::new(0, ListAlignment::Top, px(200.)).measure_all(),
             spacer_height: 0.,
             hovered: None,
             hovered_pin: None,
@@ -522,6 +524,7 @@ impl Sidebar {
         self.list = build_sidebar_list(&self.snapshot, &self.options);
         let rem_scale = ShellColors::from_theme(cx.app_theme()).rem_scale;
         self.report_settled_shelf(false, cx);
+        let previous_heights = std::mem::take(&mut self.heights);
         self.heights = self
             .list
             .entries
@@ -542,10 +545,15 @@ impl Sidebar {
         self.spacer_height = 0.;
         self.hovered = None;
         self.cursor = self.cursor.filter(|&c| c < self.list.entries.len());
-        // `reset` drops the scroll anchor; a rebuild keeps the list where the user left it.
-        let top = self.list_state.logical_scroll_top();
-        self.list_state.reset(self.list.entries.len());
-        self.list_state.scroll_to(top);
+        // Rows of the same heights (a status or title change, as a streaming turn makes many
+        // times a second) keep the measured list: `reset` drops wheel events until the next
+        // paint, so resetting on every update froze wheel scrolling while an agent worked.
+        if previous_heights != self.heights {
+            // `reset` drops the scroll anchor; a rebuild keeps the list where the user left it.
+            let top = self.list_state.logical_scroll_top();
+            self.list_state.reset(self.list.entries.len());
+            self.list_state.scroll_to(top);
+        }
         cx.notify();
     }
 

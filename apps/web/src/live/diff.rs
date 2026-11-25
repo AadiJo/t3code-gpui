@@ -163,3 +163,15 @@ pub fn load(data: &LiveData, target: &ThreadTarget, selection: &DiffPanelSelecti
         Some(future.await.unwrap_or_else(|message| DiffPanelInput { content: DiffPanelContent::Error(message), ..Default::default() }))
     })
 }
+
+/// `review.getDiffFileContents` on the thread's environment (`createGitDiffFileContentsLoader`).
+pub fn file_contents(
+    target: &ThreadTarget,
+    input: t3code_contracts::ReviewDiffFileContentsInput,
+    cx: &mut App,
+) -> Task<Result<t3code_contracts::ReviewDiffFileContentsResult, SharedString>> {
+    let ThreadTarget::Server(key) = target else { return Task::ready(Err(t!("Diff file contents are unavailable for this selection."))) };
+    let Some(link) = RpcLink::new(&runtime_ids(key).0, cx) else { return Task::ready(Err(t!("This environment is not connected."))) };
+    let call = link.call::<t3code_contracts::rpc::methods::ReviewGetDiffFileContents>(input);
+    cx.background_executor().spawn(call)
+}

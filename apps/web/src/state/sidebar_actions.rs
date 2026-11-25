@@ -27,6 +27,8 @@ pub enum SidebarOutcome {
     Rename(ThreadKey),
     /// Start a new thread, in a project when one is given.
     NewThread(Option<ProjectRef>),
+    /// A new draft on a thread's branch and worktree ("New thread on {branch}").
+    NewThreadOnBranch { project: ProjectRef, branch: Option<String>, worktree_path: Option<String> },
     /// Ask for a snooze time.
     SnoozeCustom(Vec<ThreadKey>),
     /// An app-level destination (settings, pull requests, project filter…).
@@ -54,25 +56,45 @@ where
     F: Fn(EnvironmentCommands, ThreadId) -> Fut + Send + Sync + 'static,
     Fut: std::future::Future<Output = Result<t3code_client_runtime::operations::Accepted, CommandError>> + Send,
 {
-    let targets: Vec<_> = keys.iter().filter_map(|key| commands_for(key, cx)).collect();
+    run_each_then(keys, failure, cx, command, None)
+}
+
+/// Runs `command` on each thread; `accepted` runs for each thread the server accepted it for
+/// (the undo notice shows only then, as `showThreadUndoNotice` after a successful mutation).
+fn run_each_then<F, Fut>(keys: &[ThreadKey], failure: SharedString, cx: &mut App, command: F, accepted: Option<std::rc::Rc<dyn Fn(&ThreadKey, &mut App)>>)
+where
+    F: Fn(EnvironmentCommands, ThreadId) -> Fut + Send + Sync + 'static,
+    Fut: std::future::Future<Output = Result<t3code_client_runtime::operations::Accepted, CommandError>> + Send,
+{
+    let targets: Vec<_> = keys.iter().filter_map(|key| commands_for(key, cx).map(|(commands, id)| (key.clone(), commands, id))).collect();
     let task = StateBridge::spawn(
         async move {
             let mut first_error = None;
-            for (commands, thread_id) in targets {
-                if let Err(error) = command(commands, thread_id).await {
-                    first_error.get_or_insert(error);
+            let mut done = Vec::new();
+            for (key, commands, thread_id) in targets {
+                match command(commands, thread_id).await {
+                    Ok(_) => done.push(key),
+                    Err(error) => {
+                        first_error.get_or_insert(error);
+                    }
                 }
             }
-            first_error
+            (done, first_error)
         },
         cx,
     );
     cx.spawn(async move |cx| {
-        if let Some(Some(error)) = task.await {
-            cx.update(|cx| {
+        let Some((done, error)) = task.await else { return };
+        cx.update(|cx| {
+            if let Some(accepted) = &accepted {
+                for key in &done {
+                    accepted(key, cx);
+                }
+            }
+            if let Some(error) = error {
                 Toaster::push(ToastData::new(ToastKind::Error, failure).description(SharedString::from(error.to_string())), cx);
-            });
-        }
+            }
+        });
     })
     .detach();
 }
@@ -134,24 +156,36 @@ pub fn set_projects_pinned(projects: &[ProjectRef], pinned: bool, cx: &mut App) 
 
 /// Snoozes threads until a time.
 pub fn snooze(keys: &[ThreadKey], until: &Zoned, cx: &mut App) {
-    let until = format_ms(until.timestamp().as_millisecond());
-    run_each(keys, cx, move |commands, thread_id| {
-        let until = until.clone();
-        async move { commands.snooze(&thread_id, until).await }
-    });
+    snooze_then(keys, until, None, cx)
 }
 
-/// Offers the undo notice for an action about to run on `keys`, planned from each thread's row
-/// before it changes (`planThreadUndo`, `runUndoPlan`).
-fn offer_undo(keys: &[ThreadKey], command: MenuCommand, cx: &mut App) {
+fn snooze_then(keys: &[ThreadKey], until: &Zoned, accepted: Option<std::rc::Rc<dyn Fn(&ThreadKey, &mut App)>>, cx: &mut App) {
+    let until = format_ms(until.timestamp().as_millisecond());
+    run_each_then(
+        keys,
+        t!("Something went wrong."),
+        cx,
+        move |commands, thread_id| {
+            let until = until.clone();
+            async move { commands.snooze(&thread_id, until).await }
+        },
+        accepted,
+    );
+}
+
+/// Plans the undo for an action about to run on `keys` from each thread's row before it changes
+/// (`planThreadUndo`, `runUndoPlan`); the returned callback shows the notice for a thread once
+/// the server accepted the action on it.
+fn plan_undo(keys: &[ThreadKey], command: MenuCommand, cx: &mut App) -> Option<std::rc::Rc<dyn Fn(&ThreadKey, &mut App)>> {
     use crate::thread_undo::{ThreadUndo, UndoAction};
     let action = match command {
         MenuCommand::Settle => UndoAction::Settled,
         MenuCommand::Snooze(_) => UndoAction::Snoozed,
         MenuCommand::Unpin => UndoAction::Unpinned,
         MenuCommand::Archive => UndoAction::Archived,
-        _ => return,
+        _ => return None,
     };
+    let mut plans: Vec<(ThreadKey, crate::thread_undo::UndoFn)> = Vec::new();
     let shell = StateBridge::shell(cx);
     let rows: Vec<_> = keys.iter().filter_map(|key| shell.read(cx).snapshot().threads.iter().find(|t| &t.key == key).cloned()).collect();
     for row in rows {
@@ -197,20 +231,26 @@ fn offer_undo(keys: &[ThreadKey], command: MenuCommand, cx: &mut App) {
                 }
             });
         });
-        ThreadUndo::show(action, row.key.clone(), undo, cx);
+        plans.push((row.key.clone(), undo));
     }
+    Some(std::rc::Rc::new(move |key: &ThreadKey, cx: &mut App| {
+        if let Some((_, undo)) = plans.iter().find(|(k, _)| k == key) {
+            ThreadUndo::show(action, key.clone(), undo.clone(), cx);
+        }
+    }))
 }
 
 fn thread_command(keys: Vec<ThreadKey>, command: MenuCommand, cx: &mut App) -> SidebarOutcome {
-    offer_undo(&keys, command, cx);
+    let undo = plan_undo(&keys, command, cx);
+    let failed = t!("Something went wrong.");
     match command {
         MenuCommand::Pin => run_each(&keys, cx, |c, id| async move { c.pin(&id, None).await }),
-        MenuCommand::Unpin => run_each(&keys, cx, |c, id| async move { c.unpin(&id).await }),
-        MenuCommand::Settle => run_each(&keys, cx, |c, id| async move { c.settle(&id).await }),
+        MenuCommand::Unpin => run_each_then(&keys, failed, cx, |c, id| async move { c.unpin(&id).await }, undo),
+        MenuCommand::Settle => run_each_then(&keys, failed, cx, |c, id| async move { c.settle(&id).await }, undo),
         MenuCommand::Unsettle => run_each(&keys, cx, |c, id| async move { c.unsettle(&id, None).await }),
         MenuCommand::Snooze(until) => {
             if let Ok(until) = jiff::Timestamp::from_millisecond(until.0).map(|t| t.to_zoned_datetime(jiff::tz::TimeZone::UTC)) {
-                snooze(&keys, &until, cx)
+                snooze_then(&keys, &until, undo, cx)
             }
         }
         MenuCommand::SnoozeCustom => return SidebarOutcome::SnoozeCustom(keys),
@@ -221,7 +261,7 @@ fn thread_command(keys: Vec<ThreadKey>, command: MenuCommand, cx: &mut App) -> S
         MenuCommand::AutoSettle(enabled) => run_each(&keys, cx, move |c, id| async move { c.set_auto_settle(&id, enabled).await }),
         // The chat header opens find itself; the sidebar never offers it.
         MenuCommand::FindInThread => {}
-        MenuCommand::Archive => run_each(&keys, cx, |c, id| async move { c.archive(&id).await }),
+        MenuCommand::Archive => run_each_then(&keys, failed, cx, |c, id| async move { c.archive(&id).await }, undo),
         MenuCommand::Delete => run_each(&keys, cx, |c, id| async move { c.delete(&id, false).await }),
         MenuCommand::CopyThreadId => {
             let ids = keys.iter().map(|key| key.thread_id.0.to_string()).collect::<Vec<_>>().join("\n");
@@ -242,7 +282,23 @@ fn thread_command(keys: Vec<ThreadKey>, command: MenuCommand, cx: &mut App) -> S
                 .join("\n");
             cx.write_to_clipboard(ClipboardItem::new_string(text));
         }
-        MenuCommand::NewThreadOnBranch | MenuCommand::NewThread => {
+        // `handleNewThread(project, { branch, worktreePath, envMode, startFromOrigin: false })`.
+        MenuCommand::NewThreadOnBranch => {
+            let shell = StateBridge::shell(cx);
+            let shell = shell.read(cx);
+            let Some(key) = keys.first() else { return SidebarOutcome::Done };
+            let project = shell.snapshot().threads.iter().find(|t| &t.key == key).map(|t| t.project_ref());
+            let row = shell.row(key);
+            return match project {
+                Some(project) => SidebarOutcome::NewThreadOnBranch {
+                    project,
+                    branch: row.and_then(|r| r.source.branch.clone()),
+                    worktree_path: row.and_then(|r| r.source.worktree_path.clone()),
+                },
+                None => SidebarOutcome::NewThread(None),
+            };
+        }
+        MenuCommand::NewThread => {
             let shell = StateBridge::shell(cx);
             let project = keys.first().and_then(|key| shell.read(cx).snapshot().threads.iter().find(|t| &t.key == key).map(|t| t.project_ref()));
             return SidebarOutcome::NewThread(project);

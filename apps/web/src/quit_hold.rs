@@ -258,7 +258,7 @@ pub fn quit_hold_overlay(cx: &App) -> Option<AnyElement> {
                     .py(theme.sp(4.))
                     .text_size(theme.rem(1.5))
                     .line_height(theme.rem(2.))
-                    .font_weight(FontWeight::BOLD)
+                    .font(crate::appearance_fonts::ui_font(crate::appearance_fonts::weight::BOLD))
                     .text_color(colors.background())
                     .shadow_xl()
                     .child(message),

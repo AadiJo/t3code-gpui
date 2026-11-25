@@ -110,4 +110,8 @@ impl CommandPaletteSource for FixturePaletteSource {
     fn now_ms(&self) -> i64 {
         self.lists().now_ms()
     }
+
+    fn project_flows(&self) -> Option<std::rc::Rc<dyn crate::components::command_palette_project_flow::ProjectFlowBackend>> {
+        self.lists().project_flows()
+    }
 }

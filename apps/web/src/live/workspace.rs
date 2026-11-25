@@ -102,3 +102,40 @@ impl WorkspaceFiles for LiveWorkspaceFiles {
         .boxed()
     }
 }
+
+/// `openFileInPreview`: `assets.createUrl` for a workspace file, then `preview.open` on the
+/// server's URL for it. Resolves with the preview tab's id.
+pub fn open_file_in_preview(target: &crate::router::ThreadTarget, absolute_path: String, cx: &gpui_kit::App) -> gpui_kit::Task<Result<gpui_kit::SharedString, gpui_kit::SharedString>> {
+    use t3code_contracts::rpc::methods::PreviewOpen;
+    let crate::router::ThreadTarget::Server(key) = target else {
+        return gpui_kit::Task::ready(Err(crate::i18n::t!("The integrated browser is unavailable in this runtime.")));
+    };
+    let (environment_id, thread_id) = crate::state::shell::runtime_ids(key);
+    let Some(link) = RpcLink::new(&environment_id, cx) else {
+        return gpui_kit::Task::ready(Err(crate::i18n::t!("This environment is not connected.")));
+    };
+    let run = link.clone();
+    let future = link.run(async move {
+        let session = run.session().await?;
+        let resource = AssetResource::WorkspaceFile(AssetResourceWorkspaceFile { thread_id: thread_id.clone(), path: absolute_path });
+        let asset = session.client.call::<AssetsCreateUrl>(AssetCreateUrlInput { resource }).await.map_err(|error| super::rpc::error_message(&error))?;
+        let url = session
+            .prepared
+            .http_base_url
+            .join(&asset.relative_url)
+            .map_err(|_| gpui_kit::SharedString::from("The environment returned an invalid asset URL."))?;
+        let input = t3code_contracts::PreviewOpenInput {
+            thread_id,
+            url: Some(url.to_string()),
+            viewport: None,
+            profile_id: None,
+            runtime: None,
+            color_scheme: None,
+            zoom_factor: None,
+            reveal: None,
+        };
+        let snapshot = session.client.call::<PreviewOpen>(input).await.map_err(|error| super::rpc::error_message(&error))?;
+        Ok(gpui_kit::SharedString::from(snapshot.tab_id.to_string()))
+    });
+    cx.background_executor().spawn(future)
+}

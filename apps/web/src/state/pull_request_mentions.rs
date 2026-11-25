@@ -301,6 +301,14 @@ fn remember(context_id: String, comment: ReviewCommentContext) {
     COMMENTS.with_borrow_mut(|map| map.insert(context_id, comment));
 }
 
+/// Registers a review comment from the Diff or Files tab (`addReviewComment`) and returns its
+/// chip, `[label](t3-context://v1/review-comment/<id>)`, for the composer.
+pub fn register_comment(comment: ReviewCommentContext, label: &str) -> String {
+    let context_id = review_comment_context_id(&comment.id);
+    remember(context_id.clone(), comment);
+    crate::composer_editor_mentions::format_context_reference("review-comment", &context_id, label)
+}
+
 /// The pull request comments whose chips are in `prompt`, for the draft to keep.
 pub fn comments_in(prompt: &str) -> Vec<ReviewCommentContext> {
     chip_ids(prompt).filter_map(|id| COMMENTS.with_borrow(|map| map.get(&id).cloned())).collect()

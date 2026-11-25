@@ -302,6 +302,8 @@ pub struct AppRoot {
     expanded: Option<(Entity<ExpandedImageDialog>, Subscription)>,
     /// "Link pull request", hosted here so it outlives the palette.
     link_dialog: Option<(Entity<LinkPullRequestDialog>, Subscription)>,
+    /// "Snooze → Custom…" (`CustomSnoozeDialogHost`).
+    snooze_dialog: Option<(Entity<crate::components::custom_snooze_dialog::CustomSnoozeDialog>, Subscription)>,
     /// The Usage page in the large route modal, while its route shows.
     usage: Option<(Entity<UsageRoute>, Subscription)>,
     /// The thread details card: docked or popover by the canvas width, each with its own
@@ -410,6 +412,15 @@ impl AppRoot {
                 RightPanelEvent::AddThreadContext(text) => {
                     this.thread_view.update(cx, |view, cx| view.append_reference(text, cx));
                 }
+                RightPanelEvent::SideChatAction(action) => match action {
+                    crate::components::chat::messages_timeline::TimelineAction::OpenImage { attachments, index } => {
+                        this.open_attachments(attachments, *index, window, cx)
+                    }
+                    crate::components::chat::messages_timeline::TimelineAction::OpenLink(target) => this.open_link(target, window, cx),
+                    _ => {}
+                },
+                RightPanelEvent::AddReviewComment(chip) => this.thread_view.update(cx, |view, cx| view.add_review_comment(chip, cx)),
+                RightPanelEvent::RemoveReviewComment(id) => this.thread_view.update(cx, |view, cx| view.remove_review_comment(id, cx)),
             }),
             cx.observe_global_in::<TerminalUiStateStore>(window, |this, window, cx| this.panels_changed(window, cx)),
             cx.observe_window_activation(window, |this, window, cx| {
@@ -440,6 +451,7 @@ impl AppRoot {
             terminals,
             expanded: None,
             link_dialog: None,
+            snooze_dialog: None,
             usage: None,
             details: DetailsVisibility { mode: ThreadDetailsMode::Popover, inline_open: true, popover_open: false },
             shown: None,
@@ -450,6 +462,13 @@ impl AppRoot {
         };
         let route = this.router.read(cx).current().clone();
         this.apply_route(route, window, cx);
+        let weak = cx.weak_entity();
+        crate::state::add_project::set_project_opener(
+            std::rc::Rc::new(move |project, window, cx| {
+                weak.update(cx, |this, cx| this.new_thread(Some(project), window, cx)).ok();
+            }),
+            cx,
+        );
         this
     }
 
@@ -530,6 +549,16 @@ impl AppRoot {
     /// Handles what the window's command palette asks for.
     pub fn attach_palette(&mut self, palette: &Entity<CommandPalette>, window: &mut Window, cx: &mut Context<Self>) {
         self.palette = Some(palette.downgrade());
+        // `composerPromptLink` is null for an empty or over-long prompt, so the rows hide.
+        let weak = cx.weak_entity();
+        palette.update(cx, |palette, _| {
+            palette.set_prompt_link_probe(std::rc::Rc::new(move |cx: &App| {
+                weak.upgrade().is_some_and(|this| {
+                    let text = this.read(cx).composer(cx).read(cx).editor().read(cx).text().trim().to_owned();
+                    !text.is_empty() && text.encode_utf16().count() <= 8_000
+                })
+            }));
+        });
         let subscription = cx.subscribe_in(palette, window, |this, _, event: &PaletteEvent, window, cx| {
             this.run_palette_event(event, window, cx);
         });
@@ -1086,9 +1115,10 @@ impl AppRoot {
             }
             return Wiring::Ran;
         }
-        // `requestCustomSnooze` opens a dialog this app does not have yet.
+        // `requestCustomSnooze`: the dialog picks the time, then the threads snooze until it.
         if command == MenuCommand::SnoozeCustom {
-            return self.not_built_yet(t!("Custom snooze"), "custom snooze dialog", cx);
+            self.open_custom_snooze(keys.to_vec(), window, cx);
+            return Wiring::Ran;
         }
         match self.data.thread_command(keys, command, cx) {
             CommandOutcome::Done => {}
@@ -1100,8 +1130,41 @@ impl AppRoot {
                 self.sidebar.update(cx, |sidebar, cx| sidebar.start_rename(key, window, cx))
             }
             CommandOutcome::NewThread(project) => self.new_thread(project, window, cx),
+            CommandOutcome::NewThreadOnBranch { project, branch, worktree_path } => {
+                let draft = self.data.create_draft_on_branch(project, branch, worktree_path, cx);
+                self.navigate(Route::Draft(draft), cx);
+                self.restore_focus(window, cx);
+            }
         }
         Wiring::Ran
+    }
+
+    /// Opens the custom snooze dialog for `keys`.
+    fn open_custom_snooze(&mut self, keys: Vec<ThreadKey>, window: &mut Window, cx: &mut Context<Self>) {
+        use crate::components::custom_snooze_dialog::{CustomSnoozeDialog, CustomSnoozeEvent};
+        let dialog = cx.new(|cx| CustomSnoozeDialog::new(keys, window, cx));
+        let subscription = cx.subscribe_in(&dialog, window, |this, _, event: &CustomSnoozeEvent, window, cx| {
+            this.snooze_dialog = None;
+            match event {
+                CustomSnoozeEvent::Snooze { threads, until } => {
+                    let until = crate::components::sidebar::model::TimestampMs(until.timestamp().as_millisecond());
+                    this.thread_command(threads, MenuCommand::Snooze(until), window, cx);
+                }
+                CustomSnoozeEvent::EditOptions => {
+                    this.navigate(Route::Settings { panel: SettingsPanel::Threads, query: SharedString::default() }, cx);
+                }
+                CustomSnoozeEvent::Closed => {}
+            }
+            this.restore_focus(window, cx);
+            cx.notify();
+        });
+        self.snooze_dialog = Some((dialog, subscription));
+        cx.notify();
+    }
+
+    /// Whether the custom snooze dialog is open, for checks.
+    pub fn custom_snooze_dialog(&self) -> Option<Entity<crate::components::custom_snooze_dialog::CustomSnoozeDialog>> {
+        self.snooze_dialog.as_ref().map(|(dialog, _)| dialog.clone())
     }
 
     /// The project of a listed thread.
@@ -1242,9 +1305,14 @@ impl AppRoot {
                 }
             }
             PaletteEvent::ShareWithGuest | PaletteEvent::UseInAnotherApp => return self.not_built_yet(t!("Sharing"), "sharing", cx),
-            PaletteEvent::NewProject => return self.not_built_yet(t!("New project"), "palette views", cx),
-            PaletteEvent::AddProject(AddProjectStep::BrowseFolders(_)) => return self.not_built_yet(t!("Local folder"), "palette views", cx),
-            PaletteEvent::AddProject(AddProjectStep::CloneRepository(_)) => return self.not_built_yet(t!("Git URL"), "palette views", cx),
+            // Raised outside an open palette: open it on that flow's page.
+            PaletteEvent::NewProject | PaletteEvent::AddProject(_) => {
+                let Some(palette) = self.palette.as_ref().and_then(WeakEntity::upgrade) else { return Wiring::Ran };
+                let opened = palette.update(cx, |palette, cx| palette.open_project_flow(event, window, cx));
+                if !opened {
+                    return self.not_built_yet(t!("Add project"), "palette views", cx);
+                }
+            }
         }
         Wiring::Ran
     }
@@ -1630,6 +1698,7 @@ impl Render for AppRoot {
             }))
             .children(self.expanded.as_ref().map(|(dialog, _)| dialog.clone()))
             .children(self.link_dialog.as_ref().map(|(dialog, _)| dialog.clone()))
+            .children(self.snooze_dialog.as_ref().map(|(dialog, _)| dialog.clone()))
             .children(crate::components::settings::theme_editor_panel::ThemeEditorStore::layer(cx))
     }
 }

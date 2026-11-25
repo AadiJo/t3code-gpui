@@ -132,7 +132,7 @@ pub(super) fn session_permissions(session: &SessionCheck, route_context: bool, c
 
 /// Asks the environment what this session may do; `None` without a runtime
 /// or a link to it.
-pub(super) fn check_session(id: &EnvironmentId, cx: &App) -> Option<Task<Result<AuthSessionState, crate::connection::CommandError>>> {
+pub(crate) fn check_session(id: &EnvironmentId, cx: &App) -> Option<Task<Result<AuthSessionState, crate::connection::CommandError>>> {
     if !ConnectionRuntime::is_running(cx) {
         return None;
     }
@@ -144,7 +144,7 @@ pub(super) fn check_session(id: &EnvironmentId, cx: &App) -> Option<Task<Result<
 }
 
 /// `sessionGrantsScope`, with the legacy parent scopes.
-fn grants(session: &AuthSessionState, scope: AuthEnvironmentScope) -> bool {
+pub(crate) fn grants(session: &AuthSessionState, scope: AuthEnvironmentScope) -> bool {
     use AuthEnvironmentScope as S;
     if !session.authenticated {
         return false;

@@ -186,6 +186,10 @@ pub trait CommandPaletteSource {
     }
     /// The clock relative times and search recency read.
     fn now_ms(&self) -> i64;
+    /// The server work of the Add project flows; without it their rows only tell the app.
+    fn project_flows(&self) -> Option<std::rc::Rc<dyn super::command_palette_project_flow::ProjectFlowBackend>> {
+        None
+    }
 }
 
 /// Palette data from a sidebar snapshot, for scenes and checks.
@@ -282,5 +286,21 @@ impl CommandPaletteSource for FixtureSource {
 
     fn now_ms(&self) -> i64 {
         self.now_ms
+    }
+
+    fn project_flows(&self) -> Option<std::rc::Rc<dyn super::command_palette_project_flow::ProjectFlowBackend>> {
+        let environments = self
+            .environments
+            .iter()
+            .map(|e| super::command_palette_project_flow::FlowEnvironment {
+                id: e.id.clone(),
+                label: e.label.clone(),
+                windows: false,
+                base_directory: SharedString::default(),
+                new_projects_root: Some("/home/dev/.t3/projects".into()),
+                ghq_clone_layout: false,
+            })
+            .collect();
+        Some(std::rc::Rc::new(super::command_palette_project_flow::FixtureFlows::sample(environments)))
     }
 }

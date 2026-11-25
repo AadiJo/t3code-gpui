@@ -165,6 +165,8 @@ pub struct FilesPanel {
     render_markdown_preferred: bool,
     render_table_preferred: bool,
     capabilities: FileContextMenuCapabilities,
+    /// The connection cannot write files (`!canWriteFiles`): files open read-only under a notice.
+    read_only_connection: bool,
     focus_handle: FocusHandle,
     _subscriptions: Vec<Subscription>,
 }
@@ -202,12 +204,21 @@ impl FilesPanel {
             render_markdown_preferred: false,
             render_table_preferred: true,
             capabilities: FileContextMenuCapabilities::default(),
+            read_only_connection: false,
             focus_handle: cx.focus_handle(),
             _subscriptions: vec![subscription],
         }
     }
 
     /// Server editors and reveal support, from the server config.
+    /// Whether the connection may write files; without it files open read-only under a notice.
+    pub fn set_read_only_connection(&mut self, read_only: bool, cx: &mut Context<Self>) {
+        if self.read_only_connection != read_only {
+            self.read_only_connection = read_only;
+            cx.notify();
+        }
+    }
+
     pub fn set_capabilities(&mut self, capabilities: FileContextMenuCapabilities, cx: &mut Context<Self>) {
         self.tree.update(cx, |tree, _| tree.set_capabilities(capabilities.clone()));
         self.capabilities = capabilities;
@@ -443,7 +454,7 @@ impl FilesPanel {
                 let wrap = self.wrap_override.unwrap_or_else(|| cx.try_global::<DiffPanelStore>().is_none_or(|store| store.settings.word_wrap));
                 let draft = self.drafts.get(path).cloned();
                 let editor = cx.new(|cx| {
-                    let mut editor = FileEditor::new(path.clone(), &file.contents, false, window, cx);
+                    let mut editor = FileEditor::new(path.clone(), &file.contents, self.read_only_connection, window, cx);
                     editor.set_wrap(wrap, cx);
                     if let Some(draft) = &draft {
                         editor.restore_draft(draft, cx);
@@ -1168,6 +1179,21 @@ impl Render for FilesPanel {
                 }
             }))
             .children(subheader)
+            .when(self.read_only_connection && self.open.is_some(), |d| {
+                // `shrink-0 border-b px-3 py-1.5 text-2xs text-muted-foreground`.
+                let theme = cx.app_theme();
+                d.child(
+                    div()
+                        .flex_none()
+                        .border_b_1()
+                        .border_color(theme.colors.border)
+                        .px(theme.sp(3.))
+                        .py(theme.sp(1.5))
+                        .map(|d| crate::components::ui::TextStyleExt::ui_text(d, theme, crate::appearance_fonts::TextSize::Xs2, crate::appearance_fonts::weight::NORMAL))
+                        .text_color(theme.colors.muted_foreground)
+                        .child(t!("Read-only connection. Unsaved edits are kept until write access returns.")),
+                )
+            })
             .child(
                 div()
                     .flex_1()

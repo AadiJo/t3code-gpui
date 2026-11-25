@@ -156,6 +156,8 @@ pub enum CommandOutcome {
     Rename(ThreadKey),
     /// Start a new thread in this project.
     NewThread(Option<ProjectRef>),
+    /// Start a new thread on this branch and worktree.
+    NewThreadOnBranch { project: ProjectRef, branch: Option<String>, worktree_path: Option<String> },
 }
 
 /// What a thread's source control controls are built from.
@@ -192,6 +194,12 @@ pub trait AppData: 'static {
 
     /// Starts a draft thread in `project`.
     fn create_draft(&self, project: Option<ProjectRef>, cx: &mut App) -> DraftId;
+
+    /// A draft that starts on `branch`, in `worktree_path` when the thread had one
+    /// (`handleNewThread` with `envMode` worktree or local and `startFromOrigin: false`).
+    fn create_draft_on_branch(&self, project: ProjectRef, _branch: Option<String>, _worktree_path: Option<String>, cx: &mut App) -> DraftId {
+        self.create_draft(Some(project), cx)
+    }
 
     /// Forgets a draft the sidebar discarded.
     fn discard_draft(&self, _key: &ThreadKey, _cx: &mut App) {}
@@ -251,6 +259,23 @@ pub trait AppData: 'static {
 
     /// The Diff tab's input for `target` and the scope it shows.
     fn diff_input(&self, target: &ThreadTarget, selection: &DiffPanelSelection, cx: &mut App) -> Task<Option<DiffPanelInput>>;
+
+    /// `review.getDiffFileContents`: both sides of one file of a git diff, so its folded context
+    /// can expand. Only servers have them.
+    fn diff_file_contents(
+        &self,
+        _target: &ThreadTarget,
+        _input: t3code_contracts::ReviewDiffFileContentsInput,
+        _cx: &mut App,
+    ) -> Task<Result<t3code_contracts::ReviewDiffFileContentsResult, SharedString>> {
+        Task::ready(Err(crate::i18n::t!("Diff file contents are unavailable for this selection.")))
+    }
+
+    /// `openFileInPreview`: a signed asset URL for the file (`assets.createUrl`) opened in the
+    /// thread's preview browser (`preview.open`). Resolves with the browser tab's id.
+    fn open_file_in_preview(&self, _target: &ThreadTarget, _absolute_path: String, _cx: &mut App) -> Task<Result<SharedString, SharedString>> {
+        Task::ready(Err(crate::i18n::t!("The integrated browser is unavailable in this runtime.")))
+    }
 
     /// The project workspace the Files tab of `target` reads.
     fn workspace(&self, target: &ThreadTarget, cx: &mut App) -> Option<Workspace>;

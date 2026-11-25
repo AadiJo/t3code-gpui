@@ -44,6 +44,8 @@ pub(super) fn run_commands(check: &mut Check) -> anyhow::Result<()> {
     check.action(SettleThread);
     wait_for(check, &key, "thread.settle settles the thread", |(settled, _, _)| settled)?;
     check.shot("commands-00-settled.png")?;
+    // The notice shows once the server accepted the command (`showThreadUndoNotice`).
+    check.pump(|c| c.cx.update(|cx| t3code_web::thread_undo::ThreadUndo::notice(cx).is_some()), Duration::from_secs(10), "the undo notice shows")?;
     check.action(UndoThreadAction);
     wait_for(check, &key, "thread.undo un-settles it", |(settled, _, _)| !settled)?;
 
@@ -53,6 +55,8 @@ pub(super) fn run_commands(check: &mut Check) -> anyhow::Result<()> {
     check.action(PinThread);
     wait_for(check, &key, "thread.pin again unpins it", |(_, pinned, _)| !pinned)?;
     check.shot("commands-01-unpinned-notice.png")?;
+    // The notice shows once the server accepted the command (`showThreadUndoNotice`).
+    check.pump(|c| c.cx.update(|cx| t3code_web::thread_undo::ThreadUndo::notice(cx).is_some()), Duration::from_secs(10), "the undo notice shows")?;
     check.action(UndoThreadAction);
     wait_for(check, &key, "thread.undo pins it back", |(_, pinned, _)| pinned)?;
 
@@ -70,6 +74,8 @@ pub(super) fn run_commands(check: &mut Check) -> anyhow::Result<()> {
     let notice = check.cx.update(|cx| t3code_web::thread_undo::ThreadUndo::notice(cx));
     let route = check.route();
     check.note(format!("undo notice {notice:?}, route {route:?}"));
+    // The notice shows once the server accepted the command (`showThreadUndoNotice`).
+    check.pump(|c| c.cx.update(|cx| t3code_web::thread_undo::ThreadUndo::notice(cx).is_some()), Duration::from_secs(10), "the undo notice shows")?;
     check.action(UndoThreadAction);
     let notice = check.cx.update(|cx| t3code_web::thread_undo::ThreadUndo::notice(cx));
     check.note(format!("after thread.undo: notice {notice:?}"));

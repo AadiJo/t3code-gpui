@@ -15,11 +15,18 @@ use gpui_kit::{rems,
     App, AppContext as _, Context, Entity, EventEmitter, FocusHandle, Focusable, InteractiveElement as _, IntoElement,
     KeyBinding, ListAlignment, ListOffset, ListState, MouseButton, ParentElement as _, Render, SharedString,
     StatefulInteractiveElement as _, Styled as _,
-    Subscription, WeakEntity, Window, actions, anchored, deferred, div, list, point, prelude::FluentBuilder as _, px,
+    Subscription, Task, WeakEntity, Window, actions, anchored, deferred, div, list, point, prelude::FluentBuilder as _, px,
 };
 use t3code_shared::keybindings::{KeybindingCommand, StaticCommand, THREAD_JUMP_COMMANDS};
 
-use super::command_palette_add_project::add_project_item;
+use super::command_palette_add_project::{add_project_item, sources_view};
+use super::command_palette_logic::{AddProjectStep, PaletteTrailing};
+use super::command_palette_project_flow::{
+    BrowseEntry, BrowseListing, FlowEnvironment, FlowOpened, ProjectFlow, append_segment, can_browse_up, clone_destination,
+    clone_destination_browse, clone_directory_path, directory_path, filter_entries, has_trailing_separator, initial_query,
+    is_browse_query, leaf_segment, new_project_folder_name, normalize_clone_url, parent_path, tab_completion,
+};
+use super::sidebar::model::EnvironmentId;
 use super::command_palette_logic::{
     FilterInput, PaletteEvent, PaletteGroup, PaletteItem, PaletteItemKind, PaletteMode, PaletteRow, PaletteRows,
     PaletteRun, PaletteSearchState, PaletteTitle, PaletteView, ShownGroup, build_nested_search_items, build_root_groups,
@@ -28,7 +35,7 @@ use super::command_palette_logic::{
 use super::command_palette_lookups::{CommandPaletteSource, PaletteFeature};
 use super::command_palette_port_forward_items::port_forwards_item;
 use super::command_palette_project_items::{new_thread_in_items, project_search_items, ProjectContext};
-use super::command_palette_results::{RowCallbacks, render_empty, render_item, render_label, row_height};
+use super::command_palette_results::{RowCallbacks, render_empty, render_item, render_label, render_summary_row, row_height};
 use super::command_palette_theme_items::{change_appearance_item, change_theme_item, theme_editor_item};
 use super::command_palette_thread_items::{build_thread_items, recent_thread_items};
 use super::icons::{Icon, IconName, IconSize};
@@ -52,6 +59,11 @@ actions!(
         Confirm,
         /// Closes the palette.
         Cancel,
+        /// Tab in a folder path: enters the highlighted or only matching folder, or completes the
+        /// common prefix.
+        CompletePath,
+        /// Mod+Enter: submits an Add project page even with a row highlighted.
+        SubmitFlow,
     ]
 );
 
@@ -67,6 +79,8 @@ pub fn init(cx: &mut App) {
             KeyBinding::new("down", SelectNext, Some(context)),
             KeyBinding::new("enter", Confirm, Some(context)),
             KeyBinding::new("escape", Cancel, Some(context)),
+            KeyBinding::new("tab", CompletePath, Some(context)),
+            KeyBinding::new(if cfg!(target_os = "macos") { "cmd-enter" } else { "ctrl-enter" }, SubmitFlow, Some(context)),
         ]);
     }
 }
@@ -92,6 +106,18 @@ struct Session {
     highlight_cleared: bool,
     list: ListState,
     now_ms: i64,
+    /// The Add project page shown, when one is.
+    flow: Option<ProjectFlow>,
+    /// The folder listing the path query reads, keyed by the directory asked for.
+    listing: Option<(SharedString, Result<BrowseListing, SharedString>)>,
+    /// The directory being listed now, and the request.
+    listing_request: Option<(SharedString, Task<()>)>,
+    /// A create, add or clone is running.
+    busy: bool,
+    /// What the Add project pages know about each connected environment, read at open.
+    flow_envs: Vec<FlowEnvironment>,
+    /// Where a path typed on the root page browses.
+    default_flow_env: Option<EnvironmentId>,
     _input_events: Subscription,
 }
 
@@ -99,6 +125,9 @@ struct Session {
 /// app; it draws nothing while closed.
 pub struct CommandPalette {
     source: Rc<dyn CommandPaletteSource>,
+    /// Whether the composer holds a prompt a link can carry; without one the prompt link rows
+    /// hide. `None` offers them.
+    prompt_link_probe: Option<Rc<dyn Fn(&App) -> bool>>,
     ui: CommandPaletteUiState,
     session: Option<Session>,
     focus_handle: FocusHandle,
@@ -115,7 +144,19 @@ impl Focusable for CommandPalette {
 
 impl CommandPalette {
     pub fn new(source: Rc<dyn CommandPaletteSource>, cx: &mut Context<Self>) -> Self {
-        Self { source, ui: CommandPaletteUiState::default(), session: None, focus_handle: cx.focus_handle(), this: cx.weak_entity() }
+        Self {
+            source,
+            prompt_link_probe: None,
+            ui: CommandPaletteUiState::default(),
+            session: None,
+            focus_handle: cx.focus_handle(),
+            this: cx.weak_entity(),
+        }
+    }
+
+    /// Sets what decides whether "Copy prompt link" shows (`composerPromptLink` being non-null).
+    pub fn set_prompt_link_probe(&mut self, probe: Rc<dyn Fn(&App) -> bool>) {
+        self.prompt_link_probe = Some(probe);
     }
 
     /// Replaces the data source; an open palette keeps its rows until reopened.
@@ -236,6 +277,10 @@ impl CommandPalette {
                 Rc::new(item)
             })
             .collect();
+        let connected: Vec<EnvironmentId> = source.environments().into_iter().filter(|e| e.connected).map(|e| e.id).collect();
+        let flow_envs: Vec<FlowEnvironment> =
+            source.project_flows().map(|flows| connected.iter().filter_map(|id| flows.environment(id, cx)).collect()).unwrap_or_default();
+        let default_flow_env = connected.first().cloned();
         let intent = self.ui.open_intent.clone();
         let initial_query = match &intent {
             Some(OpenIntent::Search(query)) => query.clone(),
@@ -281,6 +326,12 @@ impl CommandPalette {
             highlight_cleared,
             list: ListState::new(0, ListAlignment::Top, px(400.)),
             now_ms,
+            flow: None,
+            listing: None,
+            listing_request: None,
+            busy: false,
+            flow_envs,
+            default_flow_env,
             _input_events: events,
         });
         self.refilter();
@@ -393,7 +444,7 @@ impl CommandPalette {
             items.push(port_forwards_item(&source.ports()));
         }
         if active.is_some() {
-            if source.supports(PaletteFeature::PromptLinks) {
+            if source.supports(PaletteFeature::PromptLinks) && self.prompt_link_probe.as_ref().is_none_or(|probe| probe(cx)) {
                 items.push(event("action:copy-prompt-link", t!("Copy prompt link"), IconName::Link, PaletteEvent::CopyPromptLink { with_context: false }, &[
                     "copy", "share", "prompt", "link",
                 ]));
@@ -446,12 +497,20 @@ impl CommandPalette {
             .shortcut(StaticCommand::ProjectSearchToggle)
             .keep_open(),
         );
-        if source.supports(PaletteFeature::NewProject) {
-            items.push(event("action:new-project", t!("New project"), IconName::FolderGit2, PaletteEvent::NewProject, &[
-                "new project", "create project", "empty", "repository", "repo", "git init",
-            ]));
+        let flows = source.project_flows();
+        let can_create_new = |id: &super::sidebar::model::EnvironmentId| {
+            flows.as_ref().and_then(|f| f.environment(id, cx)).is_some_and(|e| e.new_projects_root.is_some())
+        };
+        // Shown while some connected environment can make one (`newProjectEnvironmentOptions`).
+        if source.supports(PaletteFeature::NewProject) && (flows.is_none() || environments.iter().any(|e| e.connected && can_create_new(&e.id))) {
+            items.push(
+                event("action:new-project", t!("New project"), IconName::FolderGit2, PaletteEvent::NewProject, &[
+                    "new project", "create project", "empty", "repository", "repo", "git init",
+                ])
+                .keep_open(),
+            );
         }
-        items.push(add_project_item(&environments).without_chevron());
+        items.push(add_project_item(&environments, &can_create_new).without_chevron());
         items.push(change_theme_item(cx));
         items.push(change_appearance_item(cx));
         items.push(theme_editor_item());
@@ -517,11 +576,21 @@ impl CommandPalette {
         session.highlighted = None;
         session.highlight_cleared = true;
         self.refilter();
+        self.request_listing(cx);
         cx.notify();
     }
 
     /// Filters for the current page and query, and resets the list.
     fn refilter(&mut self) {
+        if let Some(groups) = self.flow_groups() {
+            let Some(session) = &mut self.session else { return };
+            let shown: Vec<ShownGroup> = groups.iter().map(ShownGroup::from).collect();
+            session.rows = Rc::new(build_rows(&shown));
+            session.shown = shown;
+            session.list.reset(session.rows.rows.len());
+            session.list.scroll_to(ListOffset { item_ix: 0, offset_in_item: px(0.) });
+            return;
+        }
         let Some(session) = &mut self.session else { return };
         let (active_groups, in_submenu): (&[PaletteGroup], bool) = match session.search.current_view() {
             Some(view) => (&view.groups, true),
@@ -581,6 +650,9 @@ impl CommandPalette {
     }
 
     fn confirm(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.confirm_flow(false, window, cx) {
+            return;
+        }
         let Some(session) = &self.session else { return };
         let target = session.highlighted.clone().or_else(|| session.rows.item_values.first().cloned());
         if let Some(item) = target.and_then(|value| find_item(&session.shown, &value).cloned()) {
@@ -607,7 +679,9 @@ impl CommandPalette {
                 self.refilter();
                 cx.notify();
             }
+            PaletteItemKind::Action { run: PaletteRun::Event(event), .. } if self.start_flow_for(event, window, cx) => {}
             PaletteItemKind::Action { run, keep_open } => {
+                let Some(session) = &mut self.session else { return };
                 let return_focus = session.return_focus.clone();
                 let query = session.search.query.clone();
                 if !keep_open {
@@ -630,6 +704,8 @@ impl CommandPalette {
         if !session.search.back() {
             return false;
         }
+        session.flow = None;
+        session.busy = false;
         session.highlighted = None;
         let (query, placeholder) = (
             session.search.query.clone(),
@@ -640,6 +716,7 @@ impl CommandPalette {
             input.set_placeholder(placeholder, window, cx);
         });
         self.refilter();
+        self.request_listing(cx);
         cx.notify();
         true
     }
@@ -683,6 +760,8 @@ impl CommandPalette {
         let chrome = theme.sp(3.) + theme.sp(8.5) + px(2.) + footer_height(&theme) + px(2.);
         let list_padding = theme.sp(4.);
         let content: gpui_kit::Pixels = rows.rows.iter().map(|row| row_height(row, &theme)).sum::<gpui_kit::Pixels>();
+        let flow = self.flow_chrome(&theme);
+        let chrome = chrome + flow.header_height;
         let list_height = (content + list_padding).min(popup_max - chrome);
         let actions_only = session.search.query.starts_with('>');
         let weak = self.this.clone();
@@ -731,12 +810,21 @@ impl CommandPalette {
         .h(list_height)
         .w_full();
         let body = if session.rows.rows.is_empty() {
-            render_empty(empty_state_message(actions_only), &theme)
+            match flow.empty.clone() {
+                Some(message) => render_empty(message, &theme),
+                None if flow.status.is_some() => div().into_any_element(),
+                None => render_empty(empty_state_message(actions_only), &theme),
+            }
         } else {
             list_element.into_any_element()
         };
         let input_row = self.render_input(in_submenu, &theme, cx);
-        let footer = render_footer(in_submenu, &theme);
+        let footer = render_footer(in_submenu, flow.footer_action.clone(), &theme);
+        let header = flow.header;
+        let status = flow.status.map(|text| {
+            // `px-4 py-3 text-sm text-muted-foreground`.
+            div().px(theme.sp(4.)).py(theme.sp(3.)).ui_text(&theme, TextSize::Sm, weight::NORMAL).text_color(theme.colors.muted_foreground).child(text)
+        });
         let c = &theme.colors;
         div()
             .id("command-palette")
@@ -746,6 +834,10 @@ impl CommandPalette {
             .on_action(cx.listener(|this, _: &SelectNext, _, cx| this.move_highlight(1, cx)))
             .on_action(cx.listener(|this, _: &Confirm, window, cx| this.confirm(window, cx)))
             .on_action(cx.listener(|this, _: &Cancel, window, cx| this.close(window, cx)))
+            .on_action(cx.listener(|this, _: &CompletePath, window, cx| this.complete_path(window, cx)))
+            .on_action(cx.listener(|this, _: &SubmitFlow, window, cx| {
+                this.confirm_flow(true, window, cx);
+            }))
             .on_action(cx.listener(|this, _: &commands::ToggleCommandPalette, window, cx| this.close(window, cx)))
             .on_key_down(cx.listener(|this, event: &gpui_kit::KeyDownEvent, window, cx| {
                 let query_empty = this.session.as_ref().is_some_and(|s| s.search.query.is_empty());
@@ -769,6 +861,8 @@ impl CommandPalette {
             .text_color(c.foreground())
             .occlude()
             .child(input_row)
+            .children(header)
+            .children(status)
             .child(body)
             .child(footer)
     }
@@ -776,7 +870,10 @@ impl CommandPalette {
     fn render_input(&self, in_submenu: bool, theme: &AppTheme, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let session = self.session.as_ref().expect("open palette has a session");
         let c = &theme.colors;
-        let addon = if in_submenu {
+        let browsing_root = !in_submenu && self.browse_target().is_some();
+        let addon = if browsing_root {
+            Icon::new(IconName::FolderPlus).size(IconSize::Custom(theme.rem(1.))).color(c.foreground()).into_any_element()
+        } else if in_submenu {
             div()
                 .id("command-palette-back")
                 .cursor_pointer()
@@ -790,15 +887,34 @@ impl CommandPalette {
             Icon::new(IconName::Search).size(IconSize::Custom(theme.rem(1.))).color(c.icon_muted).into_any_element()
         };
         let field = gpui_kit::component::input::Input::new(&session.input).appearance(false);
+        let button = self.submit_button(theme, cx);
         let field = gpui_kit::Styled::h(field, theme.sp(8.5))
             .w_full()
             .pl(theme.sp(2.) + theme.sp(6.))
-            .pr(theme.sp(3.) - px(1.))
+            .pr(self.input_end_padding(theme))
             .ui_text(theme, TextSize::Sm, weight::NORMAL);
+        let accessory = button.map(|(label, shortcut, enabled)| {
+            // `variant="outline" size="xs"` at `inset-e-2.5`, centred on the input row.
+            let weak = self.this.clone();
+            div().absolute().top_0().bottom_0().right(theme.sp(2.5)).flex().items_center().child(
+                crate::components::ui::button::Button::new("command-palette-submit")
+                    .variant(crate::components::ui::button::ButtonVariant::Outline)
+                    .size(crate::components::ui::button::ButtonSize::Xs)
+                    .label(label)
+                    .accessory(div().mr(theme.sp(-0.5)).child(crate::components::ui::kbd::Kbd::new(shortcut)))
+                    .disabled(!enabled)
+                    .on_click(move |_, window, cx| {
+                        weak.update(cx, |palette, cx| {
+                            palette.confirm_flow(true, window, cx);
+                        })
+                        .ok();
+                    }),
+            )
+        });
         // `CommandInput`: `px-[--command-shell-inset] py-1.5`, a `lg` input whose
         // control keeps its 1px transparent border; the addon sits at
         // `ps-[calc(--spacing(3)-1px)]` inside it.
-        div().px(theme.spacing.command_shell_inset).py(theme.sp(1.5)).child(
+        div().relative().px(theme.spacing.command_shell_inset).py(theme.sp(1.5)).child(
             div()
                 .relative()
                 .h(theme.sp(8.5) + px(2.))
@@ -819,6 +935,650 @@ impl CommandPalette {
                         .child(addon),
                 ),
         )
+        .children(accessory)
+    }
+}
+
+/// What an Add project page adds around the list.
+#[derive(Default)]
+struct FlowChrome {
+    header: Option<gpui_kit::AnyElement>,
+    /// The header and status line's height, for sizing the list.
+    header_height: gpui_kit::Pixels,
+    status: Option<SharedString>,
+    empty: Option<SharedString>,
+    /// The footer's Enter label; `None` hides it.
+    footer_action: Option<SharedString>,
+}
+
+/// What the path query reads on the current page.
+struct BrowseTarget {
+    env: FlowEnvironment,
+    directory: SharedString,
+    filter: SharedString,
+}
+
+/// The Add project pages (`CommandPalette.tsx` browse, clone and new-project modes).
+impl CommandPalette {
+    /// The folder the query lists, when it is a path on this page: a Local folder or clone
+    /// destination page, or a path typed on the root page.
+    fn browse_target(&self) -> Option<BrowseTarget> {
+        let session = self.session.as_ref()?;
+        let env = match &session.flow {
+            Some(flow) if flow.browses() => flow.environment().clone(),
+            Some(_) => return None,
+            None if session.search.views.is_empty() => session.default_flow_env.clone()?,
+            None => return None,
+        };
+        let env = session.flow_envs.iter().find(|e| e.id == env)?.clone();
+        let query = session.search.query.as_ref();
+        if !is_browse_query(query, env.windows) {
+            return None;
+        }
+        let filter = if has_trailing_separator(query) { "" } else { leaf_segment(query) };
+        Some(BrowseTarget { directory: directory_path(query).to_string().into(), filter: filter.to_string().into(), env })
+    }
+
+    /// The listing for the target's directory, once it has arrived.
+    fn current_listing(&self, target: &BrowseTarget) -> Option<&Result<BrowseListing, SharedString>> {
+        let (directory, listing) = self.session.as_ref()?.listing.as_ref()?;
+        (directory == &target.directory).then_some(listing)
+    }
+
+    /// Lists the query's directory when it is not listed or being listed already.
+    fn request_listing(&mut self, cx: &mut Context<Self>) {
+        let Some(target) = self.browse_target() else { return };
+        let Some(backend) = self.source.project_flows() else { return };
+        let Some(session) = &self.session else { return };
+        if session.listing.as_ref().is_some_and(|(d, _)| d == &target.directory)
+            || session.listing_request.as_ref().is_some_and(|(d, _)| d == &target.directory)
+        {
+            return;
+        }
+        let directory = target.directory.clone();
+        let task = backend.browse(&target.env.id, directory.to_string(), cx);
+        let request = cx.spawn(async move |this, cx| {
+            let result = task.await;
+            this.update(cx, |this, cx| {
+                let Some(session) = &mut this.session else { return };
+                if session.listing_request.as_ref().is_some_and(|(d, _)| d == &directory) {
+                    session.listing_request = None;
+                }
+                session.listing = Some((directory, result));
+                this.refilter();
+                cx.notify();
+            })
+            .ok();
+        });
+        if let Some(session) = &mut self.session {
+            session.listing_request = Some((target.directory, request));
+        }
+    }
+
+    /// A row action that calls back into the palette.
+    fn local_run(&self, run: impl Fn(&mut CommandPalette, &mut Window, &mut Context<CommandPalette>) + 'static) -> PaletteRun {
+        let weak = self.this.clone();
+        PaletteRun::Local(Rc::new(move |window, cx| {
+            weak.update(cx, |palette, cx| run(palette, window, cx)).ok();
+        }))
+    }
+
+    /// The rows an Add project page or a path query shows in place of filtered results.
+    fn flow_groups(&self) -> Option<Vec<PaletteGroup>> {
+        let session = self.session.as_ref()?;
+        match &session.flow {
+            Some(ProjectFlow::CloneRepository { .. }) => Some(Vec::new()),
+            Some(ProjectFlow::NewProject { env, sources }) => {
+                let target = sources.clone().unwrap_or_else(|| env.clone());
+                let mut item = PaletteItem::action(
+                    "new-project:existing",
+                    PaletteTitle::Text(t!("Add existing project")),
+                    IconName::FolderPlus,
+                    self.local_run(move |palette, window, cx| palette.show_existing_project_sources(target.clone(), window, cx)),
+                    &[],
+                )
+                .description(t!("Open a folder or clone a repository"))
+                .keep_open();
+                item.trailing = Some(PaletteTrailing::Chevron);
+                let mut groups: Vec<PaletteGroup> = self.new_project_machine_group(env, session.busy).into_iter().collect();
+                groups.push(PaletteGroup { value: "new-project-existing".into(), label: SharedString::default(), items: vec![Rc::new(item)] });
+                Some(groups)
+            }
+            _ => {
+                let target = self.browse_target()?;
+                Some(self.browse_groups(&target))
+            }
+        }
+    }
+
+    /// The folder rows (`buildBrowseGroups`).
+    fn browse_groups(&self, target: &BrowseTarget) -> Vec<PaletteGroup> {
+        let Some(session) = self.session.as_ref() else { return Vec::new() };
+        let Some(Ok(listing)) = self.current_listing(target) else { return Vec::new() };
+        let clone_destination = matches!(session.flow, Some(ProjectFlow::CloneDestination { .. }));
+        let (visible, _) = self.visible_entries(target, listing);
+        let mut items = Vec::new();
+        if can_browse_up(&target.directory) {
+            let mut item = PaletteItem::action(
+                "browse:up",
+                PaletteTitle::Text("..".into()),
+                IconName::CornerLeftUp,
+                self.local_run(|palette, window, cx| palette.browse_up(window, cx)),
+                &[],
+            )
+            .keep_open();
+            item.set_terms([SharedString::from("..")]);
+            items.push(Rc::new(item));
+        }
+        for entry in visible {
+            let name = entry.name.clone();
+            let mut item = PaletteItem::action(
+                format!("browse:{}", entry.full_path),
+                PaletteTitle::Text(entry.name.clone()),
+                IconName::Folder,
+                self.local_run(move |palette, window, cx| palette.browse_to(name.clone(), window, cx)),
+                &[],
+            )
+            .keep_open();
+            item.set_terms([entry.name.clone()]);
+            items.push(Rc::new(item));
+        }
+        let label = if clone_destination { t!("Select where to clone") } else { t!("Directories") };
+        vec![PaletteGroup { value: "directories".into(), label, items }]
+    }
+
+    /// The listing's folders the filter keeps, and the one it names exactly. On a clone
+    /// destination the clone's own folder name filters nothing (`filterPinnedBrowseEntries`).
+    fn visible_entries(&self, target: &BrowseTarget, listing: &BrowseListing) -> (Vec<BrowseEntry>, Option<BrowseEntry>) {
+        match self.session.as_ref().and_then(|s| s.flow.as_ref()) {
+            Some(ProjectFlow::CloneDestination { pinned, .. }) => {
+                let same = |a: &str, b: &str| if target.env.windows { a.eq_ignore_ascii_case(b) } else { a == b };
+                let filter = if same(&target.filter, pinned) { "" } else { target.filter.as_ref() };
+                let (visible, _) = filter_entries(&listing.entries, filter);
+                let exact = listing.entries.iter().find(|e| same(&e.name, &target.filter)).cloned();
+                (visible, exact)
+            }
+            _ => filter_entries(&listing.entries, &target.filter),
+        }
+    }
+
+    /// Connected environments whose server can make a new project (`newProjectEnvironmentOptions`).
+    fn new_project_environments(&self) -> Vec<FlowEnvironment> {
+        let Some(session) = &self.session else { return Vec::new() };
+        session.flow_envs.iter().filter(|e| e.new_projects_root.is_some()).cloned().collect()
+    }
+
+    /// The Environments group of a new project, when more than one machine can make one.
+    fn new_project_machine_group(&self, selected: &EnvironmentId, busy: bool) -> Option<PaletteGroup> {
+        let options = self.new_project_environments();
+        if options.len() <= 1 {
+            return None;
+        }
+        let items = options
+            .into_iter()
+            .map(|option| {
+                let id = option.id.clone();
+                let mut item = PaletteItem::action(
+                    format!("new-project:environment:{}", option.id.0),
+                    PaletteTitle::Text(option.label.clone()),
+                    IconName::Server,
+                    self.local_run(move |palette, _, cx| palette.switch_new_project_environment(id.clone(), cx)),
+                    &[],
+                )
+                .description(SharedString::from(option.id.0.to_string()))
+                .keep_open();
+                item.disabled = busy;
+                if &option.id == selected {
+                    item.trailing = Some(PaletteTrailing::Check);
+                }
+                Rc::new(item)
+            })
+            .collect();
+        Some(PaletteGroup { value: "new-project-machines".into(), label: t!("Environments"), items })
+    }
+
+    /// Runs an Add project row in the palette when it can (`keepOpen` rows); `false` leaves the
+    /// event to the app.
+    fn start_flow_for(&mut self, event: &PaletteEvent, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        if self.source.project_flows().is_none() || self.session.is_none() {
+            return false;
+        }
+        let flow = match event {
+            PaletteEvent::AddProject(AddProjectStep::BrowseFolders(env)) => ProjectFlow::Browse { env: env.clone() },
+            PaletteEvent::AddProject(AddProjectStep::CloneRepository(env)) => ProjectFlow::CloneRepository { env: env.clone() },
+            PaletteEvent::AddProject(AddProjectStep::NewProject(env)) => ProjectFlow::NewProject { env: env.clone(), sources: Some(env.clone()) },
+            PaletteEvent::NewProject => match self.new_project_environments().first() {
+                Some(env) => ProjectFlow::NewProject { env: env.id.clone(), sources: None },
+                None => return false,
+            },
+            _ => return false,
+        };
+        self.start_flow(flow, window, cx);
+        true
+    }
+
+    /// Opens the palette straight on an Add project page, for an event raised outside it.
+    /// Returns `false` when the source has no project flows.
+    pub fn open_project_flow(&mut self, event: &PaletteEvent, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        if self.source.project_flows().is_none() {
+            return false;
+        }
+        if !self.ui.open {
+            self.dispatch(CommandPaletteUiAction::ToggleMode(SearchOverlayMode::Command), window, cx);
+        }
+        self.start_flow_for(event, window, cx)
+    }
+
+    /// Opens an Add project page (`startAddProjectBrowse`, `startAddProjectClone`, `startNewProject`).
+    pub fn start_flow(&mut self, flow: ProjectFlow, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(session) = &mut self.session else { return };
+        let initial_query = match &flow {
+            ProjectFlow::Browse { env } => {
+                let base = session.flow_envs.iter().find(|e| &e.id == env).map(|e| e.base_directory.clone()).unwrap_or_default();
+                Some(SharedString::from(initial_query(&base)))
+            }
+            ProjectFlow::CloneRepository { .. } => Some(SharedString::default()),
+            _ => None,
+        };
+        session.search.push(Rc::new(PaletteView { addon_icon: flow.addon_icon(), groups: Vec::new(), initial_query }));
+        session.flow = Some(flow);
+        session.busy = false;
+        session.highlighted = None;
+        session.highlight_cleared = true;
+        self.sync_input(window, cx);
+        self.refilter();
+        self.request_listing(cx);
+        cx.notify();
+    }
+
+    /// Puts the session's query and placeholder into the input.
+    fn sync_input(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(session) = &self.session else { return };
+        let placeholder = match &session.flow {
+            Some(flow) => flow.placeholder(),
+            None => input_placeholder(if session.search.views.is_empty() { PaletteMode::Root } else { PaletteMode::Submenu }),
+        };
+        let query = session.search.query.clone();
+        session.input.update(cx, |input, cx| {
+            input.set_value(query.to_string(), window, cx);
+            input.set_placeholder(placeholder, window, cx);
+        });
+    }
+
+    /// Replaces the query from code (folder navigation, the clone destination).
+    fn replace_query(&mut self, query: String, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(session) = &mut self.session else { return };
+        session.search.query = query.into();
+        session.highlighted = None;
+        session.highlight_cleared = true;
+        self.sync_input(window, cx);
+        self.refilter();
+        self.request_listing(cx);
+        cx.notify();
+    }
+
+    /// `browseTo`: enters a folder of the listing.
+    fn browse_to(&mut self, name: SharedString, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(session) = &self.session else { return };
+        let query = session.search.query.to_string();
+        let next = match (&session.flow, self.browse_target()) {
+            (Some(ProjectFlow::CloneDestination { pinned, .. }), Some(target)) => clone_destination_browse(&target.directory, &name, pinned, !target.env.windows),
+            _ => append_segment(&query, &name),
+        };
+        self.replace_query(next, window, cx);
+    }
+
+    /// `browseUp`: the parent folder, keeping a clone's own folder at the end.
+    fn browse_up(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(target) = self.browse_target() else { return };
+        let Some(parent) = parent_path(&target.directory) else { return };
+        let next = match self.session.as_ref().and_then(|s| s.flow.as_ref()) {
+            Some(ProjectFlow::CloneDestination { pinned, .. }) => clone_destination(&parent, pinned),
+            _ => parent,
+        };
+        self.replace_query(next, window, cx);
+    }
+
+    /// Tab on a path (`handleKeyDown`'s Tab branch).
+    fn complete_path(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(target) = self.browse_target() else { return };
+        let highlighted = self.session.as_ref().and_then(|s| s.highlighted.clone());
+        if highlighted.as_deref() == Some("browse:up") {
+            return self.browse_up(window, cx);
+        }
+        let Some(Ok(listing)) = self.current_listing(&target) else { return };
+        let (visible, _) = self.visible_entries(&target, listing);
+        let highlighted_entry = highlighted.as_ref().and_then(|value| visible.iter().find(|e| value.strip_prefix("browse:") == Some(e.full_path.as_ref())));
+        let completion = match highlighted_entry {
+            Some(entry) => Some((entry.name.clone(), true)),
+            None => tab_completion(&visible, &target.filter),
+        };
+        let pinned = matches!(self.session.as_ref().and_then(|s| s.flow.as_ref()), Some(ProjectFlow::CloneDestination { .. }));
+        match completion {
+            Some((name, true)) => self.browse_to(name, window, cx),
+            Some((name, false)) if !pinned => self.replace_query(format!("{}{}", target.directory, name), window, cx),
+            _ => {}
+        }
+    }
+
+    /// Enter (or Mod+Enter with `force`) on an Add project page. Returns whether it handled it.
+    fn confirm_flow(&mut self, force: bool, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        let Some(session) = &self.session else { return false };
+        let highlighted = session.highlighted.clone();
+        match &session.flow {
+            Some(ProjectFlow::CloneRepository { .. }) => {
+                self.submit_clone_repository(window, cx);
+                return true;
+            }
+            Some(ProjectFlow::NewProject { .. }) => {
+                if highlighted.is_none() || force {
+                    self.submit_new_project(window, cx);
+                    return true;
+                }
+                return false;
+            }
+            _ => {}
+        }
+        if self.browse_target().is_none() {
+            return false;
+        }
+        let on_row = highlighted.as_ref().is_some_and(|h| h.starts_with("browse:"));
+        if on_row && !force {
+            return false;
+        }
+        self.submit_path(window, cx);
+        true
+    }
+
+    /// The path a submit uses (`resolvedAddProjectPath`) and whether it names a folder that
+    /// does not exist yet (`willCreateProjectPath`).
+    fn resolved_path(&self) -> Option<(FlowEnvironment, String, bool)> {
+        let target = self.browse_target()?;
+        let session = self.session.as_ref()?;
+        let query = session.search.query.trim().to_string();
+        let on_row = session.highlighted.as_ref().is_some_and(|h| h.starts_with("browse:"));
+        let listing = self.current_listing(&target);
+        let ok_listing = listing.and_then(|l| l.as_ref().ok());
+        let (path, missing) = if has_trailing_separator(&session.search.query) {
+            match ok_listing {
+                Some(listing) => (listing.parent_path.to_string(), false),
+                None => (query.clone(), listing.is_some()),
+            }
+        } else {
+            let exact = ok_listing.and_then(|l| self.visible_entries(&target, l).1);
+            match exact {
+                Some(entry) => (entry.full_path.to_string(), false),
+                None => (query.clone(), ok_listing.is_some()),
+            }
+        };
+        Some((target.env, path, missing && !on_row && !query.is_empty()))
+    }
+
+    fn submit_path(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some((env, path, _)) = self.resolved_path() else { return };
+        let Some(backend) = self.source.project_flows() else { return };
+        let Some(session) = &mut self.session else { return };
+        if path.is_empty() || session.busy {
+            return;
+        }
+        let clone = match &session.flow {
+            Some(ProjectFlow::CloneDestination { remote_url, .. }) => Some(remote_url.to_string()),
+            _ => None,
+        };
+        session.busy = true;
+        cx.notify();
+        match clone {
+            Some(remote_url) => {
+                // The palette closes once the server takes the clone, then a draft opens when the
+                // project arrives (`submitAddProjectCloneFlow`).
+                let task = backend.start_clone(&env.id, remote_url, path, cx);
+                cx.spawn_in(window, async move |this, cx| {
+                    let started = task.await;
+                    let wait = this
+                        .update_in(cx, |this, window, cx| {
+                            if let Some(session) = &mut this.session {
+                                session.busy = false;
+                            }
+                            let (project, wait) = started?;
+                            this.close(window, cx);
+                            Some((project, wait))
+                        })
+                        .ok()
+                        .flatten();
+                    let Some((project, wait)) = wait else { return };
+                    wait.await;
+                    this.update(cx, |_, cx| cx.emit(PaletteEvent::NewThreadIn(project))).ok();
+                })
+                .detach();
+            }
+            None => {
+                let task = backend.add_project(&env.id, path, cx);
+                let threads = self.source.threads();
+                self.finish(
+                    async move {
+                        task.await.map(|opened| match opened {
+                            // `getLatestThreadForProject`: the project's most recently active thread.
+                            FlowOpened::Existing(project) => match threads.iter().filter(|t| t.project.as_ref() == Some(&project)).max_by_key(|t| t.activity_at) {
+                                Some(thread) => PaletteEvent::OpenThread { thread: thread.key.clone(), query: SharedString::default() },
+                                None => PaletteEvent::NewThreadIn(project),
+                            },
+                            FlowOpened::Created(project) => PaletteEvent::NewThreadIn(project),
+                        })
+                    },
+                    window,
+                    cx,
+                );
+            }
+        }
+    }
+
+    /// Waits for a submit: closes the palette and tells the app where to go, or stays open
+    /// (the failure has toasted).
+    fn finish(&mut self, task: impl std::future::Future<Output = Option<PaletteEvent>> + 'static, window: &mut Window, cx: &mut Context<Self>) {
+        cx.spawn_in(window, async move |this, cx| {
+            let event = task.await;
+            this.update_in(cx, |this, window, cx| {
+                if let Some(session) = &mut this.session {
+                    session.busy = false;
+                }
+                if let Some(event) = event {
+                    this.close(window, cx);
+                    cx.emit(event);
+                }
+                cx.notify();
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    /// `submitAddProjectCloneFlow`'s repository step: the URL leads to the destination page.
+    fn submit_clone_repository(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(session) = &mut self.session else { return };
+        let Some(ProjectFlow::CloneRepository { env }) = &session.flow else { return };
+        let input = session.search.query.trim().to_string();
+        if input.is_empty() {
+            return;
+        }
+        let Some(info) = session.flow_envs.iter().find(|e| &e.id == env).cloned() else { return };
+        let remote_url = normalize_clone_url(&input);
+        let folder = clone_directory_path(&remote_url, info.ghq_clone_layout);
+        let pinned = folder.rsplit('/').next().unwrap_or_default().to_string();
+        let destination = clone_destination(&initial_query(&info.base_directory), &folder);
+        session.flow = Some(ProjectFlow::CloneDestination { env: env.clone(), remote_url: remote_url.into(), input: input.into(), pinned: pinned.into() });
+        self.replace_query(destination, window, cx);
+    }
+
+    fn submit_new_project(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(backend) = self.source.project_flows() else { return };
+        let Some(session) = &mut self.session else { return };
+        let Some(ProjectFlow::NewProject { env, .. }) = &session.flow else { return };
+        let name = session.search.query.trim().to_string();
+        if name.is_empty() || session.busy {
+            return;
+        }
+        let env = env.clone();
+        session.busy = true;
+        self.refilter();
+        cx.notify();
+        let task = backend.create_new_project(&env, name, cx);
+        self.finish(async move { task.await.map(PaletteEvent::NewThreadIn) }, window, cx);
+    }
+
+    /// `switchNewProjectEnvironment`.
+    fn switch_new_project_environment(&mut self, id: EnvironmentId, cx: &mut Context<Self>) {
+        let Some(session) = &mut self.session else { return };
+        if let Some(ProjectFlow::NewProject { env, .. }) = &mut session.flow {
+            *env = id;
+        }
+        session.highlighted = None;
+        self.refilter();
+        cx.notify();
+    }
+
+    /// `showExistingProjectSources`: back to the Sources page of the new project's machine.
+    fn show_existing_project_sources(&mut self, env: EnvironmentId, window: &mut Window, cx: &mut Context<Self>) {
+        let came_from = match self.session.as_ref().and_then(|s| s.flow.as_ref()) {
+            Some(ProjectFlow::NewProject { sources, .. }) => sources.clone(),
+            _ => return,
+        };
+        self.pop_view(window, cx);
+        if came_from.as_ref() == Some(&env) {
+            return;
+        }
+        if came_from.is_some() {
+            self.pop_view(window, cx);
+        }
+        let can_create_new = self.session.as_ref().is_some_and(|s| s.flow_envs.iter().any(|e| e.id == env && e.new_projects_root.is_some()));
+        let Some(session) = &mut self.session else { return };
+        session.search.push(Rc::new(sources_view(&env, can_create_new)));
+        session.highlighted = None;
+        session.highlight_cleared = true;
+        self.sync_input(window, cx);
+        self.refilter();
+        cx.notify();
+    }
+
+    /// The input's end padding: room for the submit button (`browseInputEndPaddingClass` and the
+    /// `pe-32`/`pe-38` classes), else the input's own.
+    fn input_end_padding(&self, theme: &AppTheme) -> gpui_kit::Pixels {
+        let Some(session) = &self.session else { return theme.sp(3.) - px(1.) };
+        let highlighted = session.highlighted.is_some();
+        match &session.flow {
+            Some(ProjectFlow::NewProject { .. }) if highlighted => theme.sp(38.),
+            Some(ProjectFlow::NewProject { .. } | ProjectFlow::CloneRepository { .. }) => theme.sp(32.),
+            _ => match self.resolved_path() {
+                Some((_, _, true)) => theme.sp(38.),
+                Some(_) if session.highlighted.as_ref().is_some_and(|h| h.starts_with("browse:")) => theme.sp(30.),
+                Some(_) => theme.sp(24.),
+                None => theme.sp(3.) - px(1.),
+            },
+        }
+    }
+
+    /// The summaries, status line, empty message and footer label an Add project page shows.
+    fn flow_chrome(&self, theme: &AppTheme) -> FlowChrome {
+        let mut chrome = FlowChrome { footer_action: Some(t!("Select")), ..FlowChrome::default() };
+        let Some(session) = &self.session else { return chrome };
+        let rem = theme.fonts.interface;
+        let row = theme.sp(3.) + px(TextSize::Sm.line_height(rem)) + px(TextSize::Xs.line_height(rem));
+        let status_height = theme.sp(6.) + px(TextSize::Sm.line_height(rem));
+        match &session.flow {
+            Some(ProjectFlow::NewProject { env, .. }) => {
+                chrome.footer_action = Some(match session.highlighted.as_deref() {
+                    None => t!("Create"),
+                    Some(_) => t!("Select"),
+                });
+                let info = session.flow_envs.iter().find(|e| &e.id == env);
+                if let Some(root) = info.and_then(|e| e.new_projects_root.clone()) {
+                    let name = session.search.query.trim();
+                    let machine = (self.new_project_environments().len() > 1).then(|| info.map(|e| e.label.clone())).flatten();
+                    let preview = clone_destination(&root, &new_project_folder_name(name));
+                    let description = match (name.is_empty(), machine) {
+                        (false, None) => t!("Creates {path}", path = preview),
+                        (false, Some(environment)) => t!("Creates {path} on {environment}", path = preview, environment = environment),
+                        (true, None) => t!("Goes in {root}", root = root),
+                        (true, Some(environment)) => t!("Goes in {root} on {environment}", root = root, environment = environment),
+                    };
+                    let title: SharedString = if name.is_empty() { t!("New project") } else { name.to_string().into() };
+                    chrome.header = Some(
+                        div()
+                            .p(theme.sp(2.))
+                            .pb_0()
+                            .child(render_summary_row(IconName::FolderGit2, title, description, theme))
+                            .into_any_element(),
+                    );
+                    chrome.header_height = theme.sp(2.) + row;
+                }
+                return chrome;
+            }
+            Some(ProjectFlow::CloneRepository { .. }) => {
+                chrome.footer_action = Some(t!("Continue"));
+                chrome.empty = Some(t!("Enter a Git clone URL and press Enter to continue."));
+                return chrome;
+            }
+            Some(ProjectFlow::CloneDestination { remote_url, input, .. }) => {
+                chrome.header = Some(
+                    div()
+                        .flex_none()
+                        .p(theme.sp(2.))
+                        .pb_0()
+                        .child(render_label(t!("Repository"), true, theme))
+                        .child(render_summary_row(IconName::Link, input.clone(), remote_url.clone(), theme))
+                        .into_any_element(),
+                );
+                let label = row_height(&PaletteRow::Label { label: SharedString::default(), first: true }, theme);
+                chrome.header_height = theme.sp(2.) + label + row;
+                chrome.empty = Some(t!("Choose a destination path and press Enter to clone."));
+            }
+            _ => {}
+        }
+        let Some(target) = self.browse_target() else { return chrome };
+        let on_row = session.highlighted.as_ref().is_some_and(|h| h.starts_with("browse:"));
+        chrome.footer_action = on_row.then(|| t!("Select"));
+        match self.current_listing(&target) {
+            None if session.listing.is_none() => {
+                chrome.status = Some(t!("Loading folders..."));
+                chrome.header_height += status_height;
+            }
+            _ => {}
+        }
+        if chrome.empty.is_none() && self.resolved_path().is_some_and(|(_, _, creates)| creates) {
+            chrome.empty = Some(t!("Press Enter to create this folder and add it as a project."));
+        }
+        chrome
+    }
+
+    /// The input's submit button (`CommandPaletteSubmitButton`), when the page has one.
+    fn submit_button(&self, theme: &AppTheme, cx: &mut Context<Self>) -> Option<(SharedString, SharedString, bool)> {
+        let session = self.session.as_ref()?;
+        let highlighted = session.highlighted.is_some();
+        let mod_enter: SharedString = if cfg!(target_os = "macos") { "\u{2318} Enter".into() } else { "Ctrl Enter".into() };
+        let _ = (theme, cx);
+        match &session.flow {
+            Some(ProjectFlow::NewProject { .. }) => {
+                let label = if session.busy { t!("Creating") } else { t!("Create") };
+                let enabled = !session.busy && !session.search.query.trim().is_empty();
+                Some((label, if highlighted { mod_enter } else { "Enter".into() }, enabled))
+            }
+            Some(ProjectFlow::CloneRepository { .. }) => {
+                let label = if session.busy { t!("Working") } else { t!("Continue") };
+                Some((label, "Enter".into(), !session.busy && !session.search.query.trim().is_empty()))
+            }
+            _ => {
+                let (_, _, creates) = self.resolved_path()?;
+                let clone = matches!(session.flow, Some(ProjectFlow::CloneDestination { .. }));
+                let on_row = session.highlighted.as_ref().is_some_and(|h| h.starts_with("browse:"));
+                let label = match (clone, creates) {
+                    (true, _) if session.busy => t!("Cloning"),
+                    (true, true) => t!("Create & Clone"),
+                    (true, false) => t!("Clone"),
+                    (false, true) => t!("Create & Add"),
+                    (false, false) => t!("Add"),
+                };
+                Some((label, if on_row { mod_enter } else { "Enter".into() }, !(clone && session.busy)))
+            }
+        }
     }
 }
 
@@ -884,7 +1644,7 @@ fn footer_kbd(theme: &AppTheme, content: impl IntoElement) -> impl IntoElement {
 }
 
 /// `CommandFooter`: arrows to navigate, Enter, Backspace on pages, Esc.
-fn render_footer(in_submenu: bool, theme: &AppTheme) -> impl IntoElement + use<> {
+fn render_footer(in_submenu: bool, action: Option<SharedString>, theme: &AppTheme) -> impl IntoElement + use<> {
     let c = &theme.colors;
     let group = |keys: Vec<gpui_kit::AnyElement>, label: SharedString| {
         div().flex().items_center().gap(theme.sp(1.)).children(keys).child(div().child(label))
@@ -913,7 +1673,7 @@ fn render_footer(in_submenu: bool, theme: &AppTheme) -> impl IntoElement + use<>
                 .gap_x(theme.sp(3.))
                 .gap_y(theme.sp(1.5))
                 .child(group(vec![arrow(IconName::ArrowUp), arrow(IconName::ArrowDown)], t!("Navigate")))
-                .child(group(vec![text_kbd("Enter")], t!("Select")))
+                .when_some(action, |d, action| d.child(group(vec![text_kbd("Enter")], action)))
                 .when(in_submenu, |d| d.child(group(vec![text_kbd("Backspace")], t!("Back"))))
                 .child(group(vec![text_kbd("Esc")], t!("Close"))),
         )
