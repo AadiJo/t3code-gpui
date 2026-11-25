@@ -200,6 +200,8 @@ pub enum ComposerEvent {
         /// Set while a turn runs.
         dispatch: Option<FollowUpBehavior>,
     },
+    /// A `composer.sendAndNewThread` send succeeded on a started thread.
+    SentInBackground,
     /// `/clear` as the whole message.
     ClearSession,
     /// `/side` or `/btw`.
@@ -935,11 +937,32 @@ impl ChatComposer {
     /// `composer.increaseEffort` / `composer.decreaseEffort`: the next effort level in catalog
     /// order, wrapping (`getReasoningTraitStep`). False when the model has under two levels.
     pub fn step_effort(&mut self, direction: EffortStep, cx: &mut Context<Self>) -> bool {
+        // A pending question's answer is in the prompt; its effort stays put.
+        if self.state.pending == ComposerPending::Question {
+            return false;
+        }
         let selection = &self.state.selection;
-        let Some(descriptor) = self.state.catalog.model(&selection.instance_id, &selection.model).and_then(|m| m.effort.as_ref()) else {
+        let Some(descriptor) = self.state.catalog.model(&selection.instance_id, &selection.model).and_then(|m| m.effort.clone()) else {
             return false;
         };
-        let Some(next) = next_effort(&descriptor.options, selection.effort.as_deref(), direction) else { return false };
+        // A typed Ultrathink is the current level; one in the body text keeps the prompt in charge.
+        let prompt = self.editor.read(cx).text().to_owned();
+        let typed = !descriptor.prompt_injected.is_empty() && crate::model_selection::is_ultrathink_prompt(&prompt);
+        let stripped = crate::model_selection::strip_ultrathink_prefix(&prompt);
+        if typed && crate::model_selection::is_ultrathink_prompt(stripped) {
+            return false;
+        }
+        let current = if typed { Some("ultrathink") } else { selection.effort.as_deref() };
+        let Some(next) = next_effort(&descriptor, current, direction) else { return false };
+        if typed {
+            let removed = prompt.len() - stripped.len();
+            let cursor = self.editor.read(cx).cursor().saturating_sub(removed);
+            let stripped = stripped.to_owned();
+            self.editor.update(cx, |editor, cx| {
+                editor.replace_range(0..removed, "", cx);
+                editor.set_cursor(cursor.min(stripped.len()), cx);
+            });
+        }
         self.state.selection.effort = Some(next);
         cx.emit(ComposerEvent::ModelChanged(self.state.selection.clone()));
         if let Some((picker, _)) = &self.picker {
@@ -1147,22 +1170,24 @@ pub enum EffortStep {
 
 /// The level after `current` (or the default) in catalog order, wrapping; `None` with fewer
 /// than two levels.
-fn next_effort(options: &[crate::model_selection::OptionChoice], current: Option<&str>, step: EffortStep) -> Option<SharedString> {
-    if options.len() < 2 {
+/// `getReasoningTraitStep`: the next pickable level in catalog order, wrapping. The walk
+/// covers every level, so a typed Ultrathink keeps its place, then lands on one a picker
+/// offers. `None` with fewer than two pickable levels.
+fn next_effort(descriptor: &crate::model_selection::SelectDescriptor, current: Option<&str>, step: EffortStep) -> Option<SharedString> {
+    if descriptor.selectable().len() < 2 {
         return None;
     }
     let ordered: Vec<_> = match step {
-        EffortStep::Up => options.iter().collect(),
-        EffortStep::Down => options.iter().rev().collect(),
+        EffortStep::Up => descriptor.options.iter().collect(),
+        EffortStep::Down => descriptor.options.iter().rev().collect(),
     };
-    let position = current
-        .and_then(|c| ordered.iter().position(|o| o.id.as_ref() == c))
-        .or_else(|| ordered.iter().position(|o| o.is_default));
-    let next = match position {
-        Some(at) => ordered[(at + 1) % ordered.len()],
-        None => ordered[0],
+    let default = descriptor.options.iter().find(|o| o.is_default).map(|o| o.id.as_ref());
+    let position = [current, default].into_iter().flatten().find_map(|value| ordered.iter().position(|o| o.id.as_ref() == value));
+    let candidates = match position {
+        Some(at) => ordered[at + 1..].iter().chain(ordered[..at].iter()).collect::<Vec<_>>(),
+        None => ordered.iter().collect(),
     };
-    Some(next.id.clone())
+    candidates.into_iter().find(|o| !descriptor.prompt_injected.contains(&o.id)).map(|o| o.id.clone())
 }
 
 fn secondary(modifiers: &Modifiers) -> bool {
@@ -1743,7 +1768,9 @@ impl Render for ChatComposer {
                 el.shadow(vec![BoxShadow { color: hsla(0., 0., 0., 0.05), offset: point(px(0.), px(1.)), blur_radius: px(2.), spread_radius: px(0.), inset: false }])
             })
             .when(c.is_dark(), |el| {
-                el.shadow(vec![BoxShadow { color: c.highlight, offset: point(px(0.), px(1.)), blur_radius: px(0.), spread_radius: px(0.), inset: true }])
+                // `inset-shadow-2xs` sits inside the 1px outline on the web; GPUI measures an inset
+                // shadow from the outer edge, so it is offset by the border as well.
+                el.shadow(vec![BoxShadow { color: c.highlight, offset: point(px(0.), px(2.)), blur_radius: px(0.), spread_radius: px(0.), inset: true }])
             })
             .when(disabled, |el| el.opacity(0.75))
             .drag_over::<ExternalPaths>({

@@ -49,6 +49,7 @@ fn select(descriptor: &Descriptor) -> Option<SelectDescriptor> {
                 is_default: option.is_default == Some(true),
             })
             .collect(),
+        prompt_injected: select.prompt_injected_values.iter().flatten().map(|v| SharedString::from(v.clone())).collect(),
     })
 }
 

@@ -229,7 +229,7 @@ impl ModelPicker {
             return None;
         }
         let model = self.catalog.model(&self.selection.instance_id, &self.selection.model)?;
-        model.effort.as_ref().map(|d| d.options.clone()).filter(|o| !o.is_empty())
+        model.effort.as_ref().map(|d| d.selectable()).filter(|o| !o.is_empty())
     }
 
     fn pick_effort(&mut self, id: SharedString, cx: &mut Context<Self>) {

@@ -372,7 +372,7 @@ pub fn handle_event(event: &ComposerEvent, thread: &Entity<LiveThread>, composer
     let drafts = StateBridge::drafts(cx);
     let draft_key_text = draft_key(&key).0.to_string();
     match event {
-        ComposerEvent::Submit { prompt, attachments, model, dispatch, .. } => {
+        ComposerEvent::Submit { prompt, attachments, model, dispatch, intent } => {
             // Sending resumes quota-spending work (`clearUsageLimitsFor`).
             UsagePanels::clear(&key, cx);
             let mode = match dispatch {
@@ -384,7 +384,8 @@ pub fn handle_event(event: &ComposerEvent, thread: &Entity<LiveThread>, composer
             let draft_mode = drafts.current().drafts_by_thread_key.get(&draft_key_text).and_then(|d| d.runtime_mode);
             let thread_mode = StateBridge::shell(cx).read(cx).row(&key).map(|row| row.source.runtime_mode);
             let set_mode = draft_mode.filter(|mode| Some(*mode) != thread_mode);
-            send_turn(SendInput { key: key.clone(), thread: thread.clone(), prompt, attachments, model, mode, fresh, set_mode }, commands, config, cx);
+            let sent_to = (*intent == crate::composer_logic::ComposerSubmissionIntent::Background).then(|| composer.clone());
+            send_turn(SendInput { key: key.clone(), thread: thread.clone(), prompt, attachments, model, mode, fresh, set_mode, sent_to }, commands, config, cx);
             drafts.update(|d| {
                 if let Some(draft) = d.drafts_by_thread_key.get_mut(&draft_key_text) {
                     draft.runtime_mode = None;
@@ -400,7 +401,7 @@ pub fn handle_event(event: &ComposerEvent, thread: &Entity<LiveThread>, composer
                 // Without fresh contexts `/clear` is an ordinary message, as on the web.
                 let model = composer.upgrade().map(|c| c.read(cx).state().selection.clone());
                 if let Some(model) = model {
-                    let input = SendInput { key, thread: thread.clone(), prompt: "/clear", attachments: &[], model: &model, mode: DeliveryMode::Auto, fresh: false, set_mode: None };
+                    let input = SendInput { key, thread: thread.clone(), prompt: "/clear", attachments: &[], model: &model, mode: DeliveryMode::Auto, fresh: false, set_mode: None, sent_to: None };
                     send_turn(input, commands, config, cx);
                 }
             }
@@ -506,6 +507,9 @@ struct SendInput<'a> {
     mode: DeliveryMode,
     fresh: bool,
     set_mode: Option<WireRuntimeMode>,
+    /// The composer told when the send succeeds (`composer.sendAndNewThread` opens the new
+    /// draft only then).
+    sent_to: Option<WeakEntity<ChatComposer>>,
 }
 
 /// Sends one turn as `useComposerSend` does: the draft's mode first when it changed, then the
@@ -546,7 +550,7 @@ fn send_turn(input: SendInput<'_>, commands: EnvironmentCommands, config: Option
         },
         cx,
     );
-    let (thread, key, fresh) = (input.thread.downgrade(), input.key, input.fresh);
+    let (thread, key, fresh, sent_to) = (input.thread.downgrade(), input.key, input.fresh, input.sent_to);
     cx.spawn(async move |cx| {
         let result = task.await;
         cx.update(|cx| match result {
@@ -554,6 +558,9 @@ fn send_turn(input: SendInput<'_>, commands: EnvironmentCommands, config: Option
                 super::attachments::AttachmentUploads::forget_sent(sent);
                 if fresh {
                     FreshSessionArms::set(&key, false, cx);
+                }
+                if let Some(composer) = sent_to {
+                    _ = composer.update(cx, |_, cx| cx.emit(ComposerEvent::SentInBackground));
                 }
             }
             Some(Err(error)) => {

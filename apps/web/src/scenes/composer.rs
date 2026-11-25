@@ -38,6 +38,7 @@ const CELL_HEIGHT: f32 = 540.;
 
 fn effort(levels: &[(&str, &str)], default: &str) -> SelectDescriptor {
     SelectDescriptor {
+        prompt_injected: Vec::new(),
         label: "Reasoning".into(),
         options: levels
             .iter()
@@ -69,6 +70,7 @@ pub fn fixture_catalog() -> ModelCatalog {
     let gpt_effort = effort(&[("low", "Low"), ("medium", "Medium"), ("high", "High"), ("xhigh", "Extra high")], "medium");
     let claude_effort = effort(&[("low", "Low"), ("medium", "Medium"), ("high", "High"), ("max", "Max")], "high");
     let speed = SelectDescriptor {
+        prompt_injected: Vec::new(),
         label: "Speed".into(),
         options: vec![
             OptionChoice { id: "standard".into(), label: "Standard".into(), is_default: true },
