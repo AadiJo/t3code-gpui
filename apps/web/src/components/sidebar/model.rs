@@ -450,4 +450,14 @@ pub struct SettledShelfRequest {
 pub struct SearchContentMatches {
     pub query: SharedString,
     pub threads: std::sync::Arc<Vec<ThreadKey>>,
+    /// Each matched thread's message excerpt.
+    pub excerpts: std::sync::Arc<std::collections::HashMap<ThreadKey, SearchExcerpt>>,
+}
+
+/// The message a thread matched a search in (`ThreadSearchMatchExcerpt`): who wrote it and the
+/// server's snippet around the match.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SearchExcerpt {
+    pub from_user: bool,
+    pub snippet: SharedString,
 }

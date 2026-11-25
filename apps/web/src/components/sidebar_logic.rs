@@ -686,6 +686,10 @@ pub struct SidebarList {
     pub project_icons: HashMap<ProjectRef, crate::components::project_favicon::ProjectIconSource>,
     /// Thread keys in visual order, for keyboard and shortcut traversal.
     pub thread_order: Vec<ThreadKey>,
+    /// Search results listed only for their messages show the message (`threadSearchMatchByKey`),
+    /// with the query the server matched it for.
+    pub search_excerpts: HashMap<ThreadKey, crate::components::sidebar::model::SearchExcerpt>,
+    pub search_excerpt_query: SharedString,
 }
 
 /// The card's meta line (branch, terminals, PR, issue, diff) has content.
@@ -808,8 +812,12 @@ pub fn build_sidebar_list(snapshot: &SidebarSnapshot, options: &SidebarListOptio
                 }
                 if let Some(thread) = snapshot.threads.iter().find(|t| &t.key == key && !t.archived) {
                     results.push(thread.clone());
+                    if let Some(excerpt) = matches.excerpts.get(key) {
+                        list.search_excerpts.insert(key.clone(), excerpt.clone());
+                    }
                 }
             }
+            list.search_excerpt_query = matches.query.clone();
         }
         if results.is_empty() {
             list.entries.push(SidebarListEntry::SearchEmpty);

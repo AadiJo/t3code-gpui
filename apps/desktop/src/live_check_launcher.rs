@@ -186,3 +186,70 @@ pub(super) fn run_launcher(check: &mut Check) -> anyhow::Result<()> {
     check.check("an unavailable Pull request opens nothing", opened.is_none(), format!("{opened:?}"));
     Ok(())
 }
+
+fn set_sidebar_search(check: &mut Check, text: &str) {
+    let sidebar = check.read(|root, _| root.sidebar().clone());
+    let text = text.to_owned();
+    check.cx.update_window(check.window, |_, window, cx| sidebar.update(cx, |sidebar, cx| sidebar.set_search(&text, window, cx))).ok();
+}
+
+/// The sidebar's search excerpts, by thread.
+fn shown_excerpts(check: &mut Check) -> std::collections::HashMap<ThreadKey, t3code_web::components::sidebar::model::SearchExcerpt> {
+    check.read(|root, cx| root.sidebar().read(cx).list().search_excerpts.clone())
+}
+
+/// `live-check search-excerpts` (after `launcher`): the sidebar search lists the launcher threads
+/// for their messages, each with the excerpt of the match the server returns for it: "review"
+/// finds the user's message, "fixture" the agent's reply.
+pub(super) fn run_search_excerpts(check: &mut Check) -> anyhow::Result<()> {
+    check.cx.update(|cx| {
+        t3code_web::theme_palette::ThemeSettings::apply_env_overrides(cx);
+        t3code_web::hooks::use_theme::ThemeStore::set_appearance_mode(t3code_web::theme_palette::ThemeMode::Dark, cx);
+    });
+    check.pump(|c| all_connected(c, 1), Duration::from_secs(60), "server connected")?;
+    let state: LauncherState = serde_json::from_slice(&std::fs::read(check.out.join(STATE_FILE)).map_err(|_| anyhow::anyhow!("run the launcher phase first"))?)?;
+    let environment_id = check
+        .cx
+        .update(|cx| t3code_web::connection::ConnectionRuntime::state(cx).read(cx).environments.first().map(|e| t3code_contracts::EnvironmentId::new(e.entry.environment_id.as_str())))
+        .ok_or_else(|| anyhow::anyhow!("no environment"))?;
+    let threads = [state.linked_thread.as_str(), state.empty_thread.as_str()].map(|id| thread_key(&environment_id, &ThreadId::new(id)));
+    check.go(&threads[1]);
+    check.frame();
+    for (index, (query, from_user)) in [("review", true), ("fixture", false)].into_iter().enumerate() {
+        set_sidebar_search(check, query);
+        let wanted = threads.clone();
+        check.pump(move |c| { let shown = shown_excerpts(c); wanted.iter().all(|k| shown.contains_key(k)) }, Duration::from_secs(20), "both threads list with an excerpt")?;
+        let link = check.cx.update(|cx| t3code_web::live::rpc::RpcLink::new(&environment_id, cx)).ok_or_else(|| anyhow::anyhow!("no link"))?;
+        let input = t3code_contracts::OrchestrationV2SearchThreadsInput {
+            query: query.to_owned(),
+            titles_only: None,
+            older_settled_before: None,
+            limit: None,
+            project_ids: None,
+            environment_label: None,
+        };
+        let result = check.block(link.call::<t3code_contracts::rpc::methods::OrchestrationSearchThreads>(input))?.map_err(|e| anyhow::anyhow!("{e}"))?;
+        let shown = shown_excerpts(check);
+        for key in &threads {
+            let server = result.matches.iter().filter(|m| m.thread_id == tid(key)).last();
+            let excerpt = shown.get(key);
+            check.check(
+                &format!("\"{query}\": the row's excerpt is the server's {} match", if from_user { "user" } else { "agent" }),
+                server.zip(excerpt).is_some_and(|(server, excerpt)| {
+                    excerpt.snippet.as_ref() == server.snippet
+                        && excerpt.from_user == (server.source == t3code_contracts::OrchestrationThreadSearchSource::User)
+                        && excerpt.from_user == from_user
+                }),
+                format!("server {:?}, shown {:?}", server.map(|m| (&m.source, &m.snippet)), excerpt),
+            );
+        }
+        check.wait(Duration::from_millis(300));
+        check.shot(&format!("search-0{index}-{query}.png"))?;
+    }
+    set_sidebar_search(check, "Launcher");
+    check.wait(Duration::from_millis(400));
+    let shown = shown_excerpts(check);
+    check.check("a title match shows no excerpt", !shown.contains_key(&threads[0]), format!("{shown:?}"));
+    set_sidebar_search(check, "");
+    Ok(())
+}

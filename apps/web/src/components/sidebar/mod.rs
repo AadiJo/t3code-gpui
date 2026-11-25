@@ -533,7 +533,11 @@ impl Sidebar {
             .entries
             .iter()
             .enumerate()
-            .map(|(ix, entry)| entry_height(entry, rem_scale) + if ix > 0 { f32::from(LIST_GAP) } else { 0. })
+            .map(|(ix, entry)| {
+                // A result with its message excerpt is `py-1` around a text-sm and a text-xs line.
+                let excerpt = matches!(entry, SidebarListEntry::Thread { thread, .. } if self.list.search_excerpts.contains_key(&thread.key));
+                entry_height(entry, rem_scale) + if excerpt { 8. * rem_scale } else { 0. } + if ix > 0 { f32::from(LIST_GAP) } else { 0. }
+            })
             .collect();
         self.tops = self
             .heights

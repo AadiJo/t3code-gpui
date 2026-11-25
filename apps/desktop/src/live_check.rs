@@ -635,6 +635,7 @@ fn main() -> anyhow::Result<()> {
         "update-banner" => live_check_update_pill::run_update_banner(&mut check),
         "pr-routing" => live_check_pr_routing::run_pr_routing(&mut check),
         "launcher" => live_check_launcher::run_launcher(&mut check),
+        "search-excerpts" => live_check_launcher::run_search_excerpts(&mut check),
         other => Err(anyhow::anyhow!("unknown phase {other}")),
     };
     check.finish(&phase, result)

@@ -883,13 +883,24 @@ impl AppData for LiveData {
                     })
                     .collect();
                 let ranked = t3code_client_runtime::state::thread_search::rank_message_matches(
-                    found.iter().map(|(key, m)| (key.clone(), m)),
-                    |key| subjects.get(key),
+                    found.iter().enumerate().map(|(index, (_, m))| (index, m)),
+                    |index| subjects.get(&found[*index].0),
                     t3code_client_runtime::state::models::now_ms(),
                 );
-                let mut seen = std::collections::HashSet::new();
-                let keys: Vec<ThreadKey> = ranked.into_iter().filter(|key| seen.insert(key.clone())).collect();
-                let matches = crate::components::sidebar::model::SearchContentMatches { query: query.clone(), threads: Arc::new(keys) };
+                // `new Map(ranked)`: a thread keeps its first place and its last match.
+                let mut keys: Vec<ThreadKey> = Vec::new();
+                let mut excerpts = HashMap::new();
+                for index in ranked {
+                    let (key, found) = &found[index];
+                    let excerpt = crate::components::sidebar::model::SearchExcerpt {
+                        from_user: found.source == t3code_contracts::OrchestrationThreadSearchSource::User,
+                        snippet: found.snippet.clone().into(),
+                    };
+                    if excerpts.insert(key.clone(), excerpt).is_none() {
+                        keys.push(key.clone());
+                    }
+                }
+                let matches = crate::components::sidebar::model::SearchContentMatches { query: query.clone(), threads: Arc::new(keys), excerpts: Arc::new(excerpts) };
                 shell.update(cx, |shell, cx| shell.set_search_matches(Some(matches), cx))
             });
         })
