@@ -340,6 +340,12 @@ impl TaffyLayoutEngine {
             .get(&id)
             .map(|origin| origin.map(|c| Pixels(c / scale_factor)))
     }
+
+    /// The outer size of a node as laid out, before its edges snapped to device pixels.
+    pub fn unsnapped_size(&self, id: LayoutId, scale_factor: f32) -> Size<Pixels> {
+        let size = self.taffy.layout(id.into()).expect(EXPECT_MESSAGE).size;
+        Size::new(Pixels(size.width / scale_factor), Pixels(size.height / scale_factor))
+    }
 }
 
 /// A unique identifier for a layout node, generated when requesting a layout from Taffy

@@ -1276,9 +1276,9 @@ pub struct Window {
     layout_engine: Option<TaffyLayoutEngine>,
     /// Elements drawn through their exit transitions (see [`crate::exit`]).
     exit_ghosts: Vec<ExitGhost>,
-    /// The bounds [`Self::layout_bounds`] last returned and that box's origin before
-    /// snapping, for [`Self::unsnapped_origin`].
-    last_layout_origin: Option<(Bounds<Pixels>, Point<Pixels>)>,
+    /// The bounds [`Self::layout_bounds`] last returned and that box before snapping, for
+    /// [`Self::unsnapped_origin`] and [`Self::unsnapped_bounds`].
+    last_layout_origin: Option<(Bounds<Pixels>, Bounds<Pixels>)>,
     pub(crate) root: Option<AnyView>,
     pub(crate) element_id_stack: ElementIdStack,
     pub(crate) text_style_stack: Vec<TextStyleRefinement>,
@@ -5927,12 +5927,13 @@ impl Window {
             .map(Into::into);
         let snapped_offset = self.pixel_snap_point(self.element_offset());
         bounds.origin += snapped_offset;
-        let unsnapped = self
-            .layout_engine
-            .as_ref()
-            .unwrap()
-            .unsnapped_origin(layout_id, scale_factor)
-            .map_or(bounds.origin, |origin| origin + snapped_offset);
+        let engine = self.layout_engine.as_ref().unwrap();
+        let unsnapped = Bounds::new(
+            engine
+                .unsnapped_origin(layout_id, scale_factor)
+                .map_or(bounds.origin, |origin| origin + snapped_offset),
+            engine.unsnapped_size(layout_id, scale_factor),
+        );
         self.last_layout_origin = Some((bounds, unsnapped));
         bounds
     }
@@ -5942,9 +5943,16 @@ impl Window {
     /// at the start of an element's prepaint; otherwise `bounds.origin`. Text paints its
     /// lines from here, so each line's top rounds once, as in Blink.
     pub fn unsnapped_origin(&self, bounds: Bounds<Pixels>) -> Point<Pixels> {
+        self.unsnapped_bounds(bounds).origin
+    }
+
+    /// The element with `bounds` before layout snapped its edges to device pixels, under the
+    /// same condition as [`Self::unsnapped_origin`]; otherwise `bounds`. A list lays its
+    /// items out at this width, as Blink lays out at fractional widths and snaps on paint.
+    pub fn unsnapped_bounds(&self, bounds: Bounds<Pixels>) -> Bounds<Pixels> {
         match self.last_layout_origin {
             Some((last, unsnapped)) if last == bounds => unsnapped,
-            _ => bounds.origin,
+            _ => bounds,
         }
     }
 
