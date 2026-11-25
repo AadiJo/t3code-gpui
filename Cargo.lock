@@ -7824,6 +7824,7 @@ dependencies = [
  "serde_json",
  "t3code-contracts",
  "unicode-properties",
+ "url",
 ]
 
 [[package]]

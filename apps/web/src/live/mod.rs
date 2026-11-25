@@ -498,12 +498,12 @@ impl AppData for LiveData {
                     .and_then(|_| self.draft_environment(view, cx))
                     .and_then(|id| self.environment(&id, cx));
                 let catalog = environment.as_ref().map(|e| self.catalog(e.read(cx), cx)).unwrap_or_default();
-                // A new thread starts on the last pick (`stickyModelSelectionByProvider`).
+                // A new thread starts on its own pick (a prompt link's model), else the last pick
+                // (`stickyModelSelectionByProvider`).
                 let drafts = StateBridge::drafts(cx).current();
-                let selection = drafts
-                    .sticky_active_provider
-                    .as_ref()
-                    .and_then(|provider| drafts.sticky_model_selection_by_provider.get(provider))
+                let own = drafts.drafts_by_thread_key.get(view.key.as_ref()).and_then(|d| d.active_provider.as_ref().and_then(|p| d.model_selection_by_provider.get(p)));
+                let selection = own
+                    .or_else(|| drafts.sticky_active_provider.as_ref().and_then(|provider| drafts.sticky_model_selection_by_provider.get(provider)))
                     .map(crate::provider_models_live::from_wire)
                     .filter(|s| catalog.instances.iter().any(|i| i.instance_id == s.instance_id))
                     .unwrap_or_else(|| crate::state::composer::default_selection(&catalog));
@@ -607,7 +607,12 @@ impl AppData for LiveData {
                         let catalog = config.as_deref().map(model_catalog).unwrap_or_default();
                         let wire = to_wire(selection, &catalog, config.as_deref());
                         let instance = wire.instance_id.clone();
+                        let key = format!("draft:{}", id.0);
                         StateBridge::drafts(cx).update(|d| {
+                            if let Some(own) = d.drafts_by_thread_key.get_mut(&key) {
+                                own.model_selection_by_provider.insert(instance.clone(), wire.clone());
+                                own.active_provider = Some(instance.clone());
+                            }
                             d.sticky_model_selection_by_provider.insert(instance.clone(), wire);
                             d.sticky_active_provider = Some(instance);
                         });

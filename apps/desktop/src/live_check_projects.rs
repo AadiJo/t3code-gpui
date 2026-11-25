@@ -81,7 +81,8 @@ pub(super) fn run_add_project(check: &mut Check) -> anyhow::Result<()> {
 
     open_sources(check);
     let rows = titles(check);
-    check.check("Sources lists New project, Local folder and Git URL", rows == ["New project", "Local folder", "Git URL"], format!("{rows:?}"));
+    // The default host follows, ready or "Setup Required" (`sortAddProjectProviderSources`).
+    check.check("Sources lists New project, Local folder and Git URL", rows.starts_with(&["New project".to_owned(), "Local folder".to_owned(), "Git URL".to_owned()]) && rows.get(3).is_none_or(|r| r == "GitHub repository"), format!("{rows:?}"));
     check.shot("add-project-00-sources.png")?;
 
     // Local folder: the listing comes from the server.

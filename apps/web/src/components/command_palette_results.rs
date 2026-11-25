@@ -129,6 +129,22 @@ fn trailing_element(trailing: &PaletteTrailing, theme: &AppTheme) -> AnyElement 
         PaletteTrailing::Chevron => {
             div().flex_none().ml_auto().mr(px(-2.)).child(Icon::new(IconName::ChevronRight).size(IconSize::Md).color(muted)).into_any_element()
         }
+        // `Button variant="warning-outline" size="micro"` with the hint as its tooltip.
+        PaletteTrailing::SetupRequired(hint) => {
+            let hint = hint.clone().unwrap_or_else(|| t!("Open Settings -> Source control & issues to configure this provider."));
+            div()
+                .id("command-palette-setup-required")
+                .flex_none()
+                .ml_auto()
+                .tooltip(crate::components::ui::tooltip::tooltip(hint))
+                .child(
+                    crate::components::ui::button::Button::new("command-palette-setup-required-button")
+                        .size(crate::components::ui::button::ButtonSize::Micro)
+                        .variant(crate::components::ui::button::ButtonVariant::WarningOutline)
+                        .label(t!("Setup Required")),
+                )
+                .into_any_element()
+        }
         PaletteTrailing::Checkbox(checked) => div()
             .flex_none()
             .ml_auto()
@@ -236,7 +252,7 @@ pub fn render_item(
                     Some(project) => crate::components::project_favicon::ProjectFavicon::new(project.title.clone())
                         .size(theme.rem(1.))
                         .into_any_element(),
-                    None => Icon::new(item.icon).size(IconSize::Md).color(c.icon_muted).into_any_element(),
+                    None => Icon::new(item.brand.clone().unwrap_or_else(|| item.icon.into())).size(IconSize::Md).color(c.icon_muted).into_any_element(),
                 }),
         )
         .child(content)
@@ -308,7 +324,8 @@ fn spaced(label: &str) -> SharedString {
 
 /// A summary above the list (`NewProjectSummary`, `RemoteRepositorySummary`): an icon, a title
 /// and a `text-muted-foreground/85` second line in a `min-h-8 px-2 py-1.5` row.
-pub fn render_summary_row(icon: IconName, title: SharedString, description: SharedString, theme: &AppTheme) -> AnyElement {
+pub fn render_summary_row(icon: impl Into<crate::components::icons::IconSource>, title: SharedString, description: SharedString, theme: &AppTheme) -> AnyElement {
+    let icon = icon.into();
     let c = &theme.colors;
     let rem = theme.fonts.interface;
     div()

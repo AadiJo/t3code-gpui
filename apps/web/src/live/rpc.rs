@@ -102,6 +102,26 @@ impl RpcLink {
         })
     }
 
+    /// One unary RPC whose typed failure `describe` words (an error class's own `message`); a
+    /// failure it returns `None` for reads as [`error_message`] does.
+    pub fn call_with<M: RpcMethod + 'static>(
+        &self,
+        payload: M::Payload,
+        describe: impl FnOnce(&M::Error) -> Option<String> + Send + 'static,
+    ) -> BoxFuture<'static, Result<M::Success, SharedString>>
+    where
+        M::Error: std::fmt::Debug,
+    {
+        let this = self.clone();
+        self.run(async move {
+            let session = this.session().await?;
+            session.client.call::<M>(payload).await.map_err(|error| match &error {
+                RpcError::Failure(failure) => describe(failure).map(SharedString::from).unwrap_or_else(|| error_message(&error)),
+                _ => error_message(&error),
+            })
+        })
+    }
+
     /// One streaming RPC, flattened to its values. The forwarder reads (and so acks) at most
     /// [`STREAM_BUFFER`] values ahead of the consumer.
     pub fn stream<M: RpcStream + 'static>(&self, payload: M::Payload) -> BoxStream<'static, Result<M::Success, SharedString>>

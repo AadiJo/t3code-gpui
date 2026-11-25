@@ -294,9 +294,9 @@ pub fn snooze_presets_row<V: 'static>(
                     }
                 });
                 let stepper = div().w(theme.sp(32.)).flex_none().child(
-                    NumberField::new(SharedString::from(format!("snooze-amount-{ix}")), &field, amount, 1, max_amount)
+                    NumberField::new(SharedString::from(format!("snooze-amount-{ix}")), &field, amount as f64, 1., max_amount as f64)
                         .disabled(read_only)
-                        .on_step(move |n, _, cx| commit(n, cx)),
+                        .on_step(move |n, _, cx| commit(n.round() as u64, cx)),
                 );
                 let units = vec![
                     if amount == 1 { t!("minute") } else { t!("minutes") },

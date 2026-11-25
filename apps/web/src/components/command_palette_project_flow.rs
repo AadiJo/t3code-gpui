@@ -24,6 +24,48 @@ pub struct FlowEnvironment {
     pub new_projects_root: Option<SharedString>,
     /// Clones go to `<base>/<host>/<owner>/<repo>` (`ghqCloneLayout`).
     pub ghq_clone_layout: bool,
+    /// The hosts its Sources page offers, in order (`sortAddProjectProviderSources`).
+    pub remote_sources: Vec<RemoteSource>,
+    /// The hosts a new project can be published to (`getNewProjectPublishTargets`).
+    pub publish_targets: Vec<PublishTarget>,
+}
+
+/// A source-control host the Sources page offers (an `AddProjectRemoteSource` other than `url`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RemoteSource {
+    pub kind: SharedString,
+    /// `pickerLabel`.
+    pub label: SharedString,
+    /// `repositoryPathHint`.
+    pub path_hint: SharedString,
+    pub ready: bool,
+    /// Why it is not ready, for the "Setup Required" tooltip.
+    pub hint: Option<SharedString>,
+}
+
+/// A host a new project's private repository can go to (`NewProjectPublishTarget`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PublishTarget {
+    pub kind: SharedString,
+    pub label: SharedString,
+    /// The signed-in account the repository goes under, when the host reports one.
+    pub owner: Option<SharedString>,
+}
+
+/// A repository a host looked up (`SourceControlRepositoryInfo`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RepositoryInfo {
+    pub name_with_owner: SharedString,
+    pub url: SharedString,
+    /// The URL a clone uses (`getDefaultCloneUrl`).
+    pub clone_url: SharedString,
+}
+
+/// What a clone's repository step reads: a URL, or `owner/name` on a host.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum CloneSource {
+    Url,
+    Host(RemoteSource),
 }
 
 /// One folder of a listing.
@@ -58,12 +100,112 @@ pub trait ProjectFlowBackend {
     /// `handleAddProjectForEnvironment`: opens the project at `path` if one exists there (and
     /// unarchives it), else `project.create` with the folder created when missing.
     fn add_project(&self, id: &EnvironmentId, path: String, cx: &mut App) -> Task<Option<FlowOpened>>;
-    /// `useNewProject`: `projects.createNew`, its toasts, and the project once the shell lists it.
-    fn create_new_project(&self, id: &EnvironmentId, name: String, cx: &mut App) -> Task<Option<ProjectRef>>;
+    /// `useNewProject`: `projects.createNew`, its toasts, publishing to `publish` when given,
+    /// and the project once the shell lists it.
+    fn create_new_project(&self, id: &EnvironmentId, name: String, publish: Option<PublishTarget>, cx: &mut App) -> Task<Option<ProjectRef>>;
     /// `projectClone.start` into `destination`; progress shows in the clone toasts. Resolves
     /// once the server accepted the clone, with the project and a task that resolves once the
     /// shell lists it (up to 3 s), so the palette can close first.
     fn start_clone(&self, id: &EnvironmentId, remote_url: String, destination: String, cx: &mut App) -> Task<Option<(ProjectRef, Task<()>)>>;
+    /// Reads the environment's source-control discovery, so [`Self::environment`] reports its
+    /// hosts; resolves once it has (`sourceControlEnvironment.discovery`).
+    fn discover(&self, _id: &EnvironmentId, _cx: &mut App) -> Task<()> {
+        Task::ready(())
+    }
+    /// `sourceControl.lookupRepository` of `owner/name` on a host.
+    fn lookup_repository(&self, _id: &EnvironmentId, _source: &RemoteSource, _repository: String, _cx: &mut App) -> Task<Result<RepositoryInfo, SharedString>> {
+        Task::ready(Err(t!("An error occurred.")))
+    }
+    /// Publishes a new project's checkout as a private repository on `target`, with its toasts
+    /// (`publishNewRepository`).
+    fn publish_new_project(&self, _id: &EnvironmentId, _workspace_root: String, _target: PublishTarget, _cx: &mut App) {}
+}
+
+/// `isSourceControlProviderOffered`: only the default host (the first) until the user turns
+/// others on.
+fn offered(offered: Option<&std::collections::BTreeMap<String, bool>>, kind: &str) -> bool {
+    offered.and_then(|o| o.get(kind).copied()).unwrap_or(kind == crate::source_control_presentation::SOURCE_CONTROL_DEFINITIONS[0].kind)
+}
+
+/// `buildAddProjectRemoteSourceReadiness` for one host.
+fn readiness(kind: &str, discovery: Option<&t3code_contracts::SourceControlDiscoveryResult>) -> (bool, Option<SharedString>) {
+    use t3code_contracts::{SourceControlDiscoveryStatus, SourceControlProviderAuthDetail, SourceControlProviderAuthStatus};
+    let Some(item) = discovery.and_then(|d| d.source_control_providers.iter().find(|p| p.kind.as_str() == kind)) else {
+        return (false, Some(t!("Provider status unavailable. Open Source Control settings and rescan.")));
+    };
+    if item.status != SourceControlDiscoveryStatus::Available {
+        return (false, Some(item.install_hint.clone().into()));
+    }
+    if item.auth.status == SourceControlProviderAuthStatus::Unauthenticated {
+        let detail = match &item.auth.detail {
+            SourceControlProviderAuthDetail::SomeType(d) => Some(SharedString::from(d.value.clone())),
+            _ => None,
+        };
+        return (false, Some(detail.unwrap_or_else(|| t!("{provider} is not authenticated. Open Source Control settings for setup guidance.", provider = item.label.as_str()))));
+    }
+    (true, None)
+}
+
+/// The Sources page's hosts: offered ones, ready first, then by label (`sortAddProjectProviderSources`).
+pub fn remote_sources(discovery: Option<&t3code_contracts::SourceControlDiscoveryResult>, offered_hosts: Option<&std::collections::BTreeMap<String, bool>>) -> Vec<RemoteSource> {
+    let mut sources: Vec<RemoteSource> = crate::source_control_presentation::SOURCE_CONTROL_DEFINITIONS
+        .iter()
+        .filter(|d| offered(offered_hosts, d.kind))
+        .map(|d| {
+            let (ready, hint) = readiness(d.kind, discovery);
+            RemoteSource { kind: d.kind.into(), label: d.picker_label.into(), path_hint: d.path_hint.into(), ready, hint }
+        })
+        .collect();
+    sources.sort_by(|a, b| b.ready.cmp(&a.ready).then_with(|| a.label.cmp(&b.label)));
+    sources
+}
+
+/// `getNewProjectPublishTargets`: offered, ready hosts that can place a new repository
+/// (`newRepositoryOwner`), under the signed-in account.
+pub fn publish_targets(discovery: Option<&t3code_contracts::SourceControlDiscoveryResult>, offered_hosts: Option<&std::collections::BTreeMap<String, bool>>) -> Vec<PublishTarget> {
+    use t3code_contracts::SourceControlProviderAuthAccount;
+    crate::source_control_presentation::SOURCE_CONTROL_DEFINITIONS
+        .iter()
+        .filter(|d| offered(offered_hosts, d.kind) && readiness(d.kind, discovery).0)
+        .filter_map(|d| {
+            let account = discovery.and_then(|disc| disc.source_control_providers.iter().find(|p| p.kind.as_str() == d.kind)).and_then(|p| match &p.auth.account {
+                SourceControlProviderAuthAccount::SomeType(a) => Some(SharedString::from(a.value.clone())),
+                _ => None,
+            });
+            let owner = match d.kind {
+                "github" | "cursor-origin" | "gitlab" => Some(account),
+                "forgejo" | "gitcafe" => account.map(Some),
+                _ => None,
+            }?;
+            Some(PublishTarget { kind: d.kind.into(), label: d.label.into(), owner })
+        })
+        .collect()
+}
+
+/// `getDefaultCloneUrl`: the web URL on hosts that clone over HTTPS, the SSH URL elsewhere.
+pub fn default_clone_url(kind: &str, url: &str, ssh_url: &str) -> String {
+    if matches!(kind, "github" | "cursor-origin" | "forgejo") { url.to_owned() } else { ssh_url.to_owned() }
+}
+
+/// `githubIncompleteOwnerRepositoryMessage`: `owner/` alone on GitHub.
+pub fn incomplete_owner_message(kind: &str, input: &str) -> Option<SharedString> {
+    let trimmed = input.trim();
+    let owner = trimmed.trim_end_matches('/');
+    let incomplete = kind == "github"
+        && trimmed.ends_with('/')
+        && (1..=39).contains(&owner.len())
+        && owner.bytes().next().is_some_and(|b| b.is_ascii_alphanumeric())
+        && owner.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-');
+    incomplete.then(|| t!("Enter the full owner/repository name."))
+}
+
+/// `getNewProjectRepository`: `owner/folder`, or the folder alone without an owner.
+pub fn new_project_repository(target: &PublishTarget, workspace_root: &str) -> String {
+    let folder = workspace_root.split(['/', '\\']).filter(|s| !s.is_empty()).next_back().unwrap_or_default();
+    match &target.owner {
+        Some(owner) => format!("{owner}/{folder}"),
+        None => folder.to_owned(),
+    }
 }
 
 /// The flow a pushed Add project page runs.
@@ -71,10 +213,10 @@ pub trait ProjectFlowBackend {
 pub enum ProjectFlow {
     /// Local folder: the query is a path on the environment.
     Browse { env: EnvironmentId },
-    /// Git URL, first step: the query is the clone URL.
-    CloneRepository { env: EnvironmentId },
-    /// Git URL, second step: the query is the destination path.
-    CloneDestination { env: EnvironmentId, remote_url: SharedString, input: SharedString, pinned: SharedString },
+    /// Git URL or a host's repository, first step: the query is the clone URL or `owner/name`.
+    CloneRepository { env: EnvironmentId, source: CloneSource },
+    /// Second step: the query is the destination path. `repository` is what a host looked up.
+    CloneDestination { env: EnvironmentId, remote_url: SharedString, input: SharedString, pinned: SharedString, repository: Option<(RemoteSource, RepositoryInfo)> },
     /// New project: the query is the name. `sources` is the environment whose sources page
     /// opened it, for "Add existing project".
     NewProject { env: EnvironmentId, sources: Option<EnvironmentId> },
@@ -83,7 +225,7 @@ pub enum ProjectFlow {
 impl ProjectFlow {
     pub fn environment(&self) -> &EnvironmentId {
         match self {
-            Self::Browse { env } | Self::CloneRepository { env } | Self::CloneDestination { env, .. } | Self::NewProject { env, .. } => env,
+            Self::Browse { env } | Self::CloneRepository { env, .. } | Self::CloneDestination { env, .. } | Self::NewProject { env, .. } => env,
         }
     }
 
@@ -104,7 +246,10 @@ impl ProjectFlow {
     /// `remoteProjectInputPlaceholder`, then the new-project and browse placeholders.
     pub fn placeholder(&self) -> SharedString {
         match self {
-            Self::CloneRepository { .. } => t!("Enter Git clone URL"),
+            Self::CloneRepository { source: CloneSource::Url, .. } => t!("Enter Git clone URL"),
+            Self::CloneRepository { source: CloneSource::Host(host), .. } => {
+                t!("Enter {source} repository ({hint})", source = host.label.clone(), hint = host.path_hint.clone())
+            }
             Self::NewProject { .. } => t!("Project name"),
             Self::Browse { .. } | Self::CloneDestination { .. } => t!("Enter path (e.g. ~/projects/my-app)"),
         }
@@ -428,7 +573,7 @@ impl ProjectFlowBackend for FixtureFlows {
         Task::ready(Some(FlowOpened::Created(ProjectRef { environment_id: id.clone(), project_id: super::sidebar::model::ProjectId(title_from_path(&path).into()) })))
     }
 
-    fn create_new_project(&self, id: &EnvironmentId, name: String, _cx: &mut App) -> Task<Option<ProjectRef>> {
+    fn create_new_project(&self, id: &EnvironmentId, name: String, _publish: Option<PublishTarget>, _cx: &mut App) -> Task<Option<ProjectRef>> {
         self.log.borrow_mut().push(format!("projects.createNew {name}"));
         Task::ready(Some(ProjectRef { environment_id: id.clone(), project_id: super::sidebar::model::ProjectId(new_project_folder_name(&name).into()) }))
     }

@@ -7,15 +7,19 @@ use std::rc::Rc;
 
 use gpui_kit::SharedString;
 
-use super::command_palette_logic::{AddProjectStep, PaletteEvent, PaletteGroup, PaletteItem, PaletteRun, PaletteTitle, PaletteView};
+use super::command_palette_logic::{AddProjectStep, PaletteEvent, PaletteGroup, PaletteItem, PaletteRun, PaletteTitle, PaletteTrailing, PaletteView};
+use super::command_palette_project_flow::RemoteSource;
 use super::command_palette_lookups::PaletteEnvironment;
 use super::icons::IconName;
 use super::sidebar::model::EnvironmentId;
 use crate::i18n::t;
 
-/// An environment's Sources page (`buildAddProjectSourceGroups`). `can_create_new` says whether
-/// its server reports a `newProjectsRoot`.
-pub fn sources_view(environment: &EnvironmentId, can_create_new: bool) -> PaletteView {
+/// What an environment's Sources page needs: whether its server reports a `newProjectsRoot`,
+/// and the hosts it offers.
+pub type SourcesInfo = (bool, Vec<RemoteSource>);
+
+/// An environment's Sources page (`buildAddProjectSourceGroups`).
+pub fn sources_view(environment: &EnvironmentId, (can_create_new, hosts): SourcesInfo) -> PaletteView {
     let source = |value: String, title, description, icon, step, terms: &[&str]| {
         let mut item = PaletteItem::action(value, PaletteTitle::Text(title), icon, PaletteRun::Event(PaletteEvent::AddProject(step)), &[]);
         item.set_terms(terms.iter().map(|t| SharedString::from(*t)));
@@ -49,6 +53,38 @@ pub fn sources_view(environment: &EnvironmentId, can_create_new: bool) -> Palett
         AddProjectStep::CloneRepository(environment.clone()),
         &["clone", "remote", "repository", "repo", "git", "Git URL"],
     ));
+    for host in hosts {
+        let label = host.label.clone();
+        let title = t!("{source} repository", source = label.clone());
+        let description = t!("Clone {source} {hint}", source = label.clone(), hint = host.path_hint.clone());
+        let brand = crate::source_control_presentation::source_control_icon(crate::source_control_presentation::source_control_definition(Some(&host.kind)));
+        let terms = ["clone", "remote", "repository", "repo", "git", label.as_ref()];
+        let mut item = if host.ready {
+            let mut item = PaletteItem::action(
+                format!("action:add-project:{id}:{}", host.kind),
+                PaletteTitle::Text(title),
+                IconName::Link,
+                PaletteRun::Event(PaletteEvent::AddProject(AddProjectStep::CloneFromHost(environment.clone(), host.clone()))),
+                &[],
+            );
+            item.set_terms(terms.iter().map(|t| SharedString::from(t.to_string())));
+            item.description(description).keep_open()
+        } else {
+            let mut item = PaletteItem::action(
+                format!("action:add-project:{id}:{}:not-ready", host.kind),
+                PaletteTitle::Text(title),
+                IconName::Link,
+                PaletteRun::Local(Rc::new(|_, _| {})),
+                &[],
+            );
+            item.set_terms(terms.iter().chain(&["setup required"]).map(|t| SharedString::from(t.to_string())));
+            item.disabled = true;
+            item.trailing = Some(PaletteTrailing::SetupRequired(host.hint.clone()));
+            item.description(description)
+        };
+        item.brand = Some(brand);
+        items.push(Rc::new(item));
+    }
     PaletteView {
         addon_icon: IconName::FolderPlus,
         groups: vec![PaletteGroup { value: format!("sources:{id}").into(), label: t!("Sources"), items }],
@@ -57,7 +93,7 @@ pub fn sources_view(environment: &EnvironmentId, can_create_new: bool) -> Palett
 }
 
 /// The Add project row: its page depends on how many environments can take a project.
-pub fn add_project_item(environments: &[PaletteEnvironment], can_create_new: &dyn Fn(&EnvironmentId) -> bool) -> PaletteItem {
+pub fn add_project_item(environments: &[PaletteEnvironment], sources: &dyn Fn(&EnvironmentId) -> SourcesInfo) -> PaletteItem {
     let connected: Vec<&PaletteEnvironment> = environments.iter().filter(|e| e.connected).collect();
     let view = match connected.as_slice() {
         [] => {
@@ -76,7 +112,7 @@ pub fn add_project_item(environments: &[PaletteEnvironment], can_create_new: &dy
                 initial_query: None,
             }
         }
-        [only] => sources_view(&only.id, can_create_new(&only.id)),
+        [only] => sources_view(&only.id, sources(&only.id)),
         many => PaletteView {
             addon_icon: IconName::FolderPlus,
             groups: vec![PaletteGroup {
@@ -89,7 +125,7 @@ pub fn add_project_item(environments: &[PaletteEnvironment], can_create_new: &dy
                             format!("sources:{}", environment.id.0),
                             environment.label.clone(),
                             IconName::Server,
-                            sources_view(&environment.id, can_create_new(&environment.id)),
+                            sources_view(&environment.id, sources(&environment.id)),
                             &[],
                         );
                         item.set_terms([environment.label.clone()]);

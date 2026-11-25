@@ -72,6 +72,11 @@ pub enum TitlebarControls {
     Issues,
     /// The pull requests page: the right panel toggle alone, at the window's controls inset.
     PullRequests,
+    /// A page in the chat layout with no panel controls (`/new`).
+    Page,
+    /// A full-window page outside the chat layout (`/welcome`): the main view alone, under the
+    /// drag strip and caption buttons.
+    Bare,
 }
 
 impl TitlebarControls {
@@ -80,6 +85,8 @@ impl TitlebarControls {
         match route {
             crate::router::Route::Issues { .. } => Self::Issues,
             crate::router::Route::PullRequests { .. } => Self::PullRequests,
+            crate::router::Route::Welcome => Self::Bare,
+            crate::router::Route::New { .. } => Self::Page,
             _ => Self::Thread,
         }
     }
@@ -603,6 +610,8 @@ impl Render for AppSidebarLayout {
         let sidebar_width = self.sidebar_width;
         let caption_width = self.caption_width(window);
 
+        let bare = (self.titlebar_controls == TitlebarControls::Bare).then(|| self.main.clone()).flatten();
+        let chat_layout = bare.is_none();
         // Window drag strip, drawn first so everything else sits above it.
         let drag_strip = div()
             .id("titlebar-drag")
@@ -944,8 +953,11 @@ impl Render for AppSidebarLayout {
             // Under the panes: panes without handlers let presses through,
             // and their controls occlude it.
             .child(drag_strip)
-            .child(div().absolute().top_0().left_0().size_full().flex().child(sidebar).child(main))
-            .when(sheet_mode && self.sheet_open, |d| {
+            .map(|d| match bare {
+                Some(page) => d.child(div().absolute().top_0().left_0().size_full().child(page)),
+                None => d.child(div().absolute().top_0().left_0().size_full().flex().child(sidebar).child(main)),
+            })
+            .when(chat_layout && sheet_mode && self.sheet_open, |d| {
                 d.child(
                     div()
                         .id("sidebar-sheet-backdrop")
@@ -976,8 +988,8 @@ impl Render for AppSidebarLayout {
                         .child(self.sidebar.clone()),
                 )
             })
-            .child(sidebar_toggle)
-            .child(right_controls)
+            .when(chat_layout, |d| d.child(sidebar_toggle))
+            .when(self.titlebar_controls != TitlebarControls::Page && chat_layout, |d| d.child(right_controls))
             .children(self.render_caption_buttons(window, &colors))
     }
 }

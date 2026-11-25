@@ -367,3 +367,17 @@ pub fn route_from_deep_link(url: &str) -> Option<Route> {
     let rest = url.strip_prefix("t3code://")?;
     Some(Route::parse(&format!("/{rest}")))
 }
+
+/// The route a link the OS hands the app opens (`openAppLink` in `DesktopClerk.ts`): a prompt
+/// link (`<scheme>://new?prompt=…`, `<scheme>://threads/<env>/<thread>`, or the hosted web app's
+/// `https://app.t3.codes/new?…`), else any other path of the app's own `scheme`, read with the
+/// web's `t3code://` deep-link rules.
+pub fn route_from_app_link(url: &str, scheme: &str) -> Option<Route> {
+    use t3code_shared::prompt_links::{DEFAULT_HOSTED_APP_URL, prompt_link_app_path};
+    let url = url.trim();
+    if let Some(path) = prompt_link_app_path(url, DEFAULT_HOSTED_APP_URL) {
+        return Some(Route::parse(&path));
+    }
+    let rest = url.strip_prefix(scheme)?.strip_prefix("://")?;
+    route_from_deep_link(&format!("t3code://{rest}"))
+}
