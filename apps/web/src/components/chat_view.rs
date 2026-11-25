@@ -30,7 +30,7 @@ use crate::components::sidebar::context_menu::{self, ContextMenu, MenuCommand, M
 use crate::components::sidebar::model::{SettledOverride, SidebarThread, ThreadKey, TimestampMs};
 use crate::components::sidebar::style::ShellColors;
 use crate::ActiveAppTheme as _;
-use crate::shortcuts::commands::FindInThread;
+use crate::shortcuts::commands::{FindInThread, NewChatWithoutProject};
 use crate::thread_find_store::ThreadFindStore;
 
 use super::chat::thread_details_panel::ThreadDetailsMode;
@@ -532,17 +532,54 @@ impl ChatView {
         &self.timeline
     }
 
-    /// The draft hero's headline (`DraftHeroHeadline.tsx`).
-    fn hero_headline(colors: &ChatColors) -> impl IntoElement {
-        div()
-            .pb_4()
+    /// The draft hero's headline (`DraftHeroHeadline.tsx`), above the composer stack
+    /// (`absolute bottom-full pb-4`) so only the composer centres. A draft in a project reads
+    /// "What should we build in {project}?" (`DraftHeroProjectHeading`, inline at this width)
+    /// with "or start without a project" under it; a draft without one asks what to work on.
+    fn hero_headline(&self, colors: &ChatColors) -> impl IntoElement {
+        let heading = div()
             .w_full()
-            .text_center()
+            .flex()
+            .items_center()
+            .justify_center()
+            .gap(rems(0.5))
             .text_size(colors.r(HERO_HEADLINE_SIZE))
             .line_height(colors.r(HERO_HEADLINE_LINE))
             .font_weight(FontWeight::NORMAL)
             .text_color(colors.theme.text)
-            .child(t!("What should we work on?"))
+            .whitespace_nowrap();
+        let body = if self.project.is_empty() {
+            heading.child(t!("What should we work on?")).into_any_element()
+        } else {
+            const PROJECT_SLOT: &str = "\u{E000}";
+            let sentence = t!("What should we build in {project}?", project = PROJECT_SLOT);
+            let (before, after) = sentence.split_once(PROJECT_SLOT).unwrap_or((sentence.as_ref(), ""));
+            let without_project = div()
+                .id("hero-without-project")
+                .cursor_pointer()
+                .text_size(TEXT_SM.size)
+                .line_height(TEXT_SM.line_height)
+                .font_weight(FontWeight::MEDIUM)
+                .text_color(colors.theme.muted_foreground)
+                .hover(|s| s.text_color(colors.theme.text))
+                .on_click(|_, window, cx| window.dispatch_action(Box::new(NewChatWithoutProject), cx))
+                .child(t!("or start without a project"));
+            div()
+                .child(
+                    heading
+                        .child(SharedString::from(before.trim().to_owned()))
+                        .child(
+                            div()
+                                .flex()
+                                .items_baseline()
+                                .child(div().font_weight(FontWeight::MEDIUM).child(self.project.clone()))
+                                .child(SharedString::from(after.trim_end().to_owned())),
+                        ),
+                )
+                .child(div().mt(rems(0.5)).h(rems(1.5)).w_full().flex().items_center().justify_center().child(without_project))
+                .into_any_element()
+        };
+        div().absolute().left_0().right_0().bottom(gpui_kit::relative(1.)).pb_4().child(body)
     }
 
     /// The composer's stand-in: the glass card shape with its placeholder text.
@@ -618,16 +655,17 @@ impl Render for ChatView {
             .right_0()
             .bottom_0()
             .when(hero, |d| d.top_0().flex().items_center())
-            .pt(colors.r(COMPOSER_TOP_PAD))
+            .when(!hero, |d| d.pt(colors.r(COMPOSER_TOP_PAD)))
             .px(gutter)
             .child(
                 div()
                     .mx_auto()
                     .w_full()
                     .when_some(lane.composer, |d, w| d.max_w(w))
+                    .relative()
                     .flex()
                     .flex_col()
-                    .when(self.hero, |d| d.child(Self::hero_headline(&colors)))
+                    .when(self.hero, |d| d.child(self.hero_headline(&colors)))
                     .children(pending_question.as_ref().map(|question| {
                         div()
                             .mx(rems(1.375))
