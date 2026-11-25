@@ -1224,6 +1224,9 @@ fn control(id: impl Into<gpui_kit::ElementId>, open: bool, c: &ComposerColors) -
     div()
         .id(id)
         .h(c.r(CONTROL_HEIGHT))
+        // `border border-transparent`: the 1px sits inside the height, outside the padding.
+        .border_1()
+        .border_color(gpui_kit::transparent_black())
         .px(c.r(px(8.)))
         .flex()
         .flex_none()
@@ -1259,7 +1262,8 @@ fn effort_glyph(glyph: &EffortGlyph, color: Hsla) -> impl IntoElement {
         }))
 }
 
-fn text_width(text: &str, size: Pixels, weight: FontWeight, window: &mut Window) -> Pixels {
+/// The width of one line of interface text.
+pub(crate) fn text_width(text: &str, size: Pixels, weight: FontWeight, window: &mut Window) -> Pixels {
     let mut f = gpui_kit::font(ui_font_family());
     f.weight = weight;
     let run = gpui_kit::TextRun { len: text.len(), font: f, color: gpui_kit::black(), background_color: None, underline: None, strikethrough: None };
@@ -1332,7 +1336,8 @@ impl ChatComposer {
         }
         // The suffix is one `gap-1.5` group after the name's own gap.
         let suffix_width = suffix.iter().copied().fold(px(0.), |sum, w| sum + w) + c.r(px(6.)) * suffix.len().saturating_sub(1) as f32;
-        let natural = c.r(px(8.)) + c.r(px(16.)) + c.r(px(6.)) + label_width + if suffix.is_empty() { px(0.) } else { c.r(px(6.)) + suffix_width } + c.r(px(8.));
+        // The suffix pulls in by `-ms-0.5`: a word space after the name, not the full gap.
+        let natural = px(2.) + c.r(px(8.)) + c.r(px(16.)) + c.r(px(6.)) + label_width + if suffix.is_empty() { px(0.) } else { c.r(px(4.)) + suffix_width } + c.r(px(8.));
         let element = control("composer-model-trigger", open, &c)
             .min_w(c.r(px(52.)))
             .flex_shrink(1.)
@@ -1346,6 +1351,7 @@ impl ChatComposer {
                         .flex_none()
                         .items_center()
                         .gap(c.r(px(6.)))
+                        .when(!compact, |el| el.ml(-c.r(px(2.))))
                         .text_color(suffix_color)
                         .map(|el| match (&word, &bars) {
                             (Some(word), _) => el.child(div().max_w(c.r(px(96.))).overflow_hidden().whitespace_nowrap().text_ellipsis().child(word.clone())),

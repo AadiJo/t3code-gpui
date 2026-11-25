@@ -152,6 +152,8 @@ pub struct ModelPicker {
     /// Where the side menu was last painted: it floats outside the picker, so a press there is
     /// not a press outside.
     option_menu_bounds: std::rc::Rc<std::cell::Cell<Option<gpui_kit::Bounds<Pixels>>>>,
+    /// Where the effort column was last painted, for the side menu's flip.
+    column_bounds: std::rc::Rc<std::cell::Cell<Option<gpui_kit::Bounds<Pixels>>>>,
     /// Where an input method's uncommitted text starts in `query`, while it composes.
     marked_from: Option<usize>,
 }
@@ -190,6 +192,7 @@ impl ModelPicker {
             effort_focus: None,
             option_menu: None,
             option_menu_bounds: Default::default(),
+            column_bounds: Default::default(),
             marked_from: None,
         };
         this.rebuild_rows();
@@ -760,7 +763,7 @@ impl ModelPicker {
             .into_any_element()
     }
 
-    fn render_effort_column(&self, c: &ComposerColors, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render_effort_column(&self, c: &ComposerColors, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let c = *c;
         let model = self.catalog.model(&self.selection.instance_id, &self.selection.model).cloned();
         let label = model.as_ref().map(|m| display_model_name(m, true)).unwrap_or_default();
@@ -777,17 +780,20 @@ impl ModelPicker {
         let mut level_rows = Vec::new();
         let mut other_rows = Vec::new();
         for (i, row) in rows.into_iter().enumerate() {
-            let element = self.render_column_row(i, row, c, cx);
+            let element = self.render_column_row(i, row, c, window, cx);
             if i < levels { level_rows.push(element) } else { other_rows.push(element) }
         }
         let empty = level_rows.is_empty() && other_rows.is_empty();
         let has_levels = !level_rows.is_empty();
+        let column_bounds = self.column_bounds.clone();
         div()
+            .relative()
             .w(c.r(MODEL_PICKER_EFFORT_WIDTH))
             .flex_none()
             .h_full()
             .flex()
             .flex_col()
+            .child(gpui_kit::canvas(move |bounds, _, _| column_bounds.set(Some(bounds)), |_, _, _, _| {}).absolute().inset_0())
             .border_l_1()
             .border_color(c.border.opacity(0.7))
             .bg(c.muted.opacity(0.4))
@@ -832,7 +838,7 @@ impl ModelPicker {
     }
 
     /// One column row: `ColumnRow` for a level, `OptionMenuRow` / `OptionSwitchRow` for others.
-    fn render_column_row(&self, index: usize, row: ColumnRow, c: ComposerColors, cx: &mut Context<Self>) -> AnyElement {
+    fn render_column_row(&self, index: usize, row: ColumnRow, c: ComposerColors, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let focused = self.effort_focus == Some(index);
         let base = div()
             .id(SharedString::from(format!("effort-{index}")))
@@ -877,7 +883,7 @@ impl ModelPicker {
                     .when(open, |el| el.bg(c.row_hover))
                     .child(option_text(d.label.clone(), value))
                     .child(div().mr(c.r(px(-4.))).child(Icon::new(IconName::ChevronRight).size(IconSize::Custom(c.r(px(14.)))).color(c.muted_foreground)))
-                    .when(open, |el| el.child(self.render_option_menu(&d, c, cx)))
+                    .when(open, |el| el.child(self.render_option_menu(&d, c, window, cx)))
             }
             ColumnRow::Switch(id, name, on) => {
                 let label = if on { crate::i18n::t!("On", context = "option state") } else { crate::i18n::t!("Off", context = "option state") };
@@ -905,8 +911,28 @@ impl ModelPicker {
 
     /// An option's side menu (`MenuPopup side="right" align="start" sideOffset={6}`, `max-w-72`):
     /// its choices as radio items with their descriptions and the default marked.
-    fn render_option_menu(&self, d: &SelectDescriptor, c: ComposerColors, cx: &mut Context<Self>) -> AnyElement {
+    fn render_option_menu(&self, d: &SelectDescriptor, c: ComposerColors, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let value = d.value().cloned();
+        // Base UI flips the menu to the column's left when it would cross the viewport less its
+        // 5px collision padding. The width is the popup's: `min-w-40`, its rows' content, `max-w-72`.
+        let width = {
+            let mut text = |t: &str, size: f32| crate::components::chat::composer::text_width(t, c.r(px(size)), FontWeight::NORMAL, window);
+            let default_label = crate::i18n::t!("Default", context = "marks the default option");
+            let widest = d
+                .selectable()
+                .iter()
+                .map(|o| {
+                    let wraps = o.description.is_some();
+                    let mut w = text(&o.label, 14.) + c.r(px(12.)) + c.r(px(14.));
+                    if o.is_default {
+                        w += c.r(px(12.)) + text(&default_label, 12.);
+                    }
+                    if wraps { c.r(px(288.)) } else { w }
+                })
+                .fold(px(0.), |a, b| a.max(b));
+            (widest + c.r(px(16.)) + c.r(px(8.)) + px(2.)).clamp(c.r(px(160.)), c.r(px(288.)))
+        };
+        let flip = self.column_bounds.get().is_some_and(|b| b.right() + c.r(px(6.)) + width > window.viewport_size().width - px(5.));
         let focus = self.option_menu.as_ref().and_then(|(_, at)| *at);
         let items = d.selectable().into_iter().enumerate().map(|(i, choice)| {
             let checked = value.as_ref() == Some(&choice.id);
@@ -922,6 +948,7 @@ impl ModelPicker {
                 .rounded(c.r(px(4.)))
                 .cursor_pointer()
                 .text_size(c.r(px(14.)))
+                .line_height(c.r(px(20.)))
                 .text_color(c.foreground)
                 .when(checked, |el| el.bg(c.foreground.opacity(0.08)))
                 .when(focus == Some(i), |el| el.bg(c.accent).text_color(c.accent_foreground))
@@ -938,7 +965,7 @@ impl ModelPicker {
                         })),
                 )
                 .when(choice.is_default, |el| {
-                    el.child(div().flex_none().text_size(c.r(px(12.))).text_color(c.muted_foreground.opacity(0.7)).child(crate::i18n::t!("Default", context = "marks the default option")))
+                    el.child(div().flex_none().text_size(c.r(px(12.))).line_height(c.r(px(16.))).text_color(c.muted_foreground.opacity(0.7)).child(crate::i18n::t!("Default", context = "marks the default option")))
                 })
                 .when(checked, |el| el.child(div().flex_none().child(Icon::new(IconName::Check).size(IconSize::Custom(c.r(px(14.)))).color(c.foreground))))
                 .on_click(cx.listener(move |this, _, _, cx| {
@@ -954,6 +981,7 @@ impl ModelPicker {
         let menu = div()
             .id("model-picker-option-menu")
             .occlude()
+            .min_w(c.r(px(160.)))
             .max_w(c.r(px(288.)))
             .rounded(POPUP_RADIUS)
             .border_1()
@@ -971,8 +999,11 @@ impl ModelPicker {
             .child({
                 let cell = self.option_menu_bounds.clone();
                 gpui_kit::canvas(move |bounds, _, _| cell.set(Some(bounds)), |_, _, _, _| {}).absolute().inset_0()
-            });
-        gpui_kit::deferred(div().absolute().top_0().left_full().pl(c.r(px(6.))).child(menu)).with_priority(3).into_any_element()
+            })
+            .test_support();
+        let anchor = div().absolute().top_0();
+        let anchor = if flip { anchor.right_full().pr(c.r(px(6.))) } else { anchor.left_full().pl(c.r(px(6.))) };
+        gpui_kit::deferred(anchor.child(menu)).with_priority(3).into_any_element()
     }
 
     fn render_footer(&self, c: &ComposerColors, cx: &mut Context<Self>) -> impl IntoElement {
@@ -1370,7 +1401,7 @@ impl Render for ModelPicker {
                                     }),
                             ),
                     )
-                    .when(!self.plain, |el| el.child(self.render_effort_column(&c, cx))),
+                    .when(!self.plain, |el| el.child(self.render_effort_column(&c, window, cx))),
             )
             .when(!self.plain, |el| el.child(self.render_footer(&c, cx)))
     }

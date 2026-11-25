@@ -58,12 +58,13 @@ fn descriptor(descriptor: &Descriptor) -> Option<OptionDescriptor> {
     })
 }
 
-fn model_option(model: &ServerConfigProvidersItemModelsItem, unavailable: bool) -> ModelOption {
+fn model_option(model: &ServerConfigProvidersItemModelsItem, driver: &str, unavailable: bool) -> ModelOption {
     let descriptors = model.capabilities.as_ref().and_then(|c| c.option_descriptors.as_deref()).unwrap_or_default();
     ModelOption {
         slug: SharedString::from(model.slug.clone()),
         name: SharedString::from(model.name.clone()),
-        short_name: model.short_name.clone().map(SharedString::from),
+        // `resolveModelShortName`: triggers and the effort column name "Sonnet 4.6", not "Claude Sonnet 4.6".
+        short_name: crate::state::thread_relationships::resolve_model_short_name(&model.name, model.short_name.as_deref(), driver).map(SharedString::from),
         sub_provider: model.sub_provider.clone().map(SharedString::from),
         is_legacy: model.is_legacy == Some(true),
         is_unavailable: unavailable,
@@ -105,7 +106,7 @@ pub fn model_catalog_for<'a>(
         let id = ProviderInstanceId(SharedString::from(provider.instance_id.clone()));
         let prefs = preferences.and_then(|prefs| prefs.get(&provider.instance_id));
         let unavailable = !is_ready(provider);
-        let mut list: Vec<ModelOption> = provider.models.iter().map(|model| model_option(model, unavailable)).collect();
+        let mut list: Vec<ModelOption> = provider.models.iter().map(|model| model_option(model, &provider.driver, unavailable)).collect();
         if let Some(order) = prefs.and_then(|p| p.model_order.as_ref()) {
             list.sort_by_key(|model| order.iter().position(|slug| slug.as_str() == model.slug.as_ref()).unwrap_or(usize::MAX));
         }

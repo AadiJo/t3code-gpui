@@ -577,7 +577,7 @@ pub fn display_model_name(model: &ModelOption, prefer_short: bool) -> SharedStri
 }
 
 /// Bars for an effort select: one per ordinary level, filled up to the current
-/// one. Max, Default and Ultracode levels are named instead.
+/// one. Max, Default, prompt-injected and Ultracode levels are named instead.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct EffortGlyph {
     pub count: usize,
@@ -593,13 +593,15 @@ const MAX_BARS: usize = 7;
 /// Ports `resolveEffortGlyph`.
 pub fn resolve_effort_glyph(descriptor: &SelectDescriptor, current: Option<&str>) -> Option<EffortGlyph> {
     let current = current?;
-    let levels: Vec<_> = descriptor.options.iter().filter(|o| !NAMED_LEVELS.contains(&o.id.as_ref())).collect();
+    // Max, Default, prompt-injected (Ultrathink) and workflow levels are named, not barred.
+    let special = |id: &str| NAMED_LEVELS.contains(&id) || descriptor.prompt_injected.iter().any(|v| v.as_ref() == id);
+    let levels: Vec<_> = descriptor.options.iter().filter(|o| !special(&o.id)).collect();
     if levels.len() < 2 || levels.len() > MAX_BARS {
         return None;
     }
     let starts_at_off = matches!(levels[0].id.as_ref(), "off" | "none");
     let count = if starts_at_off { levels.len() - 1 } else { levels.len() };
-    if NAMED_LEVELS.contains(&current) {
+    if special(current) {
         let label = descriptor.options.iter().find(|o| o.id.as_ref() == current).map_or_else(|| current.to_owned().into(), |o| o.label.clone());
         return Some(EffortGlyph { count, filled: count, special: Some(label.clone()), label });
     }

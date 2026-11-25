@@ -64,7 +64,14 @@ fn text(value: &str) -> Option<OptionValue> {
 
 pub(super) fn run_options(check: &mut Check) -> anyhow::Result<()> {
     let state = load_state(&check.out)?;
+    check.cx.update(|cx| {
+        t3code_web::hooks::use_theme::ThemeStore::set_appearance_mode(t3code_web::theme_palette::ThemeMode::Dark, cx);
+    });
     check.pump(|c| c.connected(), Duration::from_secs(30), "connected")?;
+    // After the profile's client settings load, so the owner's overrides win.
+    check.cx.update(t3code_web::theme_palette::ThemeSettings::apply_env_overrides);
+    let rem = check.cx.update(|cx| t3code_web::components::chat::composer_theme::ComposerColors::new(cx).r(px(16.)));
+    check.note(format!("composer rem {rem:?}"));
     let key = thread_with_turn(check, &state, "Model options")?;
     check.go(&key);
     check.pump(|c| c.shown_input().entries.len() >= 2, Duration::from_secs(20), "thread shown")?;
@@ -99,8 +106,17 @@ pub(super) fn run_options(check: &mut Check) -> anyhow::Result<()> {
     let items = (0..8).take_while(|i| element_center(check, &format!("option-menu-item-{i}")).is_some()).count();
     check.check("the side menu offers both context windows", items == 2, items);
     let (row, item) = (element_center(check, &menu_row), element_center(check, "option-menu-item-0"));
-    check.check("the side menu opens to the right of the column", row.zip(item).is_some_and(|(r, i)| i.x > r.x), format!("{row:?} {item:?}"));
+    // Right of the column, or left of it when the viewport leaves no room (Base UI's flip).
+    let room = check.cx.update_window(check.window, |_, w, _| w.viewport_size().width).unwrap_or_default();
+    let side = row.zip(item).map(|(r, i)| if i.x > r.x { "right" } else { "left" });
+    check.check("the side menu opens beside the column, flipping left when the window is narrow", side.is_some(), format!("{side:?} in a {room:?} window: {row:?} {item:?}"));
     check.shot("o1-side-menu.png")?;
+    let ids = ["model-picker", "model-picker-option-menu", "option-menu-item-0", "option-menu-item-1", "effort-0", "effort-3", menu_row.as_str()];
+    for id in ids {
+        let element = ElementId::from(SharedString::from(id.to_owned()));
+        let bounds = check.cx.update_window(check.window, |_, w, _| w.try_find(element).map(|e| e.bounds())).ok().flatten();
+        check.note(format!("bounds {id}: {bounds:?}"));
+    }
     click(check, "option-menu-item-1")?;
     let after = selection(check);
     check.check("picking 1M writes contextWindow=1m", option(&after, "contextWindow") == text("1m"), format!("{:?}", after.options));
@@ -199,6 +215,11 @@ pub(super) fn run_options(check: &mut Check) -> anyhow::Result<()> {
         "haiku": selection.options.iter().map(|o| (o.id.to_string(), format!("{:?}", o.value))).collect::<Vec<_>>(),
     });
     std::fs::write(check.out.join("options-record.json"), serde_json::to_string_pretty(&record)?)?;
+    // The thread ends on Sonnet 4.6 so a fork capture of the same thread shows its column.
+    check.focus_composer();
+    pick_by_search(check, "Sonnet 4.6")?;
+    check.press("escape");
+    check.wait(Duration::from_millis(500));
     settings_chip(check)
 }
 
