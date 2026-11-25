@@ -1130,6 +1130,11 @@ impl AppRoot {
                 self.sidebar.update(cx, |sidebar, cx| sidebar.start_rename(key, window, cx))
             }
             CommandOutcome::NewThread(project) => self.new_thread(project, window, cx),
+            CommandOutcome::NewThreadOnBranch { project, branch, worktree_path } => {
+                let draft = self.data.create_draft_on_branch(project, branch, worktree_path, cx);
+                self.navigate(Route::Draft(draft), cx);
+                self.restore_focus(window, cx);
+            }
         }
         Wiring::Ran
     }

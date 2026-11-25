@@ -7,10 +7,7 @@
 use gpui_kit::*;
 use t3code_web::AppRoot;
 use t3code_web::app_root::{Minimize, OpenSettings, Quit, ToggleFullScreen, ZoomWindow};
-use t3code_web::components::settings::settings_search::SettingsPath;
-use t3code_web::components::sidebar::sidebar_chrome::CheckForUpdates;
 use t3code_web::i18n::t;
-use t3code_web::router::Route;
 use t3code_web::theme_palette::ThemeSettings;
 
 actions!(
@@ -22,8 +19,11 @@ actions!(
         Copy,
         Paste,
         SelectAll,
-        /// App menu → About: Settings → About, this app's about page.
+        /// App menu → About: the system's About panel (Electron's `about` role).
         About,
+        /// App menu → Check for Updates…: this build has no update feed, so it says so
+        /// (`handleCheckForUpdatesMenuClick` with updates disabled).
+        CheckForAppUpdates,
         /// App menu → Hide T3 Code.
         Hide,
         /// App menu → Hide Others.
@@ -115,11 +115,14 @@ pub fn install(root: Entity<AppRoot>, cx: &mut App) {
         }
         cx.quit();
     });
-    let about_root = root.downgrade();
-    cx.on_action(move |_: &About, cx| {
-        if let Some(root) = about_root.upgrade() {
-            root.update(cx, |root, cx| root.navigate(Route::settings(SettingsPath::About), cx));
-        }
+    cx.on_action(|_: &About, cx| show_about_panel(cx));
+    cx.on_action(|_: &CheckForAppUpdates, cx| {
+        prompt_info(
+            t!("Automatic updates are not available right now."),
+            // `getAutoUpdateDisabledReason` without an update feed.
+            "Automatic updates are not available because no update feed is configured.".into(),
+            cx,
+        )
     });
     cx.on_action(|_: &Hide, cx| cx.hide());
     cx.on_action(|_: &HideOthers, cx| cx.hide_other_apps());
@@ -133,12 +136,18 @@ pub fn install(root: Entity<AppRoot>, cx: &mut App) {
     cx.on_action(|_: &ActualSize, cx| zoom(None, cx));
     cx.on_action(|_: &ZoomIn, cx| zoom(Some(1), cx));
     cx.on_action(|_: &ZoomOut, cx| zoom(Some(-1), cx));
-    let paste_root = root.downgrade();
-    cx.on_action(move |_: &PasteAsText, cx| {
-        let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) else { return };
-        if let Some(root) = paste_root.upgrade() {
-            root.update(cx, |root, cx| root.paste_text(&text, cx));
-        }
+    // `pasteAndMatchStyle`: the focused field pastes the clipboard's text alone. The field's own
+    // paste runs on a text-only clipboard, which then gets its images and files back.
+    cx.on_action(|_: &PasteAsText, cx| {
+        let Some(item) = cx.read_from_clipboard() else { return };
+        let Some(text) = item.text() else { return };
+        let Some(window) = cx.active_window() else { return };
+        cx.write_to_clipboard(gpui_kit::ClipboardItem::new_string(text));
+        let paste = gpui_kit::Keystroke::parse(if cfg!(target_os = "macos") { "cmd-v" } else { "ctrl-v" }).expect("static keystroke");
+        _ = window.update(cx, |_, window, cx| {
+            window.dispatch_keystroke(paste, cx);
+        });
+        cx.write_to_clipboard(item);
     });
     let close_root = root.downgrade();
     cx.on_window_closed(move |cx, _| {
@@ -154,6 +163,33 @@ pub fn install(root: Entity<AppRoot>, cx: &mut App) {
     cx.set_menus(menus());
 }
 
+/// An information box with an OK button on the active window (`showMessageBox` type info).
+fn prompt_info(message: gpui_kit::SharedString, detail: gpui_kit::SharedString, cx: &mut App) {
+    let Some(window) = cx.active_window().or_else(|| cx.windows().first().copied()) else { return };
+    _ = window.update(cx, |_, window, cx| {
+        let answer = window.prompt(gpui_kit::PromptLevel::Info, &message, Some(&detail), &[gpui_kit::PromptButton::Ok(t!("OK"))], cx);
+        cx.background_executor().spawn(async move { _ = answer.await }).detach();
+    });
+}
+
+/// Electron's `about` role: the standard About panel on macOS, the app's name and version
+/// elsewhere.
+fn show_about_panel(cx: &mut App) {
+    #[cfg(target_os = "macos")]
+    {
+        use objc2::MainThreadMarker;
+        if let Some(mtm) = MainThreadMarker::new() {
+            let app = objc2_app_kit::NSApplication::sharedApplication(mtm);
+            // SAFETY: an AppKit method on the shared application, on the main thread.
+            unsafe {
+                let _: () = objc2::msg_send![&*app, orderFrontStandardAboutPanel: Option::<&objc2::runtime::AnyObject>::None];
+            }
+            return;
+        }
+    }
+    prompt_info("T3 Code".into(), format!("Version {}", env!("CARGO_PKG_VERSION")).into(), cx);
+}
+
 fn menus() -> Vec<Menu> {
     let app_name = "T3 Code";
     let mac = cfg!(target_os = "macos");
@@ -163,7 +199,7 @@ fn menus() -> Vec<Menu> {
             name: app_name.into(),
             items: vec![
                 MenuItem::action(t!("About {appName}", appName = app_name), About),
-                MenuItem::action(t!("Check for Updates..."), CheckForUpdates),
+                MenuItem::action(t!("Check for Updates..."), CheckForAppUpdates),
                 MenuItem::separator(),
                 MenuItem::action(t!("Settings..."), OpenSettings),
                 MenuItem::separator(),
@@ -227,7 +263,7 @@ fn menus() -> Vec<Menu> {
     menus.push(Menu { name: t!("Window", context = "menu bar title"), items: window, disabled: false });
     menus.push(Menu {
         name: t!("Help", context = "menu bar title"),
-        items: vec![MenuItem::action(t!("Check for Updates..."), CheckForUpdates)],
+        items: vec![MenuItem::action(t!("Check for Updates..."), CheckForAppUpdates)],
         disabled: false,
     });
     menus

@@ -223,6 +223,35 @@ fn main() -> anyhow::Result<()> {
     let open = c.cx.update(|cx| app.read(cx).custom_snooze_dialog().is_some());
     c.expect("Snooze closes the dialog", !open, String::new());
 
+    // mod+z runs thread undo while a notice shows and no text field holds focus.
+    let undone = std::rc::Rc::new(std::cell::Cell::new(0));
+    let flag = undone.clone();
+    c.cx.update(|cx| {
+        t3code_web::thread_undo::ThreadUndo::show(t3code_web::thread_undo::UndoAction::Settled, thread.clone(), std::rc::Rc::new(move |_| flag.set(flag.get() + 1)), cx)
+    });
+    c.cx.update_window(c.window, |_, w, cx| w.blur(cx)).ok();
+    c.frame();
+    c.press(if cfg!(target_os = "macos") { "cmd-z" } else { "ctrl-z" });
+    c.expect("mod+z with nothing focused undoes the latest action", undone.get() == 1, format!("{} undo runs", undone.get()));
+    let flag = undone.clone();
+    c.cx.update(|cx| {
+        t3code_web::thread_undo::ThreadUndo::show(t3code_web::thread_undo::UndoAction::Settled, thread.clone(), std::rc::Rc::new(move |_| flag.set(flag.get() + 1)), cx)
+    });
+    let sidebar_focus = c.cx.update(|cx| app.read(cx).sidebar().focus_handle(cx));
+    c.cx.update_window(c.window, |_, w, cx| w.focus(&sidebar_focus, cx)).ok();
+    c.frame();
+    c.press(if cfg!(target_os = "macos") { "cmd-z" } else { "ctrl-z" });
+    c.expect("mod+z with the sidebar focused undoes it", undone.get() == 2, format!("{} undo runs", undone.get()));
+    let flag = undone.clone();
+    c.cx.update(|cx| {
+        t3code_web::thread_undo::ThreadUndo::show(t3code_web::thread_undo::UndoAction::Settled, thread.clone(), std::rc::Rc::new(move |_| flag.set(flag.get() + 1)), cx)
+    });
+    let composer_focus = c.cx.update(|cx| app.read(cx).composer(cx).read(cx).editor().focus_handle(cx));
+    c.cx.update_window(c.window, |_, w, cx| w.focus(&composer_focus, cx)).ok();
+    c.frame();
+    c.press(if cfg!(target_os = "macos") { "cmd-z" } else { "ctrl-z" });
+    c.expect("mod+z in the composer leaves the notice alone", undone.get() == 2, format!("{} undo runs", undone.get()));
+
     std::fs::write(out.join("flow.txt"), &c.log)?;
     if !c.failures.is_empty() {
         bail!("{} failed: {:?}", c.failures.len(), c.failures);
