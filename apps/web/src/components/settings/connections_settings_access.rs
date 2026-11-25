@@ -4,11 +4,12 @@
 //! preview tunnel row, the session's permissions, and the folded
 //! "Authorized clients" section from `subscribeAuthAccess`.
 //!
+//! The Authorized clients actions, per-client revoke and T3 Connect devices
+//! are in `connections_settings_access_clients`.
+//!
 //! Left out: Version, Network access, Tailscale HTTPS, WSL and endpoint
 //! rows, which the web shows only for the local backend this remote-only
-//! app does not run; the T3 Connect link row; and the Authorized clients
-//! actions (Use in another app (MCP), Revoke others, Create link) and the
-//! per-client revoke, which need the pairing-link and revoke HTTP calls.
+//! app does not run; and the T3 Connect link row.
 
 use gpui_kit::{AnyElement, App, Context, Entity, IntoElement, Render, SharedString, Subscription, Task, Window, div, prelude::*};
 use t3code_client_runtime::environment::EnvironmentId;
@@ -46,8 +47,11 @@ pub struct AccessSettingsPanel {
     model: Entity<ServerPanelsModel>,
     permissions_open: bool,
     clients_open: bool,
-    session: SessionCheck,
-    access: Option<AuthAccessSnapshot>,
+    pub(super) session: SessionCheck,
+    pub(super) access: Option<AuthAccessSnapshot>,
+    pub(super) clients: super::connections_settings_access_clients::ClientsUi,
+    /// Codes of pairing links this client created, shown on their rows.
+    pub(super) created_credentials: std::collections::HashMap<String, SharedString>,
     _tasks: Vec<Task<()>>,
     _observe: Subscription,
 }
@@ -170,8 +174,41 @@ pub(crate) fn grants(session: &AuthSessionState, scope: AuthEnvironmentScope) ->
     parent.is_some_and(|parent| scopes.contains(&parent))
 }
 
+/// The access page on screen, for scripted checks.
+struct ShownAccessPanel(gpui_kit::WeakEntity<AccessSettingsPanel>);
+
+impl gpui_kit::Global for ShownAccessPanel {}
+
+fn shown_panel(cx: &App) -> Option<Entity<AccessSettingsPanel>> {
+    cx.try_global::<ShownAccessPanel>()?.0.upgrade()
+}
+
+/// The access state the shown page follows.
+pub fn shown_access(cx: &App) -> Option<AuthAccessSnapshot> {
+    shown_panel(cx)?.read(cx).access.clone()
+}
+
+/// The code of the pairing link labelled `label` that the shown page created.
+pub fn created_credential(label: &str, cx: &App) -> Option<String> {
+    let panel = shown_panel(cx)?;
+    let panel = panel.read(cx);
+    let link = panel.access.as_ref()?.pairing_links.iter().find(|l| l.label.as_deref() == Some(label))?;
+    panel.created_credentials.get(&link.id).map(|c| c.to_string())
+}
+
+/// Unfolds the shown page's Authorized clients.
+pub fn open_clients(cx: &mut App) {
+    if let Some(panel) = shown_panel(cx) {
+        panel.update(cx, |panel, cx| {
+            panel.clients_open = true;
+            cx.notify();
+        });
+    }
+}
+
 impl AccessSettingsPanel {
     pub fn new(model: Entity<ServerPanelsModel>, cx: &mut Context<Self>) -> Self {
+        cx.set_global(ShownAccessPanel(cx.entity().downgrade()));
         let observe = cx.observe(&model, |_, _, cx| cx.notify());
         let mut this = Self {
             model,
@@ -179,6 +216,8 @@ impl AccessSettingsPanel {
             clients_open: false,
             session: SessionCheck::Unavailable,
             access: None,
+            clients: Default::default(),
+            created_credentials: Default::default(),
             _tasks: Vec::new(),
             _observe: observe,
         };
@@ -186,7 +225,7 @@ impl AccessSettingsPanel {
         this
     }
 
-    fn environment_id(&self, cx: &App) -> EnvironmentId {
+    pub(super) fn environment_id(&self, cx: &App) -> EnvironmentId {
         EnvironmentId::from(self.model.read(cx).snapshot().environment_id.as_ref())
     }
 
@@ -214,29 +253,20 @@ impl AccessSettingsPanel {
             })
             .ok();
         }));
-        let first = ConnectionRuntime::global(cx).spawn(
-            async move {
-                use futures::StreamExt as _;
-                let session = link.session(std::time::Duration::from_secs(10)).await.map_err(|e| crate::connection::CommandError(e.to_string().into()))?;
-                let mut stream = session.client.subscribe::<t3code_contracts::rpc::methods::SubscribeAuthAccess>(Default::default());
-                while let Some(Ok(chunk)) = stream.next().await {
-                    for event in chunk {
-                        if let AuthAccessStreamEvent::Snapshot(snapshot) = event {
-                            return Ok(snapshot.payload);
-                        }
-                    }
-                }
-                Err(crate::connection::CommandError("The access stream ended.".into()))
-            },
-            cx,
-        );
+        // Every access change follows, so revokes and device requests show as they happen.
+        let mut events = super::connections_settings_access_clients::follow_access(link, cx);
         self._tasks.push(cx.spawn(async move |this, cx| {
-            if let Ok(snapshot) = first.await {
-                this.update(cx, |this, cx| {
-                    this.access = Some(snapshot);
-                    cx.notify();
-                })
-                .ok();
+            use futures::StreamExt as _;
+            while let Some(event) = events.next().await {
+                if this
+                    .update(cx, |this, cx| {
+                        super::connections_settings_access_clients::apply_access_event(&mut this.access, event);
+                        cx.notify();
+                    })
+                    .is_err()
+                {
+                    return;
+                }
             }
         }));
     }
@@ -267,7 +297,7 @@ impl AccessSettingsPanel {
     /// toggles the client list and shows the count.
     fn render_clients(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         let access = self.access.as_ref()?;
-        let theme = cx.app_theme();
+        let theme = &cx.app_theme().clone();
         let c = &theme.colors;
         let open = self.clients_open;
         // `summarizeAuthorizedClients`.
@@ -285,8 +315,13 @@ impl AccessSettingsPanel {
         let mut sessions: Vec<AuthClientSession> = access.client_sessions.clone();
         sessions.sort_by(|a, b| b.current.cmp(&a.current).then(b.connected.cmp(&a.connected)));
         let divider = with_alpha(c.border, 0.5);
+        let links: Vec<_> = access.pairing_links.iter().filter(|l| l.connect_device_request.is_none()).cloned().collect();
+        let link_rows: Vec<AnyElement> = if open { links.iter().map(|l| self.render_pairing_link_row(l, theme, cx)).collect() } else { Vec::new() };
+        let header_action = self.may(AuthEnvironmentScope::AccessWrite).then(|| self.render_clients_header_action(cx));
+        let revokes: Vec<Option<AnyElement>> = if open { sessions.iter().map(|s| self.render_client_revoke(s, cx)).collect() } else { Vec::new() };
+        let mut revokes = revokes.into_iter();
         let rows = open.then(|| {
-            div().border_t_1().border_color(divider).children(sessions.into_iter().enumerate().map(|(ix, session)| {
+            div().border_t_1().border_color(divider).children(link_rows.into_iter().map(|r| div().border_b_1().border_color(divider).child(r))).children(sessions.into_iter().enumerate().map(|(ix, session)| {
                 let label = session.client.label.clone().or(session.client.os.clone()).unwrap_or_else(|| session.subject.clone());
                 let state = if session.current {
                     t!("This device")
@@ -295,15 +330,26 @@ impl AccessSettingsPanel {
                 } else {
                     SharedString::from(session.last_connected_at.clone().unwrap_or_default())
                 };
+                let revoke = revokes.next().flatten();
                 div()
                     .when(ix > 0, |d| d.border_t_1().border_color(divider))
                     .px(theme.sp(4.))
                     .py(theme.sp(3.))
                     .flex()
-                    .flex_col()
-                    .gap(theme.sp(1.))
-                    .child(div().ui_text(theme, TextSize::Sm, weight::MEDIUM).child(SharedString::from(label)))
-                    .child(div().ui_text(theme, TextSize::Xs, weight::NORMAL).text_color(c.muted_foreground).child(state))
+                    .items_center()
+                    .justify_between()
+                    .gap(theme.sp(3.))
+                    .child(
+                        div()
+                            .min_w_0()
+                            .flex_1()
+                            .flex()
+                            .flex_col()
+                            .gap(theme.sp(1.))
+                            .child(div().ui_text(theme, TextSize::Sm, weight::MEDIUM).child(SharedString::from(label)))
+                            .child(div().ui_text(theme, TextSize::Xs, weight::NORMAL).text_color(c.muted_foreground).child(state)),
+                    )
+                    .children(revoke.map(|r| div().flex_none().child(r)))
             }))
         });
         Some(
@@ -329,7 +375,8 @@ impl AccessSettingsPanel {
                         }))
                         .child(Icon::new(if open { IconName::ChevronDown } else { IconName::ChevronRight }).size(IconSize::Md).color(c.muted_foreground))
                         .child(div().flex_none().ui_text(theme, TextSize::Sm, weight::MEDIUM).child(t!("Authorized clients")))
-                        .child(div().min_w_0().truncate().ui_text(theme, TextSize::Xs, weight::NORMAL).text_color(c.muted_foreground).child(summary)),
+                        .child(div().flex_1().min_w_0().truncate().ui_text(theme, TextSize::Xs, weight::NORMAL).text_color(c.muted_foreground).child(summary))
+                        .children(header_action.map(|a| div().flex_none().on_mouse_down(gpui_kit::MouseButton::Left, |_, _, cx| cx.stop_propagation()).child(a))),
                 )
                 .children(rows)
                 .into_any_element(),
@@ -403,6 +450,8 @@ impl Render for AccessSettingsPanel {
         }
         section = section.child(self.render_permissions(cx));
         let clients = self.render_clients(cx);
-        page_container(cx).child(section).children(clients)
+        let devices = self.render_connect_devices(cx);
+        let dialogs = self.render_access_dialogs(cx);
+        page_container(cx).child(section).children(clients).children(devices).children(dialogs)
     }
 }

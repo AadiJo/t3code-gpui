@@ -105,6 +105,7 @@ impl LiveData {
             StateBridge::init(cx);
         }
         crate::components::settings::pull_request_routing_settings::init(cx);
+        crate::components::connect_device_approval_coordinator::ConnectDeviceApprovalCoordinator::init(cx);
         let shell = StateBridge::shell(cx);
         let palette = LivePaletteSource::new();
         palette.refresh(shell.read(cx), cx);

@@ -22,6 +22,7 @@ pub mod managed_policy;
 pub mod keybindings_update_toast;
 pub mod clerk;
 pub mod cloud;
+pub mod connect_device_approval_coordinator;
 pub mod connection_status_dot;
 pub mod hosted_empty_state;
 pub mod issue;

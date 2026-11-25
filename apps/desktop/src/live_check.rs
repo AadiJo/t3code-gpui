@@ -114,6 +114,7 @@ mod live_check_sharing;
 mod live_check_update;
 mod live_check_update_ref;
 mod live_check_update_pill;
+mod live_check_access;
 mod live_check_linked_environments;
 mod live_check_mcp;
 mod live_check_pr_routing;
@@ -632,6 +633,7 @@ fn main() -> anyhow::Result<()> {
         "pr-routing" => live_check_pr_routing::run_pr_routing(&mut check),
         "use-in-another-app" => live_check_mcp::run_use_in_another_app(&mut check),
         "linked-environments" => live_check_linked_environments::run_linked_environments(&mut check),
+        "access-controls" => live_check_access::run_access_controls(&mut check),
         other => Err(anyhow::anyhow!("unknown phase {other}")),
     };
     check.finish(&phase, result)

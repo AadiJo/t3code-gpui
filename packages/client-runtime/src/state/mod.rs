@@ -9,6 +9,7 @@
 pub mod cache_persistence;
 pub mod cache_store;
 pub mod client_store;
+pub mod connect_device_approval;
 pub mod cloud_link;
 pub mod drafts;
 pub mod environment;

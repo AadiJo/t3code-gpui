@@ -47,6 +47,8 @@ pub struct ToastData {
     pub title: SharedString,
     pub description: Option<SharedString>,
     pub action: Option<(SharedString, Action)>,
+    /// Outline buttons before the action (`additionalActions`, then `secondaryActionProps`).
+    pub secondary_actions: Vec<(SharedString, Action)>,
     /// A leading icon in place of the kind's (`data.leadingIcon`).
     pub icon: Option<(IconName, Hsla)>,
     /// How long it stays; `None` keeps it until dismissed (`timeout: 0`).
@@ -56,7 +58,7 @@ pub struct ToastData {
 impl ToastData {
     pub fn new(kind: ToastKind, title: impl Into<SharedString>) -> Self {
         let timeout = (kind != ToastKind::Loading).then_some(TIMEOUT);
-        Self { kind, title: title.into(), description: None, action: None, icon: None, timeout }
+        Self { kind, title: title.into(), description: None, action: None, secondary_actions: Vec::new(), icon: None, timeout }
     }
 
     /// Keeps the toast until it is dismissed (`timeout: 0`).
@@ -83,6 +85,12 @@ impl ToastData {
     }
 
     /// A trailing `xs` button.
+    /// Adds an outline button before the action.
+    pub fn secondary_action(mut self, label: impl Into<SharedString>, action: impl Fn(&mut Window, &mut App) + 'static) -> Self {
+        self.secondary_actions.push((label.into(), Rc::new(action)));
+        self
+    }
+
     pub fn action(mut self, label: impl Into<SharedString>, action: impl Fn(&mut Window, &mut App) + 'static) -> Self {
         self.action = Some((label.into(), Rc::new(action)));
         self
@@ -174,13 +182,25 @@ impl RenderOnce for ToastSurface {
                             .children(self.data.description.map(|d| div().min_w_0().text_color(c.muted_foreground).child(d))),
                     )
                     .children(self.data.action.map(|(label, action)| {
-                        div().flex().items_center().gap(sp(1.5)).flex_none().child(
-                            Button::new("toast-action")
-                                .label(label)
-                                .size(ButtonSize::Xs)
-                                .variant(ButtonVariant::Default)
-                                .on_click(move |_, window, cx| action(window, cx)),
-                        )
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(sp(1.5))
+                            .flex_none()
+                            .children(self.data.secondary_actions.into_iter().enumerate().map(|(ix, (label, action))| {
+                                Button::new(("toast-secondary-action", ix))
+                                    .label(label)
+                                    .size(ButtonSize::Xs)
+                                    .variant(ButtonVariant::Outline)
+                                    .on_click(move |_, window, cx| action(window, cx))
+                            }))
+                            .child(
+                                Button::new("toast-action")
+                                    .label(label)
+                                    .size(ButtonSize::Xs)
+                                    .variant(ButtonVariant::Default)
+                                    .on_click(move |_, window, cx| action(window, cx)),
+                            )
                     })),
             )
             .child(

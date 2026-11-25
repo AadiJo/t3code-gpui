@@ -26,6 +26,7 @@ pub mod provider_usage_and_generators;
 pub mod provider_authentication_section;
 pub mod provider_settings_panel;
 pub mod connections_settings_access;
+pub mod connections_settings_access_clients;
 pub mod device_host_editor;
 pub mod diagnostics_settings;
 pub mod integrations_settings;
