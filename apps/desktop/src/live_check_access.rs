@@ -16,7 +16,7 @@ use t3code_web::router::Route;
 use super::live_check_families::{all_connected, pair_if_needed};
 use super::*;
 
-fn click(check: &mut Check, id: &str) -> anyhow::Result<()> {
+pub(super) fn click(check: &mut Check, id: &str) -> anyhow::Result<()> {
     let element = ElementId::from(SharedString::from(id.to_owned()));
     let at = check
         .cx
@@ -28,7 +28,7 @@ fn click(check: &mut Check, id: &str) -> anyhow::Result<()> {
 }
 
 /// The server's access state, read on a fresh `subscribeAuthAccess` (its first snapshot).
-fn server_access(check: &mut Check, id: &EnvironmentId) -> anyhow::Result<AuthAccessSnapshot> {
+pub(super) fn server_access(check: &mut Check, id: &EnvironmentId) -> anyhow::Result<AuthAccessSnapshot> {
     let link = check.cx.update(|cx| ConnectionRuntime::global(cx).environment_link(id)).context("no link")?;
     let mut events = check.cx.update(|cx| t3code_web::components::settings::connections_settings_access_clients::follow_access(link, cx));
     let first = check.block(async move {
@@ -59,7 +59,7 @@ fn sign_in_with(code: &str, agent: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn panel_access(check: &mut Check) -> Option<AuthAccessSnapshot> {
+pub(super) fn panel_access(check: &mut Check) -> Option<AuthAccessSnapshot> {
     check.cx.update(|cx| t3code_web::components::settings::connections_settings_access::shown_access(cx))
 }
 
@@ -153,4 +153,61 @@ pub(super) fn run_access_controls(check: &mut Check) -> anyhow::Result<()> {
     check.shot("access-07-use-in-another-app.png")?;
     check.cx.update(SharingDialogs::close);
     Ok(())
+}
+
+/// `live-check device-approval`: a T3 Connect device asks to connect to a server that requires
+/// approval (run `relay-check approval` against the same stand-in at the same time). The device
+/// coordinator raises its toast; Sharing & access lists it under T3 Connect devices with its
+/// code; Approve trusts it (read back from the server); Revoke removes it. With approval off, the
+/// device signs straight back in and Revoke first offers to turn approval on, which is saved and
+/// read back.
+pub(super) fn run_device_approval(check: &mut Check) -> anyhow::Result<()> {
+    use t3code_web::components::connect_device_approval_coordinator::ConnectDeviceApprovalCoordinator;
+    check.cx.update(|cx| {
+        t3code_web::hooks::use_theme::ThemeStore::set_appearance_mode(t3code_web::theme_palette::ThemeMode::Dark, cx);
+        t3code_web::theme_palette::ThemeSettings::apply_env_overrides(cx);
+    });
+    pair_if_needed(check, 1, "T3_PAIRING_URL")?;
+    check.pump(|c| all_connected(c, 1), Duration::from_secs(60), "server connected")?;
+    let id = check.cx.update(|cx| ConnectionRuntime::state(cx).read(cx).environments[0].entry.environment_id.clone());
+    let target = id.clone();
+    let task = check.cx.update(move |cx| ServerSettingsStore::update(target, ClientServerSettingsPatch { require_connect_device_approval: Some(true), ..Default::default() }, cx));
+    check.wait_task(task)?.map_err(|e| anyhow::anyhow!("{}", e.0))?;
+    let toast = check.pump(|c| !c.cx.update(|cx| ConnectDeviceApprovalCoordinator::pending(cx)).is_empty(), Duration::from_secs(90), "a waiting device");
+    check.check("a device waiting for approval raises the coordinator's toast", toast.is_ok(), format!("{toast:?}"));
+    check.wait(Duration::from_millis(400));
+    check.shot("device-01-toast.png")?;
+    let root = check.root.clone();
+    check.cx.update(|cx| {
+        let router = root.read(cx).router().clone();
+        router.update(cx, |r, cx| r.navigate(Route::parse("/settings/access"), cx));
+    });
+    check.pump(|c| panel_access(c).is_some_and(|a| a.pairing_links.iter().any(|l| l.connect_device_request.is_some())), Duration::from_secs(20), "the request on the page")?;
+    let request = panel_access(check).and_then(|a| a.pairing_links.into_iter().find(|l| l.connect_device_request.is_some())).context("request")?;
+    let code = request.connect_device_request.as_ref().map(|r| r.verification_code.clone()).unwrap_or_default();
+    check.wait(Duration::from_millis(300));
+    check.shot("device-02-waiting.png")?;
+    let listed = visible(check, &format!("device-approve-{}", request.id));
+    check.check("T3 Connect devices lists the waiting device with Approve", listed, &code);
+    click(check, &format!("device-approve-{}", request.id))?;
+    let trusted = check.pump(move |c| panel_access(c).is_some_and(|a| a.connect_devices.as_ref().is_some_and(|d| !d.is_empty())), Duration::from_secs(20), "a trusted device");
+    check.check("Approve trusts the device", trusted.is_ok(), format!("{trusted:?}"));
+    let on_server = server_access(check, &id)?;
+    let device = on_server.connect_devices.clone().unwrap_or_default().into_iter().find(|d| d.verification_code == code);
+    check.check("the server trusts the device with the code shown", device.is_some(), &code);
+    check.wait(Duration::from_millis(300));
+    check.shot("device-03-trusted.png")?;
+    let device = device.context("device")?;
+    click(check, &format!("device-revoke-{}", device.proof_key_thumbprint))?;
+    let thumb = device.proof_key_thumbprint.clone();
+    let gone = check.pump(move |c| panel_access(c).is_some_and(|a| !a.connect_devices.as_ref().is_some_and(|d| d.iter().any(|x| x.proof_key_thumbprint == thumb))), Duration::from_secs(20), "revoked");
+    check.check("with approval on, Revoke removes the device at once", gone.is_ok(), format!("{gone:?}"));
+    let on_server = server_access(check, &id)?;
+    check.check("the server no longer trusts it", !on_server.connect_devices.unwrap_or_default().iter().any(|d| d.proof_key_thumbprint == device.proof_key_thumbprint), "");
+    Ok(())
+}
+
+pub(super) fn visible(check: &mut Check, id: &str) -> bool {
+    let element = ElementId::from(SharedString::from(id.to_owned()));
+    check.cx.update_window(check.window, |_, w, _| w.try_find(element).is_some_and(|e| e.visible())).unwrap_or(false)
 }

@@ -634,6 +634,7 @@ fn main() -> anyhow::Result<()> {
         "use-in-another-app" => live_check_mcp::run_use_in_another_app(&mut check),
         "linked-environments" => live_check_linked_environments::run_linked_environments(&mut check),
         "access-controls" => live_check_access::run_access_controls(&mut check),
+        "device-approval" => live_check_access::run_device_approval(&mut check),
         other => Err(anyhow::anyhow!("unknown phase {other}")),
     };
     check.finish(&phase, result)

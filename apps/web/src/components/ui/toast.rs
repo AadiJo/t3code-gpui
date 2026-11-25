@@ -148,6 +148,8 @@ impl RenderOnce for ToastSurface {
             kind => self.data.icon.or_else(|| kind_icon(theme, kind)).map(|(name, color)| Icon::new(name).size(IconSize::Md).color(color).into_any_element()),
         };
         let has_action = self.data.action.is_some();
+        // Toasts with secondary actions use the fork's `stacked-end` layout: actions on a row below.
+        let stacked = has_action && !self.data.secondary_actions.is_empty();
         let close = self.on_close.clone();
         toast_card(theme)
             .relative()
@@ -156,9 +158,8 @@ impl RenderOnce for ToastSurface {
             .child(
                 div()
                     .flex()
-                    .items_center()
-                    .justify_between()
-                    .gap(sp(1.5))
+                    .when(stacked, |d| d.flex_col().gap(sp(2.)))
+                    .when(!stacked, |d| d.items_center().justify_between().gap(sp(1.5)))
                     .pl(sp(3.5))
                     .py(sp(3.))
                     .pr(if has_action { sp(6.) } else { sp(3.5) })
@@ -167,7 +168,8 @@ impl RenderOnce for ToastSurface {
                         div()
                             .flex()
                             .flex_col()
-                            .flex_1()
+                            .when(stacked, |d| d.pr(sp(5.)))
+                            .when(!stacked, |d| d.flex_1())
                             .min_w_0()
                             .gap(sp(0.5))
                             .child(
@@ -186,7 +188,8 @@ impl RenderOnce for ToastSurface {
                             .flex()
                             .items_center()
                             .gap(sp(1.5))
-                            .flex_none()
+                            .when(stacked, |d| d.w_full().justify_end())
+                            .when(!stacked, |d| d.flex_none())
                             .children(self.data.secondary_actions.into_iter().enumerate().map(|(ix, (label, action))| {
                                 Button::new(("toast-secondary-action", ix))
                                     .label(label)
