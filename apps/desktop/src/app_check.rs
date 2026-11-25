@@ -360,8 +360,9 @@ fn session(out: PathBuf, state: PathBuf, tag: &str) -> anyhow::Result<String> {
     let (right, _) = r.panels();
     r.check("mod+alt+b opens the right panel", right, "");
     r.shot("right-panel-launcher")?;
-    // Launcher rows are 32px tall from y 351 in the 1100x780 window (Files is the third).
-    r.click_point(point(px(860.), px(389.)));
+    // The launcher's Files row, wherever the centred list puts it.
+    let files = r.cx.update_window(r.window, |_, w, _| w.try_find("launch-files").map(|e| e.bounds().center())).ok().flatten();
+    r.click_point(files.unwrap_or(point(px(860.), px(389.))));
     r.shot("right-panel-files-tab")?;
     let panel_key = format!("env-local:{}", sent_in.thread_id.0);
     let root = r.root.clone();
