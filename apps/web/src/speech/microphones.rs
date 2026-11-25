@@ -139,3 +139,15 @@ pub fn current_order(cx: &App) -> Vec<VoiceMicrophoneEntry> {
 pub fn save_order(order: Vec<VoiceMicrophoneEntry>, cx: &mut App) {
     ClientSettingsStore::update(cx, |settings| settings.voice_microphones = order);
 }
+
+/// `isSystemDefaultDeviceId`: ids that stand for the system default.
+pub fn is_system_default_device_id(device_id: &str) -> bool {
+    matches!(device_id, "" | "default" | "communications")
+}
+
+/// `preferMicrophone`: moves an entry to the top, adding it when it is not listed yet.
+pub fn prefer_microphone(order: &[VoiceMicrophoneEntry], entry: VoiceMicrophoneEntry) -> Vec<VoiceMicrophoneEntry> {
+    let key = entry_key(&entry);
+    let existing = order.iter().find(|candidate| entry_key(candidate) == key).cloned();
+    std::iter::once(existing.unwrap_or(entry)).chain(order.iter().filter(|candidate| entry_key(candidate) != key).cloned()).collect()
+}

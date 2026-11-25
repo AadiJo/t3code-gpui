@@ -77,7 +77,7 @@ fn custom_price(check: &mut Check, id: &t3code_contracts::EnvironmentId, model: 
 }
 
 /// The environment's server settings as its config last reported them.
-fn server_settings(check: &mut Check, id: &t3code_contracts::EnvironmentId) -> Option<t3code_contracts::ServerSettings> {
+pub(super) fn server_settings(check: &mut Check, id: &t3code_contracts::EnvironmentId) -> Option<t3code_contracts::ServerSettings> {
     check.cx.update(|cx| ServerSettingsStore::config(cx, id).map(|config| config.settings.clone()))
 }
 

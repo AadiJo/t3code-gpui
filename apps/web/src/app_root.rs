@@ -1882,6 +1882,7 @@ impl Render for AppRoot {
             .children(crate::components::settings::theme_editor_panel::ThemeEditorStore::layer(cx))
             .children(crate::components::sharing_dialogs::SharingDialogs::layer(cx))
             .child(crate::components::chat::composer_voice_indicator::GlobalVoiceInputIndicator::layer(cx))
+            .child(crate::components::chat::voice_input_setup::VoiceInputSetupDialog::layer(cx))
     }
 }
 

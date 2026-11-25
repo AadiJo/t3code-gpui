@@ -2,6 +2,7 @@
 //! consent, and the app's one dictation session that every composer shares.
 
 pub mod language_names;
+mod language_names_data;
 pub mod mac_permission;
 pub mod microphones;
 pub mod pcm_capture;

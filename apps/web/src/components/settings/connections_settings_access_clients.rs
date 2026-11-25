@@ -548,7 +548,7 @@ impl AccessSettingsPanel {
     }
 
     /// The revoke offer and the Create link dialog, when open.
-    pub(super) fn render_access_dialogs(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
+    pub(super) fn render_access_dialogs(&self, viewport_height: gpui_kit::Pixels, cx: &mut Context<Self>) -> Vec<AnyElement> {
         let theme = cx.app_theme().clone();
         let c = &theme.colors;
         let mut out = Vec::new();
@@ -633,7 +633,7 @@ impl AccessSettingsPanel {
                         div()
                             .min_w_0()
                             .child(div().ui_text(&theme, TextSize::Xs, weight::MEDIUM).text_color(c.foreground()).child(title))
-                            .child(div().ui_text(&theme, TextSize::Xs, weight::NORMAL).text_color(c.muted_foreground).child(description))
+                            .child(div().ui_text(&theme, TextSize::Xs, weight::NORMAL).line_height(gpui_kit::px(TextSize::Xs.size(theme.fonts.interface) * 1.375)).text_color(c.muted_foreground).child(description))
                             .when(checked && scope == AuthGrantScope::TerminalOperate, |d| {
                                 d.child(div().ui_text(&theme, TextSize::Xs, weight::NORMAL).text_color(c.warning).child(t!("Terminal commands can read or change files within the server account’s permissions.")))
                             }),
@@ -651,10 +651,12 @@ impl AccessSettingsPanel {
                         }))
                     })
             }).collect();
-            let surface = DialogSurface::new(t!("Create pairing link"))
-                .max_width_rem(28.)
-                .bare_footer()
-                .description(t_rich!("Generate a one-time link that another device can use to pair with this backend as an authorized client.").plain())
+            // `DialogPopup max-h-full` in a `p-4` viewport: header and footer stay put and the
+            // whole panel scrolls (`DialogPanel` is a scroll area).
+            let panel = div()
+                .flex()
+                .flex_col()
+                .gap(theme.sp(4.))
                 .child(
                     div()
                         .flex()
@@ -679,18 +681,11 @@ impl AccessSettingsPanel {
                                         .child(div().ui_text(&theme, TextSize::Xs, weight::MEDIUM).text_color(c.foreground()).child(t!("Permissions")))
                                         .child(div().ui_text(&theme, TextSize::Xs, weight::NORMAL).text_color(c.muted_foreground).child(t!("Limit what the paired client can do."))),
                                 )
-                                .child(
-                                    div()
-                                        .flex()
-                                        .gap(theme.sp(1.))
-                                        .child(read_preset)
-                                        .child(standard_preset),
-                                ),
+                                .child(div().flex().gap(theme.sp(1.)).child(read_preset).child(standard_preset)),
                         )
                         .child(
-                            // The fork scrolls the whole dialog panel; this scrolls the list, which is most of it.
-                            crate::components::ui::scroll_area::scroll_area("pairing-scopes")
-                                .max_h(theme.rem(18.))
+                            div()
+                                .id("pairing-scopes")
                                 .rounded(theme.radii.lg)
                                 .border_1()
                                 .border_color(c.input)
@@ -704,16 +699,43 @@ impl AccessSettingsPanel {
                         } else {
                             div().into_any_element()
                         }),
+                );
+            let cancel = Button::new("pairing-cancel").variant(ButtonVariant::Outline).label(t!("Cancel")).disabled(creating).on_click(cx.listener(|this, _, _, cx| {
+                this.clients.create = None;
+                cx.notify();
+            }));
+            let create = Button::new("pairing-create")
+                .label(if creating { t!("Creating…") } else { t!("Create link") })
+                .disabled(creating || selected.is_empty())
+                .on_click(cx.listener(|this, _, _, cx| this.create_link(cx)));
+            let close = cx.entity().downgrade();
+            let surface = crate::components::ui::dialog::dialog_glass(&theme)
+                .w_full()
+                .max_w(theme.rem(28.))
+                .max_h(viewport_height - theme.sp(4.) * 2.)
+                .child(crate::components::ui::wizard::wizard_header(
+                    &theme,
+                    t!("Create pairing link"),
+                    Some(t_rich!("Generate a one-time link that another device can use to pair with this backend as an authorized client.").plain().into()),
+                ))
+                .child(
+                    crate::components::ui::scroll_area::scroll_area("pairing-panel")
+                        .flex_1()
+                        .min_h_0()
+                        .child(div().px(theme.sp(6.)).pt(theme.sp(1.)).pb(theme.sp(1.)).ui_text(&theme, TextSize::Sm, weight::NORMAL).child(panel)),
                 )
-                .footer(Button::new("pairing-cancel").variant(ButtonVariant::Outline).label(t!("Cancel")).disabled(creating).on_click(cx.listener(|this, _, _, cx| {
-                    this.clients.create = None;
-                    cx.notify();
-                })))
-                .footer(
-                    Button::new("pairing-create")
-                        .label(if creating { t!("Creating…") } else { t!("Create link") })
-                        .disabled(creating || selected.is_empty())
-                        .on_click(cx.listener(|this, _, _, cx| this.create_link(cx))),
+                .child(div().flex().flex_none().justify_end().gap(theme.sp(2.)).px(theme.sp(6.)).py(theme.sp(4.)).child(cancel).child(create))
+                .child(
+                    div().absolute().top(theme.sp(2.)).right(theme.sp(2.)).child(
+                        Button::new("pairing-close").variant(ButtonVariant::Ghost).size(ButtonSize::Icon).icon(IconName::X).on_click(move |_, _, cx| {
+                            close
+                                .update(cx, |this, cx| {
+                                    this.clients.create = None;
+                                    cx.notify();
+                                })
+                                .ok();
+                        }),
+                    ),
                 );
             let this = cx.entity().downgrade();
             out.push(

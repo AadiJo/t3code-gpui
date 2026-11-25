@@ -24,6 +24,7 @@ pub mod switch;
 pub mod toast;
 pub mod toggle;
 pub mod tooltip;
+pub mod wizard;
 
 use gpui_kit::{
     AbsoluteLength, BoxShadow, FontWeight, Hsla, Pixels, Styled, px,

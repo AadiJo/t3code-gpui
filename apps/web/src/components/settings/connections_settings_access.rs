@@ -384,14 +384,9 @@ impl AccessSettingsPanel {
     }
 }
 
-/// `EnvironmentMachineIcon`.
-fn machine_icon(kind: EnvironmentMachineKind) -> IconName {
-    match kind {
-        EnvironmentMachineKind::Laptop => IconName::Laptop,
-        EnvironmentMachineKind::Server => IconName::Server,
-        EnvironmentMachineKind::Cloud => IconName::Cloud,
-        _ => IconName::Monitor,
-    }
+/// `EnvironmentMachineIcon`: Linux draws its brand mark, as the fork's `LinuxIcon`.
+fn machine_icon(kind: EnvironmentMachineKind) -> crate::components::icons::IconSource {
+    super::settings_controls::machine_icon_source(kind)
 }
 
 fn machine_label(kind: EnvironmentMachineKind) -> SharedString {
@@ -403,7 +398,7 @@ fn machine_label(kind: EnvironmentMachineKind) -> SharedString {
 }
 
 impl Render for AccessSettingsPanel {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let snapshot = self.model.read(cx).snapshot().clone();
         let s = &snapshot.settings;
         let policy = snapshot.managed_policy.as_deref();
@@ -451,7 +446,7 @@ impl Render for AccessSettingsPanel {
         section = section.child(self.render_permissions(cx));
         let clients = self.render_clients(cx);
         let devices = self.render_connect_devices(cx);
-        let dialogs = self.render_access_dialogs(cx);
+        let dialogs = self.render_access_dialogs(window.viewport_size().height, cx);
         page_container(cx).child(section).children(clients).children(devices).children(dialogs)
     }
 }

@@ -281,6 +281,11 @@ pub async fn remove_speech_model(link: &EnvironmentLink, model_id: &str) -> Resu
     send(link, reqwest::Method::POST, "/api/voice/models/remove", &[], json(&serde_json::json!({ "modelId": model_id })), DEFAULT_TIMEOUT).await
 }
 
+/// `POST /api/voice/models/link`: uses model files already on the environment at `path`.
+pub async fn link_speech_models(link: &EnvironmentLink, path: &str) -> Result<EnvironmentSpeechModels, VoiceRequestError> {
+    send(link, reqwest::Method::POST, "/api/voice/models/link", &[], json(&serde_json::json!({ "path": path })), INFERENCE_OR_DOWNLOAD_TIMEOUT).await
+}
+
 /// `getSpeechModelDownloadOutcome`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SpeechModelDownloadOutcome {
