@@ -34,6 +34,7 @@ const REFERENCE_FEATURES: &[PaletteFeature] = &[
     PaletteFeature::Issues,
     PaletteFeature::UseInAnotherApp,
     PaletteFeature::ProjectSettings,
+    PaletteFeature::PortForwarding,
 ];
 
 impl FixturePaletteSource {
