@@ -1,11 +1,12 @@
 //! Settings → Worktrees. Ports `WorktreesSettings.tsx`, `BranchNamingSettings.tsx`
 //! and `WorktreeCleanupSection` of `StorageSettings.tsx`.
 
-use gpui_kit::{Context, Entity, IntoElement, Render, Subscription, Window, div, prelude::*, px};
+use gpui_kit::{Context, Entity, IntoElement, Render, Subscription, Window, div, prelude::*};
 use t3code_contracts::{
     BranchNamingMode, ClientServerSettingsPatch, ClientServerSettingsPatchStorageCleanup, WorktreeKeepWhen, WorktreeSubmodules,
 };
 
+use crate::components::ui::input::InputSize;
 use super::server_settings_controls::{
     Fields, advanced_fold, bool_setting, field_input, lock_reason, retention_control, save_patch, select_row,
 };
@@ -14,6 +15,9 @@ use super::settings_layout::{SettingsRow, SettingsSection, page_container};
 use crate::ActiveAppTheme as _;
 use crate::components::managed_policy::managed_by;
 use crate::i18n::t;
+
+/// An unsized `Input` (`h-8`, the browser's 20-character text field width at the interface size).
+const INPUT_WIDTH: gpui_kit::Rems = gpui_kit::rems(11.2);
 
 /// The Worktrees page.
 pub struct WorktreesSettingsPanel {
@@ -73,7 +77,7 @@ impl Render for WorktreesSettingsPanel {
         );
         let creation = SettingsSection::new(t!("Creation", context = "settings section about creating worktrees"))
             .child(SettingsRow::new(t!("Worktree location")).description(t!("Folder where new worktrees are created, on any drive, such as D:\\worktrees or ~/worktrees. Existing worktrees stay where they are. Leave empty to use the T3 home folder.")).control(
-                div().w(px(234.)).child(field_input(&dir, false, false, ro || lock(&["worktreesDirectory"]).is_some())),
+                div().w(INPUT_WIDTH).child(field_input(&dir, false, false, ro || lock(&["worktreesDirectory"]).is_some()).size(InputSize::Default)),
             ))
             .child(bool_setting(&model, "newWorktreesStartFromOrigin", t!("Start from remote"), Some(t!("Uses the latest commit of the base branch’s tracked remote branch, even if its name differs. Otherwise uses the same-named branch on origin. Uses your local branch if that remote branch is missing.")), s.new_worktrees_start_from_origin.unwrap_or(true), lock(&["newWorktreesStartFromOrigin"]), |v| ClientServerSettingsPatch { new_worktrees_start_from_origin: Some(v), ..Default::default() }))
             .child(creation_advanced);
@@ -102,7 +106,7 @@ impl Render for WorktreesSettingsPanel {
                 branches = branches.child(SettingsRow::new(t!("Branch naming instructions")).description(t!("Appended to the naming prompt. The model returns the complete branch name; no prefix or suffix is added.")).control(div().w(theme.sp(64.)).child(field_input(&instructions, false, false, ro))));
             }
             BranchNamingMode::Static => {
-                branches = branches.child(SettingsRow::new(t!("Branch prefix")).description(t!("For example, t3 or t3/ produces t3/add-search. Leave empty for no prefix.")).control(div().w(px(234.)).child(field_input(&prefix, false, false, ro))));
+                branches = branches.child(SettingsRow::new(t!("Branch prefix")).description(t!("For example, t3 or t3/ produces t3/add-search. Leave empty for no prefix.")).control(div().w(INPUT_WIDTH).child(field_input(&prefix, false, false, ro).size(InputSize::Default))));
             }
             _ => {}
         }

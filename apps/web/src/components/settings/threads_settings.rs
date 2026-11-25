@@ -3,7 +3,7 @@
 //! `SnoozePresetsSettings.tsx` (shown, edited elsewhere) and
 //! `ThreadTitleInstructionsSettings.tsx`, at environment scope.
 
-use gpui_kit::{App, Context, Entity, IntoElement, Render, SharedString, Subscription, Window, div, prelude::*, px};
+use gpui_kit::{App, Context, Entity, IntoElement, Render, SharedString, Subscription, Window, div, prelude::*};
 use t3code_contracts::{
     ClientServerSettingsPatch, ClientServerSettingsPatchTextGenerationModelSelection, ModelSelection, ResponseStreamingMode,
     RuntimeMode, SidebarAutoSettleAfterDays, ThreadEnvMode,
@@ -166,7 +166,7 @@ impl Render for ThreadsSettingsPanel {
             .child(
                 SettingsRow::new(t!("Add project starts in"))
                     .description(t!("Leave empty to use \"~/\" when the Add Project browser opens."))
-                    .control(div().w(px(288.)).child(field_input(&base, false, false, ro))),
+                    .control(div().w(gpui_kit::rems(18.)).child(field_input(&base, false, false, ro))),
             )
             .child(bool_setting(model, "ghqCloneLayout", t!("Clone into host folders"), Some(t!("Clones go to github.com/owner/repo under the folder above, like ghq.")), s.ghq_clone_layout.unwrap_or(false), lock(&["ghqCloneLayout"]), |v| ClientServerSettingsPatch { ghq_clone_layout: Some(v), ..Default::default() }));
 
@@ -218,7 +218,7 @@ impl Render for ThreadsSettingsPanel {
                 }
             });
             auto_settle = auto_settle
-                .child(SettingsRow::new(t!("Days of inactivity before auto-settle")).description(t!("Any new activity un-settles a thread automatically.")).control(div().w(px(96.)).child(field_input(&days_field, false, false, ro))))
+                .child(SettingsRow::new(t!("Days of inactivity before auto-settle")).description(t!("Any new activity un-settles a thread automatically.")).control(div().w(gpui_kit::rems(6.)).child(field_input(&days_field, false, false, ro))))
                 .child(bool_setting(model, "sidebarAutoSettleKeepPullRequests", t!("Keep threads with a PR"), Some(t!("Inactivity does not settle threads with a pull request. Merge and close still do.")), s.sidebar_auto_settle_keep_pull_requests.unwrap_or(false), lock(&["sidebarAutoSettleKeepPullRequests"]), |v| ClientServerSettingsPatch { sidebar_auto_settle_keep_pull_requests: Some(v), ..Default::default() }));
         }
 
