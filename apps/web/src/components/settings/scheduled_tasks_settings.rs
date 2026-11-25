@@ -6,7 +6,7 @@
 //! from `scheduled_tasks_settings_logic`.
 
 use gpui_kit::component::input::{InputState, TextareaState};
-use gpui_kit::{AnyElement, AppContext as _, Context, Entity, EventEmitter, IntoElement, Render, SharedString, Subscription, Window, div, prelude::*, px};
+use gpui_kit::{AnyElement, App, AppContext as _, Context, Div, Entity, EventEmitter, IntoElement, Render, SharedString, Subscription, Window, div, prelude::*, px};
 use t3code_contracts::{
     ModelSelection, OrchestrationV2ThreadLaunchWorkspaceStrategy as Strategy, OrchestrationV2ThreadLaunchWorkspaceStrategyRoot,
     OrchestrationV2ThreadLaunchWorkspaceStrategyWorktree, ProjectId, RuntimeMode, ScheduledTaskDeleteInput, ScheduledTaskId,
@@ -32,7 +32,7 @@ use crate::components::ui::TextStyleExt as _;
 use crate::components::ui::button::{Button, ButtonSize, ButtonVariant};
 use crate::components::ui::dialog::{Modal, dialog_glass};
 use crate::components::ui::select::{Select, SelectSize};
-use crate::components::ui::input::TextArea;
+use crate::components::ui::input::{InputSize, TextArea};
 use crate::components::ui::switch::Switch;
 use crate::components::ui::toggle::{Toggle, ToggleSize, ToggleVariant};
 use crate::i18n::t;
@@ -221,10 +221,18 @@ impl ScheduledTaskEditor {
         cx.notify();
     }
 
+    /// `Field`: its `Label` over the control, `space-y-1.5`.
     fn labeled(&self, label: SharedString, control: impl IntoElement, cx: &Context<Self>) -> AnyElement {
         let theme = cx.app_theme();
-        // `Field`: `space-y-1.5`.
-        div().flex().flex_col().gap(theme.sp(1.5)).child(div().ui_text(theme, TextSize::Sm, weight::MEDIUM).child(label)).child(control).into_any_element()
+        div().flex().flex_col().gap(theme.sp(1.5)).child(field_label(label, cx)).child(control).into_any_element()
+    }
+
+    /// A `Field` around a `Select` or `Combobox`. Their hidden form input is the field's last
+    /// child, so Tailwind's `space-y-1.5` (a bottom margin on every child but the last) leaves
+    /// the same gap under the trigger.
+    fn labeled_select(&self, label: SharedString, control: impl IntoElement, cx: &Context<Self>) -> AnyElement {
+        let theme = cx.app_theme();
+        div().pb(theme.sp(1.5)).child(self.labeled(label, control, cx)).into_any_element()
     }
 
     fn input(&mut self, key: &str, value: String, placeholder: impl Into<SharedString>, window: &mut Window, cx: &mut Context<Self>) -> Entity<InputState> {
@@ -267,8 +275,8 @@ impl ScheduledTaskEditor {
                             .flex()
                             .items_center()
                             .gap(theme.sp(2.))
-                            .child(div().ui_text(theme, TextSize::Sm, weight::MEDIUM).child(t!("Run at")))
-                            .child(div().w(theme.sp(32.)).child(field_input(&time, false, false, false).trailing_icon(IconName::Clock)))
+                            .child(field_label(t!("Run at"), cx))
+                            .child(div().w(theme.sp(32.)).child(field_input(&time, false, false, false).size(InputSize::Default).trailing_icon(IconName::Clock)))
                             .child(hint(zone, cx))
                             .child(hint(t!("on"), cx)),
                     )
@@ -281,8 +289,8 @@ impl ScheduledTaskEditor {
                     .flex()
                     .items_center()
                     .gap(theme.sp(2.))
-                    .child(div().ui_text(theme, TextSize::Sm, weight::MEDIUM).child(t!("Run at")))
-                    .child(div().w(theme.sp(56.)).child(field_input(&run_at, false, false, false)))
+                    .child(field_label(t!("Run on"), cx))
+                    .child(div().w(theme.sp(56.)).child(field_input(&run_at, false, false, false).size(InputSize::Default)))
                     .into_any_element()
             }
             ScheduleMode::Interval => {
@@ -291,8 +299,8 @@ impl ScheduledTaskEditor {
                     .flex()
                     .items_center()
                     .gap(theme.sp(2.))
-                    .child(div().ui_text(theme, TextSize::Sm, weight::MEDIUM).child(t!("Run every")))
-                    .child(div().w(theme.sp(24.)).child(field_input(&interval, false, false, false)))
+                    .child(field_label(t!("Run every"), cx))
+                    .child(div().w(theme.sp(24.)).child(field_input(&interval, false, false, false).size(InputSize::Default)))
                     .child(hint(t!("minutes"), cx))
                     .into_any_element()
             }
@@ -469,28 +477,28 @@ impl Render for ScheduledTaskEditor {
         let schedule = self.render_schedule(window, cx);
         let new_thread = d.thread_mode == ScheduledTaskThreadMode::NewThread;
         let mut body: Vec<AnyElement> = vec![
-            self.labeled(t!("Runs on"), runs_on, cx),
-            self.labeled(t!("Name"), field_input(&title, false, false, false), cx),
-            self.labeled(t!("Destination"), div().flex().flex_col().gap(theme.sp(2.)).child(destination).child(div().ui_text(theme, TextSize::Sm, weight::NORMAL).text_color(c.muted_foreground).child(thread_modes[thread_ix].2.clone())), cx),
+            self.labeled_select(t!("Runs on"), runs_on, cx),
+            self.labeled(t!("Name"), field_input(&title, false, false, false).size(InputSize::Default), cx),
+            self.labeled(t!("Destination"), div().flex().flex_col().gap(theme.sp(1.5)).child(destination).child(div().ui_text(theme, TextSize::Sm, weight::NORMAL).text_color(c.muted_foreground).child(thread_modes[thread_ix].2.clone())), cx),
         ];
         if new_thread {
             body.push(
                 div()
                     .flex()
                     .gap(theme.sp(3.))
-                    .child(div().flex_1().min_w_0().child(self.labeled(t!("Project"), project_select, cx)))
-                    .child(div().flex_1().min_w_0().child(self.labeled(t!("Workspace"), workspace, cx)))
+                    .child(div().flex_1().min_w_0().child(self.labeled_select(t!("Project"), project_select, cx)))
+                    .child(div().flex_1().min_w_0().child(self.labeled_select(t!("Workspace"), workspace, cx)))
                     .into_any_element(),
             );
             match d.workspace_mode {
                 WorkspaceMode::Worktree => {
                     let cwd = projects.get(project_ix).map(|p| p.workspace_root.clone());
                     let base = self.base_branch_picker(cwd, cx);
-                    body.push(self.labeled(t!("Base branch"), base, cx));
+                    body.push(self.labeled_select(t!("Base branch"), base, cx));
                 }
                 WorkspaceMode::ExistingWorktree => {
                     let path = self.input("checkoutPath", d.existing_worktree_path.clone(), "", window, cx);
-                    body.push(self.labeled(t!("Checkout path"), field_input(&path, false, false, false), cx));
+                    body.push(self.labeled(t!("Checkout path"), field_input(&path, false, false, false).size(InputSize::Default), cx));
                 }
                 WorkspaceMode::Root => {}
             }
@@ -506,7 +514,7 @@ impl Render for ScheduledTaskEditor {
                     .flex()
                     .flex_col()
                     .gap(theme.sp(3.))
-                    .child(div().flex().flex_wrap().items_center().justify_between().gap(theme.sp(2.)).child(div().ui_text(theme, TextSize::Sm, weight::MEDIUM).child(t!("Schedule"))).child(kinds))
+                    .child(div().flex().flex_wrap().items_center().justify_between().gap(theme.sp(2.)).child(field_label(t!("Schedule"), cx)).child(kinds))
                     .children(webhook_denied.map(|r| hint(r, cx)))
                     .child(schedule)
                     .into_any_element(),
@@ -522,7 +530,9 @@ impl Render for ScheduledTaskEditor {
                             .flex()
                             .flex_col()
                             .gap(theme.sp(1.))
-                            .child(div().ui_text(theme, TextSize::Sm, weight::MEDIUM).child(t!("Enabled")))
+                            // An inline-flex `Label` in a block: it sits on the dialog text's baseline
+                            // (15px on a 1.5rem line), about 1.25 spacing units below the block top.
+                            .child(field_label(t!("Enabled"), cx).mt(theme.sp(1.25)))
                             .child(div().ui_text(theme, TextSize::Sm, weight::NORMAL).text_color(c.muted_foreground).child(t!("Disabled tasks stay saved but do not run."))),
                     )
                     .child(Switch::new("task-enabled", enabled).on_change({
@@ -713,4 +723,10 @@ fn two_letter_weekday(day: u64) -> SharedString {
         5 => t!("Fr", context = "two-letter Friday"),
         _ => t!("Sa", context = "two-letter Saturday"),
     }
+}
+
+/// `Label`: `sm:text-sm/4 font-medium`, a 1rem line.
+fn field_label(label: SharedString, cx: &App) -> Div {
+    let theme = cx.app_theme();
+    div().ui_text(theme, TextSize::Sm, weight::MEDIUM).line_height(theme.rem(1.)).child(label)
 }
