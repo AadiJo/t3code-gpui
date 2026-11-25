@@ -674,30 +674,19 @@ impl ThreadRouteView {
             C::ComposerSendBackground if is_draft => self.composer.update(cx, |c, cx| c.submit(ComposerSubmissionIntent::Background, cx)),
             C::ComposerSendAndNewThread if !is_draft => self.composer.update(cx, |c, cx| c.submit(ComposerSubmissionIntent::Background, cx)),
             C::ComposerSendBackground | C::ComposerSendAndNewThread => {}
-            // `composer.host` and `composer.workspace` both open the run-context menu.
-            C::ComposerHost | C::ComposerWorkspace => {
-                if let Some(strip) = self.branch_strip().cloned() {
-                    strip.update(cx, |strip, cx| strip.open_menu("run-context", cx));
-                }
-            }
-            C::ComposerBranch => {
-                if let Some(strip) = self.branch_strip().cloned() {
-                    strip.update(cx, |strip, cx| strip.set_branch_picker_open(true, window, cx));
-                }
-            }
-            C::ComposerCycleHost => self.cycle_host(cx),
-            C::ComposerPreviousWorktree => {
-                let offered = self.branch_strip().is_some_and(|strip| {
-                    let props = strip.read(cx).props();
-                    !props.is_server_thread && !props.force_new_worktree && props.previous_worktree.is_some()
-                });
-                if let (ThreadTarget::Draft(draft), true) = (&target, offered) {
-                    self.data.draft_workspace_event(draft, &BranchToolbarEvent::UsePreviousWorktree, cx);
-                }
-            }
-            C::ComposerStash | C::ComposerEffort | C::ComposerIncreaseEffort | C::ComposerDecreaseEffort | C::ComposerMode | C::ComposerDictation => {
-                return self.open_composer_control(command, cx);
-            }
+            // The composer owns its controls; this reaches them when focus is elsewhere. Each
+            // method follows the fork's rule for when there is nothing to open.
+            C::ComposerHost => _ = self.composer.update(cx, |c, cx| c.open_host(cx)),
+            C::ComposerWorkspace => _ = self.composer.update(cx, |c, cx| c.open_workspace(cx)),
+            C::ComposerBranch => _ = self.composer.update(cx, |c, cx| c.open_branch(window, cx)),
+            C::ComposerCycleHost => _ = self.composer.update(cx, |c, cx| c.cycle_host(cx)),
+            C::ComposerPreviousWorktree => _ = self.composer.update(cx, |c, cx| c.use_previous_worktree(window, cx)),
+            C::ComposerStash => self.composer.update(cx, |c, cx| c.stash(window, cx)),
+            C::ComposerEffort => self.composer.update(cx, |c, cx| c.open_effort(window, cx)),
+            C::ComposerMode => self.composer.update(cx, |c, cx| c.open_mode(window, cx)),
+            C::ComposerIncreaseEffort => _ = self.composer.update(cx, |c, cx| c.step_effort(crate::components::chat::composer::EffortStep::Up, cx)),
+            C::ComposerDecreaseEffort => _ = self.composer.update(cx, |c, cx| c.step_effort(crate::components::chat::composer::EffortStep::Down, cx)),
+            C::ComposerDictation => _ = self.composer.update(cx, |c, cx| c.toggle_dictation(cx)),
             C::ThreadStop => {
                 let running = self.data.thread_view(&target, cx).is_some_and(|view| view.running);
                 if running {
@@ -731,27 +720,6 @@ impl ThreadRouteView {
             _ => return Wiring::Dropped,
         }
         Wiring::Ran
-    }
-
-    /// `composer.cycleHost`: the draft moves to the next environment its project lives on.
-    fn cycle_host(&mut self, cx: &mut Context<Self>) {
-        let Some(ThreadTarget::Draft(draft)) = self.target.clone() else { return };
-        let Some(strip) = self.branch_strip() else { return };
-        let props = strip.read(cx).props();
-        if !props.can_change_environment || props.environments.is_empty() {
-            return;
-        }
-        let index = props.environments.iter().position(|env| Some(&env.environment_id) == props.environment_id.as_ref());
-        let next = props.environments[index.map_or(0, |i| (i + 1) % props.environments.len())].environment_id.clone();
-        self.data.draft_workspace_event(&draft, &BranchToolbarEvent::EnvironmentChanged(next), cx);
-    }
-
-    /// The composer controls the composer itself opens (stash, effort, mode, dictation). Until
-    /// `ChatComposer` handles these actions on its own element, the shortcut says so here.
-    fn open_composer_control(&mut self, command: StaticCommand, cx: &mut Context<Self>) -> Wiring {
-        let title = crate::shortcuts::commands::command_title(&t3code_shared::keybindings::KeybindingCommand::Static(command));
-        Toaster::push(ToastData::new(ToastKind::Info, t!("{command} is not available in this app yet", command = title.as_ref())), cx);
-        Wiring::Unavailable(crate::shortcuts::commands::pending_command_owner(command).unwrap_or("composer"))
     }
 
     /// `script.<id>.run`: runs the shown project's script in a terminal tab.
@@ -918,7 +886,7 @@ impl ThreadRouteView {
                 }
             }
             DataEvent::ThreadChanged(_) | DataEvent::OpenThread(_) | DataEvent::OpenSideChat { .. } => {}
-            DataEvent::ThreadChanged(_) | DataEvent::OpenThread(_) | DataEvent::OpenSideChat { .. } | DataEvent::NewThread(_) => {}
+            DataEvent::ThreadChanged(_) | DataEvent::OpenThread(_) | DataEvent::OpenSideChat { .. } => {}
         }
     }
 }

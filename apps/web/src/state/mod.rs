@@ -294,10 +294,3 @@ pub fn open_thread(key: crate::components::sidebar::model::ThreadKey, cx: &mut A
         events.update(cx, |_, cx| cx.emit(app_data::DataEvent::OpenThread(key)));
     }
 }
-
-/// Asks the app to open a new draft in `project` (send and new thread).
-pub fn open_new_thread(project: Option<crate::components::sidebar::model::ProjectRef>, cx: &mut App) {
-    if let Some(events) = cx.try_global::<LiveEvents>().map(|e| e.0.clone()) {
-        events.update(cx, |_, cx| cx.emit(app_data::DataEvent::NewThread(project)));
-    }
-}
