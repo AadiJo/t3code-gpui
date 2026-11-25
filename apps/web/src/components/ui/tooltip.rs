@@ -10,8 +10,8 @@ use std::time::Duration;
 
 use crate::components::ui::GlassExt as _;
 use gpui_kit::{
-    AnyElement, AnyView, App, AppContext as _, Bounds, Context, IntoElement, Pixels, Point, Render, RenderOnce, SharedString, Task, Window, canvas, div,
-    point, prelude::*, px,
+    AnyElement, AnyView, App, AppContext as _, AvailableSpace, Bounds, Context, IntoElement, Pixels, Point, Render, RenderOnce, SharedString, Size, Task, Window, canvas, div,
+    point, prelude::*, px, size,
 };
 
 use super::motion::Transition;
@@ -186,11 +186,12 @@ impl TooltipView {
 }
 
 impl Render for TooltipView {
-    fn render(&mut self, window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         // `data-starting-style:opacity-0` (the `scale-98` half needs a transform GPUI lacks).
         let Some(Placement { side, trigger, origin }) = self.placement else {
             return Transition::STANDARD.fade_in("tooltip-enter", div().pb(px(4.)).child(self.surface.clone()));
         };
+        let side = flip(side, trigger, self.measure(window, cx), window.viewport_size());
         // GPUI places the root at `origin` and sizes it to its content, so the root stays empty
         // and the card hangs off it, beside the trigger and centred on it. Base UI shifts a
         // popup along that axis to stay `COLLISION_PADDING` inside the window: the card sits
@@ -237,6 +238,35 @@ impl Render for TooltipView {
             .child(div().flex().flex_none().when(vertical, |d| d.h_full()).when(!vertical, |d| d.w_full()).child(along));
         Transition::STANDARD.fade_in("tooltip-enter", div().size_0().child(frame))
     }
+}
+
+impl TooltipView {
+    /// The card's size, laid out on its own.
+    fn measure(&self, window: &mut Window, cx: &mut App) -> Size<Pixels> {
+        let mut probe = div().child(self.surface.clone()).into_any_element();
+        probe.layout_as_root(size(AvailableSpace::MaxContent, AvailableSpace::MaxContent), window, cx)
+    }
+}
+
+/// Floating UI's `flip`, as Base UI applies it: the opposite side when the card does not
+/// fit on its own side within the collision padding but fits there, else the roomier side.
+fn flip(side: TooltipSide, trigger: Bounds<Pixels>, card: Size<Pixels>, window: Size<Pixels>) -> TooltipSide {
+    let room = |side: TooltipSide| {
+        let edge = match side {
+            TooltipSide::Top => trigger.top(),
+            TooltipSide::Bottom => window.height - trigger.bottom(),
+            TooltipSide::Left => trigger.left(),
+            TooltipSide::Right => window.width - trigger.right(),
+        };
+        edge - SIDE_OFFSET - COLLISION_PADDING
+    };
+    let (opposite, needed) = match side {
+        TooltipSide::Top => (TooltipSide::Bottom, card.height),
+        TooltipSide::Bottom => (TooltipSide::Top, card.height),
+        TooltipSide::Left => (TooltipSide::Right, card.width),
+        TooltipSide::Right => (TooltipSide::Left, card.width),
+    };
+    if room(side) >= needed || (room(opposite) < needed && room(side) >= room(opposite)) { side } else { opposite }
 }
 
 /// A tooltip builder for GPUI's `.tooltip(...)`.

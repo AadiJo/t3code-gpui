@@ -88,6 +88,23 @@ fn turn_texts(rows: &[TimelineRow], user_row: usize) -> (SharedString, Option<Sh
     (user, assistant)
 }
 
+/// The user message with each context chip and citation as its label
+/// (`replaceComposerContextReferences(…, reference => reference.label)`,
+/// `assistantCitationsToPlainText`), before markdown would read them as links.
+fn chip_labels(text: &str) -> String {
+    use crate::composer_editor_mentions::{ChipKind, ComposerPromptSegment, split_prompt_into_segments};
+    split_prompt_into_segments(text)
+        .into_iter()
+        .map(|segment| match segment {
+            ComposerPromptSegment::Text(text) => text.to_owned(),
+            ComposerPromptSegment::Chip(token) if matches!(token.kind, ChipKind::Context { .. } | ChipKind::Citation) => {
+                token.label.to_string()
+            }
+            ComposerPromptSegment::Chip(token) => text[token.range].to_owned(),
+        })
+        .collect()
+}
+
 /// `markdownMinimapPreview`: the first stretch of a message as one line of rendered text.
 fn preview(markdown: &str) -> Option<SharedString> {
     let end = markdown.char_indices().nth(PREVIEW_SOURCE_CHARS).map_or(markdown.len(), |(i, _)| i);
@@ -202,7 +219,7 @@ impl MessagesTimeline {
         };
         let preview_card = active.and_then(|index| items.get(index)).map(|item| {
             let (user_text, assistant_text) = turn_texts(&self.rows, item.row_index);
-            let user = preview(&user_text).unwrap_or_else(|| t!("User message"));
+            let user = preview(&chip_labels(&user_text)).unwrap_or_else(|| t!("User message"));
             let assistant = assistant_text.as_deref().and_then(preview);
             let theme = crate::ActiveAppTheme::app_theme(&**cx);
             div()

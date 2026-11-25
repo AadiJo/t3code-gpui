@@ -1184,7 +1184,7 @@ impl PullRequestDetailPanel {
     }
 
     fn markdown(&mut self, key: &str, text: &str) -> (u64, Vec<ParsedBlocks>) {
-        let k = hash_key(&format!("{key}\0{text}"));
+        let k = hash_key(&format!("{key}\0{}\0{text}", crate::markdown_pipeline::math_enabled()));
         let pieces = self.markdown.entry(k).or_insert_with(|| parse_message_blocks(&expand_github_emoji_aliases(text), MarkdownFlavor::ASSISTANT, false)).clone();
         (k, pieces)
     }

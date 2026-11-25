@@ -222,7 +222,7 @@ impl IssueDetailPanel {
     }
 
     fn markdown(&mut self, key: &str, text: &str, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
-        let cache_key = format!("{key}\0{text}");
+        let cache_key = format!("{key}\0{}\0{text}", crate::markdown_pipeline::math_enabled());
         let pieces = self.markdown.entry(cache_key.clone()).or_insert_with(|| parse_message_blocks(text, MarkdownFlavor::ASSISTANT, false)).clone();
         let colors = ChatColors::get(cx);
         let k = cache_key.bytes().fold(1469598103934665603u64, |h, b| (h ^ u64::from(b)).wrapping_mul(1099511628211));

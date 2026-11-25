@@ -28,7 +28,7 @@ use super::{
 };
 use crate::{
     i18n::t,
-    components::chat_markdown::{MarkdownAction, MarkdownActions, MarkdownUiState},
+    components::chat_markdown::{MarkdownAction, MarkdownActions, MarkdownMenus, MarkdownUiState},
     markdown_pipeline::{MarkdownFlavor, ParsedBlocks},
 };
 
@@ -125,6 +125,8 @@ struct TimelineFind {
 pub(super) struct MessageMarkdown {
     text: SharedString,
     streaming: bool,
+    /// Whether math parsed (the Render math setting) when the pieces were made.
+    math: bool,
     pub(super) pieces: Vec<ParsedBlocks>,
     /// When each piece first appeared, for the streaming fade.
     pub(super) first_seen: Vec<Instant>,
@@ -227,7 +229,23 @@ impl MessagesTimeline {
             unfolded_messages: HashSet::new(),
             list,
             group_lists: HashMap::new(),
-            markdown_state: MarkdownUiState { run_shell_commands: true, ..Default::default() },
+            markdown_state: MarkdownUiState {
+                run_shell_commands: true,
+                // The route view routes these events (see `set_markdown_menus` for the host's abilities).
+                menus: MarkdownMenus {
+                    actions: Some({
+                        let weak = weak.clone();
+                        Rc::new(move |action, _, cx| {
+                            weak.update(cx, |_, cx| cx.emit(action)).ok();
+                        })
+                    }),
+                    preview: true,
+                    editor_label: Some(crate::i18n::t!("Open in editor")),
+                    reveal_label: None,
+                    cwd: None,
+                },
+                ..Default::default()
+            },
             markdown: HashMap::new(),
             colors: ChatColors::get(cx),
             lane: super::chat_style::ChatLane::get(cx),
@@ -496,6 +514,15 @@ impl MessagesTimeline {
 
     /// The composer overlay's measured height, rounded up to a whole pixel as
     /// `publishComposerOverlayHeight` does; the list reserves it at the bottom.
+    /// What the host lets message menus do: the preferred editor's "Open in …" label, the
+    /// file manager's "Reveal in …" label, whether the integrated browser is available, and the
+    /// working directory full paths resolve against.
+    pub fn set_markdown_menus(&mut self, preview: bool, editor_label: Option<SharedString>, reveal_label: Option<SharedString>, cwd: Option<SharedString>, cx: &mut Context<Self>) {
+        let menus = &mut self.markdown_state.menus;
+        (menus.preview, menus.editor_label, menus.reveal_label, menus.cwd) = (preview, editor_label, reveal_label, cwd);
+        cx.notify();
+    }
+
     pub fn set_composer_inset(&mut self, height: Pixels, cx: &mut Context<Self>) {
         let height = height.ceil();
         if self.composer_inset == height {
@@ -647,10 +674,12 @@ impl MessagesTimeline {
         let entry = self.markdown.entry(id.clone()).or_insert_with(|| MessageMarkdown {
             text: SharedString::default(),
             streaming,
+            math: crate::markdown_pipeline::math_enabled(),
             pieces: Vec::new(),
             first_seen: Vec::new(),
         });
-        if entry.text != *text || entry.streaming != streaming || entry.pieces.is_empty() && !text.is_empty() {
+        let math = crate::markdown_pipeline::math_enabled();
+        if entry.text != *text || entry.streaming != streaming || entry.math != math || entry.pieces.is_empty() && !text.is_empty() {
             let was_streaming = entry.streaming;
             entry.pieces = parse_message_blocks(text, flavor, streaming);
             // Pieces seen before keep their time; new ones fade in only while streaming.
@@ -658,6 +687,7 @@ impl MessagesTimeline {
             entry.first_seen.resize(entry.pieces.len(), seen_at);
             entry.text = text.clone();
             entry.streaming = streaming;
+            entry.math = math;
         }
         entry
     }
@@ -956,6 +986,8 @@ impl Render for MessagesTimeline {
 }
 
 impl gpui_kit::EventEmitter<TimelineAction> for MessagesTimeline {}
+/// Link and file menu items in messages (`MarkdownMenuAction`), for the route view to carry out.
+impl gpui_kit::EventEmitter<crate::components::chat_markdown::MarkdownMenuAction> for MessagesTimeline {}
 
 /// The open find's count changed without a keystroke (the index finished).
 #[derive(Clone, Copy, Debug)]

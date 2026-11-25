@@ -8,6 +8,7 @@ mod command_palette;
 pub mod connections;
 pub mod git_actions;
 mod i18n;
+mod math;
 mod notifications;
 pub mod pull_requests;
 pub mod composer;
@@ -42,6 +43,7 @@ pub fn scenes() -> &'static [(&'static str, SceneBuilder)] {
         ("terminal-light", terminal::build_light),
         ("i18n", i18n::build),
         ("text-metrics", text_metrics::build),
+        ("math", math::build),
         ("composer-light", composer::build_light),
         ("composer-popovers", composer::build_popovers),
         ("composer-popovers-light", composer::build_popovers_light),

@@ -37,6 +37,18 @@ const SCROLLBAR_MIN_THUMB: Pixels = px(24.);
 /// seconds, at most 1.5s (`cc/base/features.cc`, `ScrollOffsetAnimationCurve`).
 const SMOOTH_SCROLL_CURVE: crate::theme_tokens::CubicBezier = crate::theme_tokens::CubicBezier(0.4, 0., 0., 1.);
 const SMOOTH_SCROLL_MAX: Duration = Duration::from_millis(1_500);
+
+/// `ImpulseCurveWithInitialSlope`: the smooth-scroll curve with its first control point
+/// moved so it starts at `slope` (progress per unit of normalized time).
+fn impulse_curve(slope: f32) -> crate::theme_tokens::CubicBezier {
+    let crate::theme_tokens::CubicBezier(x1, _, x2, y2) = SMOOTH_SCROLL_CURVE;
+    let slope = slope.max(0.);
+    if x1 * slope < 1. {
+        crate::theme_tokens::CubicBezier(x1, x1 * slope, x2, y2)
+    } else {
+        crate::theme_tokens::CubicBezier(1. / slope, 1., x2, y2)
+    }
+}
 /// Lines-based wheel deltas scroll this far per line.
 const WHEEL_LINE_HEIGHT: Pixels = px(20.);
 
@@ -78,6 +90,8 @@ struct FollowAnimation {
     from: Pixels,
     start: Instant,
     duration: Duration,
+    /// The timing curve; a retarget bends its start to keep the speed the scroll had.
+    curve: crate::theme_tokens::CubicBezier,
     /// The curve's progress for the frame being drawn.
     eased: f32,
 }
@@ -398,16 +412,29 @@ impl Inner {
             if progress >= 1. {
                 self.follow_animation = None;
             } else {
-                animation.eased = SMOOTH_SCROLL_CURVE.ease(progress);
+                animation.eased = animation.curve.ease(progress);
             }
         }
         let end = self.max_scroll();
         let Some((last_end, drawn)) = self.last_end else { return };
         if end > last_end + px(0.5) {
-            let from = if self.follow_animation.is_some() { self.scroll_top() } else { drawn };
+            let running = self.follow_animation;
+            let from = if running.is_some() { self.scroll_top() } else { drawn };
             let seconds = f32::from(end - from).abs().sqrt() / 60.;
             let duration = Duration::from_secs_f32(seconds).min(SMOOTH_SCROLL_MAX);
-            self.follow_animation = Some(FollowAnimation { from, start: self.now, duration, eased: 0. });
+            // Chromium's `UpdateTarget`: the new curve starts at the speed the old one had
+            // (`ImpulseCurveWithInitialSlope`), so a moving end does not stall the scroll.
+            let curve = running.map_or(SMOOTH_SCROLL_CURVE, |old| {
+                let elapsed = self.now.saturating_duration_since(old.start).as_secs_f32();
+                let progress = (elapsed / old.duration.as_secs_f32().max(f32::EPSILON)).clamp(0., 1.);
+                let h = 0.001;
+                let (a, b) = ((progress - h).max(0.), (progress + h).min(1.));
+                let slope = (old.curve.ease(b) - old.curve.ease(a)) / (b - a).max(f32::EPSILON);
+                let velocity = f32::from(last_end - old.from) * slope / old.duration.as_secs_f32().max(f32::EPSILON);
+                let delta = f32::from(end - from).max(f32::EPSILON);
+                impulse_curve(velocity * duration.as_secs_f32() / delta)
+            });
+            self.follow_animation = Some(FollowAnimation { from, start: self.now, duration, curve, eased: 0. });
         }
     }
 

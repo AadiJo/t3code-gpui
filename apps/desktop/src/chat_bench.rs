@@ -278,6 +278,66 @@ impl Stats {
     }
 }
 
+/// Scroll frames over a thread of 200 formulas and streaming a reply with math, with the
+/// Render math setting on; counts formula layouts to show finished ones are not laid out again.
+fn perf_math(out: &Path) -> anyhow::Result<()> {
+    use t3code_web::components::chat::timeline_fixtures::{math_reply, math_thread};
+    let mut report = String::new();
+    let mut s = Session::open(Appearance::Dark, 1100., 780.)?;
+    s.cx.update(|cx| t3code_web::hooks::use_settings::ClientSettingsStore::update(cx, |settings| settings.math_rendering_enabled = true));
+    s.settle()?;
+    let input = math_thread(100);
+    let started = Instant::now();
+    s.set_thread("math", input.clone());
+    s.frame()?;
+    writeln!(report, "math thread: 100 turns, 200 formulas; first paint {:.1}ms, formula layouts so far {}", started.elapsed().as_secs_f64() * 1e3, t3code_web::math::layouts())?;
+    s.settle()?;
+    let timeline = s.timeline();
+    for pass in ["cold", "warm"] {
+        let layouts = t3code_web::math::layouts();
+        let mut scroll = Stats(Vec::new());
+        let mut up = true;
+        for step in 0..400 {
+            if step == 200 { up = false; }
+            let started = Instant::now();
+            s.cx.update(|cx| {
+                timeline.read(cx).list_state().scroll_by(px(if up { -120. } else { 120. }), t3code_web::components::chat::timeline_viewport::TimelineNavigation::Wheel { up })
+            });
+            s.frame()?;
+            scroll.0.push(started.elapsed());
+        }
+        let over = scroll.0.iter().filter(|d| d.as_secs_f64() > 0.016).count();
+        writeln!(report, "scroll frames, {pass} (200 wheel steps up and back, 120px each): {} ; over 16ms: {over}; formula layouts during the pass: {}", scroll.summary(), t3code_web::math::layouts() - layouts)?;
+    }
+    s.shot(&out.join("perf-math-scrolled.png"))?;
+    let reply = math_reply(12, 1000);
+    let base = streaming_thread(input, "");
+    s.set_thread("math-stream", base);
+    s.settle()?;
+    s.cx.update(|cx| timeline.read(cx).list_state().follow_end());
+    let reply_id = t3code_web::components::chat::timeline_entries::MessageId::new("stream-reply");
+    let layouts = t3code_web::math::layouts();
+    let mut stream = Stats(Vec::new());
+    let mut cut = 0;
+    let mut deltas = 0;
+    while cut < reply.len() {
+        cut = (cut + 12).min(reply.len());
+        while !reply.is_char_boundary(cut) { cut += 1; }
+        let text: gpui_kit::SharedString = reply[..cut].to_owned().into();
+        let started = Instant::now();
+        s.cx.update(|cx| timeline.update(cx, |t, cx| t.update_message_text(&reply_id, text, cut < reply.len(), cx)));
+        s.frame()?;
+        stream.0.push(started.elapsed());
+        deltas += 1;
+    }
+    let streamed = t3code_web::math::layouts() - layouts;
+    writeln!(report, "streaming a reply with 24 formulas in 12-char deltas ({deltas} deltas): {}; formula layouts {streamed} (each finished formula is laid out once; the growing one per delta that touches it)", stream.summary())?;
+    s.shot(&out.join("perf-math-streamed.png"))?;
+    print!("{report}");
+    std::fs::write(out.join("perf-math.txt"), report)?;
+    Ok(())
+}
+
 fn perf(out: &Path) -> anyhow::Result<()> {
     let mut report = String::new();
     let rss_start = rss_kib();
@@ -390,6 +450,7 @@ fn main() -> anyhow::Result<()> {
     match mode.as_str() {
         "shots" => shots(&out),
         "perf" => perf(&out),
+        "perf-math" => perf_math(&out),
         other => Err(anyhow!("unknown mode {other}")),
     }
 }

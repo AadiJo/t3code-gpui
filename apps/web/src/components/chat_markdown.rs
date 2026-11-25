@@ -21,14 +21,15 @@ use gpui_kit::{
 
 use super::chat::{
     chat_style::{ChatColors, TEXT_2XS, TEXT_SM_RELAXED, TEXT_XS, alpha, mono, sans, text_code},
-    rich_text::{IconPaint, InlineFontBox, LinkHandler, RichText, TextBox, TextIcon},
+    rich_text::{IconPaint, InlineFontBox, LinkHandler, RichText, TextAtom, TextBox, TextIcon},
     timeline_link_favicons::{LINK_FAVICON_PLACEHOLDER, LinkFavicon, external_link_host, link_favicon},
     syntax_highlighting::{highlight, highlight_or_schedule, is_plain_language},
     syntax_theme::SyntaxTheme,
 };
 use crate::markdown_pipeline::{
-    AlertKind, Block, CodeBlock, FILE_CHIP_PLACEHOLDER, Inlines, InlineStyle, List, ParsedBlocks, Table, TableAlign,
+    AlertKind, Block, CodeBlock, FILE_CHIP_PLACEHOLDER, InlineSpan, Inlines, InlineStyle, List, ParsedBlocks, Table, TableAlign,
 };
+use crate::{hooks::use_settings::ActiveClientSettings as _, math};
 
 /// Block spacing for `p, ul, ol, blockquote, pre, table`: `margin: 0.65rem 0`.
 pub const BLOCK_MARGIN: Pixels = px(10.4);
@@ -104,6 +105,58 @@ pub struct MarkdownUiState {
     pub open_details: HashSet<u64>,
     /// The owner can run shell code blocks in a terminal (the chat timeline).
     pub run_shell_commands: bool,
+    /// What right clicks in the markdown offer beyond copying.
+    pub menus: MarkdownMenus,
+}
+
+/// A context menu item the owning view carries out: they need its thread's machine.
+#[derive(Clone, Debug, PartialEq)]
+pub enum MarkdownMenuAction {
+    /// "Open in integrated browser" on a web link or an HTML file link.
+    OpenInPreview(SharedString),
+    /// "Open in {editor}" on a file link.
+    OpenFileInEditor(SharedString),
+    /// "Reveal in …" on a file link.
+    RevealFile(SharedString),
+    /// "Preview media" on an image or video file link.
+    PreviewMedia(SharedString),
+}
+
+/// What the markdown context menus offer (`externalLinkContextMenu.ts`, `MarkdownFileLink.tsx`,
+/// and the desktop's edit menu elsewhere). Copying and the system browser always work;
+/// the rest appear when `actions` handles them and the flag or label says the host can.
+#[derive(Clone, Default)]
+pub struct MarkdownMenus {
+    pub actions: Option<Rc<dyn Fn(MarkdownMenuAction, &mut Window, &mut App)>>,
+    /// The thread can open pages in the integrated browser.
+    pub preview: bool,
+    /// "Open in {editor}" for the preferred editor; `None` when the host cannot open files.
+    pub editor_label: Option<SharedString>,
+    /// "Reveal in Finder" and the like; `None` when the host cannot reveal files.
+    pub reveal_label: Option<SharedString>,
+    /// The thread's working directory, for "Copy full path" of a relative file link.
+    pub cwd: Option<SharedString>,
+}
+
+/// What a right click in markdown landed on.
+#[derive(Clone, Debug, Default, PartialEq)]
+enum MenuTarget {
+    #[default]
+    Text,
+    Link(SharedString),
+    File(SharedString),
+}
+
+impl MenuTarget {
+    fn from_link(link: Option<SharedString>) -> Self {
+        match link {
+            None => Self::Text,
+            Some(target) if target.contains("://") || target.starts_with("mailto:") || target.starts_with('#') => {
+                Self::Link(target)
+            }
+            Some(target) => Self::File(target),
+        }
+    }
 }
 
 /// Everything one render of a message's markdown needs.
@@ -146,11 +199,20 @@ struct Renderer<'a> {
     text_system: Rc<gpui_kit::WindowTextSystem>,
     /// Link hosts whose favicon nobody asked for yet, requested once the render is done.
     wanted_favicons: Vec<String>,
+    /// The Render math setting, for ```` ```math ```` fences (`$` math only parses with it on).
+    math: bool,
+    /// Records what a right click lands on, for the message's context menu.
+    on_secondary: super::chat::rich_text::SecondaryHandler,
 }
 
 /// Renders a message's markdown as one column.
 pub fn render_markdown(view: &MarkdownView<'_>, window: &mut Window, cx: &mut App) -> Div {
     let actions = view.actions.clone();
+    let menu_target = window.use_keyed_state(ElementId::NamedInteger("markdown-menu-target".into(), view.key), cx, |_, _| MenuTarget::Text);
+    let on_secondary: super::chat::rich_text::SecondaryHandler = {
+        let menu_target = menu_target.clone();
+        Rc::new(move |link, _, cx| menu_target.update(cx, |target, _| *target = MenuTarget::from_link(link)))
+    };
     let mut renderer = Renderer {
         view,
         app: cx,
@@ -162,6 +224,8 @@ pub fn render_markdown(view: &MarkdownView<'_>, window: &mut Window, cx: &mut Ap
         find_seen: 0,
         text_system: window.text_system().clone(),
         wanted_favicons: Vec::new(),
+        math: cx.client_settings().math_rendering_enabled,
+        on_secondary,
     };
     let mut rendered = Vec::new();
     let last_piece = view.pieces.len().saturating_sub(1);
@@ -181,15 +245,103 @@ pub fn render_markdown(view: &MarkdownView<'_>, window: &mut Window, cx: &mut Ap
     drop(renderer);
     super::chat::timeline_link_favicons::request(wanted, cx);
     let stacked = stack(rendered);
-    div()
+    let reset = menu_target.clone();
+    // Capture runs before the text's own handlers, so a right click off a link reads as text.
+    let column = div()
         .w_full()
         .min_w_0()
         .flex()
         .flex_col()
+        .capture_any_mouse_down(move |event, _, cx| {
+            if event.button == gpui_kit::MouseButton::Right {
+                reset.update(cx, |target, _| *target = MenuTarget::Text);
+            }
+        })
+        .children(stacked.0);
+    let menus = view.state.menus.clone();
+    let menu = crate::components::ui::menu::ContextMenu::new(
+        ElementId::NamedInteger("markdown-menu".into(), view.key),
+        column,
+        move |window, cx| context_menu(menu_target.read(cx).clone(), &menus, window, cx),
+    );
+    div()
+        .w_full()
+        .min_w_0()
         .text_size(TEXT_SM_RELAXED.size)
         .line_height(TEXT_SM_RELAXED.line_height)
         .text_color(text_color)
-        .children(stacked.0)
+        .child(menu)
+}
+
+/// The fork's menus: a web link's (`externalLinkContextMenu.ts`), a file link's
+/// (`MarkdownFileLink.tsx` `showFileContextMenu`), and elsewhere the desktop shell's edit menu
+/// (`DesktopWindow.ts`), whose Copy copies the selection.
+fn context_menu(target: MenuTarget, menus: &MarkdownMenus, window: &mut Window, cx: &mut App) -> crate::components::ui::menu::MenuPopup {
+    use crate::components::ui::menu::{MenuItem, MenuPopup};
+    use crate::i18n::t;
+    let copy = |text: String| move |_: &mut Window, cx: &mut App| cx.write_to_clipboard(gpui_kit::ClipboardItem::new_string(text.clone()));
+    let act = |action: MarkdownMenuAction| {
+        let actions = menus.actions.clone();
+        move |window: &mut Window, cx: &mut App| {
+            if let Some(actions) = &actions {
+                actions(action.clone(), window, cx);
+            }
+        }
+    };
+    let can = menus.actions.is_some();
+    let mut menu = MenuPopup::new().context();
+    match target {
+        MenuTarget::Link(url) if url.starts_with("http://") || url.starts_with("https://") => {
+            if can && menus.preview {
+                menu = menu.item(MenuItem::new(t!("Open in integrated browser")).on_select(act(MarkdownMenuAction::OpenInPreview(url.clone()))));
+            }
+            let open = url.clone();
+            menu = menu
+                .item(MenuItem::new(t!("Open in system browser")).on_select(move |_, cx| cx.open_url(&open)))
+                .item(MenuItem::new(t!("Copy Link")).on_select(copy(url.to_string())));
+        }
+        MenuTarget::File(path) => {
+            let file = path.split(':').next().unwrap_or(&path).to_lowercase();
+            let extension = file.rsplit_once('.').map_or("", |(_, ext)| ext);
+            let media = matches!(extension, "png" | "jpg" | "jpeg" | "gif" | "webp" | "svg" | "avif" | "bmp" | "mp4" | "webm" | "mov" | "m4v");
+            if can && media {
+                menu = menu.item(MenuItem::new(t!("Preview media")).on_select(act(MarkdownMenuAction::PreviewMedia(path.clone()))));
+            }
+            if let (true, Some(label)) = (can, menus.editor_label.clone()) {
+                menu = menu.item(MenuItem::new(label).on_select(act(MarkdownMenuAction::OpenFileInEditor(path.clone()))));
+            }
+            if can && menus.preview && matches!(extension, "html" | "htm") {
+                menu = menu.item(MenuItem::new(t!("Open in integrated browser")).on_select(act(MarkdownMenuAction::OpenInPreview(path.clone()))));
+            }
+            if let (true, Some(label)) = (can, menus.reveal_label.clone()) {
+                menu = menu.item(MenuItem::new(label).on_select(act(MarkdownMenuAction::RevealFile(path.clone()))));
+            }
+            let relative = !path.starts_with('/') && !path.starts_with('~');
+            let full = match (&menus.cwd, relative) {
+                (Some(cwd), true) => format!("{}/{}", cwd.trim_end_matches('/'), path.trim_start_matches("./")),
+                _ => path.to_string(),
+            };
+            if relative {
+                menu = menu.item(MenuItem::new(t!("Copy relative path")).on_select(copy(path.trim_start_matches("./").to_owned())));
+            }
+            menu = menu.item(MenuItem::new(t!("Copy full path")).on_select(copy(full)));
+        }
+        target => {
+            if let MenuTarget::Link(url) = &target
+                && let Some(address) = url.strip_prefix("mailto:")
+            {
+                menu = menu.item(MenuItem::new(t!("Copy Email Address")).on_select(copy(address.to_owned()))).separator();
+            }
+            let selected = gpui_kit::base::TextSelection::selected_text(window, cx);
+            let has_selection = !selected.is_empty();
+            menu = menu
+                .item(MenuItem::new(t!("Cut", context = "Edit menu item")).disabled(true))
+                .item(MenuItem::new(t!("Copy", context = "Edit menu item")).disabled(!has_selection).on_select(copy(selected)))
+                .item(MenuItem::new(t!("Paste", context = "Edit menu item")).disabled(true))
+                .item(MenuItem::new(t!("Select All", context = "Edit menu item")).disabled(true));
+        }
+    }
+    menu
 }
 
 /// Lays out siblings with collapsed margins. Returns the children (each
@@ -269,6 +421,12 @@ impl Renderer<'_> {
                 Rendered { element: element.into_any_element(), top: self.view.colors.r(BLOCK_MARGIN).max(top), bottom: self.view.colors.r(BLOCK_MARGIN).max(bottom) }
             }
             Block::Alert { kind, blocks } => self.alert(*kind, blocks, depth),
+            // A ```math fence typesets once it is closed or the message is done (`ChatMarkdown.tsx` `pre`).
+            Block::Code(code)
+                if self.math && code.language.as_deref() == Some("math") && (code.closed || !self.view.streaming) =>
+            {
+                self.display_math(&code.code)
+            }
             Block::Code(code) => Rendered { element: self.code_block(code), top: self.view.colors.r(BLOCK_MARGIN), bottom: self.view.colors.r(BLOCK_MARGIN) },
             Block::Table(table) => Rendered { element: self.table(table), top: self.view.colors.r(BLOCK_MARGIN), bottom: self.view.colors.r(BLOCK_MARGIN) },
             Block::Rule => {
@@ -291,14 +449,7 @@ impl Renderer<'_> {
                 Rendered { element: element.into_any_element(), top: self.view.colors.r(BLOCK_MARGIN), bottom: self.view.colors.r(BLOCK_MARGIN) }
             }
             Block::Details { summary, blocks } => self.details(summary, blocks, depth),
-            Block::Math(tex) => {
-                let (_, id) = self.element_id("math");
-                let runs = self.find_runs(tex, vec![run(tex.len(), sans(FontWeight::NORMAL), self.text_color)]);
-                let text = RichText::new(id, tex.clone(), runs)
-                    .selection_color(colors.selection);
-                let element = div().px(self.view.colors.r(px(2.))).py(self.view.colors.r(px(3.))).italic().child(text);
-                Rendered { element: element.into_any_element(), top: self.view.colors.r(BLOCK_MARGIN), bottom: self.view.colors.r(BLOCK_MARGIN) }
-            }
+            Block::Math(tex) => self.display_math(tex),
             Block::Footnotes(notes) => {
                 let items = notes
                     .iter()
@@ -418,6 +569,44 @@ impl Renderer<'_> {
         Some((Inlines { text: text.into(), spans }, icons))
     }
 
+    /// The inline formulas in a paragraph whose math spans hold spacer slots ([`math_slots`]).
+    fn math_atoms(&self, inlines: &Inlines, color: Hsla) -> Vec<TextAtom> {
+        inlines
+            .spans
+            .iter()
+            .filter_map(|span| match &span.style {
+                InlineStyle::Math(tex) => Some(TextAtom {
+                    range: span.range.clone(),
+                    math: Rc::new(math::atom::InlineMath { tex: tex.clone(), formula: math::typeset(tex, false), color }),
+                }),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// A display formula (`MarkdownMath` with `display`): `my-[0.65rem]`, centred, scrolling
+    /// sideways when wide; unparsable TeX shows as its `\[ … \]` source.
+    fn display_math(&mut self, tex: &SharedString) -> Rendered {
+        let colors = self.view.colors;
+        let (key, id) = self.element_id("math");
+        let tex: SharedString = tex.trim().to_owned().into();
+        let element = match math::typeset(&tex, true) {
+            Some(formula) => div()
+                .id(("math-scroll", key))
+                .w_full()
+                .overflow_x_scroll()
+                .child(math::display::DisplayMath::new(id, tex, formula, self.text_color, colors.selection))
+                .into_any_element(),
+            None => {
+                let source = math::atom::display_source(&tex);
+                let runs = self.find_runs(&source, vec![run(source.len(), sans(FontWeight::NORMAL), self.text_color)]);
+                let text = RichText::new(id, source, runs).selection_color(colors.selection);
+                div().px(colors.r(px(2.))).py(colors.r(px(3.))).child(text).into_any_element()
+            }
+        };
+        Rendered { element, top: colors.r(BLOCK_MARGIN), bottom: colors.r(BLOCK_MARGIN) }
+    }
+
     /// A paragraph of inline content as one selectable text run.
     fn paragraph(&mut self, inlines: &Inlines, weight: Option<FontWeight>, color: Option<Hsla>) -> AnyElement {
         let (_, id) = self.element_id("p");
@@ -425,17 +614,21 @@ impl Renderer<'_> {
             weight: weight.unwrap_or(FontWeight::NORMAL),
             color: color.unwrap_or(self.text_color),
         };
+        let slotted = math_slots(inlines);
+        let inlines = slotted.as_ref().unwrap_or(inlines);
         let favicons = self.link_favicons(inlines);
         let inlines = favicons.as_ref().map_or(inlines, |(inlines, _)| inlines);
+        let atoms = self.math_atoms(inlines, base.color);
         let mut styled = style_inlines(inlines, base, self.view.colors, self.view.user);
         styled.icons.extend(favicons.as_ref().into_iter().flat_map(|(_, icons)| icons.iter().cloned()));
         let runs = self.find_runs(&inlines.text, styled.runs);
         let mut text = RichText::new(id, inlines.text.clone(), runs)
             .boxes(styled.boxes)
             .icons(styled.icons)
+            .atoms(atoms)
             .selection_color(self.view.colors.selection);
         if !styled.links.is_empty() {
-            text = text.links(styled.links, self.link_handler.clone());
+            text = text.links(styled.links, self.link_handler.clone()).on_secondary(self.on_secondary.clone());
         }
         div().w_full().min_w_0().child(text).into_any_element()
     }
@@ -798,7 +991,8 @@ fn style_inlines(inlines: &Inlines, base: InlineBase, colors: &ChatColors, user:
         for span in inlines.spans.iter().filter(|s| s.range.start <= start && s.range.end >= end) {
             match &span.style {
                 InlineStyle::Strong => font.weight = FontWeight::BOLD,
-                InlineStyle::Emphasis | InlineStyle::Math => font.style = FontStyle::Italic,
+                InlineStyle::Emphasis => font.style = FontStyle::Italic,
+                InlineStyle::Math(_) => font = math::spacer_font(),
                 InlineStyle::Strikethrough => {
                     strikethrough = Some(StrikethroughStyle { thickness: px(1.), color: None });
                 }
@@ -862,6 +1056,53 @@ fn style_inlines(inlines: &Inlines, base: InlineBase, colors: &ChatColors, user:
         }
     }
     styled
+}
+
+/// The inlines with each formula's TeX replaced by a blank spacer slot the text layout
+/// widens to the formula's box; `None` without inline math. Spans keep covering what
+/// they covered, so a formula inside bold or a link stays inside it.
+fn math_slots(inlines: &Inlines) -> Option<Inlines> {
+    let mut slots: Vec<Range<usize>> = inlines
+        .spans
+        .iter()
+        .filter(|span| matches!(span.style, InlineStyle::Math(_)))
+        .map(|span| span.range.clone())
+        .collect();
+    if slots.is_empty() {
+        return None;
+    }
+    slots.sort_by_key(|range| range.start);
+    let blank = math::spacer_text(px(0.), px(1.));
+    let text = inlines.text.as_ref();
+    let mut out = String::with_capacity(text.len() + slots.len() * blank.len());
+    let mut cursor = 0;
+    for slot in &slots {
+        out.push_str(&text[cursor..slot.start]);
+        out.push_str(&blank);
+        cursor = slot.end;
+    }
+    out.push_str(&text[cursor..]);
+    // An offset after a slot moves by how much each earlier slot grew; inside one, to its edge.
+    let shift = |at: usize, end: bool| {
+        let mut moved = at as isize;
+        for slot in &slots {
+            if at >= slot.end {
+                moved += blank.len() as isize - slot.len() as isize;
+            } else if at > slot.start {
+                moved = moved - (at - slot.start) as isize + if end { blank.len() as isize } else { 0 };
+                break;
+            } else {
+                break;
+            }
+        }
+        moved as usize
+    };
+    let spans = inlines
+        .spans
+        .iter()
+        .map(|span| InlineSpan { range: shift(span.range.start, false)..shift(span.range.end, true), style: span.style.clone() })
+        .collect();
+    Some(Inlines { text: out.into(), spans })
 }
 
 /// Runs for a code block: highlighted ranges in theme colours, the rest in `foreground`.

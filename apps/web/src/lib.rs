@@ -41,6 +41,7 @@ pub mod remote_open;
 pub mod model_search;
 pub mod model_selection;
 pub mod markdown_pipeline;
+pub mod math;
 pub mod right_panel_store;
 pub mod panel_animations;
 pub mod router;
@@ -128,6 +129,7 @@ pub fn init(cx: &mut App) {
         cx,
     );
     hooks::init(cx);
+    math::init(cx);
     components::sidebar::init(cx);
     components::chat::composer::init(cx);
     components::chat::thread_find_bar::init(cx);

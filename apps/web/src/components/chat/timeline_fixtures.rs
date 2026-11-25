@@ -458,6 +458,40 @@ pub fn perf_thread(turns: usize) -> TimelineInput {
     TimelineInput { entries: Arc::new(b.entries), ..Default::default() }
 }
 
+/// Formulas cycled through by [`math_thread`] and [`math_reply`].
+const BENCH_FORMULAS: [&str; 8] = [
+    r"x = \frac{-b \pm \sqrt{b^2-4ac}}{2a}",
+    r"\sum_{i=1}^{n} i = \frac{n(n+1)}{2}",
+    r"\int_0^1 x^2\,dx = \frac{1}{3}",
+    r"\begin{pmatrix} 1 & 2 \\ 3 & 4 \end{pmatrix}",
+    r"e^{i\pi} + 1 = 0",
+    r"\nabla \times \mathbf{E} = -\frac{\partial \mathbf{B}}{\partial t}",
+    r"P(A \mid B) = \frac{P(B \mid A)\,P(A)}{P(B)}",
+    r"f(x) = \begin{cases} x & x \ge 0 \\ -x & x < 0 \end{cases}",
+];
+
+/// A reply with one inline and one display formula per paragraph pair; `index` varies them.
+pub fn math_reply(paragraphs: usize, index: usize) -> String {
+    (0..paragraphs)
+        .map(|p| {
+            let (a, b) = (BENCH_FORMULAS[(index + p) % 8], BENCH_FORMULAS[(index + p + 3) % 8]);
+            format!("Step {p} of {index}: the bound $O(n \\log n)$ follows from ${a}$ once the loop holds.\n\n$$\n{b} + {index}\n$$\n\n")
+        })
+        .collect()
+}
+
+/// A thread of `turns` turns whose replies hold two formulas each, for math scroll measurements.
+pub fn math_thread(turns: usize) -> TimelineInput {
+    let mut b = Builder::new();
+    for turn in 0..turns {
+        let ago = ((turns - turn) * 120) as i64;
+        let run = format!("run-{turn}");
+        b.user(ago, &format!("Turn {turn}: derive the bound."), InputIntent::Prompt, vec![]);
+        b.assistant(ago - 60, &run, &math_reply(1, turn), false);
+    }
+    TimelineInput { entries: Arc::new(b.entries), ..Default::default() }
+}
+
 /// A long reply with prose, lists and code, for streaming measurements.
 pub fn streaming_reply(chars: usize) -> String {
     let mut text = String::new();
