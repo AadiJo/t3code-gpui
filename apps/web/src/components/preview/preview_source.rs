@@ -196,6 +196,7 @@ pub struct FixturePreviewSource {
     /// Every input the stream accepted, in order.
     pub sent: Arc<Mutex<Vec<PreviewStreamInput>>>,
     viewport: (u32, u32),
+    streams: Mutex<Vec<mpsc::UnboundedSender<PreviewStreamEvent>>>,
 }
 
 /// Encodes a page-like JPEG of `width`×`height` tinted by `seed`.
@@ -224,7 +225,12 @@ pub fn fixture_frame(width: u32, height: u32, seed: u32) -> Vec<u8> {
 
 impl FixturePreviewSource {
     pub fn new(sessions: Vec<PreviewSessionSnapshot>) -> Rc<Self> {
-        Rc::new(Self { sessions: Mutex::new(sessions), sent: Arc::default(), viewport: (1280, 800) })
+        Rc::new(Self { sessions: Mutex::new(sessions), sent: Arc::default(), viewport: (1280, 800), streams: Mutex::default() })
+    }
+
+    /// Delivers `event` to every open stream, as the server would (an agent's pointer, a dialog).
+    pub fn emit(&self, event: PreviewStreamEvent) {
+        self.streams.lock().unwrap().retain(|stream| stream.send(event.clone()).is_ok());
     }
 }
 
@@ -283,6 +289,7 @@ impl PreviewSource for FixturePreviewSource {
         _ = events_tx.send(PreviewStreamEvent::Viewport(PreviewStreamViewport { width: width as f64, height: height as f64 }));
         let control = PreviewStreamControl { can_operate: true, controller: Controller::You, generation: 1, dialog: None };
         _ = events_tx.send(PreviewStreamEvent::Control(Some(control)));
+        self.streams.lock().unwrap().push(events_tx);
         let sent = self.sent.clone();
         PreviewStream {
             frames,
