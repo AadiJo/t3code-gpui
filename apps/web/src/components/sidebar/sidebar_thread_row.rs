@@ -296,7 +296,7 @@ impl Sidebar {
             .items_center()
             .gap(colors.r(6.))
             .child(title)
-            .when(!has_meta && thread.remote_machine, |d| d.child(remote_icon(colors)))
+            .when(!has_meta && thread.remote_machine, |d| d.child(remote_icon(thread, colors, cx)))
             .when(!has_meta, |d| d.children(thread.provider.as_ref().map(|p| provider_stack(p, colors, cx))));
         div()
             .relative()
@@ -467,7 +467,7 @@ impl Sidebar {
                     .flex_none()
                     .items_center()
                     .gap_1()
-                    .when(thread.remote_machine, |d| d.child(remote_icon(colors)))
+                    .when(thread.remote_machine, |d| d.child(remote_icon(thread, colors, cx)))
                     .children(thread.provider.as_ref().map(|p| provider_stack(p, colors, cx))),
             );
         }
@@ -568,7 +568,7 @@ impl Sidebar {
             })
             .child(title)
             .when(multiline && !has_meta, |d| {
-                d.when(thread.remote_machine, |d| d.child(remote_icon(colors)))
+                d.when(thread.remote_machine, |d| d.child(remote_icon(thread, colors, cx)))
                     .children(thread.provider.as_ref().map(|p| provider_stack(p, colors, cx)))
             })
             .when(thread.pinned_at.is_some(), |d| d.child(self.pin_indicator(ix, thread, colors, cx)))
@@ -796,8 +796,11 @@ pub(crate) fn provider_stack(provider: &SidebarProvider, colors: &ShellColors, c
         })
 }
 
-fn remote_icon(colors: &ShellColors) -> Icon {
-    Icon::new(IconName::Monitor).size(IconSize::Custom(colors.r(14.))).color(colors.sidebar_muted_foreground.opacity(0.7))
+/// `EnvironmentMachineIcon` for the thread's environment (`environmentMachineById`).
+fn remote_icon(thread: &SidebarThread, colors: &ShellColors, cx: &App) -> AnyElement {
+    use crate::components::settings::settings_controls::{environment_machine_icon, environment_machine_kind};
+    let environment = t3code_client_runtime::environment::EnvironmentId::from(thread.key.environment_id.0.as_ref());
+    environment_machine_icon(environment_machine_kind(&environment, cx), colors.r(14.), colors.sidebar_muted_foreground.opacity(0.7))
 }
 
 /// `MiddleTruncate`: the head ellipsizes, the tail stays whole.
