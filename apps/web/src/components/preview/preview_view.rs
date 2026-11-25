@@ -170,6 +170,7 @@ pub struct PreviewView {
     /// The session's `preview:operate` grant; fixtures have it.
     can_operate: bool,
     show_details: bool,
+    visible: bool,
     loading_bar: LoadingBar,
     /// The pane's size in window pixels, for "Show device toolbar".
     pane_size: Rc<std::cell::Cell<(f32, f32)>>,
@@ -278,6 +279,7 @@ impl PreviewView {
             servers: Vec::new(),
             can_operate: true,
             show_details: false,
+            visible: true,
             loading_bar: LoadingBar::default(),
             pane_size: Rc::default(),
             last_tab_label: (SharedString::default(), String::new()),
@@ -313,6 +315,16 @@ impl PreviewView {
         self
     }
 
+    /// Whether the panel shows this tab; a hidden tab's stream disconnects (`visible`).
+    pub fn set_visible(&mut self, visible: bool, cx: &mut Context<Self>) {
+        if self.visible != visible {
+            self.visible = visible;
+            for (_, surface) in &self.surfaces {
+                surface.update(cx, |surface, cx| surface.set_visible(visible, cx));
+            }
+        }
+    }
+
     /// Sets the `preview:operate` grant directly, for fixtures and checks.
     pub fn set_can_operate(&mut self, can: bool, cx: &mut Context<Self>) {
         self.can_operate = can;
@@ -341,7 +353,12 @@ impl PreviewView {
             return surface.clone();
         }
         let (source, thread, tab_id) = (self.source.clone(), self.thread_id.to_string(), tab.to_owned());
-        let surface = cx.new(|cx| ServerBrowserSurface::new(source, thread, tab_id, cx));
+        let visible = self.visible;
+        let surface = cx.new(|cx| {
+            let mut surface = ServerBrowserSurface::new(source, thread, tab_id, cx);
+            surface.set_visible(visible, cx);
+            surface
+        });
         cx.subscribe(&surface, |this, surface, event: &SurfaceEvent, cx| match event {
             SurfaceEvent::Popup(tab) => {
                 // `showPreviewPopup(…, "panel")`: the page's new tab opens in the panel.
@@ -420,6 +437,20 @@ impl PreviewView {
             PreviewEvent::Navigated(e) => e.snapshot,
             PreviewEvent::Resized(e) => e.snapshot,
             PreviewEvent::Closed(e) if e.thread_id == self.thread_id.as_str() => return self.remove_tab(&e.tab_id, cx),
+            // `failed` turns the tab's own snapshot into `LoadFailed` (`previewStateStore`).
+            PreviewEvent::Failed(e) if e.thread_id == self.thread_id.as_str() => {
+                let Some(existing) = self.sessions.iter().find(|s| s.tab_id == e.tab_id) else { return };
+                let mut snapshot = existing.clone();
+                snapshot.nav_status = PreviewNavStatus::LoadFailed(t3code_contracts::PreviewNavStatusLoadFailed {
+                    url: e.url,
+                    title: e.title,
+                    code: e.code,
+                    description: e.description,
+                    download: e.download.map(|d| t3code_contracts::PreviewNavStatusLoadFailedDownload { id: d.id, file_name: d.file_name }),
+                });
+                snapshot.updated_at = e.created_at;
+                snapshot
+            }
             _ => return,
         };
         self.apply_snapshot(snapshot, cx);

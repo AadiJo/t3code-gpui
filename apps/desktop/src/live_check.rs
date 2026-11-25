@@ -122,6 +122,7 @@ mod live_check_find;
 mod live_check_linked_environments;
 mod live_check_mcp;
 mod live_check_pr_routing;
+mod live_check_preview;
 mod live_check_usage;
 mod live_check_voice;
 #[allow(dead_code)]
@@ -644,6 +645,7 @@ fn main() -> anyhow::Result<()> {
         "linked-environments" => live_check_linked_environments::run_linked_environments(&mut check),
         "access-controls" => live_check_access::run_access_controls(&mut check),
         "device-approval" => live_check_access::run_device_approval(&mut check),
+        "preview" => live_check_preview::run_preview(&mut check),
         "find-history-seed" => live_check_find::run_find_history_seed(&mut check),
         "find-history" => live_check_find::run_find_history(&mut check),
         other => Err(anyhow::anyhow!("unknown phase {other}")),

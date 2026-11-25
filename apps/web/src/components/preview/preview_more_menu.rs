@@ -90,9 +90,9 @@ impl RenderOnce for PreviewMoreMenu {
                 let open_state = open_state.clone();
                 move |cx: &mut App| PopupOpen::set(&open_state, false, None, cx)
             };
-            let item = |label: SharedString, run: Rc<dyn Fn(&mut App)>| {
+            let item = |id: &'static str, label: SharedString, run: Rc<dyn Fn(&mut App)>| {
                 let close = close.clone();
-                MenuItem::new(label).disabled(disabled).on_select(move |_, cx| {
+                MenuItem::new(label).id(id).disabled(disabled).on_select(move |_, cx| {
                     run(cx);
                     close(cx);
                 })
@@ -115,6 +115,7 @@ impl RenderOnce for PreviewMoreMenu {
                 let submenu_state = submenu_state.clone();
                 let open_on = submenu_state.clone();
                 let mut row = MenuItem::new(t!("Appearance"))
+                    .id("preview-appearance")
                     .kind(MenuItemKind::Submenu)
                     .disabled(disabled)
                     .keep_open()
@@ -176,8 +177,8 @@ impl RenderOnce for PreviewMoreMenu {
                     .into_any_element()
             }));
             let mut popup = MenuPopup::new()
-                .item(item(t!("Hard reload"), actions.hard_reload.clone()).on_hover(hover_off.clone()))
-                .item(item(device_label, actions.toggle_device_toolbar.clone()).on_hover(hover_off.clone()))
+                .item(item("preview-hard-reload", t!("Hard reload"), actions.hard_reload.clone()).on_hover(hover_off.clone()))
+                .item(item("preview-device-toolbar", device_label, actions.toggle_device_toolbar.clone()).on_hover(hover_off.clone()))
                 .item(appearance)
                 .separator()
                 .entry(zoom_row)
@@ -185,39 +186,35 @@ impl RenderOnce for PreviewMoreMenu {
             if let Some(name) = state.profile_name.clone() {
                 popup = popup.label(crate::i18n::t_rich!("Profile: {profileName}", profileName = name).plain());
             }
-            let clear = |label: SharedString, run: Rc<dyn Fn(&mut App)>| {
+            let clear = |id: &'static str, label: SharedString, run: Rc<dyn Fn(&mut App)>| {
                 let close = close.clone();
-                MenuItem::new(label).on_hover(hover_off.clone()).on_select(move |_, cx| {
+                MenuItem::new(label).id(id).on_hover(hover_off.clone()).on_select(move |_, cx| {
                     run(cx);
                     close(cx);
                 })
             };
-            popup = popup.item(clear(t!("Clear cookies"), actions.clear_cookies.clone())).item(clear(t!("Clear cache"), actions.clear_cache.clone()));
+            popup = popup.item(clear("preview-clear-cookies", t!("Clear cookies"), actions.clear_cookies.clone())).item(clear("preview-clear-cache", t!("Clear cache"), actions.clear_cache.clone()));
             let submenu = submenu_open.then(|| {
                 let current = state.color_scheme;
                 let set = actions.set_color_scheme.clone();
                 let items = COLOR_SCHEMES.into_iter().fold(MenuPopup::new(), |popup, scheme| {
                     let (set, close) = (set.clone(), close.clone());
-                    popup.item(MenuItem::new(color_scheme_label(scheme)).kind(MenuItemKind::Radio(scheme == current)).on_select(move |_, cx| {
+                    popup.item(MenuItem::new(color_scheme_label(scheme)).id(format!("preview-color-scheme-{}", scheme.as_str())).kind(MenuItemKind::Radio(scheme == current)).on_select(move |_, cx| {
                         set(scheme, cx);
                         close(cx);
                     }))
                 });
                 // Base UI flips a submenu with no room at the end to the start side, its first
-                // row level with the trigger: below two rows and the popup's top padding.
-                div()
-                    .absolute()
-                    .right_full()
-                    .mr(px(-4.))
-                    .top(theme.sp(7.) * 2. - px(1.))
-                    .child(items)
+                // row level with the trigger: below two rows and the popup's top padding. It sits
+                // in the same row as the menu so a press on it is not a press outside the menu.
+                div().mt(theme.sp(7.) * 2. - px(1.)).mr(px(-4.)).child(items)
             });
             deferred(
                 anchored()
                     .anchor(Anchor::TopRight)
                     .offset(point(px(0.), px(6.)))
                     .snap_to_window_with_margin(px(8.))
-                    .child(PopupOpen::dismissable(&open_state, div().relative().child(popup).children(submenu))),
+                    .child(PopupOpen::dismissable(&open_state, div().flex().items_start().children(submenu).child(popup))),
             )
             .with_priority(5)
         });

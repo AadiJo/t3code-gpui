@@ -119,6 +119,8 @@ pub struct ServerBrowserSurface {
     follow_size: bool,
     /// The mini player puts the control bar under the page (`controlPosition="bottom"`).
     control_at_bottom: bool,
+    /// False while the owner does not show it: no stream runs (`visible`).
+    visible: bool,
 }
 
 impl EventEmitter<SurfaceEvent> for ServerBrowserSurface {}
@@ -226,7 +228,31 @@ impl ServerBrowserSurface {
             cursor_task: None,
             follow_size: true,
             control_at_bottom: false,
+            visible: true,
         }
+    }
+
+    /// Shows or hides the tab: hiding closes the stream and keeps the last frame; showing
+    /// opens it again at the cap it had.
+    pub fn set_visible(&mut self, visible: bool, cx: &mut Context<Self>) {
+        if self.visible == visible {
+            return;
+        }
+        self.visible = visible;
+        if visible {
+            if let Some(cap) = self.cap {
+                self.start_stream(cap, cx);
+            }
+        } else {
+            self.stream_tasks.clear();
+            self.stream = None;
+            self.control = None;
+            self.connected = false;
+            self.buttons = 0;
+            self.file_chooser = None;
+            self.agent_cursor = None;
+        }
+        cx.notify();
     }
 
     /// The mini player's surface: the control bar below and the page at its own size.
@@ -427,7 +453,11 @@ impl ServerBrowserSurface {
                 let grow = this.cap.is_none_or(|current| cap.0 > current.0 || cap.1 > current.1);
                 if grow {
                     let merged = this.cap.map_or(cap, |c| (c.0.max(cap.0), c.1.max(cap.1)));
-                    this.start_stream(merged, cx);
+                    if this.visible {
+                        this.start_stream(merged, cx);
+                    } else {
+                        this.cap = Some(merged);
+                    }
                 }
             })
             .ok();

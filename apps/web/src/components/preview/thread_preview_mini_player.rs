@@ -13,10 +13,12 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use gpui_kit::{
-    App, AppContext as _, Bounds, Context, CursorStyle, Entity, Global, IntoElement, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
+    App, AppContext as _, Bounds, Context, CursorStyle, DispatchPhase, Entity, Global, IntoElement, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
     Pixels, Point, Render, SharedString, Subscription, WeakEntity, Window, canvas, div, prelude::*, px,
 };
 use t3code_contracts::{EnvironmentId, PreviewSessionSnapshot, ThreadId};
+
+use gpui_kit::TestSupportExt as _;
 
 use super::preview_source::PreviewSource;
 use crate::ActiveAppTheme as _;
@@ -294,6 +296,8 @@ pub struct ThreadPreviewMiniPlayer {
     snapshots: HashMap<(MiniPlayerKey, String), PreviewSessionSnapshot>,
     container: Rc<Cell<Bounds<Pixels>>>,
     gesture: Option<Gesture>,
+    /// The pointer is over the handle or its pill (CSS hover covers both; GPUI's does not).
+    hovered: (bool, bool),
     _players: Subscription,
 }
 
@@ -346,6 +350,7 @@ impl ThreadPreviewMiniPlayer {
             snapshots: HashMap::new(),
             container: Rc::default(),
             gesture: None,
+            hovered: (false, false),
             _players: players,
         }
     }
@@ -498,11 +503,13 @@ impl ThreadPreviewMiniPlayer {
         let radius = px(CORNER_RADIUS);
         let pill_inset = px(8f32.max((CORNER_RADIUS * 0.55).round()));
         let (open_key, open_tab, close_key) = (key.clone(), state.tab_id.clone(), key.clone());
+        let pill_open = self.hovered.0 || self.hovered.1 || self.gesture.is_some_and(|g| g.direction.is_none());
         let pill_button = |id: &'static str, icon: IconName, label: SharedString| {
             div().id(SharedString::from(format!("{id}-tip"))).tooltip(tooltip(label)).child(Button::new(id).variant(ButtonVariant::Ghost).size(ButtonSize::IconXs).icon(icon))
         };
         let pill = div()
             .id("mini-player-pill")
+            .test_support()
             .absolute()
             .right_0()
             .top_0()
@@ -516,9 +523,13 @@ impl ThreadPreviewMiniPlayer {
             .border_color(with_alpha(c.border, 0.8))
             .bg(with_alpha(c.popover(), 0.92))
             .shadow(theme.shadows.lg.clone())
-            .invisible()
-            .group_hover("mini-player-handle", |s| s.visible())
-            .when(self.gesture.is_some_and(|g| g.direction.is_none()), |el| el.visible())
+            .when(!pill_open, |el| el.invisible())
+            .cursor(if self.gesture.is_some() { CursorStyle::ClosedHand } else { CursorStyle::OpenHand })
+            .on_hover(cx.listener(|this, hovered: &bool, _, cx| {
+                this.hovered.1 = *hovered;
+                cx.notify();
+            }))
+            .on_mouse_down(MouseButton::Left, cx.listener(move |this, event: &MouseDownEvent, _, cx| this.begin(event, frame, None, source, cx)))
             .child(pill_button("mini-player-open-panel", IconName::PanelRight, t!("Open in right panel")).on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation()).on_click(
                 cx.listener(move |this, _, _, cx| this.open_in_panel(&open_key, &open_tab, cx)),
             ))
@@ -535,18 +546,22 @@ impl ThreadPreviewMiniPlayer {
             .border_1()
             .border_color(with_alpha(c.background(), 0.7))
             .shadow(theme.shadows.sm5.clone())
-            .group_hover("mini-player-handle", |s| s.invisible());
+            .when(pill_open, |el| el.invisible());
         let handle = div()
             .id("mini-player-handle")
-            .group("mini-player-handle")
             .absolute()
             .right(pill_inset)
             .top(pill_inset)
             .size(theme.sp(3.))
             .cursor(if self.gesture.is_some() { CursorStyle::ClosedHand } else { CursorStyle::OpenHand })
             .on_mouse_down(MouseButton::Left, cx.listener(move |this, event: &MouseDownEvent, _, cx| this.begin(event, frame, None, source, cx)))
+            .on_hover(cx.listener(|this, hovered: &bool, _, cx| {
+                this.hovered.0 = *hovered;
+                cx.notify();
+            }))
             .child(dot)
-            .child(pill);
+            .child(pill)
+            .test_support();
         let rail = theme.sp(2.);
         let corner = theme.sp(4.);
         let handles = Direction::ALL.map(|direction| {
@@ -562,15 +577,24 @@ impl ThreadPreviewMiniPlayer {
                 Direction::SouthEast => el.right(-theme.sp(2.)).bottom(-theme.sp(2.)).size(corner).cursor(CursorStyle::ResizeUpLeftDownRight),
             };
             el.on_mouse_down(MouseButton::Left, cx.listener(move |this, event: &MouseDownEvent, _, cx| this.begin(event, frame, Some(direction), source, cx)))
+                .test_support()
         });
         // While a gesture runs, follow the pointer anywhere in the window.
         let tracker = self.gesture.is_some().then(|| {
             let entity = cx.entity();
             canvas(|_, _, _| {}, move |_, _, window, _| {
                 let moved = entity.clone();
-                window.on_mouse_event(move |event: &MouseMoveEvent, _, _, cx| moved.update(cx, |this, cx| this.step(event, cx)));
+                window.on_mouse_event(move |event: &MouseMoveEvent, phase, _, cx| {
+                    if phase == DispatchPhase::Bubble {
+                        moved.update(cx, |this, cx| this.step(event, cx));
+                    }
+                });
                 let up = entity.clone();
-                window.on_mouse_event(move |_: &MouseUpEvent, _, _, cx| up.update(cx, |this, cx| this.end(cx)));
+                window.on_mouse_event(move |_: &MouseUpEvent, phase, _, cx| {
+                    if phase == DispatchPhase::Bubble {
+                        up.update(cx, |this, cx| this.end(cx));
+                    }
+                });
             })
             .absolute()
             .size_0()
@@ -592,6 +616,7 @@ impl ThreadPreviewMiniPlayer {
                 .children(handles)
                 .child(handle)
                 .children(tracker)
+                .test_support()
                 .into_any_element(),
         )
     }

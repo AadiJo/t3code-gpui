@@ -257,7 +257,10 @@ impl RightPanel {
         cx: &mut Context<Self>,
     ) -> Self {
         cx.default_global::<DiffPanelStore>();
-        let observe = cx.observe(&store, |_, _, cx| cx.notify());
+        let observe = cx.observe(&store, |this, _, cx| {
+            this.sync_browser_visibility(cx);
+            cx.notify();
+        });
         Self {
             store,
             thread: None,
@@ -293,7 +296,19 @@ impl RightPanel {
             self.thread = thread;
             self.target = target;
             self.files_requests.clear();
+            self.sync_browser_visibility(cx);
             cx.notify();
+        }
+    }
+
+    /// Streams only the browser tab on screen (`visible` on `PreviewView`): the shown thread's
+    /// open panel with that tab active. Others disconnect until shown again.
+    fn sync_browser_visibility(&mut self, cx: &mut Context<Self>) {
+        let shown = self.thread.as_ref().map(|t| self.store.read(cx).state(t)).filter(|s| s.is_open).and_then(|s| s.active_surface_id);
+        for ((thread, id), view) in &self.surface_views {
+            let Ok(view) = view.clone().downcast::<crate::components::preview::preview_view::PreviewView>() else { continue };
+            let visible = self.thread.as_ref() == Some(thread) && shown.as_deref() == Some(id.as_str());
+            view.update(cx, |view, cx| view.set_visible(visible, cx));
         }
     }
 
@@ -848,6 +863,7 @@ impl RightPanel {
             _ => return None,
         };
         self.surface_views.insert(key, view.clone());
+        self.sync_browser_visibility(cx);
         Some(view)
     }
 
@@ -886,6 +902,12 @@ impl RightPanel {
         }
         let key = (self.thread.clone()?, surface.id().to_string());
         self.surface_views.get(&key)?.clone().downcast().ok()
+    }
+
+    /// The active browser tab's view, for checks.
+    pub fn active_browser(&self, cx: &App) -> Option<Entity<crate::components::preview::preview_view::PreviewView>> {
+        let state = self.store.read(cx).state(self.thread.as_ref()?);
+        self.preview_view(state.active()?, cx)
     }
 
     /// The shown thread's panel key and target, for the floating preview.
