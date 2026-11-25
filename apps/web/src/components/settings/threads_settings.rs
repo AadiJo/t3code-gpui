@@ -11,7 +11,7 @@ use t3code_contracts::{
 
 use super::server_settings_controls::{
     advanced_fold,
-    Fields, bool_setting, field_input, hint, lock_reason, reset_button, save_patch, select_row,
+    Fields, bool_setting, field_input, hint, lock_reason, reset_button, save_patch, select_row, select_row_with_icon,
 };
 use super::server_settings_data::ServerPanelsModel;
 use super::settings_layout::{SettingsRow, SettingsSection, page_container};
@@ -137,6 +137,17 @@ impl ThreadsSettingsPanel {
     }
 }
 
+/// The mode's icon, as the composer's permissions control draws it.
+fn runtime_mode_icon(mode: RuntimeMode) -> crate::components::icons::IconName {
+    use crate::components::chat::composer_permissions::{RuntimeMode as Mode, runtime_mode_icon};
+    runtime_mode_icon(match mode {
+        RuntimeMode::ApprovalRequired => Mode::ApprovalRequired,
+        RuntimeMode::AutoAcceptEdits => Mode::AutoAcceptEdits,
+        RuntimeMode::Auto => Mode::Auto,
+        RuntimeMode::FullAccess => Mode::FullAccess,
+    })
+}
+
 fn runtime_mode_label(mode: RuntimeMode) -> SharedString {
     match mode {
         RuntimeMode::ApprovalRequired => t!("Supervised"),
@@ -180,7 +191,7 @@ impl Render for ThreadsSettingsPanel {
         let defaults = SettingsSection::new(t!("New threads"))
             .child(model_picker_row(model, "defaultModelSelection", t!("Model"), t!("Default model for new threads. Projects can override it."), s.default_model_selection.as_ref(), None, t!("Reset default model to default"), lock(&["defaultModelSelection"]), |v| ClientServerSettingsPatch { default_model_selection: Some(v), ..Default::default() }, cx))
             .child(model_picker_row(model, "fallbackModelSelection", t!("Fallback model"), t!("Used for new threads when the default model's provider is out of usage."), s.fallback_model_selection.as_ref(), Some(t!("None", context = "no fallback model")), t!("Reset fallback model to default"), lock(&["fallbackModelSelection"]), |v| ClientServerSettingsPatch { fallback_model_selection: Some(v), ..Default::default() }, cx))
-            .child(select_row("defaultRuntimeMode", t!("Permissions"), Some(t!("Default permissions for new threads. Projects can override them.")), runtime_modes.iter().map(|m| runtime_mode_label(*m)).collect(), runtime_ix, lock(&["defaultRuntimeMode"]), move |ix, _, cx| {
+            .child(select_row_with_icon("defaultRuntimeMode", t!("Permissions"), Some(t!("Default permissions for new threads. Projects can override them.")), runtime_modes.iter().map(|m| runtime_mode_label(*m)).collect(), runtime_ix, lock(&["defaultRuntimeMode"]), Some((runtime_mode_icon(runtime_modes[runtime_ix]), theme.sp(3.5), theme.colors.muted_foreground)), move |ix, _, cx| {
                 let patch = ClientServerSettingsPatch { default_runtime_mode: Some(RuntimeMode::ALL[ix]), ..Default::default() };
                 save_patch(&runtime_model, "defaultRuntimeMode", patch, cx);
             }))

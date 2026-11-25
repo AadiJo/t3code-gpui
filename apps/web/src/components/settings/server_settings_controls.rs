@@ -58,8 +58,27 @@ pub fn select_row(
     lock: Option<SharedString>,
     on_change: impl Fn(usize, &mut Window, &mut App) + 'static,
 ) -> SettingsRow {
+    select_row_with_icon(id, title, description, options, selected, lock, None, on_change)
+}
+
+/// [`select_row`] with a `size-3.5` muted icon before the trigger's value, as the
+/// default permissions select draws its mode's icon.
+#[allow(clippy::too_many_arguments)]
+pub fn select_row_with_icon(
+    id: impl Into<SharedString>,
+    title: SharedString,
+    description: Option<SharedString>,
+    options: Vec<SharedString>,
+    selected: usize,
+    lock: Option<SharedString>,
+    icon: Option<(IconName, gpui_kit::Pixels, Hsla)>,
+    on_change: impl Fn(usize, &mut Window, &mut App) + 'static,
+) -> SettingsRow {
     let id = id.into();
-    let select = Select::new(SharedString::from(format!("{id}-select")), options, selected, on_change).size(SelectSize::Sm);
+    let mut select = Select::new(SharedString::from(format!("{id}-select")), options, selected, on_change).size(SelectSize::Sm);
+    if let Some((name, size, color)) = icon {
+        select = select.leading(crate::components::icons::Icon::new(name).size(crate::components::icons::IconSize::Custom(size)).color(color));
+    }
     let row = SettingsRow::new(title).control(ManagedControl::new(format!("{id}-lock"), lock, div().min_w(gpui_kit::rems(10.)).child(select)));
     match description {
         Some(d) => row.description(d),

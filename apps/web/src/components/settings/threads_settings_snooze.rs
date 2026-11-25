@@ -344,7 +344,7 @@ pub fn snooze_presets_row<V: 'static>(
             Some(r) => div()
                 .flex()
                 .child(div().text_color(c.foreground()).child(r.label.clone()))
-                .child(div().pl(theme.sp(2.)).child(r.when.clone()))
+                .child(div().pl(theme.sp(2.)).font_features(TABULAR_NUMS.clone()).child(r.when.clone()))
                 .into_any_element(),
         };
         let (list, save_remove) = (presets.clone(), save.clone());
@@ -413,3 +413,7 @@ pub fn snooze_presets_row<V: 'static>(
         .description(t!("Choices in every snooze menu, listed soonest first. Weekdays mean the next one after today."))
         .child(rows)
 }
+
+/// `tabular-nums` on the wake time.
+static TABULAR_NUMS: std::sync::LazyLock<gpui_kit::FontFeatures> =
+    std::sync::LazyLock::new(|| gpui_kit::FontFeatures(std::sync::Arc::new(vec![("tnum".into(), 1)])));
