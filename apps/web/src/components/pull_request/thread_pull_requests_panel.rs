@@ -127,12 +127,7 @@ impl ThreadPullRequestsPanel {
     fn open_link(&self, link: &ThreadPullRequestLink, context: &RowContext, cx: &mut App) {
         match context.project_id.as_ref().filter(|_| context.opens_in_app) {
             Some(project_id) => {
-                let surface = RightPanelSurface::PullRequest {
-                    id: format!("pull-request:{project_id}:{}#{}", link.repository, link.number),
-                    project_id: project_id.clone(),
-                    repository: link.repository.clone(),
-                    number: link.number as u32,
-                };
+                let surface = RightPanelSurface::pull_request(project_id, &link.repository, link.number);
                 let thread = self.thread_key_text();
                 self.panels.update(cx, |store, cx| {
                     store.open_surface(&thread, surface);

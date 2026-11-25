@@ -95,6 +95,16 @@ impl RightPanelSurface {
             SingletonKind::Preview => Self::Preview { id: "browser:new".into(), resource_id: None },
         }
     }
+
+    /// A pull request's tab; one tab per project, repository and number.
+    pub fn pull_request(project_id: &str, repository: &str, number: u64) -> Self {
+        Self::PullRequest {
+            id: format!("pull-request:{project_id}:{repository}#{number}"),
+            project_id: project_id.to_owned(),
+            repository: repository.to_owned(),
+            number: number as u32,
+        }
+    }
 }
 
 /// The kinds `open` and `toggle` accept (one tab per thread, or a new browser tab).
@@ -226,6 +236,12 @@ impl RightPanelStore {
 
     /// Adds any surface (file, terminal, pull request…) and activates it.
     pub fn open_surface(&mut self, thread: &str, surface: RightPanelSurface) {
+        self.update(thread, |state| state.upsert(surface));
+    }
+
+    /// `openPullRequest`: adds or activates the pull request's tab.
+    pub fn open_pull_request(&mut self, thread: &str, project_id: &str, repository: &str, number: u64) {
+        let surface = RightPanelSurface::pull_request(project_id, repository, number);
         self.update(thread, |state| state.upsert(surface));
     }
 

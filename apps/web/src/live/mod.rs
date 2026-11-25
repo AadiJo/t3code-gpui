@@ -994,6 +994,38 @@ impl AppData for LiveData {
         SideChatLookup::Found(SideChatFacts { title: shell.title.clone().into(), has_user_message: shell.latest_user_message_at.is_some(), state })
     }
 
+    fn pull_request_panel_target(&self, key: &ThreadKey, cx: &App) -> Option<t3code_client_runtime::state::thread_pull_requests::PullRequestPanelTarget> {
+        let (environment_id, thread_id) = runtime_ids(key);
+        let environment = StateBridge::environment(&environment_id, cx)?;
+        let environment = environment.read(cx);
+        // `supportsPullRequests`: the server's config has arrived.
+        environment.config.as_ref()?;
+        let shell = environment.shell.snapshot.as_ref()?.threads.iter().find(|t| t.id == thread_id)?;
+        t3code_client_runtime::state::thread_pull_requests::thread_pull_request_panel_target(shell)
+    }
+
+    fn side_chat_launch(&self, key: &ThreadKey, cx: &App) -> crate::state::app_data::SideChatLaunch {
+        use crate::state::app_data::SideChatLaunch;
+        let (environment_id, thread_id) = runtime_ids(key);
+        let Some(environment) = StateBridge::environment(&environment_id, cx) else { return SideChatLaunch::Hidden };
+        let env = environment.read(cx);
+        let shell = env.shell.snapshot.as_ref().and_then(|s| s.threads.iter().find(|t| t.id == thread_id));
+        // `sideChatsOffered`: not from a side chat or a subagent, and the server has side chats.
+        let side_chat = shell.is_some_and(|t| t.lineage.side_chat == Some(true));
+        let subagent = shell.is_some_and(|t| {
+            t.lineage.relationship_to_parent == Some(t3code_contracts::OrchestrationV2AppThreadLineageRelationshipToParent::Subagent) || t.delegated_from.is_some()
+        });
+        let capable = env.config.as_ref().is_some_and(|c| c.environment.capabilities.side_chats == Some(true));
+        if side_chat || subagent || !capable {
+            return SideChatLaunch::Hidden;
+        }
+        let Some(thread) = self.active(key, cx) else { return SideChatLaunch::Disabled(None) };
+        match live_composer::side_chat_disabled_reason(key, thread.read(cx), env, cx) {
+            Some(reason) => SideChatLaunch::Disabled(Some(reason)),
+            None => SideChatLaunch::Available,
+        }
+    }
+
     fn side_chat_view(&self, key: &ThreadKey, cx: &mut App) -> Option<ThreadView> {
         let threads = StateBridge::threads(cx);
         let held = self.side_thread.borrow().as_ref().is_some_and(|(k, _)| k == key);

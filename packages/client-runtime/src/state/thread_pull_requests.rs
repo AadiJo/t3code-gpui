@@ -213,3 +213,121 @@ pub fn can_start_thread_pull_request_watch(thread: &OrchestrationV2ThreadShell) 
         && thread.settled_override != Some(Settled::Settled)
         && thread.lineage.relationship_to_parent != Some(Relationship::Subagent)
 }
+
+/// The pull request a thread is working on (`ThreadCurrentPullRequest`): one link, or the open
+/// layers of its stacks from the top down.
+#[derive(Clone, Debug)]
+pub enum ThreadCurrentPullRequest<'a> {
+    Single(&'a ThreadPullRequestLink),
+    Stack { open: Vec<&'a ThreadPullRequestLink>, top: &'a ThreadPullRequestLink },
+}
+
+/// A chain's layers deepest first; siblings later in the chain first (`layersFromTop`).
+fn layers_from_top<'a>(chain: &ThreadPullRequestChain<'a>) -> Vec<&'a ThreadPullRequestLink> {
+    let mut order: Vec<usize> = (0..chain.layers.len()).collect();
+    order.sort_by(|&left, &right| chain.depths[right].cmp(&chain.depths[left]).then(right.cmp(&left)));
+    order.into_iter().map(|index| chain.layers[index]).collect()
+}
+
+/// `resolveThreadCurrentPullRequest`: the one open link; several open ones as a stack, ordered
+/// top down within each chain and chains by their newest link; with none open, the top of the
+/// only chain, else the most recently updated link.
+pub fn resolve_thread_current_pull_request(links: &[ThreadPullRequestLink]) -> Option<ThreadCurrentPullRequest<'_>> {
+    let visible = visible_thread_pull_requests(links);
+    let first = *visible.first()?;
+    let open: Vec<_> = visible.iter().copied().filter(|link| is_open(link)).collect();
+    if let [single] = open.as_slice() {
+        return Some(ThreadCurrentPullRequest::Single(single));
+    }
+    let chains = resolve_thread_pull_request_chains(links);
+    if open.len() > 1 {
+        let mut open_chains: Vec<Vec<&ThreadPullRequestLink>> = chains
+            .iter()
+            .map(|chain| layers_from_top(chain).into_iter().filter(|link| is_open(link)).collect::<Vec<_>>())
+            .filter(|layers| !layers.is_empty())
+            .collect();
+        if open_chains.len() > 1 {
+            let newest = |layers: &[&ThreadPullRequestLink]| layers.iter().map(|link| parse_ms(&link.linked_at).unwrap_or(0)).max().unwrap_or(0);
+            open_chains.sort_by_key(|layers| std::cmp::Reverse(newest(layers)));
+        }
+        let ordered: Vec<_> = open_chains.into_iter().flatten().collect();
+        let top = *ordered.first()?;
+        return Some(ThreadCurrentPullRequest::Stack { open: ordered, top });
+    }
+    if let [chain] = chains.as_slice() {
+        return layers_from_top(chain).first().map(|top| ThreadCurrentPullRequest::Single(top));
+    }
+    let mut latest = first;
+    for link in &visible[1..] {
+        if updated_ms(link) > updated_ms(latest) {
+            latest = link;
+        }
+    }
+    Some(ThreadCurrentPullRequest::Single(latest))
+}
+
+/// `resolveThreadCurrentPullRequestLink`: the single link or the stack's top.
+pub fn resolve_thread_current_pull_request_link(links: &[ThreadPullRequestLink]) -> Option<&ThreadPullRequestLink> {
+    match resolve_thread_current_pull_request(links)? {
+        ThreadCurrentPullRequest::Single(link) => Some(link),
+        ThreadCurrentPullRequest::Stack { top, .. } => Some(top),
+    }
+}
+
+/// `legacyThreadPullRequestKey`: the key of a thread's older single linked pull request, from its
+/// URL when that names the same number, else the URL's host name.
+pub fn legacy_thread_pull_request_key(repository: &str, number: u64, url: &str) -> ThreadPullRequestKey {
+    if let Some((_, parsed)) = parse_change_request_url(url).filter(|(_, parsed)| parsed.number == number) {
+        return normalize_thread_pull_request_key(&parsed.host, &parsed.repository, number, Some(url));
+    }
+    let after_scheme = url.split_once("://").map_or(url, |(_, rest)| rest);
+    let authority = after_scheme.split(['/', '?', '#']).next().unwrap_or_default();
+    let host = authority.rsplit_once('@').map_or(authority, |(_, host)| host);
+    let host = host.split(':').next().unwrap_or_default().trim().to_lowercase();
+    ThreadPullRequestKey {
+        host: if host.is_empty() { "unknown".to_owned() } else { host },
+        repository: repository.trim().to_lowercase(),
+        number,
+    }
+}
+
+/// What the "Pull request" surface opens for a thread (`threadPullRequestPanelTarget`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PullRequestPanelTarget {
+    pub project_id: String,
+    pub host: Option<String>,
+    pub repository: String,
+    pub number: u64,
+    pub url: String,
+}
+
+/// `threadPullRequestPanelTarget`: the current linked pull request (the older single link when it
+/// is the same one), else the older single link, else the branch's pull request.
+pub fn thread_pull_request_panel_target(thread: &OrchestrationV2ThreadShell) -> Option<PullRequestPanelTarget> {
+    let legacy = |linked: &t3code_contracts::ThreadLinkedPullRequest| PullRequestPanelTarget {
+        project_id: linked.project_id.to_string(),
+        host: None,
+        repository: linked.repository.clone(),
+        number: u64::from(linked.number),
+        url: linked.url.clone(),
+    };
+    let current = resolve_thread_current_pull_request_link(thread.pull_requests.as_deref().unwrap_or_default());
+    match (current, thread.linked_pull_request.as_ref()) {
+        (Some(current), Some(linked)) => {
+            let key = legacy_thread_pull_request_key(&linked.repository, u64::from(linked.number), &linked.url);
+            let legacy_key = normalize_thread_pull_request_key(&key.host, &key.repository, key.number, None);
+            if link_key(current) == legacy_key {
+                return Some(legacy(linked));
+            }
+        }
+        (None, linked) => return linked.or(thread.branch_pull_request.as_ref()).map(legacy),
+        _ => {}
+    }
+    current.map(|current| PullRequestPanelTarget {
+        project_id: thread.project_id.to_string(),
+        host: Some(current.host.clone()),
+        repository: current.repository.clone(),
+        number: current.number,
+        url: current.url.clone(),
+    })
+}
