@@ -62,6 +62,7 @@ pub mod thread_sync;
 pub mod shortcut_modifier_state;
 pub mod shortcuts;
 pub mod source_control_presentation;
+pub mod speech;
 pub mod thread_pull_requests;
 pub mod terminal;
 pub mod terminal_links;

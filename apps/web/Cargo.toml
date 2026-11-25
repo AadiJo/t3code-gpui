@@ -36,6 +36,7 @@ unicode-segmentation.workspace = true
 markdown.workspace = true
 resvg.workspace = true
 rodio.workspace = true
+cpal.workspace = true
 wasmi.workspace = true
 unicode-ident.workspace = true
 regex.workspace = true
@@ -50,6 +51,12 @@ sha2.workspace = true
 zip.workspace = true
 base64.workspace = true
 uuid.workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# Microphone consent (AVCaptureDevice) for voice input.
+block2 = "0.6"
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", features = ["NSString"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
