@@ -42,6 +42,9 @@ impl ServerSettingsSource for LiveServerSettings {
     fn snapshot(&self) -> ServerPanelsSnapshot {
         self.snapshot.lock().expect("snapshot").clone()
     }
+    fn git_source(&self) -> Arc<dyn crate::components::git_actions_control_source::GitActionsSource> {
+        Arc::new(super::git::LiveGitSource { link: self.link.clone() })
+    }
     fn uninstall_acp_registry_managed_binary(
         &self,
         input: AcpRegistryManagedBinaryUninstallInput,
