@@ -28,7 +28,10 @@ fn picker_state(check: &mut Check) -> Option<(Option<usize>, bool)> {
 
 fn effort(check: &mut Check) -> Option<String> {
     let composer = composer_of(check);
-    check.cx.update(|cx| composer.read(cx).state().selection.effort.as_ref().map(|e| e.to_string()))
+    check.cx.update(|cx| {
+        let state = composer.read(cx).state();
+        state.selection.effort(&state.catalog).map(|e| e.to_string())
+    })
 }
 
 fn strip_menu(check: &mut Check) -> Option<&'static str> {
@@ -78,7 +81,7 @@ pub(super) fn run_composer_actions(check: &mut Check) -> anyhow::Result<()> {
         let composer = composer_of(check);
         check.cx.update(|cx| {
             let state = composer.read(cx).state();
-            state.catalog.model(&state.selection.instance_id, &state.selection.model).and_then(|m| m.effort.as_ref()).map_or(0, |d| d.options.len())
+            state.selection.traits(&state.catalog).and_then(|t| t.effort().map(|d| d.options.len())).unwrap_or(0)
         })
     };
     check.note(format!("selected model has {levels} effort levels"));
@@ -407,6 +410,9 @@ pub(super) fn run_env_banner(check: &mut Check) -> anyhow::Result<()> {
     };
     check.pump(|c| enabled(c) == Some(false), Duration::from_secs(10), "machine switched off")?;
     check.check("Disconnect server switches the machine off", true, "");
+    check.pump(|c| matches!(c.route(), Route::Index), Duration::from_secs(10), "home after Disconnect")?;
+    let home = check.route();
+    check.check("Disconnect server goes home (`navigate({ to: \"/\", replace: true })`)", true, format!("{home:?}"));
     std::fs::write(check.out.join("env-banner.start"), "")?;
     check.wait(Duration::from_secs(8));
     // The fork leaves the thread after Disconnect; switch the machine back on as Settings does.

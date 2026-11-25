@@ -132,7 +132,13 @@ pub struct VoiceInput {
     start_request: u64,
     /// A hold released before recording began; it finishes once recording starts.
     stop_on_record: Option<SharedString>,
+    reading_session: Option<(t3code_contracts::EnvironmentId, Task<()>)>,
 }
+
+/// Each destination environment's session, read once per run (`useEnvironmentScope`).
+#[derive(Default)]
+struct EnvironmentSessions(HashMap<t3code_contracts::EnvironmentId, Option<t3code_contracts::AuthSessionState>>);
+impl Global for EnvironmentSessions {}
 
 struct VoiceInputGlobal(Entity<VoiceInput>);
 impl Global for VoiceInputGlobal {}
@@ -162,6 +168,7 @@ impl VoiceInput {
             _clock: None,
             start_request: 0,
             stop_on_record: None,
+            reading_session: None,
         });
         cx.set_global(VoiceInputGlobal(entity.clone()));
         // Losing the destination's connection, or its capability, discards the recording.
@@ -200,6 +207,9 @@ impl VoiceInput {
             })
             .is_some_and(|flag| flag == Some(true));
         let connected = environment.as_ref().is_some_and(|env| env.is_connected());
+        // `canDictate`: the session must grant dictation (orchestration:operate) on the destination.
+        let supported = supported
+            && Self::grants(&environment_id, t3code_contracts::AuthEnvironmentScope::OrchestrationOperate, cx) == Some(true);
         Some(ResolvedDestination { key: SessionKey { grant_id: grant.id, destination: grant.destination }, label, ready: supported && connected })
     }
 
@@ -274,8 +284,39 @@ impl VoiceInput {
         cx.notify();
     }
 
+    /// Whether the session on `environment` grants `scope`, once read.
+    pub fn grants(environment: &t3code_contracts::EnvironmentId, scope: t3code_contracts::AuthEnvironmentScope, cx: &App) -> Option<bool> {
+        let session = cx.try_global::<EnvironmentSessions>()?.0.get(environment)?.as_ref();
+        Some(session.is_some_and(|session| env::session_grants_scope(session, scope)))
+    }
+
+    /// Reads the grant's environment session once, so the destination can say whether it may dictate.
+    fn ensure_session(&mut self, cx: &mut Context<Self>) {
+        let Some(grant) = voice_consent::audio_grant(cx) else { return };
+        let environment = grant.destination.environment_id().clone();
+        let reading = self.reading_session.as_ref().is_some_and(|(id, _)| *id == environment);
+        let known = cx.try_global::<EnvironmentSessions>().is_some_and(|sessions| sessions.0.contains_key(&environment));
+        if known || reading {
+            return;
+        }
+        let Some(link) = (ConnectionRuntime::is_running(cx).then(|| ConnectionRuntime::global(cx).environment_link(&environment))).flatten() else { return };
+        let tokio = ConnectionRuntime::global(cx).handle().clone();
+        let id = environment.clone();
+        let task = cx.spawn(async move |this, cx| {
+            let session = tokio.spawn(async move { link.session_state().await }).await.ok().and_then(Result::ok);
+            _ = this.update(cx, |this, cx| {
+                cx.default_global::<EnvironmentSessions>().0.insert(id, session);
+                this.reading_session = None;
+                this.ensure_status(cx);
+                cx.notify();
+            });
+        });
+        self.reading_session = Some((environment, task));
+    }
+
     /// Probes the chosen environment's status once per destination.
     pub fn ensure_status(&mut self, cx: &mut Context<Self>) {
+        self.ensure_session(cx);
         let Some(destination) = Self::destination(cx) else { return };
         if !destination.ready || destination.key.destination.cloud_provider().is_some() {
             return;
@@ -604,9 +645,21 @@ impl Global for VoiceNavigator {}
 impl VoiceNavigator {
     /// Routes voice navigation through `router`.
     pub fn set(router: WeakEntity<crate::router::Router>, cx: &mut App) {
+        cx.set_global(AppRouter(router.clone()));
         cx.set_global(Self(Rc::new(move |route, _, cx| {
             _ = router.update(cx, |router, cx| router.navigate(route, cx));
         })));
+    }
+}
+
+/// The window's router, for actions that run without a window (a banner button's task).
+struct AppRouter(WeakEntity<crate::router::Router>);
+impl Global for AppRouter {}
+
+/// Replaces the current route, as `navigate({ to, replace: true })` does.
+pub fn replace_route(route: crate::router::Route, cx: &mut App) {
+    if let Some(router) = cx.try_global::<AppRouter>().map(|r| r.0.clone()) {
+        _ = router.update(cx, |router, cx| router.replace(route, cx));
     }
 }
 

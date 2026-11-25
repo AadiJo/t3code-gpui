@@ -36,7 +36,7 @@ impl ProviderDriverKind {
 }
 
 /// A configured provider instance id, such as `codex` or `claude-work`.
-#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct ProviderInstanceId(pub SharedString);
 
 /// One provider instance as the picker rail shows it.
@@ -55,23 +55,359 @@ pub struct ProviderInstanceEntry {
 pub struct OptionChoice {
     pub id: SharedString,
     pub label: SharedString,
+    pub description: Option<SharedString>,
     pub is_default: bool,
 }
 
-/// A select option a model offers (effort, speed).
+/// A select option a model offers (effort, service tier, context window, an agent's mode).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SelectDescriptor {
+    pub id: SharedString,
     pub label: SharedString,
     pub options: Vec<OptionChoice>,
     /// Levels that work when typed into the prompt (Ultrathink) but no picker offers
     /// (`promptInjectedValues`).
     pub prompt_injected: Vec<SharedString>,
+    /// The value in effect: the server's `currentValue`, or the selection's once resolved.
+    pub current: Option<SharedString>,
+    /// The agent marked it as the reasoning control (`role: "reasoning"`).
+    pub reasoning_role: bool,
 }
 
 impl SelectDescriptor {
     /// The options a picker offers (`selectableProviderOptionChoices`).
     pub fn selectable(&self) -> Vec<OptionChoice> {
         self.options.iter().filter(|option| !self.prompt_injected.contains(&option.id)).cloned().collect()
+    }
+
+    /// The current value, else the default option (`getProviderOptionCurrentValue`).
+    pub fn value(&self) -> Option<&SharedString> {
+        self.current.as_ref().or_else(|| self.options.iter().find(|o| o.is_default).map(|o| &o.id))
+    }
+
+    /// The current option's label (`getProviderOptionCurrentLabel`).
+    pub fn value_label(&self) -> Option<SharedString> {
+        let value = self.value()?;
+        self.options.iter().find(|o| &o.id == value).map(|o| o.label.clone())
+    }
+
+    /// `resolveDescriptorChoiceValue`: an offered id stays, a prompt-injected or unknown id falls
+    /// back to the server's value or the default.
+    fn resolve(&self, raw: Option<&str>) -> Option<SharedString> {
+        let fallback = || self.current.clone().or_else(|| self.options.iter().find(|o| o.is_default).map(|o| o.id.clone()));
+        let Some(raw) = raw.map(str::trim).filter(|raw| !raw.is_empty()) else { return fallback() };
+        if self.options.is_empty() {
+            return Some(raw.to_owned().into());
+        }
+        if self.prompt_injected.iter().any(|v| v.as_ref() == raw) && self.options.iter().any(|o| o.id.as_ref() == raw) {
+            return self.options.iter().find(|o| o.is_default).map(|o| o.id.clone());
+        }
+        if self.options.iter().any(|o| o.id.as_ref() == raw) {
+            return Some(raw.to_owned().into());
+        }
+        fallback()
+    }
+}
+
+/// A two-state option (Claude's Fast mode, thinking, Ultracode).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BooleanDescriptor {
+    pub id: SharedString,
+    pub label: SharedString,
+    pub current: Option<bool>,
+}
+
+/// One option a model offers, as the server's `optionDescriptors` carry it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum OptionDescriptor {
+    Select(SelectDescriptor),
+    Boolean(BooleanDescriptor),
+}
+
+/// `REASONING_EFFORT_OPTION_IDS` plus `thinking`, the ids `isReasoningControl` knows.
+const REASONING_IDS: &[&str] = &["reasoningEffort", "effort", "reasoning", "variant", "reasoning_effort", "thinking_level", "thinking"];
+
+impl OptionDescriptor {
+    pub fn id(&self) -> &SharedString {
+        match self {
+            Self::Select(s) => &s.id,
+            Self::Boolean(b) => &b.id,
+        }
+    }
+
+    pub fn label(&self) -> &SharedString {
+        match self {
+            Self::Select(s) => &s.label,
+            Self::Boolean(b) => &b.label,
+        }
+    }
+
+    /// `isReasoningControl`: a select the agent marked as reasoning, or a known effort id.
+    pub fn is_reasoning(&self) -> bool {
+        matches!(self, Self::Select(s) if s.reasoning_role) || REASONING_IDS.contains(&self.id().as_ref())
+    }
+
+    /// The value in effect, for the wire.
+    pub fn value(&self) -> Option<OptionValue> {
+        match self {
+            Self::Select(s) => s.value().cloned().map(OptionValue::Text),
+            Self::Boolean(b) => b.current.map(OptionValue::Bool),
+        }
+    }
+
+    /// A copy with `value` in effect (`withDescriptorCurrentValue`).
+    fn with_value(&self, value: Option<&OptionValue>) -> Self {
+        match (self, value) {
+            (Self::Boolean(b), Some(OptionValue::Bool(v))) => Self::Boolean(BooleanDescriptor { current: Some(*v), ..b.clone() }),
+            (Self::Boolean(b), _) => Self::Boolean(b.clone()),
+            (Self::Select(s), value) => {
+                let raw = match value {
+                    Some(OptionValue::Text(text)) => Some(text.as_ref()),
+                    _ => s.current.as_deref(),
+                };
+                Self::Select(SelectDescriptor { current: s.resolve(raw), ..s.clone() })
+            }
+        }
+    }
+}
+
+/// A selected option value.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum OptionValue {
+    Text(SharedString),
+    Bool(bool),
+}
+
+/// One selected option, as the wire's `ProviderOptionSelection`.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct OptionSelection {
+    pub id: SharedString,
+    pub value: OptionValue,
+}
+
+fn selected<'a>(selections: &'a [OptionSelection], id: &str) -> Option<&'a OptionValue> {
+    selections.iter().find(|s| s.id.as_ref() == id).map(|s| &s.value)
+}
+
+/// `withLegacyUltracodeEffort`: Ultracode was a Claude effort level that ran at xhigh before it
+/// became its own switch.
+fn with_legacy_ultracode(descriptors: &[OptionDescriptor], selections: &[OptionSelection]) -> Vec<OptionSelection> {
+    let legacy = matches!(selected(selections, "effort"), Some(OptionValue::Text(v)) if v.as_ref() == "ultracode");
+    let has_toggle = descriptors.iter().any(|d| matches!(d, OptionDescriptor::Boolean(b) if b.id.as_ref() == "ultracode"));
+    if !legacy || !has_toggle {
+        return selections.to_vec();
+    }
+    let mut out: Vec<_> = selections
+        .iter()
+        .map(|s| match (&s.id, &s.value) {
+            (id, OptionValue::Text(v)) if id.as_ref() == "effort" && v.as_ref() == "ultracode" => {
+                OptionSelection { id: id.clone(), value: OptionValue::Text("xhigh".into()) }
+            }
+            _ => s.clone(),
+        })
+        .collect();
+    if selected(selections, "ultracode").is_none() {
+        out.push(OptionSelection { id: "ultracode".into(), value: OptionValue::Bool(true) });
+    }
+    out
+}
+
+/// A model's descriptors with the selection's values in effect (`getProviderOptionDescriptors`).
+pub fn resolve_descriptors(base: &[OptionDescriptor], selections: &[OptionSelection]) -> Vec<OptionDescriptor> {
+    let selections = with_legacy_ultracode(base, selections);
+    base.iter().map(|d| d.with_value(selected(&selections, d.id()))).collect()
+}
+
+/// Every descriptor's value in effect (`buildProviderOptionSelectionsFromDescriptors`).
+pub fn selections_from(descriptors: &[OptionDescriptor]) -> Vec<OptionSelection> {
+    descriptors.iter().filter_map(|d| Some(OptionSelection { id: d.id().clone(), value: d.value()? })).collect()
+}
+
+/// The options a turn carries: the explicitly chosen ones, normalised against the model, plus
+/// Fast mode off when the model has it and nothing chose it (`withImplicitFastModeDefault`,
+/// `buildExplicitProviderOptionSelectionsFromDescriptors`).
+pub fn dispatch_options(base: &[OptionDescriptor], selections: &[OptionSelection]) -> Vec<OptionSelection> {
+    let mut selections = selections.to_vec();
+    let fast = base.iter().any(|d| matches!(d, OptionDescriptor::Boolean(b) if b.id.as_ref() == "fastMode"));
+    if fast && selected(&selections, "fastMode").is_none() {
+        selections.push(OptionSelection { id: "fastMode".into(), value: OptionValue::Bool(false) });
+    }
+    let explicit: HashSet<SharedString> = with_legacy_ultracode(base, &selections).into_iter().map(|s| s.id).collect();
+    selections_from(&resolve_descriptors(base, &selections)).into_iter().filter(|s| explicit.contains(&s.id)).collect()
+}
+
+/// A model's options sorted the way the picker places them (`splitSpeed`, `columnControls`):
+/// speed and Ultracode in the footer, the reasoning control at the head of the column, and
+/// every other option below it, selects before switches.
+#[derive(Clone, Debug, Default)]
+pub struct ModelTraits {
+    /// All descriptors with the selection's values in effect, in server order.
+    pub descriptors: Vec<OptionDescriptor>,
+}
+
+impl ModelTraits {
+    /// A model's traits under a selection's options.
+    pub fn new(model: &ModelOption, selections: &[OptionSelection]) -> Self {
+        Self { descriptors: resolve_descriptors(&model.options, selections) }
+    }
+
+    fn select(&self, id: &str) -> Option<&SelectDescriptor> {
+        self.descriptors.iter().find_map(|d| match d {
+            OptionDescriptor::Select(s) if s.id.as_ref() == id => Some(s),
+            _ => None,
+        })
+    }
+
+    fn boolean(&self, id: &str) -> Option<&BooleanDescriptor> {
+        self.descriptors.iter().find_map(|d| match d {
+            OptionDescriptor::Boolean(b) if b.id.as_ref() == id => Some(b),
+            _ => None,
+        })
+    }
+
+    /// The first select: the one a typed Ultrathink owns.
+    pub fn primary_select(&self) -> Option<&SelectDescriptor> {
+        self.descriptors.iter().find_map(|d| match d {
+            OptionDescriptor::Select(s) => Some(s),
+            OptionDescriptor::Boolean(_) => None,
+        })
+    }
+
+    /// The service tier select, shown as footer segments.
+    pub fn speed_select(&self) -> Option<&SelectDescriptor> {
+        self.select("serviceTier")
+    }
+
+    /// Claude's Fast mode, shown as Standard / Fast footer segments.
+    pub fn fast_toggle(&self) -> Option<&BooleanDescriptor> {
+        self.boolean("fastMode")
+    }
+
+    /// The Ultracode switch, a footer toggle.
+    pub fn ultracode_toggle(&self) -> Option<&BooleanDescriptor> {
+        self.boolean("ultracode")
+    }
+
+    /// The context window select, which the trigger also names.
+    pub fn context_window(&self) -> Option<&SelectDescriptor> {
+        self.select("contextWindow")
+    }
+
+    /// The column's controls: selects then switches, without the footer's.
+    fn column(&self) -> Vec<&OptionDescriptor> {
+        let footer = |d: &OptionDescriptor| match d {
+            OptionDescriptor::Select(s) => s.id.as_ref() == "serviceTier",
+            OptionDescriptor::Boolean(b) => matches!(b.id.as_ref(), "fastMode" | "ultracode"),
+        };
+        let selects = self.descriptors.iter().filter(|d| matches!(d, OptionDescriptor::Select(_)) && !footer(d));
+        let switches = self.descriptors.iter().filter(|d| matches!(d, OptionDescriptor::Boolean(_)) && !footer(d));
+        selects.chain(switches).collect()
+    }
+
+    /// The reasoning control the column lists first.
+    pub fn reasoning(&self) -> Option<&OptionDescriptor> {
+        self.column().into_iter().find(|d| d.is_reasoning())
+    }
+
+    /// The reasoning control when it is a select (the levels).
+    pub fn effort(&self) -> Option<&SelectDescriptor> {
+        match self.reasoning()? {
+            OptionDescriptor::Select(s) => Some(s),
+            OptionDescriptor::Boolean(_) => None,
+        }
+    }
+
+    /// Every other column option (an agent's mode, a context window), one row each.
+    pub fn others(&self) -> Vec<&OptionDescriptor> {
+        let reasoning = self.reasoning().map(|d| d.id().clone());
+        self.column().into_iter().filter(|d| Some(d.id()) != reasoning.as_ref()).collect()
+    }
+
+    /// Whether the model has any option to show (`hasAnyControls`).
+    pub fn any(&self) -> bool {
+        !self.descriptors.is_empty()
+    }
+
+    /// The selection's options after one option changes (`replaceDescriptorCurrentValue` then
+    /// `buildProviderOptionSelectionsFromDescriptors`).
+    pub fn with_value(&self, id: &str, value: OptionValue) -> Vec<OptionSelection> {
+        let next: Vec<_> = self.descriptors.iter().map(|d| if d.id().as_ref() == id { d.with_value(Some(&value)) } else { d.clone() }).collect();
+        selections_from(&next)
+    }
+
+    /// The traits chip's label (`buildTraitsTriggerDisplay` without a typed Ultrathink): every
+    /// option's current label joined with " · ", the speed appended to the reasoning level, and
+    /// the speed tier alone when nothing else has a label.
+    pub fn trigger_label(&self) -> SharedString {
+        let mut labels: Vec<SharedString> = Vec::new();
+        let mut reasoning_at = None;
+        let mut fallback = None;
+        let speed = self.speed_label();
+        for d in &self.descriptors {
+            match d {
+                OptionDescriptor::Boolean(b) if b.id.as_ref() == "fastMode" => {
+                    fallback = Some(if b.current == Some(true) { "Fast".into() } else { crate::i18n::t!("Normal", context = "model speed tier") });
+                    continue;
+                }
+                OptionDescriptor::Boolean(b) if b.id.as_ref() == "ultracode" => {
+                    if b.current == Some(true) {
+                        labels.push(b.label.clone());
+                    }
+                    continue;
+                }
+                OptionDescriptor::Select(s) if s.id.as_ref() == "serviceTier" => {
+                    let current = s.value().cloned();
+                    let tier = |label: &str| s.options.iter().find(|o| o.label.as_ref() == label);
+                    let named = tier("Fast").or(tier("Ultrafast")).is_some();
+                    if (named && current.as_deref() == Some("default")) || [tier("Fast"), tier("Ultrafast")].into_iter().flatten().any(|o| Some(&o.id) == current.as_ref()) {
+                        fallback = Some(s.value_label().unwrap_or_else(|| crate::i18n::t!("Normal", context = "model speed tier")));
+                        continue;
+                    }
+                }
+                _ => {}
+            }
+            let label = match d {
+                OptionDescriptor::Boolean(b) if b.current == Some(true) => Some(crate::i18n::t!("{label} On", label = b.label.clone())),
+                OptionDescriptor::Boolean(b) => Some(crate::i18n::t!("{label} Off", label = b.label.clone())),
+                OptionDescriptor::Select(s) => s.value_label().or_else(|| (s.id.as_ref() == "thinking").then(|| s.label.clone())),
+            };
+            if let Some(label) = label.filter(|l| !l.is_empty()) {
+                if reasoning_at.is_none() && matches!(d, OptionDescriptor::Select(_)) && d.is_reasoning() {
+                    reasoning_at = Some(labels.len());
+                }
+                labels.push(label);
+            }
+        }
+        if labels.is_empty() {
+            if let Some(fallback) = fallback {
+                return fallback;
+            }
+        }
+        if let Some(speed) = speed {
+            match reasoning_at {
+                Some(at) => labels[at] = format!("{} {speed}", labels[at]).into(),
+                None => labels.push(speed.into()),
+            }
+        }
+        labels.iter().map(|l| l.as_ref()).collect::<Vec<_>>().join(" · ").into()
+    }
+
+    /// `"Fast"` or `"Ultrafast"` when a speed option is on (`buildTraitsTriggerDisplay`'s
+    /// `speedLabel`).
+    pub fn speed_label(&self) -> Option<&'static str> {
+        if let Some(fast) = self.fast_toggle() {
+            return (fast.current == Some(true)).then_some("Fast");
+        }
+        let tier = self.speed_select()?;
+        let current = tier.value()?;
+        let by_label = |label: &str| tier.options.iter().find(|o| o.label.as_ref() == label);
+        if by_label("Ultrafast").is_some_and(|o| &o.id == current) {
+            Some("Ultrafast")
+        } else if by_label("Fast").is_some_and(|o| &o.id == current) {
+            Some("Fast")
+        } else {
+            None
+        }
     }
 }
 
@@ -96,9 +432,15 @@ pub struct ModelOption {
     pub sub_provider: Option<SharedString>,
     pub is_legacy: bool,
     pub is_unavailable: bool,
-    pub effort: Option<SelectDescriptor>,
-    pub speed: Option<SelectDescriptor>,
-    pub ultracode: bool,
+    /// The options the model offers, in server order (`capabilities.optionDescriptors`).
+    pub options: Vec<OptionDescriptor>,
+}
+
+impl ModelOption {
+    /// The model's traits under a selection's options.
+    pub fn traits(&self, selections: &[OptionSelection]) -> ModelTraits {
+        ModelTraits::new(self, selections)
+    }
 }
 
 /// The picker's whole input: instances in server order, their models, and the
@@ -113,14 +455,25 @@ pub struct ModelCatalog {
     pub hidden: HashMap<ProviderInstanceId, HashSet<SharedString>>,
 }
 
-/// What the composer sends with: a model and its options.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+/// What the composer sends with: a model and the options chosen for it, as the wire carries
+/// them. A model's [`ModelTraits`] say which option is effort, speed or a mode.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct ModelSelection {
     pub instance_id: ProviderInstanceId,
     pub model: SharedString,
-    pub effort: Option<SharedString>,
-    pub speed: Option<SharedString>,
-    pub ultracode: bool,
+    pub options: Vec<OptionSelection>,
+}
+
+impl ModelSelection {
+    /// The model's traits in a catalog under this selection, when the catalog has the model.
+    pub fn traits(&self, catalog: &ModelCatalog) -> Option<ModelTraits> {
+        Some(catalog.model(&self.instance_id, &self.model)?.traits(&self.options))
+    }
+
+    /// The reasoning level in effect, when the model has levels.
+    pub fn effort(&self, catalog: &ModelCatalog) -> Option<SharedString> {
+        self.traits(catalog)?.effort()?.value().cloned()
+    }
 }
 
 /// `instance:slug`, the key favourites use. Ports `providerModelKey`.
@@ -224,7 +577,7 @@ pub fn display_model_name(model: &ModelOption, prefer_short: bool) -> SharedStri
 }
 
 /// Bars for an effort select: one per ordinary level, filled up to the current
-/// one. Max, Default and Ultracode levels are named instead.
+/// one. Max, Default, prompt-injected and Ultracode levels are named instead.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct EffortGlyph {
     pub count: usize,
@@ -240,13 +593,15 @@ const MAX_BARS: usize = 7;
 /// Ports `resolveEffortGlyph`.
 pub fn resolve_effort_glyph(descriptor: &SelectDescriptor, current: Option<&str>) -> Option<EffortGlyph> {
     let current = current?;
-    let levels: Vec<_> = descriptor.options.iter().filter(|o| !NAMED_LEVELS.contains(&o.id.as_ref())).collect();
+    // Max, Default, prompt-injected (Ultrathink) and workflow levels are named, not barred.
+    let special = |id: &str| NAMED_LEVELS.contains(&id) || descriptor.prompt_injected.iter().any(|v| v.as_ref() == id);
+    let levels: Vec<_> = descriptor.options.iter().filter(|o| !special(&o.id)).collect();
     if levels.len() < 2 || levels.len() > MAX_BARS {
         return None;
     }
     let starts_at_off = matches!(levels[0].id.as_ref(), "off" | "none");
     let count = if starts_at_off { levels.len() - 1 } else { levels.len() };
-    if NAMED_LEVELS.contains(&current) {
+    if special(current) {
         let label = descriptor.options.iter().find(|o| o.id.as_ref() == current).map_or_else(|| current.to_owned().into(), |o| o.label.clone());
         return Some(EffortGlyph { count, filled: count, special: Some(label.clone()), label });
     }

@@ -17,6 +17,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Duration;
 
+use gpui_kit::TestSupportExt as _;
 use gpui_kit::{
     AnyElement, App, AppContext as _, BoxShadow, Context, Entity, EventEmitter, ExternalPaths, FocusHandle, Focusable,
     FontWeight, Hsla, InteractiveElement as _, IntoElement, Modifiers, ModifiersChangedEvent, ParentElement as _,
@@ -411,10 +412,15 @@ impl ChatComposer {
             "Ask anything. @ files, $ skills, / commands".into()
         };
         let rich = crate::hooks::settings_bridge::composer_rich_text(cx);
-        self.editor.update(cx, |editor, _| {
+        let vocabulary = crate::components::composer_prompt_editor::ChipVocabulary {
+            skills: self.menu_source.known_skills().into_iter().collect(),
+            models: self.state.catalog.models.iter().flat_map(|(instance, models)| models.iter().map(|m| (instance.0.clone(), m.slug.clone()))).collect(),
+        };
+        self.editor.update(cx, |editor, cx| {
             editor.submit_context = context;
             editor.placeholder = placeholder;
             editor.rich_text = rich;
+            editor.set_vocabulary(vocabulary, cx);
         });
     }
 
@@ -942,17 +948,18 @@ impl ChatComposer {
             return false;
         }
         let selection = &self.state.selection;
-        let Some(descriptor) = self.state.catalog.model(&selection.instance_id, &selection.model).and_then(|m| m.effort.clone()) else {
-            return false;
-        };
+        let Some(traits) = selection.traits(&self.state.catalog) else { return false };
+        let Some(descriptor) = traits.effort().cloned() else { return false };
+        // Ultrathink belongs to the first select only.
+        let primary = traits.primary_select().is_some_and(|p| p.id == descriptor.id);
         // A typed Ultrathink is the current level; one in the body text keeps the prompt in charge.
         let prompt = self.editor.read(cx).text().to_owned();
-        let typed = !descriptor.prompt_injected.is_empty() && crate::model_selection::is_ultrathink_prompt(&prompt);
+        let typed = primary && !descriptor.prompt_injected.is_empty() && crate::model_selection::is_ultrathink_prompt(&prompt);
         let stripped = crate::model_selection::strip_ultrathink_prefix(&prompt);
         if typed && crate::model_selection::is_ultrathink_prompt(stripped) {
             return false;
         }
-        let current = if typed { Some("ultrathink") } else { selection.effort.as_deref() };
+        let current = if typed { Some("ultrathink") } else { descriptor.value().map(|v| v.as_ref()) };
         let Some(next) = next_effort(&descriptor, current, direction) else { return false };
         if typed {
             let removed = prompt.len() - stripped.len();
@@ -963,7 +970,7 @@ impl ChatComposer {
                 editor.set_cursor(cursor.min(stripped.len()), cx);
             });
         }
-        self.state.selection.effort = Some(next);
+        self.state.selection.options = traits.with_value(&descriptor.id, crate::model_selection::OptionValue::Text(next));
         cx.emit(ComposerEvent::ModelChanged(self.state.selection.clone()));
         if let Some((picker, _)) = &self.picker {
             let (c, s, m) = (self.state.catalog.clone(), self.state.selection.clone(), self.state.runtime_mode);
@@ -1222,6 +1229,9 @@ fn control(id: impl Into<gpui_kit::ElementId>, open: bool, c: &ComposerColors) -
     div()
         .id(id)
         .h(c.r(CONTROL_HEIGHT))
+        // `border border-transparent`: the 1px sits inside the height, outside the padding.
+        .border_1()
+        .border_color(gpui_kit::transparent_black())
         .px(c.r(px(8.)))
         .flex()
         .flex_none()
@@ -1257,7 +1267,8 @@ fn effort_glyph(glyph: &EffortGlyph, color: Hsla) -> impl IntoElement {
         }))
 }
 
-fn text_width(text: &str, size: Pixels, weight: FontWeight, window: &mut Window) -> Pixels {
+/// The width of one line of interface text.
+pub(crate) fn text_width(text: &str, size: Pixels, weight: FontWeight, window: &mut Window) -> Pixels {
     let mut f = gpui_kit::font(ui_font_family());
     f.weight = weight;
     let run = gpui_kit::TextRun { len: text.len(), font: f, color: gpui_kit::black(), background_color: None, underline: None, strikethrough: None };
@@ -1286,31 +1297,81 @@ impl ChatComposer {
         let entry = self.state.catalog.instance(&selection.instance_id).cloned();
         let model = self.state.catalog.model(&selection.instance_id, &selection.model).cloned();
         let label: SharedString = model.as_ref().map_or(selection.model.clone(), |m| display_model_name(m, true));
-        let glyph = model.as_ref().and_then(|m| m.effort.as_ref()).and_then(|d| resolve_effort_glyph(d, selection.effort.as_deref()));
+        // `describeComposerEffort`: bars (or a named level) for a select, "{option} On/Off" for a
+        // two-state reasoning control, a bolt for Fast, the workflow icon for Ultracode, and the
+        // context window's label.
+        let traits = model.as_ref().map(|m| m.traits(&selection.options));
+        let reasoning = traits.as_ref().and_then(|t| t.reasoning().cloned());
+        let glyph = match &reasoning {
+            Some(crate::model_selection::OptionDescriptor::Select(d)) => resolve_effort_glyph(d, d.value().map(|v| v.as_ref())),
+            _ => None,
+        };
+        let word: Option<SharedString> = match (&glyph, &reasoning) {
+            (Some(g), _) => g.special.clone(),
+            (None, Some(crate::model_selection::OptionDescriptor::Boolean(b))) => Some(if b.current == Some(true) {
+                crate::i18n::t!("{option} On", option = b.label.clone())
+            } else {
+                crate::i18n::t!("{option} Off", option = b.label.clone())
+            }),
+            (None, Some(crate::model_selection::OptionDescriptor::Select(d))) => d.value_label().or_else(|| (d.id.as_ref() == "thinking").then(|| d.label.clone())),
+            (None, None) => None,
+        };
+        let bars = glyph.filter(|g| g.special.is_none());
+        let context_window = traits.as_ref().and_then(|t| t.context_window()).and_then(|d| d.value_label());
+        let speed_label = traits.as_ref().and_then(|t| t.speed_label());
+        let ultracode = traits.as_ref().and_then(|t| t.ultracode_toggle()).is_some_and(|u| u.current == Some(true));
         let suffix_color = if open { c.foreground } else { c.muted_foreground };
         let mark = entry.as_ref().map_or(ProviderIcon::Initials, |e| ProviderIcon::for_model(&e.driver_kind, Some(&selection.model)));
         let initials = entry.as_ref().map_or(SharedString::default(), |e| e.display_name.clone());
         let label_width = text_width(&label, c.r(px(14.)), FontWeight::MEDIUM, window).min(c.r(px(224.)));
-        let suffix_width = match &glyph {
-            Some(g) if g.special.is_none() => px(4. * g.count as f32 - 2.),
-            Some(g) => text_width(g.special.as_deref().unwrap_or(""), c.r(px(14.)), FontWeight::MEDIUM, window).min(c.r(px(96.))),
-            None => px(0.),
-        };
-        let natural = c.r(px(8.)) + c.r(px(16.)) + c.r(px(6.)) + label_width + if glyph.is_some() { c.r(px(6.)) + suffix_width } else { px(0.) } + c.r(px(8.));
-        let speed_fast = selection.speed.as_deref().is_some_and(|s| s.eq_ignore_ascii_case("fast") || s.eq_ignore_ascii_case("ultrafast"));
+        let mut suffix = Vec::new();
+        if let Some(word) = &word {
+            suffix.push(text_width(word, c.r(px(14.)), FontWeight::MEDIUM, window).min(c.r(px(96.))));
+        } else if let Some(g) = &bars {
+            suffix.push(px(4. * g.count as f32 - 2.));
+        }
+        if speed_label.is_some() {
+            suffix.push(c.r(px(12.)));
+        }
+        if ultracode {
+            suffix.push(c.r(px(12.)));
+        }
+        if let Some(window_label) = &context_window {
+            suffix.push(text_width(window_label, c.r(px(12.)), FontWeight::MEDIUM, window).min(c.r(px(96.))));
+        }
+        // The suffix is one `gap-1.5` group after the name's own gap.
+        let suffix_width = suffix.iter().copied().fold(px(0.), |sum, w| sum + w) + c.r(px(6.)) * suffix.len().saturating_sub(1) as f32;
+        // The suffix pulls in by `-ms-0.5`: a word space after the name, not the full gap.
+        let natural = px(2.) + c.r(px(8.)) + c.r(px(16.)) + c.r(px(6.)) + label_width + if suffix.is_empty() { px(0.) } else { c.r(px(4.)) + suffix_width } + c.r(px(8.));
         let element = control("composer-model-trigger", open, &c)
             .min_w(c.r(px(52.)))
             .flex_shrink(1.)
             .when(compact, |el| el.text_size(c.r(px(12.))))
             .child(super::timeline_row_parts::composer_provider_icon(entry.as_ref(), &self.state.catalog, &selection.model, &c, cx))
             .child(div().min_w_0().max_w(c.r(px(224.))).overflow_hidden().whitespace_nowrap().text_ellipsis().child(label))
-            .when_some(glyph, |el, glyph| match glyph.special.clone() {
-                Some(name) => el.child(div().max_w(c.r(px(96.))).overflow_hidden().whitespace_nowrap().text_ellipsis().text_color(suffix_color).child(name)),
-                None => el.child(effort_glyph(&glyph, suffix_color)),
+            .when(!suffix.is_empty(), |el| {
+                el.child(
+                    div()
+                        .flex()
+                        .flex_none()
+                        .items_center()
+                        .gap(c.r(px(6.)))
+                        .when(!compact, |el| el.ml(-c.r(px(2.))))
+                        .text_color(suffix_color)
+                        .map(|el| match (&word, &bars) {
+                            (Some(word), _) => el.child(div().max_w(c.r(px(96.))).overflow_hidden().whitespace_nowrap().text_ellipsis().child(word.clone())),
+                            (None, Some(glyph)) => el.child(effort_glyph(glyph, suffix_color)),
+                            (None, None) => el,
+                        })
+                        .when(speed_label.is_some(), |el| el.child(Icon::new(IconName::ZapFilled).size(IconSize::Custom(c.r(px(12.)))).color(suffix_color)))
+                        .when(ultracode, |el| el.child(Icon::new(IconName::Workflow).size(IconSize::Custom(c.r(px(12.)))).color(suffix_color)))
+                        .when_some(context_window.clone(), |el, label| {
+                            el.child(div().max_w(c.r(px(96.))).overflow_hidden().whitespace_nowrap().text_ellipsis().text_size(c.r(px(12.))).child(label))
+                        }),
+                )
             })
-            .when(speed_fast, |el| el.child(Icon::new(IconName::ZapFilled).size(IconSize::Custom(c.r(px(12.)))).color(suffix_color)))
-            .when(selection.ultracode, |el| el.child(Icon::new(IconName::Workflow).size(IconSize::Custom(c.r(px(12.)))).color(suffix_color)))
             .on_click(cx.listener(|this, _, window, cx| this.toggle_picker(window, cx)))
+            .test_support()
             .into_any_element();
         (element, natural)
     }

@@ -50,3 +50,4 @@ pub mod theme_editor_panel;
 pub mod theme_sphere;
 pub mod microphone_test;
 pub mod voice_settings_panel;
+pub mod cloud_voice_configuration;

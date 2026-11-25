@@ -87,6 +87,12 @@ pub trait ComposerMenuSource {
     fn empty_text(&self, _trigger: &ComposerTrigger) -> Option<SharedString> {
         None
     }
+
+    /// The user-invocable skill names of the provider the composer sends with: a `$name`
+    /// becomes a chip only when it names one (`composerSkillMeta`).
+    fn known_skills(&self) -> Vec<SharedString> {
+        Vec::new()
+    }
 }
 
 /// The built-in slash commands, filtered by the query.

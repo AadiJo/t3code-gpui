@@ -124,9 +124,7 @@ pub fn default_selection(catalog: &ModelCatalog) -> ModelSelection {
     ModelSelection {
         instance_id: instance.map(|i| i.instance_id.clone()).unwrap_or_else(|| crate::model_selection::ProviderInstanceId(SharedString::default())),
         model: instance.and_then(|i| catalog.models.get(&i.instance_id)).and_then(|m| m.first()).map(|m| m.slug.clone()).unwrap_or_default(),
-        effort: None,
-        speed: None,
-        ultracode: false,
+        options: Vec::new(),
     }
 }
 
@@ -1425,6 +1423,17 @@ impl LiveMenuSource {
 }
 
 impl ComposerMenuSource for LiveMenuSource {
+    fn known_skills(&self) -> Vec<SharedString> {
+        let config = self.current_config();
+        let instance = self.facts.borrow().instance_id.clone();
+        let Some(provider) = selected_provider(config.as_deref(), instance.as_deref()) else { return Vec::new() };
+        provider_skills_for_cwd(provider, self.cwd.as_deref())
+            .iter()
+            .filter(|s| crate::provider_skill_search::is_provider_skill_user_invocable(s))
+            .map(|s| SharedString::from(s.name.clone()))
+            .collect()
+    }
+
     fn slash_items(&self, trigger: &ComposerTrigger, context: &SlashMenuContext) -> Option<(Vec<ComposerCommandItem>, bool)> {
         Some((self.slash_list(trigger, context), false))
     }
@@ -1876,10 +1885,16 @@ fn environment_banner_action(id: &str, cx: &mut App) {
         (SharedString::default(), None)
     };
     if let Some(task) = task {
-        cx.spawn(async move |cx| {
-            if let Err(error) = task.await {
-                cx.update(|cx| Toaster::push(ToastData::new(ToastKind::Error, title).description(error.0), cx));
+        cx.spawn(async move |cx| match task.await {
+            Err(error) => {
+                let description = if error.0.is_empty() { t!("Failed to disconnect.") } else { SharedString::from(error.0) };
+                _ = cx.update(|cx| Toaster::push(ToastData::new(ToastKind::Error, title).description(description), cx));
             }
+            // A disconnected server's threads are hidden, so the window goes home (`navigate({ to: "/", replace: true })`).
+            Ok(_) if disconnect => {
+                _ = cx.update(|cx| crate::speech::voice_input_session::replace_route(crate::router::Route::Index, cx));
+            }
+            Ok(_) => {}
         })
         .detach();
     }

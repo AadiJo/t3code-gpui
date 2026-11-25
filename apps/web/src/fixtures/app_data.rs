@@ -151,9 +151,7 @@ impl AppData for FixtureData {
                 selection: crate::model_selection::ModelSelection {
                     instance_id: crate::model_selection::ProviderInstanceId("replayRich".into()),
                     model,
-                    effort: None,
-                    speed: None,
-                    ultracode: false,
+                    options: Vec::new(),
                 },
                 runtime_mode: mode,
                 default_runtime_mode: RuntimeMode::FullAccess,

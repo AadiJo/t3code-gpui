@@ -27,8 +27,8 @@ use crate::composer_draft_store::{ComposerDraftKey, ComposerDraftStore, InMemory
 use crate::composer_editor_mentions::{format_context_reference, serialize_file_link};
 use crate::composer_logic::{ComposerTrigger, ComposerTriggerKind, SendShortcut};
 use crate::model_selection::{
-    ModelCatalog, ModelOption, ModelSelection, OptionChoice, ProviderDriverKind, ProviderIcon, ProviderInstanceEntry,
-    ProviderInstanceId, SelectDescriptor, provider_model_key,
+    BooleanDescriptor, ModelCatalog, ModelOption, ModelSelection, OptionChoice, OptionDescriptor, OptionSelection, OptionValue,
+    ProviderDriverKind, ProviderIcon, ProviderInstanceEntry, ProviderInstanceId, SelectDescriptor, provider_model_key,
 };
 use crate::theme_palette::Appearance;
 
@@ -36,18 +36,26 @@ use crate::theme_palette::Appearance;
 const CELL_WIDTH: f32 = 840.;
 const CELL_HEIGHT: f32 = 540.;
 
-fn effort(levels: &[(&str, &str)], default: &str) -> SelectDescriptor {
-    SelectDescriptor {
-        prompt_injected: Vec::new(),
-        label: "Reasoning".into(),
-        options: levels
-            .iter()
-            .map(|(id, label)| OptionChoice { id: (*id).into(), label: (*label).into(), is_default: *id == default })
-            .collect(),
-    }
+fn choices(levels: &[(&str, &str)], default: &str) -> Vec<OptionChoice> {
+    levels.iter().map(|(id, label)| OptionChoice { id: (*id).into(), label: (*label).into(), description: None, is_default: *id == default }).collect()
 }
 
-fn model(slug: &str, name: &str, effort_levels: Option<SelectDescriptor>) -> ModelOption {
+fn select(id: &str, label: &str, levels: &[(&str, &str)], default: &str) -> OptionDescriptor {
+    OptionDescriptor::Select(SelectDescriptor {
+        id: id.into(),
+        label: label.into(),
+        options: choices(levels, default),
+        prompt_injected: Vec::new(),
+        current: None,
+        reasoning_role: false,
+    })
+}
+
+fn effort(levels: &[(&str, &str)], default: &str) -> OptionDescriptor {
+    select("reasoningEffort", "Reasoning", levels, default)
+}
+
+fn model(slug: &str, name: &str, effort_levels: Option<OptionDescriptor>) -> ModelOption {
     ModelOption {
         slug: slug.into(),
         name: name.into(),
@@ -55,9 +63,7 @@ fn model(slug: &str, name: &str, effort_levels: Option<SelectDescriptor>) -> Mod
         sub_provider: None,
         is_legacy: false,
         is_unavailable: false,
-        effort: effort_levels,
-        speed: None,
-        ultracode: false,
+        options: effort_levels.into_iter().collect(),
     }
 }
 
@@ -69,14 +75,8 @@ pub fn fixture_catalog() -> ModelCatalog {
     let opencode = ProviderInstanceId("opencode".into());
     let gpt_effort = effort(&[("low", "Low"), ("medium", "Medium"), ("high", "High"), ("xhigh", "Extra high")], "medium");
     let claude_effort = effort(&[("low", "Low"), ("medium", "Medium"), ("high", "High"), ("max", "Max")], "high");
-    let speed = SelectDescriptor {
-        prompt_injected: Vec::new(),
-        label: "Speed".into(),
-        options: vec![
-            OptionChoice { id: "standard".into(), label: "Standard".into(), is_default: true },
-            OptionChoice { id: "fast".into(), label: "Fast".into(), is_default: false },
-        ],
-    };
+    let speed = select("serviceTier", "Service Tier", &[("default", "Standard"), ("fast", "Fast")], "default");
+    let ultracode = OptionDescriptor::Boolean(BooleanDescriptor { id: "ultracode".into(), label: "Ultracode".into(), current: None });
     let entry = |id: &ProviderInstanceId, driver, name: &str| ProviderInstanceEntry {
         instance_id: id.clone(),
         driver_kind: driver,
@@ -88,7 +88,7 @@ pub fn fixture_catalog() -> ModelCatalog {
     models.insert(
         codex.clone(),
         vec![
-            ModelOption { speed: Some(speed.clone()), ..model("gpt-5.5", "GPT-5.5", Some(gpt_effort.clone())) },
+            ModelOption { options: vec![gpt_effort.clone(), speed.clone()], ..model("gpt-5.5", "GPT-5.5", None) },
             model("gpt-5.5-codex", "GPT-5.5 Codex", Some(gpt_effort.clone())),
             model("gpt-5.4-mini", "GPT-5.4 Mini", Some(gpt_effort.clone())),
             ModelOption { is_legacy: true, ..model("gpt-5", "GPT-5", Some(gpt_effort)) },
@@ -97,7 +97,7 @@ pub fn fixture_catalog() -> ModelCatalog {
     models.insert(
         claude.clone(),
         vec![
-            ModelOption { ultracode: true, ..model("claude-opus-5-5", "Claude Opus 5.5", Some(claude_effort.clone())) },
+            ModelOption { options: vec![claude_effort.clone(), ultracode], ..model("claude-opus-5-5", "Claude Opus 5.5", None) },
             model("claude-sonnet-5-5", "Claude Sonnet 5.5", Some(claude_effort.clone())),
             model("claude-haiku-5-5", "Claude Haiku 5.5", None),
             model("claude-fable-5-2", "Claude Fable 5.2", Some(claude_effort)),
@@ -130,6 +130,10 @@ pub fn fixture_catalog() -> ModelCatalog {
 pub struct FixtureMenuSource;
 
 impl ComposerMenuSource for FixtureMenuSource {
+    fn known_skills(&self) -> Vec<SharedString> {
+        ["review", "release-notes", "frontend-design"].into_iter().map(SharedString::from).collect()
+    }
+
     fn items(&self, trigger: &ComposerTrigger) -> (Vec<ComposerCommandItem>, bool) {
         let q = trigger.query.to_lowercase();
         let items = match trigger.kind {
@@ -213,9 +217,7 @@ pub fn fixture_state(key: &str) -> ComposerState {
         selection: ModelSelection {
             instance_id: ProviderInstanceId("claudeAgent".into()),
             model: "claude-opus-5-5".into(),
-            effort: Some("high".into()),
-            speed: None,
-            ultracode: false,
+            options: vec![OptionSelection { id: "reasoningEffort".into(), value: OptionValue::Text("high".into()) }],
         },
         runtime_mode: RuntimeMode::FullAccess,
         default_runtime_mode: RuntimeMode::FullAccess,

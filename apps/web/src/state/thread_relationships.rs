@@ -349,8 +349,13 @@ fn format_model_slug_name(slug: &str) -> String {
 
 /// `modelShortName` with the driver's native families (`resolveModelShortName`).
 fn model_short_name(model: &crate::provider_instances::ServerProviderModel, driver: &str) -> Option<String> {
-    if let Some(short) = model.short_name.clone().filter(|s| !s.is_empty()) {
-        return Some(short);
+    resolve_model_short_name(&model.name, model.short_name.as_deref(), driver)
+}
+
+/// `resolveModelShortName`: the server's short name, else the name without its driver's family.
+pub fn resolve_model_short_name(name: &str, short_name: Option<&str>, driver: &str) -> Option<String> {
+    if let Some(short) = short_name.filter(|s| !s.is_empty()) {
+        return Some(short.to_owned());
     }
     const FAMILIES: [&str; 6] = ["Claude ", "GPT-", "GPT ", "Gemini ", "Muse ", "Grok "];
     const VARIANTS: [&str; 33] = [
@@ -377,7 +382,6 @@ fn model_short_name(model: &crate::provider_instances::ServerProviderModel, driv
     };
     let names_model = |text: &str| words(text).iter().any(|w| !VARIANTS.contains(&w.to_lowercase().as_str()));
     let natives = crate::components::settings::provider_driver_meta::driver_meta(driver).map(|m| m.model_families).unwrap_or(&[]);
-    let name = model.name.as_str();
     // `VENDOR_PREFIX`: "Anthropic: Claude …".
     let unprefixed = name.split_once(": ").filter(|(vendor, rest)| {
         vendor.len() <= 25 && vendor.starts_with(|c: char| c.is_ascii_uppercase()) && !rest.starts_with(char::is_whitespace)

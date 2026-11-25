@@ -105,6 +105,10 @@ impl ComposerMenuSource for ShownMenu {
         let source = self.0.borrow().clone();
         source.and_then(|source| source.empty_text(trigger))
     }
+
+    fn known_skills(&self) -> Vec<SharedString> {
+        self.0.borrow().as_ref().map(|source| source.known_skills()).unwrap_or_default()
+    }
 }
 
 /// One thread's source control model and the controls drawn on it.
