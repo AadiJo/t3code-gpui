@@ -805,7 +805,10 @@ impl CommandPalette {
             };
             div().h(slot).flex_none().child(row).into_any_element()
         })
-        .px(theme.sp(2.))
+        // `p-2` inside the viewport's `scrollbar-gutter-stable`: the fork keeps
+        // `--app-scrollbar-width` (6px) free on the right whether or not the list scrolls.
+        .pl(theme.sp(2.))
+        .pr(theme.sp(2.) + px(6.))
         .py(theme.sp(2.))
         .h(list_height)
         .w_full();
