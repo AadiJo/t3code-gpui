@@ -415,10 +415,7 @@ fn environment_choices(cx: &App) -> Vec<DestinationChoice> {
         .collect()
 }
 
-/// `speech-language`: the language the chosen model transcribes.
-fn language_label(code: &str) -> SharedString {
-    crate::speech::language_names::english_name(code).map(SharedString::from).unwrap_or_else(|| code.to_owned().into())
-}
+use crate::speech::language_names::language_label;
 
 /// `CloudSpeechLogo`: the provider's mark at 1rem.
 fn cloud_logo(provider: CloudSpeechProvider) -> crate::components::icons::BrandIcon {

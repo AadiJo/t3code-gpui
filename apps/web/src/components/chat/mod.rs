@@ -17,6 +17,7 @@ pub mod composer_prompt_history;
 pub mod composer_speech;
 pub mod composer_stash;
 pub mod composer_voice_indicator;
+pub mod voice_input_setup;
 pub mod composer_theme;
 pub mod composer_usage_limits;
 pub mod expanded_image_dialog;

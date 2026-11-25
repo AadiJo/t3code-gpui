@@ -21,8 +21,8 @@ use gpui_kit::{App, AppContext as _, AsyncApp, Context, Entity, Global, SharedSt
 use t3code_client_runtime::preview::environment_link::EnvironmentLink;
 use t3code_client_runtime::voice_input::environment as env;
 use t3code_client_runtime::voice_input::speech::{
-    CLOUD_SPEECH_LANGUAGES, SpeechStreamText, SpeechTranscriptionOptions, VoiceTranscriptionDestination, effective_speech_language, pcm_bytes,
-    resolve_speech_vocabulary,
+    CLOUD_SPEECH_LANGUAGES, SpeechStreamText, SpeechTranscriptionOptions, VoiceTranscriptionDestination, choose_setup_speech_model,
+    effective_speech_language, pcm_bytes, resolve_speech_vocabulary,
 };
 use t3code_client_runtime::voice_input::stream::SpeechStream;
 use t3code_client_runtime::voice_input::{
@@ -133,6 +133,27 @@ pub struct VoiceInput {
     /// A hold released before recording began; it finishes once recording starts.
     stop_on_record: Option<SharedString>,
     reading_session: Option<(t3code_contracts::EnvironmentId, Task<()>)>,
+    /// The model setup a start opened (`setup`), and the draft it records into once ready.
+    setup: VoiceSetup,
+    setup_target: Option<VoiceTarget>,
+    /// The destination the setup was opened for; a change discards it.
+    setup_key: Option<SessionKey>,
+    _setup_poll: Option<Task<()>>,
+}
+
+/// `INITIAL_SETUP`: what the voice setup dialog shows when a start finds no model.
+#[derive(Clone, Debug, Default)]
+pub struct VoiceSetup {
+    pub open: bool,
+    /// 0 offers the download, 1 picks a microphone.
+    pub step: u8,
+    /// The offered model; its `recommended` is the setup's own pick, not the catalog's.
+    pub model: Option<t3code_contracts::EnvironmentSpeechModel>,
+    /// The language the offered model was chosen for.
+    pub language: Option<String>,
+    pub downloading: bool,
+    pub catalog_failed: bool,
+    pub error: Option<SharedString>,
 }
 
 /// Each destination environment's session, read once per run (`useEnvironmentScope`).
@@ -169,6 +190,10 @@ impl VoiceInput {
             start_request: 0,
             stop_on_record: None,
             reading_session: None,
+            setup: VoiceSetup::default(),
+            setup_target: None,
+            setup_key: None,
+            _setup_poll: None,
         });
         cx.set_global(VoiceInputGlobal(entity.clone()));
         // Losing the destination's connection, or its capability, discards the recording.
@@ -378,12 +403,19 @@ impl VoiceInput {
             self.dispose_session(cx);
             self.queued_start = None;
         }
+        if self.setup_key.as_ref() != current.as_ref() && (self.setup.open || self.setup_target.is_some()) {
+            self.reset_setup();
+        }
         self.ensure_status(cx);
         cx.notify();
     }
 
-    /// `start`: refreshes the environment's status, then records into `target`.
+    /// `start`: refreshes the environment's status, then records into `target`. With no
+    /// model on the environment it opens the model setup instead.
     pub fn start(&mut self, target: VoiceTarget, cx: &mut Context<Self>) {
+        if self.setup.open && self.setup.downloading {
+            return;
+        }
         let Some(destination) = Self::destination(cx).filter(|destination| destination.ready) else { return };
         if self.busy_elsewhere(&target.owner_key) {
             return;
@@ -396,6 +428,7 @@ impl VoiceInput {
             return;
         }
         let Some(link) = Self::link(&key, cx) else { return };
+        self.reset_setup();
         self.queued_start = Some(target.owner_key.clone());
         cx.notify();
         let tokio = ConnectionRuntime::global(cx).handle().clone();
@@ -415,10 +448,8 @@ impl VoiceInput {
                             EnvironmentSpeechStatus::NotSupported(status) => {
                                 toast(ToastKind::Error, t!("Voice input is not available"), Some(status.reason.into()), cx)
                             }
-                            // The fork opens its model setup dialog here (`VoiceInputSetup`), which this
-                            // app does not have yet.
                             EnvironmentSpeechStatus::Supported(status) if status.state == EnvironmentSpeechState::MissingModel => {
-                                toast(ToastKind::Error, t!("Voice input is not available"), None, cx)
+                                this.load_setup_catalog(key, target, status.model_id.as_str().to_owned(), status.benchmark_tier, request, cx)
                             }
                             _ => this.begin(key, target, cx),
                         }
@@ -427,6 +458,228 @@ impl VoiceInput {
             });
         })
         .detach();
+    }
+
+    /// The model setup as the dialog shows it.
+    pub fn setup(&self) -> &VoiceSetup {
+        &self.setup
+    }
+
+    /// The environment the setup transcribes on, while it is open.
+    pub fn setup_environment(&self) -> Option<&EnvironmentId> {
+        self.setup_key.as_ref().map(|key| key.destination.environment_id())
+    }
+
+    fn reset_setup(&mut self) {
+        self.setup = VoiceSetup::default();
+        self.setup_target = None;
+        self.setup_key = None;
+        self._setup_poll = None;
+    }
+
+    /// `setOpen`: closing keeps the setup; the next start begins again.
+    pub fn set_setup_open(&mut self, open: bool, cx: &mut Context<Self>) {
+        self.setup.open = open;
+        if !open {
+            self._setup_poll = None;
+        }
+        cx.notify();
+    }
+
+    /// `loadSetupCatalog`: opens the dialog, then offers the model `chooseSetupSpeechModel` picks.
+    fn load_setup_catalog(
+        &mut self,
+        key: SessionKey,
+        target: VoiceTarget,
+        selected_model_id: String,
+        tier: Option<t3code_contracts::SpeechBenchmarkTier>,
+        request: u64,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(link) = Self::link(&key, cx) else { return };
+        self.setup = VoiceSetup { open: true, ..VoiceSetup::default() };
+        self.setup_target = Some(target);
+        self.setup_key = Some(key);
+        cx.notify();
+        let tokio = ConnectionRuntime::global(cx).handle().clone();
+        cx.spawn(async move |this, cx| {
+            let catalog = tokio.spawn(async move { env::speech_models(&link, true).await }).await.ok().and_then(Result::ok);
+            _ = this.update(cx, |this, cx| {
+                if this.start_request != request {
+                    return;
+                }
+                let intent = ClientSettingsStore::get(cx).speech_language.as_str().to_owned();
+                let models = catalog.as_ref().map(|catalog| catalog.models.as_slice()).unwrap_or_default();
+                let choice = choose_setup_speech_model(models, &selected_model_id, &intent, &preferred_speech_languages(), tier);
+                this.setup.catalog_failed = catalog.is_none();
+                this.setup.error = match (&choice, &catalog) {
+                    (Some(_), _) => None,
+                    (None, Some(_)) => Some(t!("No model matches your language. Choose a model or change the language in Voice settings.")),
+                    (None, None) => Some(t!("Could not load transcription models. Check the connection and try again.")),
+                };
+                this.setup.language = choice.as_ref().and_then(|choice| choice.language.clone());
+                this.setup.model = choice.map(|choice| t3code_contracts::EnvironmentSpeechModel { recommended: choice.recommended, ..choice.model });
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    /// `retryCatalog`: offered while the catalog failed and the status is supported.
+    pub fn can_retry_setup_catalog(&self, cx: &App) -> bool {
+        self.setup.open && self.setup.catalog_failed && matches!(self.status(cx), Some(EnvironmentSpeechStatus::Supported(_)))
+    }
+
+    pub fn retry_setup_catalog(&mut self, cx: &mut Context<Self>) {
+        let (Some(EnvironmentSpeechStatus::Supported(status)), Some(key), Some(target)) =
+            (self.status(cx), self.setup_key.clone(), self.setup_target.clone())
+        else {
+            return;
+        };
+        self.start_request += 1;
+        let request = self.start_request;
+        self.load_setup_catalog(key, target, status.model_id.as_str().to_owned(), status.benchmark_tier, request, cx);
+    }
+
+    /// `downloadSetupModel`: downloads the offered model, selects it if the download did not,
+    /// and moves to the microphone step once the environment reports it ready.
+    pub fn download_setup_model(&mut self, cx: &mut Context<Self>) {
+        let supported = matches!(self.status(cx), Some(EnvironmentSpeechStatus::Supported(_)));
+        let (Some(key), Some(model)) = (self.setup_key.clone(), self.setup.model.as_ref()) else { return };
+        if !supported || self.setup.downloading {
+            return;
+        }
+        let Some(link) = Self::link(&key, cx) else { return };
+        let model_id = model.id.as_str().to_owned();
+        self.start_request += 1;
+        let request = self.start_request;
+        self.setup.downloading = true;
+        self.setup.error = None;
+        self.poll_setup_download(link.clone(), model_id.clone(), cx);
+        cx.notify();
+        let tokio = ConnectionRuntime::global(cx).handle().clone();
+        cx.spawn(async move |this, cx| {
+            let (download_link, id) = (link.clone(), model_id.clone());
+            let downloaded = tokio.spawn(async move { env::download_speech_model(&download_link, &id).await }).await.ok().and_then(Result::ok);
+            let stale = |this: &WeakEntity<Self>, cx: &mut AsyncApp| this.read_with(cx, |this, _| this.start_request != request).unwrap_or(true);
+            let fail = |this: &WeakEntity<Self>, cx: &mut AsyncApp, error: SharedString| {
+                _ = this.update(cx, |this, cx| {
+                    this.setup.downloading = false;
+                    this._setup_poll = None;
+                    this.setup.error = Some(error);
+                    cx.notify();
+                });
+            };
+            let Some(downloaded) = downloaded else {
+                if !stale(&this, cx) {
+                    fail(&this, cx, t!("Could not download the model. Check this environment's connection and try again."));
+                }
+                return;
+            };
+            if stale(&this, cx) {
+                return;
+            }
+            let outcome = env::speech_model_download_outcome(&downloaded, &model_id);
+            if outcome == env::SpeechModelDownloadOutcome::NeedsSelection {
+                let (select_link, id) = (link.clone(), model_id.clone());
+                let selected = tokio.spawn(async move { env::select_speech_model(&select_link, &id).await }).await.ok().and_then(Result::ok);
+                if stale(&this, cx) {
+                    return;
+                }
+                if selected.is_none() {
+                    fail(&this, cx, t!("The model downloaded, but this environment could not select it. Try again."));
+                    return;
+                }
+            }
+            let status_link = link.clone();
+            let next = tokio.spawn(async move { env::speech_status(&status_link).await }).await.ok().and_then(Result::ok);
+            if stale(&this, cx) {
+                return;
+            }
+            let Some(next) = next else {
+                fail(&this, cx, t!("Could not download the model. Check this environment's connection and try again."));
+                return;
+            };
+            _ = this.update(cx, |this, cx| {
+                let ready = outcome != env::SpeechModelDownloadOutcome::Incomplete
+                    && matches!(&next, EnvironmentSpeechStatus::Supported(status)
+                        if status.model_id.as_str() == model_id && status.state != EnvironmentSpeechState::MissingModel);
+                this.status = Some((key, Some(next)));
+                this.setup.downloading = false;
+                this._setup_poll = None;
+                if ready {
+                    this.setup.step = 1;
+                    this.setup.error = None;
+                } else {
+                    this.setup.error = Some(t!("The model is not ready. Try downloading it again."));
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    /// Refreshes the offered model's progress once a second while the dialog owns a download.
+    fn poll_setup_download(&mut self, link: EnvironmentLink, model_id: String, cx: &mut Context<Self>) {
+        let tokio = ConnectionRuntime::global(cx).handle().clone();
+        self._setup_poll = Some(cx.spawn(async move |this, cx| {
+            loop {
+                cx.background_executor().timer(Duration::from_secs(1)).await;
+                let poll_link = link.clone();
+                let models = tokio.spawn(async move { env::speech_models(&poll_link, false).await }).await.ok().and_then(Result::ok);
+                let keep = this.update(cx, |this, cx| {
+                    if !(this.setup.open && this.setup.downloading) {
+                        return false;
+                    }
+                    if let Some(model) = models.and_then(|models| models.models.into_iter().find(|model| model.id.as_str() == model_id)) {
+                        let recommended = this.setup.model.as_ref().is_some_and(|current| current.recommended);
+                        this.setup.model = Some(t3code_contracts::EnvironmentSpeechModel { recommended, ..model });
+                        cx.notify();
+                    }
+                    true
+                });
+                if !matches!(keep, Ok(true)) {
+                    return;
+                }
+            }
+        }));
+    }
+
+    /// `cancelSetupDownload`: closes the dialog and asks the environment to stop.
+    pub fn cancel_setup_download(&mut self, cx: &mut Context<Self>) {
+        let (Some(key), Some(model)) = (self.setup_key.clone(), self.setup.model.as_ref()) else { return };
+        let Some(link) = Self::link(&key, cx) else { return };
+        let model_id = model.id.as_str().to_owned();
+        self.start_request += 1;
+        self.setup.open = false;
+        self.setup.downloading = false;
+        self._setup_poll = None;
+        cx.notify();
+        let tokio = ConnectionRuntime::global(cx).handle().clone();
+        cx.spawn(async move |this, cx| {
+            let result = tokio.spawn(async move { env::cancel_speech_model_download(&link, &model_id).await }).await;
+            let error = match result {
+                Ok(Ok(_)) => None,
+                Ok(Err(error)) => Some(error.to_string()),
+                Err(error) => Some(error.to_string()),
+            };
+            if let Some(error) = error {
+                _ = this.update(cx, |this, cx| {
+                    this.setup.error = Some(error.into());
+                    cx.notify();
+                });
+            }
+        })
+        .detach();
+    }
+
+    /// `startRecording`: closes the dialog and starts the recording it was opened for.
+    pub fn start_setup_recording(&mut self, cx: &mut Context<Self>) {
+        self.setup.open = false;
+        if let Some(target) = self.setup_target.clone() {
+            self.start(target, cx);
+        }
+        cx.notify();
     }
 
     fn begin(&mut self, key: SessionKey, target: VoiceTarget, cx: &mut Context<Self>) {
@@ -466,6 +719,10 @@ impl VoiceInput {
         self.pending_submission = None;
         self.stop_on_record = None;
         self.start_request += 1;
+        if self.setup_target.as_ref().is_some_and(|target| target.owner_key.as_ref() == owner) {
+            self.reset_setup();
+            cx.notify();
+        }
         if self.queued_start.as_deref() == Some(owner) {
             self.queued_start = None;
             cx.notify();
@@ -622,6 +879,16 @@ impl VoiceInput {
         };
         Some((options, cleanup, cleanup_environment))
     }
+}
+
+/// `preferredSpeechLanguages`: the system's preferred languages as primary subtags, most
+/// preferred first.
+pub fn preferred_speech_languages() -> Vec<String> {
+    crate::i18n::runtime::system_languages()
+        .into_iter()
+        .filter_map(|tag| tag.to_lowercase().split(['-', '_']).next().map(str::to_owned))
+        .filter(|tag| !tag.is_empty())
+        .collect()
 }
 
 /// The Settings → Voice page (the error capsule's Settings button).

@@ -27,18 +27,18 @@ use super::*;
 
 const DEVICES: [&str; 2] = ["Desk microphone", "USB microphone"];
 
-fn source(deny: bool) {
+pub(super) fn source(deny: bool) {
     let rate = 48_000u32;
     let samples: Arc<[f32]> = (0..rate as usize * 60).map(|i| 0.3 * (2. * std::f32::consts::PI * 440. * i as f32 / rate as f32).sin()).collect();
     test_source::set(Some(TestSource { rate, samples, devices: DEVICES.iter().map(|d| (*d).to_owned()).collect(), deny }));
 }
 
-fn element_visible(check: &mut Check, id: &str) -> bool {
+pub(super) fn element_visible(check: &mut Check, id: &str) -> bool {
     let element = ElementId::from(SharedString::from(id.to_owned()));
     check.cx.update_window(check.window, |_, w, _| w.try_find(element).is_some_and(|e| e.visible())).unwrap_or(false)
 }
 
-fn click(check: &mut Check, id: &str) -> anyhow::Result<()> {
+pub(super) fn click(check: &mut Check, id: &str) -> anyhow::Result<()> {
     let element = ElementId::from(SharedString::from(id.to_owned()));
     let at = check
         .cx
@@ -50,7 +50,7 @@ fn click(check: &mut Check, id: &str) -> anyhow::Result<()> {
 }
 
 /// Notes the bounds of `ids` for the fork comparison.
-fn note_bounds(check: &mut Check, ids: &[&str]) {
+pub(super) fn note_bounds(check: &mut Check, ids: &[&str]) {
     for id in ids {
         let element = ElementId::from(SharedString::from((*id).to_owned()));
         let bounds = check.cx.update_window(check.window, |_, w, _| w.find_all(element).iter().map(|e| e.bounds()).collect::<Vec<_>>()).unwrap_or_default();
@@ -58,17 +58,17 @@ fn note_bounds(check: &mut Check, ids: &[&str]) {
     }
 }
 
-fn phase(check: &mut Check) -> VoiceInputPhase {
+pub(super) fn phase(check: &mut Check) -> VoiceInputPhase {
     let composer = composer_of(check);
     check.cx.update(|cx| composer.read(cx).voice_state(cx).phase)
 }
 
-fn prompt(check: &mut Check) -> String {
+pub(super) fn prompt(check: &mut Check) -> String {
     let composer = composer_of(check);
     check.cx.update(|cx| composer.read(cx).editor().read(cx).text().to_owned())
 }
 
-fn set_prompt(check: &mut Check, text: &str) {
+pub(super) fn set_prompt(check: &mut Check, text: &str) {
     let composer = composer_of(check);
     let text = text.to_owned();
     check.cx.update(|cx| composer.read(cx).editor().clone().update(cx, |e, cx| e.set_text(text, cx)));
@@ -84,7 +84,7 @@ fn preview(check: &mut Check) -> Option<String> {
     })
 }
 
-fn server_log(check: &Check) -> String {
+pub(super) fn server_log(check: &Check) -> String {
     let path = std::env::var("T3_VOICE_SERVER_LOG").unwrap_or_default();
     let _ = check;
     std::fs::read_to_string(path).unwrap_or_default()
@@ -92,7 +92,7 @@ fn server_log(check: &Check) -> String {
 
 /// Whether the transcript looks like the stand-in's report of the tone.
 /// Short clips round the zero-crossing estimate by up to 20 Hz.
-fn heard_tone(text: &str) -> bool {
+pub(super) fn heard_tone(text: &str) -> bool {
     let hertz = text.split(" at ").nth(1).and_then(|rest| rest.split(' ').next()).and_then(|n| n.parse::<u32>().ok());
     text.contains("stand-in heard") && hertz.is_some_and(|hz| (420..=460).contains(&hz))
 }

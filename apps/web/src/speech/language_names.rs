@@ -25,3 +25,8 @@ const NAMES: &[(&str, &str)] = &[
 pub fn english_name(code: &str) -> Option<&'static str> {
     NAMES.iter().find(|(known, _)| *known == code).map(|(_, name)| *name)
 }
+
+/// `languageLabel`: the name the app shows for a language code, or the code itself.
+pub fn language_label(code: &str) -> gpui_kit::SharedString {
+    english_name(code).map(gpui_kit::SharedString::from).unwrap_or_else(|| code.to_owned().into())
+}
