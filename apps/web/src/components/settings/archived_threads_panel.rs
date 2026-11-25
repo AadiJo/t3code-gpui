@@ -6,7 +6,7 @@
 
 use std::rc::Rc;
 
-use gpui_kit::{AnyElement, App, Context, IntoElement, Render, SharedString, Window, div, prelude::*};
+use gpui_kit::{TestSupportExt as _, AnyElement, App, Context, IntoElement, Render, SharedString, Window, div, prelude::*};
 use t3code_client_runtime::environment::EnvironmentId;
 use t3code_contracts::rpc::methods::{OrchestrationDispatchCommand, OrchestrationGetArchivedShellSnapshot};
 use t3code_contracts::{
@@ -50,11 +50,25 @@ pub struct ArchivedThreadsPanel {
     snapshots: Vec<(EnvironmentId, OrchestrationV2ArchivedShellSnapshot)>,
     pending: Vec<ThreadId>,
     confirm_delete: Option<ArchivedThread>,
+    /// How many threads the live shell showed at the last load: an archive or unarchive from
+    /// anywhere changes it, and the page reloads (the fork reloads on each visit).
+    shell_rows: usize,
+    _shell: Option<gpui_kit::Subscription>,
 }
 
 impl ArchivedThreadsPanel {
     pub fn new(_window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let mut this = Self { loading: false, error: None, snapshots: Vec::new(), pending: Vec::new(), confirm_delete: None };
+        let shell = crate::state::StateBridge::is_running(cx).then(|| {
+            cx.observe(&crate::state::StateBridge::shell(cx), |this: &mut Self, shell, cx| {
+                let rows = shell.read(cx).presented().len();
+                if rows != this.shell_rows {
+                    this.shell_rows = rows;
+                    this.refresh(cx);
+                }
+            })
+        });
+        let shell_rows = if crate::state::StateBridge::is_running(cx) { crate::state::StateBridge::shell(cx).read(cx).presented().len() } else { 0 };
+        let mut this = Self { loading: false, error: None, snapshots: Vec::new(), pending: Vec::new(), confirm_delete: None, shell_rows, _shell: shell };
         this.refresh(cx);
         this
     }
@@ -196,7 +210,7 @@ impl Render for ArchivedThreadsPanel {
                                     .icon(icon)
                                     .disabled(busy)
                                     .on_click(move |_, _, cx| handle.update(cx, |this, cx| this.run(action, thread.clone(), cx)));
-                                div().id(SharedString::from(format!("archived-tip-{key}-{id}"))).tooltip(crate::components::ui::tooltip::tooltip(label)).child(button)
+                                div().id(SharedString::from(format!("archived-tip-{key}-{id}"))).tooltip(crate::components::ui::tooltip::tooltip(label)).child(button).test_support()
                             };
                             let controls = div().flex().flex_none().items_center().gap(gap).child(button(ArchiveAction::Unarchive)).child(button(ArchiveAction::Delete));
                             let row = SettingsRow::new(thread.title.clone()).description(description).control(controls);

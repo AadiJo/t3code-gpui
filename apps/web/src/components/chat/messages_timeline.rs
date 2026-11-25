@@ -524,6 +524,11 @@ impl MessagesTimeline {
         cx.notify();
     }
 
+    /// What the message and changed-files menus offer, as the host last set it.
+    pub fn markdown_menus(&self) -> &crate::components::chat_markdown::MarkdownMenus {
+        &self.markdown_state.menus
+    }
+
     /// The working directory message menus resolve relative file links against.
     pub fn markdown_cwd(&self) -> Option<SharedString> {
         self.markdown_state.menus.cwd.clone()

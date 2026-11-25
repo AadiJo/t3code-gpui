@@ -103,6 +103,7 @@ mod live_check_heap;
 mod live_check_history;
 mod live_check_linked;
 mod live_check_memory;
+mod live_check_menus;
 mod live_check_palette;
 mod live_check_setup;
 mod live_check_settings;
@@ -612,6 +613,7 @@ fn main() -> anyhow::Result<()> {
         "env-banner" => live_check_composer_actions::run_env_banner(&mut check),
         "earlier-turns" => live_check_history::run_earlier_turns(&mut check),
         "update-ref" => live_check_update_ref::run_update_ref(&mut check),
+        "context-menus" => live_check_menus::run_context_menus(&mut check),
         other => Err(anyhow::anyhow!("unknown phase {other}")),
     };
     check.finish(&phase, result)
