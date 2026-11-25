@@ -42,7 +42,7 @@ use crate::connection::presentation::{
     route_label, row_status, status_text, transport_label,
 };
 use crate::components::server_update_action::{
-    ServerUpdateStore, ServerUpdateTarget, UpdateAppearance, desktop_confirmation, outdated_server_update_action,
+    ServerUpdateStore, ServerUpdateTarget, UpdateAppearance, confirm_copy, desktop_confirmation, outdated_server_update_action,
     server_update_action, server_update_progress, server_updates_action, update_all,
 };
 use crate::hooks::use_settings::ServerSettingsStore;
@@ -1104,14 +1104,20 @@ impl ConnectionsSettings {
             }
             PageDialog::ConfirmUpdate(targets) => {
                 let targets = targets.clone();
-                DialogSurface::new(desktop_confirmation(&targets))
+                let (title, description) = confirm_copy(&desktop_confirmation(&targets));
+                let surface = DialogSurface::new(title);
+                let surface = match description {
+                    Some(description) => surface.description(description),
+                    None => surface,
+                };
+                surface
                     .footer(
                         Button::new("confirm-cancel")
                             .label(t!("Cancel"))
                             .variant(ButtonVariant::Outline)
                             .on_click(cx.listener(|this, _, _, cx| this.close_dialog(cx))),
                     )
-                    .footer(Button::new("confirm-update").label(t!("Update")).on_click(cx.listener(move |this, _, _, cx| {
+                    .footer(Button::new("confirm-update").label(t!("Confirm")).on_click(cx.listener(move |this, _, _, cx| {
                         this.close_dialog(cx);
                         update_all(targets.clone(), cx);
                     })))

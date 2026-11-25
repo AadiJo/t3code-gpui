@@ -29,7 +29,7 @@ use crate::components::icons::{IconName, IconSize};
 use crate::components::ui::TextStyleExt as _;
 use crate::components::ui::button::{Button, ButtonSize, ButtonVariant};
 use crate::components::ui::toast::{ToastData, ToastKind, Toaster};
-use crate::components::ui::tooltip::tooltip;
+use crate::components::ui::tooltip::{TooltipAnchor, TooltipSide};
 use crate::connection::ConnectionRuntime;
 use crate::i18n::t;
 use crate::version_skew::{manual_command_installs, manual_server_update_command, updates_remotely};
@@ -337,11 +337,20 @@ pub fn server_update_progress(id: impl Into<SharedString>, state: &ServerUpdateS
         ServerUpdateState::Running { stage, .. } => (c.foreground(), stage_label(*stage), false),
         ServerUpdateState::Failed { failure, .. } => (c.destructive(), failure_text(failure), true),
     };
+    let id = id.into();
     let dot = div().flex_none().size(theme.rem(0.375)).rounded_full().bg(color);
-    let label = div().min_w_0().truncate().child(text.clone());
+    // The failure's full text shows above its label (`TooltipPopup side="top"`).
+    let anchor = TooltipAnchor::new();
+    let label = div()
+        .id(SharedString::from(format!("{id}-text")))
+        .relative()
+        .min_w_0()
+        .truncate()
+        .child(text.clone())
+        .when(failed, |label| label.child(anchor.measure()).tooltip(anchor.tooltip(text.clone(), TooltipSide::Top)));
     Some(
         div()
-            .id(id.into())
+            .id(id)
             .mt(theme.sp(1.))
             .flex()
             .min_w_0()
@@ -351,7 +360,6 @@ pub fn server_update_progress(id: impl Into<SharedString>, state: &ServerUpdateS
             .text_color(color)
             .child(dot)
             .child(label)
-            .when(failed, |row| row.tooltip(tooltip(text)))
             .test_support()
             .into_any_element(),
     )
@@ -380,9 +388,13 @@ pub fn server_update_action(
     let icon_size = IconSize::Custom(cx.app_theme().rem(0.875));
     if let Some(denial) = &target.updates_denial {
         return match appearance {
-            UpdateAppearance::Icon => div()
+            UpdateAppearance::Icon => {
+                let anchor = TooltipAnchor::new();
+                div()
                 .id(SharedString::from(format!("{id}-tip")))
-                .tooltip(tooltip(denial.clone()))
+                .relative()
+                .tooltip(anchor.tooltip(denial.clone(), TooltipSide::Top))
+                .child(anchor.measure())
                 .child(
                     Button::new(id)
                         .variant(ButtonVariant::GhostMuted)
@@ -391,7 +403,8 @@ pub fn server_update_action(
                         .icon_size(icon_size)
                         .disabled(true),
                 )
-                .into_any_element(),
+                .into_any_element()
+            }
             UpdateAppearance::Button => muted_note(denial.clone(), cx),
         };
     }
@@ -416,9 +429,13 @@ pub fn server_update_action(
         None => on_update(window, cx),
     };
     match appearance {
-        UpdateAppearance::Icon => div()
+        UpdateAppearance::Icon => {
+            let anchor = TooltipAnchor::new();
+            div()
             .id(SharedString::from(format!("{id}-tip")))
-            .tooltip(tooltip(action_label.clone()))
+            .relative()
+            .tooltip(anchor.tooltip(action_label.clone(), TooltipSide::Top))
+            .child(anchor.measure())
             .child(
                 Button::new(id)
                     .variant(ButtonVariant::GhostMuted)
@@ -428,7 +445,8 @@ pub fn server_update_action(
                     .disabled(disabled)
                     .on_click(click),
             )
-            .into_any_element(),
+            .into_any_element()
+        }
         UpdateAppearance::Button => Button::new(id)
             .variant(ButtonVariant::Outline)
             .size(ButtonSize::Xs)
@@ -482,6 +500,26 @@ pub fn desktop_confirmation(targets: &[ServerUpdateTarget]) -> SharedString {
             servers = many.iter().map(|t| t.server_label.as_ref()).collect::<Vec<_>>().join(", ").as_str()
         ),
     }
+}
+
+/// Splits a confirm message into the dialog's title and description (`resolveConfirmDialogCopy`):
+/// the line ending in a question mark, else the text through the first question mark.
+pub fn confirm_copy(message: &str) -> (SharedString, Option<SharedString>) {
+    let is_question = |c: char| c == '?' || c == '？';
+    let message = message.trim();
+    let lines: Vec<&str> = message.split('\n').collect();
+    if let Some(ix) = lines.iter().position(|line| line.trim().ends_with(is_question)) {
+        let rest = lines.iter().enumerate().filter(|(i, _)| *i != ix).map(|(_, l)| *l).collect::<Vec<_>>().join("\n");
+        let rest = rest.trim();
+        return (lines[ix].trim().to_owned().into(), (!rest.is_empty()).then(|| rest.to_owned().into()));
+    }
+    if let Some(at) = message.find(is_question) {
+        let end = at + message[at..].chars().next().map_or(1, char::len_utf8);
+        let rest = message[end..].trim();
+        return (message[..end].trim().to_owned().into(), (!rest.is_empty()).then(|| rest.to_owned().into()));
+    }
+    let description = if message.is_empty() { t!("This action requires your confirmation.") } else { message.to_owned().into() };
+    (t!("Confirm action"), Some(description))
 }
 
 /// The Update button for a host on an older protocol (`OutdatedServerUpdateAction`).

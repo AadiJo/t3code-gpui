@@ -182,10 +182,13 @@ pub(crate) fn is_handoff_loss<E: std::fmt::Debug>(error: &RpcError<E>) -> bool {
     matches!(error, RpcError::Closed(_) | RpcError::Interrupted)
 }
 
-/// The host's reason for a typed self-update failure, else the transport error.
+/// A typed self-update failure as `ServerSelfUpdateError.message` words it ("Server update
+/// failed: <reason>"), else the transport error.
 pub(crate) fn rpc_failure<E: std::fmt::Debug + ServerSelfUpdateReason>(error: &RpcError<E>) -> ServerUpdateFailure {
     match error {
-        RpcError::Failure(error) => error.reason().map_or(ServerUpdateFailure::Unknown, ServerUpdateFailure::Reason),
+        RpcError::Failure(error) => {
+            error.reason().map_or(ServerUpdateFailure::Unknown, |reason| ServerUpdateFailure::Reason(format!("Server update failed: {reason}")))
+        }
         other => ServerUpdateFailure::Reason(other.to_string()),
     }
 }
