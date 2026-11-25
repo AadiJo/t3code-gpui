@@ -49,6 +49,15 @@ fn click(check: &mut Check, id: &str) -> anyhow::Result<()> {
     super::click_at(check, at)
 }
 
+/// Notes the bounds of `ids` for the fork comparison.
+fn note_bounds(check: &mut Check, ids: &[&str]) {
+    for id in ids {
+        let element = ElementId::from(SharedString::from((*id).to_owned()));
+        let bounds = check.cx.update_window(check.window, |_, w, _| w.find_all(element).iter().map(|e| e.bounds()).collect::<Vec<_>>()).unwrap_or_default();
+        check.note(format!("bounds {id}: {bounds:?}"));
+    }
+}
+
 fn phase(check: &mut Check) -> VoiceInputPhase {
     let composer = composer_of(check);
     check.cx.update(|cx| composer.read(cx).voice_state(cx).phase)
@@ -167,6 +176,7 @@ pub(super) fn run_voice(check: &mut Check) -> anyhow::Result<()> {
         Duration::from_secs(10),
         "model status probed",
     )?;
+    super::hover_at(check, point(px(5.), px(700.)))?;
     check.shot("v2-settings-environment.png")?;
 
     // Microphone test: record, meter, stop early, play back.
@@ -178,12 +188,14 @@ pub(super) fn run_voice(check: &mut Check) -> anyhow::Result<()> {
     let level = check.cx.update(|cx| test.read(cx).level());
     check.check("the microphone test meters the tone", (0.5..=1.0).contains(&level), format!("level {level:.3}"));
     check.wait(Duration::from_millis(1000));
+    super::hover_at(check, point(px(5.), px(700.)))?;
     check.shot("v3-mic-test-recording.png")?;
     click(check, "voice-test-stop")?;
     let t = test.clone();
     check.pump(move |c| c.cx.update(|cx| t.read(cx).phase() == TestPhase::Ready), Duration::from_secs(10), "test recording ready")?;
     let seconds = check.cx.update(|cx| test.read(cx).recorded_seconds()).unwrap_or(0.);
     check.check("Stop keeps what was recorded", (1.2..=4.0).contains(&seconds), format!("{seconds:.2} s"));
+    super::hover_at(check, point(px(5.), px(700.)))?;
     check.shot("v4-mic-test-ready.png")?;
     click(check, "microphone-test-play")?;
     check.wait(Duration::from_millis(300));
@@ -194,25 +206,29 @@ pub(super) fn run_voice(check: &mut Check) -> anyhow::Result<()> {
     // ---- Composer: streaming ----
     check.go(&key);
     check.pump(|c| element_visible(c, "composer-voice"), Duration::from_secs(10), "mic button shown")?;
+    super::hover_at(check, point(px(5.), px(700.)))?;
     check.shot("v5-mic-idle.png")?;
+    note_bounds(check, &["composer-voice", "composer-send"]);
     check.focus_composer();
-    set_prompt(check, "Note: ");
+    set_prompt(check, "");
     record_for(check, "button", 2.6)?;
     check.pump(|c| preview(c).is_some_and(|p| p.strip_prefix("heard ").and_then(|r| r.split(' ').next()).and_then(|n| n.parse::<f64>().ok()).is_some_and(|n| n >= 2.)), Duration::from_secs(10), "live text")?;
+    super::hover_at(check, point(px(5.), px(700.)))?;
     check.shot("v6-recording.png")?;
+    note_bounds(check, &["composer-voice-cancel", "composer-voice-finish", "composer-send"]);
     let typed_during = prompt(check);
-    check.check("the editor is frozen while recording", typed_during == "Note: ", format!("{typed_during:?}"));
+    check.check("the editor is frozen while recording", typed_during.is_empty(), format!("{typed_during:?}"));
     check.press("mod-shift-d");
     check.pump(|c| phase(c) == VoiceInputPhase::Idle, Duration::from_secs(20), "streamed transcript")?;
     let text = prompt(check);
-    check.check("mod+shift+d finishes and the transcript follows the typed text", text.starts_with("Note: stand-in heard") && heard_tone(&text), format!("{text:?}"));
+    check.check("mod+shift+d finishes and the transcript lands in the draft", text.starts_with("stand-in heard") && heard_tone(&text), format!("{text:?}"));
     let streamed = server_log(check).contains("\"kind\":\"stream-finish\"");
     check.check("the audio streamed over the socket", streamed, "stream-finish logged");
     check.shot("v7-transcribed.png")?;
 
     // ---- Batch upload ----
     check.cx.update(|cx| ClientSettingsStore::update(cx, |s| s.speech_streaming = false));
-    set_prompt(check, "");
+    set_prompt(check, "Batch:");
     let batches = server_log(check).matches("\"kind\":\"batch\"").count();
     record_for(check, "mod-shift-d", 1.6)?;
     let no_preview = preview(check).is_none();
@@ -221,7 +237,11 @@ pub(super) fn run_voice(check: &mut Check) -> anyhow::Result<()> {
     check.pump(|c| phase(c) == VoiceInputPhase::Idle, Duration::from_secs(20), "batch transcript")?;
     let text = prompt(check);
     let uploaded = server_log(check).matches("\"kind\":\"batch\"").count() == batches + 1;
-    check.check("Finish uploads the recording to /api/voice/transcribe", heard_tone(&text) && uploaded, format!("{text:?}"));
+    check.check(
+        "Finish uploads the recording to /api/voice/transcribe and the transcript follows the typed text after a space",
+        text.starts_with("Batch: stand-in heard") && heard_tone(&text) && uploaded,
+        format!("{text:?}"),
+    );
 
     // ---- Hold in Auto mode ----
     set_prompt(check, "");
@@ -271,6 +291,7 @@ pub(super) fn run_voice(check: &mut Check) -> anyhow::Result<()> {
     check.go(&other);
     check.pump(|c| element_visible(c, "voice-indicator"), Duration::from_secs(5), "indicator shown")?;
     check.wait(Duration::from_millis(800));
+    super::hover_at(check, point(px(5.), px(700.)))?;
     check.shot("v8-indicator.png")?;
     click(check, "composer-voice-finish")?;
     check.pump(|c| !element_visible(c, "voice-indicator"), Duration::from_secs(20), "indicator gone")?;
@@ -287,6 +308,7 @@ pub(super) fn run_voice(check: &mut Check) -> anyhow::Result<()> {
     check.pump(|c| phase(c) == VoiceInputPhase::Error, Duration::from_secs(10), "error")?;
     let shown = element_visible(check, "composer-voice-error");
     check.check("a refused microphone shows the blocked error", shown, "error capsule");
+    super::hover_at(check, point(px(5.), px(700.)))?;
     check.shot("v9-error.png")?;
     source(false);
     click(check, "composer-voice-retry")?;

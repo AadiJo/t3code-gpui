@@ -21,6 +21,10 @@ use crate::speech::pcm_capture::{CaptureEvent, CaptureFailure, CaptureOptions, O
 use crate::speech::voice_input_session::WAVEFORM_BARS;
 use crate::theme_color::with_alpha;
 
+/// `tabular-nums` on the times.
+static TABULAR: std::sync::LazyLock<gpui_kit::FontFeatures> =
+    std::sync::LazyLock::new(|| gpui_kit::FontFeatures(std::sync::Arc::new(vec![("tnum".into(), 1)])));
+
 /// `LOOPBACK_SECONDS`.
 const LOOPBACK: Duration = Duration::from_secs(10);
 
@@ -372,6 +376,7 @@ impl MicrophoneTest {
                                 .flex_none()
                                 .ui_text(theme, TextSize::Xs, weight::NORMAL)
                                 .text_color(c.muted_foreground)
+                                .font_features(TABULAR.clone())
                                 .child(format!("{} / {}", format_time(elapsed), format_time(LOOPBACK.as_secs_f64()))),
                         )
                         .into_any_element()
@@ -421,6 +426,7 @@ impl MicrophoneTest {
                                 .flex_none()
                                 .ui_text(theme, TextSize::Xs, weight::NORMAL)
                                 .text_color(c.muted_foreground)
+                                .font_features(TABULAR.clone())
                                 .child(format!("{} / {}", format_time(position), format_time(recorded.duration))),
                         )
                         .into_any_element()

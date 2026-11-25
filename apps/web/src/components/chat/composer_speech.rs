@@ -400,6 +400,10 @@ impl ChatComposer {
     }
 }
 
+/// `tabular-nums`: the elapsed time keeps its width as digits change.
+static TABULAR: std::sync::LazyLock<gpui_kit::FontFeatures> =
+    std::sync::LazyLock::new(|| gpui_kit::FontFeatures(std::sync::Arc::new(vec![("tnum".into(), 1)])));
+
 /// What the capsule's buttons do.
 pub struct PillActions {
     pub cancel: Rc<dyn Fn(&mut Window, &mut App)>,
@@ -409,7 +413,8 @@ pub struct PillActions {
     pub retry: Rc<dyn Fn(&mut Window, &mut App)>,
 }
 
-/// `VoiceInputPill`: h-8, p-0.5, a 1px inset ring, rounded-full.
+/// `VoiceInputPill`: h-8, p-0.5, a 1px inset ring, rounded-full. The ring takes no space on
+/// the web, so the 1px border here comes out of the padding.
 fn pill(error: bool, c: &ComposerColors) -> gpui_kit::Div {
     div()
         .flex()
@@ -417,7 +422,7 @@ fn pill(error: bool, c: &ComposerColors) -> gpui_kit::Div {
         .items_center()
         .gap(c.r(px(6.)))
         .h(c.r(px(32.)))
-        .p(c.r(px(2.)))
+        .p(c.r(px(2.)) - px(1.))
         .rounded_full()
         .border_1()
         .when(error, |el| el.bg(c.error.opacity(0.06)).text_color(c.error).border_color(c.error.opacity(0.24)))
@@ -463,9 +468,10 @@ pub fn recording_pill(
                     .text_size(c.r(px(12.)))
                     .line_height(c.r(px(16.)))
                     .text_color(c.muted_foreground)
+                    .font_features(TABULAR.clone())
                     .child(format!("{}:{:02}", elapsed / 60, elapsed % 60)),
             )
-            .child(div().mr(c.r(px(6.))).flex().w(c.r(px(64.))).min_w_0().flex_shrink(1.).flex_grow(1.).child(waveform(levels, c)))
+            .child(div().mr(c.r(px(6.))).flex().w(c.r(px(64.))).min_w_0().flex_shrink(1.).child(waveform(levels, c)))
     } else {
         body.child(Spinner::new(SpinnerSize::Sm).muted()).child(
             div().min_w_0().truncate().text_size(c.r(px(14.))).line_height(c.r(px(20.))).text_color(c.muted_foreground).children(status),
@@ -502,8 +508,8 @@ pub fn recording_pill(
         }
         _ => None,
     };
-    // `grow-[1.5] basis-0`.
-    pill(false, c).flex_grow(1.5).flex_basis(px(0.)).child(cancel).child(body).children(trailing_control).into_any_element()
+    // `grow-[1.5] basis-0 max-w-fit`: as wide as its content, shrinking when the row is short.
+    pill(false, c).flex_shrink(1.).child(cancel).child(body).children(trailing_control).into_any_element()
 }
 
 /// `VoiceWaveform`: 24 two-pixel bars, newest at the right, each as tall and as opaque as its

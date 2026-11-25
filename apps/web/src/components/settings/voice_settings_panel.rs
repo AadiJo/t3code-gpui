@@ -429,8 +429,7 @@ impl VoiceSettings {
         };
         let trigger = SelectTrigger::new(label)
             .size(SelectSize::Sm)
-            .leading(Some(Icon::new(icon).size(IconSize::Md).color(theme.colors.icon_muted).into_any_element()))
-            .fit(true);
+            .leading(Some(Icon::new(icon).size(IconSize::Md).color(theme.colors.icon_muted).into_any_element()));
         let rows: Vec<(t3code_contracts::EnvironmentId, SharedString)> = choices.iter().map(|c| (c.environment_id.clone(), c.label.clone())).collect();
         let off_selected = chosen.is_none();
         let popover = Popover::new("select-voice-destination", trigger, move |handle: PopupHandle, _, _| {
@@ -456,7 +455,8 @@ impl VoiceSettings {
             let dismiss = handle.clone();
             menu.on_dismiss(move |_, cx| dismiss.close(cx)).into_any_element()
         });
-        div().id("voice-destination").min_w_0().max_w(theme.rem(18.)).child(popover).test_support().into_any_element()
+        // `min-w-40` from the settings row, `max-w-72` on the trigger.
+        div().id("voice-destination").min_w(theme.rem(10.)).max_w(theme.rem(18.)).child(popover).test_support().into_any_element()
     }
 }
 
@@ -551,14 +551,13 @@ impl Render for VoiceSettings {
                 }
             })
             .size(SelectSize::Sm)
-            .value_label(label)
-            .fit();
+            .value_label(label);
             let language_description = if detection {
                 t!("{model} detects the language automatically.", model = model.model.clone())
             } else {
                 t!("{model} uses one fixed language.", model = model.model.clone())
             };
-            transcription = transcription.child(SettingsRow::new(t!("Language")).description(language_description).control(div().max_w(rem16).child(select)));
+            transcription = transcription.child(SettingsRow::new(t!("Language")).description(language_description).control(div().min_w(rem10).max_w(rem16).child(select)));
             if model.supports_translation {
                 transcription = transcription.child(
                     client_switch(
@@ -632,10 +631,10 @@ impl Render for VoiceSettings {
                 })
             })
             .size(SelectSize::Sm)
-            .fit();
+            ;
             let mut row = SettingsRow::new(t!("Instructions"))
                 .description(if custom { t!("Your own instructions for cleanup.") } else { t!("Fix punctuation, numbers, lists, and spoken corrections.") })
-                .control(instructions);
+                .control(div().min_w(rem10).child(instructions));
             if custom {
                 row = row.child(div().mt(sp3).pb(sp2).child(TextArea::new(&self.instructions)));
             }
