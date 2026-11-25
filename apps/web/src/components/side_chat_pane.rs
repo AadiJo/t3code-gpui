@@ -57,6 +57,10 @@ impl ComposerMenuSource for PaneMenu {
         let source = self.0.borrow().clone();
         source.and_then(|s| s.empty_text(trigger))
     }
+
+    fn known_skills(&self) -> Vec<SharedString> {
+        self.0.borrow().as_ref().map(|s| s.known_skills()).unwrap_or_default()
+    }
 }
 
 /// One side chat's tab body.

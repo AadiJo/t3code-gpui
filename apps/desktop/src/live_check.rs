@@ -105,6 +105,7 @@ mod live_check_linked;
 mod live_check_memory;
 mod live_check_menus;
 mod live_check_options;
+mod live_check_chips;
 mod live_check_palette;
 mod live_check_projects;
 mod live_check_prompt_links;
@@ -637,6 +638,7 @@ fn main() -> anyhow::Result<()> {
         "pr-routing" => live_check_pr_routing::run_pr_routing(&mut check),
         "voice" => live_check_voice::run_voice(&mut check),
         "options" => live_check_options::run_options(&mut check),
+        "chips" => live_check_chips::run_chips(&mut check),
         other => Err(anyhow::anyhow!("unknown phase {other}")),
     };
     check.finish(&phase, result)

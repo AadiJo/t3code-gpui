@@ -1423,6 +1423,17 @@ impl LiveMenuSource {
 }
 
 impl ComposerMenuSource for LiveMenuSource {
+    fn known_skills(&self) -> Vec<SharedString> {
+        let config = self.current_config();
+        let instance = self.facts.borrow().instance_id.clone();
+        let Some(provider) = selected_provider(config.as_deref(), instance.as_deref()) else { return Vec::new() };
+        provider_skills_for_cwd(provider, self.cwd.as_deref())
+            .iter()
+            .filter(|s| crate::provider_skill_search::is_provider_skill_user_invocable(s))
+            .map(|s| SharedString::from(s.name.clone()))
+            .collect()
+    }
+
     fn slash_items(&self, trigger: &ComposerTrigger, context: &SlashMenuContext) -> Option<(Vec<ComposerCommandItem>, bool)> {
         Some((self.slash_list(trigger, context), false))
     }

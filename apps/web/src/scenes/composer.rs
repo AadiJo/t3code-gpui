@@ -130,6 +130,10 @@ pub fn fixture_catalog() -> ModelCatalog {
 pub struct FixtureMenuSource;
 
 impl ComposerMenuSource for FixtureMenuSource {
+    fn known_skills(&self) -> Vec<SharedString> {
+        ["review", "release-notes", "frontend-design"].into_iter().map(SharedString::from).collect()
+    }
+
     fn items(&self, trigger: &ComposerTrigger) -> (Vec<ComposerCommandItem>, bool) {
         let q = trigger.query.to_lowercase();
         let items = match trigger.kind {

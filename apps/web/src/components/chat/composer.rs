@@ -412,10 +412,15 @@ impl ChatComposer {
             "Ask anything. @ files, $ skills, / commands".into()
         };
         let rich = crate::hooks::settings_bridge::composer_rich_text(cx);
-        self.editor.update(cx, |editor, _| {
+        let vocabulary = crate::components::composer_prompt_editor::ChipVocabulary {
+            skills: self.menu_source.known_skills().into_iter().collect(),
+            models: self.state.catalog.models.iter().flat_map(|(instance, models)| models.iter().map(|m| (instance.0.clone(), m.slug.clone()))).collect(),
+        };
+        self.editor.update(cx, |editor, cx| {
             editor.submit_context = context;
             editor.placeholder = placeholder;
             editor.rich_text = rich;
+            editor.set_vocabulary(vocabulary, cx);
         });
     }
 

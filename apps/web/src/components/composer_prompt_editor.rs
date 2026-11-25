@@ -181,6 +181,7 @@ pub enum PastedContent {
 /// The parsed inline content of one source line, shared across frames while
 /// the line's text is unchanged.
 #[derive(Debug, PartialEq, Eq, Hash)]
+#[derive(Clone)]
 pub struct LineParse {
     pub text: String,
     pub tokens: Vec<InlineToken>,
@@ -229,6 +230,25 @@ fn hash_line(text: &str, newline_after: bool, rich: bool) -> u64 {
 }
 
 /// The prompt editor entity.
+/// The skills and models a `$name` or `model:<instance>/<slug>` may name to become a chip; any
+/// other such text stays editable (`skillLabelFor`, `isKnownModel`).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ChipVocabulary {
+    pub skills: std::collections::HashSet<SharedString>,
+    pub models: std::collections::HashSet<(SharedString, SharedString)>,
+}
+
+impl ChipVocabulary {
+    fn allows(&self, kind: &crate::composer_editor_mentions::ChipKind) -> bool {
+        use crate::composer_editor_mentions::ChipKind;
+        match kind {
+            ChipKind::Skill { name } => self.skills.contains(name),
+            ChipKind::Model { instance_id, model } => self.models.contains(&(instance_id.clone(), model.clone())),
+            _ => true,
+        }
+    }
+}
+
 pub struct ComposerPromptEditor {
     pub(crate) focus_handle: FocusHandle,
     text: String,
@@ -237,6 +257,7 @@ pub struct ComposerPromptEditor {
     marked: Option<Range<usize>>,
     pub(crate) doc: Rc<Doc>,
     parse_cache: HashMap<u64, Arc<LineParse>>,
+    vocabulary: ChipVocabulary,
     history: UndoHistory,
     /// Rich text on: Markdown styled in place. Off: plain Markdown.
     pub rich_text: bool,
@@ -272,6 +293,7 @@ impl ComposerPromptEditor {
             marked: None,
             doc: Rc::default(),
             parse_cache: HashMap::new(),
+            vocabulary: ChipVocabulary::default(),
             history: UndoHistory::default(),
             rich_text: true,
             disabled: false,
@@ -361,6 +383,34 @@ impl ComposerPromptEditor {
         cx.notify();
     }
 
+    /// The previous text's last chip, when it still ends the text with the same source and the
+    /// new last line has no chip there.
+    fn trailing_chip(&self, range: &Range<usize>, parse: &LineParse) -> Option<InlineToken> {
+        let line = &self.text[range.clone()];
+        if parse.tokens.iter().any(|t| t.range.end == line.len()) {
+            return None;
+        }
+        let previous = self.doc.lines.last()?;
+        let token = previous.parse.tokens.iter().find(|t| previous.range.start + t.range.end == self.text.len())?;
+        let start = (previous.range.start + token.range.start).checked_sub(range.start)?;
+        let source = previous.parse.text.get(token.range.clone())?;
+        let overlaps = parse.tokens.iter().any(|t| t.range.end > start);
+        (line.get(start..)? == source && !overlaps && self.vocabulary.allows(&token.kind)).then(|| InlineToken { range: start..line.len(), ..token.clone() })
+    }
+
+    /// Sets which skills and models may become chips, re-reading the text when it changes.
+    pub fn set_vocabulary(&mut self, vocabulary: ChipVocabulary, cx: &mut Context<Self>) {
+        if vocabulary == self.vocabulary {
+            return;
+        }
+        self.vocabulary = vocabulary;
+        self.parse_cache.clear();
+        self.rebuild_doc();
+        let (start, end) = (self.snap(self.selected.start, false), self.snap(self.selected.end, true));
+        self.selected = start..end;
+        cx.notify();
+    }
+
     /// Replaces a range as one undo step (menu picks, chip insertion).
     pub fn replace_range(&mut self, range: Range<usize>, replacement: &str, cx: &mut Context<Self>) {
         let caret = range.start + replacement.len();
@@ -411,6 +461,7 @@ impl ComposerPromptEditor {
             }
         }
         let count = ranges.len();
+        let vocabulary = &self.vocabulary;
         let mut parses = Vec::with_capacity(count);
         let mut used = Vec::with_capacity(count);
         for (i, range) in ranges.iter().enumerate() {
@@ -423,7 +474,7 @@ impl ComposerPromptEditor {
                 _ => {
                     let parse = Arc::new(LineParse {
                         text: line.to_owned(),
-                        tokens: collect_line_tokens(line, newline_after),
+                        tokens: collect_line_tokens(line, newline_after).into_iter().filter(|t| vocabulary.allows(&t.kind)).collect(),
                         pieces: if rich { parse_inline_markdown_pieces(line) } else { Vec::new() },
                     });
                     self.parse_cache.insert(key, parse.clone());
@@ -431,6 +482,15 @@ impl ComposerPromptEditor {
                 }
             };
             parses.push(parse);
+        }
+        // `preserveTrailingFrom`: a chip that ended the text keeps its place when the space after
+        // it goes, as the fork's chip node does, so the next Backspace takes it whole.
+        if let (Some(last), Some(range)) = (parses.last_mut(), ranges.last()) {
+            if let Some(kept) = self.trailing_chip(range, last) {
+                let mut parse = (**last).clone();
+                parse.tokens.push(kept);
+                *last = Arc::new(parse);
+            }
         }
         if self.parse_cache.len() > count * 2 + 64 {
             let used: std::collections::HashSet<u64> = used.into_iter().collect();
@@ -820,9 +880,37 @@ impl ComposerPromptEditor {
             cx.emit(ComposerEditorEvent::Attach(PastedContent::LargeText(text.into())));
             return;
         }
+        // Inside a fence the paste is verbatim; elsewhere a chip at either end gets its space.
+        let text = if self.caret_in_code() { text } else { self.pad_pasted_chips(text) };
         self.history.close_group();
         self.insert_text(&text, ComposerChangeKind::Other, cx);
         self.history.close_group();
+    }
+
+    /// `handlePaste`: a chip that ends the pasted text gets a space after it, so it stays a chip,
+    /// and one that starts it gets a space before it when the caret follows other text.
+    fn pad_pasted_chips(&self, mut text: String) -> String {
+        let chip_tokens = |line: &str| collect_line_tokens(line, true).into_iter().filter(|t| self.vocabulary.allows(&t.kind)).collect::<Vec<_>>();
+        let last_line = text.rsplit('\n').next().unwrap_or_default();
+        if chip_tokens(last_line).last().is_some_and(|t| t.range.end == last_line.len()) {
+            text.push(' ');
+        }
+        let first_line = text.split('\n').next().unwrap_or_default();
+        let at = self.selected.start;
+        let after_text = self.text[..at].chars().next_back().is_some_and(|c| !c.is_whitespace());
+        if after_text && chip_tokens(first_line).first().is_some_and(|t| t.range.start == 0) {
+            text.insert(0, ' ');
+        }
+        text
+    }
+
+    /// The chips in the text, by source range, in order.
+    pub fn chips(&self) -> Vec<(Range<usize>, crate::composer_editor_mentions::ChipKind)> {
+        self.doc
+            .lines
+            .iter()
+            .flat_map(|line| line.parse.tokens.iter().map(|t| (line.range.start + t.range.start..line.range.start + t.range.end, t.kind.clone())))
+            .collect()
     }
 
     // ---- Action handlers ----
