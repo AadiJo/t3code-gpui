@@ -211,6 +211,10 @@ impl PlatformTextSystem for AppleTextSystem {
         self.0.write().layout_line(text, font_size, font_runs)
     }
 
+    fn is_synthetic_bold(&self, font_id: FontId) -> bool {
+        self.0.read().is_synthetic_bold(font_id)
+    }
+
     fn run_padding(&self, font_id: FontId, font_size: Pixels) -> Pixels {
         self.0.read().scaled_faces.get(&font_id).map_or(Pixels::ZERO, |(_, layout)| {
             px(layout.padding_em * f32::from(font_size) * layout.scale + layout.padding_px)

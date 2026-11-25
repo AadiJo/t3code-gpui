@@ -505,6 +505,11 @@ impl TextSystem {
         self.read_metrics(font_id, |metrics| metrics.x_height(font_size))
     }
 
+    /// Whether `font_id` is drawn with synthetic bold (see [`PlatformTextSystem::is_synthetic_bold`]).
+    pub fn is_synthetic_bold(&self, font_id: FontId) -> bool {
+        self.platform_text_system.is_synthetic_bold(font_id)
+    }
+
     /// Get the recommended distance from the baseline for the given font
     pub fn ascent(&self, font_id: FontId, font_size: Pixels) -> Pixels {
         self.read_metrics(font_id, |metrics| metrics.ascent(font_size))
