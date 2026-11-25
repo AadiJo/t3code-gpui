@@ -615,7 +615,7 @@ impl<E: Element> Drawable<E> {
             _ => panic!("cannot measure after painting"),
         };
 
-        window.layout_bounds(layout_id).size
+        window.unsnapped_layout_size(layout_id)
     }
 }
 

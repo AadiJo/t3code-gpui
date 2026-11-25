@@ -80,7 +80,7 @@ use self::a11y::A11y;
 use self::a11y::ROOT_NODE_ID;
 use crate::util::{
     atomic_incr_if_not_zero, ceil_to_device_pixel, floor_to_device_pixel, round_half_toward_zero,
-    round_half_toward_zero_f64, round_stroke_to_device_pixel, round_to_device_pixel,
+    round_half_toward_zero_f64, round_stroke_to_device_pixel, round_to_device_pixel, snap_edge,
 };
 pub use prompts::*;
 
@@ -5918,24 +5918,34 @@ impl Window {
     pub fn layout_bounds(&mut self, layout_id: LayoutId) -> Bounds<Pixels> {
         self.invalidator.debug_assert_prepaint();
 
+        // A box's absolute edges snap once, as in Chromium: the element offset (a list item's
+        // or a scrolled child's origin) joins the unsnapped layout before anything rounds, so
+        // fractional item heights add up exactly and no edge is rounded twice.
         let scale_factor = self.scale_factor();
-        let mut bounds = self
-            .layout_engine
-            .as_mut()
-            .unwrap()
-            .layout_bounds(layout_id, scale_factor)
-            .map(Into::into);
-        let snapped_offset = self.pixel_snap_point(self.element_offset());
-        bounds.origin += snapped_offset;
-        let engine = self.layout_engine.as_ref().unwrap();
-        let unsnapped = Bounds::new(
-            engine
-                .unsnapped_origin(layout_id, scale_factor)
-                .map_or(bounds.origin, |origin| origin + snapped_offset),
-            engine.unsnapped_size(layout_id, scale_factor),
+        let offset = self.element_offset();
+        let engine = self.layout_engine.as_mut().unwrap();
+        let local = engine.layout_bounds(layout_id, scale_factor);
+        let origin = engine
+            .unsnapped_origin(layout_id, scale_factor)
+            .unwrap_or(local.origin)
+            + offset;
+        let unsnapped = Bounds::new(origin, engine.unsnapped_size(layout_id, scale_factor));
+        let snap = |c: Pixels| px(snap_edge(c.0 * scale_factor) / scale_factor);
+        let bounds = Bounds::from_corners(
+            unsnapped.origin.map(snap),
+            unsnapped.bottom_right().map(snap),
         );
         self.last_layout_origin = Some((bounds, unsnapped));
         bounds
+    }
+
+    /// The size of a laid-out element before its edges snapped to device pixels: what an
+    /// element laid out as a root takes up, so a list adds fractional heights exactly.
+    pub fn unsnapped_layout_size(&self, layout_id: LayoutId) -> Size<Pixels> {
+        self.layout_engine
+            .as_ref()
+            .unwrap()
+            .unsnapped_size(layout_id, self.scale_factor())
     }
 
     /// The origin of the element with `bounds` before layout snapped it to device pixels,

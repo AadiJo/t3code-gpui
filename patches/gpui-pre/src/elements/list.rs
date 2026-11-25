@@ -1554,11 +1554,12 @@ impl Element for List {
         let mut style = Style::default();
         style.refine(&self.style);
 
-        // Items lay out at the list's width before it snapped to device pixels, as in Blink;
-        // a snapped width moves every right-aligned item in a row by up to half a pixel.
-        let width = window.unsnapped_bounds(bounds).size.width;
+        // Items lay out at the list's width and stack from its origin as they were before
+        // snapping to device pixels, as in Blink; each item's edges then snap once. A snapped
+        // width moves every right-aligned item in a row by up to half a pixel.
+        let exact = window.unsnapped_bounds(bounds);
         let hitbox = window.insert_hitbox(bounds, HitboxBehavior::Normal);
-        let bounds = Bounds::new(bounds.origin, size(width, bounds.size.height));
+        let bounds = Bounds::new(exact.origin, size(exact.size.width, bounds.size.height));
 
         let padding = content_insets(&style, bounds.size, window.rem_size());
 
