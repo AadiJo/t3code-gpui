@@ -87,6 +87,7 @@ impl MessagesTimeline {
             .gap_2()
             .mt(if standalone { rems(0.125) } else { rems(0.375) })
             .text_size(TEXT_XS.size)
+            .font_features(super::chat_style::TABULAR_NUMS.clone())
             .child(
                 xs_button(
                     ("copy-reply", key),

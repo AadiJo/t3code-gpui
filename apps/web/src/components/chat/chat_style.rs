@@ -36,6 +36,10 @@ pub const TEXT_SM: TypeStep = step(14., 20.);
 /// `text-sm leading-relaxed`: chat prose, work-log lines.
 pub const TEXT_SM_RELAXED: TypeStep = step(14., 22.75);
 
+/// `tabular-nums`: the turn fold, the working timer, message meta and row times.
+pub static TABULAR_NUMS: std::sync::LazyLock<gpui_kit::FontFeatures> =
+    std::sync::LazyLock::new(|| gpui_kit::FontFeatures(std::sync::Arc::new(vec![("tnum".into(), 1)])));
+
 /// Code blocks: `--font-size-code` (the Code font size setting) with `leading-snug`.
 pub fn text_code(cx: &App) -> TypeStep {
     let size = cx.app_theme().fonts.code;

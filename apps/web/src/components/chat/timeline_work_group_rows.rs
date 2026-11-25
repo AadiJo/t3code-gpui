@@ -128,6 +128,7 @@ impl MessagesTimeline {
                     .px_1()
                     .text_size(TEXT_SM_RELAXED.size)
                     .line_height(TEXT_SM_RELAXED.line_height)
+                    .font_features(super::chat_style::TABULAR_NUMS.clone())
                     .text_color(colors.theme.muted_foreground)
                     .children(compacting.then(|| Icon::new(IconName::Minimize2).size(IconSize::Xs).color(colors.theme.muted_foreground)))
                     .child(label),
@@ -163,6 +164,7 @@ impl MessagesTimeline {
                     .cursor_pointer()
                     .text_size(TEXT_SM_RELAXED.size)
                     .line_height(TEXT_SM_RELAXED.line_height)
+                    .font_features(super::chat_style::TABULAR_NUMS.clone())
                     .text_color(colors.theme.muted_foreground)
                     .hover(|s| s.text_color(colors.theme.text))
                     .child(label.clone())

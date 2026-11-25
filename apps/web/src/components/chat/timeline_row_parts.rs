@@ -113,6 +113,7 @@ pub fn hover_timestamp(millis: Option<i64>, colors: &ChatColors, cx: &gpui_kit::
             .bg(colors.theme.canvas)
             .text_size(TEXT_XS.size)
             .line_height(TEXT_XS.line_height)
+            .font_features(super::chat_style::TABULAR_NUMS.clone())
             .text_color(colors.theme.muted_foreground)
             .opacity(0.)
             .group_hover(ROW_GROUP, |s| s.opacity(1.))
