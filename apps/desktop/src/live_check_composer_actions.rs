@@ -28,7 +28,10 @@ fn picker_state(check: &mut Check) -> Option<(Option<usize>, bool)> {
 
 fn effort(check: &mut Check) -> Option<String> {
     let composer = composer_of(check);
-    check.cx.update(|cx| composer.read(cx).state().selection.effort.as_ref().map(|e| e.to_string()))
+    check.cx.update(|cx| {
+        let state = composer.read(cx).state();
+        state.selection.effort(&state.catalog).map(|e| e.to_string())
+    })
 }
 
 fn strip_menu(check: &mut Check) -> Option<&'static str> {
@@ -78,7 +81,7 @@ pub(super) fn run_composer_actions(check: &mut Check) -> anyhow::Result<()> {
         let composer = composer_of(check);
         check.cx.update(|cx| {
             let state = composer.read(cx).state();
-            state.catalog.model(&state.selection.instance_id, &state.selection.model).and_then(|m| m.effort.as_ref()).map_or(0, |d| d.options.len())
+            state.selection.traits(&state.catalog).and_then(|t| t.effort().map(|d| d.options.len())).unwrap_or(0)
         })
     };
     check.note(format!("selected model has {levels} effort levels"));

@@ -10,6 +10,7 @@ use std::collections::HashSet;
 use std::ops::Range;
 use std::sync::Arc;
 
+use gpui_kit::TestSupportExt as _;
 use gpui_kit::{
     AnyElement, App, BoxShadow, Context, Entity, EntityInputHandler, EventEmitter, FocusHandle, Focusable, FontWeight,
     InteractiveElement as _, IntoElement, KeyBinding, ParentElement as _, Pixels, Render, ScrollStrategy, SharedString,
@@ -27,8 +28,8 @@ use crate::shortcuts::commands;
 use crate::model_ordering::{ProviderModelItem, order_claude_before_openai, sort_provider_model_items};
 use crate::model_search::{SearchableModel, rank_model_search};
 use crate::model_selection::{
-    ModelCatalog, ModelOption, ModelSelection, ProviderIcon, ProviderInstanceEntry, ProviderInstanceId,
-    display_model_name,
+    ModelCatalog, ModelOption, ModelSelection, ModelTraits, OptionChoice, OptionDescriptor, OptionValue, ProviderIcon,
+    ProviderInstanceEntry, ProviderInstanceId, SelectDescriptor, display_model_name,
 };
 
 /// One option's own height (`py-1` around the 24px icon-and-label content), at a 16px rem.
@@ -52,7 +53,7 @@ pub fn model_picker_size(plain: bool, c: &ComposerColors) -> gpui_kit::Size<Pixe
     }
 }
 
-actions!(model_picker, [PickerUp, PickerDown, PickerConfirm, PickerClose, PickerBackspace, PreviousProvider, NextProvider]);
+actions!(model_picker, [PickerUp, PickerDown, PickerConfirm, PickerClose, PickerBackspace, PreviousProvider, NextProvider, PickerLeft, PickerRight]);
 
 /// Binds the picker's keys.
 pub fn bind_keys(cx: &mut App) {
@@ -66,6 +67,8 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("enter", PickerConfirm, c),
         KeyBinding::new("escape", PickerClose, c),
         KeyBinding::new("backspace", PickerBackspace, c),
+        KeyBinding::new("left", PickerLeft, c),
+        KeyBinding::new("right", PickerRight, c),
         KeyBinding::new(prev, PreviousProvider, c),
         KeyBinding::new(next, NextProvider, c),
     ]);
@@ -92,6 +95,19 @@ pub enum ModelPickerEvent {
 enum Row {
     Model(PickerItem),
     Legacy { expanded: bool },
+}
+
+/// A row of the effort column (`EffortRows`, `OptionMenuRow`, `OptionSwitchRow`).
+#[derive(Clone, Debug)]
+enum ColumnRow {
+    /// A reasoning level.
+    Level(SelectDescriptor, OptionChoice),
+    /// On or Off of a two-state reasoning control (`thinking`).
+    State(SharedString, bool),
+    /// Another select: its name over its value, with its choices in a side menu.
+    Menu(SelectDescriptor),
+    /// Another two-state option, toggled in place.
+    Switch(SharedString, SharedString, bool),
 }
 
 #[derive(Clone, Debug)]
@@ -129,8 +145,13 @@ pub struct ModelPicker {
     permissions_preview: Option<RuntimeMode>,
     /// Without the effort column and footer, as pickers outside the composer show it.
     plain: bool,
-    /// The effort level the keyboard is on (`composer.effort` moves focus to the column).
+    /// The effort column row the keyboard is on (`composer.effort` moves focus to the column).
     effort_focus: Option<usize>,
+    /// The option whose side menu is open, and the choice the keyboard is on in it.
+    option_menu: Option<(SharedString, Option<usize>)>,
+    /// Where the side menu was last painted: it floats outside the picker, so a press there is
+    /// not a press outside.
+    option_menu_bounds: std::rc::Rc<std::cell::Cell<Option<gpui_kit::Bounds<Pixels>>>>,
     /// Where an input method's uncommitted text starts in `query`, while it composes.
     marked_from: Option<usize>,
 }
@@ -167,6 +188,8 @@ impl ModelPicker {
             permissions_preview: None,
             plain: false,
             effort_focus: None,
+            option_menu: None,
+            option_menu_bounds: Default::default(),
             marked_from: None,
         };
         this.rebuild_rows();
@@ -189,17 +212,23 @@ impl ModelPicker {
         cx.notify();
     }
 
-    /// Moves the keyboard to the selected effort level (`focusEffort`); arrows then step levels
-    /// and Enter picks one. Does nothing when the model has no levels.
+    /// Moves the keyboard to the selected effort level (`focusEffort`); arrows then move between
+    /// the column's rows and Enter picks one. Without levels the first option row takes it.
     pub fn focus_effort(&mut self, cx: &mut Context<Self>) {
-        let Some(options) = self.effort_options() else { return };
-        let current = self.selection.effort.clone();
-        let index = options
+        let rows = self.column_rows();
+        if rows.is_empty() {
+            return;
+        }
+        let index = rows
             .iter()
-            .position(|o| current.as_ref() == Some(&o.id))
-            .or_else(|| options.iter().position(|o| o.is_default))
+            .position(|row| match row {
+                ColumnRow::Level(d, o) => d.value() == Some(&o.id),
+                ColumnRow::State(_, on) => self.traits().and_then(|t| t.reasoning().cloned()).is_some_and(|r| matches!(r, OptionDescriptor::Boolean(b) if b.current == Some(true)) == *on),
+                _ => false,
+            })
             .unwrap_or(0);
         self.effort_focus = Some(index);
+        self.option_menu = None;
         self.permissions_open = false;
         cx.notify();
     }
@@ -224,18 +253,70 @@ impl ModelPicker {
         self.permissions_open
     }
 
-    fn effort_options(&self) -> Option<Vec<crate::model_selection::OptionChoice>> {
-        if self.plain {
-            return None;
-        }
-        let model = self.catalog.model(&self.selection.instance_id, &self.selection.model)?;
-        model.effort.as_ref().map(|d| d.selectable()).filter(|o| !o.is_empty())
+    /// The selected model's options under the selection.
+    fn traits(&self) -> Option<ModelTraits> {
+        self.selection.traits(&self.catalog)
     }
 
-    fn pick_effort(&mut self, id: SharedString, cx: &mut Context<Self>) {
-        self.selection.effort = Some(id);
+    /// The effort column's rows: the reasoning control's levels, then every other option.
+    fn column_rows(&self) -> Vec<ColumnRow> {
+        let Some(traits) = self.traits().filter(|_| !self.plain) else { return Vec::new() };
+        let mut rows = Vec::new();
+        match traits.reasoning() {
+            Some(OptionDescriptor::Select(d)) => rows.extend(d.selectable().into_iter().map(|o| ColumnRow::Level(d.clone(), o))),
+            Some(OptionDescriptor::Boolean(b)) => rows.extend([true, false].map(|on| ColumnRow::State(b.id.clone(), on))),
+            None => {}
+        }
+        rows.extend(traits.others().into_iter().map(|d| match d {
+            OptionDescriptor::Select(s) => ColumnRow::Menu(s.clone()),
+            OptionDescriptor::Boolean(b) => ColumnRow::Switch(b.id.clone(), b.label.clone(), b.current == Some(true)),
+        }));
+        rows
+    }
+
+    /// Writes one option into the selection and tells the owner (`changeSelect`, `changeBoolean`).
+    fn set_option(&mut self, id: &str, value: OptionValue, cx: &mut Context<Self>) {
+        let Some(traits) = self.traits() else { return };
+        if let (Some(OptionDescriptor::Select(d)), OptionValue::Text(v)) = (traits.descriptors.iter().find(|d| d.id().as_ref() == id), &value) {
+            if d.prompt_injected.contains(v) {
+                return;
+            }
+        }
+        self.selection.options = traits.with_value(id, value);
         cx.emit(ModelPickerEvent::Select(self.selection.clone()));
         cx.notify();
+    }
+
+    /// Runs a column row: picks a level or state, opens a side menu, or flips a switch.
+    fn activate_row(&mut self, row: ColumnRow, cx: &mut Context<Self>) {
+        match row {
+            ColumnRow::Level(d, o) => self.set_option(&d.id, OptionValue::Text(o.id), cx),
+            ColumnRow::State(id, on) => self.set_option(&id, OptionValue::Bool(on), cx),
+            ColumnRow::Switch(id, _, on) => self.set_option(&id, OptionValue::Bool(!on), cx),
+            ColumnRow::Menu(d) => self.open_option_menu(&d, cx),
+        }
+    }
+
+    /// Opens a select's side menu with the keyboard on its current choice.
+    fn open_option_menu(&mut self, descriptor: &SelectDescriptor, cx: &mut Context<Self>) {
+        let value = descriptor.value().cloned();
+        let at = descriptor.selectable().iter().position(|o| Some(&o.id) == value.as_ref());
+        self.option_menu = Some((descriptor.id.clone(), at.or(Some(0))));
+        cx.notify();
+    }
+
+    /// The open side menu's select under the selection.
+    fn open_menu_descriptor(&self) -> Option<SelectDescriptor> {
+        let (id, _) = self.option_menu.as_ref()?;
+        self.traits()?.descriptors.into_iter().find_map(|d| match d {
+            OptionDescriptor::Select(s) if &s.id == id => Some(s),
+            _ => None,
+        })
+    }
+
+    /// The option whose side menu is open, by id (for checks).
+    pub fn open_option_menu_id(&self) -> Option<SharedString> {
+        self.option_menu.as_ref().map(|(id, _)| id.clone())
     }
 
     /// The rail's instances: visible ones, Claude before OpenAI.
@@ -339,19 +420,12 @@ impl ModelPicker {
                 if item.model.is_unavailable || !item.entry.ready {
                     return;
                 }
-                let effort = item
-                    .model
-                    .effort
-                    .as_ref()
-                    .and_then(|d| d.options.iter().find(|o| o.is_default).or(d.options.first()))
-                    .map(|o| o.id.clone());
+                // `pickModelSelection`: the same model keeps its options, another starts without any.
                 let same = item.instance_id == self.selection.instance_id && item.model.slug == self.selection.model;
                 let selection = ModelSelection {
                     instance_id: item.instance_id,
                     model: item.model.slug,
-                    effort: if same { self.selection.effort.clone() } else { effort },
-                    speed: if same { self.selection.speed.clone() } else { None },
-                    ultracode: same && self.selection.ultracode,
+                    options: if same { self.selection.options.clone() } else { Vec::new() },
                 };
                 self.selection = selection.clone();
                 cx.emit(ModelPickerEvent::Select(selection));
@@ -379,8 +453,14 @@ impl ModelPicker {
     }
 
     fn on_up(&mut self, _: &PickerUp, _: &mut Window, cx: &mut Context<Self>) {
-        if let (Some(at), Some(options)) = (self.effort_focus, self.effort_options()) {
-            self.effort_focus = Some((at + options.len() - 1) % options.len());
+        if let Some((id, at)) = self.option_menu.clone() {
+            let count = self.open_menu_descriptor().map_or(0, |d| d.selectable().len());
+            self.option_menu = Some((id, Some(at.map_or(0, |at| at.saturating_sub(1)).min(count.saturating_sub(1)))));
+            return cx.notify();
+        }
+        if let Some(at) = self.effort_focus {
+            // `moveBetweenRows`: Up and Down stop at the column's ends.
+            self.effort_focus = Some(at.saturating_sub(1));
             return cx.notify();
         }
         if !self.rows.is_empty() {
@@ -391,8 +471,13 @@ impl ModelPicker {
     }
 
     fn on_down(&mut self, _: &PickerDown, _: &mut Window, cx: &mut Context<Self>) {
-        if let (Some(at), Some(options)) = (self.effort_focus, self.effort_options()) {
-            self.effort_focus = Some((at + 1) % options.len());
+        if let Some((id, at)) = self.option_menu.clone() {
+            let count = self.open_menu_descriptor().map_or(0, |d| d.selectable().len());
+            self.option_menu = Some((id, Some(at.map_or(0, |at| at + 1).min(count.saturating_sub(1)))));
+            return cx.notify();
+        }
+        if let Some(at) = self.effort_focus {
+            self.effort_focus = Some((at + 1).min(self.column_rows().len().saturating_sub(1)));
             return cx.notify();
         }
         if !self.rows.is_empty() {
@@ -403,13 +488,41 @@ impl ModelPicker {
     }
 
     fn on_confirm(&mut self, _: &PickerConfirm, _: &mut Window, cx: &mut Context<Self>) {
-        if let Some(option) = self.effort_focus.zip(self.effort_options()).and_then(|(at, o)| o.get(at).cloned()) {
-            return self.pick_effort(option.id, cx);
+        if let Some((_, at)) = self.option_menu.clone() {
+            let picked = self.open_menu_descriptor().and_then(|d| Some((d.id.clone(), d.selectable().get(at?)?.id.clone())));
+            self.option_menu = None;
+            if let Some((id, value)) = picked {
+                self.set_option(&id, OptionValue::Text(value), cx);
+            }
+            return cx.notify();
+        }
+        if let Some(row) = self.effort_focus.and_then(|at| self.column_rows().get(at).cloned()) {
+            return self.activate_row(row, cx);
         }
         self.pick_row(self.highlighted, cx);
     }
 
+    /// ArrowRight on an option row opens its side menu.
+    fn on_right(&mut self, _: &PickerRight, _: &mut Window, cx: &mut Context<Self>) {
+        match self.effort_focus.and_then(|at| self.column_rows().get(at).cloned()) {
+            Some(ColumnRow::Menu(d)) if self.option_menu.is_none() => self.open_option_menu(&d, cx),
+            _ => cx.propagate(),
+        }
+    }
+
+    /// ArrowLeft in a side menu closes it.
+    fn on_left(&mut self, _: &PickerLeft, _: &mut Window, cx: &mut Context<Self>) {
+        if self.option_menu.take().is_some() {
+            return cx.notify();
+        }
+        cx.propagate();
+    }
+
     fn on_close(&mut self, _: &PickerClose, _: &mut Window, cx: &mut Context<Self>) {
+        // Escape closes an open side menu first, as its own menu would.
+        if self.option_menu.take().is_some() {
+            return cx.notify();
+        }
         cx.emit(ModelPickerEvent::Close);
     }
 
@@ -440,6 +553,7 @@ impl ModelPicker {
     /// Types into the search field (also used by scripted tests).
     pub fn type_query(&mut self, text: &str, cx: &mut Context<Self>) {
         self.effort_focus = None;
+        self.option_menu = None;
         self.query.push_str(text);
         self.highlighted = 0;
         self.rebuild_rows();
@@ -557,7 +671,7 @@ impl ModelPicker {
                 }
             }))
             .on_click(cx.listener(move |this, _, _, cx| this.pick_row(index, cx)));
-        base.into_any_element()
+        base.test_support().into_any_element()
     }
 
     fn render_model_row(&self, index: usize, item: &PickerItem, active: bool, c: &ComposerColors, cx: &mut Context<Self>) -> AnyElement {
@@ -650,48 +764,24 @@ impl ModelPicker {
         let c = *c;
         let model = self.catalog.model(&self.selection.instance_id, &self.selection.model).cloned();
         let label = model.as_ref().map(|m| display_model_name(m, true)).unwrap_or_default();
-        let descriptor = model.as_ref().and_then(|m| m.effort.clone());
-        let heading: SharedString = descriptor.as_ref().map_or("Effort".into(), |d| d.label.clone());
-        let current = self.selection.effort.clone();
-        let rows: Vec<AnyElement> = match descriptor {
-            None => vec![div().px(c.r(px(8.))).h(c.r(px(32.))).flex().items_center().text_size(c.r(px(14.))).text_color(c.muted_foreground).child(crate::i18n::t!("No effort levels")).into_any_element()],
-            Some(d) => d
-                .options
-                .iter()
-                .enumerate()
-                .map(|(i, option)| {
-                    let selected = current.as_ref() == Some(&option.id) || (current.is_none() && option.is_default);
-                    let focused = self.effort_focus == Some(i);
-                    let id = option.id.clone();
-                    div()
-                        .id(SharedString::from(format!("effort-{i}")))
-                        .when(focused, |el| el.bg(c.row_hover))
-                        .h(c.r(px(32.)))
-                        .flex_none()
-                        .flex()
-                        .items_center()
-                        .gap(c.r(px(8.)))
-                        .px(c.r(px(8.)))
-                        .rounded(c.r(px(4.)))
-                        .cursor_pointer()
-                        .hover(move |s| s.bg(c.row_hover))
-                        .text_size(c.r(px(14.)))
-                        .text_color(c.foreground)
-                        .child(div().flex_1().min_w_0().overflow_hidden().whitespace_nowrap().text_ellipsis().child(option.label.clone()))
-                        .map(|el| {
-                            if selected {
-                                el.child(Icon::new(IconName::Check).size(IconSize::Custom(c.r(px(14.)))).color(c.foreground).stroke(1.8))
-                            } else if option.is_default {
-                                el.child(div().text_size(c.r(px(12.))).text_color(c.muted_foreground.opacity(0.7)).child("Default"))
-                            } else {
-                                el
-                            }
-                        })
-                        .on_click(cx.listener(move |this, _, _, cx| this.pick_effort(id.clone(), cx)))
-                        .into_any_element()
-                })
-                .collect(),
+        let traits = self.traits();
+        let reasoning = traits.as_ref().and_then(|t| t.reasoning().cloned());
+        let has_others = traits.as_ref().is_some_and(|t| !t.others().is_empty());
+        let heading: SharedString = match &reasoning {
+            Some(d) => d.label().clone(),
+            None if has_others => crate::i18n::t!("Options", context = "heading for model options"),
+            None => crate::i18n::t!("Effort", context = "heading for reasoning effort levels"),
         };
+        let rows = self.column_rows();
+        let levels = rows.iter().take_while(|r| matches!(r, ColumnRow::Level(..) | ColumnRow::State(..))).count();
+        let mut level_rows = Vec::new();
+        let mut other_rows = Vec::new();
+        for (i, row) in rows.into_iter().enumerate() {
+            let element = self.render_column_row(i, row, c, cx);
+            if i < levels { level_rows.push(element) } else { other_rows.push(element) }
+        }
+        let empty = level_rows.is_empty() && other_rows.is_empty();
+        let has_levels = !level_rows.is_empty();
         div()
             .w(c.r(MODEL_PICKER_EFFORT_WIDTH))
             .flex_none()
@@ -716,12 +806,177 @@ impl ModelPicker {
                         .child(div().ml_auto().min_w_0().overflow_hidden().whitespace_nowrap().text_ellipsis().text_size(c.r(px(12.))).text_color(c.muted_foreground).child(label)),
                 ),
             )
-            .child(div().flex().flex_col().gap(c.r(px(2.))).px(c.r(px(8.))).pt(c.r(px(10.))).pb(c.r(px(6.))).children(rows))
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(c.r(px(2.)))
+                    .px(c.r(px(8.)))
+                    .pt(c.r(px(10.)))
+                    .pb(c.r(px(6.)))
+                    .when(empty, |el| {
+                        el.child(div().px(c.r(px(8.))).h(c.r(px(32.))).flex().items_center().text_size(c.r(px(14.))).text_color(c.muted_foreground).child(crate::i18n::t!("No effort levels")))
+                    })
+                    .children(level_rows)
+                    .when(!other_rows.is_empty(), |el| {
+                        el.child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .gap(c.r(px(2.)))
+                                .when(has_levels, |el| el.mt(c.r(px(4.))).border_t_1().border_color(c.border.opacity(0.7)).pt(c.r(px(4.))))
+                                .children(other_rows),
+                        )
+                    }),
+            )
+    }
+
+    /// One column row: `ColumnRow` for a level, `OptionMenuRow` / `OptionSwitchRow` for others.
+    fn render_column_row(&self, index: usize, row: ColumnRow, c: ComposerColors, cx: &mut Context<Self>) -> AnyElement {
+        let focused = self.effort_focus == Some(index);
+        let base = div()
+            .id(SharedString::from(format!("effort-{index}")))
+            .relative()
+            .w_full()
+            .flex_none()
+            .flex()
+            .items_center()
+            .gap(c.r(px(8.)))
+            .px(c.r(px(8.)))
+            .rounded(c.r(px(4.)))
+            .cursor_pointer()
+            .hover(move |s| s.bg(c.row_hover))
+            .when(focused, |el| el.bg(c.row_hover))
+            .text_size(c.r(px(14.)))
+            .text_color(c.foreground);
+        // `OptionRowText`: the option's name over its current value.
+        let option_text = |name: SharedString, value: SharedString| {
+            div()
+                .flex()
+                .flex_col()
+                .flex_1()
+                .min_w_0()
+                .child(div().truncate().text_size(c.r(px(12.))).line_height(c.r(px(16.))).text_color(c.muted_foreground).child(name))
+                .child(div().truncate().line_height(c.r(px(20.))).child(value))
+        };
+        let pick = row.clone();
+        let element = match row {
+            ColumnRow::Level(d, option) => {
+                let selected = d.value() == Some(&option.id);
+                level_row(base.h(c.r(px(32.))), option.label.clone(), selected, option.is_default, c)
+            }
+            ColumnRow::State(id, on) => {
+                let current = self.traits().and_then(|t| t.descriptors.into_iter().find(|d| d.id() == &id)).is_some_and(|d| matches!(d, OptionDescriptor::Boolean(b) if b.current == Some(true)));
+                let label = if on { crate::i18n::t!("On", context = "option state") } else { crate::i18n::t!("Off", context = "option state") };
+                level_row(base.h(c.r(px(32.))), label, current == on, false, c)
+            }
+            ColumnRow::Menu(d) => {
+                let open = self.option_menu.as_ref().is_some_and(|(id, _)| id == &d.id);
+                let value = d.value_label().unwrap_or_default();
+                base.py(c.r(px(4.)))
+                    .when(open, |el| el.bg(c.row_hover))
+                    .child(option_text(d.label.clone(), value))
+                    .child(div().mr(c.r(px(-4.))).child(Icon::new(IconName::ChevronRight).size(IconSize::Custom(c.r(px(14.)))).color(c.muted_foreground)))
+                    .when(open, |el| el.child(self.render_option_menu(&d, c, cx)))
+            }
+            ColumnRow::Switch(id, name, on) => {
+                let label = if on { crate::i18n::t!("On", context = "option state") } else { crate::i18n::t!("Off", context = "option state") };
+                let toggle = id.clone();
+                base.py(c.r(px(4.))).child(option_text(name, label)).child(
+                    crate::components::ui::switch::Switch::new(SharedString::from(format!("option-switch-{id}")), on)
+                        .size(crate::components::ui::switch::SwitchSize::Sm)
+                        .on_change({
+                            let picker = cx.entity().downgrade();
+                            move |next, _, cx| {
+                                picker.update(cx, |this, cx| this.set_option(&toggle, OptionValue::Bool(next), cx)).ok();
+                            }
+                        }),
+                )
+            }
+        };
+        element
+            .on_click(cx.listener(move |this, _, _, cx| {
+                this.effort_focus = Some(index);
+                this.activate_row(pick.clone(), cx);
+            }))
+            .test_support()
+            .into_any_element()
+    }
+
+    /// An option's side menu (`MenuPopup side="right" align="start" sideOffset={6}`, `max-w-72`):
+    /// its choices as radio items with their descriptions and the default marked.
+    fn render_option_menu(&self, d: &SelectDescriptor, c: ComposerColors, cx: &mut Context<Self>) -> AnyElement {
+        let value = d.value().cloned();
+        let focus = self.option_menu.as_ref().and_then(|(_, at)| *at);
+        let items = d.selectable().into_iter().enumerate().map(|(i, choice)| {
+            let checked = value.as_ref() == Some(&choice.id);
+            let (id, pick) = (d.id.clone(), choice.id.clone());
+            div()
+                .id(SharedString::from(format!("option-menu-item-{i}")))
+                .flex()
+                .items_center()
+                .gap(c.r(px(12.)))
+                .min_h(c.r(px(28.)))
+                .px(c.r(px(8.)))
+                .py(c.r(px(4.)))
+                .rounded(c.r(px(4.)))
+                .cursor_pointer()
+                .text_size(c.r(px(14.)))
+                .text_color(c.foreground)
+                .when(checked, |el| el.bg(c.foreground.opacity(0.08)))
+                .when(focus == Some(i), |el| el.bg(c.accent).text_color(c.accent_foreground))
+                .hover(move |s| s.bg(c.accent).text_color(c.accent_foreground))
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .flex_1()
+                        .min_w_0()
+                        .child(div().truncate().child(choice.label.clone()))
+                        .children(choice.description.clone().map(|text| {
+                            div().text_size(c.r(px(12.))).line_height(c.r(px(16.))).line_clamp(2).text_color(c.muted_foreground).child(text)
+                        })),
+                )
+                .when(choice.is_default, |el| {
+                    el.child(div().flex_none().text_size(c.r(px(12.))).text_color(c.muted_foreground.opacity(0.7)).child(crate::i18n::t!("Default", context = "marks the default option")))
+                })
+                .when(checked, |el| el.child(div().flex_none().child(Icon::new(IconName::Check).size(IconSize::Custom(c.r(px(14.)))).color(c.foreground))))
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    cx.stop_propagation();
+                    this.option_menu = None;
+                    if this.selection.traits(&this.catalog).and_then(|t| t.descriptors.into_iter().find(|d| d.id() == &id)).and_then(|d| d.value()) != Some(OptionValue::Text(pick.clone())) {
+                        this.set_option(&id, OptionValue::Text(pick.clone()), cx);
+                    }
+                    cx.notify();
+                }))
+                .test_support()
+        });
+        let menu = div()
+            .id("model-picker-option-menu")
+            .occlude()
+            .max_w(c.r(px(288.)))
+            .rounded(POPUP_RADIUS)
+            .border_1()
+            .border_color(c.popup_border)
+            .glass(c.popup_background)
+            .shadow(popup_shadow(&c))
+            .p(c.r(px(4.)))
+            .flex()
+            .flex_col()
+            .on_mouse_down_out(cx.listener(|this, _, _, cx| {
+                this.option_menu = None;
+                cx.notify();
+            }))
+            .children(items)
+            .child({
+                let cell = self.option_menu_bounds.clone();
+                gpui_kit::canvas(move |bounds, _, _| cell.set(Some(bounds)), |_, _, _, _| {}).absolute().inset_0()
+            });
+        gpui_kit::deferred(div().absolute().top_0().left_full().pl(c.r(px(6.))).child(menu)).with_priority(3).into_any_element()
     }
 
     fn render_footer(&self, c: &ComposerColors, cx: &mut Context<Self>) -> impl IntoElement {
         let c = *c;
-        let model = self.catalog.model(&self.selection.instance_id, &self.selection.model).cloned();
         let segment = |id: SharedString, checked: bool, content: AnyElement| {
             div()
                 .id(id)
@@ -737,43 +992,58 @@ impl ModelPicker {
                 .when(checked, |el| el.bg(c.input.opacity(0.72)))
                 .child(content)
         };
-        let speed = model.as_ref().and_then(|m| m.speed.clone()).map(|speed| {
-            let current = self.selection.speed.clone();
-            div().flex().rounded(c.r(px(8.))).bg(c.input.opacity(0.4)).p(c.r(px(2.))).children(speed.options.into_iter().enumerate().map(|(i, option)| {
-                let checked = current.as_ref() == Some(&option.id) || (current.is_none() && option.is_default);
-                let bolt = matches!(option.label.as_ref(), "Fast" | "Ultrafast");
-                let id = option.id.clone();
+        let traits = self.traits();
+        let group = || div().flex().rounded(c.r(px(8.))).bg(c.input.opacity(0.4)).p(c.r(px(2.)));
+        let bolt = |speed: &str, checked: bool| {
+            matches!(speed, "Fast" | "Ultrafast").then(|| Icon::new(IconName::ZapFilled).size(IconSize::Custom(c.r(px(12.)))).color(if checked { c.foreground } else { c.muted_foreground }))
+        };
+        // `SpeedControl`: a service tier's levels, else Fast mode as Standard / Fast.
+        let speed = traits.as_ref().and_then(|t| {
+            if let Some(tier) = t.speed_select() {
+                let current = tier.value().cloned();
+                let id = tier.id.clone();
+                return Some(group().children(tier.selectable().into_iter().enumerate().map(|(i, option)| {
+                    let checked = current.as_ref() == Some(&option.id);
+                    let (id, value) = (id.clone(), option.id.clone());
+                    segment(
+                        format!("speed-{i}").into(),
+                        checked,
+                        div().flex().items_center().gap(c.r(px(4.))).children(bolt(&option.label, checked)).child(option.label.clone()).into_any_element(),
+                    )
+                    .on_click(cx.listener(move |this, _, _, cx| this.set_option(&id, OptionValue::Text(value.clone()), cx)))
+                    .test_support()
+                })));
+            }
+            let fast = t.fast_toggle()?;
+            let on = fast.current == Some(true);
+            let id = fast.id.clone();
+            Some(group().children([false, true].into_iter().map(|value| {
+                let checked = on == value;
+                let (speed, label) = if value {
+                    ("Fast", crate::i18n::t!("Fast", context = "response speed"))
+                } else {
+                    ("Standard", crate::i18n::t!("Standard", context = "response speed"))
+                };
+                let id = id.clone();
                 segment(
-                    format!("speed-{i}").into(),
+                    format!("speed-{}", usize::from(value)).into(),
                     checked,
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap(c.r(px(4.)))
-                        .when(bolt, |el| el.child(Icon::new(IconName::ZapFilled).size(IconSize::Custom(c.r(px(12.)))).color(if checked { c.foreground } else { c.muted_foreground })))
-                        .child(option.label.clone())
-                        .into_any_element(),
+                    div().flex().items_center().gap(c.r(px(4.))).children(bolt(speed, checked)).child(label).into_any_element(),
                 )
-                .on_click(cx.listener(move |this, _, _, cx| {
-                    this.selection.speed = Some(id.clone());
-                    cx.emit(ModelPickerEvent::Select(this.selection.clone()));
-                    cx.notify();
-                }))
-            }))
+                .on_click(cx.listener(move |this, _, _, cx| this.set_option(&id, OptionValue::Bool(value), cx)))
+                .test_support()
+            })))
         });
-        let ultracode = model.as_ref().filter(|m| m.ultracode).map(|_| {
-            let on = self.selection.ultracode;
-            div().flex().rounded(c.r(px(8.))).bg(c.input.opacity(0.4)).p(c.r(px(2.))).child(
+        let ultracode = traits.as_ref().and_then(|t| t.ultracode_toggle().cloned()).map(|toggle| {
+            let on = toggle.current == Some(true);
+            group().child(
                 segment(
                     "ultracode".into(),
                     on,
-                    div().flex().items_center().gap(c.r(px(4.))).child(Icon::new(IconName::Workflow).size(IconSize::Custom(c.r(px(12.)))).color(if on { c.foreground } else { c.muted_foreground })).child("Ultracode").into_any_element(),
+                    div().flex().items_center().gap(c.r(px(4.))).child(Icon::new(IconName::Workflow).size(IconSize::Custom(c.r(px(12.)))).color(if on { c.foreground } else { c.muted_foreground })).child(toggle.label.clone()).into_any_element(),
                 )
-                .on_click(cx.listener(move |this, _, _, cx| {
-                    this.selection.ultracode = !this.selection.ultracode;
-                    cx.emit(ModelPickerEvent::Select(this.selection.clone()));
-                    cx.notify();
-                })),
+                .on_click(cx.listener(move |this, _, _, cx| this.set_option(&toggle.id, OptionValue::Bool(!on), cx)))
+                .test_support(),
             )
         });
         let mode = self.runtime_mode;
@@ -944,6 +1214,19 @@ pub fn permissions_panel<V: 'static>(
         )
 }
 
+/// A level row's label and its check or "Default" mark (`ColumnRow`).
+fn level_row(row: gpui_kit::Stateful<gpui_kit::Div>, label: SharedString, selected: bool, is_default: bool, c: ComposerColors) -> gpui_kit::Stateful<gpui_kit::Div> {
+    row.child(div().flex_1().min_w_0().overflow_hidden().whitespace_nowrap().text_ellipsis().child(label)).map(|el| {
+        if selected {
+            el.child(Icon::new(IconName::Check).size(IconSize::Custom(c.r(px(14.)))).color(c.foreground).stroke(1.8))
+        } else if is_default {
+            el.child(div().text_size(c.r(px(12.))).text_color(c.muted_foreground.opacity(0.7)).child(crate::i18n::t!("Default", context = "marks the default option")))
+        } else {
+            el
+        }
+    })
+}
+
 /// A `Kbd` hint: `h-5 min-w-5 rounded px-1 text-xs font-medium`.
 pub fn kbd(label: impl Into<SharedString>, c: ComposerColors) -> impl IntoElement {
     div()
@@ -1025,6 +1308,8 @@ impl Render for ModelPicker {
             .on_action(cx.listener(Self::on_confirm))
             .on_action(cx.listener(Self::on_close))
             .on_action(cx.listener(Self::on_backspace))
+            .on_action(cx.listener(Self::on_left))
+            .on_action(cx.listener(Self::on_right))
             .on_action(cx.listener(Self::on_previous_provider))
             .on_action(cx.listener(Self::on_next_provider))
             // The shortcut registry's commands (`modelPicker.*`), which users may rebind.
@@ -1039,7 +1324,12 @@ impl Render for ModelPicker {
             .on_action(cx.listener(|this, _: &commands::JumpToModel7, _, cx| this.jump(6, cx)))
             .on_action(cx.listener(|this, _: &commands::JumpToModel8, _, cx| this.jump(7, cx)))
             .on_action(cx.listener(|this, _: &commands::JumpToModel9, _, cx| this.jump(8, cx)))
-            .on_mouse_down_out(cx.listener(|_, _, _, cx| cx.emit(ModelPickerEvent::Close)))
+            .on_mouse_down_out(cx.listener(|this, event: &gpui_kit::MouseDownEvent, _, cx| {
+                let in_menu = this.option_menu.is_some() && this.option_menu_bounds.get().is_some_and(|b| b.contains(&event.position));
+                if !in_menu {
+                    cx.emit(ModelPickerEvent::Close);
+                }
+            }))
             .font_family(ui_font_family())
             .flex()
             .flex_col()

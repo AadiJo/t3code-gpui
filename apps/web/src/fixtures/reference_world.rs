@@ -383,9 +383,7 @@ pub fn model_catalog() -> crate::model_selection::ModelCatalog {
             sub_provider: None,
             is_legacy: false,
             is_unavailable: false,
-            effort: None,
-            speed: None,
-            ultracode: false,
+            options: Vec::new(),
         })
         .collect();
     ModelCatalog {

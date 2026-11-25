@@ -124,9 +124,7 @@ pub fn default_selection(catalog: &ModelCatalog) -> ModelSelection {
     ModelSelection {
         instance_id: instance.map(|i| i.instance_id.clone()).unwrap_or_else(|| crate::model_selection::ProviderInstanceId(SharedString::default())),
         model: instance.and_then(|i| catalog.models.get(&i.instance_id)).and_then(|m| m.first()).map(|m| m.slug.clone()).unwrap_or_default(),
-        effort: None,
-        speed: None,
-        ultracode: false,
+        options: Vec::new(),
     }
 }
 

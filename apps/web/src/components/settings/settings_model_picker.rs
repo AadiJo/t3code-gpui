@@ -187,16 +187,12 @@ impl RenderOnce for SettingsModelPicker {
                                 .map(|e| e.instance_id.clone())
                                 .unwrap_or(ProviderInstanceId(SharedString::default())),
                             model: SharedString::default(),
-                            effort: None,
-                            speed: None,
-                            ultracode: false,
+                            options: Vec::new(),
                         },
                         |s| ModelSelection {
                             instance_id: ProviderInstanceId(SharedString::from(s.instance_id.clone())),
                             model: SharedString::from(s.model.clone()),
-                            effort: None,
-                            speed: None,
-                            ultracode: false,
+                            options: Vec::new(),
                         },
                     );
                     let picker = cx.new(|cx| ModelPicker::new(catalog.clone(), selection, RuntimeMode::default(), cx).plain());

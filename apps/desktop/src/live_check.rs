@@ -104,6 +104,7 @@ mod live_check_history;
 mod live_check_linked;
 mod live_check_memory;
 mod live_check_menus;
+mod live_check_options;
 mod live_check_palette;
 mod live_check_projects;
 mod live_check_prompt_links;
@@ -635,6 +636,7 @@ fn main() -> anyhow::Result<()> {
         "update-banner" => live_check_update_pill::run_update_banner(&mut check),
         "pr-routing" => live_check_pr_routing::run_pr_routing(&mut check),
         "voice" => live_check_voice::run_voice(&mut check),
+        "options" => live_check_options::run_options(&mut check),
         other => Err(anyhow::anyhow!("unknown phase {other}")),
     };
     check.finish(&phase, result)
@@ -2985,9 +2987,7 @@ fn run_banner(check: &mut Check) -> anyhow::Result<()> {
                 model: t3code_web::model_selection::ModelSelection {
                     instance_id: t3code_web::model_selection::ProviderInstanceId("no-such-instance".into()),
                     model: "nothing".into(),
-                    effort: None,
-                    speed: None,
-                    ultracode: false,
+                    options: Vec::new(),
                 },
                 intent: t3code_web::composer_logic::ComposerSubmissionIntent::Foreground,
                 dispatch: None,

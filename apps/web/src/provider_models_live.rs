@@ -1,7 +1,7 @@
 //! The model picker's catalog from an environment's provider snapshots (`providerModels.ts`,
 //! the model parts of `modelSelection.ts`): instances in the fork's order (Claude before
 //! OpenAI), models in the owner's saved order, the owner's favourites and hidden models, and
-//! the reasoning-effort, speed and ultracode options each model offers. Also converts between
+//! every option each model offers (`capabilities.optionDescriptors`). Also converts between
 //! the picker's [`ModelSelection`] and the wire's.
 
 use std::collections::{HashMap, HashSet};
@@ -15,14 +15,9 @@ use t3code_contracts::{
 
 use crate::model_ordering::order_claude_before_openai;
 use crate::model_selection::{
-    ModelCatalog, ModelOption, ModelSelection, OptionChoice, ProviderDriverKind, ProviderInstanceEntry, ProviderInstanceId,
-    SelectDescriptor, provider_model_key,
+    BooleanDescriptor, ModelCatalog, ModelOption, ModelSelection, OptionChoice, OptionDescriptor, OptionSelection, OptionValue,
+    ProviderDriverKind, ProviderInstanceEntry, ProviderInstanceId, SelectDescriptor, dispatch_options, provider_model_key,
 };
-
-/// The option ids the picker knows: reasoning effort, speed and the ultracode switch.
-const EFFORT_IDS: &[&str] = &["reasoningEffort", "effort", "reasoning_effort"];
-const SPEED_IDS: &[&str] = &["speed", "serviceTier", "fastMode"];
-const ULTRACODE_ID: &str = "ultracode";
 
 fn driver_kind(driver: &str) -> ProviderDriverKind {
     match driver {
@@ -36,39 +31,35 @@ fn driver_kind(driver: &str) -> ProviderDriverKind {
     }
 }
 
-fn select(descriptor: &Descriptor) -> Option<SelectDescriptor> {
-    let Descriptor::Select(select) = descriptor else { return None };
-    Some(SelectDescriptor {
-        label: SharedString::from(select.label.clone()),
-        options: select
-            .options
-            .iter()
-            .map(|option| OptionChoice {
-                id: SharedString::from(option.id.clone()),
-                label: SharedString::from(option.label.clone()),
-                is_default: option.is_default == Some(true),
-            })
-            .collect(),
-        prompt_injected: select.prompt_injected_values.iter().flatten().map(|v| SharedString::from(v.clone())).collect(),
+fn descriptor(descriptor: &Descriptor) -> Option<OptionDescriptor> {
+    let text = |value: &String| SharedString::from(value.clone());
+    Some(match descriptor {
+        Descriptor::Select(select) => OptionDescriptor::Select(SelectDescriptor {
+            id: text(&select.id),
+            label: text(&select.label),
+            options: select
+                .options
+                .iter()
+                .map(|option| OptionChoice {
+                    id: text(&option.id),
+                    label: text(&option.label),
+                    description: option.description.as_ref().map(text),
+                    is_default: option.is_default == Some(true),
+                })
+                .collect(),
+            prompt_injected: select.prompt_injected_values.iter().flatten().map(text).collect(),
+            current: select.current_value.as_ref().map(text),
+            reasoning_role: select.role.is_some(),
+        }),
+        Descriptor::Boolean(boolean) => {
+            OptionDescriptor::Boolean(BooleanDescriptor { id: text(&boolean.id), label: text(&boolean.label), current: boolean.current_value })
+        }
+        Descriptor::Unknown(_) => return None,
     })
-}
-
-fn descriptor_id(descriptor: &Descriptor) -> Option<&str> {
-    match descriptor {
-        Descriptor::Select(select) => Some(&select.id),
-        Descriptor::Boolean(boolean) => Some(&boolean.id),
-        Descriptor::Unknown(_) => None,
-    }
 }
 
 fn model_option(model: &ServerConfigProvidersItemModelsItem, unavailable: bool) -> ModelOption {
     let descriptors = model.capabilities.as_ref().and_then(|c| c.option_descriptors.as_deref()).unwrap_or_default();
-    let find = |ids: &[&str]| descriptors.iter().find(|d| descriptor_id(d).is_some_and(|id| ids.contains(&id)));
-    let effort = descriptors
-        .iter()
-        .find(|d| matches!(d, Descriptor::Select(s) if s.role.is_some()))
-        .or_else(|| find(EFFORT_IDS))
-        .and_then(select);
     ModelOption {
         slug: SharedString::from(model.slug.clone()),
         name: SharedString::from(model.name.clone()),
@@ -76,9 +67,7 @@ fn model_option(model: &ServerConfigProvidersItemModelsItem, unavailable: bool) 
         sub_provider: model.sub_provider.clone().map(SharedString::from),
         is_legacy: model.is_legacy == Some(true),
         is_unavailable: unavailable,
-        effort,
-        speed: find(SPEED_IDS).and_then(select),
-        ultracode: find(&[ULTRACODE_ID]).is_some(),
+        options: descriptors.iter().filter_map(descriptor).collect(),
     }
 }
 
@@ -134,56 +123,56 @@ pub fn model_catalog_for<'a>(
     ModelCatalog { instances, models, favorites, hidden }
 }
 
-fn option_value(options: Option<&ProviderOptionSelections>, ids: &[&str]) -> Option<String> {
-    match options? {
-        ProviderOptionSelections::List(list) => list.iter().find(|o| ids.contains(&o.id.as_str())).and_then(|o| match &o.value {
-            ProviderOptionSelectionValue::Text(value) => Some(value.clone()),
-            ProviderOptionSelectionValue::Bool(value) => Some(value.to_string()),
-        }),
-        ProviderOptionSelections::Map(map) => ids.iter().find_map(|id| map.get(*id)).map(|value| match value {
-            serde_json::Value::String(text) => text.clone(),
-            other => other.to_string(),
-        }),
-    }
-}
-
-/// The picker's selection from the wire's.
+/// The picker's selection from the wire's. An old object-form option list becomes a list.
 pub fn from_wire(selection: &WireSelection) -> ModelSelection {
-    let options = selection.options.as_ref();
+    let options = match &selection.options {
+        None => Vec::new(),
+        Some(ProviderOptionSelections::List(list)) => list
+            .iter()
+            .map(|o| OptionSelection {
+                id: SharedString::from(o.id.clone()),
+                value: match &o.value {
+                    ProviderOptionSelectionValue::Text(value) => OptionValue::Text(SharedString::from(value.clone())),
+                    ProviderOptionSelectionValue::Bool(value) => OptionValue::Bool(*value),
+                },
+            })
+            .collect(),
+        Some(ProviderOptionSelections::Map(map)) => map
+            .iter()
+            .filter_map(|(id, value)| {
+                let value = match value {
+                    serde_json::Value::String(text) => OptionValue::Text(SharedString::from(text.clone())),
+                    serde_json::Value::Bool(value) => OptionValue::Bool(*value),
+                    _ => return None,
+                };
+                Some(OptionSelection { id: SharedString::from(id.clone()), value })
+            })
+            .collect(),
+    };
     ModelSelection {
         instance_id: ProviderInstanceId(SharedString::from(selection.instance_id.clone())),
         model: SharedString::from(selection.model.clone()),
-        effort: option_value(options, EFFORT_IDS).map(SharedString::from),
-        speed: option_value(options, SPEED_IDS).map(SharedString::from),
-        ultracode: option_value(options, &[ULTRACODE_ID]).is_some_and(|value| value == "true"),
+        options,
     }
 }
 
-/// The wire's selection from the picker's. Option ids come from the model's descriptors.
-pub fn to_wire(selection: &ModelSelection, catalog: &ModelCatalog, config: Option<&ServerConfig>) -> WireSelection {
-    let descriptors = config
-        .and_then(|config| config.providers.iter().find(|p| p.instance_id == selection.instance_id.0.as_ref()))
-        .and_then(|provider| provider.models.iter().find(|m| m.slug == selection.model.as_ref()))
-        .and_then(|model| model.capabilities.as_ref())
-        .and_then(|capabilities| capabilities.option_descriptors.clone())
-        .unwrap_or_default();
-    let id_for = |ids: &[&str]| descriptors.iter().filter_map(descriptor_id).find(|id| ids.contains(id)).map(str::to_owned);
-    let mut options = Vec::new();
-    let effort_id = descriptors
-        .iter()
-        .find(|d| matches!(d, Descriptor::Select(s) if s.role.is_some()))
-        .and_then(descriptor_id)
-        .map(str::to_owned)
-        .or_else(|| id_for(EFFORT_IDS));
-    if let (Some(id), Some(effort)) = (effort_id, &selection.effort) {
-        options.push(ProviderOptionSelection { id, value: ProviderOptionSelectionValue::Text(effort.to_string()) });
-    }
-    if let (Some(id), Some(speed)) = (id_for(SPEED_IDS), &selection.speed) {
-        options.push(ProviderOptionSelection { id, value: ProviderOptionSelectionValue::Text(speed.to_string()) });
-    }
-    if selection.ultracode && catalog.model(&selection.instance_id, &selection.model).is_some_and(|m| m.ultracode) {
-        options.push(ProviderOptionSelection { id: ULTRACODE_ID.to_owned(), value: ProviderOptionSelectionValue::Bool(true) });
-    }
+/// The wire's selection from the picker's, with the options a turn carries for the model
+/// (`modelOptionsForDispatch`). A model the catalog does not know keeps its options as they are.
+pub fn to_wire(selection: &ModelSelection, catalog: &ModelCatalog, _config: Option<&ServerConfig>) -> WireSelection {
+    let options = match catalog.model(&selection.instance_id, &selection.model) {
+        Some(model) => dispatch_options(&model.options, &selection.options),
+        None => selection.options.clone(),
+    };
+    let options: Vec<_> = options
+        .into_iter()
+        .map(|o| ProviderOptionSelection {
+            id: o.id.to_string(),
+            value: match o.value {
+                OptionValue::Text(text) => ProviderOptionSelectionValue::Text(text.to_string()),
+                OptionValue::Bool(value) => ProviderOptionSelectionValue::Bool(value),
+            },
+        })
+        .collect();
     WireSelection {
         instance_id: selection.instance_id.0.to_string().into(),
         model: selection.model.to_string(),
