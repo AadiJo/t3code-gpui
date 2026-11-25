@@ -177,7 +177,8 @@ pub fn xs_button(id: impl Into<ElementId>, glyph: Option<IconName>, label: Optio
         .flex()
         .items_center()
         .gap_1()
-        .px(px(if label.is_some() { 7. } else { 6. }))
+        // `Button size="xs"`: 1px border plus `calc(--spacing(2) - 1px)`, less the icon's `-mx-0.5`.
+        .px(rems(if label.is_some() { 0.5 } else { 0.375 }))
         .rounded(rems(0.5))
         .cursor_pointer()
         .text_size(TEXT_XS.size)
