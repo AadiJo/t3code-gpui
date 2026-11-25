@@ -16,7 +16,7 @@ use std::{collections::HashMap, ops::Range, sync::Arc, time::Duration};
 use gpui_kit::{
     component::{
         Sizable as _,
-        input::{Input, InputEvent, InputState, Textarea, TextareaState},
+        input::{Input, InputEvent, InputState, TextareaState},
     },
     base::TestSupportExt as _,
     prelude::FluentBuilder as _,
@@ -179,7 +179,6 @@ struct Draft {
     start: (Side, u32),
     end: (Side, u32),
     anchor: (Side, u32),
-    label: SharedString,
     editor: Entity<TextareaState>,
     _subscription: Subscription,
 }
@@ -262,7 +261,7 @@ pub struct PaintPlan {
     hatch_color: Hsla,
 }
 
-const DRAFT_HEIGHT: f32 = 120.;
+use super::comment_annotation::{self, draft_height};
 const SCROLLBAR_WIDTH: f32 = 6.;
 
 /// The code surface. Create with [`CodeView::new`], feed it files with [`CodeView::set_files`].
@@ -293,6 +292,8 @@ pub struct CodeView {
     hovered: Option<(u32, u32, Column)>,
     hovered_header: Option<u32>,
     draft: Option<Draft>,
+    /// The interface size the comment form is laid out at.
+    ui_rem: f32,
     comments: Vec<SavedComment>,
     decorations: Option<std::rc::Rc<dyn CodeViewDecorations>>,
     find: Option<Find>,
@@ -351,6 +352,7 @@ impl CodeView {
             hovered: None,
             hovered_header: None,
             draft: None,
+            ui_rem: 16.,
             comments: Vec::new(),
             decorations: None,
             find: None,
@@ -509,9 +511,7 @@ impl CodeView {
         let mut out: Vec<((Side, u32), f32)> = self.decorations.as_ref().map(|d| d.annotations(&file.key)).unwrap_or_default();
         let width = self.viewport_width();
         for saved in self.comments.iter().filter(|c| c.file_key == file.key) {
-            let chars_per_line = ((width - 60.) / 7.).max(20.) as usize;
-            let lines: usize = saved.comment.text.split('\n').map(|l| l.len().div_ceil(chars_per_line).max(1)).sum();
-            let height = 21. + 20. * lines as f32;
+            let height = comment_annotation::saved_comment_height(&saved.comment.text, width);
             match out.iter_mut().find(|(anchor, _)| *anchor == saved.anchor) {
                 Some((_, total)) => *total += height,
                 None => out.push((saved.anchor, height + 1.)),
@@ -519,8 +519,8 @@ impl CodeView {
         }
         if let Some(draft) = self.draft.as_ref().filter(|d| d.file as usize == index) {
             match out.iter_mut().find(|(anchor, _)| *anchor == draft.anchor) {
-                Some((_, total)) => *total += DRAFT_HEIGHT,
-                None => out.push((draft.anchor, DRAFT_HEIGHT)),
+                Some((_, total)) => *total += draft_height(width, self.ui_rem),
+                None => out.push((draft.anchor, draft_height(width, self.ui_rem))),
             }
         }
         out
@@ -957,18 +957,6 @@ impl CodeView {
         };
         let cells: Vec<Cell> = range.clone().filter_map(|row| cell_at(self, row)).collect();
         let (Some(first), Some(last)) = (cells.first().copied(), cells.last().copied()) else { return };
-        let state = &self.files[file as usize];
-        let label = build_review_comment(ReviewCommentInput {
-            id: "draft".into(),
-            section_id: self.section.0.clone(),
-            section_title: self.section.1.clone(),
-            file: &state.diff,
-            start: (first.side(), first.number),
-            end: (last.side(), last.number),
-            text: "",
-        })
-        .map(|comment| comment.range_label)
-        .unwrap_or_else(|| "line".into());
         let editor = cx.new(|cx| TextareaState::new(window, cx).placeholder("Add a comment…"));
         let subscription = cx.subscribe_in(&editor, window, |this, _, event: &InputEvent, window, cx| {
             if let InputEvent::PressEnter { secondary: true, .. } = event {
@@ -981,7 +969,6 @@ impl CodeView {
             start: (first.side(), first.number),
             end: (last.side(), last.number),
             anchor: (last.side(), last.number),
-            label,
             editor,
             _subscription: subscription,
         });
@@ -1205,6 +1192,10 @@ impl CodeView {
 
     fn ensure_metrics(&mut self, window: &mut Window, cx: &App) {
         let theme = cx.app_theme();
+        if self.ui_rem != theme.fonts.interface {
+            self.ui_rem = theme.fonts.interface;
+            self.layout_dirty = true;
+        }
         let theme_id = (theme.id.clone(), theme.appearance, self.options.scheme);
         if self.colors.is_none() || self.theme_id != theme_id {
             self.colors = Some(DiffColors::new(theme, self.options.scheme));
@@ -1921,7 +1912,6 @@ impl CodeView {
 
     fn render_annotation(&self, index: usize, side: Side, number: u32, y: f32, height: f32, colors: &DiffColors, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let key = self.files[index].key.clone();
-        let theme = cx.app_theme().colors;
         let mut column = div().flex().flex_col();
         if let Some(decorations) = self.decorations.clone()
             && let Some(element) = decorations.render_annotation(&key, (side, number), window, cx)
@@ -1930,93 +1920,20 @@ impl CodeView {
         }
         for saved in self.comments.iter().filter(|c| c.file_key == key && c.anchor == (side, number)) {
             let id = saved.comment.id.clone();
-            column = column.child(
-                div()
-                    .id(SharedString::from(format!("comment-{id}")))
-                    .test_support()
-                    .group("comment")
-                    .flex()
-                    .items_start()
-                    .gap(px(10.))
-                    .border_l_2()
-                    .border_color(colors.primary.opacity(0.55))
-                    .bg(colors.primary.opacity(0.045))
-                    .px(px(12.))
-                    .py(px(10.))
-                    .text_size(px(14.))
-                    .line_height(px(20.))
-                    .text_color(theme.text)
-                    .child(div().h(px(20.)).flex().items_center().child(icon("icons/diffs/message-circle.svg", 14., colors.primary.opacity(0.7))))
-                    .child(div().flex_1().min_w_0().child(saved.comment.text.clone()))
-                    .child(
-                        div()
-                            .id(SharedString::from(format!("comment-delete-{id}")))
-                            .test_support()
-                            .invisible()
-                            .group_hover("comment", |s| s.visible())
-                            .size(px(24.))
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .rounded(px(8.))
-                            .hover(|s| s.bg(theme.toolbar_control_hover))
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                cx.stop_propagation();
-                                this.delete_comment(&id, cx);
-                            }))
-                            .child(icon("icons/diffs/trash-2.svg", 12., colors.muted)),
-                    ),
-            );
+            let view = cx.weak_entity();
+            column = column.child(comment_annotation::saved_comment(&id.clone(), saved.comment.text.clone(), cx.app_theme(), move |_, cx| {
+                view.update(cx, |this, cx| this.delete_comment(&id, cx)).ok();
+            }));
         }
         if let Some(draft) = self.draft.as_ref().filter(|d| d.file as usize == index && d.anchor == (side, number)) {
-            let empty = draft.editor.read(cx).value().trim().is_empty();
-            column = column.child(
-                div()
-                    .px(px(12.))
-                    .py(px(8.))
-                    .flex()
-                    .flex_col()
-                    .gap(px(6.))
-                    .child(div().h(px(70.)).child(Textarea::new(&draft.editor).h(px(70.))))
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap(px(4.))
-                            .child(div().mr_auto().text_size(px(10.)).text_color(colors.muted.opacity(0.7)).child(format!("Lines {} · ⌘/Ctrl Enter to send", draft.label)))
-                            .child(
-                                div()
-                                    .id("draft-cancel")
-                                    .test_support()
-                                    .h(px(24.))
-                                    .px(px(7.))
-                                    .flex()
-                                    .items_center()
-                                    .rounded(px(8.))
-                                    .text_size(px(12.))
-                                    .text_color(colors.muted)
-                                    .hover(|s| s.bg(theme.toolbar_control_hover).text_color(theme.text))
-                                    .on_click(cx.listener(|this, _, _, cx| this.cancel_draft(cx)))
-                                    .child("Cancel"),
-                            )
-                            .child(
-                                div()
-                                    .id("draft-submit")
-                                    .test_support()
-                                    .h(px(24.))
-                                    .px(px(7.))
-                                    .flex()
-                                    .items_center()
-                                    .rounded(px(8.))
-                                    .text_size(px(12.))
-                                    .bg(theme.text)
-                                    .text_color(theme.canvas)
-                                    .when(empty, |s| s.opacity(0.64))
-                                    .on_click(cx.listener(|this, _, window, cx| this.submit_draft(window, cx)))
-                                    .child("Comment"),
-                            ),
-                    ),
-            );
+            let (cancel, submit) = (cx.weak_entity(), cx.weak_entity());
+            column = column.child(comment_annotation::draft_form(
+                &draft.editor,
+                cx.app_theme(),
+                cx,
+                move |_, cx| _ = cancel.update(cx, |this, cx| this.cancel_draft(cx)),
+                move |window, cx| _ = submit.update(cx, |this, cx| this.submit_draft(window, cx)),
+            ));
         }
         div()
             .id(("annotation", index * 1_000_000 + number as usize))

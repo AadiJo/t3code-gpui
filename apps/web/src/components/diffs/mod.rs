@@ -3,6 +3,7 @@
 
 pub mod code_view;
 pub mod colors;
+pub mod comment_annotation;
 pub mod diff_file_tree;
 pub mod layout;
 pub mod review_comment;

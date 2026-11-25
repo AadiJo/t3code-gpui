@@ -472,6 +472,13 @@ impl RightPanel {
             FilesPanelEvent::OpenInEditor { absolute_path, editor, reveal } => this.open_in_editor(absolute_path.clone(), *editor, *reveal, cx),
             FilesPanelEvent::OpenInPreview { absolute_path } => this.open_in_preview(absolute_path.clone(), cx),
             FilesPanelEvent::RunOnServer { .. } => crate::live::host_menus::on_files_event(this, this.target.clone(), event, cx),
+            FilesPanelEvent::AddReviewComment(comment) => {
+                let label = review_comment_label(&comment.file_path, &comment.range_label, &comment.section_id);
+                cx.emit(RightPanelEvent::AddReviewComment(crate::state::pull_request_mentions::register_comment(comment.clone(), &label)))
+            }
+            FilesPanelEvent::RemoveReviewComment(id) => {
+                cx.emit(RightPanelEvent::RemoveReviewComment(crate::state::pull_request_mentions::review_comment_context_id(id)))
+            }
         });
         self.files.insert(workspace.key.clone(), (panel.clone(), subscription));
         // `canWriteFiles`: the session's filesystem-write grant, asked of the server once.

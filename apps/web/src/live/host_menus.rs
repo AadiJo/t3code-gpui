@@ -295,6 +295,6 @@ pub fn on_files_event(panel: &mut RightPanel, target: Option<ThreadTarget>, even
             run_file_action(link, action, absolute_path.clone(), cx);
         }
         // The panel runs these itself (`RightPanel::open_in_editor`, `open_in_preview`).
-        FilesPanelEvent::OpenInEditor { .. } | FilesPanelEvent::OpenInPreview { .. } | FilesPanelEvent::AddToChat(_) => {}
+        FilesPanelEvent::OpenInEditor { .. } | FilesPanelEvent::OpenInPreview { .. } | FilesPanelEvent::AddToChat(_) | FilesPanelEvent::AddReviewComment(_) | FilesPanelEvent::RemoveReviewComment(_) => {}
     }
 }

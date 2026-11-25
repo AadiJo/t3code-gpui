@@ -636,6 +636,7 @@ fn main() -> anyhow::Result<()> {
         "pr-routing" => live_check_pr_routing::run_pr_routing(&mut check),
         "launcher" => live_check_launcher::run_launcher(&mut check),
         "search-excerpts" => live_check_launcher::run_search_excerpts(&mut check),
+        "file-comments" => live_check_launcher::run_file_comments(&mut check),
         other => Err(anyhow::anyhow!("unknown phase {other}")),
     };
     check.finish(&phase, result)
