@@ -42,7 +42,7 @@ use crate::components::ui::select::{Select, SelectSize};
 use crate::components::ui::switch::Switch;
 use crate::components::ui::tooltip::tooltip;
 use crate::hooks::use_settings::{ClientSettingsStore, ServerSettingsStore};
-use crate::i18n::t;
+use crate::i18n::{t, t_rich};
 use crate::theme_color::with_alpha;
 
 /// The dictionary a draft adds to.
@@ -63,6 +63,8 @@ pub struct VoiceSettings {
     test: Entity<MicrophoneTest>,
     /// The open cloud destination dialog (`pendingCloud`).
     cloud: Option<(Entity<super::cloud_voice_configuration::CloudVoiceConfiguration>, Subscription)>,
+    /// The chosen environment's model browser (`SpeechModelBrowser`), while one is ready.
+    models: Option<(Entity<super::speech_model_browser::SpeechModelBrowser>, Subscription)>,
     _refresh: Option<gpui_kit::Task<()>>,
     _subscriptions: Vec<Subscription>,
 }
@@ -127,6 +129,7 @@ impl VoiceSettings {
             microphones: Vec::new(),
             test,
             cloud: None,
+            models: None,
             _refresh: None,
             _subscriptions: subscriptions,
         };
@@ -162,6 +165,27 @@ impl VoiceSettings {
             self.test = cx.new(|_| MicrophoneTest::new(device));
         }
         cx.set_global(super::microphone_test::ShownMicrophoneTest(self.test.downgrade()));
+    }
+
+    /// Keeps one model browser for the ready environment destination (`prepared`); a cloud
+    /// destination or none has no browser.
+    fn sync_models(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let prepared = VoiceInput::destination(cx)
+            .filter(|d| d.ready && d.key.destination.cloud_provider().is_none())
+            .map(|d| d.key.destination.environment_id().clone());
+        if self.models.as_ref().map(|(b, _)| b.read(cx).environment_id().clone()) == prepared {
+            return;
+        }
+        self.models = prepared.map(|id| {
+            let browser = cx.new(|cx| super::speech_model_browser::SpeechModelBrowser::new(id, window, cx));
+            let observe = cx.observe(&browser, |_, _, cx| cx.notify());
+            (browser, observe)
+        });
+    }
+
+    /// The model browser, for scripted checks.
+    pub fn model_browser(&self) -> Option<&Entity<super::speech_model_browser::SpeechModelBrowser>> {
+        self.models.as_ref().map(|(browser, _)| browser)
     }
 
     /// The system microphones from the last refresh.
@@ -550,7 +574,8 @@ impl VoiceSettings {
 }
 
 impl Render for VoiceSettings {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.sync_models(window, cx);
         let settings = ClientSettingsStore::get(cx).clone();
         let (rem16, sp3, sp2, rem10) = {
             let theme = cx.app_theme();
@@ -681,6 +706,13 @@ impl Render for VoiceSettings {
                 )
                 .title(t!("Remove filler words")),
             );
+        let transcription = match self.models.as_ref().map(|(browser, _)| browser.clone()) {
+            Some(browser) => {
+                let (row, advanced) = browser.update(cx, |browser, cx| (browser.models_row(cx), browser.advanced(cx)));
+                transcription.children(row).children(advanced)
+            }
+            None => transcription,
+        };
 
         let server = SettingsScope::settings(cx);
         let shared_words = server.as_ref().and_then(|s| s.speech_project_custom_words.clone());
@@ -727,7 +759,7 @@ impl Render for VoiceSettings {
             if custom {
                 row = row.child(div().mt(sp3).pb(sp2).child(TextArea::new(&self.instructions)));
             }
-            cleanup = cleanup.child(row).child(
+            cleanup = cleanup.child(row).children(cleanup_model_row(cx)).child(
                 SettingsRow::new(t!("Correction cue"))
                     .description(t!("The phrase you say to fix a mistake, like “scratch that”."))
                     .control(div().w(rem10).child(TextInput::new(&self.cue))),
@@ -741,6 +773,58 @@ impl Render for VoiceSettings {
         });
         page_container(cx).child(input).child(transcription).child(dictionary).child(cleanup).children(cloud)
     }
+}
+
+/// `CleanupModelRow`: cleanup runs on the draft's environment, so its model is an environment
+/// setting there. Off uses the environment's text generation model; on picks a separate one.
+/// Nothing while the settings have no environment in scope.
+fn cleanup_model_row(cx: &App) -> Option<AnyElement> {
+    use t3code_contracts::{ClientServerSettingsPatch, ModelSelection};
+    let scope = SettingsScope::get(cx);
+    let environment = scope.environment.clone().or_else(|| SettingsScope::targets(cx).first().cloned())?;
+    let theme = cx.app_theme();
+    let row = SettingsRow::new(t!("Cleanup model")).description(t!(
+        "Model for transcript cleanup, such as a cheaper or faster one. When disabled, use the text generation model configured for this environment."
+    ));
+    let Some(settings) = ServerSettingsStore::resolved(cx, &environment) else {
+        return Some(
+            row.control(div().ui_text(theme, TextSize::Sm, weight::NORMAL).text_color(theme.colors.muted_foreground).child(t_rich!("Connect an environment first.").plain()))
+                .into_any_element(),
+        );
+    };
+    let providers: Vec<t3code_contracts::ServerConfigProvidersItem> = crate::state::StateBridge::environment(&environment, cx)
+        .and_then(|live| live.read(cx).config.clone())
+        .map(|config| config.providers.iter().filter(|p| p.supports_text_generation != Some(false)).cloned().collect())
+        .unwrap_or_default();
+    let catalog = std::sync::Arc::new(crate::provider_models_live::model_catalog_for(providers.iter(), &settings));
+    let has_provider = providers.iter().any(|p| p.enabled && p.models.iter().any(|m| m.supports_text_generation != Some(false)));
+    let dedicated = settings.speech_post_processing_model_selection.clone();
+    let save = |selection: Option<ModelSelection>, cx: &mut App| {
+        SettingsScope::update(ClientServerSettingsPatch { speech_post_processing_model_selection: Some(selection), ..Default::default() }, cx);
+    };
+    let mut control = div().flex().min_w_0().flex_wrap().items_center().gap(theme.sp(2.));
+    match (&dedicated, has_provider) {
+        (Some(_), false) => {
+            control = control.child(
+                div().ui_text(theme, TextSize::Sm, weight::NORMAL).text_color(theme.colors.muted_foreground).child(t_rich!("No text generation providers available.").plain()),
+            );
+        }
+        (Some(selection), true) => {
+            control = control.child(
+                super::settings_model_picker::SettingsModelPicker::new("speech-cleanup-model", catalog, Some(selection.clone()), move |next, cx| save(Some(next), cx))
+                    .traits(true),
+            );
+        }
+        (None, _) => {}
+    }
+    let text_model = settings.text_generation_model_selection.clone();
+    let on = dedicated.is_some();
+    control = control.child(
+        Switch::new("switch-speech-cleanup-model", on).disabled(!on && !has_provider).on_change(move |checked, _, cx| {
+            save(if checked { text_model.clone() } else { None }, cx);
+        }),
+    );
+    Some(row.control(control).into_any_element())
 }
 
 /// `DEFAULT_SPEECH_POST_PROCESSING_PROMPT`.
