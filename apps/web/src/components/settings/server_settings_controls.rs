@@ -60,7 +60,7 @@ pub fn select_row(
 ) -> SettingsRow {
     let id = id.into();
     let select = Select::new(SharedString::from(format!("{id}-select")), options, selected, on_change).size(SelectSize::Sm);
-    let row = SettingsRow::new(title).control(ManagedControl::new(format!("{id}-lock"), lock, div().min_w(gpui_kit::px(160.)).child(select)));
+    let row = SettingsRow::new(title).control(ManagedControl::new(format!("{id}-lock"), lock, div().min_w(gpui_kit::rems(10.)).child(select)));
     match description {
         Some(d) => row.description(d),
         None => row,
