@@ -21,7 +21,7 @@ use crate::app_root::Wiring;
 use crate::components::chat::thread_error_banner::{ThreadErrorBanner, ThreadErrorBannerEvent};
 use crate::state::thread_errors::ThreadErrors;
 use crate::components::branch_toolbar::{BranchToolbar, BranchToolbarEvent, BranchToolbarLayout, BranchToolbarProps};
-use crate::components::chat::composer::{ChatComposer, ComposerEvent, ComposerState};
+use crate::components::chat::composer::{ChatComposer, ComposerEvent, ComposerPending, ComposerState};
 use crate::components::chat::messages_timeline::TimelineAction;
 use crate::components::chat::open_in_picker::OpenInPicker;
 use crate::components::chat::thread_details_items::ThreadDetailsItemSettings;
@@ -331,7 +331,7 @@ impl ThreadRouteView {
         *self.menu.0.borrow_mut() = Some(self.data.menu_source(view, &self.composer, cx));
         let state = self.data.composer_state(view, &self.base, cx);
         // The branch toolbar under the composer replaces the static strip.
-        let state = ComposerState { context_strip: None, placeholder, ..state };
+        let state = ComposerState { context_strip: None, placeholder, pending: ComposerPending::of(input), ..state };
         self.composer.update(cx, |composer, cx| composer.set_state(state, cx));
     }
 
@@ -640,10 +640,7 @@ impl ThreadRouteView {
         }
         match event {
             // `composer.sendAndNewThread` on a started thread: send, then a new thread in its project.
-            ComposerEvent::Submit { intent: ComposerSubmissionIntent::Background, .. } if matches!(target, ThreadTarget::Server(_)) => {
-                self.refresh(true, cx);
-                cx.emit(ThreadRouteEvent::NewThreadInProject);
-            }
+            ComposerEvent::SentInBackground if matches!(target, ThreadTarget::Server(_)) => cx.emit(ThreadRouteEvent::NewThreadInProject),
             ComposerEvent::Submit { .. } => self.refresh(true, cx),
             // These change what the composer shows from the draft (model, mode, the `/clear` banner).
             ComposerEvent::ModelChanged(_) | ComposerEvent::RuntimeModeChanged(_) | ComposerEvent::ClearSession | ComposerEvent::BannerAction(_) | ComposerEvent::BannerDismissed(_) | ComposerEvent::UsageLimits => {

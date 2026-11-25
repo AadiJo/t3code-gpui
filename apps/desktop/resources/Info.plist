@@ -24,6 +24,8 @@
     <true/>
     <key>NSSupportsAutomaticGraphicsSwitching</key>
     <true/>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>T3 Code lets commands run by terminals and coding agents use the microphone.</string>
     <key>CFBundleURLTypes</key>
     <array>
         <dict>

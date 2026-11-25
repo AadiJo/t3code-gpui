@@ -119,6 +119,7 @@ mod live_check_update_ref;
 mod live_check_update_pill;
 mod live_check_pr_routing;
 mod live_check_usage;
+mod live_check_voice;
 #[allow(dead_code)]
 #[path = "notifications/mod.rs"]
 mod notifications;
@@ -633,6 +634,7 @@ fn main() -> anyhow::Result<()> {
         "update-pill" => live_check_update_pill::run_update_pill(&mut check),
         "update-banner" => live_check_update_pill::run_update_banner(&mut check),
         "pr-routing" => live_check_pr_routing::run_pr_routing(&mut check),
+        "voice" => live_check_voice::run_voice(&mut check),
         other => Err(anyhow::anyhow!("unknown phase {other}")),
     };
     check.finish(&phase, result)

@@ -5,7 +5,7 @@
 
 use gpui_kit::*;
 
-use crate::components::chat::composer::{ChatComposer, ComposerEvent, ComposerState};
+use crate::components::chat::composer::{ChatComposer, ComposerEvent, ComposerPending, ComposerState};
 use crate::components::chat::composer_command_menu::{ComposerCommandItem, ComposerMenuSource, SlashMenuContext};
 use crate::components::chat::messages_timeline::TimelineAction;
 use crate::components::chat_view::{ChatView, ChatViewEvent};
@@ -169,7 +169,7 @@ impl SideChatPane {
             None
         };
         let state = self.data.composer_state(&view, &self.base, cx);
-        let state = ComposerState { context_strip: None, placeholder, ..state };
+        let state = ComposerState { context_strip: None, placeholder, pending: ComposerPending::of(&view.timeline), ..state };
         self.composer.update(cx, |composer, cx| composer.set_state(state, cx));
     }
 

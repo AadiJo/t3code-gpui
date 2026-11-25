@@ -148,9 +148,11 @@ pub struct ComposerState {
     pub history: Arc<Vec<PromptHistoryEntry>>,
     pub banners: Vec<ComposerBanner>,
     pub context_strip: Option<ComposerContextStrip>,
-    /// Shows the dictation button. As in the fork, it is shown only when a
-    /// transcription destination is chosen and ready, never as a setup prompt.
+    /// Dictation may write into this draft. The mic itself shows only when a transcription
+    /// destination is chosen and ready (`VoiceInput::available`), never as a setup prompt.
     pub voice_available: bool,
+    /// What the agent waits on: answering a question, or an approval.
+    pub pending: ComposerPending,
     pub validation: Option<SharedString>,
     /// Replaces the placeholder while the agent waits: a pending approval
     /// ("Send a message to decline…") or question ("Type your own answer…").
@@ -161,6 +163,30 @@ pub struct ComposerState {
     /// `/usage-limits` opens the limits banner (`onUsageLimitsCommand`): the provider reports
     /// limits and the thread can show them.
     pub usage_limits: bool,
+}
+
+/// What the agent is waiting for, read from the thread's pending requests.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ComposerPending {
+    #[default]
+    None,
+    /// A question: the prompt is the custom answer.
+    Question,
+    /// An approval: a message declines and redirects.
+    Approval,
+}
+
+impl ComposerPending {
+    /// The first pending request of a thread's timeline: a question wins, as the placeholder does.
+    pub fn of(input: &super::timeline_entries::TimelineInput) -> Self {
+        if input.pending_question.is_some() {
+            Self::Question
+        } else if !input.pending_approval_ids.is_empty() {
+            Self::Approval
+        } else {
+            Self::None
+        }
+    }
 }
 
 /// What the composer asks the chat view to do.
@@ -174,6 +200,8 @@ pub enum ComposerEvent {
         /// Set while a turn runs.
         dispatch: Option<FollowUpBehavior>,
     },
+    /// A `composer.sendAndNewThread` send succeeded on a started thread.
+    SentInBackground,
     /// `/clear` as the whole message.
     ClearSession,
     /// `/side` or `/btw`.
@@ -190,7 +218,6 @@ pub enum ComposerEvent {
     FavoriteToggled { instance_id: crate::model_selection::ProviderInstanceId, model: SharedString },
     /// The editor cannot page; scroll the timeline.
     PageScroll { down: bool },
-    VoiceRequested,
     ContextStripClicked(ContextStripControl),
     /// A banner's action button, by banner id.
     BannerAction(SharedString),
@@ -215,8 +242,8 @@ pub enum ContextStripControl {
 
 /// The composer view.
 pub struct ChatComposer {
-    editor: Entity<ComposerPromptEditor>,
-    state: ComposerState,
+    pub(super) editor: Entity<ComposerPromptEditor>,
+    pub(super) state: ComposerState,
     pub(super) attachments: Vec<ComposerAttachment>,
     /// HEIC photos converting off the UI thread, by draft; each holds an attachment slot.
     pub(super) converting: Vec<ComposerDraftKey>,
@@ -228,7 +255,7 @@ pub struct ChatComposer {
     modifier_held: bool,
     stop_phase: StopPhase,
     stop_task: Option<Task<()>>,
-    draft_store: Rc<RefCell<dyn ComposerDraftStore>>,
+    pub(super) draft_store: Rc<RefCell<dyn ComposerDraftStore>>,
     save_task: Option<Task<()>>,
     footer_width: Pixels,
     /// Limits banner accounts whose email is shown.
@@ -247,6 +274,8 @@ pub struct ChatComposer {
     page_scroller: Option<super::composer_page_scroll::PageScroller>,
     /// The stash drawer is open on this row (`isStashMenuOpen`).
     pub(super) stash_menu: Option<usize>,
+    /// Dictation: the shortcut press, the indicator's owner and the waveform.
+    pub(super) speech: super::composer_speech::ComposerSpeech,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -295,10 +324,13 @@ impl ChatComposer {
             chip_hidden: false,
             page_scroller: None,
             stash_menu: None,
-            _subscriptions: vec![subscription, settings],
+            speech: Default::default(),
+            _subscriptions: vec![subscription, settings, Self::observe_voice(cx)],
         };
+        cx.on_release(|this, cx| this.release_voice_presentation(cx)).detach();
         this.load_draft(cx);
         this.sync_editor(cx);
+        this.sync_voice_presentation(cx);
         this
     }
 
@@ -345,6 +377,7 @@ impl ChatComposer {
         if switched {
             self.stop_phase = StopPhase::Idle;
             self.load_draft(cx);
+            self.sync_voice_presentation(cx);
         } else if interrupted && matches!(self.stop_phase, StopPhase::Pending | StopPhase::TimedOut) {
             self.set_stop_phase(StopPhase::Landed, cx);
         } else if resumed && self.stop_phase == StopPhase::Landed {
@@ -415,7 +448,7 @@ impl ChatComposer {
     }
 
     /// Writes the draft after a 300 ms pause; each change restarts the wait.
-    fn schedule_save(&mut self, cx: &mut Context<Self>) {
+    pub(super) fn schedule_save(&mut self, cx: &mut Context<Self>) {
         self.save_task = Some(cx.spawn(async move |this, cx| {
             cx.background_executor().timer(DRAFT_PERSIST_DEBOUNCE).await;
             this.update(cx, |this, cx| this.save_draft_now(cx)).ok();
@@ -616,6 +649,9 @@ impl ChatComposer {
 
     /// Sends the draft. Ports `useComposerSend`'s gatekeeping.
     pub fn submit(&mut self, intent: ComposerSubmissionIntent, cx: &mut Context<Self>) {
+        if self.submit_waits_for_dictation(intent, cx) {
+            return;
+        }
         if self.state.send_disabled_reason.is_some() || self.state.is_send_busy || self.uploads_pending() || !self.has_sendable_content(cx) {
             return;
         }
@@ -901,11 +937,32 @@ impl ChatComposer {
     /// `composer.increaseEffort` / `composer.decreaseEffort`: the next effort level in catalog
     /// order, wrapping (`getReasoningTraitStep`). False when the model has under two levels.
     pub fn step_effort(&mut self, direction: EffortStep, cx: &mut Context<Self>) -> bool {
+        // A pending question's answer is in the prompt; its effort stays put.
+        if self.state.pending == ComposerPending::Question {
+            return false;
+        }
         let selection = &self.state.selection;
-        let Some(descriptor) = self.state.catalog.model(&selection.instance_id, &selection.model).and_then(|m| m.effort.as_ref()) else {
+        let Some(descriptor) = self.state.catalog.model(&selection.instance_id, &selection.model).and_then(|m| m.effort.clone()) else {
             return false;
         };
-        let Some(next) = next_effort(&descriptor.options, selection.effort.as_deref(), direction) else { return false };
+        // A typed Ultrathink is the current level; one in the body text keeps the prompt in charge.
+        let prompt = self.editor.read(cx).text().to_owned();
+        let typed = !descriptor.prompt_injected.is_empty() && crate::model_selection::is_ultrathink_prompt(&prompt);
+        let stripped = crate::model_selection::strip_ultrathink_prefix(&prompt);
+        if typed && crate::model_selection::is_ultrathink_prompt(stripped) {
+            return false;
+        }
+        let current = if typed { Some("ultrathink") } else { selection.effort.as_deref() };
+        let Some(next) = next_effort(&descriptor, current, direction) else { return false };
+        if typed {
+            let removed = prompt.len() - stripped.len();
+            let cursor = self.editor.read(cx).cursor().saturating_sub(removed);
+            let stripped = stripped.to_owned();
+            self.editor.update(cx, |editor, cx| {
+                editor.replace_range(0..removed, "", cx);
+                editor.set_cursor(cursor.min(stripped.len()), cx);
+            });
+        }
         self.state.selection.effort = Some(next);
         cx.emit(ComposerEvent::ModelChanged(self.state.selection.clone()));
         if let Some((picker, _)) = &self.picker {
@@ -913,16 +970,6 @@ impl ChatComposer {
             picker.update(cx, |p, cx| p.update_state(c, s, m, cx));
         }
         cx.notify();
-        true
-    }
-
-    /// `composer.dictation`: starts dictation. With no transcription destination ready the fork
-    /// leaves the key alone, so this returns false and the key falls through.
-    pub fn toggle_dictation(&mut self, cx: &mut Context<Self>) -> bool {
-        if !self.state.voice_available || self.state.project_required {
-            return false;
-        }
-        cx.emit(ComposerEvent::VoiceRequested);
         true
     }
 
@@ -985,8 +1032,9 @@ impl ChatComposer {
                 })
             }))
             // Any key release or modifier change ends the press that `once` remembered.
-            .on_key_up(cx.listener(|this, _: &gpui_kit::KeyUpEvent, _, _| {
+            .on_key_up(cx.listener(|this, _: &gpui_kit::KeyUpEvent, _, cx| {
                 this.held_command = None;
+                this.dictation_key_up(cx);
                 if let Some(scroller) = this.page_scroller.as_mut() {
                     scroller.release();
                 }
@@ -1063,6 +1111,10 @@ impl ChatComposer {
     }
 
     fn capture_escape(&mut self, _: &editor_mod::Escape, window: &mut Window, cx: &mut Context<Self>) {
+        if self.dictation_escape(cx) {
+            cx.stop_propagation();
+            return;
+        }
         if self.stash_menu.is_some() {
             cx.stop_propagation();
             self.stash_menu = None;
@@ -1094,6 +1146,7 @@ impl ChatComposer {
 
     fn on_modifiers(&mut self, event: &ModifiersChangedEvent, _: &mut Window, cx: &mut Context<Self>) {
         self.held_command = None;
+        self.dictation_modifiers(event.modifiers, cx);
         let held = secondary(&event.modifiers);
         if held != self.modifier_held {
             self.modifier_held = held;
@@ -1117,22 +1170,24 @@ pub enum EffortStep {
 
 /// The level after `current` (or the default) in catalog order, wrapping; `None` with fewer
 /// than two levels.
-fn next_effort(options: &[crate::model_selection::OptionChoice], current: Option<&str>, step: EffortStep) -> Option<SharedString> {
-    if options.len() < 2 {
+/// `getReasoningTraitStep`: the next pickable level in catalog order, wrapping. The walk
+/// covers every level, so a typed Ultrathink keeps its place, then lands on one a picker
+/// offers. `None` with fewer than two pickable levels.
+fn next_effort(descriptor: &crate::model_selection::SelectDescriptor, current: Option<&str>, step: EffortStep) -> Option<SharedString> {
+    if descriptor.selectable().len() < 2 {
         return None;
     }
     let ordered: Vec<_> = match step {
-        EffortStep::Up => options.iter().collect(),
-        EffortStep::Down => options.iter().rev().collect(),
+        EffortStep::Up => descriptor.options.iter().collect(),
+        EffortStep::Down => descriptor.options.iter().rev().collect(),
     };
-    let position = current
-        .and_then(|c| ordered.iter().position(|o| o.id.as_ref() == c))
-        .or_else(|| ordered.iter().position(|o| o.is_default));
-    let next = match position {
-        Some(at) => ordered[(at + 1) % ordered.len()],
-        None => ordered[0],
+    let default = descriptor.options.iter().find(|o| o.is_default).map(|o| o.id.as_ref());
+    let position = [current, default].into_iter().flatten().find_map(|value| ordered.iter().position(|o| o.id.as_ref() == value));
+    let candidates = match position {
+        Some(at) => ordered[at + 1..].iter().chain(ordered[..at].iter()).collect::<Vec<_>>(),
+        None => ordered.iter().collect(),
     };
-    Some(next.id.clone())
+    candidates.into_iter().find(|o| !descriptor.prompt_injected.contains(&o.id)).map(|o| o.id.clone())
 }
 
 fn secondary(modifiers: &Modifiers) -> bool {
@@ -1300,13 +1355,9 @@ impl ChatComposer {
     fn render_primary_actions(&self, c: &ComposerColors, cx: &mut Context<Self>) -> AnyElement {
         let has_content = self.has_sendable_content(cx);
         let stop_visible = (self.state.can_interrupt || matches!(self.stop_phase, StopPhase::Pending | StopPhase::TimedOut)) && !has_content;
-        let mut row = div().flex().flex_none().items_center().gap(c.r(px(4.)));
-        if self.state.voice_available {
-            row = row.child(
-                icon_action("composer-voice", IconName::Mic, c.r(px(16.)), c.muted_foreground, false, c)
-                    .on_click(cx.listener(|_, _, _, cx| cx.emit(ComposerEvent::VoiceRequested))),
-            );
-        }
+        let voice_active = self.voice_state(cx).blocks_submission();
+        let has_content = has_content || voice_active;
+        let row = div().flex().flex_none().min_w_0().items_center().gap(c.r(px(4.))).children(self.render_speech(c, cx));
         if stop_visible {
             let disabled = self.stop_phase == StopPhase::Pending;
             let hover = c.row_hover;
@@ -1592,7 +1643,9 @@ impl Render for ChatComposer {
         let c = ComposerColors::new(cx);
         let compact = self.footer_width < c.r((FOOTER_COMPACT_BREAKPOINT));
         let disabled = self.state.project_required;
-        self.editor.update(cx, |e, _| e.disabled = disabled);
+        let frozen = self.voice_freezes_editor(cx);
+        self.editor.update(cx, |e, _| e.disabled = disabled || frozen);
+        let dictation_footer = self.dictation_takes_footer(compact, cx);
 
         let (trigger, trigger_width) = self.render_model_trigger(compact, window, cx);
         let show_chip = self.state.runtime_mode != self.state.default_runtime_mode;
@@ -1601,7 +1654,7 @@ impl Render for ChatComposer {
             (c.r(px(6.)) + c.r(px(16.)) + c.r(px(6.)) + label + c.r(px(8.)), c.r(px(6.)) + c.r(px(16.)) + c.r(px(8.)))
         });
         // Host: footer minus padding, attach (28 + 8) and primary actions.
-        let actions_width = c.r((CONTROL_HEIGHT)) * if self.state.voice_available { 2. } else { 1. } + c.r(px(4.));
+        let actions_width = c.r(CONTROL_HEIGHT) * if self.voice_available_here(cx) { 2. } else { 1. } + c.r(px(4.));
         let host = self.footer_width - c.r((FOOTER_PADDING_X)) * 2. - (c.r((CONTROL_HEIGHT)) + c.r(px(8.))) - actions_width + c.r(px(7.));
         let (chip_icon_only, chip_hidden) = resolve_footer_layout(host, trigger_width, chip_widths, c.r((CONTROL_HEIGHT)), c.r(px(2.)));
         self.chip_hidden = chip_hidden;
@@ -1663,7 +1716,7 @@ impl Render for ChatComposer {
             .px(c.r(FOOTER_PADDING_X))
             .pb(c.r(FOOTER_PADDING_BOTTOM))
             .child(measure)
-            .child(
+            .when(!dictation_footer, |footer| footer.child(
                 div().mr(c.r(px(8.))).child(
                     div()
                         .relative()
@@ -1674,7 +1727,7 @@ impl Render for ChatComposer {
                                 .on_click(cx.listener(|_, _, _, cx| cx.emit(ComposerEvent::AttachRequested))),
                         ),
                 ),
-            )
+            ))
             .child(
                 div()
                     .flex()
@@ -1684,7 +1737,7 @@ impl Render for ChatComposer {
                     .items_center()
                     .justify_end()
                     .gap(c.r(px(4.)))
-                    .child(controls)
+                    .when(!dictation_footer, |row| row.child(controls))
                     .child(self.render_primary_actions(&c, cx)),
             );
 
@@ -1715,7 +1768,9 @@ impl Render for ChatComposer {
                 el.shadow(vec![BoxShadow { color: hsla(0., 0., 0., 0.05), offset: point(px(0.), px(1.)), blur_radius: px(2.), spread_radius: px(0.), inset: false }])
             })
             .when(c.is_dark(), |el| {
-                el.shadow(vec![BoxShadow { color: c.highlight, offset: point(px(0.), px(1.)), blur_radius: px(0.), spread_radius: px(0.), inset: true }])
+                // `inset-shadow-2xs` sits inside the 1px outline on the web; GPUI measures an inset
+                // shadow from the outer edge, so it is offset by the border as well.
+                el.shadow(vec![BoxShadow { color: c.highlight, offset: point(px(0.), px(2.)), blur_radius: px(0.), spread_radius: px(0.), inset: true }])
             })
             .when(disabled, |el| el.opacity(0.75))
             .drag_over::<ExternalPaths>({
@@ -1726,6 +1781,7 @@ impl Render for ChatComposer {
                 this.attach(PastedContent::Files(paths.paths().to_vec()), cx);
             }))
             .child(body)
+            .children(self.render_live_transcript(&c, cx))
             .child(footer);
 
         let stash_menu = if self.menu.is_none() { self.render_stash_menu(&c, window, cx) } else { None };

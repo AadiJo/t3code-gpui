@@ -63,6 +63,28 @@ pub struct OptionChoice {
 pub struct SelectDescriptor {
     pub label: SharedString,
     pub options: Vec<OptionChoice>,
+    /// Levels that work when typed into the prompt (Ultrathink) but no picker offers
+    /// (`promptInjectedValues`).
+    pub prompt_injected: Vec<SharedString>,
+}
+
+impl SelectDescriptor {
+    /// The options a picker offers (`selectableProviderOptionChoices`).
+    pub fn selectable(&self) -> Vec<OptionChoice> {
+        self.options.iter().filter(|option| !self.prompt_injected.contains(&option.id)).cloned().collect()
+    }
+}
+
+/// `isClaudeUltrathinkPrompt`: the word "ultrathink" anywhere in the prompt.
+pub fn is_ultrathink_prompt(text: &str) -> bool {
+    static WORD: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| regex::Regex::new(r"(?i)\bultrathink\b").expect("valid"));
+    WORD.is_match(text)
+}
+
+/// The prompt without a leading `Ultrathink:` and the whitespace after it.
+pub fn strip_ultrathink_prefix(text: &str) -> &str {
+    static PREFIX: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| regex::Regex::new(r"(?i)^Ultrathink:\s*").expect("valid"));
+    PREFIX.find(text).map_or(text, |m| &text[m.end()..])
 }
 
 /// One model of an instance.

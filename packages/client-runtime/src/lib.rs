@@ -27,4 +27,5 @@ pub mod preview;
 pub mod relay;
 pub mod rpc;
 pub mod state;
+pub mod voice_input;
 pub mod work_log;

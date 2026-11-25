@@ -12,7 +12,7 @@ use t3code_web::router::SettingsPanel;
 
 /// Clicks the centre of the visible element `id`, scrolling the settings page with the wheel
 /// (down, then back up) until it is laid out in view.
-fn click_id(check: &mut Check, id: &str) -> anyhow::Result<()> {
+pub(super) fn click_id(check: &mut Check, id: &str) -> anyhow::Result<()> {
     let element = ElementId::from(SharedString::from(id.to_owned()));
     let mut found = None;
     for step in 0..30 {

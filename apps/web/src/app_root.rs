@@ -445,6 +445,7 @@ impl AppRoot {
             _ => initial,
         };
         let router = cx.new(|_| Router::new(initial));
+        crate::speech::voice_input_session::VoiceNavigator::set(router.downgrade(), cx);
 
         let snapshot = data.snapshot(None, cx);
         let sidebar = cx.new(|cx| Sidebar::new(snapshot, window, cx));
@@ -1875,6 +1876,7 @@ impl Render for AppRoot {
             .children(self.snooze_dialog.as_ref().map(|(dialog, _)| dialog.clone()))
             .children(crate::components::settings::theme_editor_panel::ThemeEditorStore::layer(cx))
             .children(crate::components::sharing_dialogs::SharingDialogs::layer(cx))
+            .child(crate::components::chat::composer_voice_indicator::GlobalVoiceInputIndicator::layer(cx))
     }
 }
 

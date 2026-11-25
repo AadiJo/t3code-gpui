@@ -38,6 +38,7 @@ const CELL_HEIGHT: f32 = 540.;
 
 fn effort(levels: &[(&str, &str)], default: &str) -> SelectDescriptor {
     SelectDescriptor {
+        prompt_injected: Vec::new(),
         label: "Reasoning".into(),
         options: levels
             .iter()
@@ -69,6 +70,7 @@ pub fn fixture_catalog() -> ModelCatalog {
     let gpt_effort = effort(&[("low", "Low"), ("medium", "Medium"), ("high", "High"), ("xhigh", "Extra high")], "medium");
     let claude_effort = effort(&[("low", "Low"), ("medium", "Medium"), ("high", "High"), ("max", "Max")], "high");
     let speed = SelectDescriptor {
+        prompt_injected: Vec::new(),
         label: "Speed".into(),
         options: vec![
             OptionChoice { id: "standard".into(), label: "Standard".into(), is_default: true },
@@ -232,7 +234,9 @@ pub fn fixture_state(key: &str) -> ComposerState {
             workspace: "Worktree".into(),
             branch: "composer".into(),
         }),
-        voice_available: false,
+        // Dictation is allowed; the mic shows only once a destination is chosen and ready.
+        voice_available: true,
+        pending: Default::default(),
         validation: None,
         file_attachment_limit: Some(crate::state::attachments::MAX_FILE_BYTES),
         usage_limits: false,

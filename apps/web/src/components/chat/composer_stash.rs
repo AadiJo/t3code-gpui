@@ -153,7 +153,7 @@ impl ChatComposer {
     /// Takes an entry back into the composer: its prompt after the current text (a blank line
     /// between), its files with their uploads and its images re-uploaded, up to the attachment limit.
     pub fn restore_stash_entry(&mut self, id: &str, window: &mut Window, cx: &mut Context<Self>) {
-        let pending_question = self.state().placeholder.is_some();
+        let pending_question = self.state().pending == super::composer::ComposerPending::Question;
         let Some(entry) = PromptStash::peek(cx).iter().find(|e| e.id == id).cloned() else { return };
         if pending_question && entry.records.as_ref().is_some_and(|r| r.iter().any(|r| r.get("kind").and_then(|k| k.as_str()) == Some("environment"))) {
             Toaster::push(
