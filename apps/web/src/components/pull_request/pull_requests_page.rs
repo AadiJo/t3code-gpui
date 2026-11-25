@@ -1441,7 +1441,14 @@ fn render_row(
                                 .min_w_0()
                                 .items_center()
                                 .gap(rems(0.375))
-                                .child(div().flex_none().mono_text(theme.rem(0.75), weight::NORMAL).text_color(muted).child(format!("#{}", entry.number)))
+                                .child({
+                                    let (url, provider) = (entry.url.clone(), entry.provider.as_str().to_owned());
+                                    crate::components::ui::menu::ContextMenu::new(
+                                        SharedString::from(format!("pr-number-menu-{key}")),
+                                        div().flex_none().mono_text(theme.rem(0.75), weight::NORMAL).text_color(muted).child(format!("#{}", entry.number)),
+                                        move |_, _| super::pull_request_link_context_menu::pull_request_link_menu(&url, &provider),
+                                    )
+                                })
                                 .child(
                                     div()
                                         .min_w_0()

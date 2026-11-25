@@ -5,6 +5,7 @@
 pub mod diff;
 pub mod draft_workspace;
 pub mod git;
+pub mod host_menus;
 pub mod rpc;
 pub mod sources;
 pub mod terminal;

@@ -29,6 +29,8 @@ pub enum MenuCommand {
     Rename,
     RegenerateTitle,
     MarkUnread,
+    /// "Share with guest": the window opens the dialog (`openGuestShareDialog`).
+    ShareWithGuest,
     FilterByProject,
     /// "Auto-settle behavior": `true` follows the settings, `false` never auto-settles.
     AutoSettle(bool),
@@ -140,6 +142,8 @@ pub struct ThreadMenuState<'a> {
     pub auto_settle_enabled: bool,
     /// The thread's environment snooze menu (`resolveSnoozePresets`).
     pub snooze_presets: &'a [ResolvedSnoozePreset],
+    /// `canShareWithGuest`: the environment offers guest links.
+    pub can_share_with_guest: bool,
 }
 
 /// `buildThreadActionMenuItems` for a sidebar row.
@@ -179,6 +183,9 @@ pub fn thread_menu_items(state: &ThreadMenuState<'_>) -> Vec<MenuItem> {
     );
     items.push(MenuItem::new(C::RegenerateTitle, "Regenerate title").icon(IconName::RefreshCw));
     items.push(MenuItem::new(C::MarkUnread, "Mark unread").icon(IconName::MailOpen));
+    if state.can_share_with_guest {
+        items.push(MenuItem::new(C::ShareWithGuest, "Share with guest").icon(IconName::UserPlus));
+    }
     if state.show_project_filter {
         items.push(
             MenuItem::new(

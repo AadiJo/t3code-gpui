@@ -12,6 +12,7 @@ pub mod kbd;
 pub mod menu;
 pub mod number_field;
 pub mod motion;
+pub mod pointer_menu;
 pub mod popover;
 pub mod scroll_area;
 pub mod select;

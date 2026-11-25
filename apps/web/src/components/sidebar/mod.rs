@@ -869,6 +869,7 @@ impl Sidebar {
                     can_find: false,
                     auto_settle_enabled: !self.snapshot.auto_settle_disabled.contains(&thread.key),
                     snooze_presets: &self.snooze_presets(&thread.key),
+                    can_share_with_guest: crate::components::chat::guest_share_controls::can_share_with_guest(&crate::state::shell::runtime_ids(&thread.key).0, cx),
                 });
                 ContextMenu {
                     target: MenuTarget::Thread(thread.key.clone()),

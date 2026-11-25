@@ -319,6 +319,7 @@ fn main() -> anyhow::Result<()> {
         can_find: true,
         auto_settle_enabled: true,
         snooze_presets: &presets,
+        can_share_with_guest: true,
     };
     let mut header: Vec<MenuCommand> = Vec::new();
     for item in thread_menu_items(&state) {

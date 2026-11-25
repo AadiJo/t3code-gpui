@@ -372,6 +372,7 @@ impl ChatView {
             can_find: true,
             auto_settle_enabled: facts.auto_settle_enabled,
             snooze_presets: &facts.snooze_presets,
+            can_share_with_guest: crate::components::chat::guest_share_controls::can_share_with_guest(&crate::state::shell::runtime_ids(&facts.key).0, cx),
         });
         self.header_menu = Some(ContextMenu {
             target: MenuTarget::Thread(facts.key.clone()),
@@ -768,7 +769,7 @@ impl Render for ChatView {
                     .min_w_0()
                     .min_h_0()
                     .when(!self.embedded, |d| {
-                        d.child(chat_header(&self.project, self.project_icon.as_ref(), &self.title, self.header_height, self.header_inset, &colors, self.parent_crumb.as_ref(), thread_actions))
+                        d.child(chat_header(&self.project, self.project_icon.as_ref(), &self.title, self.header_height, self.header_inset, &colors, self.parent_crumb.as_ref(), thread_actions, self.thread_menu.as_ref().and_then(|facts| crate::components::chat::guest_share_controls::guest_share_indicator(&facts.key, cx))))
                     })
                     .child(
                         div()

@@ -63,6 +63,12 @@ pub struct IssueDetailPanel {
 impl EventEmitter<IssueDetailEvent> for IssueDetailPanel {}
 
 impl IssueDetailPanel {
+    /// What right clicks in its Markdown offer on the host (`live::host_menus::right_panel_menus`).
+    pub fn with_markdown_menus(mut self, menus: crate::components::chat_markdown::MarkdownMenus) -> Self {
+        self.markdown_state.menus = menus;
+        self
+    }
+
     /// The panel for `reference`; starts loading at once.
     pub fn new(source: Rc<dyn IssueSource>, reference: IssueRef, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let composer = cx.new(|cx| InputState::new(window, cx).placeholder(t!("Leave a comment")));

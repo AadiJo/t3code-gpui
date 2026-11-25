@@ -49,6 +49,8 @@ struct PaletteData {
     /// The active thread's environment has its server config, so links can change
     /// (`threadPullRequestLinkMode`).
     active_can_link: bool,
+    /// `canShareWithGuestAtom` for the active thread's environment.
+    active_can_share_guest: bool,
     /// Some environment has its server config (`Open pull requests`).
     pull_requests: bool,
     /// Some environment's server offers issues.
@@ -212,6 +214,7 @@ impl LivePaletteSource {
             .as_ref()
             .and_then(|id| environments.iter().find(|env| env.read(cx).environment_id() == id))
             .is_some_and(|env| config(env).is_some());
+        data.active_can_share_guest = active_environment.as_ref().is_some_and(|id| crate::components::chat::guest_share_controls::can_share_with_guest(id, cx));
         data.pull_requests = environments.iter().any(|env| config(env).is_some());
         data.issues = environments.iter().any(|env| config(env).is_some_and(|c| c.environment.capabilities.issues == Some(true)));
         data.triage = triage_environment(snapshot.active_thread.as_ref(), cx);
@@ -276,6 +279,7 @@ impl CommandPaletteSource for LivePaletteSource {
             | PaletteFeature::UseInAnotherApp => true,
             PaletteFeature::PromptLinks => data.active_thread.is_some(),
             PaletteFeature::LinkPullRequest => data.active_can_link,
+            PaletteFeature::GuestShare => data.active_can_share_guest,
             PaletteFeature::PullRequests => data.pull_requests,
             PaletteFeature::Issues => data.issues,
             PaletteFeature::Triage => data.triage.is_some(),

@@ -1115,6 +1115,12 @@ impl AppRoot {
             }
             return Wiring::Ran;
         }
+        if command == MenuCommand::ShareWithGuest {
+            if let Some(key) = keys.first() {
+                crate::components::sharing_dialogs::SharingDialogs::open_guest_share(key.clone(), window, cx);
+            }
+            return Wiring::Ran;
+        }
         // `requestCustomSnooze`: the dialog picks the time, then the threads snooze until it.
         if command == MenuCommand::SnoozeCustom {
             self.open_custom_snooze(keys.to_vec(), window, cx);
@@ -1304,7 +1310,12 @@ impl AppRoot {
                     crate::port_discovery_state::PortForwards::handle(request.clone(), cx);
                 }
             }
-            PaletteEvent::ShareWithGuest | PaletteEvent::UseInAnotherApp => return self.not_built_yet(t!("Sharing"), "sharing", cx),
+            PaletteEvent::ShareWithGuest => {
+                if let Some(key) = self.shown_key() {
+                    crate::components::sharing_dialogs::SharingDialogs::open_guest_share(key, window, cx);
+                }
+            }
+            PaletteEvent::UseInAnotherApp => return self.not_built_yet(t!("Sharing"), "sharing", cx),
             // Raised outside an open palette: open it on that flow's page.
             PaletteEvent::NewProject | PaletteEvent::AddProject(_) => {
                 let Some(palette) = self.palette.as_ref().and_then(WeakEntity::upgrade) else { return Wiring::Ran };
@@ -1700,6 +1711,7 @@ impl Render for AppRoot {
             .children(self.link_dialog.as_ref().map(|(dialog, _)| dialog.clone()))
             .children(self.snooze_dialog.as_ref().map(|(dialog, _)| dialog.clone()))
             .children(crate::components::settings::theme_editor_panel::ThemeEditorStore::layer(cx))
+            .children(crate::components::sharing_dialogs::SharingDialogs::layer(cx))
     }
 }
 

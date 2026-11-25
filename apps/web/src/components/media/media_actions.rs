@@ -9,10 +9,7 @@ use gpui_kit::{App, AppContext as _, ClipboardItem, SharedString, Window};
 
 use super::media_source::{DecodedImage, MediaBytes};
 use crate::{
-    components::{
-        icons::IconName,
-        ui::menu::{MenuItem, MenuPopup},
-    },
+    components::ui::menu::{MenuItem, MenuPopup},
     i18n::t,
 };
 
@@ -38,31 +35,34 @@ pub struct MediaActionSource {
 /// Opens the media's file in the file viewer.
 pub type OpenFileHandler = Rc<dyn Fn(&mut Window, &mut App)>;
 
-/// The menu for a media item.
+/// The menu for a media item. Like the fork's native menu, its rows have no icons.
 pub fn media_actions_menu(source: &MediaActionSource, open_file: Option<OpenFileHandler>) -> MenuPopup {
-    let mut menu = MenuPopup::new();
+    let mut menu = MenuPopup::new().context();
     if let Some(path) = source.absolute_path.clone() {
-        menu = menu.item(MenuItem::new(t!("Copy full path")).icon(IconName::Copy).on_select(move |_, cx| {
+        menu = menu.item(MenuItem::new(t!("Copy full path")).on_select(move |_, cx| {
             cx.write_to_clipboard(ClipboardItem::new_string(path.to_string()));
         }));
     }
     if let Some(path) = source.relative_path.clone() {
-        menu = menu.item(MenuItem::new(t!("Copy relative path")).icon(IconName::Copy).on_select(move |_, cx| {
+        menu = menu.item(MenuItem::new(t!("Copy relative path")).on_select(move |_, cx| {
             cx.write_to_clipboard(ClipboardItem::new_string(path.to_string()));
         }));
     }
     if let Some(open) = open_file {
-        menu = menu.item(MenuItem::new(t!("Open in file viewer")).icon(IconName::FileText).on_select(move |window, cx| open(window, cx)));
+        menu = menu.item(MenuItem::new(t!("Open in file viewer")).on_select(move |window, cx| open(window, cx)));
     }
     let save_label = match source.kind {
         MediaKind::Image => t!("Save image"),
         MediaKind::Video => t!("Save video"),
     };
     let save_source = source.clone();
-    menu = menu.item(MenuItem::new(save_label).icon(IconName::Download).on_select(move |_, cx| save_media(&save_source, cx)));
-    if let Some(decoded) = source.decoded.clone().filter(|_| source.kind == MediaKind::Image) {
-        menu = menu.item(MenuItem::new(t!("Copy image")).icon(IconName::Image).on_select(move |_, cx| {
-            cx.write_to_clipboard(ClipboardItem::new_image(&decoded.clipboard_image()));
+    menu = menu.item(MenuItem::new(save_label).on_select(move |_, cx| save_media(&save_source, cx)));
+    if source.kind == MediaKind::Image {
+        let decoded = source.decoded.clone();
+        menu = menu.item(MenuItem::new(t!("Copy image")).disabled(decoded.is_none()).on_select(move |_, cx| {
+            if let Some(decoded) = &decoded {
+                cx.write_to_clipboard(ClipboardItem::new_image(&decoded.clipboard_image()));
+            }
         }));
     }
     menu

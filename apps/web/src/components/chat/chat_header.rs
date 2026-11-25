@@ -39,7 +39,7 @@ pub struct ThreadActionsTrigger {
 }
 
 /// The header row: project crumb, separator, the parent crumb of a subagent thread and its
-/// separator, thread title. `height` is the window's topbar height; `leading_inset` is the left
+/// separator, thread title, then `trailing` (a shared thread's guest status). `height` is the window's topbar height; `leading_inset` is the left
 /// padding that clears the floating sidebar toggle while the sidebar is collapsed
 /// (`--workspace-titlebar-content-left`).
 pub fn chat_header(
@@ -51,6 +51,7 @@ pub fn chat_header(
     colors: &ChatColors,
     parent: Option<&ParentCrumb>,
     actions: Option<ThreadActionsTrigger>,
+    trailing: Option<AnyElement>,
 ) -> AnyElement {
     div()
         .flex_none()
@@ -71,6 +72,8 @@ pub fn chat_header(
             parent: parent.cloned(),
             actions,
         })
+        // `GuestShareIndicator` after the breadcrumb.
+        .children(trailing)
         .into_any_element()
 }
 
