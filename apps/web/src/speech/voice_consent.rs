@@ -21,7 +21,7 @@ fn read_choice(cx: &App) -> AudioChoice {
 
 /// The grant in force (`useAudioChoice`), or `None` when audio may not leave this device.
 pub fn audio_grant(cx: &App) -> Option<AudioGrant> {
-    read_choice(cx).active(|id| LocalStorage::get::<bool>(cx, &saved_key(id))).cloned()
+    read_choice(cx).active(&|id| LocalStorage::get::<bool>(cx, &saved_key(id))).cloned()
 }
 
 /// `chooseAudioDestination`: a new grant for `destination`, or Off.
@@ -49,7 +49,7 @@ fn changed(cx: &mut App) {
 /// grant id to pass to [`confirm_pending`].
 pub fn pending_cloud_choice(destination: VoiceTranscriptionDestination, cx: &mut App) -> String {
     let previous = read_choice(cx);
-    let active = previous.active(|id| LocalStorage::get::<bool>(cx, &saved_key(id))).cloned();
+    let active = previous.active(&|id| LocalStorage::get::<bool>(cx, &saved_key(id))).cloned();
     let previous_choice = match active {
         Some(grant) => AudioChoice::Grant(grant),
         None if matches!(previous, AudioChoice::Off(_)) => AudioChoice::Off(OffLiteral::Off),

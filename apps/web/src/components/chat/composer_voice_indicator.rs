@@ -4,6 +4,7 @@
 
 use std::rc::Rc;
 
+use gpui_kit::TestSupportExt as _;
 use gpui_kit::{
     AnyElement, App, AppContext as _, Context, Entity, Global, InteractiveElement as _, IntoElement, ParentElement as _, Render,
     Styled as _, Window, div, px,
@@ -92,7 +93,8 @@ impl Render for GlobalVoiceInputIndicator {
                     .p(c.r(px(2.)))
                     .shadow(theme.shadows.lg.clone())
                     .child(div().min_w_0().flex_shrink(1.).child(label))
-                    .child(recording_pill(&state, started, &levels, None, false, actions, &c)),
+                    .child(recording_pill(&state, started, &levels, None, false, actions, &c))
+                    .test_support(),
             )
             .into_any_element()
     }

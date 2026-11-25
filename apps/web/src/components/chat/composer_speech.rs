@@ -8,6 +8,8 @@
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
+use gpui_kit::Focusable as _;
+use gpui_kit::TestSupportExt as _;
 use gpui_kit::{
     AnyElement, App, Context, Entity, InteractiveElement as _, IntoElement, Modifiers, ParentElement as _, SharedString,
     StatefulInteractiveElement as _, Styled as _, WeakEntity, Window, div, prelude::FluentBuilder as _, px,
@@ -288,9 +290,10 @@ impl ChatComposer {
                             .size(ButtonSize::IconSm)
                             .icon(IconName::Mic)
                             .disabled(disabled)
-                            .on_click(cx.listener(|this, _, _, cx| {
+                            .on_click(cx.listener(|this, _, window, cx| {
                                 if !this.dictation_disabled() {
                                     this.start_dictation(cx);
+                                    window.focus(&this.editor.focus_handle(cx), cx);
                                 }
                             })),
                     )
@@ -302,20 +305,36 @@ impl ChatComposer {
         let started = voice.as_ref().and_then(|voice| voice.read(cx).recording_started_at(&owner));
         let levels = voice.as_ref().and_then(|voice| voice.read(cx).activity_for(&owner).map(|a| a.levels)).unwrap_or_default();
         let this = cx.weak_entity();
+        // The capsule's buttons keep the keyboard in the editor (`keepFocus`), so Escape and the
+        // shortcut still reach the composer.
+        let focus = self.editor.focus_handle(cx);
+        let refocus = move |window: &mut Window, cx: &mut App| window.focus(&focus, cx);
         let actions = PillActions {
             cancel: Rc::new({
-                let this = this.clone();
-                move |_, cx| _ = this.update(cx, |this, cx| this.cancel_dictation(cx))
+                let (this, refocus) = (this.clone(), refocus.clone());
+                move |window, cx| {
+                    _ = this.update(cx, |this, cx| this.cancel_dictation(cx));
+                    refocus(window, cx);
+                }
             }),
             finish: Rc::new({
-                let this = this.clone();
-                move |_, cx| _ = this.update(cx, |this, cx| this.stop_dictation(cx))
+                let (this, refocus) = (this.clone(), refocus.clone());
+                move |window, cx| {
+                    _ = this.update(cx, |this, cx| this.stop_dictation(cx));
+                    refocus(window, cx);
+                }
             }),
             skip: Rc::new({
-                let owner = owner.clone();
-                move |_, cx| VoiceInput::global(cx).update(cx, |voice, _| voice.skip_post_processing(&owner))
+                let (owner, refocus) = (owner.clone(), refocus.clone());
+                move |window, cx| {
+                    VoiceInput::global(cx).update(cx, |voice, _| voice.skip_post_processing(&owner));
+                    refocus(window, cx);
+                }
             }),
-            retry: Rc::new(move |_, cx| _ = this.update(cx, |this, cx| this.start_dictation(cx))),
+            retry: Rc::new(move |window, cx| {
+                _ = this.update(cx, |this, cx| this.start_dictation(cx));
+                refocus(window, cx);
+            }),
         };
         Some(recording_pill(&state, started, &levels, shortcut, disabled, actions, c))
     }
@@ -537,7 +556,8 @@ fn error_pill(state: &VoiceInputState, disabled: bool, actions: PillActions, c: 
         .font_weight(gpui_kit::FontWeight::MEDIUM)
         .tooltip(tooltip(message))
         .child(Icon::new(IconName::CircleAlert).size(IconSize::Custom(c.r(px(14.)))).color(c.error))
-        .child(div().min_w_0().truncate().child(label));
+        .child(div().min_w_0().truncate().child(label))
+        .test_support();
     let trailing = if state.error_action.is_some() {
         let (cancel, retry) = (actions.cancel.clone(), actions.retry.clone());
         div()

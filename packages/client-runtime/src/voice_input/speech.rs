@@ -120,12 +120,12 @@ pub enum OffLiteral {
 impl AudioChoice {
     /// The grant in force (`activeChoice`). `saved` reports the pending grant's save marker:
     /// `None` when absent, `Some(true)` once the key saved.
-    pub fn active(&self, saved: impl Fn(&str) -> Option<bool>) -> Option<&AudioGrant> {
+    pub fn active(&self, saved: &dyn Fn(&str) -> Option<bool>) -> Option<&AudioGrant> {
         match self {
             Self::Grant(grant) => Some(grant),
             Self::Off(_) | Self::None(()) => None,
             Self::Pending { pending, previous } => match saved(&pending.id) {
-                None => previous.active(|_| None),
+                None => previous.active(&|_| None),
                 Some(true) => Some(pending),
                 Some(false) => None,
             },

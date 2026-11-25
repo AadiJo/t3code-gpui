@@ -103,6 +103,10 @@ impl Player {
     }
 }
 
+/// The microphone test Settings → Voice shows, for scripted checks.
+pub struct ShownMicrophoneTest(pub gpui_kit::WeakEntity<MicrophoneTest>);
+impl gpui_kit::Global for ShownMicrophoneTest {}
+
 /// The Test microphone row.
 pub struct MicrophoneTest {
     /// The device to record from; `None` is System default.

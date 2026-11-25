@@ -169,6 +169,7 @@ impl VoiceInput {
             let connections = ConnectionRuntime::state(cx);
             entity.update(cx, |_, cx| cx.observe(&connections, |this, _, cx| this.destination_changed(cx)).detach());
         }
+        entity.update(cx, |this, cx| this.ensure_status(cx));
         entity
     }
 
@@ -336,6 +337,7 @@ impl VoiceInput {
             self.dispose_session(cx);
             self.queued_start = None;
         }
+        self.ensure_status(cx);
         cx.notify();
     }
 

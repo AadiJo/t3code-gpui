@@ -103,6 +103,7 @@ mod live_check_setup;
 mod live_check_settings;
 mod live_check_update;
 mod live_check_usage;
+mod live_check_voice;
 #[allow(dead_code)]
 #[path = "notifications/mod.rs"]
 mod notifications;
@@ -604,6 +605,7 @@ fn main() -> anyhow::Result<()> {
         "composer-actions" => live_check_composer_actions::run_composer_actions(&mut check),
         "stash" => live_check_composer_actions::run_stash(&mut check),
         "env-banner" => live_check_composer_actions::run_env_banner(&mut check),
+        "voice" => live_check_voice::run_voice(&mut check),
         other => Err(anyhow::anyhow!("unknown phase {other}")),
     };
     check.finish(&phase, result)

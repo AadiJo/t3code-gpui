@@ -7,6 +7,7 @@
 //! Not here yet: the cloud destinations (`CloudVoiceConfiguration`), the model browser and
 //! transcription test (`SpeechModelBrowser`), advanced speech settings and the cleanup model.
 
+use gpui_kit::TestSupportExt as _;
 use gpui_kit::component::input::{InputEvent, InputState, TextareaState};
 use gpui_kit::{AnyElement, App, AppContext as _, Context, Entity, IntoElement, Render, SharedString, Subscription, Window, div, prelude::*};
 use t3code_client_runtime::voice_input::speech::{VoiceTranscriptionDestination, effective_speech_language};
@@ -111,6 +112,7 @@ impl VoiceSettings {
         }));
         subscriptions.push(cx.observe_global::<LocalStorage>(|_, cx| cx.notify()));
         let test = cx.new(|_| MicrophoneTest::new(None));
+        cx.set_global(super::microphone_test::ShownMicrophoneTest(test.downgrade()));
         let mut this = Self {
             device_draft,
             shared_draft,
@@ -152,6 +154,7 @@ impl VoiceSettings {
         if self.test.read(cx).device != device {
             self.test = cx.new(|_| MicrophoneTest::new(device));
         }
+        cx.set_global(super::microphone_test::ShownMicrophoneTest(self.test.downgrade()));
     }
 
     /// The system microphones from the last refresh.
@@ -433,7 +436,7 @@ impl VoiceSettings {
         let popover = Popover::new("select-voice-destination", trigger, move |handle: PopupHandle, _, _| {
             let close = handle.clone();
             let mut menu = MenuPopup::new().min_width(gpui_kit::rems(9.)).item(
-                MenuItem::new(t!("Off")).icon(IconName::MicOff).kind(MenuItemKind::Radio(off_selected)).on_select(move |_, cx| {
+                MenuItem::new(t!("Off")).id("voice-destination-off").icon(IconName::MicOff).kind(MenuItemKind::Radio(off_selected)).on_select(move |_, cx| {
                     voice_consent::choose_audio_destination(None, cx);
                     close.close(cx);
                 }),
@@ -444,7 +447,8 @@ impl VoiceSettings {
             for (environment_id, label) in rows.iter().cloned() {
                 let selected = chosen.as_ref() == Some(&environment_id);
                 let close = handle.clone();
-                menu = menu.item(MenuItem::new(label).icon(IconName::Monitor).kind(MenuItemKind::Radio(selected)).on_select(move |_, cx| {
+                let id = format!("voice-destination-{environment_id}");
+                menu = menu.item(MenuItem::new(label).id(id).icon(IconName::Monitor).kind(MenuItemKind::Radio(selected)).on_select(move |_, cx| {
                     voice_consent::choose_audio_destination(Some(VoiceTranscriptionDestination::Environment { environment_id: environment_id.clone() }), cx);
                     close.close(cx);
                 }));
@@ -452,7 +456,7 @@ impl VoiceSettings {
             let dismiss = handle.clone();
             menu.on_dismiss(move |_, cx| dismiss.close(cx)).into_any_element()
         });
-        div().min_w_0().max_w(theme.rem(18.)).child(popover).into_any_element()
+        div().id("voice-destination").min_w_0().max_w(theme.rem(18.)).child(popover).test_support().into_any_element()
     }
 }
 
