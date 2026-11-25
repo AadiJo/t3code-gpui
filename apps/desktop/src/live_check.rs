@@ -100,6 +100,7 @@ mod live_check_commands;
 mod live_check_composer_actions;
 mod live_check_families;
 mod live_check_heap;
+mod live_check_launcher;
 mod live_check_history;
 mod live_check_linked;
 mod live_check_memory;
@@ -633,6 +634,7 @@ fn main() -> anyhow::Result<()> {
         "update-pill" => live_check_update_pill::run_update_pill(&mut check),
         "update-banner" => live_check_update_pill::run_update_banner(&mut check),
         "pr-routing" => live_check_pr_routing::run_pr_routing(&mut check),
+        "launcher" => live_check_launcher::run_launcher(&mut check),
         other => Err(anyhow::anyhow!("unknown phase {other}")),
     };
     check.finish(&phase, result)

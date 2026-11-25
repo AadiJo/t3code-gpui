@@ -250,6 +250,20 @@ impl Launch {
         }
     }
 
+    /// The empty panel's row id.
+    fn element_id(self) -> &'static str {
+        match self {
+            Launch::Surface(SingletonKind::Preview) => "launch-browser",
+            Launch::Terminal => "launch-terminal",
+            Launch::Surface(SingletonKind::Files) => "launch-files",
+            Launch::Surface(SingletonKind::Diff) => "launch-diff",
+            Launch::PullRequest => "launch-pull-request",
+            Launch::Surface(SingletonKind::PullRequests) => "launch-linked-items",
+            Launch::Surface(SingletonKind::Device) => "launch-device",
+            Launch::SideChat => "launch-side-chat",
+        }
+    }
+
     fn shortcut(self) -> &'static str {
         match self {
             Launch::Surface(SingletonKind::Preview) => "B",
@@ -1096,17 +1110,17 @@ impl RightPanel {
         let c = &theme.colors;
         let hover = c.accent_surface.opacity(0.6);
         let side_chat = facts.side_chat != crate::state::app_data::SideChatLaunch::Hidden;
-        let rows = Launch::all(side_chat).enumerate().map(|(index, launch)| {
+        let rows = Launch::all(side_chat).map(|launch| {
             let available = facts.available(launch);
             let reason = (!available).then(|| facts.disabled_reason(launch));
             div()
-                .id(("launch", index))
-                .h(rems(2.))
+                .id(launch.element_id())
+                .h(theme.rem(2.))
                 .w_full()
                 .flex()
                 .items_center()
-                .gap(rems(0.625))
-                .px(rems(0.625))
+                .gap(theme.rem(0.625))
+                .px(theme.rem(0.625))
                 .rounded(theme.radii.control)
                 .ui_text(theme, TextSize::Sm, weight::NORMAL)
                 .text_color(c.text)
@@ -1117,6 +1131,7 @@ impl RightPanel {
                 .when(available, |d| {
                     d.cursor_pointer().hover(move |s| s.bg(hover)).on_click(cx.listener(move |this, _, _, cx| this.launch(launch, cx)))
                 })
+                .test_support()
         });
         div()
             .flex_1()
@@ -1124,22 +1139,22 @@ impl RightPanel {
             .flex()
             .items_center()
             .justify_center()
-            .px(rems(1.5))
+            .px(theme.rem(1.5))
             .pb(self.topbar_height)
             .child(
                 div()
                     .w_full()
-                    .max_w(rems(20.))
-                    .py(rems(1.5))
+                    .max_w(theme.rem(20.))
+                    .py(theme.rem(1.5))
                     .child(
                         div()
-                            .mb(rems(0.75))
+                            .mb(theme.rem(0.75))
                             .text_center()
                             .ui_text(theme, TextSize::Sm, weight::MEDIUM)
                             .text_color(c.text)
                             .child(t!("Open a surface")),
                     )
-                    .child(div().flex().flex_col().gap(rems(0.125)).children(rows)),
+                    .child(div().flex().flex_col().gap(theme.rem(0.125)).children(rows)),
             )
     }
 }
