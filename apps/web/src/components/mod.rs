@@ -36,6 +36,7 @@ pub mod search;
 pub mod server_update_action;
 pub mod server_update_banners;
 pub mod icons;
+pub mod mcp;
 pub mod media;
 pub mod composer_prompt_editor;
 pub mod composer_prompt_editor_element;
