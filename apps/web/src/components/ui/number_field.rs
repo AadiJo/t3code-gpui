@@ -17,21 +17,21 @@ use crate::components::icons::{Icon, IconName, IconSize};
 
 /// `NumberField` with `size="sm"`: `−`, the value, `+` in one `border-input`
 /// group. Typing commits through the field's own draft binding; the buttons
-/// call `on_step` with the next value, clamped to `min..=max`.
+/// call `on_step` with the next value, clamped to `min..=max`. Format it with [`format_number`].
 #[derive(IntoElement)]
 pub struct NumberField {
     id: ElementId,
     field: Entity<InputState>,
-    value: u64,
-    min: u64,
-    max: u64,
+    value: f64,
+    min: f64,
+    max: f64,
     disabled: bool,
-    on_step: Option<Rc<dyn Fn(u64, &mut Window, &mut App)>>,
+    on_step: Option<Rc<dyn Fn(f64, &mut Window, &mut App)>>,
 }
 
 impl NumberField {
     /// `field` holds the typed text; `value` is the committed number.
-    pub fn new(id: impl Into<ElementId>, field: &Entity<InputState>, value: u64, min: u64, max: u64) -> Self {
+    pub fn new(id: impl Into<ElementId>, field: &Entity<InputState>, value: f64, min: f64, max: f64) -> Self {
         Self { id: id.into(), field: field.clone(), value, min, max, disabled: false, on_step: None }
     }
 
@@ -40,7 +40,7 @@ impl NumberField {
         self
     }
 
-    pub fn on_step(mut self, handler: impl Fn(u64, &mut Window, &mut App) + 'static) -> Self {
+    pub fn on_step(mut self, handler: impl Fn(f64, &mut Window, &mut App) + 'static) -> Self {
         self.on_step = Some(Rc::new(handler));
         self
     }
@@ -54,7 +54,7 @@ impl RenderOnce for NumberField {
         let focused = self.field.read(cx).focus_handle(cx).is_focused(window);
         let inner_radius = theme.radii.lg - px(1.);
         let pad = sp(2.5) - px(1.);
-        let step_button = |name: &str, icon: IconName, next: Option<u64>, left: bool| {
+        let step_button = |name: &str, icon: IconName, next: Option<f64>, left: bool| {
             let on_step = self.on_step.clone();
             let enabled = !self.disabled && next.is_some();
             div()
@@ -73,8 +73,9 @@ impl RenderOnce for NumberField {
                 })
                 .test_support()
         };
-        let down = self.value.checked_sub(1).filter(|n| *n >= self.min);
-        let up = Some(self.value + 1).filter(|n| *n <= self.max);
+        // Steps of one from whatever was typed, decimals included (`step="any"`).
+        let down = (self.value > self.min).then(|| (self.value - 1.).max(self.min));
+        let up = (self.value < self.max).then(|| (self.value + 1.).min(self.max));
         let input = Input::new(&self.field).appearance(false).disabled(self.disabled);
         let input = Styled::h(input, sp(6.5)).flex_1().min_w_0().px(pad).text_align(TextAlign::Center).ui_text(theme, TextSize::Sm, weight::NORMAL);
         div()
@@ -94,4 +95,10 @@ impl RenderOnce for NumberField {
             .child(step_button("inc", IconName::Plus, up, false))
             .when(self.disabled, |d| d.opacity(DISABLED_OPACITY))
     }
+}
+
+/// A stepped value as the field shows it: no trailing `.0`, at most a few decimals.
+pub fn format_number(value: f64) -> String {
+    let text = format!("{:.4}", value);
+    text.trim_end_matches('0').trim_end_matches('.').to_owned()
 }

@@ -196,8 +196,8 @@ impl CustomSnoozeDialog {
         self.error.as_ref()
     }
 
-    fn amount_value(&self, cx: &App) -> u64 {
-        self.amount.read(cx).value().trim().parse::<f64>().map_or(0, |v| v.max(0.) as u64)
+    fn amount_value(&self, cx: &App) -> f64 {
+        self.amount.read(cx).value().trim().parse::<f64>().ok().filter(|v| v.is_finite()).map_or(0., |v| v.max(0.))
     }
 
     /// The calendar popup (`Calendar` in a `PopoverPopup`): month caption between its arrows,
@@ -365,10 +365,10 @@ impl Render for CustomSnoozeDialog {
                     .gap(theme.sp(3.))
                     .child(field(
                         t!("Snooze for"),
-                        NumberField::new("snooze-amount", &self.amount, self.amount_value(cx), 0, 100_000)
+                        NumberField::new("snooze-amount", &self.amount, self.amount_value(cx), 0., 100_000.)
                             .on_step(move |value, window, cx| {
                                 step.update(cx, |this, cx| {
-                                    this.amount.update(cx, |input, cx| input.set_value(value.to_string(), window, cx));
+                                    this.amount.update(cx, |input, cx| input.set_value(super::ui::number_field::format_number(value), window, cx));
                                     this.error = None;
                                     cx.notify();
                                 })

@@ -107,6 +107,7 @@ mod live_check_palette;
 mod live_check_projects;
 mod live_check_prompt_links;
 mod live_check_github;
+mod live_check_leftovers;
 mod live_check_diff_comments;
 mod live_check_snooze;
 mod live_check_setup;
@@ -606,6 +607,7 @@ fn main() -> anyhow::Result<()> {
         "snooze-custom" => live_check_snooze::run_snooze_custom(&mut check),
         "prompt-links" => live_check_prompt_links::run_prompt_links(&mut check),
         "github-source" => live_check_github::run_github_source(&mut check),
+        "snooze-decimal" => live_check_leftovers::run_snooze_decimal(&mut check),
         "wiring" => live_check_commands::run_commands(&mut check),
         "setup" => live_check_setup::run_setup(&mut check),
         "draft-banner" => live_check_setup::run_draft_banner(&mut check),
