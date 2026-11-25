@@ -1796,7 +1796,7 @@ impl ProviderSettingsPanel {
 
 /// A `SettingsSection` inside the provider detail pane. The web flattens
 /// these (`[data-provider-detail] [data-slot=settings-group]` in `index.css`):
-/// no border, fill or shadow, only the heading and the row dividers.
+/// a transparent border, no fill or shadow, only the heading and the row dividers.
 #[derive(IntoElement)]
 pub struct FlatSection {
     title: SharedString,
@@ -1859,7 +1859,8 @@ impl gpui_kit::RenderOnce for FlatSection {
                         div().flex().items_center().justify_end().min_h(theme.sp(7.)).min_w(theme.sp(7.)).child(action)
                     })),
             )
-            .child(div().flex().flex_col().text_color(c.foreground()).children(self.children.into_iter().enumerate().map(|(ix, child)| {
+            // The group's border turns transparent but still takes its 1px.
+            .child(div().flex().flex_col().border_1().border_color(gpui_kit::transparent_black()).text_color(c.foreground()).children(self.children.into_iter().enumerate().map(|(ix, child)| {
                 div().when(ix > 0, |d| d.border_t_1().border_color(divider)).child(child).into_any_element()
             })))
     }
