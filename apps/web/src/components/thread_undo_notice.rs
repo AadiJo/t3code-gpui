@@ -23,18 +23,42 @@ pub fn thread_undo_label(cx: &App) -> SharedString {
 }
 
 /// The notice, filling the row's free space (`flex-1`, `h-6`, `text-2xs`, `leading-6`), or
-/// nothing when there is nothing to undo.
+/// nothing when there is nothing to undo. As in the fork, a reversed wrapping row: a summary
+/// that does not fit beside the button drops to a second line the row's height clips, and a
+/// label that does not fit drops away the same way, leaving the undo icon.
 pub fn thread_undo_notice(colors: &ShellColors, cx: &App) -> Option<AnyElement> {
     let (action, count) = ThreadUndo::notice(cx)?;
     let theme = cx.app_theme();
+    let line = theme.rem(1.5);
     let button = div()
         .id("thread-undo-button")
-        .flex_shrink_0()
+        .min_w_0()
+        .flex_shrink(1.)
         .cursor_pointer()
-        .font_weight(FontWeight::MEDIUM)
+        .font(crate::appearance_fonts::ui_font(crate::appearance_fonts::weight::MEDIUM))
         .text_color(colors.foreground)
         .hover(|s| s.underline())
-        .child(thread_undo_label(cx))
+        .child(
+            div()
+                .flex()
+                .h(line)
+                .min_w_0()
+                .flex_wrap()
+                .justify_end()
+                .overflow_hidden()
+                // The icon's negative margin cancels its width, so beside the label it sits in
+                // clipped space; once the label wraps away, the icon shows.
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .h(line)
+                        .w(theme.sp(4.))
+                        .ml(-theme.sp(4.))
+                        .child(crate::components::icons::Icon::new(crate::components::icons::IconName::Undo2).size(crate::components::icons::IconSize::Custom(theme.sp(4.))).color(colors.foreground)),
+                )
+                .child(thread_undo_label(cx)),
+        )
         .on_click(|_, _, cx| {
             ThreadUndo::undo_latest(cx);
         });
@@ -42,18 +66,20 @@ pub fn thread_undo_notice(colors: &ShellColors, cx: &App) -> Option<AnyElement> 
         div()
             .id("thread-undo-notice")
             .flex()
+            .flex_row_reverse()
+            .flex_wrap()
             .flex_1()
             .min_w_0()
-            .h(theme.rem(1.5))
-            .justify_end()
-            .gap(theme.sp(1.))
+            .h(line)
+            .gap_x(theme.sp(1.))
             .overflow_hidden()
             .whitespace_nowrap()
+            .font(crate::appearance_fonts::ui_font(crate::appearance_fonts::weight::NORMAL))
             .text_size(theme.rem(0.6875))
-            .line_height(theme.rem(1.5))
+            .line_height(line)
             .text_color(colors.sidebar_muted_foreground)
-            .child(div().min_w_0().child(action.short_summary(count)))
             .child(button)
+            .child(div().child(action.short_summary(count)))
             .into_any_element(),
     )
 }

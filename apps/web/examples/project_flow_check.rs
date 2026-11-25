@@ -237,6 +237,7 @@ fn main() -> anyhow::Result<()> {
     c.cx.update(|cx| {
         t3code_web::thread_undo::ThreadUndo::show(t3code_web::thread_undo::UndoAction::Settled, thread.clone(), std::rc::Rc::new(move |_| flag.set(flag.get() + 1)), cx)
     });
+    c.shot("undo-notice")?;
     let sidebar_focus = c.cx.update(|cx| app.read(cx).sidebar().focus_handle(cx));
     c.cx.update_window(c.window, |_, w, cx| w.focus(&sidebar_focus, cx)).ok();
     c.frame();
@@ -251,6 +252,11 @@ fn main() -> anyhow::Result<()> {
     c.frame();
     c.press(if cfg!(target_os = "macos") { "cmd-z" } else { "ctrl-z" });
     c.expect("mod+z in the composer leaves the notice alone", undone.get() == 2, format!("{} undo runs", undone.get()));
+
+    // The quit-hold hint after one press of the quit shortcut.
+    c.cx.update(|cx| t3code_web::quit_hold::QuitHold::key_down(false, cx));
+    c.shot("quit-hold-hint")?;
+    c.cx.update(|cx| t3code_web::quit_hold::QuitHold::other_key(cx));
 
     std::fs::write(out.join("flow.txt"), &c.log)?;
     if !c.failures.is_empty() {
