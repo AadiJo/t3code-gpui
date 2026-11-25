@@ -115,6 +115,13 @@ pub(super) fn run_cloud_voice(check: &mut Check) -> anyhow::Result<()> {
     check.pump(|c| c.connected(), Duration::from_secs(30), "connected")?;
     let environment = state.environment_id.clone();
     let key = thread_with_turn(check, &state, "Cloud dictation")?;
+    // Start with no saved keys, so the first dialog asks for one.
+    let link = check.cx.update(|cx| t3code_web::connection::ConnectionRuntime::global(cx).environment_link(&t3code_contracts::EnvironmentId::new(environment.as_str())));
+    let link = link.context("environment link")?;
+    for provider in [CloudSpeechProvider::Openai, CloudSpeechProvider::Xai, CloudSpeechProvider::Openrouter] {
+        let link = link.clone();
+        check.block(async move { t3code_client_runtime::voice_input::environment::set_cloud_speech_key(&link, provider, None).await })?.ok();
+    }
 
     // ---- OpenAI: key, enable, dictate ----
     open_settings(check);

@@ -1885,10 +1885,16 @@ fn environment_banner_action(id: &str, cx: &mut App) {
         (SharedString::default(), None)
     };
     if let Some(task) = task {
-        cx.spawn(async move |cx| {
-            if let Err(error) = task.await {
-                cx.update(|cx| Toaster::push(ToastData::new(ToastKind::Error, title).description(error.0), cx));
+        cx.spawn(async move |cx| match task.await {
+            Err(error) => {
+                let description = if error.0.is_empty() { t!("Failed to disconnect.") } else { SharedString::from(error.0) };
+                _ = cx.update(|cx| Toaster::push(ToastData::new(ToastKind::Error, title).description(description), cx));
             }
+            // A disconnected server's threads are hidden, so the window goes home (`navigate({ to: "/", replace: true })`).
+            Ok(_) if disconnect => {
+                _ = cx.update(|cx| crate::speech::voice_input_session::replace_route(crate::router::Route::Index, cx));
+            }
+            Ok(_) => {}
         })
         .detach();
     }

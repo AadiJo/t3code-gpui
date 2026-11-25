@@ -645,9 +645,21 @@ impl Global for VoiceNavigator {}
 impl VoiceNavigator {
     /// Routes voice navigation through `router`.
     pub fn set(router: WeakEntity<crate::router::Router>, cx: &mut App) {
+        cx.set_global(AppRouter(router.clone()));
         cx.set_global(Self(Rc::new(move |route, _, cx| {
             _ = router.update(cx, |router, cx| router.navigate(route, cx));
         })));
+    }
+}
+
+/// The window's router, for actions that run without a window (a banner button's task).
+struct AppRouter(WeakEntity<crate::router::Router>);
+impl Global for AppRouter {}
+
+/// Replaces the current route, as `navigate({ to, replace: true })` does.
+pub fn replace_route(route: crate::router::Route, cx: &mut App) {
+    if let Some(router) = cx.try_global::<AppRouter>().map(|r| r.0.clone()) {
+        _ = router.update(cx, |router, cx| router.replace(route, cx));
     }
 }
 
