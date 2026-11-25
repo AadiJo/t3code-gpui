@@ -121,13 +121,22 @@ struct Session {
     _input_events: Subscription,
 }
 
+/// Which "Copy prompt link" rows the palette shows.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PromptLinkRows {
+    /// The composer holds no prompt a link can carry.
+    None,
+    Plain,
+    /// The project is on GitHub, so the link can name its repository and model too.
+    WithContext,
+}
+
 /// The command palette view. Render it once at the window root, above the
 /// app; it draws nothing while closed.
 pub struct CommandPalette {
     source: Rc<dyn CommandPaletteSource>,
-    /// Whether the composer holds a prompt a link can carry; without one the prompt link rows
-    /// hide. `None` offers them.
-    prompt_link_probe: Option<Rc<dyn Fn(&App) -> bool>>,
+    /// Which prompt link rows the composer's prompt offers. `None` offers the plain one.
+    prompt_link_probe: Option<Rc<dyn Fn(&App) -> PromptLinkRows>>,
     ui: CommandPaletteUiState,
     session: Option<Session>,
     focus_handle: FocusHandle,
@@ -154,8 +163,9 @@ impl CommandPalette {
         }
     }
 
-    /// Sets what decides whether "Copy prompt link" shows (`composerPromptLink` being non-null).
-    pub fn set_prompt_link_probe(&mut self, probe: Rc<dyn Fn(&App) -> bool>) {
+    /// Sets what decides which "Copy prompt link" rows show (`composerPromptLink` being
+    /// non-null, `promptLinkRepositoryOf` naming a GitHub repository).
+    pub fn set_prompt_link_probe(&mut self, probe: Rc<dyn Fn(&App) -> PromptLinkRows>) {
         self.prompt_link_probe = Some(probe);
     }
 
@@ -443,12 +453,19 @@ impl CommandPalette {
         if source.supports(PaletteFeature::PortForwarding) {
             items.push(port_forwards_item(&source.ports()));
         }
-        if active.is_some() {
-            if source.supports(PaletteFeature::PromptLinks) && self.prompt_link_probe.as_ref().is_none_or(|probe| probe(cx)) {
-                items.push(event("action:copy-prompt-link", t!("Copy prompt link"), IconName::Link, PaletteEvent::CopyPromptLink { with_context: false }, &[
-                    "copy", "share", "prompt", "link",
+        // A thread or a draft (`promptLinkTarget`); the probe is `None` without a composer prompt.
+        let rows = self.prompt_link_probe.as_ref().map_or(PromptLinkRows::Plain, |probe| probe(cx));
+        if source.supports(PaletteFeature::PromptLinks) && rows != PromptLinkRows::None {
+            items.push(event("action:copy-prompt-link", t!("Copy prompt link"), IconName::Link, PaletteEvent::CopyPromptLink { with_context: false }, &[
+                "copy", "share", "prompt", "link",
+            ]));
+            if rows == PromptLinkRows::WithContext {
+                items.push(event("action:copy-prompt-link-with-context", t!("Copy prompt link with repo and model"), IconName::Link, PaletteEvent::CopyPromptLink { with_context: true }, &[
+                    "copy", "share", "prompt", "link", "repository", "model",
                 ]));
             }
+        }
+        if active.is_some() {
             // The subtitle is the thread's title (`resolveThreadReferenceCopyTarget`).
             let title = active
                 .as_ref()

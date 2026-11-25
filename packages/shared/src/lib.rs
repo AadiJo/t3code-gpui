@@ -7,6 +7,7 @@ pub mod orchestration_v2_deduped_bodies;
 pub mod orchestration_v2_pending_background_work;
 pub mod orchestration_v2_timeline;
 pub mod pin_order_key;
+pub mod prompt_links;
 pub mod thread_projection;
 pub mod turn_item;
 pub mod usage_format;

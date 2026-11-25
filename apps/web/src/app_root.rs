@@ -14,6 +14,8 @@ use crate::components::app_sidebar_layout::{AppSidebarLayout, LayoutEvent, Panel
 use crate::components::chat::composer::ChatComposer;
 use crate::components::chat::thread_details_panel::ThreadDetailsMode;
 use crate::components::no_active_thread_state::NoActiveThreadState;
+use crate::components::no_projects_hero::NoProjectsHero;
+use crate::components::prompt_links::new_thread_link_view::{NewThreadLinkEvent, NewThreadLinkView};
 use crate::components::persistent_thread_terminals::PersistentThreadTerminals;
 use crate::components::chat::expanded_image_dialog::{ExpandedImageDialog, ExpandedImageEvent, ExpandedImageItem};
 use crate::components::chat::timeline_entries::Attachment;
@@ -239,6 +241,9 @@ struct MainPane {
     page: Option<Route>,
     /// The built view of a page route (pull requests, issues), kept while it shows.
     page_view: Option<(Route, Entity<ListPage>)>,
+    /// The `/new` page of the current link, with the app root's subscription to it.
+    link_view: Option<(Route, Entity<NewThreadLinkView>, Subscription)>,
+    app: WeakEntity<AppRoot>,
     has_thread: bool,
 }
 
@@ -274,6 +279,15 @@ impl Render for MainPane {
             {
                 return view.clone().into_any_element();
             }
+            if let Some((built, view, _)) = &self.link_view
+                && built == route
+            {
+                view.update(cx, |view, _| view.set_topbar(topbar));
+                return view.clone().into_any_element();
+            }
+            if *route == Route::Welcome {
+                return self.welcome(topbar, cx).into_any_element();
+            }
             return RoutePage { route: route.clone(), topbar, leading_inset: inset }.into_any_element();
         }
         if !self.has_thread {
@@ -282,6 +296,24 @@ impl Render for MainPane {
         let chat = self.thread_view.read(cx).chat().clone();
         chat.update(cx, |chat, cx| chat.set_header_metrics(topbar, inset, cx));
         self.thread_view.clone().into_any_element()
+    }
+}
+
+impl MainPane {
+    /// `/welcome` for a client with no local environment (`welcome.tsx`): the no-projects hero.
+    fn welcome(&self, topbar: Pixels, cx: &App) -> NoProjectsHero {
+        let app = self.app.clone();
+        let on_add_project = Rc::new(move |window: &mut Window, cx: &mut App| {
+            app.update(cx, |app, cx| app.open_palette(OpenIntent::AddProject, window, cx)).ok();
+        });
+        let scratch = StateBridge::is_running(cx).then(|| crate::state::palette::scratch_environment_for(None, cx)).flatten();
+        let app = self.app.clone();
+        let on_start_without_project = scratch.map(|environment| {
+            Rc::new(move |window: &mut Window, cx: &mut App| {
+                app.update(cx, |app, cx| app.new_thread_without_project(Some(environment.clone()), window, cx)).ok();
+            }) as Rc<dyn Fn(&mut Window, &mut App)>
+        });
+        NoProjectsHero { topbar, on_add_project, on_start_without_project }
     }
 }
 
@@ -381,7 +413,8 @@ impl AppRoot {
             layout
         });
         let thread_view = cx.new(|cx| ThreadRouteView::new(data.clone(), window, cx));
-        let main = cx.new(|_| MainPane { layout: layout.downgrade(), thread_view: thread_view.clone(), page: None, page_view: None, has_thread: false });
+        let app = cx.weak_entity();
+        let main = cx.new(|_| MainPane { layout: layout.downgrade(), thread_view: thread_view.clone(), page: None, page_view: None, link_view: None, app, has_thread: false });
         let backends = data.terminal_backends(cx);
         let shell_backend = backends.shell.clone();
         let right_panel = cx.new(|cx| RightPanel::new(right_panels.clone(), layout.downgrade(), data.clone(), backends, cx));
@@ -553,10 +586,17 @@ impl AppRoot {
         let weak = cx.weak_entity();
         palette.update(cx, |palette, _| {
             palette.set_prompt_link_probe(std::rc::Rc::new(move |cx: &App| {
-                weak.upgrade().is_some_and(|this| {
-                    let text = this.read(cx).composer(cx).read(cx).editor().read(cx).text().trim().to_owned();
-                    !text.is_empty() && text.encode_utf16().count() <= 8_000
-                })
+                use crate::components::command_palette::PromptLinkRows;
+                let Some(this) = weak.upgrade() else { return PromptLinkRows::None };
+                let this = this.read(cx);
+                if this.shown.is_none() || this.main.read(cx).page.is_some() {
+                    return PromptLinkRows::None;
+                }
+                match (this.prompt_link(false, cx), this.prompt_link_repository(cx)) {
+                    (None, _) => PromptLinkRows::None,
+                    (Some(_), None) => PromptLinkRows::Plain,
+                    (Some(_), Some(_)) => PromptLinkRows::WithContext,
+                }
             }));
         });
         let subscription = cx.subscribe_in(palette, window, |this, _, event: &PaletteEvent, window, cx| {
@@ -630,11 +670,13 @@ impl AppRoot {
         let has_thread = self.shown.is_some();
         self.layout.update(cx, |layout, cx| layout.set_titlebar_controls(TitlebarControls::for_route(&route), cx));
         let page_view = page.as_ref().and_then(|route| self.page_view(route, window, cx));
+        let link_view = page.as_ref().and_then(|route| self.link_view(route, window, cx));
         self.sync_usage(&route, window, cx);
         self.main.update(cx, |main, cx| {
             if page_view.is_some() || page.is_none() {
                 main.page_view = page_view;
             }
+            main.link_view = link_view;
             main.page = page;
             main.has_thread = has_thread;
             cx.notify();
@@ -655,6 +697,101 @@ impl AppRoot {
         if panel_focused && !self.layout.read(cx).is_right_panel_open() {
             self.restore_focus(window, cx);
         }
+    }
+
+    /// The `/new` page on screen, for checks.
+    pub fn new_thread_link_view(&self, cx: &App) -> Option<Entity<NewThreadLinkView>> {
+        self.main.read(cx).link_view.as_ref().map(|(_, view, _)| view.clone())
+    }
+
+    /// The `/new` page for `route`, reused while the route stays (a new link starts over).
+    fn link_view(&mut self, route: &Route, window: &mut Window, cx: &mut Context<Self>) -> Option<(Route, Entity<NewThreadLinkView>, Subscription)> {
+        let Route::New { query } = route else { return None };
+        if let Some((built, ..)) = &self.main.read(cx).link_view
+            && built == route
+        {
+            return self.main.update(cx, |main, _| main.link_view.take());
+        }
+        let flows = self.data.palette_source().project_flows();
+        let view = cx.new(|cx| NewThreadLinkView::new(query, flows, cx));
+        let subscription = cx.subscribe_in(&view, window, |this, _, event: &NewThreadLinkEvent, window, cx| this.open_prompt_link(event, window, cx));
+        Some((route.clone(), view, subscription))
+    }
+
+    /// Opens what a prompt link resolved to, replacing the `/new` entry (`replace: true`), and
+    /// places its prompt (`placeLinkedPrompt`).
+    fn open_prompt_link(&mut self, event: &NewThreadLinkEvent, window: &mut Window, cx: &mut Context<Self>) {
+        use crate::composer_draft_store::{ComposerDraft, ComposerDraftKey};
+        use crate::components::prompt_links::{prompt_placed, warn_about_hidden_characters};
+        let seed = |this: &Self, draft: &DraftId, prompt: Option<&t3code_shared::prompt_links::LinkedPrompt>, cx: &mut Context<Self>| {
+            let key = ComposerDraftKey(format!("draft:{}", draft.0).into());
+            let seeded = ComposerDraft { prompt: prompt.map(|p| p.text.clone()).unwrap_or_default(), ..Default::default() };
+            this.data.draft_store(cx).borrow_mut().save(&key, &seeded);
+        };
+        match event {
+            NewThreadLinkEvent::OpenDraft { project, prompt, model, notes } => {
+                let draft = self.data.create_draft(Some(project.clone()), cx);
+                // `setModelSelection(draftId, selection, { explicit: true })`.
+                if let Some(model) = model.clone().filter(|_| StateBridge::is_running(cx)) {
+                    let key = format!("draft:{}", draft.0);
+                    StateBridge::drafts(cx).update(|d| {
+                        let own = d.drafts_by_thread_key.entry(key).or_default();
+                        own.active_provider = Some(model.instance_id.clone());
+                        own.model_selection_by_provider.insert(model.instance_id.clone(), model);
+                        own.model_selection_explicit = true;
+                    });
+                }
+                seed(self, &draft, prompt.as_ref(), cx);
+                self.router.update(cx, |router, cx| router.replace(Route::Draft(draft), cx));
+                if let Some(prompt) = prompt {
+                    warn_about_hidden_characters(prompt, cx);
+                    prompt_placed(notes, cx);
+                }
+            }
+            NewThreadLinkEvent::OpenDraftOnBranch { project, branch, worktree_path, prompt } => {
+                let draft = self.data.create_draft_on_branch(project.clone(), Some(branch.clone()), worktree_path.clone(), cx);
+                seed(self, &draft, prompt.as_ref(), cx);
+                self.router.update(cx, |router, cx| router.replace(Route::Draft(draft), cx));
+                if prompt.is_some() {
+                    prompt_placed(&[], cx);
+                }
+            }
+            NewThreadLinkEvent::OpenThread { key, prompt } => {
+                self.router.update(cx, |router, cx| router.replace(Route::Thread(key.clone()), cx));
+                let Some(prompt) = prompt.clone() else { return };
+                warn_about_hidden_characters(&prompt, cx);
+                let draft_key = crate::state::composer::draft_key(key);
+                let store = self.data.draft_store(cx);
+                let existing = store.borrow().load(&draft_key).map(|d| d.prompt).unwrap_or_default();
+                let same = existing == prompt.text;
+                let weak = cx.weak_entity();
+                let target = key.clone();
+                let place = Rc::new(move |cx: &mut App| {
+                    let Some(this) = weak.upgrade() else { return };
+                    let mut draft = store.borrow().load(&draft_key).unwrap_or_default();
+                    draft.prompt = prompt.text.clone();
+                    store.borrow_mut().save(&draft_key, &draft);
+                    // The thread on screen holds its draft in the composer.
+                    if this.read(cx).shown_key().as_ref() == Some(&target) {
+                        let editor = this.read(cx).composer(cx).read(cx).editor().clone();
+                        editor.update(cx, |editor, cx| editor.set_text(prompt.text.clone(), cx));
+                    }
+                    prompt_placed(&[], cx);
+                });
+                if existing.trim().is_empty() || same {
+                    place(cx);
+                } else {
+                    Toaster::push(
+                        ToastData::new(ToastKind::Info, t!("Linked prompt ready"))
+                            .description(t!("This thread already has a draft. Replace it with the linked prompt?"))
+                            .persistent()
+                            .action(t!("Replace draft"), move |_, cx| place(cx)),
+                        cx,
+                    );
+                }
+            }
+        }
+        self.restore_focus(window, cx);
     }
 
     /// The pull requests or issues page for `route`, reused while the route stays.
@@ -1337,40 +1474,35 @@ impl AppRoot {
         }
     }
 
-    /// Copies a link that opens a new thread with the composer's prompt on the hosted app
-    /// (`composerPromptLink`, `buildNewThreadLink`); `with_context` adds the GitHub repository
-    /// and the selected provider and model.
-    fn copy_prompt_link(&self, with_context: bool, cx: &mut Context<Self>) {
-        /// `PROMPT_LINK_MAX_PROMPT_LENGTH`.
-        const MAX_PROMPT: usize = 8_000;
+    /// The GitHub repository of the thread or draft on screen (`promptLinkRepositoryOf`).
+    fn prompt_link_repository(&self, cx: &App) -> Option<t3code_shared::prompt_links::PromptLinkRepository> {
+        StateBridge::is_running(cx).then(|| self.shown_project(cx)).flatten().and_then(|project| crate::state::prompt_links::project_repository(&project, cx))
+    }
+
+    /// A link that opens a new thread with the composer's prompt on the hosted app
+    /// (`composerPromptLink`, `promptLinkFor`); `with_context` adds the GitHub repository and
+    /// the selected provider and model. `None` for an empty or over-long prompt.
+    fn prompt_link(&self, with_context: bool, cx: &App) -> Option<String> {
+        use t3code_shared::prompt_links::{DEFAULT_HOSTED_APP_URL, PROMPT_LINK_MAX_PROMPT_LENGTH, build_new_thread_link};
         let composer = self.composer(cx);
         let prompt = composer.read(cx).editor().read(cx).text().trim().to_owned();
-        if prompt.is_empty() || prompt.encode_utf16().count() > MAX_PROMPT {
-            return;
+        if prompt.is_empty() || prompt.encode_utf16().count() > PROMPT_LINK_MAX_PROMPT_LENGTH {
+            return None;
         }
-        let mut url = url::Url::parse("https://app.t3.codes/new").expect("static url");
-        {
-            let mut query = url.query_pairs_mut();
-            query.append_pair("prompt", &prompt);
-            if with_context {
-                let repository = self
-                    .shown_key()
-                    .filter(|_| StateBridge::is_running(cx))
-                    .and_then(|key| crate::state::palette::link_project(&key, cx))
-                    .filter(|project| project.host == "github.com")
-                    .map(|project| project.repository);
-                if let Some(repository) = repository {
-                    query.append_pair("repo", &repository);
-                }
-                let state = composer.read(cx).state();
-                let driver = state.catalog.instances.iter().find(|i| i.instance_id == state.selection.instance_id).map(|i| i.driver_kind.as_str().to_owned());
-                if let Some(driver) = driver {
-                    query.append_pair("provider", &driver);
-                    query.append_pair("model", &state.selection.model);
-                }
-            }
+        if !with_context {
+            return Some(build_new_thread_link(&prompt, None, None, None, DEFAULT_HOSTED_APP_URL));
         }
-        cx.write_to_clipboard(ClipboardItem::new_string(url.to_string()));
+        let state = composer.read(cx).state();
+        let driver = state.catalog.instances.iter().find(|i| i.instance_id == state.selection.instance_id).map(|i| i.driver_kind.as_str().to_owned());
+        let repository = self.prompt_link_repository(cx);
+        Some(build_new_thread_link(&prompt, repository.as_ref(), driver.as_deref(), Some(&state.selection.model), DEFAULT_HOSTED_APP_URL))
+    }
+
+    /// Copies [`Self::prompt_link`] (`copyPromptLink`).
+    fn copy_prompt_link(&self, with_context: bool, cx: &mut Context<Self>) {
+        if let Some(link) = self.prompt_link(with_context, cx) {
+            cx.write_to_clipboard(ClipboardItem::new_string(link));
+        }
     }
 
     /// Opens "Link pull request" for the thread on screen (`openLinkPullRequestDialog`).

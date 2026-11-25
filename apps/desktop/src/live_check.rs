@@ -105,6 +105,7 @@ mod live_check_linked;
 mod live_check_memory;
 mod live_check_palette;
 mod live_check_projects;
+mod live_check_prompt_links;
 mod live_check_diff_comments;
 mod live_check_snooze;
 mod live_check_setup;
@@ -602,6 +603,7 @@ fn main() -> anyhow::Result<()> {
         "add-project" => live_check_projects::run_add_project(&mut check),
         "diff-comments" => live_check_diff_comments::run_diff_comments(&mut check),
         "snooze-custom" => live_check_snooze::run_snooze_custom(&mut check),
+        "prompt-links" => live_check_prompt_links::run_prompt_links(&mut check),
         "wiring" => live_check_commands::run_commands(&mut check),
         "setup" => live_check_setup::run_setup(&mut check),
         "draft-banner" => live_check_setup::run_draft_banner(&mut check),

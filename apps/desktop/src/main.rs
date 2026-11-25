@@ -29,6 +29,10 @@ fn main() {
         let (handle, root) = window::open_main_window(options, fixtures, cx).expect("open main window");
         menu::install(root.app.clone(), cx);
         let app_root = root.app.clone();
+        // Windows and Linux start the app with the link as an argument (`HostProcess.Arguments`).
+        if let Some(route) = std::env::args().skip(1).find_map(|arg| window::route_from_url(&arg)) {
+            app_root.update(cx, |root, cx| root.navigate(route, cx));
+        }
         cx.spawn(async move |cx| {
             use futures::StreamExt as _;
             while let Some(url) = opened_urls.next().await {

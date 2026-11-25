@@ -274,7 +274,7 @@ impl CommandPaletteSource for LivePaletteSource {
             | PaletteFeature::RestartAgentSession
             | PaletteFeature::PortForwarding
             | PaletteFeature::UseInAnotherApp => true,
-            PaletteFeature::PromptLinks => data.active_thread.is_some(),
+            PaletteFeature::PromptLinks => true,
             PaletteFeature::LinkPullRequest => data.active_can_link,
             PaletteFeature::PullRequests => data.pull_requests,
             PaletteFeature::Issues => data.issues,
@@ -499,7 +499,7 @@ pub fn start_triage(environment_id: t3code_contracts::EnvironmentId, cx: &mut Ap
     })
 }
 
-fn project_key(id: &t3code_contracts::ProjectId) -> crate::components::sidebar::model::ProjectId {
+pub(crate) fn project_key(id: &t3code_contracts::ProjectId) -> crate::components::sidebar::model::ProjectId {
     crate::components::sidebar::model::ProjectId(SharedString::from(id.0.to_string()))
 }
 
@@ -522,9 +522,15 @@ async fn wait_for_project(store: t3code_client_runtime::state::EnvironmentStore,
 /// `scratchEnvironmentId`: the machine a projectless thread starts on: the one on screen when it
 /// offers a scratch workspace, else the only one that does.
 pub fn scratch_environment(active: Option<&ThreadKey>, cx: &App) -> Option<t3code_contracts::EnvironmentId> {
+    scratch_environment_for(active.map(|key| super::shell::runtime_ids(key).0), cx)
+}
+
+/// `scratchEnvironmentId(preferred)`: `preferred` when it offers a scratch workspace, else the
+/// only machine that does.
+pub fn scratch_environment_for(preferred: Option<t3code_contracts::EnvironmentId>, cx: &App) -> Option<t3code_contracts::EnvironmentId> {
     let environments = super::StateBridge::environments(cx).read(cx).list.clone();
     let offers = |env: &gpui_kit::Entity<super::LiveEnvironment>| env.read(cx).config.as_ref().is_some_and(|c| c.scratch_workspace_root.is_some());
-    if let Some(id) = active.map(|key| super::shell::runtime_ids(key).0)
+    if let Some(id) = preferred
         && environments.iter().any(|env| env.read(cx).environment_id() == &id && offers(env))
     {
         return Some(id);

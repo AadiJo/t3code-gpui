@@ -23,6 +23,7 @@ pub mod favorites;
 pub mod memory;
 pub mod notifications;
 pub mod palette;
+pub mod prompt_links;
 pub mod pull_request_mentions;
 pub mod shell;
 pub mod sidebar_actions;
