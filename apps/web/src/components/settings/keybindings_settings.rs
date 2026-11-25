@@ -110,6 +110,34 @@ fn conflicts_with_when(left: &str, right: &str) -> bool {
     left.is_empty() || right.is_empty() || left == right
 }
 
+/// `usageCommandOrder`: the usage commands keep this order, and sort among the others where
+/// `usage.cost` (`METRIC_OPTIONS[0]`) does.
+const USAGE_COMMAND_ORDER: [&str; 8] =
+    ["usage.open", "usage.cost", "usage.tokens", "usage.limits", "usage.period.day", "usage.period.week", "usage.period.month", "usage.period.quarter"];
+
+/// `String#localeCompare` for command ids and English labels: letters compare without case
+/// first, then lowercase sorts before uppercase.
+fn locale_compare(left: &str, right: &str) -> std::cmp::Ordering {
+    let fold = |s: &str| s.chars().flat_map(char::to_lowercase).collect::<String>();
+    fold(left).cmp(&fold(right)).then_with(|| right.cmp(left))
+}
+
+/// `compareCommands`: by `key`, with the usage commands ranked.
+fn compare_commands(left: &KeybindingCommand, right: &KeybindingCommand, key: impl Fn(&KeybindingCommand) -> String) -> std::cmp::Ordering {
+    let rank = |command: &KeybindingCommand| {
+        let id = command.to_string();
+        USAGE_COMMAND_ORDER.iter().position(|usage| *usage == id)
+    };
+    match (rank(left), rank(right)) {
+        (Some(l), Some(r)) => l.cmp(&r),
+        (l, r) => {
+            let first_usage: KeybindingCommand = USAGE_COMMAND_ORDER[1].parse().expect("usage.cost is a command");
+            let key_of = |command: &KeybindingCommand, ranked: Option<usize>| key(if ranked.is_some() { &first_usage } else { command });
+            locale_compare(&key_of(left, l), &key_of(right, r))
+        }
+    }
+}
+
 /// `buildKeybindingRows`.
 pub fn build_rows(config: &ResolvedKeybindingsConfig, platform: ShortcutPlatform) -> Vec<KeybindingRow> {
     let mut rows: Vec<KeybindingRow> = Vec::new();
@@ -148,7 +176,7 @@ pub fn build_rows(config: &ResolvedKeybindingsConfig, platform: ShortcutPlatform
         labels.dedup();
         row.conflicts = labels;
     }
-    rows.sort_by(|a, b| command_label(&a.command).cmp(&command_label(&b.command)).then(a.key.cmp(&b.key)));
+    rows.sort_by(|a, b| compare_commands(&a.command, &b.command, |c| c.to_string()).then_with(|| locale_compare(&a.key, &b.key)));
     rows
 }
 
@@ -244,7 +272,7 @@ fn bindable_commands() -> Vec<KeybindingCommand> {
             commands.push(rule.command.clone());
         }
     }
-    commands.sort_by_key(command_label);
+    commands.sort_by(|a, b| compare_commands(a, b, |c| command_label(c).to_string()));
     commands
 }
 
@@ -515,10 +543,10 @@ impl KeybindingsSettings {
     }
 }
 
-/// `KeybindingPill`: one 20px keycap per part of the shortcut, 4px apart.
+/// `KeybindingPill`: one keycap per part of the shortcut, `gap-1` apart (`KbdGroup`).
 fn keycaps(key: &str, platform: ShortcutPlatform) -> impl IntoElement {
     let mac = platform == ShortcutPlatform::Mac;
-    div().flex().items_center().gap(px(4.)).children(key.split('+').map(|part| {
+    div().flex().items_center().gap(gpui_kit::rems(0.25)).children(key.split('+').map(|part| {
         let label: SharedString = match part {
             "mod" if mac => "⌘".into(),
             "mod" => "Ctrl".into(),
