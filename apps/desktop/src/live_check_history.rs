@@ -116,6 +116,13 @@ pub(super) fn run_earlier_turns(check: &mut Check) -> anyhow::Result<()> {
     pair_if_needed(check, 1, "T3_PAIRING_URL")?;
     check.pump(|c| c.connected(), Duration::from_secs(60), "connected")?;
     check.pump(|c| c.sidebar_threads() > 0, Duration::from_secs(30), "sidebar rows")?;
+    // Shots compare against the fork capture at the owner's settings (`T3CODE_*`, dark), applied
+    // once the profile's own settings have loaded.
+    check.wait(Duration::from_secs(1));
+    check.cx.update(|cx| {
+        t3code_web::hooks::use_theme::ThemeStore::set_appearance_mode(t3code_web::theme_palette::ThemeMode::Dark, cx);
+        t3code_web::theme_palette::ThemeSettings::apply_env_overrides(cx);
+    });
     // The user messages the server stores for the thread before this run (`T3_LONG_TURNS`, read from its database).
     let expected: usize = std::env::var("T3_LONG_TURNS").ok().and_then(|v| v.parse().ok()).unwrap_or(150);
     let long = key_of(&state, &state.long_thread);
@@ -137,7 +144,12 @@ pub(super) fn run_earlier_turns(check: &mut Check) -> anyhow::Result<()> {
         format!("{first} user turns of {expected}, control {history:?}"),
     );
     scroll_to_top(check);
+    let corner = point(px(5.), viewport(check).bounds.bottom() - px(5.));
+    super::hover_at(check, corner)?;
     check.shot("h1-control.png")?;
+    let v = viewport(check);
+    let interface = check.cx.update(|cx| { use t3code_web::ActiveAppTheme as _; cx.app_theme().fonts.interface });
+    check.note(format!("interface {interface}px, timeline bounds {:?}, control row {:?}", v.bounds, v.row_bounds.first()));
 
     let mut records = Vec::new();
     load_page(check, 1, &mut records)?;
