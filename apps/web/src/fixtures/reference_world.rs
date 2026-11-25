@@ -279,6 +279,8 @@ pub fn build(env: &EnvironmentId) -> ReferenceWorld {
                 has_pending_user_input: input,
                 last_visited_at: None,
                 provider: Some(replay.clone()),
+                // The owner runs with the local environment off: the reference server is a saved remote.
+                remote_machine: true,
                 ..super::blank_thread(&key)
             };
             row.last_visited_at = Some(visited_at(&row, read));

@@ -591,7 +591,6 @@ fn render(name: &str, steps: &[Step], profile: &Profile, out: &Path, data: &Path
     };
     cx.update(|cx| {
         ConnectionRuntime::init(config, cx)?;
-        reference_environment(cx);
         t3code_web::fixtures::reference_world::preload_link_favicons(cx);
         anyhow::Ok(())
     })?;
@@ -660,6 +659,9 @@ fn render(name: &str, steps: &[Step], profile: &Profile, out: &Path, data: &Path
         let env = t3code_web::fixtures::fixture_environment();
         ServerSettingsStore::insert_fixture(EnvironmentId::from(env.0.as_ref()), t3code_web::fixtures::reference_server::config(&env), cx);
     });
+    frame(&mut cx, window);
+    // Once the runtime has loaded its (empty) catalog, which replaces the environment list.
+    cx.update(reference_environment);
     frame(&mut cx, window);
     // The capture rests the mouse at 64% across and halfway down before each view (`fresh()`).
     let rest = point(px(width * 0.64), px(height * 0.5));
