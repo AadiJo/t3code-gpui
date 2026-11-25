@@ -327,7 +327,11 @@ impl Inner {
         let live = table.live.remove(thread_id).expect("entry present");
         live.task.abort();
         let state = live.state.borrow().clone();
-        table.resume.insert(thread_id.clone(), ResumeEntry { state, closed_at: Instant::now() });
+        // A thread whose older history was loaded gives it back: the next open starts from the
+        // disk cache's bounded window and the subscription, as a first open does.
+        if !state.history.expanded {
+            table.resume.insert(thread_id.clone(), ResumeEntry { state, closed_at: Instant::now() });
+        }
         table.sweep(Instant::now());
     }
 }

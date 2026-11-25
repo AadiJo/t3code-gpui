@@ -720,6 +720,13 @@ impl AppData for LiveData {
                     })
                     .detach();
             }
+            TimelineAction::LoadEarlier => {
+                // The runtime records loading and failure in the thread's history, which the
+                // control shows; the result needs nothing more.
+                if let Some(thread) = self.active(key, cx) {
+                    thread.update(cx, |thread, cx| thread.load_earlier(cx)).detach();
+                }
+            }
             // The route view handles these itself.
             TimelineAction::OpenDiff { .. }
             | TimelineAction::OpenImage { .. }

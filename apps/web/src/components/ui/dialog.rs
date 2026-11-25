@@ -139,7 +139,7 @@ impl RenderOnce for DialogSurface {
                             .children(self.title_icon.map(|icon| {
                                 div().mr(sp(2.)).child(Icon::new(icon).size(IconSize::Custom(theme.rem(1.))))
                             }))
-                            .child(self.title),
+                            .child(div().flex_1().min_w_0().child(self.title)),
                     )
                     .children(self.description.map(|d| {
                         div().ui_text(theme, TextSize::Sm, weight::NORMAL).text_color(c.muted_foreground).child(d)

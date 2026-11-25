@@ -20,6 +20,7 @@ use t3code_shared::thread_projection::ThreadProjection;
 
 use t3code_contracts::{WorktreeSetupPhase as Phase, WorktreeSetupSnapshot, WorktreeSetupStageId as StageId, WorktreeSetupStageStatus as StageStatus};
 
+use crate::components::chat::messages_timeline::TimelineHistory;
 use crate::components::chat::timeline_entries::{EntryKind, MessageId, TimelineInput, Timestamp, ToolStatus, WorktreeSetup};
 use crate::i18n::t;
 use crate::components::sidebar::model::ThreadKey;
@@ -95,6 +96,7 @@ impl LiveThread {
             mapped.projection = state.data.clone();
             stats.map_micros += started.elapsed().as_micros() as u64;
         }
+        mapped.input.history = timeline_history(&state);
         if let Some(data) = &state.data {
             quiet.update(data);
         }
@@ -268,6 +270,7 @@ impl LiveThread {
             self.mapped.input = TimelineInput::default();
         }
         self.mapped.input.worktree_setup = self.state.data.as_deref().and_then(|data| visible_worktree_setup(self.worktree.as_deref(), data, &self.mapped.input));
+        self.mapped.input.history = timeline_history(&self.state);
         self.mapped.projection = self.state.data.clone();
         self.stats.map_micros += started.elapsed().as_micros() as u64;
     }
@@ -283,6 +286,7 @@ impl LiveThread {
             _ => false,
         };
         if same_data {
+            self.mapped.input.history = timeline_history(&self.state);
             self.stats.status += 1;
             cx.emit(LiveThreadEvent::Status);
             cx.notify();
@@ -338,6 +342,19 @@ impl LiveThread {
         let handle = Arc::clone(&self.handle);
         cx.background_executor().spawn(async move { handle.expand_work_group(anchor).await })
     }
+}
+
+/// The timeline's view of the thread's paged history. Messages the runtime writes itself are
+/// shown in the user's language; a server's message stays as it is (`threadErrorText`).
+fn timeline_history(state: &ThreadState) -> TimelineHistory {
+    let history = &state.history;
+    let error = history.error.as_deref().map(|error| match error {
+        "Could not load earlier activity." => t!("Could not load earlier activity."),
+        "Work history changed. Retry loading it." => t!("Work history changed. Retry loading it."),
+        "Could not synchronize the thread." => t!("Could not synchronize the thread."),
+        other => SharedString::from(other.to_owned()),
+    });
+    TimelineHistory { has_more: history.has_more_history, loading: history.loading, error, expanded: history.expanded }
 }
 
 /// The setup card the timeline shows, if any (`resolveVisibleWorktreeSetup` with no recorded

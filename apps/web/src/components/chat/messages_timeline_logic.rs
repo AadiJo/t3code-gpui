@@ -91,6 +91,8 @@ pub enum RowKind {
     McpApp { title: SharedString },
     PendingApproval { entry: WorkLogEntry },
     QueuedMessages { messages: Arc<[QueuedMessage]> },
+    /// "Load earlier turns" above the first loaded row (`TimelineHistoryControl`).
+    HistoryControl(super::messages_timeline::TimelineHistory),
 }
 
 /// A user or assistant message row.
@@ -127,6 +129,7 @@ impl RowKind {
             Self::Event { .. } => px(44.),
             Self::ProposedPlan(_) => px(240.),
             Self::QueuedMessages { messages } => px(messages.len() as f32 * 56. + 16.),
+            Self::HistoryControl(_) => px(36.),
             _ => px(90.),
         }
     }

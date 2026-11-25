@@ -12,7 +12,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use gpui_kit::{prelude::FluentBuilder as _, 
+use gpui_kit::{prelude::FluentBuilder as _, InteractiveElement as _, StatefulInteractiveElement as _,
     AnyElement, App, AppContext as _, ClipboardItem, Context, Entity, IntoElement, ParentElement as _, Pixels,
     Render, SharedString, Styled as _, Task, WeakEntity, Window, div, px,
 };
@@ -27,6 +27,7 @@ use super::{
     virtual_list::{AT_END_THRESHOLD, ListViewport, RowSlot, ScrollMemory, VirtualListState, virtual_list},
 };
 use crate::{
+    i18n::t,
     components::chat_markdown::{MarkdownAction, MarkdownActions, MarkdownUiState},
     markdown_pipeline::{MarkdownFlavor, ParsedBlocks},
 };
@@ -84,7 +85,33 @@ pub enum TimelineAction {
     CancelWorktreeSetup,
     /// Open the setup script's terminal by its id.
     OpenTerminal(SharedString),
+    /// "Load earlier turns": page older history (`threadEnvironment.loadEarlierHistory`).
+    LoadEarlier,
 }
+
+/// A thread's paged history as the timeline shows it (`MessagesTimelineHistoryControls`).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct TimelineHistory {
+    /// The server holds older turns than the loaded window.
+    pub has_more: bool,
+    /// A page is being fetched; the button reads "Loading earlier turns…" and is disabled.
+    pub loading: bool,
+    /// The last page failed, in the user's language when the runtime wrote it (`threadErrorText`).
+    pub error: Option<SharedString>,
+    /// Older pages were merged in, so the thread's rows are not kept once it is left.
+    pub expanded: bool,
+}
+
+impl TimelineHistory {
+    /// Whether the control shows (`shouldShowLoadEarlierControl`).
+    pub fn shows_control(&self) -> bool {
+        self.has_more || self.error.is_some()
+    }
+}
+
+/// The history control's row key; the list never anchors its scroll position on it, so rows
+/// merged in above keep the content below it still (LegendList's `maintainVisibleContentPosition`).
+const HISTORY_ROW_KEY: u64 = u64::MAX;
 
 /// The open find's query and where it stands.
 struct TimelineFind {
@@ -125,6 +152,7 @@ fn same_input(a: &TimelineInput, b: &TimelineInput) -> bool {
         && a.worktree_setup == b.worktree_setup
         && a.queued == b.queued
         && a.pending_question == b.pending_question
+        && a.history == b.history
 }
 
 /// The chat timeline for one thread at a time.
@@ -182,6 +210,7 @@ impl MessagesTimeline {
     pub fn new(cx: &mut Context<Self>) -> Self {
         let list = VirtualListState::new();
         list.set_insets(TIMELINE_TOP_INSET, TIMELINE_BOTTOM_PAD);
+        list.set_unanchored_key(Some(HISTORY_ROW_KEY));
         let weak = cx.weak_entity();
         let scroll_weak = weak.clone();
         list.on_scroll(move |viewport, follow, _window, cx| {
@@ -231,7 +260,11 @@ impl MessagesTimeline {
     pub fn set_thread(&mut self, key: SharedString, input: TimelineInput, cx: &mut Context<Self>) {
         if let Some(previous) = self.thread_key.take() {
             self.scroll_memory.insert(previous.clone(), self.list.memory());
-            self.remember_rows(previous);
+            if self.input.history.expanded {
+                self.forget_markdown();
+            } else {
+                self.remember_rows(previous);
+            }
         }
         self.list.settle();
         self.expansion = TimelineExpansion::default();
@@ -536,6 +569,16 @@ impl MessagesTimeline {
         }
     }
 
+    /// Drops the parsed markdown of the shown thread's messages, so a thread whose older
+    /// history was loaded gives it back when it is left.
+    fn forget_markdown(&mut self) {
+        for entry in self.input.entries.iter() {
+            if let EntryKind::Message(message) = &entry.kind {
+                self.markdown.remove(message.id.as_str());
+            }
+        }
+    }
+
     fn use_rows(&mut self, rows: Arc<Vec<TimelineRow>>) {
         let slots: Vec<RowSlot> = rows.iter().map(|row| RowSlot { key: row.key, estimate: row.kind.estimate() }).collect();
         self.list.set_rows(&slots);
@@ -544,7 +587,11 @@ impl MessagesTimeline {
 
     /// Re-derives rows from the input and current expansions.
     pub(super) fn rebuild_rows(&mut self) {
-        let rows = derive_timeline_rows(&self.input, &self.expansion);
+        let mut rows = derive_timeline_rows(&self.input, &self.expansion);
+        if self.input.history.shows_control() {
+            let kind = RowKind::HistoryControl(self.input.history.clone());
+            rows.insert(0, TimelineRow { id: "history-control".into(), key: HISTORY_ROW_KEY, created_at: None, continues_work_log: false, kind });
+        }
         let slots: Vec<RowSlot> = rows.iter().map(|row| RowSlot { key: row.key, estimate: row.kind.estimate() }).collect();
         self.list.set_rows(&slots);
         // A running turn that shows tool activity releases the new-turn pin.
@@ -774,7 +821,7 @@ impl MessagesTimeline {
             | RowKind::McpApp { .. }
             | RowKind::ViewedImages { .. }
             | RowKind::PendingApproval { .. } => px(8.),
-            RowKind::QueuedMessages { .. } => px(0.),
+            RowKind::QueuedMessages { .. } | RowKind::HistoryControl(_) => px(0.),
             _ => px(16.),
         }
     }
@@ -812,6 +859,7 @@ impl MessagesTimeline {
             RowKind::WorktreeSetup(setup) => self.render_worktree_setup(setup, window, cx),
             RowKind::PendingApproval { entry } => self.render_pending_approval(entry, cx),
             RowKind::QueuedMessages { messages } => self.render_queued(messages, cx),
+            RowKind::HistoryControl(history) => self.render_history_control(history, cx),
         };
         let bottom = if row.continues_work_log { px(0.) } else { Self::row_bottom_padding(row) };
         let standalone_work = matches!(row.kind, RowKind::Work { .. } | RowKind::WorkToggle { .. } | RowKind::WorkLive { .. } | RowKind::Thinking { .. })
@@ -830,6 +878,44 @@ impl MessagesTimeline {
                     .pb(bottom)
                     .child(content),
             )
+            .into_any_element()
+    }
+
+    /// "Load earlier turns" between two rules, and the last page's error under it
+    /// (`TimelineHistoryControl`).
+    fn render_history_control(&self, history: &TimelineHistory, cx: &mut Context<Self>) -> AnyElement {
+        use crate::ActiveAppTheme as _;
+        let palette = &self.colors.theme;
+        let (muted, text, rule) = (palette.muted_foreground, palette.text, gpui_kit::Hsla { a: palette.border.a * 0.7, ..palette.border });
+        let theme = cx.app_theme();
+        let (size, line) = (theme.rem(0.75), theme.rem(1.));
+        let line_rule = || div().h(px(1.)).flex_1().bg(rule);
+        let button = history.has_more.then(|| {
+            let label = if history.loading { t!("Loading earlier turns…") } else { t!("Load earlier turns") };
+            div()
+                .id("load-earlier-turns")
+                .flex()
+                .w_full()
+                .items_center()
+                .gap(theme.sp(3.))
+                .py(theme.sp(1.5))
+                .text_color(muted)
+                .hover(|s| s.text_color(text))
+                .when(!history.loading, |d| d.cursor_pointer().on_click(cx.listener(|_, _, _, cx| cx.emit(TimelineAction::LoadEarlier))))
+                .child(line_rule())
+                .child(div().flex_shrink_0().child(label))
+                .child(line_rule())
+        });
+        let error = history.error.clone().map(|error| div().w_full().text_center().text_color(muted).child(error));
+        div()
+            .flex()
+            .flex_col()
+            .gap(theme.sp(1.5))
+            .pb(theme.sp(2.))
+            .text_size(size)
+            .line_height(line)
+            .children(button)
+            .children(error)
             .into_any_element()
     }
 

@@ -129,6 +129,8 @@ struct Inner {
     /// The time this layout is drawn for.
     now: Instant,
     on_scroll: Option<Box<dyn FnMut(&ListViewport, TimelineFollow, &mut Window, &mut App)>>,
+    /// A header row the scroll position never anchors to (see [`VirtualListState::set_unanchored_key`]).
+    unanchored_key: Option<RowKey>,
 }
 
 impl VirtualListState {
@@ -150,6 +152,7 @@ impl VirtualListState {
             scrollbar_drag: None,
             scrollbar_hovered: false,
             on_scroll: None,
+            unanchored_key: None,
             smooth_follow: false,
             follow_animation: None,
             last_end: None,
@@ -161,6 +164,13 @@ impl VirtualListState {
     /// and the scroll anchor stays on the same row.
     pub fn set_rows(&self, rows: &[RowSlot]) {
         let mut inner = self.0.borrow_mut();
+        // A position on the unanchored row moves to the row under it first.
+        if let Position::Row { index, offset } = inner.position
+            && inner.keys.get(index).is_some_and(|key| Some(*key) == inner.unanchored_key)
+            && index + 1 < inner.keys.len()
+        {
+            inner.position = Position::Row { index: index + 1, offset: offset - inner.heights[index] };
+        }
         let anchor_key = match inner.position {
             Position::Row { index, offset } => inner.keys.get(index).map(|k| (*k, offset, false)),
             Position::Pinned { index, offset } => inner.keys.get(index).map(|k| (*k, offset, true)),
@@ -183,6 +193,12 @@ impl VirtualListState {
                 None => Position::Row { index: 0, offset: px(0.) },
             };
         }
+    }
+
+    /// Names a header row that the scroll position never anchors to, so rows inserted under
+    /// it keep the content on screen where it is.
+    pub fn set_unanchored_key(&self, key: Option<RowKey>) {
+        self.0.borrow_mut().unanchored_key = key;
     }
 
     /// Space reserved above the first row and below the last (header fade, composer).

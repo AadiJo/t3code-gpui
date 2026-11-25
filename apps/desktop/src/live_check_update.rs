@@ -24,11 +24,11 @@ use t3code_web::version_skew;
 use super::live_check_families::pair_if_needed;
 use super::*;
 
-fn control() -> anyhow::Result<PathBuf> {
+pub(super) fn control() -> anyhow::Result<PathBuf> {
     Ok(PathBuf::from(std::env::var("T3_STANDIN_CONTROL").context("T3_STANDIN_CONTROL")?))
 }
 
-fn set_control(name: &str, value: Option<&str>) -> anyhow::Result<()> {
+pub(super) fn set_control(name: &str, value: Option<&str>) -> anyhow::Result<()> {
     let path = control()?.join(name);
     match value {
         Some(value) => std::fs::write(path, value)?,
@@ -38,19 +38,19 @@ fn set_control(name: &str, value: Option<&str>) -> anyhow::Result<()> {
 }
 
 /// Closes the stand-in's sockets so the client reconnects and reads the descriptors again.
-fn kick() -> anyhow::Result<()> {
+pub(super) fn kick() -> anyhow::Result<()> {
     let url = std::env::var("T3_STANDIN_URL").context("T3_STANDIN_URL")?;
     let status = std::process::Command::new("curl").args(["-sf", &format!("{url}/__standin/kick")]).output()?;
     anyhow::ensure!(status.status.success(), "kick failed");
     Ok(())
 }
 
-fn element_visible(check: &mut Check, id: &str) -> bool {
+pub(super) fn element_visible(check: &mut Check, id: &str) -> bool {
     let element = ElementId::from(SharedString::from(id.to_owned()));
     check.cx.update_window(check.window, |_, w, _| w.try_find(element).is_some_and(|e| e.visible())).unwrap_or(false)
 }
 
-fn click(check: &mut Check, id: &str) -> anyhow::Result<()> {
+pub(super) fn click(check: &mut Check, id: &str) -> anyhow::Result<()> {
     let element = ElementId::from(SharedString::from(id.to_owned()));
     let at = check
         .cx
@@ -61,11 +61,11 @@ fn click(check: &mut Check, id: &str) -> anyhow::Result<()> {
     super::click_at(check, at)
 }
 
-fn server_version(check: &mut Check, id: &t3code_contracts::EnvironmentId) -> Option<String> {
+pub(super) fn server_version(check: &mut Check, id: &t3code_contracts::EnvironmentId) -> Option<String> {
     check.cx.update(|cx| ServerSettingsStore::config(cx, id).map(|c| c.environment.server_version.clone()))
 }
 
-fn update_state(check: &mut Check, id: &t3code_contracts::EnvironmentId) -> ServerUpdateState {
+pub(super) fn update_state(check: &mut Check, id: &t3code_contracts::EnvironmentId) -> ServerUpdateState {
     check.cx.update(|cx| ServerUpdateStore::state(id, cx))
 }
 
@@ -152,6 +152,8 @@ pub(super) fn run_server_update(check: &mut Check) -> anyhow::Result<()> {
     check.pump(move |c| server_version(c, &env).as_deref() == Some(behind) && c.connected(), Duration::from_secs(60), "behind again")?;
     let env_ready = key.clone();
     check.pump(move |c| element_visible(c, &format!("env-update-{env_ready}")), Duration::from_secs(15), "Update is back")?;
+    // The icon returns with the descriptor; its session's maintain scope can trail it by a moment.
+    check.wait(Duration::from_millis(800));
     click(check, &icon)?;
     let env = id.clone();
     check.pump(move |c| matches!(update_state(c, &env), ServerUpdateState::Failed { .. }), Duration::from_secs(20), "the update fails")?;

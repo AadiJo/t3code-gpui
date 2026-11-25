@@ -434,6 +434,7 @@ pub fn fixture_thread() -> TimelineInput {
         }),
         item_sources: Default::default(),
         superseded_attempts: Default::default(),
+        history: Default::default(),
     }
 }
 

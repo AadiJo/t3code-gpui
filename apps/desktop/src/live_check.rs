@@ -57,6 +57,10 @@
 //            transfer on the parent), a fork with the lineage on both ends, and `/side` refused
 //            inside a side chat; each read back from the server
 //   sidechats-ref  shots of the fork capture's states on its server (`T3_REF_IDS`: ids.json)
+//   update-ref  the server Update states shot for the fork capture behind the update stand-in
+//            (`live_check_update_ref.rs`)
+//   earlier-turns  "Load earlier turns" pages the long thread on a fresh profile with the row on
+//            screen held, and leaving gives the history back (`live_check_history.rs`)
 //   setup    the worktree setup row against the server's setup stream: running, cancelled,
 //            finished (`live_check_setup.rs`)
 //   draft-banner  a draft launch the server refuses returns to the draft with the banner and
@@ -96,12 +100,14 @@ mod live_check_commands;
 mod live_check_composer_actions;
 mod live_check_families;
 mod live_check_heap;
+mod live_check_history;
 mod live_check_linked;
 mod live_check_memory;
 mod live_check_palette;
 mod live_check_setup;
 mod live_check_settings;
 mod live_check_update;
+mod live_check_update_ref;
 mod live_check_usage;
 #[allow(dead_code)]
 #[path = "notifications/mod.rs"]
@@ -604,6 +610,8 @@ fn main() -> anyhow::Result<()> {
         "composer-actions" => live_check_composer_actions::run_composer_actions(&mut check),
         "stash" => live_check_composer_actions::run_stash(&mut check),
         "env-banner" => live_check_composer_actions::run_env_banner(&mut check),
+        "earlier-turns" => live_check_history::run_earlier_turns(&mut check),
+        "update-ref" => live_check_update_ref::run_update_ref(&mut check),
         other => Err(anyhow::anyhow!("unknown phase {other}")),
     };
     check.finish(&phase, result)

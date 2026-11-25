@@ -1096,6 +1096,7 @@ pub fn timeline_input(mapper: &mut TimelineMapper, projection: &ThreadProjection
                 .collect(),
         ),
         item_sources: Arc::new(item_sources),
+        history: Default::default(),
     }
 }
 
