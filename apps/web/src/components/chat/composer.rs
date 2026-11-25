@@ -355,6 +355,11 @@ impl ChatComposer {
             picker.update(cx, |p, cx| p.update_state(catalog, selection, mode, cx));
         }
         self.sync_editor(cx);
+        // An open menu re-reads its source: provider commands or a model change may have
+        // arrived after it opened.
+        if self.menu.is_some() && !switched {
+            self.refresh_menu(cx);
+        }
         cx.notify();
     }
 

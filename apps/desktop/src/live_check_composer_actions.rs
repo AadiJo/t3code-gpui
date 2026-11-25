@@ -56,6 +56,20 @@ pub(super) fn run_composer_actions(check: &mut Check) -> anyhow::Result<()> {
     let key = thread_with_turn(check, &state, "Composer actions")?;
     check.go(&key);
     check.pump(|c| c.shown_input().entries.len() >= 2, Duration::from_secs(20), "thread shown")?;
+    // An open `/` menu follows a provider change without retyping: Replay has no /compact.
+    super::pick_instance(check, "devReplay");
+    check.focus_composer();
+    check.type_text("/");
+    let before = slash_ids(check);
+    super::pick_instance(check, "claudeAgent");
+    let after = slash_ids(check);
+    check.check(
+        "the open / menu refreshes when the provider's commands arrive",
+        !before.iter().any(|id| id.ends_with(":compact")) && after.iter().any(|id| id.ends_with(":compact")),
+        format!("{before:?} -> {after:?}"),
+    );
+    check.press("escape");
+    set_prompt(check, "");
     // The Claude instance's models have effort levels; Replay's have none.
     let picked = super::pick_instance(check, "claudeAgent");
     check.check("the composer can pick the Claude instance", picked, picked);
@@ -404,4 +418,9 @@ pub(super) fn run_env_banner(check: &mut Check) -> anyhow::Result<()> {
     check.pump(|c| env_banner(c).is_none(), Duration::from_secs(10), "banner gone")?;
     check.check("switched back on, the banner leaves once connected", true, "");
     Ok(())
+}
+
+fn slash_ids(check: &mut Check) -> Vec<String> {
+    let composer = composer_of(check);
+    check.cx.update(|cx| composer.read(cx).menu().map(|m| m.items.iter().map(|i| i.id.to_string()).collect()).unwrap_or_default())
 }
