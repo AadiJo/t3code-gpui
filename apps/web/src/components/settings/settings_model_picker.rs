@@ -1,7 +1,9 @@
 //! `ProviderModelPicker` as settings rows use it (`ProjectDefaultsSettings.tsx`
 //! with `SETTINGS_PICKER_TRIGGER_CLASSNAME`): an outlined button with the
 //! provider's mark and the model name that opens the model picker below it,
-//! without the composer's effort column and footer.
+//! without the composer's effort column and footer. With [`SettingsModelPicker::traits`] the
+//! model's options sit beside it as `TraitsPicker` draws them in settings: a chip naming the
+//! current values whose menu lists each option.
 
 use std::rc::Rc;
 use std::sync::Arc;
@@ -42,6 +44,7 @@ pub struct SettingsModelPicker {
     selection: Option<SavedSelection>,
     label: Option<SharedString>,
     disabled: bool,
+    traits: bool,
     on_pick: Rc<dyn Fn(SavedSelection, &mut App)>,
 }
 
@@ -53,7 +56,7 @@ impl SettingsModelPicker {
         selection: Option<SavedSelection>,
         on_pick: impl Fn(SavedSelection, &mut App) + 'static,
     ) -> Self {
-        Self { id: id.into(), catalog, selection, label: None, disabled: false, on_pick: Rc::new(on_pick) }
+        Self { id: id.into(), catalog, selection, label: None, disabled: false, traits: false, on_pick: Rc::new(on_pick) }
     }
 
     /// `triggerLabel`: text shown instead of the model (no mark).
@@ -66,6 +69,177 @@ impl SettingsModelPicker {
         self.disabled = disabled;
         self
     }
+
+    /// Shows the model's options chip beside the trigger, as settings rows with a model do.
+    pub fn traits(mut self, traits: bool) -> Self {
+        self.traits = traits;
+        self
+    }
+}
+
+/// `SETTINGS_PICKER_TRIGGER_CLASSNAME` on a `ComposerControl`: the outlined settings trigger.
+fn settings_trigger(id: SharedString, cx: &App) -> gpui_kit::Stateful<gpui_kit::Div> {
+    let theme = cx.app_theme();
+    let c = &theme.colors;
+    let sp = |n: f32| theme.sp(n);
+    div()
+        .id(id)
+        .flex()
+        .flex_none()
+        .items_center()
+        .gap(sp(1.5))
+        .h(sp(6.5) + px(2.))
+        .px(sp(2.))
+        .rounded(theme.radii.lg)
+        .border_1()
+        .border_color(c.input)
+        .bg(theme.derived.input_fill)
+        .shadow(theme.shadows.xs5.clone())
+        .control_highlight(theme)
+        .ui_text(theme, TextSize::Sm, weight::NORMAL)
+        .text_color(c.foreground())
+        .whitespace_nowrap()
+}
+
+/// The open traits menu for one chip, kept with `window.use_keyed_state`.
+#[derive(Default)]
+struct TraitsSlot {
+    open: bool,
+    closed_at: Option<Point<Pixels>>,
+}
+
+/// `TraitsPicker` with `allowPromptInjectedEffort={false}`: the chip and its menu. Nothing when
+/// the model has no options.
+fn traits_chip(id: &SharedString, catalog: &ModelCatalog, saved: &SavedSelection, on_pick: Rc<dyn Fn(SavedSelection, &mut App)>, window: &mut Window, cx: &mut App) -> Option<gpui_kit::AnyElement> {
+    let selection = crate::provider_models_live::from_wire(saved);
+    let traits = selection.traits(catalog).filter(|t| t.any())?;
+    let slot = window.use_keyed_state(ElementId::from(SharedString::from(format!("{id}-traits"))), cx, |_, _| TraitsSlot::default());
+    let theme = cx.app_theme();
+    let c = &theme.colors;
+    let open = slot.read(cx).open;
+    let label = traits.trigger_label();
+    let toggle = slot.clone();
+    let trigger = settings_trigger(SharedString::from(format!("traits-trigger-{id}")), cx)
+        .min_w_0()
+        .cursor_pointer()
+        .hover(|d| d.bg(theme.colors.accent.opacity(0.5)))
+        .child(div().child(label))
+        .on_click(move |event, _, cx| {
+            let press = crate::components::ui::popover::press_position(event);
+            toggle.update(cx, |s, cx| {
+                if s.closed_at == Some(press) {
+                    s.closed_at = None;
+                } else {
+                    s.open = !s.open;
+                }
+                cx.notify();
+            });
+        })
+        .test_support();
+    // Writes one option, as `onModelOptionsChange` with `createModelSelection` does.
+    let write = {
+        let (slot, traits, saved) = (slot.clone(), traits.clone(), saved.clone());
+        Rc::new(move |id: SharedString, value: crate::model_selection::OptionValue, cx: &mut App| {
+            let mut next = selection.clone();
+            next.options = traits.with_value(&id, value);
+            let mut wire = crate::provider_models_live::to_wire(&next, &ModelCatalog::default(), None);
+            wire.instance_id = saved.instance_id.clone();
+            on_pick(wire, cx);
+            slot.update(cx, |s, cx| {
+                s.open = false;
+                cx.notify();
+            });
+        })
+    };
+    let menu = open.then(|| {
+        let mut sections: Vec<gpui_kit::AnyElement> = Vec::new();
+        let header = |text: SharedString| {
+            div().px(theme.sp(2.)).pt(theme.sp(1.5)).pb(theme.sp(1.)).ui_text(theme, TextSize::Xs, weight::MEDIUM).text_color(c.muted_foreground).child(text)
+        };
+        let separator = || div().mx(theme.sp(2.)).my(theme.sp(1.)).h(px(1.)).bg(c.border);
+        let item = |key: String, checked: bool, content: gpui_kit::AnyElement, on: Rc<dyn Fn(&mut App)>| {
+            div()
+                .id(SharedString::from(key))
+                .flex()
+                .items_center()
+                .min_h(theme.sp(7.))
+                .px(theme.sp(2.))
+                .py(theme.sp(1.))
+                .rounded(theme.radii.sm)
+                .cursor_pointer()
+                .ui_text(theme, TextSize::Sm, weight::NORMAL)
+                .text_color(c.foreground())
+                .when(checked, |d| d.bg(c.foreground().opacity(0.08)))
+                .hover(|d| d.bg(theme.colors.accent).text_color(theme.colors.accent_foreground))
+                .child(content)
+                .on_click(move |_, _, cx| on(cx))
+                .test_support()
+                .into_any_element()
+        };
+        let selects = traits.descriptors.iter().filter_map(|d| match d {
+            crate::model_selection::OptionDescriptor::Select(s) => Some(s),
+            _ => None,
+        });
+        for (n, d) in selects.enumerate() {
+            if n > 0 {
+                sections.push(separator().into_any_element());
+            }
+            sections.push(header(d.label.clone()).into_any_element());
+            let current = d.value().cloned();
+            for (i, option) in d.selectable().into_iter().enumerate() {
+                let content = div()
+                    .flex()
+                    .flex_col()
+                    .w_full()
+                    .min_w_0()
+                    .child(
+                        div().flex().min_w_0().items_center().gap(theme.sp(1.)).child(div().min_w_0().truncate().child(option.label.clone())).when(option.is_default, |d| {
+                            d.child(
+                                crate::components::ui::badge::Badge::new(crate::i18n::t!("Default", context = "the default option in a list"))
+                                    .variant(crate::components::ui::badge::BadgeVariant::Outline)
+                                    .size(crate::components::ui::badge::BadgeSize::Sm),
+                            )
+                        }),
+                    )
+                    .children(option.description.clone().map(|text| div().max_w(theme.rem(14.)).ui_text(theme, TextSize::Xs, weight::NORMAL).text_color(c.muted_foreground.opacity(0.8)).child(text)))
+                    .into_any_element();
+                let (write, id, value) = (write.clone(), d.id.clone(), option.id.clone());
+                sections.push(item(format!("traits-{}-{i}", d.id), current.as_ref() == Some(&option.id), content, Rc::new(move |cx| write(id.clone(), crate::model_selection::OptionValue::Text(value.clone()), cx))));
+            }
+        }
+        let booleans = traits.descriptors.iter().filter_map(|d| match d {
+            crate::model_selection::OptionDescriptor::Boolean(b) => Some(b),
+            _ => None,
+        });
+        let any_select = traits.descriptors.iter().any(|d| matches!(d, crate::model_selection::OptionDescriptor::Select(_)));
+        for (n, b) in booleans.enumerate() {
+            if n > 0 || any_select {
+                sections.push(separator().into_any_element());
+            }
+            sections.push(div().px(theme.sp(2.)).py(theme.sp(1.5)).ui_text(theme, TextSize::Xs, weight::MEDIUM).text_color(c.muted_foreground).child(b.label.clone()).into_any_element());
+            for on in [true, false] {
+                let label = if on { crate::i18n::t!("On", context = "toggle state") } else { crate::i18n::t!("Off", context = "toggle state") };
+                let (write, id) = (write.clone(), b.id.clone());
+                sections.push(item(format!("traits-{}-{}", b.id, if on { "on" } else { "off" }), (b.current == Some(true)) == on, div().child(label).into_any_element(), Rc::new(move |cx| write(id.clone(), crate::model_selection::OptionValue::Bool(on), cx))));
+            }
+        }
+        let close = slot.clone();
+        crate::components::ui::popover::below(
+            crate::components::ui::popover::glass_surface(theme)
+                .id(SharedString::from(format!("traits-menu-{id}")))
+                .min_w(theme.rem(10.))
+                .p(theme.sp(1.))
+                .on_mouse_down_out(move |event, _, cx| {
+                    close.update(cx, |s, cx| {
+                        s.open = false;
+                        s.closed_at = Some(event.position);
+                        cx.notify();
+                    })
+                })
+                .children(sections),
+        )
+    });
+    Some(div().flex().flex_col().child(trigger).children(menu).into_any_element())
 }
 
 /// `pickModelSelection`: re-picking the saved model keeps its options.
@@ -136,24 +310,8 @@ impl RenderOnce for SettingsModelPicker {
         let text = self.label.clone().or(model_name).unwrap_or_default();
         let open = slot.read(cx).open.as_ref().map(|(picker, _)| picker.clone());
         let disabled = self.disabled;
-        let trigger = div()
-            .id(SharedString::from(format!("model-trigger-{}", self.id)))
+        let trigger = settings_trigger(SharedString::from(format!("model-trigger-{}", self.id)), cx)
             .test_support()
-            .flex()
-            .flex_none()
-            .items_center()
-            .gap(sp(1.5))
-            .h(sp(6.5) + px(2.))
-            .px(sp(2.))
-            .rounded(theme.radii.lg)
-            .border_1()
-            .border_color(c.input)
-            .bg(theme.derived.input_fill)
-            .shadow(theme.shadows.xs5.clone())
-            .control_highlight(theme)
-            .ui_text(theme, TextSize::Sm, weight::NORMAL)
-            .text_color(c.foreground())
-            .whitespace_nowrap()
             .children(mark)
             .child(div().min_w_0().truncate().child(text))
             .when(disabled, |d| d.opacity(crate::components::ui::DISABLED_OPACITY))
@@ -221,7 +379,11 @@ impl RenderOnce for SettingsModelPicker {
                 })
             });
         let close_slot = slot.clone();
-        div().id(self.id).flex().flex_col().child(trigger).when_some(open, |d, picker| {
+        let chip = self
+            .traits
+            .then(|| self.selection.as_ref().and_then(|saved| traits_chip(&self.id, &self.catalog, saved, self.on_pick.clone(), window, cx)))
+            .flatten();
+        let picker = div().id(self.id.clone()).flex().flex_col().child(trigger).when_some(open, |d, picker| {
             d.child(crate::components::ui::popover::below(
                 div()
                     .on_mouse_down_out(move |event, _, cx| {
@@ -234,6 +396,11 @@ impl RenderOnce for SettingsModelPicker {
                     .child(picker.clone())
                     .child(input_handler_canvas(picker)),
             ))
-        })
+        });
+        // `flex min-w-0 flex-wrap items-center justify-end gap-1.5` around the picker and its chip.
+        match chip {
+            Some(chip) => div().flex().min_w_0().flex_wrap().items_center().justify_end().gap(cx.app_theme().sp(1.5)).child(picker).child(chip).into_any_element(),
+            None => picker.into_any_element(),
+        }
     }
 }

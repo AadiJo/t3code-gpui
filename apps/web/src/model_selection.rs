@@ -335,6 +335,63 @@ impl ModelTraits {
         selections_from(&next)
     }
 
+    /// The traits chip's label (`buildTraitsTriggerDisplay` without a typed Ultrathink): every
+    /// option's current label joined with " · ", the speed appended to the reasoning level, and
+    /// the speed tier alone when nothing else has a label.
+    pub fn trigger_label(&self) -> SharedString {
+        let mut labels: Vec<SharedString> = Vec::new();
+        let mut reasoning_at = None;
+        let mut fallback = None;
+        let speed = self.speed_label();
+        for d in &self.descriptors {
+            match d {
+                OptionDescriptor::Boolean(b) if b.id.as_ref() == "fastMode" => {
+                    fallback = Some(if b.current == Some(true) { "Fast".into() } else { crate::i18n::t!("Normal", context = "model speed tier") });
+                    continue;
+                }
+                OptionDescriptor::Boolean(b) if b.id.as_ref() == "ultracode" => {
+                    if b.current == Some(true) {
+                        labels.push(b.label.clone());
+                    }
+                    continue;
+                }
+                OptionDescriptor::Select(s) if s.id.as_ref() == "serviceTier" => {
+                    let current = s.value().cloned();
+                    let tier = |label: &str| s.options.iter().find(|o| o.label.as_ref() == label);
+                    let named = tier("Fast").or(tier("Ultrafast")).is_some();
+                    if (named && current.as_deref() == Some("default")) || [tier("Fast"), tier("Ultrafast")].into_iter().flatten().any(|o| Some(&o.id) == current.as_ref()) {
+                        fallback = Some(s.value_label().unwrap_or_else(|| crate::i18n::t!("Normal", context = "model speed tier")));
+                        continue;
+                    }
+                }
+                _ => {}
+            }
+            let label = match d {
+                OptionDescriptor::Boolean(b) if b.current == Some(true) => Some(crate::i18n::t!("{label} On", label = b.label.clone())),
+                OptionDescriptor::Boolean(b) => Some(crate::i18n::t!("{label} Off", label = b.label.clone())),
+                OptionDescriptor::Select(s) => s.value_label().or_else(|| (s.id.as_ref() == "thinking").then(|| s.label.clone())),
+            };
+            if let Some(label) = label.filter(|l| !l.is_empty()) {
+                if reasoning_at.is_none() && matches!(d, OptionDescriptor::Select(_)) && d.is_reasoning() {
+                    reasoning_at = Some(labels.len());
+                }
+                labels.push(label);
+            }
+        }
+        if labels.is_empty() {
+            if let Some(fallback) = fallback {
+                return fallback;
+            }
+        }
+        if let Some(speed) = speed {
+            match reasoning_at {
+                Some(at) => labels[at] = format!("{} {speed}", labels[at]).into(),
+                None => labels.push(speed.into()),
+            }
+        }
+        labels.iter().map(|l| l.as_ref()).collect::<Vec<_>>().join(" · ").into()
+    }
+
     /// `"Fast"` or `"Ultrafast"` when a speed option is on (`buildTraitsTriggerDisplay`'s
     /// `speedLabel`).
     pub fn speed_label(&self) -> Option<&'static str> {

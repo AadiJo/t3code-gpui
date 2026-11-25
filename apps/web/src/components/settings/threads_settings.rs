@@ -108,7 +108,8 @@ pub fn model_picker_row(
     let mut picker = super::settings_model_picker::SettingsModelPicker::new(id, catalog, shown, move |next, cx| {
         save_patch(&save_model, id, patch(Some(next)), cx);
     })
-    .disabled(lock.is_some());
+    .disabled(lock.is_some())
+    .traits(lock.is_none() && (current.is_some() || none_label.is_none()));
     if current.is_none() {
         if let Some(label) = none_label {
             picker = picker.label(label);

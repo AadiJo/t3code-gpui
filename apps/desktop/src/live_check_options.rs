@@ -5,11 +5,15 @@
 //! window" row under them, the row opens its side menu by click and by ArrowRight, a choice there
 //! is written, ArrowLeft and Escape close the side menu before the picker, the footer's Standard /
 //! Fast segments flip Fast mode, the trigger names the context window, and a sent turn carries
-//! every chosen option (read back from the server's thread). Run `seed` first.
+//! every chosen option (read back from the server's thread). In Settings → Threads the default
+//! model's traits chip names its values, and a pick in its menu reaches the server's settings.
+//! Run `seed` first.
 
 use std::time::Duration;
 
+use t3code_web::hooks::use_settings::ServerSettingsStore;
 use t3code_web::model_selection::{ModelSelection, OptionSelection, OptionValue};
+use t3code_web::router::SettingsPanel;
 
 use super::*;
 
@@ -195,5 +199,50 @@ pub(super) fn run_options(check: &mut Check) -> anyhow::Result<()> {
         "haiku": selection.options.iter().map(|o| (o.id.to_string(), format!("{:?}", o.value))).collect::<Vec<_>>(),
     });
     std::fs::write(check.out.join("options-record.json"), serde_json::to_string_pretty(&record)?)?;
+    settings_chip(check)
+}
+
+fn saved_default(check: &mut Check, id: &t3code_contracts::EnvironmentId) -> Option<ModelSelection> {
+    check.cx.update(|cx| ServerSettingsStore::config(cx, id).and_then(|c| c.settings.default_model_selection.as_ref().map(t3code_web::provider_models_live::from_wire)))
+}
+
+/// Settings → Threads: the default model's traits chip (`TraitsPicker` beside the settings picker).
+fn settings_chip(check: &mut Check) -> anyhow::Result<()> {
+    let id = check.cx.update(|cx| ConnectionRuntime::state(cx).read(cx).environments[0].entry.environment_id.to_string());
+    let environment_id = t3code_contracts::EnvironmentId::new(id.as_str());
+    let router = check.read(|root, _| root.router().clone());
+    let route = Route::Settings { panel: SettingsPanel::Threads, query: SharedString::default() };
+    check.cx.update(|cx| router.update(cx, |router, cx| router.navigate(route, cx)));
+    check.frame();
+    check.wait(Duration::from_millis(500));
+    click(check, "model-trigger-defaultModelSelection")?;
+    check.type_text("Sonnet 4.6");
+    check.frame();
+    click(check, "picker-row-0")?;
+    let env = environment_id.clone();
+    check.pump(move |c| saved_default(c, &env).is_some_and(|s| s.model.as_ref() == "claude-sonnet-4-6"), Duration::from_secs(15), "the default model reaches the server")?;
+    check.wait(Duration::from_millis(300));
+    let chip = element_center(check, "traits-trigger-defaultModelSelection");
+    check.check("a traits chip sits beside the default model picker", chip.is_some(), format!("{chip:?}"));
+    check.shot("o5-settings-chip.png")?;
+    click(check, "traits-trigger-defaultModelSelection")?;
+    let items = element_center(check, "traits-contextWindow-1").is_some() && element_center(check, "traits-effort-0").is_some();
+    check.check("its menu lists the effort levels and the context windows", items, items);
+    check.shot("o6-settings-chip-menu.png")?;
+    click(check, "traits-contextWindow-1")?;
+    let env = environment_id.clone();
+    check.pump(
+        move |c| saved_default(c, &env).is_some_and(|s| s.options.iter().any(|o| o.id.as_ref() == "contextWindow" && o.value == OptionValue::Text("1m".into()))),
+        Duration::from_secs(15),
+        "the chip's pick reaches the server's settings",
+    )?;
+    let saved = saved_default(check, &environment_id);
+    check.check("the server saves the default model with contextWindow=1m", true, format!("{:?}", saved.map(|s| s.options)));
+    let closed = element_center(check, "traits-contextWindow-1").is_none();
+    check.check("a pick closes the chip's menu", closed, "");
+    check.shot("o7-settings-chip-picked.png")?;
+    click(check, "defaultModelSelection-reset")?;
+    let env = environment_id.clone();
+    check.pump(move |c| saved_default(c, &env).is_none_or(|s| s.model.as_ref() != "claude-sonnet-4-6"), Duration::from_secs(15), "reset restores the default model")?;
     Ok(())
 }
