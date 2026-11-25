@@ -182,7 +182,7 @@ impl PullRequestListSource for LivePullRequests {
         unary(self.link.call::<PullRequestsFilterOptions>(input))
     }
     fn run_action(&self, input: PullRequestActionInput) -> RpcFuture<Option<PullRequestSummary>> {
-        unary(self.link.call::<PullRequestsRunAction>(input))
+        unary(self.link.call_routed::<PullRequestsRunAction>(input))
     }
     fn subscribe_refreshes(&self) -> RpcStream<NonNegativeInt> {
         stream_of(self.link.stream::<PullRequestsSubscribeRefreshes>(Default::default()))
@@ -192,25 +192,25 @@ impl PullRequestListSource for LivePullRequests {
 
 impl PullRequestDetailSource for LivePullRequests {
     fn detail(&self, input: PullRequestRef) -> RpcFuture<PullRequestDetail> {
-        unary(self.link.call::<PullRequestsDetail>(input))
+        unary(self.link.call_routed::<PullRequestsDetail>(input))
     }
     fn checks(&self, input: PullRequestRef) -> RpcFuture<Option<PullRequestChecks>> {
-        unary(self.link.call::<PullRequestsChecks>(input))
+        unary(self.link.call_routed::<PullRequestsChecks>(input))
     }
     fn activity(&self, input: PullRequestRef) -> RpcFuture<PullRequestActivity> {
-        unary(self.link.call::<PullRequestsActivity>(input))
+        unary(self.link.call_routed::<PullRequestsActivity>(input))
     }
     fn thread_comments(&self, input: PullRequestThreadCommentsInput) -> RpcFuture<PullRequestThreadCommentsResult> {
-        unary(self.link.call::<PullRequestsThreadComments>(input))
+        unary(self.link.call_routed::<PullRequestsThreadComments>(input))
     }
     fn stack(&self, input: PullRequestRef) -> RpcFuture<Option<PullRequestStack>> {
-        unary(self.link.call::<PullRequestsStack>(input))
+        unary(self.link.call_routed::<PullRequestsStack>(input))
     }
     fn linked_threads(&self, input: PullRequestRef) -> RpcFuture<PullRequestLinkedThreadsResult> {
         unary(self.link.call::<PullRequestsLinkedThreads>(input))
     }
     fn change_breakdown(&self, input: PullRequestRef) -> RpcFuture<PullRequestChangeBreakdown> {
-        unary(self.link.call::<PullRequestsChangeBreakdown>(input))
+        unary(self.link.call_routed::<PullRequestsChangeBreakdown>(input))
     }
     fn diff(&self, input: PullRequestDiffInput) -> RpcFuture<PullRequestDiffResult> {
         let link = self.link.clone();
@@ -225,13 +225,13 @@ impl PullRequestDetailSource for LivePullRequests {
         }))
     }
     fn diff_file_contents(&self, input: PullRequestDiffFileContentsInput) -> RpcFuture<PullRequestDiffFileContentsResult> {
-        unary(self.link.call::<PullRequestsDiffFileContents>(input))
+        unary(self.link.call_routed::<PullRequestsDiffFileContents>(input))
     }
     fn files_viewed(&self, input: PullRequestRef) -> RpcFuture<PullRequestFilesViewedResult> {
-        unary(self.link.call::<PullRequestsFilesViewed>(input))
+        unary(self.link.call_routed::<PullRequestsFilesViewed>(input))
     }
     fn set_files_viewed(&self, input: PullRequestSetFilesViewedInput) -> RpcFuture<()> {
-        unary(self.link.call::<PullRequestsSetFilesViewed>(input))
+        unary(self.link.call_routed::<PullRequestsSetFilesViewed>(input))
     }
     fn review_guide(&self, input: PullRequestRef) -> RpcFuture<PullRequestReviewGuideResult> {
         unary(self.link.call::<PullRequestsReviewGuide>(input))
@@ -240,40 +240,40 @@ impl PullRequestDetailSource for LivePullRequests {
         unary(self.link.call::<PullRequestsGenerateReviewGuide>(input))
     }
     fn run_action(&self, input: PullRequestActionInput) -> RpcFuture<Option<PullRequestSummary>> {
-        unary(self.link.call::<PullRequestsRunAction>(input))
+        unary(self.link.call_routed::<PullRequestsRunAction>(input))
     }
     fn update(&self, input: PullRequestUpdateInput) -> RpcFuture<()> {
-        unary(self.link.call::<PullRequestsUpdate>(input))
+        unary(self.link.call_routed::<PullRequestsUpdate>(input))
     }
     fn comment(&self, input: PullRequestCommentInput) -> RpcFuture<()> {
-        unary(self.link.call::<PullRequestsComment>(input))
+        unary(self.link.call_routed::<PullRequestsComment>(input))
     }
     fn update_comment(&self, input: PullRequestCommentUpdateInput) -> RpcFuture<()> {
-        unary(self.link.call::<PullRequestsUpdateComment>(input))
+        unary(self.link.call_routed::<PullRequestsUpdateComment>(input))
     }
     fn submit_review(&self, input: PullRequestSubmitReviewInput) -> RpcFuture<()> {
-        unary(self.link.call::<PullRequestsSubmitReview>(input))
+        unary(self.link.call_routed::<PullRequestsSubmitReview>(input))
     }
     fn reply_to_thread(&self, input: PullRequestThreadReplyInput) -> RpcFuture<()> {
-        unary(self.link.call::<PullRequestsReplyToThread>(input))
+        unary(self.link.call_routed::<PullRequestsReplyToThread>(input))
     }
     fn set_thread_resolution(&self, input: PullRequestThreadResolutionInput) -> RpcFuture<()> {
-        unary(self.link.call::<PullRequestsSetThreadResolution>(input))
+        unary(self.link.call_routed::<PullRequestsSetThreadResolution>(input))
     }
     fn set_reaction(&self, input: PullRequestReactionInput) -> RpcFuture<()> {
-        unary(self.link.call::<PullRequestsSetReaction>(input))
+        unary(self.link.call_routed::<PullRequestsSetReaction>(input))
     }
     fn reviewer_candidates(&self, input: PullRequestReviewerCandidatesInput) -> RpcFuture<PullRequestReviewerCandidateList> {
-        unary(self.link.call::<PullRequestsReviewerCandidates>(input))
+        unary(self.link.call_routed::<PullRequestsReviewerCandidates>(input))
     }
     fn request_reviewers(&self, input: PullRequestReviewerRequestInput) -> RpcFuture<()> {
-        unary(self.link.call::<PullRequestsRequestReviewers>(input))
+        unary(self.link.call_routed::<PullRequestsRequestReviewers>(input))
     }
     fn label_candidates(&self, input: PullRequestRef) -> RpcFuture<PullRequestLabelCandidateList> {
-        unary(self.link.call::<PullRequestsLabelCandidates>(input))
+        unary(self.link.call_routed::<PullRequestsLabelCandidates>(input))
     }
     fn set_labels(&self, input: PullRequestLabelChangeInput) -> RpcFuture<()> {
-        unary(self.link.call::<PullRequestsSetLabels>(input))
+        unary(self.link.call_routed::<PullRequestsSetLabels>(input))
     }
     fn prepare_thread(&self, input: GitPreparePullRequestThreadInput) -> RpcFuture<GitPreparePullRequestThreadResult> {
         unary(self.link.call::<GitPreparePullRequestThread>(input))

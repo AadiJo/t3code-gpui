@@ -97,6 +97,8 @@ pub struct ConnectionsSettings {
     permissions: HashMap<EnvironmentId, super::connections_settings_access::SessionCheck>,
     /// The Load balancing fold is open.
     load_balancing_open: bool,
+    /// The Pull request sharing fold is open.
+    pull_request_routing_open: bool,
     dialog: Option<PageDialog>,
     /// Ticks once a second while a row shows a retry countdown.
     ticker: Option<Task<()>>,
@@ -125,6 +127,7 @@ impl ConnectionsSettings {
             removing: HashSet::new(),
             permissions: HashMap::new(),
             load_balancing_open: false,
+            pull_request_routing_open: false,
             dialog: None,
             ticker: None,
             _subscriptions: vec![observe, observe_updates],
@@ -381,7 +384,7 @@ impl ConnectionsSettings {
                             .child(div().truncate().ui_text(theme, TextSize::Sm, weight::MEDIUM).text_color(c.foreground()).child(env.entry.label.clone()))
                             .child(div().truncate().ui_text(theme, TextSize::Xs, weight::NORMAL).text_color(c.muted_foreground).child(transport_label(env))),
                     )
-                    .child(div().w(sp(32.)).flex_none().child(select))
+                    .child(div().min_w(sp(32.)).flex_none().child(select))
             });
             div()
                 .border_t_1()
@@ -406,6 +409,12 @@ impl ConnectionsSettings {
                 .children(body)
                 .into_any_element(),
         )
+    }
+
+    /// Opens or closes the Pull request sharing fold.
+    pub fn toggle_pull_request_routing(&mut self, cx: &mut Context<Self>) {
+        self.pull_request_routing_open = !self.pull_request_routing_open;
+        cx.notify();
     }
 
     /// Opens or closes a row's "Permissions"; opening asks the environment
@@ -1296,6 +1305,9 @@ impl Render for ConnectionsSettings {
         let environments: Vec<EnvironmentState> = self.state.read(cx).environments.clone();
         let rows: Vec<AnyElement> = environments.iter().map(|env| self.render_row(env, cx)).collect();
         let load_balancing = self.render_load_balancing(&environments, cx);
+        let shared: Vec<&EnvironmentState> =
+            environments.iter().filter(|env| env.entry.enabled && present_phase(env) != crate::connection::presentation::PresentedPhase::Unsupported).collect();
+        let pull_request_routing = self.render_pull_request_routing(&shared, self.pull_request_routing_open, cx);
         let cloud_rows = cloud_environment_connect_rows(&self.state, cx);
         let dialog = self.render_dialog(cx);
         let targets = self.update_targets(&environments, cx);
@@ -1337,6 +1349,7 @@ impl Render for ConnectionsSettings {
             .text_color(c.foreground())
             .child(section)
             .children(load_balancing)
+            .children(pull_request_routing)
             .children(dialog)
     }
 }

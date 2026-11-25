@@ -113,6 +113,8 @@ mod live_check_settings;
 mod live_check_sharing;
 mod live_check_update;
 mod live_check_update_ref;
+mod live_check_update_pill;
+mod live_check_pr_routing;
 mod live_check_usage;
 #[allow(dead_code)]
 #[path = "notifications/mod.rs"]
@@ -622,6 +624,9 @@ fn main() -> anyhow::Result<()> {
         "update-ref" => live_check_update_ref::run_update_ref(&mut check),
         "context-menus" => live_check_menus::run_context_menus(&mut check),
         "guest-share" => live_check_sharing::run_guest_share(&mut check),
+        "update-pill" => live_check_update_pill::run_update_pill(&mut check),
+        "update-banner" => live_check_update_pill::run_update_banner(&mut check),
+        "pr-routing" => live_check_pr_routing::run_pr_routing(&mut check),
         other => Err(anyhow::anyhow!("unknown phase {other}")),
     };
     check.finish(&phase, result)

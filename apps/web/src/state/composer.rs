@@ -406,6 +406,7 @@ pub fn handle_event(event: &ComposerEvent, thread: &Entity<LiveThread>, composer
         }
         ComposerEvent::BannerAction(id) if id.as_ref() == FRESH_SESSION_BANNER => FreshSessionArms::set(&key, false, cx),
         ComposerEvent::BannerAction(id) if id.starts_with(ENVIRONMENT_UNAVAILABLE_BANNER) => environment_banner_action(id, cx),
+        ComposerEvent::BannerAction(_) | ComposerEvent::BannerDismissed(_) if crate::components::server_update_banners::handle_banner_event(&key, event, cx) => {}
         ComposerEvent::UsageLimits => {
             let Some(composer) = composer.upgrade() else { return EventOutcome::Done };
             let instance = composer.read(cx).state().selection.instance_id.0.to_string();
@@ -1787,7 +1788,9 @@ pub fn system_banners(key: &ThreadKey, cx: &mut App) -> Vec<ComposerBanner> {
     for left in grace_left.into_iter().chain((!disconnect_left.is_zero()).then_some(disconnect_left)) {
         refresh_after(key.clone(), left, cx);
     }
-    if reconnecting && grace_left.is_some() {
+    // A restarting server's update banner explains the reconnect (`suppressUnavailableBanner`).
+    let updating = crate::components::server_update_action::ServerUpdateStore::state(&t3code_client_runtime::environment::EnvironmentId::new(environment_id.as_str()), cx).is_running();
+    if reconnecting && (grace_left.is_some() || updating) {
         return Vec::new();
     }
     let label = environment.entry.label.clone();

@@ -155,7 +155,7 @@ impl DetailsFeed {
             return;
         }
         let Some(link) = RpcLink::new(environment, cx) else { return };
-        let request = link.call::<PullRequestsDetail>(reference);
+        let request = link.call_routed::<PullRequestsDetail>(reference);
         cx.spawn(async move |this, cx| {
             let result = request.await;
             this.update(cx, |this, cx| {
@@ -475,7 +475,7 @@ pub fn event(feed: &Entity<DetailsFeed>, key: &ThreadKey, event: &ThreadDetailsE
                 update_method: None,
                 reply_with_summary: None,
             };
-            let request = link.call::<PullRequestsRunAction>(input);
+            let request = link.call_routed::<PullRequestsRunAction>(input);
             let (feed, url) = (feed.clone(), current.url.clone());
             cx.spawn(async move |cx| {
                 let result = request.await;

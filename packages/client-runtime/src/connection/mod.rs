@@ -9,6 +9,7 @@ pub mod model;
 pub mod onboarding;
 pub mod outdated_host_update;
 pub mod profile_store;
+pub mod pull_request_routing;
 pub mod registry;
 pub mod resolver;
 pub mod routes;

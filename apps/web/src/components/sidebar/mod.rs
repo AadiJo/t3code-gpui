@@ -15,6 +15,9 @@ pub mod sidebar_notifications;
 pub mod sidebar_project_grouping;
 pub mod sidebar_thread_header;
 pub mod sidebar_thread_row;
+pub mod sidebar_update_pill;
+pub mod update_everything_logic;
+pub mod update_everything_run;
 pub mod style;
 pub mod surface_grain;
 
