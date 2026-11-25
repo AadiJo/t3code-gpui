@@ -540,7 +540,12 @@ impl WrappedLineLayout {
         for (line, line_end) in ends.enumerate() {
             let (start, end) = (range.start.max(line_start), range.end.min(line_end));
             if start < end {
-                let origin = layout.x_for_index(line_start) - break_padding(&self.padded_runs, line_start);
+                // The first line starts at 0, as `position_for_index` and painting take it.
+                let origin = if line == 0 {
+                    Pixels::ZERO
+                } else {
+                    layout.x_for_index(line_start) - break_padding(&self.padded_runs, line_start)
+                };
                 let right = if range.end <= line_end {
                     layout.x_for_index(range.end)
                 } else {
