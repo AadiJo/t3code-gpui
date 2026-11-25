@@ -467,7 +467,8 @@ impl AppData for LiveData {
                 if let Some(banner) = live_composer::usage_banner(&key, panel_key.as_deref(), config.as_deref(), &instance, cx) {
                     state.banners.insert(0, banner);
                 }
-                state.banners.splice(0..0, live_composer::system_banners(&key, cx));
+                let system = live_composer::system_banners(&key, cx);
+                state.banners.splice(0..0, system.into_iter().chain(crate::components::server_update_banners::server_update_banner(&key, cx)));
                 let cwd = (!view.cwd.is_empty()).then(|| view.cwd.to_string());
                 self.menu_facts.borrow_mut().insert((environment_id.clone(), cwd.clone()), facts.clone());
                 for ((environment, workspace, _), source) in self.menus.borrow().iter() {

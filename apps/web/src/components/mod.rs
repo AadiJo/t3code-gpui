@@ -32,6 +32,7 @@ pub mod saved_views_menu;
 pub mod settings;
 pub mod search;
 pub mod server_update_action;
+pub mod server_update_banners;
 pub mod icons;
 pub mod media;
 pub mod composer_prompt_editor;

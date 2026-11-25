@@ -243,3 +243,31 @@ pub fn managed_updates_denial(config: Option<&ServerConfig>) -> Option<SharedStr
     let off = policy.limits.as_ref()?.updates.as_ref()?.mode == t3code_contracts::ManagedUpdatesMode::Off;
     off.then(|| t!("{organization} manages T3 Code updates.", organization = policy.organization.as_str()))
 }
+
+/// Failed updates whose notice was dismissed, by environment, for this run of the app
+/// (`dismissedServerUpdateFailures`). A newer failure is a different state and shows again.
+#[derive(Default)]
+struct DismissedFailures(Vec<(EnvironmentId, t3code_client_runtime::connection::server_update::ServerUpdateState)>);
+
+impl gpui_kit::Global for DismissedFailures {}
+
+/// Whether the failure notice for `state` was dismissed (`isServerUpdateFailureDismissed`).
+pub fn is_server_update_failure_dismissed(
+    environment_id: &EnvironmentId,
+    state: &t3code_client_runtime::connection::server_update::ServerUpdateState,
+    cx: &App,
+) -> bool {
+    matches!(state, t3code_client_runtime::connection::server_update::ServerUpdateState::Failed { .. })
+        && cx.try_global::<DismissedFailures>().is_some_and(|d| d.0.iter().any(|(id, s)| id == environment_id && s == state))
+}
+
+/// Dismisses the failure notice for `state` (`dismissServerUpdateFailure`); other states are ignored.
+pub fn dismiss_server_update_failure(
+    environment_id: &EnvironmentId,
+    state: &t3code_client_runtime::connection::server_update::ServerUpdateState,
+    cx: &mut App,
+) {
+    if matches!(state, t3code_client_runtime::connection::server_update::ServerUpdateState::Failed { .. }) {
+        cx.default_global::<DismissedFailures>().0.push((environment_id.clone(), state.clone()));
+    }
+}

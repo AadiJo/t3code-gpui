@@ -558,7 +558,7 @@ fn muted_note(text: SharedString, cx: &App) -> AnyElement {
 }
 
 /// Copies the manual command and says what to do with it (`useCopyToClipboard`'s `onCopy`).
-fn copy_manual_command(command: &str, installs: bool, server_label: &SharedString, cx: &mut App) {
+pub fn copy_manual_command(command: &str, installs: bool, server_label: &SharedString, cx: &mut App) {
     cx.write_to_clipboard(ClipboardItem::new_string(command.to_owned()));
     let toast = if installs {
         ToastData::new(ToastKind::Success, t!("Update command copied")).description(t!(

@@ -19,6 +19,7 @@ use std::time::Duration;
 use t3code_web::components::provider_updates_action::ProviderUpdates;
 use t3code_web::components::sidebar::sidebar_update_pill::{SidebarUpdatePill, UpdateEverythingPlan};
 use t3code_web::components::sidebar::update_everything_run::UpdateRunStore;
+use t3code_web::hooks::use_settings::ServerSettingsStore;
 use t3code_web::version_skew;
 
 use super::live_check_families::{all_connected, pair_if_needed};
@@ -236,5 +237,116 @@ pub(super) fn run_update_pill(check: &mut Check) -> anyhow::Result<()> {
     let log = a.log();
     check.check("the stand-in saw the failed update and the retry", log.matches("server.updateServer").count() == 2, log.trim().replace('\n', " | "));
     check.shot("p10-retried.png")?;
+    Ok(())
+}
+
+fn update_banner(check: &mut Check) -> Option<t3code_web::components::chat::composer::ComposerBanner> {
+    let composer = super::composer_of(check);
+    check.cx.update(|cx| composer.read(cx).state().banners.iter().find(|b| b.id.starts_with("server-version:")).cloned())
+}
+
+/// live-check `update-banner`: the composer's server update banner on a thread of the first
+/// server (`T3_BANNER_THREAD`), behind the stand-ins as in `update-pill`: "Updating srva server"
+/// with the stage while the update runs (no reconnecting banner while it restarts), then
+/// "Could not update srva server" with the host's reason, Retry and Dismiss. Retry after the host
+/// is fixed updates it; a dismissed failure stays hidden.
+pub(super) fn run_update_banner(check: &mut Check) -> anyhow::Result<()> {
+    let (a, b) = (Standin::from_env("")?, Standin::from_env("_B")?);
+    a.set("updates.log", None)?;
+    pair_if_needed(check, 1, "T3_PAIRING_URL")?;
+    pair_if_needed(check, 2, "T3_PAIRING_URL_B")?;
+    check.cx.update(|cx| {
+        t3code_web::hooks::use_theme::ThemeStore::set_appearance_mode(t3code_web::theme_palette::ThemeMode::Dark, cx);
+        t3code_web::theme_palette::ThemeSettings::apply_env_overrides(cx);
+    });
+    let client = check.cx.update(|cx| version_skew::client_version(cx).to_string());
+    let behind = "0.1.10";
+    reset(check, &a, &b, (behind, &client), false, None)?;
+    let id = check.cx.update(|cx| ConnectionRuntime::state(cx).read(cx).environments[0].id().clone());
+    let thread = std::env::var("T3_BANNER_THREAD").context("T3_BANNER_THREAD")?;
+    let key = super::thread_key(&t3code_contracts::EnvironmentId::new(id.as_str()), &ThreadId::new(thread.as_str()));
+    check.go(&key);
+    check.pump(|c| !c.shown_input().entries.is_empty(), Duration::from_secs(30), "thread shown")?;
+    let none = update_banner(check).is_none();
+    check.check("no update banner while nothing updates", none, "");
+
+    // 1. Running.
+    a.set("stage-ms", Some("6000"))?;
+    a.set("restart-ms", Some("4000"))?;
+    let target = check.cx.update(|cx| {
+        let config = ServerSettingsStore::config(cx, &id);
+        t3code_web::components::server_update_action::ServerUpdateTarget::for_config(id.clone(), "srva server".into(), config.as_deref(), client.clone().into())
+    });
+    let run = check.cx.update(|cx| t3code_web::components::server_update_action::ServerUpdateStore::update(target, false, cx));
+    run.detach();
+    check.pump(|c| update_banner(c).is_some(), Duration::from_secs(10), "the updating banner")?;
+    hover_at(check, point(px(600.), px(300.)))?;
+    check.wait(Duration::from_millis(500));
+    let banner = update_banner(check).expect("banner");
+    check.check(
+        "the banner names the server and its stage",
+        banner.title.as_ref() == "Updating srva server" && banner.description.as_deref() == Some("Downloading…") && banner.dismiss.is_none() && banner.action.is_none(),
+        format!("{:?} {:?}", banner.title, banner.description),
+    );
+    check.shot("b0-banner-updating.png")?;
+    check.pump(
+        |c| update_banner(c).is_some_and(|b| b.description.as_deref() == Some("Restarting…")),
+        Duration::from_secs(30),
+        "Restarting…",
+    )?;
+    let composer = super::composer_of(check);
+    let reconnecting = check.cx.update(|cx| composer.read(cx).state().banners.iter().any(|b| b.id.starts_with("environment-unavailable:")));
+    check.check("no reconnecting banner while the server restarts into its update", !reconnecting, "");
+    check.shot("b1-banner-restarting.png")?;
+    let expect = client.clone();
+    let env = id.clone();
+    check.pump(move |c| update_banner(c).is_none() && server_version(c, &env).as_deref() == Some(expect.as_str()), Duration::from_secs(90), "the banner goes once updated")?;
+
+    // 2. Failed, Retry.
+    reset(check, &a, &b, (behind, &client), false, Some("Download failed: the release server is unreachable."))?;
+    let target = check.cx.update(|cx| {
+        let config = ServerSettingsStore::config(cx, &id);
+        t3code_web::components::server_update_action::ServerUpdateTarget::for_config(id.clone(), "srva server".into(), config.as_deref(), client.clone().into())
+    });
+    check.wait(Duration::from_millis(800));
+    let run = check.cx.update(|cx| t3code_web::components::server_update_action::ServerUpdateStore::update(target, true, cx));
+    run.detach();
+    check.pump(|c| update_banner(c).is_some_and(|b| b.dismiss.is_some()), Duration::from_secs(20), "the failed banner")?;
+    hover_at(check, point(px(600.), px(300.)))?;
+    check.wait(Duration::from_millis(500));
+    let banner = update_banner(check).expect("banner");
+    check.check(
+        "the failed banner keeps the host's reason and offers Retry",
+        banner.title.as_ref() == "Could not update srva server"
+            && banner.description.as_deref().is_some_and(|d| d.contains("release server is unreachable"))
+            && banner.action.as_deref() == Some("Retry"),
+        format!("{:?} {:?} {:?}", banner.title, banner.description, banner.action),
+    );
+    check.shot("b2-banner-failed.png")?;
+    a.set("fail", None)?;
+    check.cx.update(|cx| composer.update(cx, |_, cx| cx.emit(t3code_web::components::chat::composer::ComposerEvent::BannerAction(banner.id.clone()))));
+    let expect = client.clone();
+    let env = id.clone();
+    check.pump(move |c| update_banner(c).is_none() && server_version(c, &env).as_deref() == Some(expect.as_str()), Duration::from_secs(90), "Retry updates the server")?;
+    let log = a.log();
+    check.check("the stand-in saw the failed update and the retry", log.matches("server.updateServer").count() == 3, log.trim().replace('\n', " | "));
+
+    // 3. Dismiss.
+    reset(check, &a, &b, (behind, &client), false, Some("Download failed: the release server is unreachable."))?;
+    let target = check.cx.update(|cx| {
+        let config = ServerSettingsStore::config(cx, &id);
+        t3code_web::components::server_update_action::ServerUpdateTarget::for_config(id.clone(), "srva server".into(), config.as_deref(), client.clone().into())
+    });
+    check.wait(Duration::from_millis(800));
+    check.cx.update(|cx| t3code_web::components::server_update_action::ServerUpdateStore::update(target, true, cx)).detach();
+    check.pump(|c| update_banner(c).is_some_and(|b| b.dismiss.is_some()), Duration::from_secs(20), "the failed banner")?;
+    let banner = update_banner(check).expect("banner");
+    check.cx.update(|cx| composer.update(cx, |_, cx| cx.emit(t3code_web::components::chat::composer::ComposerEvent::BannerDismissed(banner.id.clone()))));
+    check.wait(Duration::from_millis(500));
+    let gone = update_banner(check).is_none();
+    check.check("a dismissed failure stays hidden", gone, "");
+    a.set("fail", None)?;
+    a.set("version", Some(&client))?;
+    a.kick()?;
     Ok(())
 }
