@@ -122,6 +122,7 @@ mod live_check_update_ref;
 mod live_check_update_pill;
 mod live_check_access;
 mod live_check_find;
+mod live_check_link_several;
 mod live_check_linked_environments;
 mod live_check_mcp;
 mod live_check_pr_routing;
@@ -647,6 +648,7 @@ fn main() -> anyhow::Result<()> {
         "voice-setup" => live_check_voice_setup::run_voice_setup(&mut check),
         "use-in-another-app" => live_check_mcp::run_use_in_another_app(&mut check),
         "linked-environments" => live_check_linked_environments::run_linked_environments(&mut check),
+        "link-several" => live_check_link_several::run_link_several(&mut check),
         "access-controls" => live_check_access::run_access_controls(&mut check),
         "device-approval" => live_check_access::run_device_approval(&mut check),
         "find-history-seed" => live_check_find::run_find_history_seed(&mut check),

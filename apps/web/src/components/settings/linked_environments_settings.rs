@@ -125,13 +125,15 @@ pub struct LinkedEnvironmentsSection {
     forgetting: Option<EnvironmentId>,
     confirm_forget: Option<PeerLinkSummary>,
     dialog: Option<Entity<LinkEnvironmentDialog>>,
+    /// The open "Link several environments" dialog.
+    several: Option<(Entity<super::link_several_environments::LinkSeveralEnvironments>, gpui_kit::Subscription)>,
     _tasks: Vec<Task<()>>,
 }
 
 impl LinkedEnvironmentsSection {
     fn new(environment_id: EnvironmentId, cx: &mut Context<Self>) -> Self {
         let mut this =
-            Self { environment_id, show_label: false, search_target: false, session: None, list: ListState::Loading, forgetting: None, confirm_forget: None, dialog: None, _tasks: Vec::new() };
+            Self { environment_id, show_label: false, search_target: false, session: None, list: ListState::Loading, forgetting: None, confirm_forget: None, dialog: None, several: None, _tasks: Vec::new() };
         if let Some(task) = check_session(&this.environment_id, cx) {
             this._tasks.push(cx.spawn(async move |this, cx| {
                 let result = task.await;
@@ -189,6 +191,29 @@ impl LinkedEnvironmentsSection {
         let dialog = cx.new(|cx| LinkEnvironmentDialog::new(host, links, section, window, cx));
         self.dialog = Some(dialog);
         cx.notify();
+    }
+
+    /// Opens "Link several environments".
+    pub fn open_several_dialog(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        use super::link_several_environments::{LinkSeveralEnvironments, LinkSeveralEvent};
+        let host = self.environment_id.clone();
+        let dialog = cx.new(|cx| LinkSeveralEnvironments::new(host, window, cx));
+        let subscription = cx.subscribe(&dialog, |this, _, event: &LinkSeveralEvent, cx| match event {
+            LinkSeveralEvent::Close { linked } => {
+                this.several = None;
+                if *linked {
+                    this.refresh(cx);
+                }
+                cx.notify();
+            }
+        });
+        self.several = Some((dialog, subscription));
+        cx.notify();
+    }
+
+    /// The open "Link several environments" dialog, for scripted checks.
+    pub fn several_dialog(&self) -> Option<Entity<super::link_several_environments::LinkSeveralEnvironments>> {
+        self.several.as_ref().map(|(dialog, _)| dialog.clone())
     }
 
     fn close_dialog(&mut self, linked: bool, cx: &mut Context<Self>) {
@@ -340,13 +365,24 @@ impl Render for LinkedEnvironmentsSection {
         let can_link = self.may(AuthEnvironmentScope::AccessWrite);
         let mut section = SettingsSection::new(title);
         if can_link {
-            section = section.header_action(
-                Button::new(SharedString::from(format!("linked-link-{}", self.environment_id.as_str())))
+            // A batch needs at least two other machines this app has saved.
+            let other_machines = ConnectionRuntime::state(cx).read(cx).environments.len().saturating_sub(1);
+            let several = (other_machines > 1).then(|| {
+                Button::new(SharedString::from(format!("linked-several-{}", self.environment_id.as_str())))
                     .size(ButtonSize::Xs)
-                    .icon(IconName::Plus)
-                    .icon_size(IconSize::Custom(theme.rem(0.75)))
-                    .label(t!("Link", context = "verb, links an environment"))
-                    .on_click(cx.listener(|this, _, window, cx| this.open_link_dialog(window, cx))),
+                    .variant(ButtonVariant::Outline)
+                    .label(t_rich!("Link several…").plain())
+                    .on_click(cx.listener(|this, _, window, cx| this.open_several_dialog(window, cx)))
+            });
+            section = section.header_action(
+                div().flex().items_center().gap(theme.sp(2.)).children(several).child(
+                    Button::new(SharedString::from(format!("linked-link-{}", self.environment_id.as_str())))
+                        .size(ButtonSize::Xs)
+                        .icon(IconName::Plus)
+                        .icon_size(IconSize::Custom(theme.rem(0.75)))
+                        .label(t!("Link", context = "verb, links an environment"))
+                        .on_click(cx.listener(|this, _, window, cx| this.open_link_dialog(window, cx))),
+                ),
             );
         }
         section = match &self.list {
@@ -400,6 +436,7 @@ impl Render for LinkedEnvironmentsSection {
             .child(section)
             .children(confirm)
             .children(self.dialog.clone())
+            .children(self.several.as_ref().map(|(dialog, _)| dialog.clone()))
             .into_any_element()
     }
 }
@@ -670,11 +707,36 @@ impl LinkEnvironmentDialog {
     }
 }
 
-fn field_label(theme: &AppTheme, label: SharedString) -> AnyElement {
+/// `LinkAccessPicker`: what agents here may do there, with what that does not allow.
+pub(super) fn access_picker(theme: &AppTheme, id: &'static str, access: AuthMcpClientAccess, on_change: impl Fn(AuthMcpClientAccess, &mut App) + 'static) -> AnyElement {
+    let (label, description, icon) = access_config(access);
+    let options: Vec<SharedString> = LEVELS.iter().map(|level| access_config(*level).0).collect();
+    let selected_ix = LEVELS.iter().position(|l| *l == access).unwrap_or(1);
+    div()
+        .flex()
+        .flex_col()
+        .gap(theme.sp(1.5))
+        .child(field_label(theme, t!("What agents here may do there")))
+        .child(
+            Select::new(id, options, selected_ix, move |ix, _, cx| on_change(LEVELS[ix], cx))
+                .value_label(label)
+                .leading(crate::components::icons::Icon::new(icon).size(IconSize::Md)),
+        )
+        .child(hint(
+            theme,
+            format!(
+                "{description} {}",
+                t_rich!("An agent never gets more access there than its own mode here. Below full access, it can change only threads this link started, not that machine's own threads, projects or settings.").plain()
+            ),
+        ))
+        .into_any_element()
+}
+
+pub(super) fn field_label(theme: &AppTheme, label: SharedString) -> AnyElement {
     div().ui_text(theme, TextSize::Xs, weight::MEDIUM).text_color(theme.colors.foreground()).child(label).into_any_element()
 }
 
-fn hint(theme: &AppTheme, text: impl Into<SharedString>) -> AnyElement {
+pub(super) fn hint(theme: &AppTheme, text: impl Into<SharedString>) -> AnyElement {
     div().ui_text(theme, TextSize::Xs, weight::NORMAL).text_color(theme.colors.muted_foreground).child(text.into()).into_any_element()
 }
 
@@ -786,33 +848,10 @@ impl Render for LinkEnvironmentDialog {
             }
             body.push(field.into_any_element());
         }
-        // `LinkAccessPicker`.
-        let (label, description, icon) = access_config(self.access);
-        let options: Vec<SharedString> = LEVELS.iter().map(|level| access_config(*level).0).collect();
-        let selected_ix = LEVELS.iter().position(|l| *l == self.access).unwrap_or(1);
         let this = cx.entity().downgrade();
-        body.push(
-            div()
-                .flex()
-                .flex_col()
-                .gap(theme.sp(1.5))
-                .child(field_label(&theme, t!("What agents here may do there")))
-                .child(
-                    Select::new("link-access", options, selected_ix, move |ix, _, cx| {
-                        this.update(cx, |this, cx| this.set_access(LEVELS[ix], cx)).ok();
-                    })
-                    .value_label(label)
-                    .leading(crate::components::icons::Icon::new(icon).size(IconSize::Md)),
-                )
-                .child(hint(
-                    &theme,
-                    format!(
-                        "{description} {}",
-                        t_rich!("An agent never gets more access there than its own mode here. Below full access, it can change only threads this link started, not that machine's own threads, projects or settings.").plain()
-                    ),
-                ))
-                .into_any_element(),
-        );
+        body.push(access_picker(&theme, "link-access", self.access, move |level, cx| {
+            this.update(cx, |this, cx| this.set_access(level, cx)).ok();
+        }));
         let surface = DialogSurface::new(t!("Link an environment"))
             .max_width_rem(28.)
             .bare_footer()
