@@ -44,6 +44,34 @@ pub enum VoiceRequestError {
     Decode(String),
 }
 
+/// `sessionGrantsScope`: whether a session may use `scope`, through its permission list, its
+/// scopes, or the legacy parent scope an older server granted instead.
+pub fn session_grants_scope(session: &t3code_contracts::AuthSessionState, scope: t3code_contracts::AuthEnvironmentScope) -> bool {
+    use t3code_contracts::AuthEnvironmentScope as S;
+    if !session.authenticated {
+        return false;
+    }
+    if let Some(permissions) = &session.permissions {
+        return permissions.contains(&scope);
+    }
+    let scopes = session.scopes.as_deref().unwrap_or_default();
+    if scopes.contains(&scope) {
+        return true;
+    }
+    if session.auth.server_update_scope.is_some() {
+        return false;
+    }
+    let parent = match scope {
+        S::FilesystemRead | S::DiagnosticsRead => Some(S::OrchestrationRead),
+        S::SettingsWrite | S::ProvidersManage | S::EnvironmentMaintain | S::PreviewOperate | S::SourceControlWrite | S::FilesystemWrite => {
+            Some(S::OrchestrationOperate)
+        }
+        S::TerminalRead => Some(S::TerminalOperate),
+        _ => None,
+    };
+    parent.is_some_and(|parent| scopes.contains(&parent))
+}
+
 /// The copy `CloudSpeechError.message` shows.
 pub trait CloudSpeechErrorMessage {
     fn message(&self) -> String;

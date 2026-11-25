@@ -4,14 +4,17 @@
 //! environment's model, silence filtering and filler words, both dictionaries
 //! (`DictionaryEditor`), and transcript cleanup with its instructions and correction cue.
 //!
-//! Not here yet: the cloud destinations (`CloudVoiceConfiguration`), the model browser and
-//! transcription test (`SpeechModelBrowser`), advanced speech settings and the cleanup model.
+//! The cloud destinations ("Cloud via <environment>") open `CloudVoiceConfiguration`.
+//!
+//! Not here yet: the model browser and transcription test (`SpeechModelBrowser`), advanced
+//! speech settings and the cleanup model.
 
 use gpui_kit::TestSupportExt as _;
 use gpui_kit::component::input::{InputEvent, InputState, TextareaState};
 use gpui_kit::{AnyElement, App, AppContext as _, Context, Entity, IntoElement, Render, SharedString, Subscription, Window, div, prelude::*};
 use t3code_client_runtime::voice_input::speech::{VoiceTranscriptionDestination, effective_speech_language};
 use t3code_contracts::{
+    CloudSpeechProvider,
     ClientServerSettingsPatch, EnvironmentSpeechStatus, SpeechCorrectionCue, SpeechCustomWords, SpeechCustomWordsInnerItem, SpeechLanguage,
     SpeechPostProcessingPromptSettings, SpeechPostProcessingPromptSettingsMode, VoiceMicrophoneEntry, VoiceShortcutMode,
 };
@@ -28,6 +31,7 @@ use crate::client_persistence_storage::LocalStorage;
 use crate::components::ui::input::{TextArea, TextInput};
 use crate::components::ui::menu::{MenuItem, MenuItemKind, MenuPopup};
 use crate::components::ui::popover::{Popover, PopupHandle};
+use crate::components::ui::dialog::Modal;
 use crate::components::ui::select::SelectTrigger;
 use crate::connection::ConnectionRuntime;
 use crate::speech::microphones::{self, SystemMicrophone};
@@ -57,6 +61,8 @@ pub struct VoiceSettings {
     /// The audio inputs the system reported at the last refresh.
     microphones: Vec<SystemMicrophone>,
     test: Entity<MicrophoneTest>,
+    /// The open cloud destination dialog (`pendingCloud`).
+    cloud: Option<(Entity<super::cloud_voice_configuration::CloudVoiceConfiguration>, Subscription)>,
     _refresh: Option<gpui_kit::Task<()>>,
     _subscriptions: Vec<Subscription>,
 }
@@ -120,6 +126,7 @@ impl VoiceSettings {
             instructions,
             microphones: Vec::new(),
             test,
+            cloud: None,
             _refresh: None,
             _subscriptions: subscriptions,
         };
@@ -413,23 +420,71 @@ fn language_label(code: &str) -> SharedString {
     crate::speech::language_names::english_name(code).map(SharedString::from).unwrap_or_else(|| code.to_owned().into())
 }
 
+/// `CloudSpeechLogo`: the provider's mark at 1rem.
+fn cloud_logo(provider: CloudSpeechProvider) -> crate::components::icons::BrandIcon {
+    use crate::components::icons::BrandIcon;
+    match provider {
+        CloudSpeechProvider::Openai => BrandIcon::OpenAi,
+        CloudSpeechProvider::Xai => BrandIcon::Grok,
+        CloudSpeechProvider::Openrouter => BrandIcon::OpenRouter,
+    }
+}
+
+const CLOUD_PROVIDERS: [CloudSpeechProvider; 3] = [CloudSpeechProvider::Openai, CloudSpeechProvider::Xai, CloudSpeechProvider::Openrouter];
+
+/// Environments whose server can forward to the cloud providers (`cloudVoiceTranscription`).
+fn cloud_environments(choices: &[DestinationChoice], cx: &App) -> Vec<(t3code_contracts::EnvironmentId, SharedString)> {
+    choices
+        .iter()
+        .filter(|c| {
+            crate::state::StateBridge::environment(&c.environment_id, cx)
+                .and_then(|live| live.read(cx).config.clone())
+                .is_some_and(|config| config.environment.capabilities.cloud_voice_transcription == Some(true))
+        })
+        .map(|c| (c.environment_id.clone(), c.label.clone()))
+        .collect()
+}
+
 impl VoiceSettings {
-    /// "Transcribe with": Off, then "On an environment" with every saved environment.
-    fn destination_select(&self, cx: &App) -> AnyElement {
+    /// Opens the cloud dialog for a provider through an environment (`setPendingCloud`).
+    fn open_cloud(&mut self, environment_id: t3code_contracts::EnvironmentId, label: SharedString, provider: CloudSpeechProvider, window: &mut Window, cx: &mut Context<Self>) {
+        use super::cloud_voice_configuration::{CloudVoiceConfiguration, CloudVoiceEvent};
+        let dialog = cx.new(|cx| CloudVoiceConfiguration::new(environment_id, label, provider, window, cx));
+        let subscription = cx.subscribe(&dialog, |this, _, event: &CloudVoiceEvent, cx| match event {
+            CloudVoiceEvent::Close => {
+                this.cloud = None;
+                cx.notify();
+            }
+        });
+        self.cloud = Some((dialog, subscription));
+        cx.notify();
+    }
+
+    /// "Transcribe with": Off, "On an environment" with every saved environment, then "Cloud via
+    /// <environment>" with each provider for environments that can forward to them.
+    fn destination_select(&self, cx: &mut Context<Self>) -> AnyElement {
         let theme = cx.app_theme();
         let destination = voice_consent::audio_grant(cx).map(|grant| grant.destination);
         let choices = environment_choices(cx);
+        let clouds = cloud_environments(&choices, cx);
         let chosen = destination.as_ref().map(|d| d.environment_id().clone());
+        let chosen_cloud = destination.as_ref().and_then(|d| d.cloud_provider());
         let chosen_label = chosen.as_ref().map(|id| {
             choices.iter().find(|c| &c.environment_id == id).map(|c| c.label.clone()).unwrap_or_else(|| t!("Chosen environment (unavailable)"))
         });
-        let (icon, label) = match &chosen_label {
-            Some(label) => (IconName::Monitor, label.clone()),
-            None => (IconName::MicOff, t!("Off")),
+        let leading = match (&chosen_label, chosen_cloud) {
+            (Some(_), Some(provider)) => Icon::new(cloud_logo(provider)).size(IconSize::Md).into_any_element(),
+            (Some(_), None) => Icon::new(IconName::Monitor).size(IconSize::Md).color(theme.colors.icon_muted).into_any_element(),
+            (None, _) => Icon::new(IconName::MicOff).size(IconSize::Md).color(theme.colors.icon_muted).into_any_element(),
         };
-        let trigger = SelectTrigger::new(label)
-            .size(SelectSize::Sm)
-            .leading(Some(Icon::new(icon).size(IconSize::Md).color(theme.colors.icon_muted).into_any_element()));
+        let label = match (&chosen_label, chosen_cloud) {
+            (Some(environment), Some(provider)) => SharedString::from(format!("{} via {environment}", t3code_client_runtime::voice_input::environment::cloud_speech_label(provider))),
+            (Some(environment), None) => environment.clone(),
+            (None, _) => t!("Off"),
+        };
+        let trigger = SelectTrigger::new(label).size(SelectSize::Sm).leading(Some(leading));
+        let view = cx.entity().downgrade();
+        let chosen_for_manage = chosen.clone();
         let rows: Vec<(t3code_contracts::EnvironmentId, SharedString)> = choices.iter().map(|c| (c.environment_id.clone(), c.label.clone())).collect();
         let off_selected = chosen.is_none();
         let popover = Popover::new("select-voice-destination", trigger, move |handle: PopupHandle, _, _| {
@@ -444,7 +499,7 @@ impl VoiceSettings {
                 menu = menu.label(t!("On an environment"));
             }
             for (environment_id, label) in rows.iter().cloned() {
-                let selected = chosen.as_ref() == Some(&environment_id);
+                let selected = chosen.as_ref() == Some(&environment_id) && chosen_cloud.is_none();
                 let close = handle.clone();
                 let id = format!("voice-destination-{environment_id}");
                 menu = menu.item(MenuItem::new(label).id(id).icon(IconName::Monitor).kind(MenuItemKind::Radio(selected)).on_select(move |_, cx| {
@@ -452,11 +507,48 @@ impl VoiceSettings {
                     close.close(cx);
                 }));
             }
+            for (environment_id, environment) in clouds.iter().cloned() {
+                menu = menu.label(t!("Cloud via {environment}", environment = environment.clone()));
+                for provider in CLOUD_PROVIDERS {
+                    let selected = chosen.as_ref() == Some(&environment_id) && chosen_cloud == Some(provider);
+                    let (close, view, environment_id, environment) = (handle.clone(), view.clone(), environment_id.clone(), environment.clone());
+                    let id = format!("voice-destination-cloud-{}-{environment_id}", provider.as_str());
+                    menu = menu.item(
+                        MenuItem::new(t3code_client_runtime::voice_input::environment::cloud_speech_label(provider))
+                            .id(id)
+                            .icon(cloud_logo(provider))
+                            .kind(MenuItemKind::Radio(selected))
+                            .on_select(move |window, cx| {
+                                close.close(cx);
+                                view.update(cx, |this, cx| this.open_cloud(environment_id.clone(), environment.clone(), provider, window, cx)).ok();
+                            }),
+                    );
+                }
+            }
             let dismiss = handle.clone();
             menu.on_dismiss(move |_, cx| dismiss.close(cx)).into_any_element()
         });
+        // `KeyRoundIcon`: manage the chosen cloud provider's key (OpenRouter: its model too).
+        let manage = chosen_cloud.zip(chosen_for_manage).zip(chosen_label.clone()).map(|((provider, environment_id), environment)| {
+            let tip = if provider == CloudSpeechProvider::Openrouter { t!("Manage OpenRouter") } else { t!("Manage key") };
+            div().id("voice-cloud-manage-tip").tooltip(tooltip(tip)).child(
+                Button::new("voice-cloud-manage")
+                    .variant(ButtonVariant::Ghost)
+                    .size(ButtonSize::IconSm)
+                    .icon(IconName::KeyRound)
+                    .on_click(cx.listener(move |this, _, window, cx| this.open_cloud(environment_id.clone(), environment.clone(), provider, window, cx))),
+            )
+        });
         // `min-w-40` from the settings row, `max-w-72` on the trigger.
-        div().id("voice-destination").min_w(theme.rem(10.)).max_w(theme.rem(18.)).child(popover).test_support().into_any_element()
+        let theme = cx.app_theme();
+        div()
+            .flex()
+            .min_w_0()
+            .items_center()
+            .gap(theme.sp(1.5))
+            .child(div().id("voice-destination").min_w(theme.rem(10.)).max_w(theme.rem(18.)).child(popover).test_support())
+            .children(manage)
+            .into_any_element()
     }
 }
 
@@ -644,7 +736,13 @@ impl Render for VoiceSettings {
                     .control(div().w(rem10).child(TextInput::new(&self.cue))),
             );
         }
-        page_container(cx).child(input).child(transcription).child(dictionary).child(cleanup)
+        let cloud = self.cloud.as_ref().map(|(dialog, _)| {
+            let dialog_close = dialog.downgrade();
+            Modal::dialog("voice-cloud-dialog", dialog.clone(), move |_, cx| {
+                dialog_close.update(cx, |_, cx| cx.emit(super::cloud_voice_configuration::CloudVoiceEvent::Close)).ok();
+            })
+        });
+        page_container(cx).child(input).child(transcription).child(dictionary).child(cleanup).children(cloud)
     }
 }
 
