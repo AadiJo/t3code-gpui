@@ -1335,6 +1335,7 @@ impl Render for ConnectionsSettings {
         }
         page_container(cx)
             .text_color(c.foreground())
+            .child(super::local_environment_setting::local_environment_section())
             .child(section)
             .children(load_balancing)
             .children(dialog)

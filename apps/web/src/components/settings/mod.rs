@@ -4,6 +4,7 @@ pub mod add_environment_dialog;
 pub mod appearance_settings;
 pub mod archived_threads_panel;
 pub mod connections_settings;
+pub mod local_environment_setting;
 pub mod import_desktop_dialog;
 pub mod keybindings_settings;
 pub mod settings_controls;
